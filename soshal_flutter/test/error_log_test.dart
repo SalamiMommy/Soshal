@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/error_log.dart';
 
-import 'package:soshal_flutter/test/helpers/test_env.dart';
+import 'helpers/test_env.dart';
 
 void main() {
   final env = bootstrapTestEnv('test-error-log');

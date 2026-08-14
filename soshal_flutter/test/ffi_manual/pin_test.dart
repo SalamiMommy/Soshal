@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soshal_flutter/test/helpers/test_env.dart';
+import 'helpers/test_env.dart';
 
 import 'package:soshal_flutter/ffi/pin.dart';
 
