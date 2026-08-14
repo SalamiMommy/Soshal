@@ -289,4 +289,181 @@ mod tests {
             _ => panic!("Unexpected response type"),
         }
     }
+
+    #[test]
+    fn test_request_roundtrip_all_variants() {
+        let get = FreenetRequest::Get(GetRequest {
+            key: "k".to_string(),
+            fetch_contract: true,
+            subscribe: true,
+            blocking_subscribe: false,
+        });
+        let decoded: FreenetRequest =
+            serde_json::from_str(&serde_json::to_string(&get).unwrap()).unwrap();
+        match decoded {
+            FreenetRequest::Get(g) => {
+                assert_eq!(g.key, "k");
+                assert!(g.fetch_contract && g.subscribe && !g.blocking_subscribe);
+            }
+            _ => panic!("Unexpected request variant"),
+        }
+
+        let put = FreenetRequest::Put(PutRequest {
+            container: Some(ContractContainer {
+                contract_code: vec![1],
+                state: vec![2],
+            }),
+            wrapped_state: Some(ContractState {
+                key: "k".to_string(),
+                state: vec![3],
+                contract_code: None,
+            }),
+            related_contracts: vec![RelatedContract {
+                key: "r".to_string(),
+                summary: Some(ContractSummary { data: vec![4] }),
+            }],
+            subscribe: false,
+            blocking_subscribe: true,
+        });
+        let decoded: FreenetRequest =
+            serde_json::from_str(&serde_json::to_string(&put).unwrap()).unwrap();
+        match decoded {
+            FreenetRequest::Put(p) => {
+                assert_eq!(p.container.unwrap().state, vec![2]);
+                assert_eq!(p.wrapped_state.unwrap().state, vec![3]);
+                assert_eq!(p.related_contracts[0].key, "r");
+                assert_eq!(
+                    p.related_contracts[0].summary.as_ref().unwrap().data,
+                    vec![4]
+                );
+                assert!(!p.subscribe && p.blocking_subscribe);
+            }
+            _ => panic!("Unexpected request variant"),
+        }
+
+        let subscribe = FreenetRequest::Subscribe(SubscribeRequest {
+            key: "k".to_string(),
+            summary: Some(ContractSummary { data: vec![5] }),
+        });
+        let decoded: FreenetRequest =
+            serde_json::from_str(&serde_json::to_string(&subscribe).unwrap()).unwrap();
+        match decoded {
+            FreenetRequest::Subscribe(s) => {
+                assert_eq!(s.key, "k");
+                assert_eq!(s.summary.unwrap().data, vec![5]);
+            }
+            _ => panic!("Unexpected request variant"),
+        }
+
+        let update = FreenetRequest::Update(UpdateRequest {
+            key: Some("k".to_string()),
+            update: Some(StateUpdate {
+                delta: vec![6],
+                summary: None,
+            }),
+        });
+        let decoded: FreenetRequest =
+            serde_json::from_str(&serde_json::to_string(&update).unwrap()).unwrap();
+        match decoded {
+            FreenetRequest::Update(u) => {
+                assert_eq!(u.key.as_deref(), Some("k"));
+                assert_eq!(u.update.unwrap().delta, vec![6]);
+            }
+            _ => panic!("Unexpected request variant"),
+        }
+
+        let disconnect = FreenetRequest::Disconnect(DisconnectRequest {
+            cause: Some("bye".to_string()),
+        });
+        let decoded: FreenetRequest =
+            serde_json::from_str(&serde_json::to_string(&disconnect).unwrap()).unwrap();
+        match decoded {
+            FreenetRequest::Disconnect(d) => assert_eq!(d.cause.as_deref(), Some("bye")),
+            _ => panic!("Unexpected request variant"),
+        }
+    }
+
+    #[test]
+    fn test_response_roundtrip_all_variants() {
+        let get = FreenetResponse::GetResult(GetResult {
+            state: ContractState {
+                key: "k".to_string(),
+                state: vec![1],
+                contract_code: None,
+            },
+            subscribed: true,
+        });
+        let decoded: FreenetResponse =
+            serde_json::from_str(&serde_json::to_string(&get).unwrap()).unwrap();
+        match decoded {
+            FreenetResponse::GetResult(r) => {
+                assert_eq!(r.state.key, "k");
+                assert!(r.subscribed);
+            }
+            _ => panic!("Unexpected response variant"),
+        }
+
+        let put = FreenetResponse::PutResult(PutResult {
+            key: "p".to_string(),
+            subscribed: false,
+        });
+        let decoded: FreenetResponse =
+            serde_json::from_str(&serde_json::to_string(&put).unwrap()).unwrap();
+        match decoded {
+            FreenetResponse::PutResult(r) => {
+                assert_eq!(r.key, "p");
+                assert!(!r.subscribed);
+            }
+            _ => panic!("Unexpected response variant"),
+        }
+
+        let subscribe = FreenetResponse::SubscribeResult(SubscribeResult {
+            key: "s".to_string(),
+            subscribed: true,
+        });
+        let decoded: FreenetResponse =
+            serde_json::from_str(&serde_json::to_string(&subscribe).unwrap()).unwrap();
+        match decoded {
+            FreenetResponse::SubscribeResult(r) => {
+                assert_eq!(r.key, "s");
+                assert!(r.subscribed);
+            }
+            _ => panic!("Unexpected response variant"),
+        }
+
+        let update = FreenetResponse::UpdateResult(UpdateResult {
+            key: "u".to_string(),
+            success: true,
+        });
+        let decoded: FreenetResponse =
+            serde_json::from_str(&serde_json::to_string(&update).unwrap()).unwrap();
+        match decoded {
+            FreenetResponse::UpdateResult(r) => {
+                assert_eq!(r.key, "u");
+                assert!(r.success);
+            }
+            _ => panic!("Unexpected response variant"),
+        }
+
+        let error = FreenetResponse::Error(ErrorResponse {
+            message: "boom".to_string(),
+            code: Some(7),
+        });
+        let decoded: FreenetResponse =
+            serde_json::from_str(&serde_json::to_string(&error).unwrap()).unwrap();
+        match decoded {
+            FreenetResponse::Error(e) => {
+                assert_eq!(e.message, "boom");
+                assert_eq!(e.code, Some(7));
+            }
+            _ => panic!("Unexpected response variant"),
+        }
+    }
+
+    #[test]
+    fn test_response_rejects_junk() {
+        assert!(serde_json::from_str::<FreenetResponse>("not json").is_err());
+        assert!(serde_json::from_str::<FreenetResponse>(r#"{"type":"Nope"}"#).is_err());
+        assert!(serde_json::from_str::<FreenetResponse>(r#"{"subscribed":true}"#).is_err());
+    }
 }

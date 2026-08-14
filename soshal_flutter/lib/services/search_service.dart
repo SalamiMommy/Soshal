@@ -47,7 +47,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
         query: query,
         limit: limit,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _hashtags;
     } catch (e, st) {
@@ -77,7 +77,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
         limit: BigInt.from(limit),
         relaysJson: jsonEncode(relays),
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return json;
     } catch (e, st) {
@@ -94,7 +94,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
           RustLib.instance.api.crateFfiSearchSearchTrendingHashtags(
         limit: limit,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _trendingHashtags;
     } catch (e, st) {
@@ -118,7 +118,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
       } else {
         _trendingProfiles = [];
       }
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _trendingProfiles;
     } catch (e, st) {
@@ -139,7 +139,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
             .map((e) => SearchResultItem.fromJson(e as Map<String, dynamic>))
             .toList();
       }
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _results;
     } catch (e, st) {

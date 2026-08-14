@@ -80,7 +80,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
         port: _lanPort!,
         quicPort: _quicPort,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _lanPort!;
     } catch (e, st) {
@@ -110,7 +110,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
       _peers
         ..clear()
         ..addAll(capped);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return found;
     } catch (e, st) {
@@ -172,7 +172,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
         failures: BigInt.zero,
         failedHashes: const [],
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return id;
     } catch (e, st) {
@@ -226,7 +226,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
         cellular: cellular,
         lowPowerMode: lowPowerMode,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _power!;
     } catch (e, st) {
@@ -262,7 +262,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
       );
       final Map<String, dynamic> manifest =
           Map<String, dynamic>.from(jsonDecode(manifestJson) as Map);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return manifest;
     } catch (e, st) {
@@ -282,7 +282,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
         manifestJson: manifestJson,
         packetsB64Json: packetsB64Json,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return bytes;
     } catch (e, st) {

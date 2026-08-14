@@ -28,7 +28,7 @@ class ScheduledService extends ChangeNotifier with LastErrorMixin {
         scheduledAt: scheduledAt,
         hashtags: hashtags,
       );
-      _lastError = null;
+      clearLastError();
       return id;
     } catch (e, st) {
       setLastError(e, st);
@@ -47,7 +47,7 @@ class ScheduledService extends ChangeNotifier with LastErrorMixin {
       _drafts = (decoded as List<dynamic>)
           .map((e) => ScheduledPost.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _drafts;
     } catch (e, st) {
@@ -61,7 +61,7 @@ class ScheduledService extends ChangeNotifier with LastErrorMixin {
   Future<bool> delete(String id) async {
     try {
       final ok = RustLib.instance.api.crateFfiScheduledScheduledDelete(id: id);
-      _lastError = null;
+      clearLastError();
       return ok;
     } catch (e, st) {
       setLastError(e, st);

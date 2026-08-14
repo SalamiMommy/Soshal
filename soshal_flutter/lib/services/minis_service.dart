@@ -9,7 +9,7 @@ class MinisService with LastErrorMixin {
   List<String> fetchMinis() {
     try {
       final minis = RustLib.instance.api.crateFfiMinisMinisFetch();
-      lastErrorValue = null;
+      clearLastError();
       return minis;
     } catch (e, st) {
       setLastError(e, st);
@@ -29,7 +29,7 @@ class MinisService with LastErrorMixin {
         text: text,
         wasmBytesHex: wasmBytesHex,
       );
-      lastErrorValue = null;
+      clearLastError();
       return result;
     } catch (e, st) {
       setLastError(e, st);
@@ -49,7 +49,7 @@ class MinisService with LastErrorMixin {
         postsJson: postsJson,
         wasmBytesHex: wasmBytesHex,
       );
-      lastErrorValue = null;
+      clearLastError();
       return ranked;
     } catch (e, st) {
       setLastError(e, st);

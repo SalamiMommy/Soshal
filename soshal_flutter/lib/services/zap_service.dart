@@ -29,7 +29,7 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
       if (ok) {
         await refreshStatus();
       }
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -47,7 +47,7 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
         _nwcStatus = 'disconnected';
         _nwcPubkey = null;
       }
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -66,7 +66,7 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
       } catch (_) {
         _nwcPubkey = null;
       }
-      _lastError = null;
+      clearLastError();
       notifyListeners();
     } catch (e, st) {
       setLastError(e, st);
@@ -81,7 +81,7 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
         eventId: eventId,
       );
       _totalMsat = msat.toInt();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _totalMsat;
     } catch (e, st) {
@@ -103,7 +103,7 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
       _receipts = (decoded as List<dynamic>)
           .map((e) => ZapReceipt.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _receipts;
     } catch (e, st) {
@@ -118,7 +118,7 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
     try {
       final json = await RustLib.instance.api
           .crateFfiZapZapParseLnurlMetadata(lnurl: lnurl);
-      _lastError = null;
+      clearLastError();
       return json;
     } catch (e, st) {
       setLastError(e, st);

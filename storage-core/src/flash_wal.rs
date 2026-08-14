@@ -122,7 +122,11 @@ mod tests {
 
     #[test]
     fn test_configure_flash_pragmas_enables_wal() {
-        let db = soshal_db_core::block_on(libsql::Builder::new_local(":memory:").build()).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "soshal-flash-wal-test-{}",
+            std::process::id()
+        ));
+        let db = soshal_db_core::block_on(libsql::Builder::new_local(&path).build()).unwrap();
         let conn = db.connect().unwrap();
         configure_flash_pragmas(&conn).unwrap();
         let journal_mode = soshal_db_core::block_on(async {
@@ -134,5 +138,10 @@ mod tests {
             }
         });
         assert_eq!(journal_mode, "wal");
+        drop(conn);
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{}-wal", path.display()));
+        let _ = std::fs::remove_file(format!("{}-shm", path.display()));
     }
 }

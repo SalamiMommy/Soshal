@@ -36,7 +36,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
       );
       _activePubkey = _session!.activePubkey;
 
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _session!;
     } catch (e, st) {
@@ -105,7 +105,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
         _activePubkey = pubkey;
       }
 
-      _lastError = null;
+      clearLastError();
       notifyListeners();
     } catch (e, st) {
       setLastError(e, st);
@@ -155,7 +155,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
         accounts: _session!.accounts,
       );
 
-      _lastError = null;
+      clearLastError();
       notifyListeners();
     } catch (e, st) {
       setLastError(e, st);
@@ -183,7 +183,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
         );
       }
 
-      _lastError = null;
+      clearLastError();
       notifyListeners();
     } catch (e, st) {
       setLastError(e, st);

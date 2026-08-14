@@ -25,6 +25,7 @@ class FeedScreen extends StatefulWidget {
 
 class _FeedScreenState extends State<FeedScreen> {
   late ScrollController _scrollController;
+  FeedService? _feed;
 
   @override
   void initState() {
@@ -34,13 +35,22 @@ class _FeedScreenState extends State<FeedScreen> {
 
     // Load initial feed
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final feed = context.read<FeedService>();
+      if (!mounted) return;
+      final feed = _feed;
+      if (feed == null) return;
       feed.fetchFeed();
       _scheduleLayout(feed);
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _feed = context.read<FeedService>();
+  }
+
   void _scheduleLayout(FeedService feed) {
+    if (!mounted || !context.mounted) return;
     final size = MediaQuery.sizeOf(context);
     final layout = context.read<LayoutService>();
     layout.refresh(
@@ -52,7 +62,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _onFeedChanged() {
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     final size = MediaQuery.sizeOf(context);
     context.read<LayoutService>().refresh(
           context.read<FeedService>().posts,
@@ -63,7 +73,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   @override
   void dispose() {
-    context.read<FeedService>().removeListener(_onFeedChanged);
+    _feed?.removeListener(_onFeedChanged);
     _scrollController.dispose();
     super.dispose();
   }

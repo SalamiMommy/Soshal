@@ -46,7 +46,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
         pubkey: _requirePubkey(),
         bindAddr: bindAddr,
       );
-      _lastError = null;
+      clearLastError();
       _parseStatus(json);
       notifyListeners();
     } catch (e, st) {
@@ -70,7 +70,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
         port: port,
         intervalMs: BigInt.from(intervalMs),
       );
-      _lastError = null;
+      clearLastError();
       _parseStatus(json);
       notifyListeners();
     } catch (e, st) {
@@ -91,7 +91,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
         port: port,
         maxConnections: BigInt.from(maxConnections),
       );
-      _lastError = null;
+      clearLastError();
       _parseStatus(json);
       notifyListeners();
     } catch (e, st) {
@@ -112,7 +112,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
         destAddr: destAddr,
         packetJson: packetJson,
       );
-      _lastError = null;
+      clearLastError();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
@@ -128,7 +128,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
         pubkey: _requirePubkey(),
         destHex: destHex,
       );
-      _lastError = null;
+      clearLastError();
       return json;
     } catch (e, st) {
       setLastError(e, st);
@@ -144,7 +144,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
           RustLib.instance.api.crateFfiNetworkReticulumAddressFromPubkey(
         pubkey: _requirePubkey(),
       );
-      _lastError = null;
+      clearLastError();
       return json;
     } catch (e, st) {
       setLastError(e, st);
@@ -161,7 +161,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
         appName: appName,
         aspect: aspect,
       );
-      _lastError = null;
+      clearLastError();
       return json;
     } catch (e, st) {
       setLastError(e, st);
@@ -177,7 +177,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
         pubkey: _requirePubkey(),
         aspect: aspect,
       );
-      _lastError = null;
+      clearLastError();
       _parseStatus(json);
       notifyListeners();
     } catch (e, st) {
@@ -193,7 +193,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
       final json = RustLib.instance.api.crateFfiNetworkReticulumGetStatus(
         pubkey: _requirePubkey(),
       );
-      _lastError = null;
+      clearLastError();
       _parseStatus(json);
       notifyListeners();
     } catch (e, st) {
@@ -206,7 +206,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
   /// Shared parser for the status JSON returned by the `reticulum_*`
   /// wrappers: `{running, destination_hash, active_routes, rx_packets,
   /// tx_packets, interfaces}`. Only overwrites fields present in the
-  /// payload; parse failures land in [_lastError].
+  /// payload; parse failures land in [lastError].
   void _parseStatus(String json) {
     try {
       final map = jsonDecode(json) as Map<String, dynamic>;

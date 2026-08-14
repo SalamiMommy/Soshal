@@ -40,7 +40,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
           _posts = _posts.sublist(_posts.length - 100);
         }
       }
-      _lastError = null;
+      clearLastError();
       _currentOffset = offset;
     } catch (e, st) {
       setLastError(e, st);
@@ -64,7 +64,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
         limit: limit,
       );
       _posts = _decodePosts(json);
-      _lastError = null;
+      clearLastError();
       _currentOffset = startIndex;
     } catch (e, st) {
       setLastError(e, st);
@@ -109,7 +109,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
         _pinned.addAll((jsonDecode(raw) as List<dynamic>).whereType<String>());
       }
       _pinnedLoaded = true;
-      _lastError = null;
+      clearLastError();
     } catch (e, st) {
       setLastError(e, st);
       _pinned.clear();
@@ -137,7 +137,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
         key: _pinnedKey,
         value: jsonEncode(_pinned.toList()),
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _pinned.contains(eventId);
     } catch (e, st) {

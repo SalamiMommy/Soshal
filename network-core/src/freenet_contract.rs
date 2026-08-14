@@ -295,4 +295,95 @@ mod tests {
             .unwrap();
         assert_eq!(delta.data.len(), 0); // Should be empty since hashes match
     }
+
+    #[test]
+    fn test_payload_serde_roundtrip() {
+        let params = Parameters {
+            data: vec![1, 2, 3],
+        };
+        let state = State {
+            data: vec![4, 5],
+        };
+        let related = RelatedContracts {
+            contracts: vec![RelatedContract {
+                key: "k".to_string(),
+                summary: Some(StateSummary { data: vec![9] }),
+            }],
+        };
+        let update = UpdateData { data: vec![7] };
+        let modification = UpdateModification {
+            new_state: state.clone(),
+            summary: Some(StateSummary { data: vec![8] }),
+        };
+        let delta = StateDelta { data: vec![6] };
+        let result = ValidateResult {
+            valid: false,
+            reason: Some("nope".to_string()),
+        };
+        let error = ContractError {
+            message: "boom".to_string(),
+            code: Some(2),
+        };
+
+        let decoded: Parameters =
+            serde_json::from_str(&serde_json::to_string(&params).unwrap()).unwrap();
+        assert_eq!(decoded.data, vec![1, 2, 3]);
+        let decoded: State =
+            serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
+        assert_eq!(decoded.data, vec![4, 5]);
+        let decoded: RelatedContracts =
+            serde_json::from_str(&serde_json::to_string(&related).unwrap()).unwrap();
+        assert_eq!(decoded.contracts[0].key, "k");
+        assert_eq!(decoded.contracts[0].summary.as_ref().unwrap().data, vec![9]);
+        let decoded: UpdateData =
+            serde_json::from_str(&serde_json::to_string(&update).unwrap()).unwrap();
+        assert_eq!(decoded.data, vec![7]);
+        let decoded: UpdateModification =
+            serde_json::from_str(&serde_json::to_string(&modification).unwrap()).unwrap();
+        assert_eq!(decoded.new_state.data, vec![4, 5]);
+        assert_eq!(decoded.summary.unwrap().data, vec![8]);
+        let decoded: StateDelta =
+            serde_json::from_str(&serde_json::to_string(&delta).unwrap()).unwrap();
+        assert_eq!(decoded.data, vec![6]);
+        let decoded: ValidateResult =
+            serde_json::from_str(&serde_json::to_string(&result).unwrap()).unwrap();
+        assert!(!decoded.valid);
+        assert_eq!(decoded.reason.as_deref(), Some("nope"));
+        let decoded: ContractError =
+            serde_json::from_str(&serde_json::to_string(&error).unwrap()).unwrap();
+        assert_eq!(decoded.message, "boom");
+        assert_eq!(decoded.code, Some(2));
+    }
+
+    #[test]
+    fn test_validation_rejects_invalid_json() {
+        let contract = SocialPostContract;
+        let result = contract
+            .validate_state(
+                Parameters { data: vec![] },
+                State {
+                    data: b"not json".to_vec(),
+                },
+                RelatedContracts { contracts: vec![] },
+            )
+            .unwrap();
+        assert!(!result.valid);
+        assert_eq!(result.reason.as_deref(), Some("Invalid JSON state"));
+    }
+
+    #[test]
+    fn test_state_delta_mismatch_returns_full_state() {
+        let contract = SocialPostContract;
+        let state_data = br#"{"a":1}"#.to_vec();
+        let delta = contract
+            .get_state_delta(
+                Parameters { data: vec![] },
+                State {
+                    data: state_data.clone(),
+                },
+                StateSummary { data: vec![0; 32] },
+            )
+            .unwrap();
+        assert_eq!(delta.data, state_data);
+    }
 }

@@ -25,7 +25,7 @@ class AuditService extends ChangeNotifier with LastErrorMixin {
               .map((e) => AuditRow.fromJson(e as Map<String, dynamic>))
               .toList()
           : <AuditRow>[];
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _rows;
     } catch (e, st) {

@@ -45,7 +45,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
         if (res['success'] != true) {
           throw Exception(res['error'] ?? 'Peer fetch failed');
         }
-        _lastError = null;
+        clearLastError();
         notifyListeners();
         return outPath;
       } catch (e) {
@@ -90,7 +90,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
         jsonDecode(manifestJson) as Map,
       );
 
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return manifest;
     } catch (e, st) {
@@ -123,7 +123,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
         throw Exception(result['error'] ?? 'Fetch failed');
       }
 
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return outPath;
     } catch (e, st) {
@@ -139,7 +139,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
     try {
       _localServerPort =
           RustLib.instance.api.crateFfiMediaMediaStartLocalServer().toInt();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _localServerPort!;
     } catch (e, st) {
@@ -154,7 +154,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
     try {
       RustLib.instance.api.crateFfiMediaMediaStopLocalServer();
       _localServerPort = null;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
     } catch (e, st) {
       setLastError(e, st);
@@ -175,7 +175,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
   Future<String> getCachePath() async {
     try {
       final path = RustLib.instance.api.crateFfiMediaMediaGetCachePath();
-      _lastError = null;
+      clearLastError();
       return path;
     } catch (e, st) {
       setLastError(e, st);
@@ -189,7 +189,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
     try {
       final cachePath = await getCachePath();
       RustLib.instance.api.crateFfiMediaMediaClearCache(cacheDir: cachePath);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
     } catch (e, st) {
       setLastError(e, st);

@@ -4903,6 +4903,7 @@ dependencies = [
  "nostr",
  "nostr-sdk",
  "oxidelta",
+ "rustls 0.23.43",
  "serde",
  "serde_json",
  "sha2",

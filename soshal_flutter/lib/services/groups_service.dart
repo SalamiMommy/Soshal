@@ -28,7 +28,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         userPubkey: userPubkey,
       );
       _groups = _decodeGroups(json);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _groups;
     } catch (e, st) {
@@ -44,7 +44,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         groupId: groupId,
       );
       _current = SoshalGroup.fromJson(jsonDecode(json));
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _current!;
     } catch (e, st) {
@@ -59,7 +59,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
       _members = RustLib.instance.api.crateFfiGroupsGroupsGetMembers(
         groupId: groupId,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _members;
     } catch (e, st) {
@@ -75,7 +75,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         groupId: groupId,
         userPubkey: userPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -91,7 +91,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         groupId: groupId,
         userPubkey: userPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -107,7 +107,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         groupId: groupId,
         content: content,
       );
-      _lastError = null;
+      clearLastError();
       return eventJson;
     } catch (e, st) {
       setLastError(e, st);
@@ -129,7 +129,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
           .map((e) => GroupMessage.fromJson(e as Map<String, dynamic>))
           .toList();
       _messages = parsed.length > 200 ? parsed.sublist(0, 200) : parsed;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _messages;
     } catch (e, st) {
@@ -154,7 +154,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         pictureUrl: pictureUrl,
         creatorPubkey: creatorPubkey,
       );
-      _lastError = null;
+      clearLastError();
       return id;
     } catch (e, st) {
       setLastError(e, st);
@@ -176,7 +176,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         role: role,
         adminPubkey: adminPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -197,7 +197,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         memberPubkey: memberPubkey,
         adminPubkey: adminPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -215,7 +215,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
       _roles = (jsonDecode(json) as List<dynamic>)
           .map((e) => GroupRole.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _roles;
     } catch (e, st) {
@@ -244,7 +244,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         position: position,
         permissions: permissions,
       );
-      _lastError = null;
+      clearLastError();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
@@ -258,7 +258,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
       final ok = RustLib.instance.api.crateFfiGroupsGroupsRoleDelete(
         roleId: roleId,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -278,7 +278,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
       _memberRoles = (jsonDecode(json) as List<dynamic>)
           .map((e) => GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _memberRoles;
     } catch (e, st) {

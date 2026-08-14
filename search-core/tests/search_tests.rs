@@ -7,6 +7,7 @@ use soshal_search_core::fts5::{
     format_fts5_query, format_fts5_query_json, optimize_fts5_index_query, sanitize_fts5_term,
 };
 use soshal_search_core::row_map::{map_search_row, map_search_row_json, SearchRowInput};
+use soshal_search_core::vector_search::{cosine_similarity, rank_vector_documents, VectorDocument};
 use soshal_search_core::{MAX_CONTENT_LEN, MAX_FTS5_TERMS};
 
 fn event(
@@ -338,4 +339,68 @@ fn event_to_search_result_json_limits() {
         "kind": 1
     });
     assert_eq!(event_to_search_result_json(&input.to_string()), "null");
+}
+
+#[test]
+fn format_fts5_query_handles_unicode_and_term_variants() {
+    assert_eq!(format_fts5_query("café au lait"), "café* AND au* AND lait*");
+    assert_eq!(format_fts5_query("\"quoted\" term"), "quoted* AND term*");
+    assert_eq!(format_fts5_query("rust-lang 2x!"), "rustlang* AND 2x*");
+    assert_eq!(format_fts5_query("#nostr @alice"), "nostr* AND alice*");
+}
+
+#[test]
+fn format_fts5_query_no_match_terms_yield_empty() {
+    assert_eq!(format_fts5_query("--- ..."), "");
+    assert_eq!(format_fts5_query("'single'"), "single*");
+    assert_eq!(format_fts5_query(",,,"), "");
+}
+
+#[test]
+fn cosine_similarity_mismatched_or_empty_returns_zero() {
+    assert_eq!(cosine_similarity(&[1.0, 0.0], &[1.0, 0.0, 0.0]), 0.0);
+    assert_eq!(cosine_similarity(&[], &[]), 0.0);
+}
+
+#[test]
+fn rank_vector_documents_orders_by_similarity() {
+    let docs = vec![
+        VectorDocument { id: "far".into(), embedding: vec![0.0, 1.0] },
+        VectorDocument { id: "near".into(), embedding: vec![0.9, 0.1] },
+        VectorDocument { id: "mid".into(), embedding: vec![0.5, 0.5] },
+    ];
+    let ranked = rank_vector_documents(&[1.0, 0.0], &docs, 3);
+    let ids: Vec<&str> = ranked.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, vec!["near", "mid", "far"]);
+    assert!(ranked[0].1 > ranked[1].1 && ranked[1].1 > ranked[2].1);
+}
+
+#[test]
+fn rank_vector_documents_respects_top_k() {
+    let docs = vec![
+        VectorDocument { id: "a".into(), embedding: vec![1.0, 0.0] },
+        VectorDocument { id: "b".into(), embedding: vec![0.5, 0.5] },
+        VectorDocument { id: "c".into(), embedding: vec![0.0, 1.0] },
+    ];
+    let ranked = rank_vector_documents(&[1.0, 0.0], &docs, 2);
+    assert_eq!(ranked.len(), 2);
+    assert_eq!(ranked[0].0, "a");
+}
+
+#[test]
+fn rank_vector_documents_empty_index_returns_empty() {
+    let ranked = rank_vector_documents(&[1.0, 0.0], &[], 5);
+    assert!(ranked.is_empty());
+}
+
+#[test]
+fn rank_vector_documents_dimension_mismatch_scores_zero() {
+    let docs = vec![
+        VectorDocument { id: "d1".into(), embedding: vec![1.0, 0.0] },
+        VectorDocument { id: "d2".into(), embedding: vec![0.0, 1.0, 0.0] },
+    ];
+    let ranked = rank_vector_documents(&[1.0, 0.0], &docs, 5);
+    assert_eq!(ranked.len(), 2);
+    assert_eq!(ranked[0], ("d1".to_string(), 1.0));
+    assert_eq!(ranked[1], ("d2".to_string(), 0.0));
 }

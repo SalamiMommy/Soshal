@@ -43,6 +43,8 @@ pub fn spawn_engine(
     tx: tokio::sync::mpsc::Sender<SyncUpdate>,
     stop: Arc<AtomicBool>,
 ) -> std::thread::JoinHandle<()> {
+    use rustls::crypto::ring;
+    let _ = ring::default_provider().install_default();
     std::thread::spawn(move || {
         let rt = match tokio::runtime::Builder::new_multi_thread()
             .enable_all()

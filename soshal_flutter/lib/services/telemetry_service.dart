@@ -3,23 +3,22 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 
+import 'error_log.dart';
 import 'error_log.dart' as error_log;
 
 /// Flight recorder service. Owns the telemetry init + crash hooks; records
 /// app lifecycle/state events into the Rust ring buffer. On an unhandled
 /// exception the recorder is sealed — the transcript survives the crash.
-class TelemetryService extends ChangeNotifier {
+class TelemetryService extends ChangeNotifier with LastErrorMixin {
   static const _capacityMb = 5;
   static const _appKind = 5; // RecordKind::App
   static const _stateKind = 1; // RecordKind::State
 
   bool _ready = false;
   bool _sealed = false;
-  String? _lastError;
 
   bool get ready => _ready;
   bool get sealed => _sealed;
-  String? get lastError => _lastError;
 
   /// Must be called after FfiBridge.init().
   Future<void> init() async {
@@ -36,8 +35,7 @@ class TelemetryService extends ChangeNotifier {
       recordState('app-started');
       notifyListeners();
     } catch (e) {
-      _lastError = e.toString();
-      debugPrint('telemetry init: $e');
+      setLastError(e);
     }
   }
 
@@ -69,8 +67,7 @@ class TelemetryService extends ChangeNotifier {
       _sealed = RustLib.instance.api.crateFfiTelemetryTelemetryIsSealed();
       return dump;
     } catch (e) {
-      _lastError = e.toString();
-      debugPrint('telemetry dump: $e');
+      setLastError(e);
       return null;
     }
   }
@@ -111,11 +108,14 @@ class TelemetryService extends ChangeNotifier {
     FlutterError.onError = (details) {
       service.recordCrash('flutter: ${details.exception}');
       error_log.logRuntimeError(details.exception, details.stack);
+      FlutterError.dumpErrorToConsole(details, forceReport: true);
       FlutterError.presentError(details);
     };
     PlatformDispatcher.instance.onError = (error, stack) {
       service.recordCrash('platform: $error');
       error_log.logRuntimeError(error, stack);
+      debugPrint('PLATFORM ERROR: $error');
+      debugPrintStack(stackTrace: stack, maxFrames: 20);
       return true;
     };
   }

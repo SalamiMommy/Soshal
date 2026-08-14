@@ -60,7 +60,7 @@ class EbpfService extends ChangeNotifier with LastErrorMixin {
       _passedPackets = (stats['passed_packets'] as num?)?.toInt() ?? 0;
       _nanosSaved = (stats['nanos_saved'] as num?)?.toInt() ?? 0;
       _blockedPeersCount = (stats['blocked_peers_count'] as num?)?.toInt() ?? 0;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
     } catch (e, st) {
       setLastError(e, st);

@@ -30,4 +30,8 @@ mixin LastErrorMixin {
     debugPrint('SVC ERROR: $error');
     logRuntimeError('svc: $error', stack);
   }
+
+  void clearLastError() {
+    _lastError = null;
+  }
 }

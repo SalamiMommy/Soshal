@@ -8,6 +8,7 @@ import '../frb_generated.dart';
 import '../services/media_service.dart';
 import '../services/search_service.dart';
 import '../services/session_service.dart';
+import '../services/signer_service.dart';
 
 /// Composer Screen
 /// Create post, add media/tags
@@ -81,6 +82,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
   }
 
   Future<void> _publishPost() async {
+    if (_isPosting) return;
     if (_contentController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: SelectableText('Post content cannot be empty')),
@@ -100,6 +102,20 @@ class _ComposerScreenState extends State<ComposerScreen> {
     }
 
     setState(() => _isPosting = true);
+    try {
+      if (await context.read<SignerService>().isLocked()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: SelectableText('Signer locked — unlock in Security settings'),
+            ),
+          );
+        }
+        return;
+      }
+    } finally {
+      setState(() => _isPosting = false);
+    }
     try {
       final feedService = context.read<FeedService>();
       final sessionService = context.read<SessionService>();

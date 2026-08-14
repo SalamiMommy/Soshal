@@ -162,13 +162,23 @@
               "icon": "lucide-list",
               "title": "Outline"
             }
+          },
+          {
+            "id": "4f891e9c498fe237",
+            "type": "leaf",
+            "state": {
+              "type": "opencode-terminal",
+              "state": {},
+              "icon": "terminal",
+              "title": "Opencode"
+            }
           }
-        ]
+        ],
+        "currentTab": 5
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 427.5
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -183,18 +193,23 @@
       "bases:Create new base": false
     }
   },
-  "active": "c7dacb06979ad174",
+  "active": "4f891e9c498fe237",
   "lastOpenFiles": [
-    "builds/linux/soshal_flutter-linux-x64.AppImage",
-    "soshal_flutter/build/linux/x64/debug/build.ninja.tmpe1e0e",
-    "target/release/stBmRmL6",
-    "target/debug/incremental/soshal_flutter_bridge-0hqklge8xh4x1/s-hlcbk43163-0t6gkp0-0whtwo2yslw8hvcvekeq9m01l/work-products.bin",
-    "target/debug/incremental/soshal_flutter_bridge-0hqklge8xh4x1/s-hlcbk43163-0t6gkp0-0whtwo2yslw8hvcvekeq9m01l/query-cache.bin",
-    "target/debug/incremental/soshal_flutter_bridge-0hqklge8xh4x1/s-hlcbk43163-0t6gkp0-0whtwo2yslw8hvcvekeq9m01l/metadata.rmeta",
-    "target/debug/incremental/soshal_flutter_bridge-0hqklge8xh4x1/s-hlcbk43163-0t6gkp0-0whtwo2yslw8hvcvekeq9m01l/dep-graph.bin",
-    "target/debug/incremental/soshal_flutter_bridge-0hqklge8xh4x1/s-hlcbk43163-0t6gkp0-0whtwo2yslw8hvcvekeq9m01l",
-    "target/debug/incremental/soshal_flutter_bridge-0hqklge8xh4x1/s-hlcbk43163-0t6gkp0.lock",
-    "target/debug/incremental/soshal_sync_core-03fu1vwa7t4us/s-hlcbk3vw6d-08puhk0-8qsfacki8bj162v97sy1rpuyn/work-products.bin",
-    "target/debug/incremental/soshal_sync_core-03fu1vwa7t4us/s-hlcbk3vw6d-08puhk0-8qsfacki8bj162v97sy1rpuyn/query-cache.bin"
+    "soshal_flutter/test/ffi_calls/webrtc_calls_test.dart",
+    "soshal_flutter/test/ffi_calls/turso_calls_test.dart",
+    "soshal_flutter/test/ffi_calls/telemetry_calls_test.dart",
+    "soshal_flutter/test/ffi_calls/sync_calls_test.dart",
+    "soshal_flutter/test/ffi_calls/signer_calls_test.dart",
+    "soshal_flutter/test/ffi_calls/pin_calls_test.dart",
+    "soshal_flutter/test/ffi_calls/p2p_calls_test.dart",
+    "soshal_flutter/test/ffi_calls/network_calls_test.dart",
+    "soshal_flutter/test/ffi_calls/moderation_calls_test.dart",
+    "soshal_flutter/test/ffi_calls/minis_calls_test.dart",
+    "soshal_flutter/test/ffi_calls/marketplace_calls_test.dart",
+    "AGENTS.md",
+    "2026-08-14.md",
+    "Untitled.canvas",
+    "DAEMON_BUNDLING.md",
+    "flutter-bridge/FFI_BRIDGE_GUIDE.md"
   ]
 }

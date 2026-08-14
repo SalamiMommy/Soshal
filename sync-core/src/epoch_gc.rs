@@ -43,9 +43,22 @@ impl EpochGarbageCollector {
                 .await
                 .map_err(|e| format!("Failed to start transaction: {}", e))?;
 
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS _crdt_epoch_boundaries (
+                    domain TEXT PRIMARY KEY,
+                    epoch_counter INTEGER NOT NULL DEFAULT 0,
+                    vector_clock_horizon INTEGER NOT NULL DEFAULT 0,
+                    pruned_tombstone_count INTEGER NOT NULL DEFAULT 0,
+                    last_gc_at TEXT
+                )",
+                (),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
             let delete_res = conn
                 .execute(
-                    "DELETE FROM posts WHERE (is_tombstone = 1 OR is_deleted = 1) AND (COALESCE(deleted_at, created_at) <= ?1)",
+                    "DELETE FROM posts WHERE is_deleted = 1 AND created_at <= ?1",
                     [cutoff_timestamp.to_string()],
                 )
                 .await;

@@ -17,7 +17,7 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
     try {
       final json = RustLib.instance.api.crateFfiAuthAuthGenerateKeypair();
       _currentKeypair = _decode(json);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _currentKeypair!;
     } catch (e, st) {
@@ -31,7 +31,7 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
   Future<String> generateMnemonic() async {
     try {
       final mnemonic = RustLib.instance.api.crateFfiAuthAuthGenerateMnemonic();
-      _lastError = null;
+      clearLastError();
       return mnemonic;
     } catch (e, st) {
       setLastError(e, st);
@@ -62,7 +62,7 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
         passphrase: passphrase,
       );
       _currentKeypair = _decode(json);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _currentKeypair!;
     } catch (e, st) {

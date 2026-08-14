@@ -20,7 +20,7 @@ class VouchService extends ChangeNotifier with LastErrorMixin {
         targetPubkey: targetPubkey,
         content: content,
       );
-      _lastError = null;
+      clearLastError();
       return id;
     } catch (e, st) {
       setLastError(e, st);
@@ -39,7 +39,7 @@ class VouchService extends ChangeNotifier with LastErrorMixin {
       _vouches = (decoded as List<dynamic>)
           .map((e) => VouchEntry.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _vouches;
     } catch (e, st) {

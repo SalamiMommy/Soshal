@@ -52,7 +52,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
         eventId: eventId,
       );
       _detail = SoshalEvent.fromJson(jsonDecode(json));
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _detail!;
     } catch (e, st) {
@@ -85,7 +85,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
         endTime: BigInt.from(endTime),
         imageUrl: imageUrl,
       );
-      _lastError = null;
+      clearLastError();
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
@@ -101,7 +101,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
         userPubkey: userPubkey,
         rsvpStatus: status,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -120,7 +120,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
         latitude: latitude,
         longitude: longitude,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -135,7 +135,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
       _attendees = RustLib.instance.api.crateFfiEventsEventsGetAttendees(
         eventId: eventId,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _attendees;
     } catch (e, st) {
@@ -151,7 +151,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
       _reminders = (jsonDecode(json) as List<dynamic>)
           .map((e) => EventReminder.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _reminders;
     } catch (e, st) {
@@ -207,7 +207,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
           .map((e) => SoshalEvent.fromJson(e as Map<String, dynamic>))
           .toList();
       _events = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _events;
     } catch (e, st) {

@@ -53,7 +53,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       );
       _matches.clear();
       _matches.addAll(_parseCards(json));
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _matches;
     } catch (e, st) {
@@ -70,7 +70,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       );
       _likes.clear();
       _likes.addAll(_parseCards(json));
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _likes;
     } catch (e, st) {
@@ -85,7 +85,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       final json = RustLib.instance.api.crateFfiDatingDatingFetchLikes(
         userPubkey: userPubkey,
       );
-      _lastError = null;
+      clearLastError();
       return _parseCards(json);
     } catch (e, st) {
       setLastError(e, st);
@@ -101,7 +101,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
         targetPubkey: targetPubkey,
         preferencesJson: '{}',
       );
-      _lastError = null;
+      clearLastError();
       return score;
     } catch (e, st) {
       setLastError(e, st);
@@ -116,7 +116,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
         userPubkey: userPubkey,
       );
       _ownProfile = DatingCard.fromJson(jsonDecode(json));
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _ownProfile!;
     } catch (e, st) {
@@ -146,7 +146,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
         imagesJson: jsonEncode(images),
         interestsJson: jsonEncode(interests),
       );
-      _lastError = null;
+      clearLastError();
       await getOwnProfile(userPubkey);
       return eventId;
     } catch (e, st) {
@@ -169,7 +169,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
         imagesJson: jsonEncode(images),
         interestsJson: jsonEncode(interests),
       );
-      _lastError = null;
+      clearLastError();
       await getOwnProfile(userPubkey);
       return ok;
     } catch (e, st) {
@@ -185,7 +185,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
         userPubkey: userPubkey,
       );
       _ownProfile = null;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -258,7 +258,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       final decoded = jsonDecode(json);
       final stats = DatingStats.fromJson(
           decoded is Map<String, dynamic> ? decoded : <String, dynamic>{});
-      _lastError = null;
+      clearLastError();
       return stats;
     } catch (e, st) {
       setLastError(e, st);
@@ -270,7 +270,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
   Future<bool> _bool(bool Function() call) async {
     try {
       final ok = call();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -284,7 +284,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
     try {
       final json = call();
       _cards = _parseCards(json);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _cards;
     } catch (e, st) {

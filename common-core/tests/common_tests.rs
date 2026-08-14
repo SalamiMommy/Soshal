@@ -210,3 +210,103 @@ fn format_json_wrappers() {
     assert_eq!(pluralize_json("garbage"), "");
     assert_eq!(format_timestamp_json("garbage"), "");
 }
+
+#[test]
+fn entity_delta_serde_roundtrip() {
+    use soshal_common_core::store::EntityDelta;
+
+    let deltas = vec![
+        EntityDelta::UserUpdated {
+            pubkey: "pk1".to_string(),
+            name: Some("alice".to_string()),
+            avatar_url: None,
+            nip05: Some("alice@example.com".to_string()),
+        },
+        EntityDelta::PostReactionAdded {
+            post_id: "p1".to_string(),
+            like_count: 4,
+            repost_count: 1,
+            zap_amount_sats: 2100,
+            user_liked: true,
+        },
+        EntityDelta::PostBookmarkToggled {
+            post_id: "p2".to_string(),
+            bookmarked: true,
+        },
+        EntityDelta::PostDeleted {
+            post_id: "p3".to_string(),
+        },
+    ];
+    for delta in deltas {
+        let json = serde_json::to_string(&delta).unwrap();
+        let back: EntityDelta = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, delta);
+    }
+    assert!(serde_json::from_str::<EntityDelta>("garbage").is_err());
+    assert!(serde_json::from_str::<EntityDelta>(
+        r#"{"PostDeleted":{"post_id":42}}"#
+    )
+    .is_err());
+}
+
+#[test]
+fn memory_pressure_level_mapping() {
+    use soshal_common_core::memory::MemoryPressureLevel;
+
+    assert_eq!(MemoryPressureLevel::from_u8(0), MemoryPressureLevel::Normal);
+    assert_eq!(MemoryPressureLevel::from_u8(1), MemoryPressureLevel::Moderate);
+    assert_eq!(
+        MemoryPressureLevel::from_u8(2),
+        MemoryPressureLevel::Critical
+    );
+    assert_eq!(MemoryPressureLevel::from_u8(3), MemoryPressureLevel::Normal);
+    assert_eq!(MemoryPressureLevel::from_u8(255), MemoryPressureLevel::Normal);
+    assert_eq!(MemoryPressureLevel::Normal as u8, 0);
+    assert_eq!(MemoryPressureLevel::Moderate as u8, 1);
+    assert_eq!(MemoryPressureLevel::Critical as u8, 2);
+    assert_eq!(
+        MemoryPressureLevel::from_u8(2),
+        MemoryPressureLevel::Critical
+    );
+}
+
+#[test]
+fn url_port_and_length_limits() {
+    assert!(is_valid_media_url("https://example.com:8443/x"));
+    assert!(!is_valid_media_url("https://example.com:99999/x"));
+    assert!(!is_valid_media_url("example.com/x"));
+    assert!(is_valid_relay_url("wss://relay.example.com:443").0);
+
+    let mut long = String::from("https://example.com/");
+    long.push_str(&"a".repeat(2100));
+    assert!(long.len() > 2048);
+    assert!(!is_valid_media_url(&long));
+    assert_eq!(extract(&long).len(), 0);
+
+    let many: String = (0..70)
+        .map(|i| format!("https://example.com/{} ", i))
+        .collect();
+    let urls = extract(&many);
+    assert_eq!(urls.len(), 64);
+}
+
+#[test]
+fn ui_safe_extended() {
+    assert!(is_valid_css_color("#abcd"));
+    assert!(is_valid_css_color("#abcdef12"));
+    assert!(is_valid_css_color("hsla(120, 50%, 50%, 25%)"));
+    assert!(is_valid_css_color("hsl(360deg, 0%, 0%)"));
+    assert!(!is_valid_css_color("hsl(390, 50%, 50%)"));
+    assert!(!is_valid_css_color("hsl(120, 150%, 50%)"));
+    assert!(!is_valid_css_color("hsl(120, 50%, 50%, 50%, 10%)"));
+
+    assert_eq!(short_pk("", 4), "");
+    assert_eq!(short_pk("abcdef", 0), "");
+    assert_eq!(short_pk("abcdef", 3), "abc");
+    assert_eq!(short_pk("abcdef", 10), "abcdef");
+    assert_eq!(short_pk("éééé", 3), "é");
+    assert_eq!(truncate_str("", 5), "");
+    assert_eq!(truncate_str("abc", 0), "");
+    assert_eq!(js_string_literal("a\\b"), "\"a\\\\b\"");
+    assert_eq!(js_string_literal("a\x01b"), "\"a\\u0001b\"");
+}

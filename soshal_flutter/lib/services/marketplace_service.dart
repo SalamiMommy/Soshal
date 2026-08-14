@@ -66,7 +66,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       final json = RustLib.instance.api
           .crateFfiMarketplaceMarketplaceGetListing(listingId: listingId);
       _current = ListingInfo.fromJson(jsonDecode(json));
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _current!;
     } catch (e, st) {
@@ -100,7 +100,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         imagesJson: jsonEncode(images),
         shippingAvailable: shippingAvailable,
       );
-      _lastError = null;
+      clearLastError();
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
@@ -125,7 +125,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         description: description,
         price: BigInt.from(price),
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -142,7 +142,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         listingId: listingId,
         sellerPubkey: sellerPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -164,7 +164,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         buyerPubkey: buyerPubkey,
         sellerPubkey: sellerPubkey,
       );
-      _lastError = null;
+      clearLastError();
       return orderId;
     } catch (e, st) {
       setLastError(e, st);
@@ -204,7 +204,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         sellerPubkey: sellerPubkey,
         amount: BigInt.from(amount),
       );
-      _lastError = null;
+      clearLastError();
       return escrowId;
     } catch (e, st) {
       setLastError(e, st);
@@ -222,7 +222,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         disputerPubkey: disputerPubkey,
         reason: reason,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -239,7 +239,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         escrowId: escrowId,
         sellerPubkey: sellerPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -261,7 +261,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         mediatorPubkey: mediatorPubkey,
         winnerPubkey: winnerPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -326,7 +326,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
           .map((e) => ListingInfo.fromJson(e as Map<String, dynamic>))
           .toList();
       _listings = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _listings;
     } catch (e, st) {
@@ -343,7 +343,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       _orders = (decoded as List<dynamic>)
           .map((e) => OrderInfo.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _orders;
     } catch (e, st) {

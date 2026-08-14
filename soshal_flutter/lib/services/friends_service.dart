@@ -25,7 +25,7 @@ class FriendsService extends ChangeNotifier with LastErrorMixin {
       _suggestions =
           RustLib.instance.api.crateFfiSocialSocialFriendSuggestions();
       _suggestionsLoaded = true;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _suggestions;
     } catch (e, st) {
@@ -42,7 +42,7 @@ class FriendsService extends ChangeNotifier with LastErrorMixin {
           RustLib.instance.api.crateFfiRelationsRelationsSendFriendRequest(
         pubkey: pubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -56,7 +56,7 @@ class FriendsService extends ChangeNotifier with LastErrorMixin {
   void addContact(ProfileInfo profile) {
     if (_contacts.any((c) => c.pubkey == profile.pubkey)) return;
     _contacts.add(profile);
-    _lastError = null;
+    clearLastError();
     notifyListeners();
   }
 
@@ -68,7 +68,7 @@ class FriendsService extends ChangeNotifier with LastErrorMixin {
 
   /// Clear error.
   void clearError() {
-    _lastError = null;
+    clearLastError();
     notifyListeners();
   }
 }

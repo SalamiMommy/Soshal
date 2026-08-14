@@ -50,7 +50,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         _transportMode = mode;
         RustLib.instance.api
             .crateFfiDbDbSetSetting(key: _modeKey, value: mode.name);
-        _lastError = null;
+        clearLastError();
         notifyListeners();
       }
       return ok;
@@ -66,7 +66,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final dest = RustLib.instance.api
           .crateFfiNetworkI2PStartSession(destination: destination);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return dest;
     } catch (e, st) {
@@ -80,7 +80,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
   Future<bool> stopI2pSession() async {
     try {
       final ok = RustLib.instance.api.crateFfiNetworkI2PStopSession();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -95,7 +95,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final json = RustLib.instance.api.crateFfiNetworkI2PSessionStatus();
       final map = jsonDecode(json) as Map<String, dynamic>;
-      _lastError = null;
+      clearLastError();
       return map;
     } catch (e, st) {
       setLastError(e, st);
@@ -116,7 +116,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       _i2p = await RustLib.instance.api.crateFfiNetworkNetworkI2PStatus();
       _freenet =
           await RustLib.instance.api.crateFfiNetworkNetworkFreenetStatus();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
     } catch (e, st) {
       setLastError(e, st);
@@ -139,7 +139,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         headersJson: headersJson,
         body: body,
       );
-      _lastError = null;
+      clearLastError();
       return resp;
     } catch (e, st) {
       setLastError(e, st);
@@ -158,7 +158,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
           .map((e) => RelayInfo.fromJson(e as Map<String, dynamic>))
           .toList();
       _relays = relays;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return relays;
     } catch (e, st) {
@@ -173,7 +173,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final ok =
           await RustLib.instance.api.crateFfiNetworkNetworkAddRelay(url: url);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -188,7 +188,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final ok = await RustLib.instance.api
           .crateFfiNetworkNetworkRemoveRelay(url: url);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -203,7 +203,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final result = await RustLib.instance.api
           .crateFfiNetworkNetworkInitRelays(relayUrls: relayUrls);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return result;
     } catch (e, st) {
@@ -219,7 +219,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       final json = await RustLib.instance.api
           .crateFfiNetworkNetworkGetMultiBearerStatus(ownPubkey: ownPubkey);
       final map = jsonDecode(json) as Map<String, dynamic>;
-      _lastError = null;
+      clearLastError();
       return map;
     } catch (e, st) {
       setLastError(e, st);
@@ -234,7 +234,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final json =
           RustLib.instance.api.crateFfiNetworkNetworkGetSysDiagnostics();
-      _lastError = null;
+      clearLastError();
       return json;
     } catch (e, st) {
       setLastError(e, st);
@@ -258,7 +258,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       );
       final Map<String, dynamic> res =
           Map<String, dynamic>.from(jsonDecode(resJson) as Map);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return res;
     } catch (e, st) {

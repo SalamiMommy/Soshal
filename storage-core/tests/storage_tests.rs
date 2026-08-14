@@ -7,9 +7,13 @@ use soshal_storage_core::backup_export::{
 use soshal_storage_core::backup_restore::{
     backup_post_event_payload, backup_post_meta, decrypt_backup_payload, unwrap_backup_db,
 };
-use soshal_storage_core::eviction::estimate_eviction;
+use soshal_storage_core::cuckoo_cache::ChunkCuckooFilter;
+use soshal_storage_core::erasure_fountain::{decode_fountain, encode_fountain};
+use soshal_storage_core::eviction::{estimate_eviction, execute_incremental_vacuum};
+use soshal_storage_core::flash_wal::{configure_flash_pragmas, FlashWalFlusher};
 use soshal_storage_core::offline_sync::{decrypt_offline_sync_json, encrypt_offline_sync_json};
 use soshal_storage_core::util::{fail_json, hex_to_32_bytes};
+use soshal_storage_core::zram_cache::ZramCacheManager;
 
 // ---------------------------------------------------------------------------
 // Eviction
@@ -37,6 +41,37 @@ fn estimate_eviction_invalid_inputs_return_none() {
     assert!(estimate_eviction(-5, 100, 10).is_none());
     assert!(estimate_eviction(100, 200, 0).is_none());
     assert!(estimate_eviction(100, 200, -1).is_none());
+}
+
+#[test]
+fn incremental_vacuum_frees_deleted_pages() {
+    let db = soshal_db_core::block_on(libsql::Builder::new_local(":memory:").build()).unwrap();
+    let conn = db.connect().unwrap();
+    soshal_db_core::block_on(conn.execute_batch(
+        "PRAGMA auto_vacuum = INCREMENTAL;
+         CREATE TABLE t (a INTEGER, b TEXT);",
+    ))
+    .unwrap();
+    for i in 0..2000 {
+        soshal_db_core::block_on(conn.execute(
+            "INSERT INTO t VALUES (?, ?);",
+            libsql::params![i, format!("row{i}")],
+        ))
+        .unwrap();
+    }
+    let pages_before = pragma_int(&conn, "PRAGMA page_count;");
+    soshal_db_core::block_on(conn.execute("DELETE FROM t;", ())).unwrap();
+    let free_before = pragma_int(&conn, "PRAGMA freelist_count;");
+    assert!(free_before > 0);
+    assert!(execute_incremental_vacuum(&conn, free_before as u32).is_err());
+    soshal_db_core::block_on(async {
+        let sql = format!("PRAGMA incremental_vacuum({});", free_before as u32);
+        let mut stmt = conn.prepare(&sql).await.unwrap();
+        let mut rows = stmt.query(()).await.unwrap();
+        while rows.next().await.unwrap().is_some() {}
+    });
+    assert_eq!(pragma_int(&conn, "PRAGMA freelist_count;"), 0);
+    assert!(pragma_int(&conn, "PRAGMA page_count;") < pages_before);
 }
 
 // ---------------------------------------------------------------------------
@@ -424,4 +459,184 @@ fn offline_sync_rejects_missing_signature_on_decrypt() {
         serde_json::from_str(&decrypt_offline_sync_json(&input.to_string())).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"], "missing DSA signature");
+}
+
+// ---------------------------------------------------------------------------
+// Erasure fountain
+// ---------------------------------------------------------------------------
+
+fn fountain_payload() -> Vec<u8> {
+    (0..25_600u32).map(|i| (i % 251) as u8).collect()
+}
+
+#[test]
+fn erasure_fountain_drop_30_percent_still_reconstructs() {
+    let original = fountain_payload();
+    let encoded = encode_fountain(&original, 0.5).unwrap();
+    let dropped = (encoded.packets.len() as f32 * 0.3).ceil() as usize;
+    let available = encoded.packets[..encoded.packets.len() - dropped].to_vec();
+    let decoded = decode_fountain(&encoded.manifest, &available).unwrap();
+    assert_eq!(decoded, original);
+}
+
+#[test]
+fn erasure_fountain_any_k_packets_reconstruct() {
+    let original = fountain_payload();
+    let encoded = encode_fountain(&original, 0.5).unwrap();
+    let k = encoded.manifest.num_source_symbols as usize;
+    let subset = encoded.packets[..k].to_vec();
+    let decoded = decode_fountain(&encoded.manifest, &subset).unwrap();
+    assert_eq!(decoded, original);
+}
+
+#[test]
+fn erasure_fountain_insufficient_packets_errors() {
+    let original = fountain_payload();
+    let encoded = encode_fountain(&original, 0.5).unwrap();
+    let few = encoded.packets[..encoded.manifest.num_source_symbols as usize / 2].to_vec();
+    let err = decode_fountain(&encoded.manifest, &few).unwrap_err();
+    assert!(err.contains("Insufficient"));
+}
+
+#[test]
+fn erasure_fountain_empty_payload_rejected() {
+    assert!(encode_fountain(&[], 0.5).is_err());
+}
+
+#[test]
+fn erasure_fountain_corrupted_packet_not_detected() {
+    let original = fountain_payload();
+    let encoded = encode_fountain(&original, 0.5).unwrap();
+    let mut packets = encoded.packets.clone();
+    packets[0][4 + 17] ^= 0xFF;
+    let decoded = decode_fountain(&encoded.manifest, &packets).unwrap();
+    assert_ne!(decoded, original);
+}
+
+// ---------------------------------------------------------------------------
+// Cuckoo cache
+// ---------------------------------------------------------------------------
+
+#[test]
+fn chunk_cuckoo_insert_hit_delete_miss() {
+    let filter = ChunkCuckooFilter::new(100);
+    let a = [7u8; 32];
+    let b = [9u8; 32];
+    assert!(!filter.contains(&a));
+    filter.insert(&a).unwrap();
+    assert!(filter.contains(&a));
+    assert!(!filter.contains(&b));
+    assert!(filter.delete(&a));
+    assert!(!filter.contains(&a));
+}
+
+#[test]
+fn chunk_cuckoo_batch_insert_reports_inserted_count() {
+    let filter = ChunkCuckooFilter::new(100);
+    let hashes: Vec<[u8; 32]> = (1..=5).map(|i| [i as u8; 32]).collect();
+    assert_eq!(filter.insert_batch(&hashes).unwrap(), 5);
+    for h in &hashes {
+        assert!(filter.contains(h));
+    }
+    assert_eq!(filter.insert_batch(&[]).unwrap(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Flash WAL
+// ---------------------------------------------------------------------------
+
+#[test]
+fn flash_wal_flush_persists_and_reads_back() {
+    let db = soshal_db_core::block_on(libsql::Builder::new_local(":memory:").build()).unwrap();
+    let conn = db.connect().unwrap();
+    let mut flusher = FlashWalFlusher::new();
+    flusher.push_sql("CREATE TABLE wal_t (id INTEGER);");
+    flusher.push_sql("INSERT INTO wal_t VALUES (1);");
+    flusher.push_sql("INSERT INTO wal_t VALUES (2);");
+    assert_eq!(flusher.flush_to_db(&conn).unwrap(), 3);
+    assert_eq!(table_count(&conn, "wal_t"), 2);
+}
+
+#[test]
+fn flash_wal_flush_empty_buffer_returns_zero() {
+    let db = soshal_db_core::block_on(libsql::Builder::new_local(":memory:").build()).unwrap();
+    let conn = db.connect().unwrap();
+    let mut flusher = FlashWalFlusher::new();
+    assert_eq!(flusher.flush_to_db(&conn).unwrap(), 0);
+}
+
+#[test]
+fn flash_wal_batch_tolerates_bad_statement() {
+    let db = soshal_db_core::block_on(libsql::Builder::new_local(":memory:").build()).unwrap();
+    let conn = db.connect().unwrap();
+    let mut flusher = FlashWalFlusher::new();
+    flusher.push_sql("CREATE TABLE wal_t (id INTEGER);");
+    flusher.push_sql("INSERT INTO wal_t VALUES (1);");
+    flusher.push_sql("NOT VALID SQL;");
+    flusher.push_sql("INSERT INTO wal_t VALUES (2);");
+    assert_eq!(flusher.flush_to_db(&conn).unwrap(), 4);
+    assert_eq!(table_count(&conn, "wal_t"), 2);
+}
+
+#[test]
+fn flash_wal_pragmas_set_flash_friendly_values() {
+    let db = soshal_db_core::block_on(libsql::Builder::new_local(":memory:").build()).unwrap();
+    let conn = db.connect().unwrap();
+    configure_flash_pragmas(&conn).unwrap();
+    assert_eq!(pragma_int(&conn, "PRAGMA page_size;"), 8192);
+    assert_eq!(pragma_int(&conn, "PRAGMA auto_vacuum;"), 2);
+    assert_eq!(pragma_int(&conn, "PRAGMA wal_autocheckpoint;"), 1000);
+}
+
+// ---------------------------------------------------------------------------
+// ZRAM cache
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn zram_roundtrip_preserves_json() {
+    let cache = ZramCacheManager::new();
+    let payload = r#"{"post_id":"z1","content":"compressed roundtrip"}"#;
+    cache.put("k", payload).await;
+    assert_eq!(cache.get("k").await.as_deref(), Some(payload));
+}
+
+#[tokio::test]
+async fn zram_missing_key_returns_none() {
+    let cache = ZramCacheManager::new();
+    assert!(cache.get("absent").await.is_none());
+}
+
+#[tokio::test]
+async fn zram_put_overwrites_existing_key() {
+    let cache = ZramCacheManager::new();
+    cache.put("k", r#"{"v":1}"#).await;
+    cache.put("k", r#"{"v":2}"#).await;
+    assert_eq!(cache.get("k").await.as_deref(), Some(r#"{"v":2}"#));
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn pragma_int(conn: &libsql::Connection, sql: &str) -> i64 {
+    soshal_db_core::block_on(async {
+        let mut stmt = conn.prepare(sql).await.unwrap();
+        let mut rows = stmt.query(()).await.unwrap();
+        match rows.next().await.unwrap().unwrap().get_value(0).unwrap() {
+            libsql::Value::Integer(n) => n,
+            _ => 0,
+        }
+    })
+}
+
+fn table_count(conn: &libsql::Connection, table: &str) -> i64 {
+    soshal_db_core::block_on(async {
+        let sql = format!("SELECT COUNT(*) FROM {table};");
+        let mut stmt = conn.prepare(&sql).await.unwrap();
+        let mut rows = stmt.query(()).await.unwrap();
+        match rows.next().await.unwrap().unwrap().get_value(0).unwrap() {
+            libsql::Value::Integer(n) => n,
+            _ => 0,
+        }
+    })
 }

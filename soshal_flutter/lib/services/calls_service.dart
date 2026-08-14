@@ -51,7 +51,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
         candidate: candidate,
         mediaType: mediaType,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return eventId;
     } catch (e, st) {
@@ -72,7 +72,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
         ..addAll(list
             .map((e) => CallSignal.fromJson(e as Map<String, dynamic>))
             .toList());
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return List.unmodifiable(_signals);
     } catch (e, st) {
@@ -90,7 +90,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
         sdp: sdp,
         forceRelay: forceRelay,
       );
-      _lastError = null;
+      clearLastError();
       return out;
     } catch (e, st) {
       setLastError(e, st);
@@ -106,7 +106,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
         privacyLevel: privacyLevel,
         stunUrl: stunUrl,
       );
-      _lastError = null;
+      clearLastError();
       return out;
     } catch (e, st) {
       setLastError(e, st);
@@ -129,7 +129,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       notifyListeners();
     });
-    _lastError = null;
+    clearLastError();
     notifyListeners();
   }
 
@@ -147,7 +147,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
 
   /// Clear error.
   void clearError() {
-    _lastError = null;
+    clearLastError();
     notifyListeners();
   }
 

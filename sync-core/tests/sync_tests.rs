@@ -4,6 +4,8 @@
 
 use nostr::event::{Event, EventBuilder, FinalizeEvent, Kind, Tag};
 use nostr::key::Keys;
+use sha2::{Digest, Sha256};
+use soshal_db_core::query::query_first;
 use soshal_db_core::repos::bookmark::BookmarkRepo;
 use soshal_db_core::repos::post::{PostRepo, PostRow};
 use soshal_db_core::repos::reaction::ReactionRepo;
@@ -11,10 +13,17 @@ use soshal_db_core::repos::settings::SettingsRepo;
 use soshal_db_core::repos::user::UserRepo;
 use soshal_db_core::repos::zap::ZapRepo;
 use soshal_db_core::Database;
+use soshal_sync_core::epoch_gc::EpochGarbageCollector;
 use soshal_sync_core::gossip::GossipSyncBridge;
 use soshal_sync_core::ingest::{handle, handle_batch, set_watermark, watermark, watermark_key};
+use soshal_sync_core::outbox::{
+    enqueue_outbox_item, fetch_pending_outbox_items, get_outbox_summary, mark_outbox_item_completed,
+};
 use soshal_sync_core::revert::{revert, KIND_LIKE, KIND_POST, KIND_PROFILE};
+use soshal_sync_core::tx::{tx_begin, tx_link, tx_mark_applied, tx_statuses, STATUS_APPLIED};
+use soshal_sync_core::zk_rollup::{ZkCrdtRollup, ZkProofType, ZkRollupEngine};
 use soshal_sync_core::{SyncUpdate, WM_FEED, WM_META};
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 fn gossip_msg(event: &Event) -> soshal_network_core::plumtree::PlumTreeMessage {
@@ -536,4 +545,214 @@ async fn gossip_duplicate_emits_prune() {
             m,
             soshal_network_core::plumtree::PlumTreeMessage::Prune { .. }
         )));
+}
+
+#[test]
+fn epoch_gc_prunes_old_tombstones_keeps_new_and_live() {
+    let db = test_db();
+    let pubkey = "aa".repeat(32);
+    seed_user(&db, &pubkey);
+    let repo = PostRepo::new(&db);
+    let mut old_tomb = post_row("old_tomb", "gone");
+    old_tomb.is_deleted = true;
+    old_tomb.created_at = 86_000;
+    let mut new_tomb = post_row("new_tomb", "kept");
+    new_tomb.is_deleted = true;
+    new_tomb.created_at = 87_000;
+    let mut live = post_row("live_old", "live");
+    live.created_at = 1_000;
+    repo.upsert(&old_tomb).unwrap();
+    repo.upsert(&new_tomb).unwrap();
+    repo.upsert(&live).unwrap();
+
+    let mut clocks = HashMap::new();
+    clocks.insert("peer1".to_string(), 100_000);
+    clocks.insert("peer2".to_string(), 90_000);
+    let summary = EpochGarbageCollector::prune_tombstones_if_consensus_reached(
+        &db.conn().unwrap(),
+        "posts_feed",
+        &clocks,
+        3_600,
+    )
+    .unwrap();
+
+    assert_eq!(summary.domain, "posts_feed");
+    assert_eq!(summary.epoch_counter, 1);
+    assert_eq!(summary.pruned_tombstones, 1);
+    assert_eq!(summary.bytes_reclaimed, 512);
+    assert!(repo.get_by_id("old_tomb").unwrap().is_none());
+    assert!(repo.get_by_id("new_tomb").unwrap().unwrap().is_deleted);
+    assert!(!repo.get_by_id("live_old").unwrap().unwrap().is_deleted);
+}
+
+#[test]
+fn epoch_gc_increments_epoch_counter_per_run() {
+    let db = test_db();
+    let mut clocks = HashMap::new();
+    clocks.insert("peer1".to_string(), 100_000);
+    let conn = db.conn().unwrap();
+    let first = EpochGarbageCollector::prune_tombstones_if_consensus_reached(
+        &conn,
+        "posts_feed",
+        &clocks,
+        3_600,
+    )
+    .unwrap();
+    let second = EpochGarbageCollector::prune_tombstones_if_consensus_reached(
+        &conn,
+        "posts_feed",
+        &clocks,
+        3_600,
+    )
+    .unwrap();
+    assert_eq!(first.epoch_counter, 1);
+    assert_eq!(second.epoch_counter, 2);
+}
+
+#[test]
+fn epoch_gc_is_noop_without_peer_clocks() {
+    let db = test_db();
+    let summary = EpochGarbageCollector::prune_tombstones_if_consensus_reached(
+        &db.conn().unwrap(),
+        "posts_feed",
+        &HashMap::new(),
+        3_600,
+    )
+    .unwrap();
+    assert_eq!(summary.epoch_counter, 0);
+    assert_eq!(summary.pruned_tombstones, 0);
+    assert_eq!(summary.bytes_reclaimed, 0);
+}
+
+fn rollup(thread_id: &str, ops: u64, genesis: &str, final_state: &str) -> ZkCrdtRollup {
+    let mut hasher = Sha256::new();
+    hasher.update(thread_id.as_bytes());
+    hasher.update(genesis.as_bytes());
+    hasher.update(final_state.as_bytes());
+    hasher.update(ops.to_le_bytes());
+    ZkCrdtRollup {
+        thread_id: thread_id.to_string(),
+        genesis_root: genesis.to_string(),
+        final_state_root: final_state.to_string(),
+        operation_count: ops,
+        proof_bytes_hex: hex::encode(hasher.finalize()),
+        proof_type: ZkProofType::RiscZeroStark,
+    }
+}
+
+#[test]
+fn zk_rollup_valid_commitment_verifies_and_tampered_rejected() {
+    let genesis = "g".repeat(64);
+    let final_state = "f".repeat(64);
+    let engine = ZkRollupEngine::new();
+
+    let ok = engine.verify_rollup(&rollup("zr1", 42, &genesis, &final_state));
+    assert!(ok.verified);
+    assert_eq!(ok.verified_operations, 42);
+    assert_eq!(ok.error_msg, None);
+
+    let mut tampered_proof = rollup("zr2", 7, &genesis, &final_state);
+    tampered_proof.proof_bytes_hex = hex::encode([0u8; 32]);
+    let bad = engine.verify_rollup(&tampered_proof);
+    assert!(!bad.verified);
+    assert_eq!(bad.verified_operations, 0);
+    assert_eq!(bad.error_msg.as_deref(), Some("Rollup commitment mismatch"));
+
+    let mut tampered_state = rollup("zr3", 7, &genesis, &final_state);
+    tampered_state.final_state_root = "x".repeat(64);
+    assert!(!engine.verify_rollup(&tampered_state).verified);
+}
+
+#[test]
+fn zk_rollup_apply_writes_upserts_and_rejects_tampered() {
+    let db = test_db();
+    let conn = db.conn().unwrap();
+    let genesis = "g".repeat(64);
+    let final_state = "f".repeat(64);
+    let engine = ZkRollupEngine::new();
+
+    assert!(engine
+        .apply_rollup_to_db(&conn, &rollup("thread_1", 5, &genesis, &final_state))
+        .unwrap());
+    let (root, ops): (String, i64) = query_first(
+        &conn,
+        "SELECT final_state_root, operation_count FROM zk_state_rollups WHERE thread_id = ?1",
+        libsql::params!["thread_1"],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(root, final_state);
+    assert_eq!(ops, 5);
+
+    assert!(engine
+        .apply_rollup_to_db(&conn, &rollup("thread_1", 9, &genesis, &final_state))
+        .unwrap());
+    let ops2: i64 = query_first(
+        &conn,
+        "SELECT operation_count FROM zk_state_rollups WHERE thread_id = ?1",
+        libsql::params!["thread_1"],
+        |r| r.get::<i64>(0),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ops2, 9);
+
+    let mut tampered = rollup("thread_2", 1, &genesis, &final_state);
+    tampered.proof_bytes_hex = hex::encode([0u8; 32]);
+    let err = engine.apply_rollup_to_db(&conn, &tampered).unwrap_err();
+    assert_eq!(err, "Rollup commitment mismatch");
+}
+
+#[test]
+fn tx_record_status_update_and_list() {
+    let db = test_db();
+    tx_begin(&db, "n1", "post", r#"{"id":"n1"}"#, 1).unwrap();
+    tx_begin(&db, "n2", "like", r#"{"id":"n2"}"#, 2).unwrap();
+    tx_link(&db, "n1", "n2").unwrap();
+    tx_mark_applied(&db, "n2").unwrap();
+
+    let nodes = tx_statuses(&db).unwrap();
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0].id, "n2");
+    assert_eq!(nodes[0].status, STATUS_APPLIED);
+    assert_eq!(nodes[1].id, "n1");
+    assert_eq!(nodes[1].status, "pending");
+}
+
+#[test]
+fn outbox_enqueue_pending_count_and_complete() {
+    let db = test_db();
+    enqueue_outbox_item(&db, "o1", "post", "{}", None, 100).unwrap();
+    enqueue_outbox_item(
+        &db,
+        "o2",
+        "image",
+        r#"{"path":"x"}"#,
+        Some("media/x.jpg"),
+        200,
+    )
+    .unwrap();
+
+    let summary = get_outbox_summary(&db).unwrap();
+    assert_eq!(summary.pending_count, 2);
+    assert_eq!(summary.failed_count, 0);
+    assert_eq!(summary.total_count, 2);
+
+    let pending = fetch_pending_outbox_items(&db, 200, 10).unwrap();
+    assert_eq!(pending.len(), 2);
+    assert_eq!(pending[0].id, "o1");
+    assert_eq!(pending[0].media_path, None);
+    assert_eq!(pending[1].id, "o2");
+    assert_eq!(pending[1].media_path.as_deref(), Some("media/x.jpg"));
+    assert_eq!(pending[1].payload_json, r#"{"path":"x"}"#);
+
+    mark_outbox_item_completed(&db, "o1").unwrap();
+    let after = get_outbox_summary(&db).unwrap();
+    assert_eq!(after.pending_count, 1);
+    assert_eq!(after.total_count, 2);
+
+    let remaining = fetch_pending_outbox_items(&db, 200, 10).unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, "o2");
 }

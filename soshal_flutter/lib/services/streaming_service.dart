@@ -115,7 +115,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
       final port = await RustLib.instance.api
           .crateFfiStreamingStreamingStartLocalServer();
       _localVideoServerPort = port;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return port;
     } catch (e, st) {
@@ -165,7 +165,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         description: description,
         streamUrl: streamUrl,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return eventId;
     } catch (e, st) {
@@ -181,7 +181,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         streamId: streamId,
         broadcasterPubkey: broadcasterPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -204,7 +204,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         imagesJson: jsonEncode(images),
         expiresInHours: expiresInHours,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return eventId;
     } catch (e, st) {
@@ -236,7 +236,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         storyId: storyId,
         viewerPubkey: viewerPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -263,7 +263,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         isKeyframe: isKeyframe,
         payloadHex: payloadHex,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return json;
     } catch (e, st) {
@@ -284,7 +284,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         streamId: streamId,
         subscriberPubkey: subscriberPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return status;
     } catch (e, st) {
@@ -315,7 +315,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
     try {
       final encoded = encodeMoqGroup(group);
       final json = moq.p2PMoqPublishGroup(streamId: streamId, encoded: encoded);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return jsonDecode(json) as Map<String, dynamic>;
     } catch (e, st) {
@@ -409,7 +409,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
       final frames = (parsed['groups'] as List<dynamic>? ?? [])
           .map((g) => _hexToBytes(g as String))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return frames.map(decodeMoqGroup).toList();
     } catch (e, st) {
@@ -434,7 +434,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
       final parsed = (decoded as List<dynamic>)
           .map((e) => StreamRow.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return parsed;
     } catch (e, st) {

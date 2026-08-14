@@ -25,7 +25,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         content: content,
         expiresInSecs: expiresInSecs,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -43,7 +43,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         huddleId: huddleId,
         limit: limit,
       );
-      _lastError = null;
+      clearLastError();
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
     } catch (e, st) {
       setLastError(e, st);
@@ -56,7 +56,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
       final ok = RustLib.instance.api.crateFfiLegacyLegacyHuddlePostDelete(
         postId: postId,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -78,7 +78,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         senderName: senderName,
         content: content,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -98,7 +98,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         limit: limit,
         onlyApproved: onlyApproved,
       );
-      _lastError = null;
+      clearLastError();
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
     } catch (e, st) {
       setLastError(e, st);
@@ -112,7 +112,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         entryId: entryId,
         approved: approved,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -126,7 +126,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
       final ok = RustLib.instance.api.crateFfiLegacyLegacyGuestbookDelete(
         entryId: entryId,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -146,7 +146,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         pubkey: pubkey,
         text: text,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -164,7 +164,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         streamId: streamId,
         limit: limit,
       );
-      _lastError = null;
+      clearLastError();
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
     } catch (e, st) {
       setLastError(e, st);
@@ -177,7 +177,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
       final ok = RustLib.instance.api.crateFfiLegacyLegacyStreamChatClear(
         streamId: streamId,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -197,7 +197,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         title: title,
         description: description,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -211,7 +211,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
       final json = RustLib.instance.api.crateFfiLegacyLegacyLinkPreviewGet(
         url: url,
       );
-      _lastError = null;
+      clearLastError();
       return json == null ? null : jsonDecode(json) as Map<String, dynamic>;
     } catch (e, st) {
       setLastError(e, st);
@@ -228,7 +228,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         userPubkey: userPubkey,
         encryptedData: encryptedData,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -242,7 +242,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
       final data = RustLib.instance.api.crateFfiLegacyLegacyFriendBackupGet(
         userPubkey: userPubkey,
       );
-      _lastError = null;
+      clearLastError();
       return data;
     } catch (e, st) {
       setLastError(e, st);
@@ -255,7 +255,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
       final ok = RustLib.instance.api.crateFfiLegacyLegacyFriendBackupDelete(
         userPubkey: userPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -275,7 +275,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         geohash: geohash,
         purpose: purpose,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -289,7 +289,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
       final json = RustLib.instance.api.crateFfiLegacyLegacyGeohashPeersByCell(
         geohash: geohash,
       );
-      _lastError = null;
+      clearLastError();
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
     } catch (e, st) {
       setLastError(e, st);
@@ -325,7 +325,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         properties: properties,
         layout: layout,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -339,7 +339,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
       final json = RustLib.instance.api.crateFfiLegacyLegacyProfileNodes(
         userPubkey: userPubkey,
       );
-      _lastError = null;
+      clearLastError();
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
     } catch (e, st) {
       setLastError(e, st);
@@ -368,7 +368,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         id: id,
         reason: reason,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -391,7 +391,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
       final ok = RustLib.instance.api.crateFfiLegacyLegacyRefetchUnblock(
         id: id,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -413,7 +413,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         method: method,
         message: message,
       );
-      _lastError = null;
+      clearLastError();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
@@ -430,7 +430,7 @@ class LegacyService extends ChangeNotifier with LastErrorMixin {
         limit: limit,
         level: level,
       );
-      _lastError = null;
+      clearLastError();
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
     } catch (e, st) {
       setLastError(e, st);

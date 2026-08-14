@@ -54,7 +54,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
         _conversations[otherPubkey] = messages;
       }
 
-      lastErrorValue = null;
+      clearLastError();
       notifyListeners();
       return _conversations[otherPubkey]!;
     } catch (e, st) {
@@ -94,7 +94,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
       }
       _conversations[recipientPubkey]!.add(message);
 
-      lastErrorValue = null;
+      clearLastError();
       notifyListeners();
       return eventId;
     } catch (e, st) {
@@ -137,7 +137,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
         groupId: sorted.join(','),
         participantPubkeysJson: jsonEncode(sorted),
       );
-      lastErrorValue = null;
+      clearLastError();
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
@@ -171,7 +171,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
           RustLib.instance.api.crateFfiMessagingMessagingFetchConversations(
         pubkey: pubkey,
       );
-      lastErrorValue = null;
+      clearLastError();
       return list;
     } catch (e, st) {
       setLastError(e, st);
@@ -201,7 +201,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
   Future<void> markAsRead(String otherPubkey) async {
     try {
       if (_conversations.containsKey(otherPubkey)) {
-        lastErrorValue = null;
+        clearLastError();
         notifyListeners();
       }
     } catch (e, st) {
@@ -213,7 +213,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
 
   /// Clear error
   void clearError() {
-    lastErrorValue = null;
+    clearLastError();
     notifyListeners();
   }
 
@@ -242,7 +242,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
         maxViews: maxViews,
         expiresAt: expiresAt,
       );
-      lastErrorValue = null;
+      clearLastError();
       return id;
     } catch (e, st) {
       setLastError(e, st);
@@ -262,7 +262,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
         ..clear()
         ..addAll(list
             .map((e) => EphemeralMedia.fromJson(e as Map<String, dynamic>)));
-      lastErrorValue = null;
+      clearLastError();
       notifyListeners();
       return pendingEphemeral;
     } catch (e, st) {
@@ -283,7 +283,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
         _pendingEphemeral[index] = media;
         notifyListeners();
       }
-      lastErrorValue = null;
+      clearLastError();
       return media;
     } catch (e, st) {
       setLastError(e, st);
@@ -297,7 +297,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
     try {
       final ok = RustLib.instance.api.crateFfiEphemeralEphemeralDelete(id: id);
       _pendingEphemeral.removeWhere((m) => m.id == id);
-      lastErrorValue = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -310,12 +310,10 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
 
 /// Identity Service
 /// Handles profiles, WoT status, and NIP-05 verification
-class IdentityService extends ChangeNotifier {
+class IdentityService extends ChangeNotifier with LastErrorMixin {
   final Map<String, ProfileInfo> _profiles = {};
-  String? _lastError;
 
   Map<String, ProfileInfo> get profiles => _profiles;
-  String? get lastError => _lastError;
 
   /// Get user profile
   Future<ProfileInfo> getProfile(String pubkey) async {
@@ -330,11 +328,11 @@ class IdentityService extends ChangeNotifier {
           ProfileInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
       _profiles[pubkey] = profile;
 
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return profile;
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -348,11 +346,11 @@ class IdentityService extends ChangeNotifier {
       final profile =
           ProfileInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
       _profiles[pubkey] = profile;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return profile;
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -370,7 +368,7 @@ class IdentityService extends ChangeNotifier {
           .map((e) => ProfileInfo.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -425,11 +423,11 @@ class IdentityService extends ChangeNotifier {
         wotStatus: 'unknown',
       );
 
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return eventId;
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -441,7 +439,7 @@ class IdentityService extends ChangeNotifier {
       return RustLib.instance.api
           .crateFfiIdentityIdentityVerifyNip05(nip05: nip05);
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -456,7 +454,7 @@ class IdentityService extends ChangeNotifier {
       );
       return (score * 100).round();
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       return 0;
     }
   }
@@ -469,7 +467,7 @@ class IdentityService extends ChangeNotifier {
         targetPubkey: targetPubkey,
       );
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       return false;
     }
   }
@@ -481,11 +479,11 @@ class IdentityService extends ChangeNotifier {
         blockerPubkey: blockerPubkey,
         targetPubkey: targetPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -498,11 +496,11 @@ class IdentityService extends ChangeNotifier {
         blockerPubkey: blockerPubkey,
         targetPubkey: targetPubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -513,10 +511,10 @@ class IdentityService extends ChangeNotifier {
     try {
       final list = RustLib.instance.api
           .crateFfiIdentityIdentityGetBlockedUsers(pubkey: pubkey);
-      _lastError = null;
+      clearLastError();
       return list;
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -529,7 +527,7 @@ class IdentityService extends ChangeNotifier {
         viewerPubkey: viewerPubkey,
       );
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -542,7 +540,7 @@ class IdentityService extends ChangeNotifier {
         pubkey: targetPubkey,
       );
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -557,7 +555,7 @@ class IdentityService extends ChangeNotifier {
       );
       return ok ? 'unfollowed' : 'not followed';
     } catch (e) {
-      _lastError = e.toString();
+      setLastError(e);
       notifyListeners();
       rethrow;
     }
@@ -565,7 +563,7 @@ class IdentityService extends ChangeNotifier {
 
   /// Clear error
   void clearError() {
-    _lastError = null;
+    clearLastError();
     notifyListeners();
   }
 }

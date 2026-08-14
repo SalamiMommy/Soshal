@@ -20,7 +20,7 @@ class BookmarksService extends ChangeNotifier with LastErrorMixin {
         pubkey: pubkey,
         eventId: eventId,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return id;
     } catch (e, st) {
@@ -45,7 +45,7 @@ class BookmarksService extends ChangeNotifier with LastErrorMixin {
               .map((e) => BookmarkRow.fromJson(e as Map<String, dynamic>))
               .toList()
           : <BookmarkRow>[];
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _bookmarks;
     } catch (e, st) {
@@ -61,7 +61,7 @@ class BookmarksService extends ChangeNotifier with LastErrorMixin {
       final removed = RustLib.instance.api.crateFfiBookmarksBookmarksDelete(
         id: id,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return removed;
     } catch (e, st) {

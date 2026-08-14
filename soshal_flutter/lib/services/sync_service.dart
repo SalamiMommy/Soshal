@@ -56,7 +56,7 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
       _gcTimer = Timer.periodic(const Duration(days: 1), (_) {
         runScheduledEpochGc();
       });
-      _lastError = null;
+      clearLastError();
     } catch (e, st) {
       _started = false;
       setLastError(e, st);
@@ -136,7 +136,7 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
       );
       final Map<String, dynamic> res =
           Map<String, dynamic>.from(jsonDecode(resJson) as Map);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return res;
     } catch (e, st) {
@@ -163,7 +163,7 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
       );
       final Map<String, dynamic> res =
           Map<String, dynamic>.from(jsonDecode(resJson) as Map);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return res;
     } catch (e, st) {
@@ -193,7 +193,7 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
       );
       final Map<String, dynamic> res =
           Map<String, dynamic>.from(jsonDecode(resJson) as Map);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return res;
     } catch (e, st) {

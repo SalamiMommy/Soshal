@@ -11,7 +11,7 @@ class AnalyticsService extends ChangeNotifier with LastErrorMixin {
   Future<String> computeStats() async {
     try {
       final out = RustLib.instance.api.crateFfiAnalyticsAnalyticsComputeStats();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return out;
     } catch (e, st) {
@@ -28,7 +28,7 @@ class AnalyticsService extends ChangeNotifier with LastErrorMixin {
           RustLib.instance.api.crateFfiAnalyticsAnalyticsSlmGenerateEmbedding(
         text: text,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return out;
     } catch (e, st) {
@@ -45,7 +45,7 @@ class AnalyticsService extends ChangeNotifier with LastErrorMixin {
           RustLib.instance.api.crateFfiAnalyticsAnalyticsSlmClassifyPost(
         text: text,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return out;
     } catch (e, st) {

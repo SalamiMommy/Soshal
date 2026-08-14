@@ -23,7 +23,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
       _tracks = decoded
           .map((e) => MusicTrack.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _tracks;
     } catch (e, st) {
@@ -49,7 +49,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
         hashtags: hashtags,
         audience: audience,
       );
-      _lastError = null;
+      clearLastError();
       return id;
     } catch (e, st) {
       setLastError(e, st);
@@ -72,7 +72,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
         message: message,
         hashtags: hashtags,
       );
-      _lastError = null;
+      clearLastError();
       return id;
     } catch (e, st) {
       setLastError(e, st);
@@ -95,7 +95,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
         trackD: trackD,
         content: content,
       );
-      _lastError = null;
+      clearLastError();
       return id;
     } catch (e, st) {
       setLastError(e, st);
@@ -120,7 +120,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
       final comments = decoded
           .map((e) => TrackComment.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       return comments;
     } catch (e, st) {
       setLastError(e, st);

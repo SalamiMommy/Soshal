@@ -25,7 +25,7 @@ class TursoService extends ChangeNotifier with LastErrorMixin {
   Future<bool> configure(
       {required String url, required String authToken}) async {
     try {
-      lastErrorValue = null;
+      clearLastError();
       notifyListeners();
 
       RustLib.instance.api.crateFfiTursoDbTursoConfigure(
@@ -51,7 +51,7 @@ class TursoService extends ChangeNotifier with LastErrorMixin {
     if (_isSyncing) return false;
     _isSyncing = true;
     _status = 'syncing';
-    lastErrorValue = null;
+    clearLastError();
     notifyListeners();
 
     try {
@@ -80,10 +80,10 @@ class TursoService extends ChangeNotifier with LastErrorMixin {
       _isConfigured = data['configured'] as bool? ?? false;
       _status = data['status'] as String? ?? 'idle';
       _lastSyncedAt = (data['last_synced_at'] as num?)?.toInt();
-      lastErrorValue = data["last_error"] as String?;
-      if (_lastError != null) {
-        debugPrint('turso last_error: $lastErrorValue');
-        logRuntimeError('turso last_error: $lastErrorValue');
+      final lastErr = data["last_error"] as String?;
+      if (lastErr != null) {
+        debugPrint('turso last_error: $lastErr');
+        logRuntimeError('turso last_error: $lastErr');
       }
       notifyListeners();
     } catch (e) {

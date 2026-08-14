@@ -39,7 +39,7 @@ class ChatrandomService extends ChangeNotifier with LastErrorMixin {
         peers: peers,
         contentJson: contentJson,
       );
-      _lastError = null;
+      clearLastError();
       return id;
     } catch (e, st) {
       setLastError(e, st);
@@ -66,7 +66,7 @@ class ChatrandomService extends ChangeNotifier with LastErrorMixin {
       _peers = (decoded as List<dynamic>)
           .map((e) => ChatrandomPeer.fromJson(e as Map<String, dynamic>))
           .toList();
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _peers;
     } catch (e, st) {

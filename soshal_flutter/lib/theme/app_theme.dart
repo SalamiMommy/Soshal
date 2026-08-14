@@ -262,26 +262,41 @@ class AppTheme {
     }
     if (colorString.startsWith('hsl(')) {
       final parts = colorString.substring(4, colorString.length - 1).split(',');
-      final h = double.parse(parts[0].trim());
-      final s = double.parse(parts[1].trim()) / 100;
-      final l = double.parse(parts[2].trim()) / 100;
-      return HSVColor.fromAHSV(1.0, h, s, l).toColor();
+      if (parts.length >= 3) {
+        final h = double.tryParse(parts[0].trim());
+        final s = double.tryParse(parts[1].trim().replaceAll('%', ''));
+        final l = double.tryParse(parts[2].trim().replaceAll('%', ''));
+        if (h != null && s != null && l != null) {
+          return HSVColor.fromAHSV(1.0, h, s / 100, l / 100).toColor();
+        }
+      }
+      return Colors.grey;
     }
     if (colorString.startsWith('hsla(')) {
       final parts = colorString.substring(5, colorString.length - 1).split(',');
-      final h = double.parse(parts[0].trim());
-      final s = double.parse(parts[1].trim()) / 100;
-      final l = double.parse(parts[2].trim()) / 100;
-      final a = double.parse(parts[3].trim());
-      return HSVColor.fromAHSV(a, h, s, l).toColor();
+      if (parts.length >= 4) {
+        final h = double.tryParse(parts[0].trim());
+        final s = double.tryParse(parts[1].trim().replaceAll('%', ''));
+        final l = double.tryParse(parts[2].trim().replaceAll('%', ''));
+        final a = double.tryParse(parts[3].trim());
+        if (h != null && s != null && l != null && a != null) {
+          return HSVColor.fromAHSV(a, h, s / 100, l / 100).toColor();
+        }
+      }
+      return Colors.grey;
     }
     if (colorString.startsWith('rgba(')) {
       final parts = colorString.substring(5, colorString.length - 1).split(',');
-      final r = int.parse(parts[0].trim());
-      final g = int.parse(parts[1].trim());
-      final b = int.parse(parts[2].trim());
-      final a = double.parse(parts[3].trim());
-      return Color.fromRGBO(r, g, b, a);
+      if (parts.length >= 4) {
+        final r = int.tryParse(parts[0].trim());
+        final g = int.tryParse(parts[1].trim());
+        final b = int.tryParse(parts[2].trim());
+        final a = double.tryParse(parts[3].trim());
+        if (r != null && g != null && b != null && a != null) {
+          return Color.fromRGBO(r, g, b, a);
+        }
+      }
+      return Colors.grey;
     }
     return Colors.grey;
   }

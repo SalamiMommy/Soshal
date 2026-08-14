@@ -1,6 +1,8 @@
 //! Integration tests for soshal-media-core.
 
+use soshal_media_core::decoder::decode_to_rgba;
 use soshal_media_core::envelope::{open_dm, open_group, seal_dm, seal_group};
+use soshal_media_core::prefetcher::Prefetcher;
 use soshal_media_core::freenet::{
     freenet_content_hash, freenet_content_hash_json, freenet_contract_hash,
     freenet_contract_hash_json,
@@ -469,6 +471,86 @@ fn group_envelope_wrong_key_or_bad_hex_fails() {
     assert!(seal_group(b"data", &"ab".repeat(31)).is_err());
     assert!(open_group("not json", &key).is_err());
     assert!(open_group(r#"{"v":1}"#, &key).is_err());
+}
+
+#[test]
+fn dm_envelope_tampered_ciphertext_fails() {
+    let (pk, sk) = soshal_pqc_core::hybrid::hybrid_keygen().unwrap();
+    let (ct, nonce, payload) = seal_dm(b"media", &pk).unwrap();
+    let mut ct_bytes = hex::decode(&ct).unwrap();
+    ct_bytes[0] ^= 0xFF;
+    let tampered_ct = hex::encode(ct_bytes);
+    assert!(open_dm(&tampered_ct, &nonce, &payload, &sk).is_err());
+    let mut payload_chars: Vec<char> = payload.chars().collect();
+    payload_chars[0] = if payload_chars[0] == 'A' { 'B' } else { 'A' };
+    let tampered_payload: String = payload_chars.into_iter().collect();
+    assert!(open_dm(&ct, &nonce, &tampered_payload, &sk).is_err());
+}
+
+#[test]
+fn group_envelope_tampered_payload_fails() {
+    let key = "ab".repeat(32);
+    let env = seal_group(b"data", &key).unwrap();
+    let mut v: serde_json::Value = serde_json::from_str(&env).unwrap();
+    let payload = v["payload"].as_str().unwrap().to_string();
+    let mut payload_bytes = payload.into_bytes();
+    payload_bytes[3] ^= 0x01;
+    v["payload"] = String::from_utf8(payload_bytes).unwrap().into();
+    assert!(open_group(&v.to_string(), &key).is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Image decoder
+// ---------------------------------------------------------------------------
+
+const TINY_PNG: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+    0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x60, 0x60, 0x60, 0x60,
+    0x00, 0x00, 0x00, 0x05, 0x00, 0x01, 0xA5, 0xF6, 0x45, 0x40, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+    0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
+#[test]
+fn decode_to_rgba_decodes_tiny_png() {
+    let frame = decode_to_rgba(TINY_PNG, None, None).unwrap();
+    assert_eq!(frame.width, 1);
+    assert_eq!(frame.height, 1);
+    assert_eq!(frame.pixels.len(), 4);
+    let frame = decode_to_rgba(TINY_PNG, Some(64), Some(64)).unwrap();
+    assert_eq!((frame.width, frame.height), (1, 1));
+}
+
+#[test]
+fn decode_to_rgba_rejects_junk_bytes() {
+    assert!(decode_to_rgba(b"not an image at all", None, None).is_err());
+    assert!(decode_to_rgba(&[], Some(64), Some(64)).is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Prefetcher
+// ---------------------------------------------------------------------------
+
+#[test]
+fn prefetcher_prefetches_window_at_rest() {
+    let prefetcher = Prefetcher::new();
+    prefetcher.update_scroll_telemetry(0.0, 10, 20);
+    assert!(prefetcher.should_prefetch_media(10));
+    assert!(prefetcher.should_prefetch_media(20));
+    assert!(prefetcher.should_prefetch_media(25));
+    assert!(!prefetcher.should_prefetch_media(26));
+    assert!(!prefetcher.should_prefetch_media(9));
+}
+
+#[test]
+fn prefetcher_disables_on_fast_scroll() {
+    let prefetcher = Prefetcher::new();
+    prefetcher.update_scroll_telemetry(2000.0, 0, 5);
+    assert!(!prefetcher.should_prefetch_media(0));
+    prefetcher.update_scroll_telemetry(-1600.0, 0, 5);
+    assert!(!prefetcher.should_prefetch_media(5));
+    prefetcher.update_scroll_telemetry(100.0, 0, 5);
+    assert!(prefetcher.should_prefetch_media(5));
 }
 
 #[test]

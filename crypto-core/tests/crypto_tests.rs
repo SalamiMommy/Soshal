@@ -10,7 +10,8 @@ use soshal_crypto_core::key_derivation::derive_db_key;
 use soshal_crypto_core::nip44::{
     decrypt, encrypt, encrypt_padded, pad, unpad, SALT_LEN, VERSION_LEGACY,
 };
-use soshal_crypto_core::pqc::{hybrid, kem};
+use soshal_crypto_core::pqc::{dsa, hybrid, kem};
+use soshal_crypto_core::zk_trust::{generate_zk_wot_proof, verify_zk_wot_proof};
 
 use soshal_crypto_core::pqc_ratchet::{
     decrypt_ratchet, encrypt_ratchet, init_state, ratchet_context, ratchet_header_from_tags,
@@ -291,4 +292,117 @@ fn at_rest_and_ratchet_error_paths() {
     // Invalid tags for ratchet header
     let invalid_tags = vec![vec!["ratchet_seq".into(), "not_an_int".into()]];
     assert!(ratchet_header_from_tags(&invalid_tags).is_none());
+}
+
+#[test]
+fn kem_cross_encapsulation_tests() {
+    let (kem_pk, kem_sk) = kem::keypair().unwrap();
+    let (ct1, ss1) = kem::encapsulate(&kem_pk).unwrap();
+    let (ct2, ss2) = kem::encapsulate(&kem_pk).unwrap();
+    assert_ne!(ct1, ct2);
+    assert_ne!(ss1, ss2);
+    assert_eq!(kem::decapsulate(&kem_sk, &ct1).unwrap(), ss1);
+    assert_eq!(kem::decapsulate(&kem_sk, &ct2).unwrap(), ss2);
+
+    let (_other_pk, other_sk) = kem::keypair().unwrap();
+    let wrong_ss = kem::decapsulate(&other_sk, &ct1).unwrap();
+    assert_ne!(wrong_ss, ss1);
+
+    let mut bad_ct = ct1;
+    bad_ct[0] ^= 0x01;
+    let tampered_ss = kem::decapsulate(&kem_sk, &bad_ct).unwrap();
+    assert_ne!(tampered_ss, ss1);
+}
+
+#[test]
+fn hybrid_domain_and_error_tests() {
+    let (hybrid_pk, hybrid_sk) = hybrid::keypair().unwrap();
+    let (ct, ss_a) = hybrid::encapsulate(&hybrid_pk, b"domain-a").unwrap();
+    assert_eq!(hybrid::decapsulate(&hybrid_sk, &ct, b"domain-a").unwrap(), ss_a);
+    let ss_b = hybrid::decapsulate(&hybrid_sk, &ct, b"domain-b").unwrap();
+    assert_ne!(ss_b, ss_a);
+
+    let (_other_pk, other_sk) = hybrid::keypair().unwrap();
+    assert_ne!(
+        hybrid::decapsulate(&other_sk, &ct, b"domain-a").unwrap(),
+        ss_a
+    );
+
+    let mut bad_pk = hybrid_pk;
+    bad_pk[0] = 0x00;
+    assert!(hybrid::encapsulate(&bad_pk, b"domain-a").is_err());
+
+    let mut bad_ct = ct;
+    bad_ct[0] = 0x02;
+    assert!(hybrid::decapsulate(&hybrid_sk, &bad_ct, b"domain-a").is_err());
+}
+
+#[allow(deprecated)]
+#[test]
+fn dsa_sign_verify_tests() {
+    let seed = [0x13u8; 32];
+    let (pk1, sk1) = dsa::keypair_from_seed(&seed).unwrap();
+    let (pk2, sk2) = dsa::keypair_from_seed(&seed).unwrap();
+    assert_eq!(pk1, pk2);
+    assert_eq!(sk1, sk2);
+
+    let other_seed = [0x42u8; 32];
+    let (pk_other, _) = dsa::keypair_from_seed(&other_seed).unwrap();
+    assert_ne!(pk_other, pk1);
+
+    let msg = b"dsa roundtrip payload";
+    let sig = dsa::sign(&seed, msg).unwrap();
+    assert!(dsa::verify(&pk1, msg, &sig).is_ok());
+
+    assert!(dsa::verify(&pk1, b"tampered message", &sig).is_err());
+
+    let mut bad_sig = sig.clone();
+    let mid = bad_sig.len() / 2;
+    bad_sig[mid] ^= 0xFF;
+    assert!(dsa::verify(&pk1, msg, &bad_sig).is_err());
+
+    assert!(dsa::verify(&pk_other, msg, &sig).is_err());
+}
+
+#[test]
+fn zk_trust_tests() {
+    let proof = generate_zk_wot_proof("pubkey_bob", "wot_root_abc", "black_root_xy");
+    assert!(verify_zk_wot_proof(&proof, "wot_root_abc", &[]));
+    assert!(!verify_zk_wot_proof(&proof, "wot_root_xyz", &[]));
+    assert!(!verify_zk_wot_proof(
+        &proof,
+        "wot_root_abc",
+        std::slice::from_ref(&proof.blacklist_nullifier_hash)
+    ));
+
+    let proof2 = generate_zk_wot_proof("pubkey_bob", "wot_root_abc", "black_root_xy");
+    assert_eq!(proof, proof2);
+
+    let mut bad_b64 = proof.clone();
+    bad_b64.proof_bytes_b64 = "not base64!!!".into();
+    assert!(!verify_zk_wot_proof(&bad_b64, "wot_root_abc", &[]));
+
+    let mut bad_len = proof.clone();
+    bad_len.proof_bytes_b64 = base64_encode_bytes(&[0u8; 16]);
+    assert!(!verify_zk_wot_proof(&bad_len, "wot_root_abc", &[]));
+}
+
+#[test]
+fn base64url_padding_tests() {
+    assert_eq!(to_base64url("aGVsbG8+/w=="), "aGVsbG8-_w");
+    assert_eq!(from_base64url("aGVsbG8-_w"), "aGVsbG8+/w==");
+
+    assert_eq!(from_base64url("YWJjZA"), "YWJjZA==");
+    assert_eq!(from_base64url("aGVsbG8"), "aGVsbG8=");
+    assert_eq!(from_base64url("ZQ"), "ZQ==");
+
+    assert_eq!(to_base64url(""), "");
+    assert_eq!(from_base64url(""), "");
+
+    let nopad = "aGVsbG8-_w";
+    assert_eq!(to_base64url(&from_base64url(nopad)), nopad);
+    let padded = "aGVsbG8+/w==";
+    assert_eq!(from_base64url(&to_base64url(padded)), padded);
+
+    assert_eq!(from_base64url("abcde"), "abcde");
 }

@@ -25,7 +25,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
       );
       final parsed = parseNotifications(json);
       _notifications = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _notifications;
     } catch (e, st) {
@@ -45,7 +45,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         limit: limit,
       );
       _notifications = parseNotifications(json);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _notifications;
     } catch (e, st) {
@@ -66,7 +66,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         limit: limit,
       );
       _notifications = parseNotifications(json);
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _notifications;
     } catch (e, st) {
@@ -86,7 +86,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
       if (ok) {
         _unreadCount = _unreadCount > 0 ? _unreadCount - 1 : 0;
       }
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -106,7 +106,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
       if (ok) {
         _unreadCount = 0;
       }
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
@@ -123,7 +123,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
           RustLib.instance.api.crateFfiNotificationsNotificationsGetUnreadCount(
         userPubkey: pubkey,
       );
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return _unreadCount;
     } catch (e, st) {
@@ -142,7 +142,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
       if (ok) {
         _notifications.removeWhere((n) => n.id == notificationId);
       }
-      _lastError = null;
+      clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
