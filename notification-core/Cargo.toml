@@ -1,0 +1,15 @@
+[package]
+name = "soshal-notification-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+soshal-nostr-core = { path = "../nostr-core" }
+soshal-content-core = { path = "../content-core" }
+soshal-common-core = { path = "../common-core" }
+
+
+[lints]
+workspace = true

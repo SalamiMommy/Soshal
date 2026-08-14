@@ -1,0 +1,242 @@
+use soshal_crypto_core::at_rest::{
+    at_rest_key, at_rest_key_v2, open_at_rest, open_at_rest_v2, seal_at_rest, seal_at_rest_v2,
+};
+use soshal_crypto_core::base64::{
+    base64_decode, base64_decode_bytes, base64_encode, base64_encode_bytes,
+};
+use soshal_crypto_core::base64url::{from_base64url, to_base64url};
+use soshal_crypto_core::hash::{hkdf_sha256, hmac_sha256, sha256, sha256_hex};
+use soshal_crypto_core::key_derivation::derive_db_key;
+use soshal_crypto_core::nip44::{
+    decrypt, encrypt, encrypt_padded, pad, unpad, SALT_LEN, VERSION_LEGACY,
+};
+use soshal_crypto_core::pqc::{hybrid, kem};
+
+use soshal_crypto_core::pqc_ratchet::{
+    decrypt_ratchet, encrypt_ratchet, init_state, ratchet_context, ratchet_header_from_tags,
+    ratchet_state_from_plaintext, ratchet_state_to_json, ratchet_wrapper_tags, state_key,
+    HeaderOutput, RatchetInput, RatchetOutput, RatchetState, MAX_RATCHET_WINDOW, RATCHET_VERSION,
+};
+
+#[test]
+fn sha256_tests() {
+    let h = sha256(b"");
+    assert_eq!(
+        hex::encode(h),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+        sha256_hex(b"hello"),
+        "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    );
+    let hmac_out = hmac_sha256(b"key", b"data");
+    assert_eq!(hmac_out.len(), 32);
+    let hkdf_out = hkdf_sha256(b"ikm", b"salt", b"info", 32).unwrap();
+    assert_eq!(hkdf_out.len(), 32);
+}
+
+#[test]
+fn base64_tests() {
+    let s = "hello world";
+    let enc = base64_encode(s);
+    let dec = base64_decode(&enc);
+    assert_eq!(dec, s);
+    assert_eq!(base64_decode_bytes(&enc).unwrap(), s.as_bytes());
+    assert_eq!(base64_encode_bytes(b"hello"), "aGVsbG8=");
+    assert_eq!(base64_decode("invalid!!!"), "");
+
+    let b64 = "aGVsbG8+/w==";
+    let b64u = to_base64url(b64);
+    assert_eq!(b64u, "aGVsbG8-_w");
+    assert_eq!(from_base64url(&b64u), b64);
+}
+
+#[test]
+fn key_derivation_test() {
+    let sk = [0xABu8; 32];
+    let k1 = derive_db_key(&sk, None).unwrap();
+    let k2 = derive_db_key(&sk, None).unwrap();
+    assert_eq!(k1, k2);
+    let k_salted = derive_db_key(&sk, Some("device-1")).unwrap();
+    assert_eq!(k_salted.len(), 32);
+}
+
+#[test]
+fn nip44_tests() {
+    let key = [0x42u8; 32];
+    let plaintext = b"hello nip44";
+    let ct = encrypt(plaintext, &key).unwrap();
+    let pt = decrypt(&ct, &key).unwrap();
+    assert_eq!(pt, plaintext);
+
+    assert!(decrypt(&ct, &[0x00u8; 32]).is_err());
+    assert!(decrypt("not-base64!!!", &key).is_err());
+
+    assert_eq!(pad(b"short").unwrap().len(), 2 + 32);
+    assert_eq!(unpad(&pad(b"hello").unwrap()).unwrap(), b"hello");
+
+    let legacy_ct = encrypt_padded(b"legacy data", &key).unwrap();
+    let mut buf = legacy_ct[..SALT_LEN].to_vec();
+    buf.push(VERSION_LEGACY);
+    buf.extend_from_slice(&legacy_ct[SALT_LEN..]);
+    let encoded = base64_encode_bytes(&buf);
+    assert_eq!(decrypt(&encoded, &key).unwrap(), b"legacy data");
+}
+
+#[test]
+fn nip44_spec_interop_with_nostr() {
+    // The spec conversation key is HKDF-extract("nip44-v2", shared_key);
+    // our symmetric keys play the shared-key role. With the extracted ck
+    // passed to nostr's ConversationKey::new, both implementations must
+    // produce byte-identical ciphertext for the same nonce.
+    use nostr::nips::nip44::v2::{decrypt_to_bytes, encrypt_to_bytes_with_nonce, ConversationKey};
+    use soshal_crypto_core::base64::base64_decode_bytes;
+
+    let key = [0x42u8; 32];
+    let plaintext = b"hello spec interop";
+    let nonce = [7u8; 32];
+
+    // nostr side: ck = extract("nip44-v2", key) as conversation key.
+    let ck = hmac_sha256(b"nip44-v2", &key);
+    let conv = ConversationKey::new(ck);
+    let nostr_ct = encrypt_to_bytes_with_nonce(&conv, plaintext, nonce).unwrap();
+
+    // our side: force the same nonce by decrypt-reencrypt trick is not
+    // possible (nonce is internal), so derive the expected payload with a
+    // fixed nonce via the public API contract: our ciphertext must decode to
+    // the nostr payload when decrypted by nostr.
+    let our_ct = encrypt(plaintext, &key).unwrap();
+    let our_bytes = base64_decode_bytes(&our_ct).unwrap();
+    let nostr_pt = decrypt_to_bytes(&conv, &our_bytes).unwrap();
+    assert_eq!(nostr_pt, plaintext);
+
+    // And nostr's output must be readable by us.
+    let nostr_b64 = base64_encode_bytes(&nostr_ct);
+    assert_eq!(decrypt(&nostr_b64, &key).unwrap(), plaintext);
+}
+
+#[test]
+fn at_rest_tests() {
+    let master = b"nsec1testmaster";
+    let key = at_rest_key(master).unwrap();
+    let sealed = seal_at_rest(&key, b"secret payload").unwrap();
+    let opened = open_at_rest(&key, &sealed).unwrap();
+    assert_eq!(opened, b"secret payload");
+
+    let (pk, sk) = soshal_pqc_core::hybrid::hybrid_keygen().unwrap();
+    let sealed_v2 = seal_at_rest_v2(&key, &pk, b"secret payload v2").unwrap();
+    let opened_v2 = open_at_rest_v2(&key, &sk, &sealed_v2).unwrap();
+    assert_eq!(opened_v2, b"secret payload v2");
+
+    let k1 = at_rest_key(b"master_secret").unwrap();
+    let k2 = at_rest_key_v2(b"master_secret").unwrap();
+    assert_ne!(k1, k2);
+}
+
+#[test]
+fn pqc_primitives_tests() {
+    let (hybrid_pk, hybrid_sk) = hybrid::keypair().unwrap();
+    let (hybrid_ct, ss1) = hybrid::encapsulate(&hybrid_pk, b"domain").unwrap();
+    let ss2 = hybrid::decapsulate(&hybrid_sk, &hybrid_ct, b"domain").unwrap();
+    assert_eq!(ss1, ss2);
+
+    let (kem_pk, kem_sk) = kem::keypair().unwrap();
+    let (kem_ct, kss1) = kem::encapsulate(&kem_pk).unwrap();
+    let kss2 = kem::decapsulate(&kem_sk, &kem_ct).unwrap();
+    assert_eq!(kss1, kss2);
+
+    let (dsa_sk, dsa_pk) = soshal_pqc_core::dsa::dsa_keygen(None).unwrap();
+    assert!(!dsa_sk.is_empty());
+    assert!(!dsa_pk.is_empty());
+}
+
+fn make_ratchet_pair(ctx: &str) -> (RatchetState, RatchetState) {
+    let (bob_pk, bob_sk) = soshal_pqc_core::hybrid::hybrid_keygen().unwrap();
+    let (alice_pk, alice_sk) = soshal_pqc_core::hybrid::hybrid_keygen().unwrap();
+    let bob = init_state("", ctx, &bob_sk, &bob_pk);
+    let alice = init_state(&bob_pk, ctx, &alice_sk, &alice_pk);
+    (alice, bob)
+}
+
+#[test]
+fn pqc_ratchet_tests() {
+    let (alice, bob) = make_ratchet_pair("test-ctx");
+    let (_a1, header, ciphertext) = encrypt_ratchet(&alice, "hello bob!").unwrap();
+    let (_b1, plaintext) = decrypt_ratchet(&bob, &header, &ciphertext).unwrap();
+    assert_eq!(plaintext, "hello bob!");
+    assert_eq!(header.version, RATCHET_VERSION);
+
+    assert_eq!(state_key("abc"), "pqc_state:abc");
+    assert_eq!(ratchet_context("me", "you"), "dm:me:you");
+
+    let tags = vec![
+        vec!["ratchet_pk".into(), "pk".into()],
+        vec!["ratchet_ct".into(), "ct".into()],
+        vec!["ratchet_seq".into(), "5".into()],
+        vec!["ratchet_cc".into(), "2".into()],
+        vec!["ratchet_version".into(), "3".into()],
+    ];
+    let h = ratchet_header_from_tags(&tags).unwrap();
+    assert_eq!(h.pk, "pk");
+    assert_eq!(h.seq, 5);
+
+    let input_state = RatchetInput {
+        version: RATCHET_VERSION,
+        root_key: "00".repeat(32),
+        current_sk: "01".repeat(32),
+        current_pk: "mypk".into(),
+        peer_pk: "pk".into(),
+        context: "dm:me:you".into(),
+        chain_counter: 0,
+        sending_chain_key: "02".repeat(32),
+        sending_chain_counter: 0,
+        sending_epoch_peer_pk: "pk".into(),
+        sending_ct: "03".repeat(32),
+        receiving_chain_key: "04".repeat(32),
+        receiving_chain_counter: 0,
+        skipped: vec![],
+    };
+    let json_st = serde_json::to_string(&input_state).unwrap();
+    assert!(ratchet_state_from_plaintext(json_st.as_bytes()).is_some());
+
+    let out_st = RatchetOutput {
+        version: RATCHET_VERSION,
+        root_key: "00".repeat(32),
+        current_sk: "01".repeat(32),
+        current_pk: "livepk".into(),
+        peer_pk: "pk".into(),
+        context: "dm:me:you".into(),
+        chain_counter: 3,
+        sending_chain_key: "02".repeat(32),
+        sending_chain_counter: 7,
+        sending_epoch_peer_pk: "pk".into(),
+        sending_ct: "03".repeat(32),
+        receiving_chain_key: "04".repeat(32),
+        receiving_chain_counter: 0,
+        skipped: vec![],
+    };
+    let out_json = ratchet_state_to_json(&out_st).unwrap();
+    assert!(out_json.contains("livepk"));
+
+    let header_out = HeaderOutput {
+        version: RATCHET_VERSION,
+        pk: "hdrpk".into(),
+        ct: "hdrct".into(),
+        seq: 7,
+        chain_counter: 3,
+    };
+    let w_tags = ratchet_wrapper_tags(&out_st, &header_out);
+    assert!(!w_tags.is_empty());
+    const { assert!(MAX_RATCHET_WINDOW > 0) };
+}
+
+#[test]
+fn at_rest_and_ratchet_error_paths() {
+    let key = at_rest_key(b"master").unwrap();
+    assert!(open_at_rest(&key, "invalid_base64_or_short").is_err());
+    assert!(open_at_rest_v2(&key, "not_a_valid_sk", "short").is_err());
+
+    // Invalid tags for ratchet header
+    let invalid_tags = vec![vec!["ratchet_seq".into(), "not_an_int".into()]];
+    assert!(ratchet_header_from_tags(&invalid_tags).is_none());
+}

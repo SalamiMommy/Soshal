@@ -1,0 +1,78 @@
+use soshal_audio_core::voice::{decode_voice_stream, encode_voice_pcm, voice_duration_secs};
+use soshal_audio_core::{
+    extract_waveform_bytes, extract_waveform_path, is_opus_stream, OPUS_FRAME_SIZE,
+    OPUS_SAMPLE_RATE,
+};
+
+fn sine_pcm(secs: f64, freq: f64) -> Vec<i16> {
+    let n = (secs * OPUS_SAMPLE_RATE as f64) as usize;
+    (0..n)
+        .map(|i| {
+            let t = i as f64 / OPUS_SAMPLE_RATE as f64;
+            (12000.0 * (2.0 * std::f64::consts::PI * freq * t).sin()) as i16
+        })
+        .collect()
+}
+
+#[test]
+fn voice_encode_decode_roundtrip() {
+    let pcm = sine_pcm(1.0, 440.0);
+    let stream = encode_voice_pcm(&pcm).unwrap();
+    assert!(is_opus_stream(&stream));
+    assert!(stream.len() < pcm.len(), "opus should beat raw pcm");
+    let restored = decode_voice_stream(&stream).unwrap();
+    assert!(restored.len() >= pcm.len() - OPUS_FRAME_SIZE * 2);
+    let dur = voice_duration_secs(&stream).unwrap();
+    assert!((dur - 1.0).abs() < 0.05, "duration {dur}");
+}
+
+#[test]
+fn voice_stream_rejects_garbage() {
+    assert!(decode_voice_stream(b"not a voice note").is_err());
+    assert!(voice_duration_secs(b"not a voice note").is_err());
+}
+
+#[test]
+fn waveform_from_voice_stream() {
+    let pcm = sine_pcm(2.0, 220.0);
+    let stream = encode_voice_pcm(&pcm).unwrap();
+    let peaks = extract_waveform_bytes(&stream, 64).unwrap();
+    assert_eq!(peaks.len(), 64);
+    for p in &peaks {
+        assert!((0.0..=1.0).contains(p), "peak out of range: {p}");
+    }
+    assert!(
+        peaks.iter().any(|p| *p > 0.05),
+        "sine should register energy"
+    );
+    assert!(peaks.iter().any(|p| *p > 0.9), "sine peak near 1.0");
+}
+
+#[test]
+fn waveform_bins_clamped() {
+    let pcm = sine_pcm(0.5, 330.0);
+    let stream = encode_voice_pcm(&pcm).unwrap();
+    assert_eq!(extract_waveform_bytes(&stream, 4).unwrap().len(), 32);
+    assert_eq!(extract_waveform_bytes(&stream, 9999).unwrap().len(), 2048);
+}
+
+#[test]
+fn waveform_silence_is_zero() {
+    let silence = vec![0i16; OPUS_FRAME_SIZE * 10];
+    let stream = encode_voice_pcm(&silence).unwrap();
+    let peaks = extract_waveform_bytes(&stream, 64).unwrap();
+    assert!(peaks.iter().all(|p| *p == 0.0));
+}
+
+#[test]
+fn waveform_path_roundtrip() {
+    let pcm = sine_pcm(0.5, 440.0);
+    let stream = encode_voice_pcm(&pcm).unwrap();
+    let dir = std::env::temp_dir().join("soshal-audio-test");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("voice.wav");
+    std::fs::write(&path, &stream).unwrap();
+    let peaks = extract_waveform_path(path.to_str().unwrap(), 64).unwrap();
+    assert_eq!(peaks.len(), 64);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

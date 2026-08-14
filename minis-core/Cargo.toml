@@ -1,0 +1,13 @@
+[package]
+name = "soshal-minis-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+soshal-nostr-core = { path = "../nostr-core" }
+
+
+[lints]
+workspace = true

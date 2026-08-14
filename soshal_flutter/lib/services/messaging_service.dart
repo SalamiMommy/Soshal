@@ -1,0 +1,724 @@
+// ignore_for_file: invalid_use_of_internal_member
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:soshal_flutter/frb_generated.dart';
+
+/// Messaging Service
+/// Handles direct messages (NIP-44), group chats, and decryption
+class MessagingService extends ChangeNotifier {
+  static final _hexRegex = RegExp(r'^[0-9a-f]{64}$');
+  final Map<String, List<DirectMessage>> _conversations = {};
+  final List<EphemeralMedia> _pendingEphemeral = [];
+  String? _lastError;
+
+  Map<String, List<DirectMessage>> get conversations => _conversations;
+  String? get lastError => _lastError;
+  List<EphemeralMedia> get pendingEphemeral =>
+      List.unmodifiable(_pendingEphemeral);
+
+  /// Insert a DM arriving from the live sync stream (already decrypted by
+  /// the bridge). Conversation is keyed by the peer pubkey.
+  void insertLiveDm(DirectMessage message) {
+    final peer = message.sender;
+    if (peer.isEmpty) return;
+    final list = _conversations.putIfAbsent(peer, () => []);
+    if (list.any((m) => m.id == message.id)) return;
+    list.add(message);
+    if (list.length > 200) {
+      list.removeAt(0);
+    }
+    notifyListeners();
+  }
+
+  /// Fetch DMs with a specific contact
+  Future<List<DirectMessage>> fetchDMs(String otherPubkey) async {
+    try {
+      if (_conversations.containsKey(otherPubkey)) {
+        return _conversations[otherPubkey]!;
+      }
+
+      final json = RustLib.instance.api.crateFfiMessagingMessagingFetchDms(
+        withPubkey: otherPubkey,
+        limit: 100,
+      );
+      final list = jsonDecode(json) as List<dynamic>;
+      final messages = list
+          .map((e) => DirectMessage.fromJson(e as Map<String, dynamic>))
+          .toList()
+          .reversed
+          .toList();
+
+      if (messages.length > 200) {
+        _conversations[otherPubkey] = messages.sublist(messages.length - 200);
+      } else {
+        _conversations[otherPubkey] = messages;
+      }
+
+      _lastError = null;
+      notifyListeners();
+      return _conversations[otherPubkey]!;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Send a direct message (NIP-44 v2)
+  Future<String> sendDM(
+    String content,
+    String recipientPubkey,
+    String senderPubkey,
+    String senderSk,
+  ) async {
+    try {
+      final eventId =
+          await RustLib.instance.api.crateFfiMessagingMessagingSendDm(
+        content: content,
+        recipientPubkey: recipientPubkey,
+      );
+
+      // Add to local conversation
+      final message = DirectMessage(
+        id: eventId,
+        sender: senderPubkey,
+        recipient: recipientPubkey,
+        content: content,
+        createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        decrypted: true,
+        isOwn: true,
+      );
+
+      if (!_conversations.containsKey(recipientPubkey)) {
+        _conversations[recipientPubkey] = [];
+      }
+      _conversations[recipientPubkey]!.add(message);
+
+      _lastError = null;
+      notifyListeners();
+      return eventId;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Resolve a recipient input (npub or hex) to a hex pubkey.
+  /// Throws if the input is neither a valid npub nor 64-char hex pubkey.
+  String resolvePubkey(String input) {
+    final trimmed = input.trim();
+    if (_hexRegex.hasMatch(trimmed.toLowerCase())) {
+      return trimmed.toLowerCase();
+    }
+    if (trimmed.startsWith('npub1')) {
+      try {
+        return RustLib.instance.api.crateFfiAuthAuthNpubDecode(npub: trimmed);
+      } catch (e) {
+        _lastError = e.toString();
+        notifyListeners();
+        throw Exception('Invalid npub: $trimmed');
+      }
+    }
+    throw Exception('Invalid recipient: expected npub or 64-char hex pubkey');
+  }
+
+  /// Send a group DM (kind-1059). Group id is derived deterministically from
+  /// the sorted participant list; the backend resolves the conversation.
+  Future<String> sendGroupDm({
+    required String content,
+    required List<String> participantPubkeys,
+  }) async {
+    try {
+      final sorted = [...participantPubkeys]..sort();
+      final eventId =
+          RustLib.instance.api.crateFfiMessagingMessagingSendGroupDm(
+        content: content,
+        groupId: sorted.join(','),
+        participantPubkeysJson: jsonEncode(sorted),
+      );
+      _lastError = null;
+      return eventId;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Decrypt a direct message
+  Future<String> decryptDM(
+    String encryptedContent,
+    String senderPubkey,
+    String recipientSk,
+  ) async {
+    try {
+      return RustLib.instance.api.crateFfiMessagingMessagingDecryptDm(
+        payload: encryptedContent,
+        senderPubkey: senderPubkey,
+      );
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Fetch all conversation partner pubkeys for the active account.
+  Future<List<String>> fetchConversations(String pubkey) async {
+    try {
+      final list =
+          RustLib.instance.api.crateFfiMessagingMessagingFetchConversations(
+        pubkey: pubkey,
+      );
+      _lastError = null;
+      return list;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Replace a message's content in the local conversation cache.
+  void updateMessageContent(
+    String? otherPubkey,
+    DirectMessage message,
+    String decrypted,
+  ) {
+    if (otherPubkey == null) return;
+    final list = _conversations[otherPubkey];
+    if (list == null) return;
+    final index = list.indexWhere((m) => identical(m, message));
+    if (index >= 0) {
+      final updated = message.deepCopy(content: decrypted, decrypted: true);
+      list[index] = updated;
+      notifyListeners();
+    }
+  }
+
+  /// Mark conversation as read
+  Future<void> markAsRead(String otherPubkey) async {
+    try {
+      if (_conversations.containsKey(otherPubkey)) {
+        _lastError = null;
+        notifyListeners();
+      }
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Clear error
+  void clearError() {
+    _lastError = null;
+    notifyListeners();
+  }
+
+  /// Register a burn DM (disappearing media) against a sent message.
+  /// Sync FFI; returns the ephemeral row id.
+  Future<String> saveEphemeral({
+    required String messageId,
+    required String conversationId,
+    required String conversationType,
+    required String mediaUrl,
+    required String mediaType,
+    required String senderPubkey,
+    required String recipientPubkey,
+    required int maxViews,
+    int expiresAt = 0,
+  }) async {
+    try {
+      final id = RustLib.instance.api.crateFfiEphemeralEphemeralSave(
+        messageId: messageId,
+        conversationId: conversationId,
+        conversationType: conversationType,
+        mediaUrl: mediaUrl,
+        mediaType: mediaType,
+        senderPubkey: senderPubkey,
+        recipientPubkey: recipientPubkey,
+        maxViews: maxViews,
+        expiresAt: expiresAt,
+      );
+      _lastError = null;
+      return id;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Fetch pending disappearing media addressed to [pubkey] (the active
+  /// account). Sync FFI returning a JSON array.
+  Future<List<EphemeralMedia>> fetchPendingEphemeral(String pubkey) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiEphemeralEphemeralListPending(pubkey: pubkey);
+      final list = jsonDecode(json) as List<dynamic>;
+      _pendingEphemeral
+        ..clear()
+        ..addAll(list
+            .map((e) => EphemeralMedia.fromJson(e as Map<String, dynamic>)));
+      _lastError = null;
+      notifyListeners();
+      return pendingEphemeral;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Consume one view of a burn DM (increments view count; row expires at
+  /// max_views). Returns the fresh row.
+  Future<EphemeralMedia> viewEphemeral(String id) async {
+    try {
+      final json = RustLib.instance.api.crateFfiEphemeralEphemeralView(id: id);
+      final media = EphemeralMedia.fromJson(jsonDecode(json));
+      final index = _pendingEphemeral.indexWhere((m) => m.id == id);
+      if (index >= 0) {
+        _pendingEphemeral[index] = media;
+        notifyListeners();
+      }
+      _lastError = null;
+      return media;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Delete a burn DM row (also removes it from the pending list).
+  Future<bool> deleteEphemeral(String id) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiEphemeralEphemeralDelete(id: id);
+      _pendingEphemeral.removeWhere((m) => m.id == id);
+      _lastError = null;
+      notifyListeners();
+      return ok;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+}
+
+/// Identity Service
+/// Handles profiles, WoT status, and NIP-05 verification
+class IdentityService extends ChangeNotifier {
+  final Map<String, ProfileInfo> _profiles = {};
+  String? _lastError;
+
+  Map<String, ProfileInfo> get profiles => _profiles;
+  String? get lastError => _lastError;
+
+  /// Get user profile
+  Future<ProfileInfo> getProfile(String pubkey) async {
+    try {
+      if (_profiles.containsKey(pubkey)) {
+        return _profiles[pubkey]!;
+      }
+
+      final json = RustLib.instance.api
+          .crateFfiIdentityIdentityGetProfile(pubkey: pubkey);
+      final profile =
+          ProfileInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
+      _profiles[pubkey] = profile;
+
+      _lastError = null;
+      notifyListeners();
+      return profile;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Get current user's profile
+  Future<ProfileInfo> getSelfProfile(String pubkey) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiIdentityIdentityGetSelfProfile(pubkey: pubkey);
+      final profile =
+          ProfileInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
+      _profiles[pubkey] = profile;
+      _lastError = null;
+      notifyListeners();
+      return profile;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Search users by name/pubkey
+  Future<List<ProfileInfo>> searchUsers(String query, {int limit = 50}) async {
+    try {
+      final json = RustLib.instance.api.crateFfiIdentityIdentitySearchUsers(
+        query: query,
+        limit: limit,
+      );
+      final list = jsonDecode(json) as List<dynamic>;
+      return list
+          .map((e) => ProfileInfo.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Update user profile
+  Future<String> updateProfile(
+    String pubkey,
+    String name,
+    String displayName,
+    String picture,
+    String banner,
+    String about,
+    String nip05,
+  ) async {
+    try {
+      final eventId =
+          RustLib.instance.api.crateFfiIdentityIdentityUpdateProfile(
+        pubkey: pubkey,
+        name: name,
+        displayName: displayName,
+        picture: picture,
+        banner: banner,
+        about: about,
+        nip05: nip05,
+      );
+
+      try {
+        RustLib.instance.api.crateFfiSearchSearchIndexProfile(
+          pubkey: pubkey,
+          name: displayName,
+          about: about,
+        );
+      } catch (e) {
+        debugPrint('index profile: $e');
+      }
+
+      // Update local cache
+      _profiles[pubkey] = ProfileInfo(
+        pubkey: pubkey,
+        name: name,
+        displayName: displayName,
+        picture: picture,
+        banner: banner,
+        about: about,
+        nip05: nip05,
+        nip05Valid: false,
+        createdAt: 0,
+        followers: 0,
+        following: 0,
+        isFollowing: false,
+        wotStatus: 'unknown',
+      );
+
+      _lastError = null;
+      notifyListeners();
+      return eventId;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Verify NIP-05 identifier
+  Future<bool> verifyNip05(String nip05) async {
+    try {
+      return RustLib.instance.api
+          .crateFfiIdentityIdentityVerifyNip05(nip05: nip05);
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Get Web of Trust status
+  Future<int> getTrustScore(String source, String target) async {
+    try {
+      final score = RustLib.instance.api.crateFfiIdentityIdentityGetTrustScore(
+        sourcePubkey: source,
+        targetPubkey: target,
+      );
+      return (score * 100).round();
+    } catch (e) {
+      _lastError = e.toString();
+      return 0;
+    }
+  }
+
+  /// Check whether one account has blocked another.
+  Future<bool> isBlocked(String checkerPubkey, String targetPubkey) async {
+    try {
+      return RustLib.instance.api.crateFfiIdentityIdentityIsBlocked(
+        checkerPubkey: checkerPubkey,
+        targetPubkey: targetPubkey,
+      );
+    } catch (e) {
+      _lastError = e.toString();
+      return false;
+    }
+  }
+
+  /// Block a user (blocker must be the active account).
+  Future<bool> blockUser(String blockerPubkey, String targetPubkey) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiIdentityIdentityBlockUser(
+        blockerPubkey: blockerPubkey,
+        targetPubkey: targetPubkey,
+      );
+      _lastError = null;
+      notifyListeners();
+      return ok;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Unblock a user.
+  Future<bool> unblockUser(String blockerPubkey, String targetPubkey) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiIdentityIdentityUnblockUser(
+        blockerPubkey: blockerPubkey,
+        targetPubkey: targetPubkey,
+      );
+      _lastError = null;
+      notifyListeners();
+      return ok;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// List users blocked by the given account.
+  Future<List<String>> getBlockedUsers(String pubkey) async {
+    try {
+      final list = RustLib.instance.api
+          .crateFfiIdentityIdentityGetBlockedUsers(pubkey: pubkey);
+      _lastError = null;
+      return list;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<String> getWotStatus(String targetPubkey, String viewerPubkey) async {
+    try {
+      return RustLib.instance.api.crateFfiIdentityIdentityGetWotStatus(
+        targetPubkey: targetPubkey,
+        viewerPubkey: viewerPubkey,
+      );
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Follow a user
+  Future<String> followUser(String targetPubkey, String myPubkey) async {
+    try {
+      return RustLib.instance.api.crateFfiIdentityIdentityFollowUser(
+        userPubkey: myPubkey,
+        targetPubkey: targetPubkey,
+      );
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Unfollow a user (depends on full contact-list republish; Rust returns
+  /// a guidance error until the caller republishes kind 3)
+  Future<String> unfollowUser(String targetPubkey, String myPubkey) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiIdentityIdentityUnfollowUser(
+        userPubkey: myPubkey,
+        targetPubkey: targetPubkey,
+      );
+      return ok ? 'unfollowed' : 'not followed';
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Clear error
+  void clearError() {
+    _lastError = null;
+    notifyListeners();
+  }
+}
+
+/// Direct message (NIP-44 v2) as served by the bridge.
+class DirectMessage {
+  final String id;
+  final String sender;
+  final String recipient;
+  final String content;
+  final int createdAt;
+  final bool decrypted;
+  final bool isOwn;
+
+  DirectMessage({
+    required this.id,
+    required this.sender,
+    this.recipient = '',
+    required this.content,
+    required this.createdAt,
+    required this.decrypted,
+    required this.isOwn,
+  });
+
+  factory DirectMessage.fromJson(Map<String, dynamic> json) {
+    return DirectMessage(
+      id: json['id'] as String? ?? '',
+      sender: json['sender'] as String? ?? '',
+      recipient: json['recipient'] as String? ?? '',
+      content: json['content'] as String? ?? '',
+      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      decrypted: json['decrypted'] as bool? ?? false,
+      isOwn: json['is_own'] as bool? ?? false,
+    );
+  }
+
+  DirectMessage deepCopy({String? content, bool? decrypted}) {
+    return DirectMessage(
+      id: id,
+      sender: sender,
+      recipient: recipient,
+      content: content ?? this.content,
+      createdAt: createdAt,
+      decrypted: decrypted ?? this.decrypted,
+      isOwn: isOwn,
+    );
+  }
+}
+
+/// User profile info as served by the identity module.
+class ProfileInfo {
+  final String pubkey;
+  final String name;
+  final String displayName;
+  final String picture;
+  final String banner;
+  final String about;
+  final String nip05;
+  final bool nip05Valid;
+  final int createdAt;
+  final int followers;
+  final int following;
+  final bool isFollowing;
+  final String wotStatus;
+
+  ProfileInfo({
+    required this.pubkey,
+    required this.name,
+    required this.displayName,
+    required this.picture,
+    required this.banner,
+    required this.about,
+    required this.nip05,
+    required this.nip05Valid,
+    required this.createdAt,
+    required this.followers,
+    required this.following,
+    required this.isFollowing,
+    required this.wotStatus,
+  });
+
+  factory ProfileInfo.fromJson(Map<String, dynamic> json) {
+    return ProfileInfo(
+      pubkey: json['pubkey'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      displayName: json['display_name'] as String? ?? '',
+      picture: json['picture'] as String? ?? '',
+      banner: json['banner'] as String? ?? '',
+      about: json['about'] as String? ?? '',
+      nip05: json['nip05'] as String? ?? '',
+      nip05Valid: json['nip05_valid'] as bool? ?? false,
+      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      followers: (json['followers'] as num?)?.toInt() ?? 0,
+      following: (json['following'] as num?)?.toInt() ?? 0,
+      isFollowing: json['is_following'] as bool? ?? false,
+      wotStatus: json['wot_status'] as String? ?? 'unknown',
+    );
+  }
+}
+
+/// Disappearing media (burn DM) row as served by the ephemeral module.
+class EphemeralMedia {
+  final String id;
+  final String messageId;
+  final String conversationId;
+  final String conversationType;
+  final String mediaUrl;
+  final String mediaType;
+  final String senderPubkey;
+  final String recipientPubkey;
+  final int maxViews;
+  final int currentViews;
+  final String state;
+  final int expiresAt;
+  final int createdAt;
+  final int viewedAt;
+
+  EphemeralMedia({
+    required this.id,
+    required this.messageId,
+    required this.conversationId,
+    required this.conversationType,
+    required this.mediaUrl,
+    required this.mediaType,
+    required this.senderPubkey,
+    required this.recipientPubkey,
+    required this.maxViews,
+    required this.currentViews,
+    required this.state,
+    required this.expiresAt,
+    required this.createdAt,
+    required this.viewedAt,
+  });
+
+  factory EphemeralMedia.fromJson(Map<String, dynamic> json) {
+    return EphemeralMedia(
+      id: json['id'] as String? ?? '',
+      messageId: json['message_id'] as String? ?? '',
+      conversationId: json['conversation_id'] as String? ?? '',
+      conversationType: json['conversation_type'] as String? ?? '',
+      mediaUrl: json['media_url'] as String? ?? '',
+      mediaType: json['media_type'] as String? ?? 'image',
+      senderPubkey: json['sender_pubkey'] as String? ?? '',
+      recipientPubkey: json['recipient_pubkey'] as String? ?? '',
+      maxViews: (json['max_views'] as num?)?.toInt() ?? 1,
+      currentViews: (json['current_views'] as num?)?.toInt() ?? 0,
+      state: json['state'] as String? ?? '',
+      expiresAt: (json['expires_at'] as num?)?.toInt() ?? 0,
+      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      viewedAt: (json['viewed_at'] as num?)?.toInt() ?? 0,
+    );
+  }
+}

@@ -1,0 +1,10 @@
+[alias]
+
+[target.aarch64-linux-android]
+rustflags = ["-C", "target-feature=+aes,+sha2"]
+
+[target.x86_64-linux-android]
+rustflags = ["-C", "target-feature=+aes,+sse4.1,+ssse4.1,+avx2"]
+
+[target.armv7-linux-androideabi]
+rustflags = ["-C", "target-feature=+neon"]

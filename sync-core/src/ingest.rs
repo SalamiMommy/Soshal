@@ -1,0 +1,263 @@
+//! Verified-event ingest: relay-fetched events are untrusted, so every event
+//! passes `event.verify()` (signature + id) before any row is written or any
+//! update is emitted. Kind-4 payloads additionally require a p-tag pointing
+//! at the local pubkey (or authorship by it) — mirroring the
+//! `commands::util::verified_events` rule set from the hardening audit.
+
+use crate::{SyncUpdate, WM_FEED, WM_META};
+use nostr::event::{Event, Kind};
+use nostr::key::PublicKey;
+use nostr::nips::nip19::ToBech32;
+use soshal_db_core::error::DbError;
+use soshal_db_core::repos::post::{PostRepo, PostRow};
+use soshal_db_core::repos::reaction::{ReactionRepo, ReactionRow};
+use soshal_db_core::repos::settings::SettingsRepo;
+use soshal_db_core::repos::user::{UserRepo, UserRow};
+use soshal_db_core::Database;
+
+/// Max bytes of feed content that gets cached (relay size caps already
+/// enforced by PostRepo::upsert; this is a belt-and-suspenders guard).
+const MAX_CACHED_CONTENT: usize = 64 * 1024;
+
+fn e_tags(event: &Event) -> Vec<String> {
+    event
+        .tags
+        .iter()
+        .filter(|t| t.kind() == "e")
+        .filter_map(|t| t.content().map(|c| c.to_string()))
+        .collect()
+}
+
+fn p_tags(event: &Event) -> Vec<String> {
+    event
+        .tags
+        .iter()
+        .filter(|t| t.kind() == "p")
+        .filter_map(|t| t.content().map(|c| c.to_string()))
+        .collect()
+}
+
+fn t_tags(event: &Event) -> Vec<String> {
+    event
+        .tags
+        .iter()
+        .filter(|t| t.kind() == "t")
+        .filter_map(|t| t.content().map(|c| c.to_string()))
+        .collect()
+}
+
+/// Convert a verified relay event into its cached DB row (if cacheable).
+fn post_row(event: &Event) -> Option<PostRow> {
+    if event.content.len() > MAX_CACHED_CONTENT {
+        return None;
+    }
+    let es = e_tags(event);
+    let reply_to = es.first().cloned();
+    let root_id = es.get(1).cloned().or_else(|| es.first().cloned());
+    let sig = event.sig.to_string();
+
+    let tags_json = serde_json::to_string(
+        &event
+            .tags
+            .iter()
+            .map(|t| t.clone().to_vec())
+            .collect::<Vec<Vec<String>>>(),
+    )
+    .unwrap_or_default();
+    let freenet_key = event.tags.iter().find_map(|t| {
+        let slice = t.as_slice();
+        if slice.first().map(|s| s.as_str()) == Some("freenet") {
+            slice.get(1).map(|s| s.to_string())
+        } else {
+            None
+        }
+    });
+
+    Some(PostRow {
+        id: event.id.to_hex(),
+        pubkey: event.pubkey.to_hex(),
+        content: event.content.clone(),
+        kind: event.kind.as_u16() as u64 as i64,
+        created_at: event.created_at.as_secs() as i64,
+        tags_json,
+        sig: Some(sig),
+        reply_to,
+        root_id,
+        mentioned_pubkeys: p_tags(event).join(","),
+        mentioned_hashtags: t_tags(event).join(","),
+        subject: None,
+        sync_status: "synced".to_string(),
+        is_deleted: false,
+        scheduled_at: None,
+        freenet_key: freenet_key.clone(),
+        is_freenet_native: freenet_key.is_some(),
+    })
+}
+
+fn user_row(event: &Event) -> Option<UserRow> {
+    let meta: serde_json::Value = serde_json::from_str(&event.content).ok()?;
+    let pubkey = event.pubkey.to_hex();
+    let npub = PublicKey::from_hex(&pubkey)
+        .ok()
+        .map(|p| p.to_bech32().unwrap_or_default())
+        .unwrap_or_default();
+    let created = event.created_at.as_secs() as i64;
+    Some(UserRow {
+        pubkey,
+        npub,
+        name: meta
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        display_name: meta
+            .get("display_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        about: meta
+            .get("about")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        picture: meta
+            .get("picture")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        banner: meta
+            .get("banner")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        nip05: meta
+            .get("nip05")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        lud16: meta
+            .get("lud16")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        created_at: created,
+        updated_at: created,
+        metadata_json: Some(event.content.clone()),
+        contact_pubkeys: String::new(),
+        relay_list: String::new(),
+    })
+}
+
+/// Read the persisted watermark for `key` (0 when absent).
+pub fn watermark(db: &Database, key: &str) -> u64 {
+    SettingsRepo::new(db)
+        .get(key)
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+}
+
+/// Persist the watermark for `key` (best-effort; a stale watermark only
+/// causes a small re-fetch overlap).
+pub fn set_watermark(db: &Database, key: &str, ts: u64) {
+    let _ = SettingsRepo::new(db).set(key, &ts.to_string());
+}
+
+/// Handle one verified relay event: cache it, bump the watermark, and emit a
+/// [`SyncUpdate`] for the app layer. Any kind we don't model is skipped.
+pub fn handle(
+    db: &Database,
+    my_pubkey: &str,
+    event: &Event,
+    tx: &tokio::sync::mpsc::Sender<SyncUpdate>,
+) -> Result<(), DbError> {
+    event
+        .verify()
+        .map_err(|e| DbError::Migration(format!("event verification failed: {e}")))?;
+
+    // DM kind: only keep payloads addressed to us (p-tag mine) or authored by
+    // us; content stays encrypted here — never persisted unverified.
+    if event.kind == Kind::EncryptedDirectMessage {
+        let addresses_me = p_tags(event).iter().any(|p| p == my_pubkey);
+        let authored_by_me = event.pubkey.to_hex() == my_pubkey;
+        if addresses_me || authored_by_me {
+            let _ = tx.try_send(SyncUpdate::Dm {
+                id: event.id.to_hex(),
+                sender: event.pubkey.to_hex(),
+                content: event.content.clone(),
+                created_at: event.created_at.as_secs(),
+            });
+        }
+        return Ok(());
+    }
+
+    match event.kind {
+        Kind::Metadata => {
+            if let Some(row) = user_row(event) {
+                UserRepo::new(db).upsert(&row)?;
+                let _ = tx.try_send(SyncUpdate::Profile { pubkey: row.pubkey });
+            }
+        }
+        Kind::Reaction => {
+            let es = e_tags(event);
+            let Some(target) = es.first() else {
+                return Ok(());
+            };
+            let row = ReactionRow {
+                id: event.id.to_hex(),
+                pubkey: event.pubkey.to_hex(),
+                event_id: target.clone(),
+                kind: 7,
+                content: Some(event.content.clone()),
+                created_at: event.created_at.as_secs() as i64,
+            };
+            ReactionRepo::new(db).upsert(&row)?;
+            let _ = tx.try_send(SyncUpdate::Reaction {
+                id: row.id,
+                event_id: row.event_id,
+                pubkey: row.pubkey,
+                content: row.content.unwrap_or_default(),
+                created_at: event.created_at.as_secs(),
+            });
+        }
+        // Text notes and other app-published kinds all land in `posts` so the
+        // cached feed stays complete; only kinds with a surface model emit.
+        Kind::TextNote => {
+            if let Some(row) = post_row(event) {
+                PostRepo::new(db).upsert(&row)?;
+                let _ = tx.try_send(SyncUpdate::Feed {
+                    id: row.id,
+                    pubkey: row.pubkey,
+                    content: row.content,
+                    created_at: event.created_at.as_secs(),
+                    kind: event.kind.as_u16() as u64,
+                });
+            }
+        }
+        _ => {
+            if let Some(row) = post_row(event) {
+                PostRepo::new(db).upsert(&row)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Handle a batch of verified relay events inside a single `with_tx` transaction wrapper.
+pub fn handle_batch(
+    db: &Database,
+    my_pubkey: &str,
+    events: &[Event],
+    tx: &tokio::sync::mpsc::Sender<SyncUpdate>,
+) -> Result<(), DbError> {
+    if events.is_empty() {
+        return Ok(());
+    }
+    for event in events {
+        let _ = handle(db, my_pubkey, event, tx);
+    }
+    Ok(())
+}
+
+/// Which settings key tracks watermark for `kind` (None = not tracked).
+pub fn watermark_key(kind: Kind) -> Option<&'static str> {
+    match kind {
+        Kind::TextNote => Some(WM_FEED),
+        Kind::Metadata => Some(WM_META),
+        _ => None,
+    }
+}

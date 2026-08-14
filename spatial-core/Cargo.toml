@@ -1,0 +1,19 @@
+[package]
+name = "soshal-spatial-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+soshal-common-core = { path = "../common-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+geohash = { workspace = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[dev-dependencies.geohash]
+workspace = true

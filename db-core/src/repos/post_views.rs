@@ -1,0 +1,59 @@
+//! Persistence for which posts the user has already seen, per account.
+//!
+//! The `post_views` table is keyed by `(pubkey, post_id)` so multi-account
+//! installs keep per-account seen history. Used by the popular feed to
+//! exclude posts the user has already scrolled into view.
+
+use crate::Database;
+use libsql::params;
+
+/// Count of placeholders used by [`PostViewsRepo::mark_seen`] batches.
+const BATCH_MAX: usize = 500;
+
+pub struct PostViewsRepo<'a> {
+    db: &'a Database,
+}
+
+impl<'a> PostViewsRepo<'a> {
+    pub fn new(db: &'a Database) -> Self {
+        Self { db }
+    }
+
+    /// Records `post_id` as seen by `pubkey` at the current unix time.
+    /// Re-seeing a post is a no-op (INSERT OR IGNORE).
+    pub fn mark_seen(
+        &self,
+        pubkey: &str,
+        post_ids: &[String],
+    ) -> Result<(), crate::error::DbError> {
+        if post_ids.is_empty() {
+            return Ok(());
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let conn = self.db.conn()?;
+        crate::query::with_tx(&conn, |tx| async move {
+            for chunk in post_ids.chunks(BATCH_MAX) {
+                for id in chunk {
+                    tx.execute("INSERT OR IGNORE INTO post_views (pubkey, post_id, seen_at) VALUES (?1, ?2, ?3)", params![pubkey, id.as_str(), now]).await?;
+                }
+            }
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+
+    /// Returns the set of post ids `pubkey` has seen, for exclusion in the
+    /// popular feed query.
+    pub fn seen_ids(&self, pubkey: &str) -> Result<Vec<String>, crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::query(
+            &conn,
+            "SELECT post_id FROM post_views WHERE pubkey = ?1 ORDER BY seen_at DESC",
+            params![pubkey],
+            |row| row.get(0),
+        )
+    }
+}

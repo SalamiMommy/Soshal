@@ -1,0 +1,15 @@
+[package]
+name = "soshal-common-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+libc = "0.2"
+
+
+[lints]
+workspace = true

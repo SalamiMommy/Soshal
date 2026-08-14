@@ -1,0 +1,220 @@
+//! P2P network binary frame encoding and packet chunking kernel.
+//!
+//! Provides CRC32 checksum generation, frame assembly,
+//! and chunking for BLE and LAN P2P offline transports.
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+/// Hard caps on frame sizes so a crafted `decode_p2p_frame` input cannot force
+/// unbounded allocation or CPU work.
+const MAX_CHUNKS: usize = 256;
+const MAX_TOTAL_BYTES: usize = 1024 * 1024;
+const MAX_CHUNK_SIZE: usize = 64 * 1024;
+
+#[derive(Deserialize, Serialize)]
+pub struct FramePacketInput {
+    pub payload: String,
+    pub chunk_size: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChunkOutput {
+    pub index: usize,
+    pub total: usize,
+    pub data: String,
+    pub checksum: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FramePacketResult {
+    pub chunks: Vec<ChunkOutput>,
+    pub crc32: u32,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct ChunkInput {
+    pub index: usize,
+    pub total: usize,
+    pub data: String,
+    pub checksum: u32,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct DecodeFrameInput {
+    pub chunks: Vec<ChunkInput>,
+    pub expected_crc32: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DecodeFrameResult {
+    pub payload: String,
+    pub valid: bool,
+    pub crc32: u32,
+}
+
+/// Freenet-native P2P commands for WoT depth 1 (friends) and depth 2 (friends-of-friends) cache retrieval.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FreenetP2PCommand {
+    GetPostCache {
+        authors: Vec<String>,
+        since: i64,
+        limit: usize,
+        wot_distance: u32,
+        allow_2hop: bool,
+    },
+    PostCacheResponse {
+        posts: Vec<serde_json::Value>,
+        wot_distance: u32,
+    },
+    GetFreenetContract {
+        contract_key: String,
+        requester_pubkey: String,
+        max_hops: u8,
+    },
+    FreenetContractResponse {
+        contract_key: String,
+        state_json: String,
+        signature: String,
+    },
+    GetMediaBlob {
+        hash: String,
+        chunk_offset: usize,
+        chunk_length: usize,
+    },
+    MediaBlobResponse {
+        hash: String,
+        offset: usize,
+        total_size: usize,
+        data_b64: String,
+    },
+}
+
+impl FreenetP2PCommand {
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+
+    pub fn from_json(json: &str) -> Option<Self> {
+        serde_json::from_str(json).ok()
+    }
+}
+
+/// Computes IEEE CRC32 checksum of bytes.
+pub fn compute_crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+    for &byte in bytes {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            let mask = (crc & 1).wrapping_neg();
+            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+        }
+    }
+    !crc
+}
+
+/// Encodes a string payload into CRC32-validated chunks.
+/// Input: JSON string of FramePacketInput.
+/// Returns: JSON string of FramePacketResult (empty on failure).
+pub fn encode_p2p_frame(json_input: &str) -> String {
+    let input: FramePacketInput = match serde_json::from_str(json_input) {
+        Ok(v) => v,
+        Err(_) => return "{\"chunks\":[],\"crc32\":0}".to_string(),
+    };
+
+    let bytes = input.payload.as_bytes();
+    if bytes.len() > MAX_TOTAL_BYTES {
+        return "{\"chunks\":[],\"crc32\":0}".to_string();
+    }
+    let total_crc = compute_crc32(bytes);
+    let chunk_size = if input.chunk_size == 0 {
+        512
+    } else {
+        input.chunk_size.min(MAX_CHUNK_SIZE)
+    };
+    let chunks_data: Vec<&[u8]> = bytes.chunks(chunk_size).collect();
+    let total = chunks_data.len();
+
+    let chunks = chunks_data
+        .into_iter()
+        .enumerate()
+        .map(|(idx, chunk)| ChunkOutput {
+            index: idx,
+            total,
+            data: String::from_utf8_lossy(chunk).to_string(),
+            checksum: compute_crc32(chunk),
+        })
+        .collect();
+
+    let result = FramePacketResult {
+        chunks,
+        crc32: total_crc,
+    };
+
+    serde_json::to_string(&result).unwrap_or_else(|_| "{\"chunks\":[],\"crc32\":0}".to_string())
+}
+
+/// Decodes and validates CRC32 chunks into original frame payload.
+/// Input: JSON string of DecodeFrameInput.
+/// Returns: JSON string of DecodeFrameResult.
+pub fn decode_p2p_frame(json_input: &str) -> String {
+    let input: DecodeFrameInput = match serde_json::from_str(json_input) {
+        Ok(v) => v,
+        Err(_) => return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string(),
+    };
+
+    // SECURITY: reject hostile chunk sets before doing any work — too many
+    // chunks, out-of-range indices, duplicate indices, or an aggregate size
+    // past the frame cap would otherwise cause unbounded allocation and CRC
+    // CPU from crafted JSON.
+    if input.chunks.len() > MAX_CHUNKS {
+        return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string();
+    }
+    for chunk in &input.chunks {
+        if chunk.total == 0 || chunk.index >= chunk.total {
+            return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string();
+        }
+    }
+    let mut seen = HashSet::with_capacity(input.chunks.len());
+    for chunk in &input.chunks {
+        if !seen.insert(chunk.index) {
+            return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string();
+        }
+    }
+    if input.chunks.iter().map(|c| c.data.len()).sum::<usize>() > MAX_TOTAL_BYTES {
+        return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string();
+    }
+
+    let mut sorted_chunks = input.chunks;
+    sorted_chunks.sort_by_key(|c| c.index);
+
+    let mut payload_bytes = Vec::new();
+    let mut valid = true;
+
+    for chunk in &sorted_chunks {
+        let bytes = chunk.data.as_bytes();
+        let computed_crc = compute_crc32(bytes);
+        if chunk.checksum != 0 && computed_crc != chunk.checksum {
+            valid = false;
+        }
+        payload_bytes.extend_from_slice(bytes);
+    }
+
+    let total_crc = compute_crc32(&payload_bytes);
+    if let Some(exp) = input.expected_crc32 {
+        if exp != total_crc {
+            valid = false;
+        }
+    }
+
+    let payload = String::from_utf8_lossy(&payload_bytes).to_string();
+    let result = DecodeFrameResult {
+        payload,
+        valid,
+        crc32: total_crc,
+    };
+
+    serde_json::to_string(&result)
+        .unwrap_or_else(|_| "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string())
+}

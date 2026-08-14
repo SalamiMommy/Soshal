@@ -1,0 +1,27 @@
+[package]
+name = "soshal-storage-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+soshal-content-core = { path = "../content-core" }
+soshal-common-core = { path = "../common-core" }
+soshal-crypto-core = { path = "../crypto-core" }
+soshal-pqc-core = { path = "../pqc-core" }
+hex = { workspace = true }
+libsql = { workspace = true }
+soshal-db-core = { path = "../db-core" }
+ring = { workspace = true }
+zeroize = { workspace = true }
+tokio = { workspace = true }
+raptorq = "1.8"
+cuckoo_filter = "0.1"
+libc = "0.2"
+memmap2 = { workspace = true }
+
+
+
+[lints]
+workspace = true

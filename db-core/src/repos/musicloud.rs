@@ -1,0 +1,176 @@
+use crate::Database;
+use libsql::params;
+
+pub struct MusicloudRepo<'a> {
+    db: &'a Database,
+}
+
+impl<'a> MusicloudRepo<'a> {
+    pub fn new(db: &'a Database) -> Self {
+        Self { db }
+    }
+
+    pub fn upsert(&self, m: &MusicloudRow) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::execute(
+            &conn,
+            "INSERT INTO musiclouds (id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(id) DO UPDATE SET title=excluded.title, duration=excluded.duration, text_overlay=excluded.text_overlay, thumbnail=excluded.thumbnail",
+            params![
+                m.id.as_str(),
+                m.pubkey.as_str(),
+                m.audio_url.as_str(),
+                m.title.as_deref(),
+                m.duration,
+                m.text_overlay.as_deref(),
+                m.thumbnail.as_deref(),
+                m.likes,
+                m.liked as i64,
+                m.bookmarked as i64,
+                m.audience.as_str(),
+                m.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<MusicloudRow>, crate::error::DbError> {
+        let limit = crate::repos::clamp_limit(limit);
+        let conn = self.db.conn()?;
+        crate::query::query(
+            &conn,
+            "SELECT id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, created_at FROM musiclouds ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
+            params![limit, offset],
+            Self::map_row,
+        )
+    }
+
+    pub fn list_by_author(
+        &self,
+        pubkey: &str,
+        limit: i64,
+    ) -> Result<Vec<MusicloudRow>, crate::error::DbError> {
+        let limit = crate::repos::clamp_limit(limit);
+        let conn = self.db.conn()?;
+        crate::query::query(
+            &conn,
+            "SELECT id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, created_at FROM musiclouds WHERE pubkey=?1 ORDER BY created_at DESC LIMIT ?2",
+            params![pubkey, limit],
+            Self::map_row,
+        )
+    }
+
+    pub fn delete(&self, id: &str) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::execute(&conn, "DELETE FROM musiclouds WHERE id=?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn set_like(&self, id: &str, liked: bool) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::execute(
+            &conn,
+            "UPDATE musiclouds SET liked=?1, likes=CASE WHEN ?1=1 THEN likes+1 ELSE MAX(likes-1, 0) END WHERE id=?2",
+            params![liked as i64, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_bookmark(&self, id: &str, bookmarked: bool) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::execute(
+            &conn,
+            "UPDATE musiclouds SET bookmarked=?1 WHERE id=?2",
+            params![bookmarked as i64, id],
+        )?;
+        Ok(())
+    }
+
+    fn map_row(r: &libsql::Row) -> libsql::Result<MusicloudRow> {
+        Ok(MusicloudRow {
+            id: r.get(0)?,
+            pubkey: r.get(1)?,
+            audio_url: r.get(2)?,
+            title: r.get(3)?,
+            duration: r.get(4)?,
+            text_overlay: r.get(5)?,
+            thumbnail: r.get(6)?,
+            likes: r.get(7)?,
+            liked: r.get(8)?,
+            bookmarked: r.get(9)?,
+            audience: r.get(10)?,
+            created_at: r.get(11)?,
+        })
+    }
+}
+
+pub struct MusicloudRow {
+    pub id: String,
+    pub pubkey: String,
+    pub audio_url: String,
+    pub title: Option<String>,
+    pub duration: Option<i64>,
+    pub text_overlay: Option<String>,
+    pub thumbnail: Option<String>,
+    pub likes: i64,
+    pub liked: bool,
+    pub bookmarked: bool,
+    pub audience: String,
+    pub created_at: i64,
+}
+
+pub struct MusicloudCommentRepo<'a> {
+    db: &'a Database,
+}
+
+impl<'a> MusicloudCommentRepo<'a> {
+    pub fn new(db: &'a Database) -> Self {
+        Self { db }
+    }
+
+    pub fn insert(&self, c: &MusicloudCommentRow) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::execute(
+            &conn,
+            "INSERT INTO musicloud_comments (id, track_id, pubkey, content, created_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(id) DO NOTHING",
+            params![c.id.as_str(), c.track_id.as_str(), c.pubkey.as_str(), c.content.as_str(), c.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_by_track(
+        &self,
+        track_id: &str,
+        limit: i64,
+    ) -> Result<Vec<MusicloudCommentRow>, crate::error::DbError> {
+        let limit = crate::repos::clamp_limit(limit);
+        let conn = self.db.conn()?;
+        crate::query::query(
+            &conn,
+            "SELECT id, track_id, pubkey, content, created_at FROM musicloud_comments WHERE track_id=?1 ORDER BY created_at ASC LIMIT ?2",
+            params![track_id, limit],
+            Self::map_row,
+        )
+    }
+
+    fn map_row(r: &libsql::Row) -> libsql::Result<MusicloudCommentRow> {
+        Ok(MusicloudCommentRow {
+            id: r.get(0)?,
+            track_id: r.get(1)?,
+            pubkey: r.get(2)?,
+            content: r.get(3)?,
+            created_at: r.get(4)?,
+        })
+    }
+}
+
+pub struct MusicloudCommentRow {
+    pub id: String,
+    pub track_id: String,
+    pub pubkey: String,
+    pub content: String,
+    pub created_at: i64,
+}

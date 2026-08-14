@@ -1,0 +1,61 @@
+use nostr::event::{Event, SignEvent, UnsignedEvent};
+use nostr::key::{Keys, PublicKey};
+use nostr::nips::nip19::{FromBech32, ToBech32};
+
+pub fn generate_keypair() -> Keys {
+    Keys::generate()
+}
+
+pub fn parse_key(secret: &str) -> Result<Keys, String> {
+    Keys::parse(secret).map_err(|e| format!("invalid key: {}", e))
+}
+
+pub fn public_key_hex(keys: &Keys) -> String {
+    keys.public_key().to_string()
+}
+
+pub fn private_key_hex(keys: &Keys) -> String {
+    keys.secret_key().to_secret_hex()
+}
+
+pub fn npub(keys: &Keys) -> String {
+    keys.public_key().to_bech32().unwrap_or_default()
+}
+
+/// Encodes a hex x-only public key string into its bech32 npub form.
+pub fn npub_encode(pubkey_hex: &str) -> Result<String, String> {
+    let pk = PublicKey::from_hex(pubkey_hex).map_err(|e| format!("invalid pubkey: {}", e))?;
+    pk.to_bech32().map_err(|e| format!("npub encode: {}", e))
+}
+
+/// Decodes an npub (bech32) into its hex x-only public key.
+pub fn pubkey_from_npub(npub_str: &str) -> Result<String, String> {
+    let pk = PublicKey::from_bech32(npub_str).map_err(|e| format!("invalid npub: {}", e))?;
+    Ok(pk.to_string())
+}
+
+pub fn nsec(keys: &Keys) -> String {
+    keys.secret_key().to_bech32().unwrap_or_default()
+}
+
+pub fn sign_event(keys: &Keys, unsigned: UnsignedEvent) -> Result<Event, String> {
+    keys.sign_event(unsigned)
+        .map_err(|e| format!("signing error: {}", e))
+}
+
+pub fn sign_event_json(keys: &Keys, event_json: &str) -> Result<String, String> {
+    let mut val: serde_json::Value =
+        serde_json::from_str(event_json).map_err(|e| format!("parse unsigned event: {}", e))?;
+    if let Some(obj) = val.as_object_mut() {
+        if obj.get("id").and_then(|v| v.as_str()) == Some(&"00".repeat(32))
+            || obj.get("id").map(|v| v.is_null()).unwrap_or(false)
+        {
+            obj.remove("id");
+        }
+        obj.remove("sig");
+    }
+    let unsigned: UnsignedEvent =
+        serde_json::from_value(val).map_err(|e| format!("parse unsigned event: {}", e))?;
+    let signed = sign_event(keys, unsigned)?;
+    serde_json::to_string(&signed).map_err(|e| format!("serialize: {}", e))
+}

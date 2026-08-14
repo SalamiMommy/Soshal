@@ -1,0 +1,16 @@
+[package]
+name = "soshal-events-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+soshal-content-core = { path = "../content-core" }
+soshal-common-core = { path = "../common-core" }
+soshal-social-core = { path = "../social-core" }
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true

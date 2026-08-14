@@ -1,0 +1,14 @@
+[package]
+name = "soshal-dating-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+soshal-common-core = { path = "../common-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+soshal-spatial-core = { path = "../spatial-core" }
+soshal-social-core = { path = "../social-core" }
+
+[lints]
+workspace = true

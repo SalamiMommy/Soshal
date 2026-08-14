@@ -1,0 +1,132 @@
+use crate::Database;
+use libsql::params;
+
+pub struct MessageRepo<'a> {
+    db: &'a Database,
+}
+
+impl<'a> MessageRepo<'a> {
+    pub fn new(db: &'a Database) -> Self {
+        Self { db }
+    }
+
+    pub fn get_by_id(&self, id: &str) -> Result<Option<MessageRow>, crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::query_first(
+            &conn,
+            "SELECT id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted FROM messages WHERE id = ?1",
+            params![id],
+            Self::map_row,
+        )
+    }
+
+    pub fn get_conversation(
+        &self,
+        conversation_id: &str,
+        limit: i64,
+        before: Option<i64>,
+    ) -> Result<Vec<MessageRow>, crate::error::DbError> {
+        let limit = crate::repos::clamp_limit(limit);
+        let conn = self.db.conn()?;
+        match before {
+            Some(ts) => crate::query::query(
+                &conn,
+                "SELECT id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted FROM messages WHERE conversation_id = ?1 AND is_deleted = 0 AND created_at < ?2 ORDER BY created_at DESC LIMIT ?3",
+                params![conversation_id, ts, limit],
+                Self::map_row,
+            ),
+            None => crate::query::query(
+                &conn,
+                "SELECT id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted FROM messages WHERE conversation_id = ?1 AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?2",
+                params![conversation_id, limit],
+                Self::map_row,
+            ),
+        }
+    }
+
+    pub fn upsert(&self, msg: &MessageRow) -> Result<(), crate::error::DbError> {
+        if crate::repos::limits::row_too_big(&msg.content, &msg.tags_json) {
+            return Err(crate::error::DbError::Oversized(format!(
+                "message {} exceeds relay size caps ({} / {} bytes)",
+                msg.id,
+                crate::repos::limits::MAX_CONTENT_BYTES,
+                crate::repos::limits::MAX_BATCH_BYTES
+            )));
+        }
+        let conn = self.db.conn()?;
+        crate::query::execute(
+            &conn,
+            "INSERT INTO messages (id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted",
+            params![
+                msg.id.as_str(),
+                msg.conversation_id.as_str(),
+                msg.pubkey.as_str(),
+                msg.content.as_str(),
+                msg.created_at,
+                msg.tags_json.as_str(),
+                msg.reply_to.as_deref(),
+                msg.sync_status.as_str(),
+                msg.is_deleted,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn upsert_batch(&self, messages: &[MessageRow]) -> Result<(), crate::error::DbError> {
+        if messages.is_empty() {
+            return Ok(());
+        }
+        let conn = self.db.conn()?;
+        crate::query::with_tx(&conn, |tx| async move {
+            let sql = "INSERT INTO messages (id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted";
+            for msg in messages {
+                if crate::repos::limits::row_too_big(&msg.content, &msg.tags_json) {
+                    continue; // relay content too large: skip, never store
+                }
+                tx.execute(
+                    sql,
+                    params![
+                        msg.id.as_str(),
+                        msg.conversation_id.as_str(),
+                        msg.pubkey.as_str(),
+                        msg.content.as_str(),
+                        msg.created_at,
+                        msg.tags_json.as_str(),
+                        msg.reply_to.as_deref(),
+                        msg.sync_status.as_str(),
+                        msg.is_deleted,
+                    ],
+                )
+                .await?;
+            }
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+
+    fn map_row(row: &libsql::Row) -> libsql::Result<MessageRow> {
+        Ok(MessageRow {
+            id: row.get(0)?,
+            conversation_id: row.get(1)?,
+            pubkey: row.get(2)?,
+            content: row.get(3)?,
+            created_at: row.get(4)?,
+            tags_json: row.get(5)?,
+            reply_to: row.get(6)?,
+            sync_status: row.get(7)?,
+            is_deleted: row.get(8)?,
+        })
+    }
+}
+
+pub struct MessageRow {
+    pub id: String,
+    pub conversation_id: String,
+    pub pubkey: String,
+    pub content: String,
+    pub created_at: i64,
+    pub tags_json: String,
+    pub reply_to: Option<String>,
+    pub sync_status: String,
+    pub is_deleted: bool,
+}

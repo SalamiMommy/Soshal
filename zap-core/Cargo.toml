@@ -1,0 +1,18 @@
+[package]
+name = "soshal-zap-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+serde_json = { workspace = true }
+soshal-nostr-core = { path = "../nostr-core" }
+regex = { workspace = true }
+serde = { workspace = true }
+url = { workspace = true }
+soshal-common-core = { path = "../common-core" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true }

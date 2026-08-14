@@ -1,0 +1,26 @@
+[package]
+name = "soshal-media-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+base64 = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+fastcdc = { workspace = true }
+blake3 = { workspace = true }
+memmap2 = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+soshal-crypto-core = { path = "../crypto-core" }
+soshal-pqc-core = { path = "../pqc-core" }
+soshal-nostr-core = { path = "../nostr-core" }
+soshal-common-core = { path = "../common-core" }
+thumbhash.workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

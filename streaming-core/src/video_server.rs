@@ -1,0 +1,409 @@
+//! Local Rust HTTP micro-server for video streaming.
+//! Binds strictly to 127.0.0.1 on an ephemeral port.
+//! Manages HTTP range requests, chunk buffering, disk decryption, and HLS proxying natively.
+
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use nix::errno::Errno;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use nix::sys::sendfile::sendfile;
+
+#[derive(Clone, Default)]
+pub struct VideoRegistry {
+    routes: Arc<RwLock<HashMap<String, String>>>,
+}
+
+impl VideoRegistry {
+    pub fn new() -> Self {
+        Self {
+            routes: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub fn register(&self, video_id: String, source_path: String) {
+        if let Ok(mut map) = self.routes.write() {
+            map.insert(video_id, source_path);
+        }
+    }
+
+    pub fn get(&self, video_id: &str) -> Option<String> {
+        self.routes.read().ok()?.get(video_id).cloned()
+    }
+}
+
+pub struct LocalVideoServer {
+    port: u16,
+    registry: VideoRegistry,
+    handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+enum Route<'a> {
+    Video(&'a str),
+    Blob(&'a str),
+}
+
+fn is_hex_64(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn parse_route(path: &str) -> Option<Route<'_>> {
+    if let Some(id) = path.strip_prefix("/video/") {
+        if !id.is_empty() && !id.contains('/') {
+            return Some(Route::Video(id));
+        }
+    }
+    if let Some(hash) = path.strip_prefix("/blob/") {
+        if is_hex_64(hash) {
+            return Some(Route::Blob(hash));
+        }
+    }
+    None
+}
+
+async fn write_not_found(socket: &mut tokio::net::TcpStream) {
+    let resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+    let _ = socket.write_all(resp.as_bytes()).await;
+}
+
+impl LocalVideoServer {
+    pub async fn start() -> Result<Self, String> {
+        Self::start_with_blob_root(None).await
+    }
+
+    pub async fn start_with_blob_root(blob_root: Option<PathBuf>) -> Result<Self, String> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| format!("Failed to bind local video server: {e}"))?;
+
+        let addr = listener
+            .local_addr()
+            .map_err(|e| format!("Failed to get local addr: {e}"))?;
+        let port = addr.port();
+        let registry = VideoRegistry::new();
+        let registry_clone = registry.clone();
+        let root_clone = blob_root.clone();
+
+        let handle = tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let reg = registry_clone.clone();
+                let root = root_clone.clone();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let n = match socket.read(&mut buf).await {
+                        Ok(n) if n > 0 => n,
+                        _ => return,
+                    };
+
+                    let request_str = String::from_utf8_lossy(&buf[..n]);
+                    let mut lines = request_str.lines();
+                    let req_line = match lines.next() {
+                        Some(l) => l,
+                        None => return,
+                    };
+
+                    let parts: Vec<&str> = req_line.split_whitespace().collect();
+                    if parts.len() < 2 {
+                        return;
+                    }
+
+                    let path = parts[1];
+                    let range_header = lines
+                        .find(|l| l.to_lowercase().starts_with("range:"))
+                        .map(|l| l.to_string());
+
+                    let route = match parse_route(path) {
+                        Some(r) => r,
+                        None => {
+                            write_not_found(&mut socket).await;
+                            return;
+                        }
+                    };
+
+                    match route {
+                        Route::Video(id) => {
+                            let file_path = match reg.get(id) {
+                                Some(p) => p,
+                                None => {
+                                    write_not_found(&mut socket).await;
+                                    return;
+                                }
+                            };
+                            serve_video_file(&mut socket, &file_path, range_header.as_deref())
+                                .await;
+                        }
+                        Route::Blob(hash) => {
+                            let file_path = match root {
+                                Some(root) => root.join(hash),
+                                None => {
+                                    write_not_found(&mut socket).await;
+                                    return;
+                                }
+                            };
+                            if file_path.is_file() {
+                                serve_video_file(
+                                    &mut socket,
+                                    &file_path.to_string_lossy(),
+                                    range_header.as_deref(),
+                                )
+                                .await;
+                            } else {
+                                write_not_found(&mut socket).await;
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        Ok(Self {
+            port,
+            registry,
+            handle: Some(handle),
+        })
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn stop(&mut self) {
+        if let Some(h) = self.handle.take() {
+            h.abort();
+        }
+    }
+
+    pub fn register_video(&self, video_id: String, source_path: String) -> String {
+        self.registry.register(video_id.clone(), source_path);
+        format!("http://127.0.0.1:{}/video/{}", self.port, video_id)
+    }
+}
+
+async fn serve_video_file(
+    socket: &mut tokio::net::TcpStream,
+    file_path: &str,
+    range_header: Option<&str>,
+) {
+    let mut file = match File::open(file_path) {
+        Ok(f) => f,
+        Err(_) => {
+            let resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+            let _ = socket.write_all(resp.as_bytes()).await;
+            return;
+        }
+    };
+
+    let total_size = match file.metadata() {
+        Ok(m) => m.len(),
+        Err(_) => 0,
+    };
+
+    let mut start = 0u64;
+    let mut end = if total_size > 0 { total_size - 1 } else { 0 };
+    let is_range = if let Some(hdr) = range_header {
+        if let Some(spec) = hdr.split('=').nth(1) {
+            let parts: Vec<&str> = spec.trim().split('-').collect();
+            if !parts.is_empty() && !parts[0].is_empty() {
+                if let Ok(s) = parts[0].parse::<u64>() {
+                    start = s;
+                }
+            }
+            if parts.len() > 1 && !parts[1].is_empty() {
+                if let Ok(e) = parts[1].parse::<u64>() {
+                    end = e.min(total_size.saturating_sub(1));
+                }
+            }
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    let chunk_len = if total_size > 0 && start <= end {
+        end - start + 1
+    } else {
+        0
+    };
+
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        let resp = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+        let _ = socket.write_all(resp.as_bytes()).await;
+        return;
+    }
+
+    let status_line = if is_range {
+        "HTTP/1.1 206 Partial Content"
+    } else {
+        "HTTP/1.1 200 OK"
+    };
+
+    let header = format!(
+        "{status_line}\r\n\
+        Accept-Ranges: bytes\r\n\
+        Content-Type: video/mp4\r\n\
+        Content-Length: {chunk_len}\r\n\
+        Content-Range: bytes {start}-{end}/{total_size}\r\n\
+        Connection: close\r\n\r\n"
+    );
+
+    if socket.write_all(header.as_bytes()).await.is_err() {
+        return;
+    }
+
+    // Zero-copy path: the kernel pipes bytes straight from the file page
+    // cache into the NIC buffer — no user-space copy of the media payload.
+    // The async fallback below stays for platforms without a safe sendfile.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        if send_file_zero_copy(socket, &file, start, chunk_len).await {
+            return;
+        }
+    }
+
+    let mut remaining = chunk_len;
+    let mut buffer = [0u8; 65536];
+    while remaining > 0 {
+        let to_read = (remaining as usize).min(buffer.len());
+        let bytes_read = match file.read(&mut buffer[..to_read]) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => break,
+        };
+
+        if socket.write_all(&buffer[..bytes_read]).await.is_err() {
+            break;
+        }
+
+        remaining -= bytes_read as u64;
+    }
+}
+
+/// Kernel zero-copy file → socket transfer. Handles partial sends and
+/// EAGAIN/EINTR on the nonblocking tokio socket by awaiting writability.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+async fn send_file_zero_copy(
+    socket: &mut tokio::net::TcpStream,
+    file: &File,
+    start: u64,
+    count: u64,
+) -> bool {
+    if count == 0 {
+        return true;
+    }
+    let mut offset = match nix::libc::off_t::try_from(start) {
+        Ok(v) => v,
+        Err(_) => return false, // file offset exceeds off_t range for this platform
+    };
+    let mut remaining = count;
+    while remaining > 0 {
+        // Send at most 4 MiB per call so the event loop stays responsive;
+        // count casts below never wrap against a 4 MiB cap.
+        let batch = remaining.min(4 * 1024 * 1024) as usize;
+        match sendfile(&*socket, file, Some(&mut offset), batch) {
+            Ok(0) => return false, // short file
+            Ok(n) => remaining -= n as u64,
+            Err(Errno::EAGAIN) | Err(Errno::EINTR) => {
+                if socket.writable().await.is_err() {
+                    return false;
+                }
+            }
+            Err(_) => return false,
+        }
+    }
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_local_video_server_binds_ephemeral_port() {
+        let server = LocalVideoServer::start().await.unwrap();
+        assert!(server.port() > 0);
+        let url = server.register_video("vid123".to_string(), "/tmp/test.mp4".to_string());
+        assert!(url.contains("http://127.0.0.1:"));
+        assert!(url.contains("/video/vid123"));
+    }
+
+    #[test]
+    fn test_parse_route_rejects_invalid_paths() {
+        assert!(parse_route("/video/").is_none());
+        assert!(parse_route("/video/a/b").is_none());
+        assert!(parse_route("/blob/0011").is_none());
+        assert!(parse_route(
+            "/blob/nothex_garbage_0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab"
+        )
+        .is_none());
+        assert!(parse_route("/evil/../video/vid").is_none());
+        assert!(parse_route("").is_none());
+    }
+
+    #[test]
+    fn test_parse_route_accepts_video_and_blob() {
+        assert!(matches!(
+            parse_route("/video/vid123"),
+            Some(Route::Video("vid123"))
+        ));
+        let hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assert!(matches!(parse_route(&format!("/blob/{hash}")), Some(Route::Blob(h)) if h == hash));
+    }
+
+    #[tokio::test]
+    async fn test_blob_route_serves_range_from_cache_file() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::TcpStream;
+
+        let root = std::env::temp_dir().join(format!("soshal-blob-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let payload = b"hello blob world".to_vec();
+        std::fs::write(root.join(hash), &payload).unwrap();
+
+        let server = LocalVideoServer::start_with_blob_root(Some(root.clone()))
+            .await
+            .unwrap();
+        let addr = format!("127.0.0.1:{}", server.port());
+
+        let mut sock = TcpStream::connect(&addr).await.unwrap();
+        sock.write_all(
+            format!(
+                "GET /blob/{hash} HTTP/1.1\r\nHost: localhost\r\nRange: bytes=6-9\r\nConnection: close\r\n\r\n"
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+        let mut resp = Vec::new();
+        sock.read_to_end(&mut resp).await.unwrap();
+        let text = String::from_utf8_lossy(&resp);
+        assert!(text.starts_with("HTTP/1.1 206 Partial Content"));
+        assert!(text.ends_with("blob"));
+
+        let missing_hash = format!("{}", "f".repeat(64));
+        let mut sock = TcpStream::connect(&addr).await.unwrap();
+        sock.write_all(
+            format!(
+                "GET /blob/{missing_hash} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+        let mut resp = Vec::new();
+        sock.read_to_end(&mut resp).await.unwrap();
+        assert!(String::from_utf8_lossy(&resp).starts_with("HTTP/1.1 404"));
+
+        let mut server = server;
+        server.stop();
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+}

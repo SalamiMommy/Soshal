@@ -1,0 +1,15 @@
+[package]
+name = "soshal-marketplace-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+nostr = { workspace = true }
+soshal-content-core = { path = "../content-core" }
+soshal-common-core = { path = "../common-core" }
+soshal-nostr-core = { path = "../nostr-core" }
+
+[lints]
+workspace = true

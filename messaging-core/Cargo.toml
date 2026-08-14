@@ -1,0 +1,13 @@
+[package]
+name = "soshal-messaging-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+soshal-common-core = { path = "../common-core" }
+soshal-crypto-core = { path = "../crypto-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

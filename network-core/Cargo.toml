@@ -1,0 +1,33 @@
+[package]
+name = "soshal-network-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+base64 = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+blake3 = { workspace = true }
+memmap2 = { workspace = true }
+nix = { workspace = true }
+mdns-sd = { workspace = true }
+if-addrs = "0.13"
+webrtc-ice = { workspace = true }
+quinn = { workspace = true }
+rcgen = "0.13"
+rustls = { version = "0.23", features = ["ring", "std", "tls12"] }
+aes-gcm = "0.10"
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+soshal-common-core = { path = "../common-core" }
+soshal-content-core = { path = "../content-core" }
+soshal-crypto-core = { path = "../crypto-core" }
+soshal-media-core = { path = "../media-core" }
+soshal-pqc-core = { path = "../pqc-core" }
+
+[lints]
+workspace = true

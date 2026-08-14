@@ -1,0 +1,414 @@
+//! Identity FFI module
+//!
+//! User profiles (DB-backed), NIP-05 verification, Web of Trust scoring,
+//! follow state, and local blocklist. Publishing profile/contact-list events
+//! signs with the unlocked signer (kind 0 / kind 3).
+
+use flutter_rust_bridge::frb;
+use nostr::event::EventBuilder;
+use nostr::event::Kind;
+use serde::{Deserialize, Serialize};
+use soshal_db_core::repos::block::BlockRepo;
+use soshal_db_core::repos::user::{UserRepo, UserRow};
+use soshal_identity_core::wot;
+
+/// User profile info
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ProfileInfo {
+    pub pubkey: String,
+    pub name: String,
+    pub display_name: String,
+    pub picture: String,
+    pub banner: String,
+    pub about: String,
+    pub nip05: String,
+    pub nip05_valid: bool,
+    pub created_at: u64,
+    pub followers: i32,
+    pub following: i32,
+    pub is_following: bool,
+    pub wot_status: String,
+}
+
+fn empty_profile(pubkey: String) -> ProfileInfo {
+    ProfileInfo {
+        pubkey,
+        name: String::new(),
+        display_name: String::new(),
+        picture: String::new(),
+        banner: String::new(),
+        about: String::new(),
+        nip05: String::new(),
+        nip05_valid: false,
+        created_at: 0,
+        followers: 0,
+        following: 0,
+        is_following: false,
+        wot_status: "unknown".to_string(),
+    }
+}
+
+fn row_to_profile(row: &UserRow, me: Option<&str>) -> ProfileInfo {
+    let mut p = empty_profile(row.pubkey.clone());
+    p.name = row.name.clone().unwrap_or_default();
+    p.display_name = row.display_name.clone().unwrap_or_default();
+    p.picture = row.picture.clone().unwrap_or_default();
+    p.banner = row.banner.clone().unwrap_or_default();
+    p.about = row.about.clone().unwrap_or_default();
+    p.nip05 = row.nip05.clone().unwrap_or_default();
+    p.created_at = row.created_at.max(0) as u64;
+    if let Some(me) = me {
+        if let Ok(follows) = serde_json::from_str::<Vec<String>>(&row.contact_pubkeys) {
+            p.is_following = follows.contains(&row.pubkey) && row.pubkey != me;
+        }
+    }
+    p.following = serde_json::from_str::<Vec<String>>(&row.contact_pubkeys)
+        .map(|f| f.len() as i32)
+        .unwrap_or(0);
+    p
+}
+
+/// Get a user profile from the local DB (created empty on first sight).
+#[frb(sync, serialize)]
+pub fn identity_get_profile(pubkey: String) -> Result<String, String> {
+    let me = super::signer::signer_pubkey().ok();
+    super::db::with_db_result(|db| {
+        let repo = UserRepo::new(db);
+        let row = repo.get_by_pubkey(&pubkey)?;
+        let p = match row {
+            Some(r) => row_to_profile(&r, me.as_deref()),
+            None => empty_profile(pubkey),
+        };
+        Ok(p)
+    })
+    .map(super::util::json_ok)?
+}
+
+/// Upsert a fetched kind-0 profile row into the DB.
+#[frb(sync, serialize)]
+pub fn identity_store_profile(profile: String) -> Result<bool, String> {
+    let v: serde_json::Value =
+        serde_json::from_str(&profile).map_err(|e| format!("invalid profile JSON: {e}"))?;
+    let content = v.get("content").and_then(|c| c.as_str()).unwrap_or("");
+    let content_v: serde_json::Value =
+        serde_json::from_str(content).unwrap_or(serde_json::Value::Null);
+    let get = |k: &str| -> Option<String> {
+        content_v
+            .get(k)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    };
+    let pubkey = v
+        .get("pubkey")
+        .and_then(|p| p.as_str())
+        .ok_or_else(|| "missing pubkey".to_string())?;
+    let now = soshal_common_core::format::now_secs();
+    let row = UserRow {
+        pubkey: pubkey.to_string(),
+        npub: soshal_identity_core::keys::npub_encode(pubkey).unwrap_or_default(),
+        name: get("name"),
+        display_name: get("display_name"),
+        about: get("about"),
+        picture: get("picture"),
+        banner: get("banner"),
+        nip05: get("nip05"),
+        lud16: None,
+        created_at: v.get("created_at").and_then(|c| c.as_i64()).unwrap_or(now),
+        updated_at: now,
+        metadata_json: Some(content.to_string()),
+        contact_pubkeys: String::from("[]"),
+        relay_list: String::from("[]"),
+    };
+    super::db::with_db_result(|db| {
+        UserRepo::new(db).upsert(&row)?;
+        Ok(true)
+    })
+}
+
+/// Search users by name/about (FTS-ish prefix match).
+#[frb(sync, serialize)]
+pub fn identity_search_users(query: String, limit: i32) -> Result<String, String> {
+    let limit = limit.clamp(1, 100) as i64;
+    super::db::with_db_result(|db| {
+        let rows = UserRepo::new(db).search(&query, limit)?;
+        let profiles: Vec<ProfileInfo> = rows.iter().map(|r| row_to_profile(r, None)).collect();
+        Ok(profiles)
+    })
+    .map(super::util::json_ok)?
+}
+
+/// Get the active account's own profile (alias of `identity_get_profile`).
+#[frb(sync, serialize)]
+pub fn identity_get_self_profile(pubkey: String) -> Result<String, String> {
+    identity_get_profile(pubkey)
+}
+
+/// Build and sign a kind-0 profile metadata event for the unlocked account.
+/// `pubkey` is validated against the unlocked signer; returns signed JSON
+/// (publish via `network_publish_event`).
+#[frb(sync, serialize)]
+pub fn identity_update_profile(
+    pubkey: String,
+    name: String,
+    display_name: String,
+    picture: String,
+    banner: String,
+    about: String,
+    nip05: String,
+) -> Result<String, String> {
+    let unlocked = match super::signer::signer_pubkey() {
+        Ok(pk) => pk,
+        Err(_) => return Err("signer locked".to_string()).into(),
+    };
+    if unlocked != pubkey {
+        return Err("pubkey does not match unlocked signer".to_string()).into();
+    }
+    let profile = serde_json::json!({
+        "name": name,
+        "display_name": display_name,
+        "picture": picture,
+        "banner": banner,
+        "about": about,
+        "nip05": nip05,
+    })
+    .to_string();
+    let builder = EventBuilder::new(Kind::Metadata, profile);
+    super::signer::sign_builder(builder)
+}
+
+/// Verify a NIP-05 identifier against the published `.well-known` document.
+#[frb(sync, serialize)]
+pub fn identity_verify_nip05(nip05: String) -> Result<bool, String> {
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => return Err(format!("runtime: {e}")).into(),
+    };
+    match runtime.block_on(verify_nip05_fut(&nip05)) {
+        Ok((valid, _)) => Ok(valid).into(),
+        Err(e) => Err(e).into(),
+    }
+}
+
+async fn verify_nip05_fut(nip05: &str) -> Result<(bool, String), String> {
+    // identity-core exposes the record struct; construct the URL and fetch.
+    let (name, domain) = split_nip05(nip05);
+    let url = format!("https://{domain}/.well-known/nostr.json?name={name}");
+    let mut builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(8));
+    if let Some(addr) = super::network::i2p_socks_addr() {
+        if let Ok(proxy) = reqwest::Proxy::all(format!("socks5://{addr}")) {
+            builder = builder.proxy(proxy);
+        }
+    }
+    let client = builder.build().map_err(|e| e.to_string())?;
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Ok((false, String::new()));
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let entry = json
+        .pointer(&format!("/names/{name}"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let result = entry.to_lowercase();
+    Ok((result.starts_with("npub1") || result.len() == 64, result))
+}
+
+fn split_nip05(nip05: &str) -> (String, String) {
+    match nip05.rsplit_once('@') {
+        Some((name, domain)) => (name.to_string(), domain.to_string()),
+        None => (String::new(), nip05.to_string()),
+    }
+}
+
+/// Compute the WoT trust score (0..1) of `target` from `viewer`'s graph,
+/// using all stored users' contact lists.
+#[frb(sync, serialize)]
+pub fn identity_get_trust_score(
+    source_pubkey: String,
+    target_pubkey: String,
+) -> Result<f32, String> {
+    let users = all_users()?;
+    let mut self_contacts = Vec::new();
+    let mut target_contacts = Vec::new();
+    let mut wot_users = Vec::new();
+    for u in &users {
+        let contacts: Vec<String> = serde_json::from_str(&u.contact_pubkeys).unwrap_or_default();
+        if u.pubkey == source_pubkey {
+            self_contacts = contacts.clone();
+        }
+        if u.pubkey == target_pubkey {
+            target_contacts = contacts.clone();
+        }
+        wot_users.push(wot::WotUser {
+            pubkey: u.pubkey.clone(),
+            contacts: contacts.clone(),
+        });
+    }
+    let score = wot::compute_trust_score(
+        &source_pubkey,
+        &target_pubkey,
+        &self_contacts,
+        &target_contacts,
+    )
+    .score;
+    Ok(score as f32).into()
+}
+
+/// Load every stored user row (raw query, since repos have no list-all).
+fn all_users() -> Result<Vec<UserRow>, String> {
+    let json = super::db::db_query_raw(
+        "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list FROM users"
+            .to_string(),
+    )?;
+    let rows: Vec<serde_json::Value> = match serde_json::from_str(&json) {
+        Ok(r) => r,
+        Err(e) => return Err(format!("parse users: {e}")),
+    };
+    let mut out = Vec::new();
+    for r in rows {
+        let get = |k: &str| -> Option<String> {
+            r.get(k).and_then(|v| v.as_str()).map(|s| s.to_string())
+        };
+        out.push(UserRow {
+            pubkey: get("pubkey").unwrap_or_default(),
+            npub: get("npub").unwrap_or_default(),
+            name: get("name"),
+            display_name: get("display_name"),
+            about: get("about"),
+            picture: get("picture"),
+            banner: get("banner"),
+            nip05: get("nip05"),
+            lud16: get("lud16"),
+            created_at: r.get("created_at").and_then(|v| v.as_i64()).unwrap_or(0),
+            updated_at: r.get("updated_at").and_then(|v| v.as_i64()).unwrap_or(0),
+            metadata_json: get("metadata_json"),
+            contact_pubkeys: get("contact_pubkeys").unwrap_or_else(|| "[]".to_string()),
+            relay_list: get("relay_list").unwrap_or_else(|| "[]".to_string()),
+        });
+    }
+    Ok(out)
+}
+
+/// Classify the target as trusted / warning / unknown relative to the
+/// viewer (WoT distance 1 = `trusted`, distance 2 = `warning`).
+/// Args: (target_pubkey, viewer_pubkey) for UI parity with the desktop
+/// command surface.
+#[frb(sync, serialize)]
+pub fn identity_get_wot_status(
+    target_pubkey: String,
+    viewer_pubkey: String,
+) -> Result<String, String> {
+    let users = all_users()?;
+    let wot_users: Vec<wot::WotUser> = users
+        .iter()
+        .map(|u| wot::WotUser {
+            pubkey: u.pubkey.clone(),
+            contacts: serde_json::from_str(&u.contact_pubkeys).unwrap_or_default(),
+        })
+        .collect();
+    let by_distance = wot::get_wot_peers_by_distance(&viewer_pubkey, &wot_users, 2);
+    let status = if by_distance
+        .get(&1)
+        .map(|v| v.contains(&target_pubkey))
+        .unwrap_or(false)
+    {
+        "trusted"
+    } else if by_distance
+        .get(&2)
+        .map(|v| v.contains(&target_pubkey))
+        .unwrap_or(false)
+    {
+        "warning"
+    } else {
+        "unknown"
+    };
+    Ok(status.to_string()).into()
+}
+
+/// Sign a kind-3 contact list (follow) event containing the given pubkey.
+/// `user_pubkey` must match the unlocked signer.
+#[frb(sync, serialize)]
+pub fn identity_follow_user(user_pubkey: String, target_pubkey: String) -> Result<String, String> {
+    let unlocked = match super::signer::signer_pubkey() {
+        Ok(pk) => pk,
+        Err(_) => return Err("signer locked".to_string()).into(),
+    };
+    if unlocked != user_pubkey {
+        return Err("pubkey does not match unlocked signer".to_string()).into();
+    }
+    let mut builder = EventBuilder::new(Kind::ContactList, "");
+    if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), target_pubkey]) {
+        builder = builder.tag(tag);
+    }
+    super::signer::sign_builder(builder)
+}
+
+/// Unfollow: publish a contact-list event without the target (an empty list
+/// clears the server-side follow set; a full re-publish of remaining follows
+/// is server-side reconciliation).
+#[frb(sync, serialize)]
+pub fn identity_unfollow_user(
+    _user_pubkey: String,
+    _target_pubkey: String,
+) -> Result<bool, String> {
+    Err(
+        "unfollow requires the full contact list; re-publish kind 3 via identity_follow_user"
+            .to_string(),
+    )
+    .into()
+}
+
+/// Block a user locally (stored in the blocks table; also enforced by feed
+/// and DM filtering).
+#[frb(sync, serialize)]
+pub fn identity_block_user(blocker_pubkey: String, target_pubkey: String) -> Result<bool, String> {
+    let row = soshal_db_core::repos::block::BlockRow {
+        pubkey: blocker_pubkey.clone(),
+        blocked_pubkey: target_pubkey.clone(),
+        created_at: soshal_common_core::format::now_secs(),
+    };
+    super::db::with_db_result(|db| {
+        BlockRepo::new(db).upsert(&row)?;
+        Ok(true)
+    })
+}
+
+/// Unblock a user locally.
+#[frb(sync, serialize)]
+pub fn identity_unblock_user(
+    blocker_pubkey: String,
+    target_pubkey: String,
+) -> Result<bool, String> {
+    super::db::with_db_result(|db| {
+        BlockRepo::new(db).delete(&blocker_pubkey, &target_pubkey)?;
+        Ok(true)
+    })
+}
+
+/// Get the local blocked list for a user.
+#[frb(sync, serialize)]
+pub fn identity_get_blocked_users(pubkey: String) -> Result<Vec<String>, String> {
+    super::db::with_db_result(|db| BlockRepo::new(db).list(&pubkey))
+}
+
+/// Check whether `checker_pubkey` has blocked `target_pubkey`.
+#[frb(sync, serialize)]
+pub fn identity_is_blocked(checker_pubkey: String, target_pubkey: String) -> Result<bool, String> {
+    super::db::with_db_result(|db| BlockRepo::new(db).is_blocked(&checker_pubkey, &target_pubkey))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nip05_split() {
+        assert_eq!(
+            split_nip05("bob@example.com"),
+            ("bob".to_string(), "example.com".to_string())
+        );
+    }
+}

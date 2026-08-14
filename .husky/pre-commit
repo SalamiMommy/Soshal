@@ -1,0 +1,25 @@
+#!/bin/bash
+# Pre-commit: Format check + architecture compliance
+
+set -e
+
+echo "🔍 Running pre-commit checks..."
+
+# 1. Format check
+echo "📝 Checking code format..."
+if ! cargo fmt --check; then
+    echo "❌ Code format check failed. Run: cargo fmt"
+    exit 1
+fi
+echo "✅ Code format OK"
+
+# 2. Clippy lint
+echo "🔎 Running clippy..."
+if cargo clippy --workspace --quiet 2>&1 | grep -iE "error|deny"; then
+    echo "❌ Clippy errors found"
+    exit 1
+fi
+echo "✅ Clippy OK"
+
+echo ""
+echo "✅ Pre-commit checks passed!"

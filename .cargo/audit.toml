@@ -1,0 +1,20 @@
+# cargo-audit configuration (format: cargo-audit 0.22.x)
+#
+# rustls-webpki 0.102.8 advisory block: NO fix exists upstream at any libsql
+# version. Verified 2026-08-13: libsql 0.6.0 (workspace pin) -> tonic 0.11 ->
+# axum 0.6 -> hyper 0.14 -> hyper-rustls 0.25 -> rustls 0.22.4 -> webpki 0.102.
+# crates.io libsql 0.10.0-pre.4 and libsql git main STILL pin hyper-rustls
+# 0.25/hyper 0.14/tonic 0.11, so a patched webpki cannot be reached without
+# upstream changes. webpki 0.102.8 is the final 0.102 release.
+#
+# TODO(2026-11-11): recheck and remove ignores. Unblocks: libsql 0.10 stable,
+# rustls-0.22.5+ webpki backport, or any version that drops hyper-rustls 0.25.
+# Probe: cargo update -p hyper-rustls --precise 0.26.0 (dry-run) after bumps.
+
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0049", # webpki CRL distribution-point matching
+    "RUSTSEC-2026-0098", # webpki URI name constraints
+    "RUSTSEC-2026-0099", # webpki wildcard name constraints
+    "RUSTSEC-2026-0104", # webpki reachable panic in CRL parsing
+]

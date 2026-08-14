@@ -1,0 +1,5 @@
+rust_root: .
+rust_input: crate::ffi
+dart_output: ../soshal_flutter/lib
+dart3: true
+full_dep: true

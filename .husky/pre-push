@@ -1,0 +1,5 @@
+#!/bin/sh
+cargo check --workspace && cargo test --workspace
+if command -v cargo-audit >/dev/null 2>&1; then
+  cargo audit
+fi

@@ -1,0 +1,73 @@
+name: CI
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  rust-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.8
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # pinned commit (master-tracked repo)
+      - name: Cache cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      - run: cargo fmt --check
+      - run: cargo check --workspace
+      - run: cargo test --workspace
+      - name: Clippy (lib + tests)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Docs (deny warnings)
+        run: cargo doc --workspace --no-deps -- -D warnings
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+
+  ffi-bridge-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.8
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      - name: Test FFI bridge
+        run: cargo test -p soshal-flutter-bridge --test flutter_bridge_tests
+      - name: Test FFI bridge with ignored tests
+        run: cargo test -p soshal-flutter-bridge --test flutter_bridge_tests -- --ignored --test-threads=1
+
+  core-compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.8
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      - name: Run core compliance audit
+        run: bash scripts/check-core-compliance.sh
+      - name: Verify core crates compile independently
+        run: |
+          cd common-core && cargo build --quiet && cd ..
+          cd db-core && cargo build --quiet && cd ..
+          cd network-core && cargo build --quiet && cd ..
+          cd identity-core && cargo build --quiet && cd ..
+
+  flutter-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.8
+      - uses: subosito/flutter-action@48caab11266cdbfc51ac412500010431fb1f2ce6 # v2.14.0
+        with:
+          flutter-version: '3.24.0'
+      - name: Get Flutter dependencies
+        run: cd soshal_flutter && flutter pub get && cd ..
+      - name: Lint Flutter code
+        run: cd soshal_flutter && flutter analyze && cd ..
+      - name: Check Flutter formatting
+        run: cd soshal_flutter && dart format --set-exit-if-changed lib/ && cd ..

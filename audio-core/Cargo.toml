@@ -1,0 +1,13 @@
+[package]
+name = "soshal-audio-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+audiopus = "0.2"
+symphonia = { version = "0.5", default-features = false, features = ["mp3", "aac", "flac", "pcm", "vorbis", "ogg", "isomp4", "wav"] }
+
+[dev-dependencies]
+
+[lints]
+workspace = true

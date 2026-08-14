@@ -1,0 +1,12 @@
+[package]
+name = "soshal-webrtc-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+soshal-common-core = { path = "../common-core" }
+
+[lints]
+workspace = true

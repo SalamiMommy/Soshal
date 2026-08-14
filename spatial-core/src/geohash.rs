@@ -1,0 +1,197 @@
+use crate::distance;
+use soshal_common_core::json_util::{json_in, json_out};
+
+const MAX_GEOHASH_LEN: usize = 16;
+/// Maximum geohash precision.
+#[doc(hidden)]
+pub const MAX_PRECISION: usize = 12;
+
+pub fn get_nearby_prefixes(geohash_str: &str, precision: usize) -> Vec<String> {
+    if geohash_str.is_empty() {
+        return Vec::new();
+    }
+    if geohash_str.len() > MAX_GEOHASH_LEN {
+        return Vec::new();
+    }
+    if precision == 0 {
+        return Vec::new();
+    }
+    let precision = precision.min(MAX_PRECISION);
+    // Slice at a char boundary: byte-slicing multi-byte input at `precision`
+    // would panic.
+    let center = if geohash_str.is_ascii() && geohash_str.len() > precision {
+        &geohash_str[..precision]
+    } else if geohash_str.chars().count() > precision {
+        geohash_str
+            .char_indices()
+            .nth(precision)
+            .map(|(i, _)| &geohash_str[..i])
+            .unwrap_or(geohash_str)
+    } else {
+        geohash_str
+    };
+    let mut result = Vec::with_capacity(9);
+    result.push(center.to_string());
+    if geohash::decode(center).is_ok() {
+        if let Ok(neighbors) = geohash::neighbors(center) {
+            result.push(neighbors.n);
+            result.push(neighbors.ne);
+            result.push(neighbors.e);
+            result.push(neighbors.se);
+            result.push(neighbors.s);
+            result.push(neighbors.sw);
+            result.push(neighbors.w);
+            result.push(neighbors.nw);
+        }
+    }
+    result
+}
+
+pub fn precision_for_distance(max_km: f64) -> i32 {
+    if max_km <= 0.0 {
+        return 4;
+    }
+    if max_km >= 500.0 {
+        return 3;
+    }
+    if max_km >= 100.0 {
+        return 4;
+    }
+    if max_km >= 10.0 {
+        return 5;
+    }
+    6
+}
+
+/// Encodes a WGS84 coordinate into a geohash string at the given precision.
+pub fn encode_geohash(lat: f64, lon: f64, precision: usize) -> Option<String> {
+    if !lat.is_finite() || !lon.is_finite() || precision == 0 {
+        return None;
+    }
+    if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+        return None;
+    }
+    let p = precision.min(MAX_PRECISION);
+    geohash::encode(geohash::Coord { x: lon, y: lat }, p).ok()
+}
+
+pub fn compute_spatial_matrix_json(input: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct LocationPoint {
+        id: String,
+        lat: f64,
+        lon: f64,
+    }
+    #[derive(serde::Deserialize)]
+    struct Input {
+        center_lat: f64,
+        center_lon: f64,
+        points: Vec<LocationPoint>,
+        max_distance_km: f64,
+    }
+    #[derive(serde::Serialize)]
+    struct DistanceResult {
+        id: String,
+        distance_km: f64,
+    }
+
+    let Some(input) = json_in::<Option<Input>>(input, None) else {
+        return "[]".to_string();
+    };
+
+    let mut results: Vec<DistanceResult> = input
+        .points
+        .into_iter()
+        .map(|pt| {
+            let dist = distance::haversine_km(input.center_lat, input.center_lon, pt.lat, pt.lon);
+            DistanceResult {
+                id: pt.id,
+                distance_km: dist,
+            }
+        })
+        .filter(|res| input.max_distance_km <= 0.0 || res.distance_km <= input.max_distance_km)
+        .collect();
+
+    results.sort_by(|a, b| {
+        a.distance_km
+            .partial_cmp(&b.distance_km)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    json_out(&results, "[]")
+}
+
+pub fn expand_geohash_prefix_json(input: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Input {
+        geohash: String,
+        precision: Option<usize>,
+    }
+    #[derive(serde::Serialize)]
+    struct Output {
+        prefixes: Vec<String>,
+    }
+
+    let Some(input) = json_in::<Option<Input>>(input, None) else {
+        return "{\"prefixes\":[]}".to_string();
+    };
+
+    let precision = input.precision.unwrap_or(5);
+    let prefixes = get_nearby_prefixes(&input.geohash, precision);
+    let out = Output { prefixes };
+    json_out(&out, "{\"prefixes\":[]}")
+}
+
+pub fn filter_geohash_presence_events_json(input: &str) -> String {
+    use std::collections::HashSet;
+
+    #[derive(serde::Deserialize)]
+    struct SpatialEvent {
+        id: String,
+        pubkey: String,
+        geohash: String,
+        created_at: u64,
+    }
+    #[derive(serde::Deserialize)]
+    struct Input {
+        events: Vec<SpatialEvent>,
+        target_prefix: String,
+        now_sec: u64,
+        max_age_sec: u64,
+    }
+    #[derive(serde::Serialize)]
+    struct FilteredSpatialEvent {
+        id: String,
+        pubkey: String,
+        geohash: String,
+    }
+
+    let Some(input) = json_in::<Option<Input>>(input, None) else {
+        return "[]".to_string();
+    };
+
+    let mut seen_ids = HashSet::new();
+    let mut filtered = Vec::new();
+
+    for ev in input.events {
+        if !seen_ids.insert(ev.id.clone()) {
+            continue;
+        }
+
+        if input.now_sec > ev.created_at && (input.now_sec - ev.created_at) > input.max_age_sec {
+            continue;
+        }
+
+        if !input.target_prefix.is_empty() && !ev.geohash.starts_with(&input.target_prefix) {
+            continue;
+        }
+
+        filtered.push(FilteredSpatialEvent {
+            id: ev.id,
+            pubkey: ev.pubkey,
+            geohash: ev.geohash,
+        });
+    }
+
+    json_out(&filtered, "[]")
+}

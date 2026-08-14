@@ -1,0 +1,70 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# frontend build output (Dioxus WASM)
+dist/
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env*.local
+
+# generated native folders
+/android
+
+# build credentials
+service-account-key.json
+
+# build artifacts (scripts are tracked, binaries are not)
+builds/**/*.apk
+builds/**/*.tar.gz
+builds/**/*.AppImage
+bundles/
+
+# AI / agent tool configurations (personal — not project assets)
+.claude/
+.cursorignore
+.cursorrules
+.devin/
+.opencode/
+rununcompiled.sh
+
+# Rust build artifacts
+**/target/
+
+# Node compile cache
+tmp/
+
+# Test coverage output
+coverage/
+*.profraw
+*.profdata
+
+# JDK symlink (machine-specific)
+jlink
+
+# orphaned wasm build artifacts
+assets/*.wasm
+
+# Build artifacts that must not be committed
+*.apk
+*.idsig

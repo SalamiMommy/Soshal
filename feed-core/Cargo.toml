@@ -1,0 +1,17 @@
+[package]
+name = "soshal-feed-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+soshal-common-core = { path = "../common-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+soshal-nostr-core = { path = "../nostr-core" }
+soshal-db-core = { path = "../db-core" }
+rayon = { workspace = true }
+
+
+
+[lints]
+workspace = true

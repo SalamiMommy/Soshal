@@ -1,0 +1,14 @@
+[package]
+name = "soshal-moderation-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+soshal-content-core = { path = "../content-core" }
+soshal-crypto-core = { path = "../crypto-core" }
+
+[lints]
+workspace = true

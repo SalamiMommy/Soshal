@@ -1,0 +1,16 @@
+[package]
+name = "soshal-nostr-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+nostr-sdk = { workspace = true }
+nostr = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rayon = { workspace = true }
+tokio = { workspace = true }
+soshal-content-core = { path = "../content-core" }
+
+[lints]
+workspace = true
