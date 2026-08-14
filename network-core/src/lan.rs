@@ -4,21 +4,27 @@
 
 use soshal_crypto_core::hash::hmac_sha256;
 
-/// True for RFC-1918, loopback, and link-local addresses. LAN sync/beacon
-/// traffic is only ever accepted from private hosts.
+/// True for RFC-1918, loopback, link-local, and wildcard addresses. IPv4-mapped
+/// IPv6 is resolved to its embedded v4 and checked against the same ranges. LAN
+/// sync/beacon traffic is only ever accepted from private hosts.
 pub fn is_private_ip(ip: std::net::IpAddr) -> bool {
+    fn v4_private(v4: std::net::Ipv4Addr) -> bool {
+        let o = v4.octets();
+        o[0] == 10
+            || (o[0] == 172 && (16..=31).contains(&o[1]))
+            || (o[0] == 192 && o[1] == 168)
+            || o[0] == 127
+            || (o[0] == 169 && o[1] == 254)
+            || v4.is_unspecified()
+    }
     match ip {
-        std::net::IpAddr::V4(v4) => {
-            let o = v4.octets();
-            o[0] == 10
-                || (o[0] == 172 && (16..=31).contains(&o[1]))
-                || (o[0] == 192 && o[1] == 168)
-                || o[0] == 127
-                || (o[0] == 169 && o[1] == 254)
-        }
+        std::net::IpAddr::V4(v4) => v4_private(v4),
         std::net::IpAddr::V6(v6) => {
             let s = v6.segments();
-            s[0] == 0xfc00 || s[0] == 0xfe80 || v6.is_loopback()
+            s[0] == 0xfc00
+                || s[0] == 0xfe80
+                || v6.is_loopback()
+                || v6.to_ipv4_mapped().is_some_and(v4_private)
         }
     }
 }

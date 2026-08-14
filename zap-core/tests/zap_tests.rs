@@ -6,6 +6,7 @@ use soshal_nostr_core::nostr;
 use soshal_zap_core::lnurl::{host_of, parse_lud16_url, parse_lud16_url_secure};
 use soshal_zap_core::nwc::{
     get_balance_request, make_invoice_request, parse_nwc_uri, pay_invoice_request,
+    validate_pay_invoice,
 };
 use soshal_zap_core::{
     apply_daily_spend, bolt11_amount_sats, parse_msats_from_bolt11, NWC_DAILY_MAX_MSATS,
@@ -160,6 +161,28 @@ fn make_invoice_requests() {
     use nostr::nips::nip47::Method as M;
     assert_eq!(method(pay_invoice_request("lnbc10n".into())), M::PayInvoice);
     assert_eq!(method(get_balance_request()), M::GetBalance);
+}
+
+#[test]
+fn pay_invoice_request_carries_invoice() {
+    let req = pay_invoice_request("lnbc10n".into());
+    assert_eq!(req.method, nostr::nips::nip47::Method::PayInvoice);
+    match req.params {
+        nostr::nips::nip47::RequestParams::PayInvoice(p) => assert_eq!(p.invoice, "lnbc10n"),
+        _ => panic!("expected PayInvoice params"),
+    }
+}
+
+#[test]
+fn pay_invoice_validation_bounds() {
+    assert_eq!(
+        validate_pay_invoice(""),
+        Err("invalid bolt11 invoice".into())
+    );
+    assert!(validate_pay_invoice(&"x".repeat(5000)).is_err());
+    assert!(validate_pay_invoice("lnbc10n").is_ok());
+    assert!(validate_pay_invoice("lnbc10m").is_ok()); // exactly at cap (1M sats)
+    assert!(validate_pay_invoice("lnbc20m").is_err()); // over cap
 }
 
 #[test]

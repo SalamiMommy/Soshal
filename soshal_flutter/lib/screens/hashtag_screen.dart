@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/search_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Hashtag page: posts tagged with a given hashtag.
 class HashtagScreen extends StatefulWidget {
@@ -55,7 +56,6 @@ class _HashtagScreenState extends State<HashtagScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text('#${widget.hashtag}'),
@@ -72,15 +72,7 @@ class _HashtagScreenState extends State<HashtagScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (_error != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'Error: $_error',
-                  style: TextStyle(color: colors.error),
-                ),
-              ),
-            );
+            return ErrorStateText('Error: $_error');
           }
           final posts = api.results
               .where((r) => r.kind == 'post' || r.kind.isEmpty)

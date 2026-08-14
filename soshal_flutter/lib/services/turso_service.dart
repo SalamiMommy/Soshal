@@ -3,22 +3,21 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Turso Sync Service
 /// Manages connection settings, replication credentials, and real-time
 /// sync status for the Turso (libSQL) database engine.
-class TursoService extends ChangeNotifier {
+class TursoService extends ChangeNotifier with LastErrorMixin {
   bool _isConfigured = false;
   String _status = 'idle';
   int? _lastSyncedAt;
-  String? _lastError;
   String _url = '';
   bool _isSyncing = false;
 
   bool get isConfigured => _isConfigured;
   String get status => _status;
   int? get lastSyncedAt => _lastSyncedAt;
-  String? get lastError => _lastError;
   String get url => _url;
   bool get isSyncing => _isSyncing;
 
@@ -26,7 +25,7 @@ class TursoService extends ChangeNotifier {
   Future<bool> configure(
       {required String url, required String authToken}) async {
     try {
-      _lastError = null;
+      lastErrorValue = null;
       notifyListeners();
 
       RustLib.instance.api.crateFfiTursoDbTursoConfigure(
@@ -39,8 +38,8 @@ class TursoService extends ChangeNotifier {
       notifyListeners();
       await checkStatus();
       return true;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       _isConfigured = false;
       notifyListeners();
       return false;
@@ -52,7 +51,7 @@ class TursoService extends ChangeNotifier {
     if (_isSyncing) return false;
     _isSyncing = true;
     _status = 'syncing';
-    _lastError = null;
+    lastErrorValue = null;
     notifyListeners();
 
     try {
@@ -62,10 +61,10 @@ class TursoService extends ChangeNotifier {
       _lastSyncedAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       notifyListeners();
       return true;
-    } catch (e) {
+    } catch (e, st) {
       _isSyncing = false;
       _status = 'error';
-      _lastError = e.toString();
+      setLastError(e, st);
       notifyListeners();
       return false;
     }
@@ -81,7 +80,11 @@ class TursoService extends ChangeNotifier {
       _isConfigured = data['configured'] as bool? ?? false;
       _status = data['status'] as String? ?? 'idle';
       _lastSyncedAt = (data['last_synced_at'] as num?)?.toInt();
-      _lastError = data['last_error'] as String?;
+      lastErrorValue = data["last_error"] as String?;
+      if (_lastError != null) {
+        debugPrint('turso last_error: $lastErrorValue');
+        logRuntimeError('turso last_error: $lastErrorValue');
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('Error fetching Turso status: $e');

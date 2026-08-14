@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Appends a runtime error to `<app documents>/soshal-error.log` so failures
@@ -16,4 +17,17 @@ Future<void> logRuntimeError(Object error, [StackTrace? stack]) async {
     final file = File('${dir.path}/soshal-error.log');
     await file.writeAsString(buffer.toString(), mode: FileMode.append);
   } catch (_) {}
+}
+
+/// Standardized error store for services: surfaces to UI via [lastError]
+/// AND logs to terminal + soshal-error.log, so errors never vanish.
+mixin LastErrorMixin {
+  String? _lastError;
+  String? get lastError => _lastError;
+
+  void setLastError(Object error, [StackTrace? stack]) {
+    _lastError = error.toString();
+    debugPrint('SVC ERROR: $error');
+    logRuntimeError('svc: $error', stack);
+  }
 }

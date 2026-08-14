@@ -327,4 +327,44 @@ mod tests {
         assert_eq!(plain, "secret dm");
         signer_lock().unwrap();
     }
+
+    #[test]
+    fn test_keyring_save_unlock_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let secret = keys.secret_key().to_secret_hex();
+        let pk_hex = keys.public_key().to_hex();
+
+        signer_unlock(secret).unwrap();
+        assert_eq!(signer_pubkey().unwrap(), pk_hex);
+        match signer_save_to_keyring(pk_hex.clone()) {
+            Ok(_) => {
+                signer_lock().unwrap();
+                assert!(signer_unlock_from_keyring(pk_hex.clone()).unwrap());
+                assert!(!signer_is_locked().unwrap());
+                let sig = signer_sign_text("keyring roundtrip".to_string()).unwrap();
+                assert_eq!(sig.len(), 128);
+            }
+            Err(e) => assert!(!e.is_empty()),
+        }
+        signer_lock().unwrap();
+        let _ = signer_remove_from_keyring(pk_hex);
+    }
+
+    #[test]
+    fn test_keyring_remove() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let secret = keys.secret_key().to_secret_hex();
+        let pk_hex = keys.public_key().to_hex();
+
+        signer_unlock(secret).unwrap();
+        let _ = signer_save_to_keyring(pk_hex.clone());
+        match signer_remove_from_keyring(pk_hex.clone()) {
+            Ok(_) => {}
+            Err(e) => assert!(!e.is_empty()),
+        }
+        assert!(signer_unlock_from_keyring(pk_hex).is_err());
+        signer_lock().unwrap();
+    }
 }

@@ -152,6 +152,16 @@ async fn engine_loop(
                 .kinds([Kind::EncryptedDirectMessage])
                 .since(since_dm),
             Filter::new().kinds([Kind::Metadata]).since(since_meta),
+            // Lists + zaps: contacts (3), relay list (10002), bookmarks
+            // (10003), zap receipts (9735).
+            Filter::new()
+                .kinds([
+                    Kind::ContactList,
+                    Kind::RelayList,
+                    Kind::Bookmarks,
+                    Kind::ZapReceipt,
+                ])
+                .since(since_meta),
             // Self-sync: re-import our own reaction/post events + caches.
             Filter::new().kinds([Kind::Reaction]).authors([pk]),
             Filter::new().authors([pk]),

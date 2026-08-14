@@ -1,8 +1,10 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import '../services/ffi_bridge.dart';
+import '../services/error_log.dart';
 import '../services/session_service.dart';
 
 /// Backup screen: account identifiers + recovery guidance.
@@ -32,7 +34,10 @@ class _BackupScreenState extends State<BackupScreen> {
       try {
         final c = RustLib.instance.api.crateFfiDbDbCount(table: t);
         if (c > 0) out[t] = c.toInt();
-      } catch (_) {}
+      } catch (e, st) {
+        debugPrint('backup table count failed: $e');
+        logRuntimeError('backup table count: $e', st);
+      }
     }
     return out;
   }

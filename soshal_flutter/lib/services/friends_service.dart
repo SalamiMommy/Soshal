@@ -1,6 +1,7 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 import 'messaging_service.dart';
 
@@ -8,19 +9,17 @@ import 'messaging_service.dart';
 /// Friend suggestions, friend requests, and an in-memory local contact list.
 /// The contact list is kept in memory only (no persistence) until the
 /// backend-gated contact store lands.
-class FriendsService extends ChangeNotifier {
+class FriendsService extends ChangeNotifier with LastErrorMixin {
   List<String> _suggestions = [];
   bool _suggestionsLoaded = false;
   final List<ProfileInfo> _contacts = [];
-  String? _lastError;
 
   List<String> get suggestions => _suggestions;
   bool get suggestionsLoaded => _suggestionsLoaded;
   List<ProfileInfo> get contacts => _contacts;
-  String? get lastError => _lastError;
 
-  /// Load friend suggestions from the bridge. The backend surface is stubbed
-  /// today and returns an empty list — callers render an honest empty state.
+  /// Load friend suggestions from the bridge (pubkey list from the social
+  /// contact graph). Empty when nothing to suggest yet.
   Future<List<String>> fetchSuggestions() async {
     try {
       _suggestions =
@@ -29,8 +28,8 @@ class FriendsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _suggestions;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -46,8 +45,8 @@ class FriendsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

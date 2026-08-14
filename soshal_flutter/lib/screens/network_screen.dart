@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../services/mesh_service.dart';
 import '../services/network_service.dart';
 import '../services/session_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Network: relay connections, anonymity transports, and diagnostics.
 class NetworkScreen extends StatefulWidget {
@@ -250,10 +251,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
               else if (_relayError != null)
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(
-                    _relayError!,
-                    style: TextStyle(color: theme.colorScheme.error),
-                  ),
+                  child: ErrorStateText(_relayError!),
                 )
               else if (network.relays.isEmpty)
                 const Padding(
@@ -393,10 +391,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
                 if (mesh.lastError != null)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      mesh.lastError!,
-                      style: TextStyle(color: theme.colorScheme.error),
-                    ),
+                    child: ErrorStateText(mesh.lastError!),
                   ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),

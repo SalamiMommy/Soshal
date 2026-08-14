@@ -3,17 +3,17 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Groups Service
 /// NIP-29 group membership, info, messages and admin actions.
-class GroupsService extends ChangeNotifier {
+class GroupsService extends ChangeNotifier with LastErrorMixin {
   List<SoshalGroup> _groups = [];
   SoshalGroup? _current;
   List<String> _members = [];
   List<GroupMessage> _messages = [];
   List<GroupRole> _roles = [];
   List<GroupMemberWithRole> _memberRoles = [];
-  String? _lastError;
 
   List<SoshalGroup> get groups => _groups;
   SoshalGroup? get current => _current;
@@ -21,7 +21,6 @@ class GroupsService extends ChangeNotifier {
   List<GroupMessage> get messages => _messages;
   List<GroupRole> get roles => _roles;
   List<GroupMemberWithRole> get memberRoles => _memberRoles;
-  String? get lastError => _lastError;
 
   Future<List<SoshalGroup>> fetchGroups(String userPubkey) async {
     try {
@@ -32,8 +31,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _groups;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -48,8 +47,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _current!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -63,8 +62,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _members;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -79,8 +78,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -95,8 +94,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -110,8 +109,8 @@ class GroupsService extends ChangeNotifier {
       );
       _lastError = null;
       return eventJson;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -133,8 +132,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _messages;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -157,8 +156,8 @@ class GroupsService extends ChangeNotifier {
       );
       _lastError = null;
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -180,8 +179,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -201,8 +200,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -219,8 +218,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _roles;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -247,8 +246,8 @@ class GroupsService extends ChangeNotifier {
       );
       _lastError = null;
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -262,8 +261,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -282,8 +281,8 @@ class GroupsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _memberRoles;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

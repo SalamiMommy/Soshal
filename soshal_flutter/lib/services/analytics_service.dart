@@ -1,13 +1,11 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Analytics Service
 /// Local SLM statistics, embeddings and post classification.
-class AnalyticsService extends ChangeNotifier {
-  String? _lastError;
-
-  String? get lastError => _lastError;
+class AnalyticsService extends ChangeNotifier with LastErrorMixin {
 
   /// Compute engagement/posts stats. Backend stub: returns "stats".
   Future<String> computeStats() async {
@@ -16,8 +14,8 @@ class AnalyticsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return out;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -33,8 +31,8 @@ class AnalyticsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return out;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -50,8 +48,8 @@ class AnalyticsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return out;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

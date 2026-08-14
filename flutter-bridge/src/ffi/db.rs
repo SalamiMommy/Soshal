@@ -151,17 +151,49 @@ pub fn db_delete_setting(key: String) -> Result<bool, String> {
 /// (mirrors the legacy `db_get_storage_stats` command).
 #[frb(sync, serialize)]
 pub fn db_storage_stats() -> Result<String, String> {
-    let json = db_query_raw(
-        "SELECT name AS table_name, (SELECT COUNT(*) FROM pragma_table_info(name)) AS cols, \
-         CASE name \
-           WHEN 'posts' THEN (SELECT COUNT(*) FROM posts WHERE is_deleted=0) \
-           WHEN 'messages' THEN (SELECT COUNT(*) FROM messages) \
-           WHEN 'group_messages' THEN (SELECT COUNT(*) FROM group_messages) \
-           WHEN 'notifications' THEN (SELECT COUNT(*) FROM notifications) \
-           ELSE 0 END AS rows \
-         FROM sqlite_master WHERE type='table' ORDER BY name"
-            .to_string(),
+    let names = db_query_raw(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name".to_string(),
     )?;
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    for v in serde_json::from_str::<Vec<serde_json::Value>>(&names).unwrap_or_default() {
+        let Some(name) = v.get("name").and_then(|n| n.as_str()) else {
+            continue;
+        };
+        let (name, cols, rows) = with_db(|db| {
+            let conn = db.conn().map_err(DbError::from)?;
+            let cols_sql = format!(
+                "SELECT COUNT(*) FROM pragma_table_info('{}')",
+                name.replace('\'', "''")
+            );
+            let cols = soshal_db_core::query::query_first(&conn, &cols_sql, (), |r| {
+                let n: i64 = r.get(0)?;
+                Ok(n)
+            })?
+            .unwrap_or(0);
+            let count_sql = match name {
+                "posts" => "SELECT COUNT(*) FROM posts WHERE is_deleted=0".to_string(),
+                "messages" | "group_messages" | "notifications" => {
+                    format!("SELECT COUNT(*) FROM {name}")
+                }
+                _ => String::new(),
+            };
+            let rows: i64 = if count_sql.is_empty() {
+                0
+            } else {
+                soshal_db_core::query::query_first(&conn, &count_sql, (), |r| {
+                    let n: i64 = r.get(0)?;
+                    Ok(n)
+                })?
+                .unwrap_or(0)
+            };
+            Ok::<_, DbError>((name.to_string(), cols, rows))
+        })?;
+        out.push(serde_json::json!({
+            "table_name": name,
+            "cols": cols,
+            "rows": rows,
+        }));
+    }
     let file_bytes = DB_PATH
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -169,16 +201,12 @@ pub fn db_storage_stats() -> Result<String, String> {
         .and_then(|p| std::fs::metadata(p).ok())
         .map(|m| m.len())
         .unwrap_or(0);
-    let mut out: serde_json::Value =
-        serde_json::from_str(&json).unwrap_or_else(|_| serde_json::json!([]));
-    if let serde_json::Value::Array(arr) = &mut out {
-        arr.push(serde_json::json!({
-            "table_name": "__db_file__",
-            "cols": 0,
-            "rows": 0,
-            "bytes": file_bytes
-        }));
-    }
+    out.push(serde_json::json!({
+        "table_name": "__db_file__",
+        "cols": 0,
+        "rows": 0,
+        "bytes": file_bytes
+    }));
     Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
 }
 
@@ -282,8 +310,11 @@ pub fn db_save_custom_profile(pubkey: String, profile_json: String) -> Result<bo
 mod tests {
     use super::*;
 
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
     #[test]
     fn test_raw_query_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
         let path = format!(
             "{}/soshal_test_{}.db",
             std::env::temp_dir().to_string_lossy(),
@@ -302,6 +333,112 @@ mod tests {
         assert!(rows.is_ok());
         let json = rows.unwrap();
         assert!(json.contains("tester"));
+        *DB.lock().unwrap() = None;
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_backup_restore_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let path = format!(
+            "{}/soshal_test_{}_backup.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let backup_path = format!("{path}.bak");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&backup_path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        assert!(db_init(path.clone()).is_ok());
+        assert!(db_execute_raw(
+            "CREATE TABLE backup_test (id INTEGER PRIMARY KEY, val TEXT)".to_string()
+        )
+        .is_ok());
+        assert!(
+            db_execute_raw("INSERT INTO backup_test (val) VALUES ('survivor')".to_string()).is_ok()
+        );
+        assert!(db_backup(backup_path.clone()).is_ok());
+        *DB.lock().unwrap() = None;
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        assert!(db_restore(backup_path.clone()).is_ok());
+        let rows = db_query_raw("SELECT val FROM backup_test".to_string());
+        assert!(rows.is_ok());
+        assert!(rows.unwrap().contains("survivor"));
+        *DB.lock().unwrap() = None;
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&backup_path);
+    }
+
+    #[test]
+    fn test_settings_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let path = format!(
+            "{}/soshal_test_{}_settings.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        assert!(db_init(path.clone()).is_ok());
+        assert!(db_set_setting("theme".to_string(), "dark".to_string()).is_ok());
+        let got = db_get_setting("theme".to_string());
+        assert!(got.is_ok());
+        assert_eq!(got.unwrap(), Some("dark".to_string()));
+        assert!(db_delete_setting("theme".to_string()).is_ok());
+        let gone = db_get_setting("theme".to_string());
+        assert!(gone.is_ok());
+        assert_eq!(gone.unwrap(), None);
+        *DB.lock().unwrap() = None;
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_storage_stats() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let path = format!(
+            "{}/soshal_test_{}_stats.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        assert!(db_init(path.clone()).is_ok());
+        assert!(db_execute_raw(
+            "INSERT INTO users (pubkey, npub, name) VALUES ('stat1', 'npub1stat', 's') \
+                 ON CONFLICT DO UPDATE SET name='s'"
+                .to_string()
+        )
+        .is_ok());
+        let stats = db_storage_stats();
+        assert!(stats.is_ok());
+        assert!(!stats.unwrap().is_empty());
+        *DB.lock().unwrap() = None;
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_backup_bad_path() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let path = format!(
+            "{}/soshal_test_{}_badpath.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        assert!(db_init(path.clone()).is_ok());
+        let bad = format!(
+            "{}/no_such_dir_soshal_xyz/backup.db",
+            std::env::temp_dir().to_string_lossy()
+        );
+        let res = db_backup(bad);
+        assert!(res.is_err());
         *DB.lock().unwrap() = None;
         let _ = std::fs::remove_file(&path);
     }

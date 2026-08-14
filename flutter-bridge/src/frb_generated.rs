@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1597896039;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 400691904;
 
 // Section: executor
 
@@ -4550,6 +4550,36 @@ fn wire__crate__ffi__identity__identity_block_user_impl(
         },
     )
 }
+fn wire__crate__ffi__identity__identity_fetch_follows_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "identity_fetch_follows",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pubkey = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::identity::identity_fetch_follows(api_pubkey)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__identity__identity_follow_user_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -4571,12 +4601,10 @@ fn wire__crate__ffi__identity__identity_follow_user_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
-            let api_target_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_pubkey = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::identity::identity_follow_user(api_user_pubkey, api_target_pubkey)?;
+                let output_ok = crate::ffi::identity::identity_follow_user(api_pubkey)?;
                 Ok(output_ok)
             })())
         },
@@ -4774,6 +4802,70 @@ fn wire__crate__ffi__identity__identity_is_blocked_impl(
         },
     )
 }
+fn wire__crate__ffi__identity__identity_publish_custom_profile_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "identity_publish_custom_profile",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_profile_json = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::identity::identity_publish_custom_profile(
+                    api_pubkey,
+                    api_profile_json,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__identity__identity_publish_relay_list_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "identity_publish_relay_list",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_relay_urls = <Vec<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::identity::identity_publish_relay_list(api_relay_urls)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__identity__identity_search_users_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -4890,14 +4982,10 @@ fn wire__crate__ffi__identity__identity_unfollow_user_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api__user_pubkey = <String>::sse_decode(&mut deserializer);
-            let api__target_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_pubkey = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::identity::identity_unfollow_user(
-                    api__user_pubkey,
-                    api__target_pubkey,
-                )?;
+                let output_ok = crate::ffi::identity::identity_unfollow_user(api_pubkey)?;
                 Ok(output_ok)
             })())
         },
@@ -8216,367 +8304,6 @@ fn wire__crate__ffi__network__network_verify_zk_wot_proof_impl(
         },
     )
 }
-fn wire__crate__ffi__nostr__nostr_add_relay_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "nostr_add_relay",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_url = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok = crate::ffi::nostr::nostr_add_relay(api_url).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__ffi__nostr__nostr_init_relays_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "nostr_init_relays",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_relay_urls = <Vec<String>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok =
-                            crate::ffi::nostr::nostr_init_relays(api_relay_urls).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__ffi__nostr__nostr_publish_custom_profile_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "nostr_publish_custom_profile",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_pubkey = <String>::sse_decode(&mut deserializer);
-            let api_profile_json = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok = crate::ffi::nostr::nostr_publish_custom_profile(
-                            api_pubkey,
-                            api_profile_json,
-                        )
-                        .await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__ffi__nostr__nostr_publish_event_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "nostr_publish_event",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_event_json = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok =
-                            crate::ffi::nostr::nostr_publish_event(api_event_json).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__ffi__nostr__nostr_query_events_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "nostr_query_events",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_filter_json = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok =
-                            crate::ffi::nostr::nostr_query_events(api_filter_json).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__ffi__nostr__nostr_relay_status_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "nostr_relay_status",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok = crate::ffi::nostr::nostr_relay_status().await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__ffi__nostr__nostr_remove_relay_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "nostr_remove_relay",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_url = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok = crate::ffi::nostr::nostr_remove_relay(api_url).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__ffi__nostr__nostr_status_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "nostr_status",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::nostr::nostr_status()?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__ffi__nostr__nostr_subscribe_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "nostr_subscribe",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_filter_json = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok = crate::ffi::nostr::nostr_subscribe(api_filter_json).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__ffi__nostr__nostr_unsubscribe_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "nostr_unsubscribe",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_subscription_id = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok =
-                            crate::ffi::nostr::nostr_unsubscribe(api_subscription_id).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
 fn wire__crate__ffi__notifications__notifications_delete_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -10204,10 +9931,10 @@ fn wire__crate__ffi__relations__relations_send_friend_request_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api__pubkey = <String>::sse_decode(&mut deserializer);
+            let api_pubkey = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::relations::relations_send_friend_request(api__pubkey)?;
+                let output_ok = crate::ffi::relations::relations_send_friend_request(api_pubkey)?;
                 Ok(output_ok)
             })())
         },
@@ -10899,6 +10626,49 @@ fn wire__crate__ffi__search__search_profiles_impl(
                 let output_ok = crate::ffi::search::search_profiles(api_query, api_limit)?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__ffi__search__search_remote_global_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "search_remote_global",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_query = <String>::sse_decode(&mut deserializer);
+            let api_limit = <u64>::sse_decode(&mut deserializer);
+            let api_relays_json = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::search::search_remote_global(
+                            api_query,
+                            api_limit,
+                            api_relays_json,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -13455,6 +13225,42 @@ fn wire__crate__ffi__zap__zap_parse_lnurl_metadata_impl(
         },
     )
 }
+fn wire__crate__ffi__zap__zap_send_payment_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zap_send_payment",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_bolt11 = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::zap::zap_send_payment(api_bolt11).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__ffi__zk__zk_apply_rollup_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -15625,6 +15431,15 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_fetch_follows(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__identity__identity_fetch_follows_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_follow_user(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -15685,6 +15500,28 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__identity__identity_is_blocked_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_publish_custom_profile(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__identity__identity_publish_custom_profile_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_publish_relay_list(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__identity__identity_publish_relay_list_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -16751,110 +16588,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__nostr__nostr_add_relay(
-        port_: i64,
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_add_relay_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__nostr__nostr_init_relays(
-        port_: i64,
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_init_relays_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__nostr__nostr_publish_custom_profile(
-        port_: i64,
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_publish_custom_profile_impl(
-            port_,
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__nostr__nostr_publish_event(
-        port_: i64,
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_publish_event_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__nostr__nostr_query_events(
-        port_: i64,
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_query_events_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__nostr__nostr_relay_status(
-        port_: i64,
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_relay_status_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__nostr__nostr_remove_relay(
-        port_: i64,
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_remove_relay_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__nostr__nostr_status(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__nostr__nostr_status_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__nostr__nostr_subscribe(
-        port_: i64,
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_subscribe_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__nostr__nostr_unsubscribe(
-        port_: i64,
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_unsubscribe_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_delete(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -17586,6 +17319,16 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__search__search_profiles_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__search__search_remote_global(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__search__search_remote_global_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -18356,6 +18099,16 @@ mod io {
         data_len_: i32,
     ) {
         wire__crate__ffi__zap__zap_parse_lnurl_metadata_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__zap__zap_send_payment(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__zap__zap_send_payment_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -19831,6 +19584,15 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__identity__identity_fetch_follows(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__identity__identity_fetch_follows_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__identity__identity_follow_user(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -19891,6 +19653,28 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__identity__identity_is_blocked_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__identity__identity_publish_custom_profile(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__identity__identity_publish_custom_profile_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__identity__identity_publish_relay_list(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__identity__identity_publish_relay_list_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -20957,110 +20741,6 @@ mod web {
     }
 
     #[wasm_bindgen]
-    pub fn wire__crate__ffi__nostr__nostr_add_relay(
-        port_: flutter_rust_bridge::for_generated::MessagePort,
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_add_relay_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__nostr__nostr_init_relays(
-        port_: flutter_rust_bridge::for_generated::MessagePort,
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_init_relays_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__nostr__nostr_publish_custom_profile(
-        port_: flutter_rust_bridge::for_generated::MessagePort,
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_publish_custom_profile_impl(
-            port_,
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__nostr__nostr_publish_event(
-        port_: flutter_rust_bridge::for_generated::MessagePort,
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_publish_event_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__nostr__nostr_query_events(
-        port_: flutter_rust_bridge::for_generated::MessagePort,
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_query_events_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__nostr__nostr_relay_status(
-        port_: flutter_rust_bridge::for_generated::MessagePort,
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_relay_status_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__nostr__nostr_remove_relay(
-        port_: flutter_rust_bridge::for_generated::MessagePort,
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_remove_relay_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__nostr__nostr_status(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__nostr__nostr_status_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__nostr__nostr_subscribe(
-        port_: flutter_rust_bridge::for_generated::MessagePort,
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_subscribe_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__nostr__nostr_unsubscribe(
-        port_: flutter_rust_bridge::for_generated::MessagePort,
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__nostr__nostr_unsubscribe_impl(port_, ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
     pub fn wire__crate__ffi__notifications__notifications_delete(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -21792,6 +21472,16 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__search__search_profiles_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__search__search_remote_global(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__search__search_remote_global_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -22562,6 +22252,16 @@ mod web {
         data_len_: i32,
     ) {
         wire__crate__ffi__zap__zap_parse_lnurl_metadata_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__zap__zap_send_payment(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__zap__zap_send_payment_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]

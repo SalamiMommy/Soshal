@@ -3,17 +3,16 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Notification Service
 /// Fetches, marks, and counts notifications through the Rust bridge.
-class NotificationService extends ChangeNotifier {
+class NotificationService extends ChangeNotifier with LastErrorMixin {
   List<AppNotification> _notifications = [];
   int _unreadCount = 0;
-  String? _lastError;
 
   List<AppNotification> get notifications => _notifications;
   int get unreadCount => _unreadCount;
-  String? get lastError => _lastError;
 
   /// Fetch recent notifications (all types).
   Future<List<AppNotification>> fetchNotifications(String pubkey,
@@ -29,8 +28,8 @@ class NotificationService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _notifications;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -49,8 +48,8 @@ class NotificationService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _notifications;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -70,8 +69,8 @@ class NotificationService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _notifications;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -90,8 +89,8 @@ class NotificationService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -110,8 +109,8 @@ class NotificationService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -127,8 +126,8 @@ class NotificationService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _unreadCount;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -146,8 +145,8 @@ class NotificationService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

@@ -3,16 +3,15 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Scheduled Service
 /// Draft posts with a future scheduled_at timestamp, persisted in the
 /// posts table and broadcast later by the sync pipeline.
-class ScheduledService extends ChangeNotifier {
+class ScheduledService extends ChangeNotifier with LastErrorMixin {
   List<ScheduledPost> _drafts = [];
-  String? _lastError;
 
   List<ScheduledPost> get drafts => _drafts;
-  String? get lastError => _lastError;
 
   /// Create a scheduled post draft. `scheduledAt` is a unix timestamp in
   /// the future. Returns the draft id.
@@ -31,8 +30,8 @@ class ScheduledService extends ChangeNotifier {
       );
       _lastError = null;
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -51,8 +50,8 @@ class ScheduledService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _drafts;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -64,8 +63,8 @@ class ScheduledService extends ChangeNotifier {
       final ok = RustLib.instance.api.crateFfiScheduledScheduledDelete(id: id);
       _lastError = null;
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

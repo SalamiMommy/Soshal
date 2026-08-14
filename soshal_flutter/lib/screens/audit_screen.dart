@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/audit_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Audit Log: read-only security event log stored locally in SQLite.
 class AuditScreen extends StatefulWidget {
@@ -49,7 +50,6 @@ class _AuditScreenState extends State<AuditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Audit Log'),
@@ -69,10 +69,7 @@ class _AuditScreenState extends State<AuditScreen> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text(
-                  'Error: $_error',
-                  style: TextStyle(color: colors.error),
-                ),
+                child: ErrorStateText('Error: $_error'),
               ),
             );
           }

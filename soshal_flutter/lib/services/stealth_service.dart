@@ -1,18 +1,17 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Stealth Service
 /// Local whitelist of pubkeys allowed to see you when stealth mode is
 /// active, stored as a newline-separated setting via the local DB.
-class StealthService extends ChangeNotifier {
+class StealthService extends ChangeNotifier with LastErrorMixin {
   static const _whitelistKey = 'stealth_whitelist';
 
   List<String> _whitelist = [];
-  String? _lastError;
 
   List<String> get whitelist => _whitelist;
-  String? get lastError => _lastError;
 
   /// Load the whitelist from the local DB setting.
   Future<List<String>> load() async {
@@ -28,8 +27,8 @@ class StealthService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _whitelist;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -48,8 +47,8 @@ class StealthService extends ChangeNotifier {
         notifyListeners();
       }
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -63,8 +62,8 @@ class StealthService extends ChangeNotifier {
       );
       _lastError = null;
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

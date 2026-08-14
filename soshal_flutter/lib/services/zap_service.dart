@@ -3,21 +3,20 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Zap Service
 /// NIP-57 zaps via a NWC connection: connect, receipts and totals.
-class ZapService extends ChangeNotifier {
+class ZapService extends ChangeNotifier with LastErrorMixin {
   String? _nwcStatus;
   String? _nwcPubkey;
   int _totalMsat = 0;
   List<ZapReceipt> _receipts = [];
-  String? _lastError;
 
   String? get nwcStatus => _nwcStatus;
   String? get nwcPubkey => _nwcPubkey;
   int get totalMsat => _totalMsat;
   List<ZapReceipt> get receipts => _receipts;
-  String? get lastError => _lastError;
 
   bool get isConnected =>
       (_nwcStatus ?? '').isNotEmpty && (_nwcStatus ?? '') != 'disconnected';
@@ -33,8 +32,8 @@ class ZapService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -51,8 +50,8 @@ class ZapService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -69,8 +68,8 @@ class ZapService extends ChangeNotifier {
       }
       _lastError = null;
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
     }
   }
@@ -85,8 +84,8 @@ class ZapService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _totalMsat;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -107,8 +106,8 @@ class ZapService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _receipts;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -121,8 +120,8 @@ class ZapService extends ChangeNotifier {
           .crateFfiZapZapParseLnurlMetadata(lnurl: lnurl);
       _lastError = null;
       return json;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

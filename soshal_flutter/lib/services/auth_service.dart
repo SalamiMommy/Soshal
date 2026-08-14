@@ -3,15 +3,14 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Authentication Service
 /// Handles key generation, login, and session management
-class AuthService extends ChangeNotifier {
+class AuthService extends ChangeNotifier with LastErrorMixin {
   KeyPair? _currentKeypair;
-  String? _lastError;
 
   KeyPair? get currentKeypair => _currentKeypair;
-  String? get lastError => _lastError;
 
   /// Generate a new keypair
   Future<KeyPair> generateKeypair() async {
@@ -21,8 +20,8 @@ class AuthService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _currentKeypair!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -34,8 +33,8 @@ class AuthService extends ChangeNotifier {
       final mnemonic = RustLib.instance.api.crateFfiAuthAuthGenerateMnemonic();
       _lastError = null;
       return mnemonic;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -46,8 +45,8 @@ class AuthService extends ChangeNotifier {
     try {
       return RustLib.instance.api
           .crateFfiAuthAuthValidateMnemonic(mnemonic: mnemonic);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -66,8 +65,8 @@ class AuthService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _currentKeypair!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -79,8 +78,8 @@ class AuthService extends ChangeNotifier {
       final hex =
           RustLib.instance.api.crateFfiAuthAuthPublicKeyFromNsec(nsec: nsec);
       return RustLib.instance.api.crateFfiAuthAuthNpubEncode(publicKey: hex);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -91,8 +90,8 @@ class AuthService extends ChangeNotifier {
     try {
       return RustLib.instance.api
           .crateFfiAuthAuthNpubEncode(publicKey: publicKey);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -102,8 +101,8 @@ class AuthService extends ChangeNotifier {
   Future<String> decodeNpub(String npub) async {
     try {
       return RustLib.instance.api.crateFfiAuthAuthNpubDecode(npub: npub);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

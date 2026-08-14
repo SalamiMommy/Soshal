@@ -3,19 +3,18 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Marketplace Service
 /// NIP-15 style listings, orders and escrow through the bridge.
-class MarketplaceService extends ChangeNotifier {
+class MarketplaceService extends ChangeNotifier with LastErrorMixin {
   List<ListingInfo> _listings = [];
   ListingInfo? _current;
   List<OrderInfo> _orders = [];
-  String? _lastError;
 
   List<ListingInfo> get listings => _listings;
   ListingInfo? get current => _current;
   List<OrderInfo> get orders => _orders;
-  String? get lastError => _lastError;
 
   Future<List<ListingInfo>> fetchListings(
       {int limit = 50, int offset = 0}) async {
@@ -70,8 +69,8 @@ class MarketplaceService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _current!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -103,8 +102,8 @@ class MarketplaceService extends ChangeNotifier {
       );
       _lastError = null;
       return eventId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -129,8 +128,8 @@ class MarketplaceService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -146,8 +145,8 @@ class MarketplaceService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -167,8 +166,8 @@ class MarketplaceService extends ChangeNotifier {
       );
       _lastError = null;
       return orderId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -207,8 +206,8 @@ class MarketplaceService extends ChangeNotifier {
       );
       _lastError = null;
       return escrowId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -226,8 +225,8 @@ class MarketplaceService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -243,8 +242,8 @@ class MarketplaceService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -265,8 +264,8 @@ class MarketplaceService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -280,8 +279,8 @@ class MarketplaceService extends ChangeNotifier {
               listingId: listingId);
       if (json.trim() == 'null') return null;
       return EscrowInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -330,8 +329,8 @@ class MarketplaceService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _listings;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -347,8 +346,8 @@ class MarketplaceService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _orders;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

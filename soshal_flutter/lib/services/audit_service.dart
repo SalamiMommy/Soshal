@@ -3,15 +3,14 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Audit Service
 /// Read-only access to the local SQLite security event log.
-class AuditService extends ChangeNotifier {
+class AuditService extends ChangeNotifier with LastErrorMixin {
   List<AuditRow> _rows = [];
-  String? _lastError;
 
   List<AuditRow> get rows => _rows;
-  String? get lastError => _lastError;
 
   /// List audit log rows, newest first. Optional actor pubkey filter.
   Future<List<AuditRow>> list({int limit = 100, String? actor}) async {
@@ -29,8 +28,8 @@ class AuditService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _rows;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

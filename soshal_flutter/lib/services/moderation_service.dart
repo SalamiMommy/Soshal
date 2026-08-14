@@ -3,19 +3,18 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Moderation Service
 /// Mute/block lists and word filters, backed by the Rust moderation core.
-class ModerationService extends ChangeNotifier {
+class ModerationService extends ChangeNotifier with LastErrorMixin {
   Set<String> _muted = {};
   Set<String> _blocked = {};
   List<String> _wordFilters = [];
-  String? _lastError;
 
   List<String> get muted => _muted.toList();
   List<String> get blocked => _blocked.toList();
   List<String> get wordFilters => _wordFilters;
-  String? get lastError => _lastError;
 
   bool isBlocked(String pubkey) => _blocked.contains(pubkey);
   bool isMuted(String pubkey) => _muted.contains(pubkey);
@@ -37,8 +36,8 @@ class ModerationService extends ChangeNotifier {
           RustLib.instance.api.crateFfiModerationModerationGetWordFilters();
       _lastError = null;
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
     }
   }
@@ -128,8 +127,8 @@ class ModerationService extends ChangeNotifier {
         content: content,
         userPubkey: pubkey,
       );
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }

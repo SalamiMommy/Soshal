@@ -33,6 +33,15 @@ String searchMentions({required String query, required int limit}) =>
 String searchGlobal({required String query, required int limit}) =>
     RustLib.instance.api.crateFfiSearchSearchGlobal(query: query, limit: limit);
 
+/// Remote NIP-50 search: query relays for matching text notes. Returns a
+/// JSON array of {id, pubkey, content, created_at} for verified events.
+Future<String> searchRemoteGlobal(
+        {required String query,
+        required BigInt limit,
+        required String relaysJson}) =>
+    RustLib.instance.api.crateFfiSearchSearchRemoteGlobal(
+        query: query, limit: limit, relaysJson: relaysJson);
+
 /// Get trending hashtags from the hashtag index.
 List<String> searchTrendingHashtags({required int limit}) =>
     RustLib.instance.api.crateFfiSearchSearchTrendingHashtags(limit: limit);

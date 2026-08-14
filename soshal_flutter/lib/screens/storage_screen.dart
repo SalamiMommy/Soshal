@@ -1,8 +1,8 @@
 // ignore_for_file: invalid_use_of_internal_member
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:soshal_flutter/frb_generated.dart';
+import 'package:provider/provider.dart';
+import 'package:soshal_flutter/services/settings_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Storage settings — database size, per-table row counts (via the
 /// `db_storage_stats` FFI), cache clearing, and auto-download toggles
@@ -30,56 +30,42 @@ class _StorageScreenState extends State<StorageScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final json = RustLib.instance.api.crateFfiDbDbStorageStats();
-      final rows = jsonDecode(json) as List<dynamic>;
-      _stats = rows.map((e) => e as Map<String, dynamic>).toList();
+      _stats = context.read<SettingsService>().storageStats();
       _error = null;
     } catch (e) {
       _error = '$e';
     }
     try {
-      final ad =
-          RustLib.instance.api.crateFfiDbDbGetSetting(key: 'auto_download');
-      if (ad != null) _autoDownload = ad.toLowerCase() == 'true';
-      final ap = RustLib.instance.api.crateFfiDbDbGetSetting(key: 'auto_play');
-      if (ap != null) _autoPlay = ap.toLowerCase() == 'true';
+      final settings = context.read<SettingsService>();
+      final ad = settings.getSetting('auto_download');
+      if (ad.isNotEmpty) _autoDownload = ad.toLowerCase() == 'true';
+      final ap = settings.getSetting('auto_play');
+      if (ap.isNotEmpty) _autoPlay = ap.toLowerCase() == 'true';
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _setSetting(String key, bool value) async {
     try {
-      RustLib.instance.api.crateFfiDbDbSetSetting(
-        key: key,
-        value: value.toString(),
-      );
+      context.read<SettingsService>().setSetting(key, value.toString());
     } catch (e) {
       debugPrint('set $key: $e');
     }
   }
 
   Future<void> _clearOldPosts() async {
-    final cutoff = DateTime.now()
-            .subtract(const Duration(days: 30))
-            .millisecondsSinceEpoch ~/
-        1000;
-    try {
-      RustLib.instance.api.crateFfiDbDbExecuteRaw(
-        sql:
-            "UPDATE posts SET is_deleted = 1 WHERE is_deleted = 0 AND created_at < $cutoff",
+    final ok = await context.read<SettingsService>().purgeOldPosts();
+    if (!ok) return;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Old posts cleared')),
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Old posts cleared')),
-        );
-      }
-      _load();
-    } catch (e) {
-      debugPrint('clear old posts: $e');
     }
+    _load();
   }
 
   Future<void> _clearAllPosts() async {
+    final settings = context.read<SettingsService>();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -99,19 +85,14 @@ class _StorageScreenState extends State<StorageScreen> {
       ),
     );
     if (confirmed != true) return;
-    try {
-      RustLib.instance.api.crateFfiDbDbExecuteRaw(
-        sql: "UPDATE posts SET is_deleted = 1 WHERE is_deleted = 0",
+    final ok = await settings.purgeAllPosts();
+    if (!ok) return;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('All posts cleared')),
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All posts cleared')),
-        );
-      }
-      _load();
-    } catch (e) {
-      debugPrint('clear posts: $e');
     }
+    _load();
   }
 
   @override
@@ -130,7 +111,7 @@ class _StorageScreenState extends State<StorageScreen> {
                 child: CircularProgressIndicator(),
               ))
             else if (_error != null)
-              Text('Error loading stats: $_error')
+              ErrorStateText('Error loading stats: $_error')
             else ...[
               Text('Database', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),

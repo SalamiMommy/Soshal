@@ -161,3 +161,40 @@ fn select_relays_json_interface() {
     let result = select_relays_json(&input);
     assert!(result.contains("i2p"));
 }
+
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+use soshal_network_core::lan::is_private_ip;
+
+#[test]
+fn ip_privacy_matrix() {
+    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
+    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1))));
+    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(172, 31, 255, 255))));
+    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
+    assert!(is_private_ip(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+    assert!(is_private_ip(IpAddr::V6(Ipv6Addr::new(
+        0xfe80, 0, 0, 0, 0, 0, 0, 1
+    ))));
+    assert!(is_private_ip(IpAddr::V6(Ipv6Addr::new(
+        0xfc00, 0, 0, 0, 0, 0, 0, 1
+    ))));
+    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::UNSPECIFIED)));
+    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(169, 254, 0, 1))));
+
+    assert!(!is_private_ip(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+    assert!(!is_private_ip(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))));
+    assert!(!is_private_ip(IpAddr::V4(Ipv4Addr::new(172, 32, 0, 1))));
+    assert!(!is_private_ip(IpAddr::V4(Ipv4Addr::new(192, 169, 0, 1))));
+    assert!(!is_private_ip("2606:4700::1111".parse().unwrap()));
+    assert!(!is_private_ip("2001:4860:4860::8888".parse().unwrap()));
+
+    assert!(is_private_ip("::ffff:10.0.0.1".parse().unwrap()));
+    assert!(is_private_ip("::ffff:172.16.0.1".parse().unwrap()));
+    assert!(is_private_ip("::ffff:192.168.1.1".parse().unwrap()));
+    assert!(
+        !is_private_ip("::ffff:8.8.8.8".parse().unwrap()),
+        "public v4 embedded in mapped v6 stays public"
+    );
+}

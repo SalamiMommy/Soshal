@@ -116,6 +116,58 @@ fn nip44_spec_interop_with_nostr() {
 }
 
 #[test]
+fn nip44_adversarial_tests() {
+    let key = [0x42u8; 32];
+    let wrong_key = [0x00u8; 32];
+    let plaintext = b"adversarial payload";
+    let ct = encrypt(plaintext, &key).unwrap();
+    let bytes = base64_decode_bytes(&ct).unwrap();
+
+    let mut bad_mac = bytes.clone();
+    let last = bad_mac.len() - 1;
+    bad_mac[last] ^= 0xFF;
+    bad_mac[last - 1] ^= 0xFF;
+    assert!(decrypt(&base64_encode_bytes(&bad_mac), &key).is_err());
+
+    let mut cut_end = bytes.clone();
+    cut_end.truncate(cut_end.len() - 1);
+    assert!(decrypt(&base64_encode_bytes(&cut_end), &key).is_err());
+
+    let mut cut_mid = bytes.clone();
+    cut_mid.drain(20..30);
+    assert!(decrypt(&base64_encode_bytes(&cut_mid), &key).is_err());
+
+    let mut bad_ct = bytes.clone();
+    let mid = bad_ct.len() / 2;
+    bad_ct[mid..mid + 4].copy_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
+    assert!(decrypt(&base64_encode_bytes(&bad_ct), &key).is_err());
+
+    assert!(decrypt(&ct, &wrong_key).is_err());
+
+    let empty = encrypt_padded(b"", &key).unwrap();
+    let mut empty_buf = empty[..SALT_LEN].to_vec();
+    empty_buf.push(VERSION_LEGACY);
+    empty_buf.extend_from_slice(&empty[SALT_LEN..]);
+    assert!(decrypt(&base64_encode_bytes(&empty_buf), &key)
+        .unwrap()
+        .is_empty());
+
+    let bin: Vec<u8> = (0..64u8).collect();
+    assert_eq!(decrypt(&encrypt(&bin, &key).unwrap(), &key).unwrap(), bin);
+
+    let padded = encrypt_padded(b"padded data", &key).unwrap();
+    let mut padded_buf = padded[..SALT_LEN].to_vec();
+    padded_buf.push(VERSION_LEGACY);
+    padded_buf.extend_from_slice(&padded[SALT_LEN..]);
+    assert_eq!(
+        decrypt(&base64_encode_bytes(&padded_buf), &key).unwrap(),
+        b"padded data"
+    );
+
+    assert!(decrypt("garbage!!$$$ not base64", &key).is_err());
+}
+
+#[test]
 fn at_rest_tests() {
     let master = b"nsec1testmaster";
     let key = at_rest_key(master).unwrap();

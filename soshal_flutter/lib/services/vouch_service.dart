@@ -3,16 +3,15 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Vouch Service
 /// Kind-31989 web-of-trust vouches, signed in-process and relay-published;
 /// fetched vouches are signature-verified.
-class VouchService extends ChangeNotifier {
+class VouchService extends ChangeNotifier with LastErrorMixin {
   List<VouchEntry> _vouches = [];
-  String? _lastError;
 
   List<VouchEntry> get vouches => _vouches;
-  String? get lastError => _lastError;
 
   /// Publish a vouch for `targetPubkey`. Returns the event id.
   Future<String> publish(String targetPubkey, String content) async {
@@ -23,8 +22,8 @@ class VouchService extends ChangeNotifier {
       );
       _lastError = null;
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -43,8 +42,8 @@ class VouchService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _vouches;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

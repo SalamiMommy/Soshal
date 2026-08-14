@@ -3,13 +3,13 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Feed Service
 /// Handles feed operations and post publishing
-class FeedService extends ChangeNotifier {
+class FeedService extends ChangeNotifier with LastErrorMixin {
   List<FeedPost> _posts = [];
   bool _isLoading = false;
-  String? _lastError;
   int _currentOffset = 0;
   static const String _pinnedKey = 'pinned_posts';
   final Set<String> _pinned = {};
@@ -17,7 +17,6 @@ class FeedService extends ChangeNotifier {
 
   List<FeedPost> get posts => _posts;
   bool get isLoading => _isLoading;
-  String? get lastError => _lastError;
   List<String> get pinnedPosts => List.unmodifiable(_pinned.toList());
 
   /// Fetch feed events with pagination
@@ -43,8 +42,8 @@ class FeedService extends ChangeNotifier {
       }
       _lastError = null;
       _currentOffset = offset;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       rethrow;
     } finally {
       _isLoading = false;
@@ -67,8 +66,8 @@ class FeedService extends ChangeNotifier {
       _posts = _decodePosts(json);
       _lastError = null;
       _currentOffset = startIndex;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       rethrow;
     } finally {
       _isLoading = false;
@@ -89,8 +88,8 @@ class FeedService extends ChangeNotifier {
       );
       notifyListeners();
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -111,8 +110,8 @@ class FeedService extends ChangeNotifier {
       }
       _pinnedLoaded = true;
       _lastError = null;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       _pinned.clear();
       _pinnedLoaded = true;
     }
@@ -141,8 +140,8 @@ class FeedService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _pinned.contains(eventId);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -161,10 +160,22 @@ class FeedService extends ChangeNotifier {
         tagsJson: jsonEncode(tags),
       );
       return eventId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
+    }
+  }
+
+  /// Validate note content before publish (sync FFI).
+  bool validateNote(String content) {
+    try {
+      return RustLib.instance.api
+          .crateFfiFeedFeedValidateNote(content: content);
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
     }
   }
 
@@ -182,8 +193,8 @@ class FeedService extends ChangeNotifier {
         replyToEventId: replyToEventId,
       );
       return eventId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -196,8 +207,8 @@ class FeedService extends ChangeNotifier {
         eventId: eventId,
       );
       return _decodePosts(json);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -214,8 +225,8 @@ class FeedService extends ChangeNotifier {
         eventId: eventId,
         reactionType: reactionType,
       );
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -234,8 +245,8 @@ class FeedService extends ChangeNotifier {
         debugPrint('unindex: $e');
       }
       return result;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

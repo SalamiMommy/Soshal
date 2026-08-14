@@ -9,10 +9,13 @@ use nostr::event::{Event, Kind};
 use nostr::key::PublicKey;
 use nostr::nips::nip19::ToBech32;
 use soshal_db_core::error::DbError;
+use soshal_db_core::repos::bookmark::{BookmarkRepo, BookmarkRow};
 use soshal_db_core::repos::post::{PostRepo, PostRow};
 use soshal_db_core::repos::reaction::{ReactionRepo, ReactionRow};
+use soshal_db_core::repos::relay::{RelayRepo, RelayRow};
 use soshal_db_core::repos::settings::SettingsRepo;
 use soshal_db_core::repos::user::{UserRepo, UserRow};
+use soshal_db_core::repos::zap::{ZapRepo, ZapRow};
 use soshal_db_core::Database;
 
 /// Max bytes of feed content that gets cached (relay size caps already
@@ -191,6 +194,87 @@ pub fn handle(
                 UserRepo::new(db).upsert(&row)?;
                 let _ = tx.try_send(SyncUpdate::Profile { pubkey: row.pubkey });
             }
+        }
+        Kind::ContactList => {
+            let pubkey = event.pubkey.to_hex();
+            let repo = UserRepo::new(db);
+            let mut row = repo.get_by_pubkey(&pubkey)?.unwrap_or_else(|| UserRow {
+                pubkey: pubkey.clone(),
+                npub: PublicKey::from_hex(&pubkey)
+                    .ok()
+                    .map(|p| p.to_bech32().unwrap_or_default())
+                    .unwrap_or_default(),
+                name: None,
+                display_name: None,
+                about: None,
+                picture: None,
+                banner: None,
+                nip05: None,
+                lud16: None,
+                created_at: event.created_at.as_secs() as i64,
+                updated_at: event.created_at.as_secs() as i64,
+                metadata_json: None,
+                contact_pubkeys: String::new(),
+                relay_list: String::new(),
+            });
+            row.contact_pubkeys = p_tags(event).join(",");
+            repo.upsert(&row)?;
+        }
+        Kind::ZapReceipt => {
+            let Some(recipient) = p_tags(event).first().cloned() else {
+                return Ok(());
+            };
+            let amount = event
+                .tags
+                .iter()
+                .find(|t| t.kind() == "amount")
+                .and_then(|t| t.content())
+                .and_then(|v| v.parse::<i64>().ok())
+                .unwrap_or(0);
+            let row = ZapRow {
+                id: event.id.to_hex(),
+                pubkey: event.pubkey.to_hex(),
+                recipient_pubkey: recipient,
+                event_id: e_tags(event).first().cloned(),
+                amount,
+                content: Some(event.content.clone()),
+                created_at: event.created_at.as_secs() as i64,
+                zap_type: "public".to_string(),
+            };
+            ZapRepo::new(db).upsert(&row)?;
+        }
+        Kind::RelayList => {
+            let relay_repo = RelayRepo::new(db);
+            let owner = Some(event.pubkey.to_hex());
+            for t in event.tags.iter().filter(|t| t.kind() == "r") {
+                let Some(url) = t.content() else { continue };
+                let (read_enabled, write_enabled) = match t.as_slice().get(2).map(|s| s.as_str()) {
+                    Some("read") => (true, false),
+                    Some("write") => (false, true),
+                    _ => (true, true),
+                };
+                relay_repo.upsert(&RelayRow {
+                    url: url.to_string(),
+                    pubkey: owner.clone(),
+                    name: None,
+                    read_enabled,
+                    write_enabled,
+                    priority: 0,
+                    last_connected_at: None,
+                    health_score: 1.0,
+                })?;
+            }
+        }
+        Kind::Bookmarks => {
+            let Some(event_id) = e_tags(event).first().cloned() else {
+                return Ok(());
+            };
+            BookmarkRepo::new(db).upsert(&BookmarkRow {
+                id: event.id.to_hex(),
+                pubkey: event.pubkey.to_hex(),
+                event_id,
+                created_at: event.created_at.as_secs() as i64,
+            })?;
         }
         Kind::Reaction => {
             let es = e_tags(event);

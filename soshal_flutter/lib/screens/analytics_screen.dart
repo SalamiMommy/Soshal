@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/analytics_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Analytics: local SLM stats, post classification and embeddings.
 class AnalyticsScreen extends StatefulWidget {
@@ -210,10 +211,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(
-                'Error: $_error',
-                style: TextStyle(color: colors.error),
-              ),
+              child: ErrorStateText('Error: $_error'),
             ),
         ],
       ),

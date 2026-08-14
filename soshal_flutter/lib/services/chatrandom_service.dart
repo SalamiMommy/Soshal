@@ -3,16 +3,15 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Chat Random Service
 /// Interest-based random pairing: kind-20030 availability announcements and
 /// kind-20031/20032 request/accept events over the shared relay client.
-class ChatrandomService extends ChangeNotifier {
+class ChatrandomService extends ChangeNotifier with LastErrorMixin {
   List<ChatrandomPeer> _peers = [];
-  String? _lastError;
 
   List<ChatrandomPeer> get peers => _peers;
-  String? get lastError => _lastError;
 
   /// Build the availability content JSON for an announcement.
   String availableContent({
@@ -42,8 +41,8 @@ class ChatrandomService extends ChangeNotifier {
       );
       _lastError = null;
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -70,8 +69,8 @@ class ChatrandomService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _peers;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

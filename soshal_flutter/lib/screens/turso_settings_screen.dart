@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/turso_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Turso Database Sync Settings Screen
 class TursoSettingsScreen extends StatefulWidget {
@@ -121,10 +122,7 @@ class _TursoSettingsScreenState extends State<TursoSettingsScreen> {
                   ),
                   if (turso.lastError != null) ...[
                     const SizedBox(height: 12),
-                    Text(
-                      'Error: ${turso.lastError}',
-                      style: const TextStyle(color: Colors.red),
-                    ),
+                    ErrorStateText('Error: ${turso.lastError}'),
                   ],
                   const SizedBox(height: 24),
                   Text(

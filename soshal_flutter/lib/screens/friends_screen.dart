@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/friends_service.dart';
 import '../services/messaging_service.dart';
 import '../services/session_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Friends: suggestions, add-friend, and in-memory contacts.
 class FriendsScreen extends StatefulWidget {
@@ -109,10 +110,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               if (_service.lastError != null)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    _service.lastError!,
-                    style: TextStyle(color: theme.colorScheme.error),
-                  ),
+                  child: ErrorStateText(_service.lastError!),
                 )
               else if (_service.suggestions.isEmpty)
                 const Padding(

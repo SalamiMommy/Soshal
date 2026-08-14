@@ -7,6 +7,7 @@ import 'ffi/db.dart' as ffi_db;
 import 'services/auth_service.dart';
 import 'services/feed_service.dart';
 import 'services/session_service.dart';
+import 'services/settings_service.dart';
 import 'services/sync_service.dart';
 import 'services/messaging_service.dart';
 import 'services/notifications_service.dart';
@@ -26,6 +27,7 @@ import 'services/telemetry_service.dart';
 import 'services/layout_service.dart';
 import 'services/turso_service.dart';
 import 'services/shell_service.dart';
+import 'services/signer_service.dart';
 import 'services/theme_service.dart';
 import 'services/music_service.dart';
 import 'services/friends_service.dart';
@@ -40,7 +42,6 @@ import 'services/calls_service.dart';
 import 'services/chatrandom_service.dart';
 import 'services/media_service.dart';
 import 'services/mesh_service.dart';
-import 'services/nostr_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -74,12 +75,12 @@ void main() {
             pubkey: () => ctx.read<SessionService>().activePubkey,
           ),
         ),
-        ChangeNotifierProvider(create: (_) => NostrService()),
         ChangeNotifierProvider(create: (_) => P2pService()),
         ChangeNotifierProvider(create: (_) => ModerationService()),
         ChangeNotifierProvider(create: (_) => EbpfService()),
         ChangeNotifierProvider(create: (_) => TursoService()),
         ChangeNotifierProvider(create: (_) => ShellService()),
+        ChangeNotifierProvider(create: (_) => SettingsService()),
         ChangeNotifierProvider(create: (_) => ThemeService()),
         ChangeNotifierProvider(create: (_) => MusicService()),
         ChangeNotifierProvider(create: (_) => FriendsService()),
@@ -92,6 +93,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => CallsService()),
         ChangeNotifierProvider(create: (_) => ChatrandomService()),
         ChangeNotifierProvider(create: (_) => MediaService()),
+        Provider<SignerService>(create: (_) => SignerService()),
         Provider<MinisService>(create: (_) => MinisService()),
       ],
       child: const SoshalApp(),

@@ -1,7 +1,7 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:soshal_flutter/frb_generated.dart';
+import '../services/settings_service.dart';
 import '../services/shell_service.dart';
 
 /// Privacy settings — port of the legacy privacy section: privacy level
@@ -32,9 +32,8 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
 
   Future<void> _load() async {
     try {
-      final saved =
-          RustLib.instance.api.crateFfiDbDbGetSetting(key: 'privacy_level');
-      if (saved != null && saved.isNotEmpty && mounted) {
+      final saved = context.read<SettingsService>().getSetting('privacy_level');
+      if (saved.isNotEmpty && mounted) {
         setState(() => _level = saved);
       }
     } catch (_) {}
@@ -42,10 +41,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
 
   Future<void> _save(String level) async {
     try {
-      RustLib.instance.api.crateFfiDbDbSetSetting(
-        key: 'privacy_level',
-        value: level,
-      );
+      context.read<SettingsService>().setSetting('privacy_level', level);
     } catch (e) {
       debugPrint('save privacy: $e');
     }
@@ -120,9 +116,8 @@ class _StealthEditorState extends State<_StealthEditor> {
 
   Future<void> _load() async {
     try {
-      final v =
-          RustLib.instance.api.crateFfiDbDbGetSetting(key: 'stealth_whitelist');
-      if (v != null && v.isNotEmpty) {
+      final v = context.read<SettingsService>().getSetting('stealth_whitelist');
+      if (v.isNotEmpty) {
         _field.text = v;
       }
     } catch (_) {}
@@ -130,10 +125,9 @@ class _StealthEditorState extends State<_StealthEditor> {
 
   Future<void> _save() async {
     try {
-      RustLib.instance.api.crateFfiDbDbSetSetting(
-        key: 'stealth_whitelist',
-        value: _field.text,
-      );
+      context
+          .read<SettingsService>()
+          .setSetting('stealth_whitelist', _field.text);
       _saved = true;
     } catch (e) {
       debugPrint('save whitelist: $e');

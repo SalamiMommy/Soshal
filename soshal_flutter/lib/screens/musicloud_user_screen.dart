@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/music_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Musicloud user page: one author's published tracks (kind 31022).
 class MusicloudUserScreen extends StatefulWidget {
@@ -168,12 +169,7 @@ class _MusicloudUserScreenState extends State<MusicloudUserScreen> {
               color: Theme.of(context).colorScheme.errorContainer,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Text(
-                  'Error: $error',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onErrorContainer,
-                  ),
-                ),
+                child: ErrorStateText('Error: $error'),
               ),
             )
           : null,

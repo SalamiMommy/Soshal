@@ -117,3 +117,23 @@ fn glitter_strips_control_characters() {
     let cleaned = sanitize_glitter_content(input);
     assert_eq!(cleaned, "helloworld");
 }
+
+#[test]
+fn check_text_adversarial_cases() {
+    assert!(!passed(&check_text("you faggot")));
+    assert_eq!(
+        category(&check_text("you faggot")).as_deref(),
+        Some("homophobic")
+    );
+    assert!(!passed(&check_text("FAGGOT")));
+    assert!(!passed(&check_text("TrAnNy")));
+    assert!(passed(&check_text("f\u{0430}ggot")));
+    assert!(passed(&check_text("nigg\u{301}er")));
+    assert!(passed(&check_text("faggotry")));
+    assert!(passed(&check_text("unfaggot")));
+    assert!(passed(&check_text("hello world")));
+    assert_eq!(category(&check_text("hello world")).as_deref(), None);
+    assert!(passed(&check_text("")));
+    assert!(passed(&check_text("   ")));
+    assert!(passed(&check_text("\t\n ")));
+}

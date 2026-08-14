@@ -1,10 +1,11 @@
+// ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../ffi/db.dart' as ffi_db;
-import '../ffi/nostr.dart' as ffi_nostr;
+import '../frb_generated.dart';
 import '../models/custom_profile.dart';
 import '../models/widget.dart';
 import '../services/session_service.dart';
@@ -111,7 +112,7 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
 
       // Publish to relays (Nostr event kind 30085)
       try {
-        await ffi_nostr.nostrPublishCustomProfile(
+        RustLib.instance.api.crateFfiIdentityIdentityPublishCustomProfile(
           pubkey: pubkey,
           profileJson: jsonEncode(profile.toJson()),
         );

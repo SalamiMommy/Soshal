@@ -3,22 +3,21 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/ffi/network.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Network Service
 /// Transport status: I2P + Freenet presence + HTTP/3 stack + transport mode.
-class NetworkService extends ChangeNotifier {
+class NetworkService extends ChangeNotifier with LastErrorMixin {
   static const String _modeKey = 'transport_mode';
 
   bool? _i2p;
   bool? _freenet;
   List<RelayInfo> _relays = [];
-  String? _lastError;
   TransportMode _transportMode = TransportMode.clearnet;
 
   bool? get i2p => _i2p;
   bool? get freenet => _freenet;
   List<RelayInfo> get relays => _relays;
-  String? get lastError => _lastError;
   TransportMode get transportMode => _transportMode;
   bool get i2pForced => _transportMode == TransportMode.i2p;
 
@@ -35,8 +34,8 @@ class NetworkService extends ChangeNotifier {
         _transportMode = TransportMode.parse(current) ?? TransportMode.clearnet;
         notifyListeners();
       }
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
     }
   }
@@ -55,8 +54,8 @@ class NetworkService extends ChangeNotifier {
         notifyListeners();
       }
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -70,8 +69,8 @@ class NetworkService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return dest;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -84,8 +83,8 @@ class NetworkService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -98,8 +97,8 @@ class NetworkService extends ChangeNotifier {
       final map = jsonDecode(json) as Map<String, dynamic>;
       _lastError = null;
       return map;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -119,8 +118,8 @@ class NetworkService extends ChangeNotifier {
           await RustLib.instance.api.crateFfiNetworkNetworkFreenetStatus();
       _lastError = null;
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
     }
   }
@@ -142,8 +141,8 @@ class NetworkService extends ChangeNotifier {
       );
       _lastError = null;
       return resp;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -162,8 +161,8 @@ class NetworkService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return relays;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -177,8 +176,8 @@ class NetworkService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -192,8 +191,8 @@ class NetworkService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -207,8 +206,8 @@ class NetworkService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return result;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -222,8 +221,8 @@ class NetworkService extends ChangeNotifier {
       final map = jsonDecode(json) as Map<String, dynamic>;
       _lastError = null;
       return map;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -237,8 +236,8 @@ class NetworkService extends ChangeNotifier {
           RustLib.instance.api.crateFfiNetworkNetworkGetSysDiagnostics();
       _lastError = null;
       return json;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -262,8 +261,8 @@ class NetworkService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return res;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return {'success': false, 'error_msg': e.toString()};
     }

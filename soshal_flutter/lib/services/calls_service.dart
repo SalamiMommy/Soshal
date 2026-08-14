@@ -4,14 +4,14 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Calls Service
 /// Relay-based WebRTC signaling (kinds 20001-20004) plus in-call state:
 /// call id, peer, media type, and an elapsed-call timer. Media transport
 /// itself is gated behind the backend; this service only moves signals.
-class CallsService extends ChangeNotifier {
+class CallsService extends ChangeNotifier with LastErrorMixin {
   final List<CallSignal> _signals = [];
-  String? _lastError;
 
   String? _callId;
   String? _peer;
@@ -20,7 +20,6 @@ class CallsService extends ChangeNotifier {
   Timer? _timer;
 
   List<CallSignal> get signals => _signals;
-  String? get lastError => _lastError;
   String? get callId => _callId;
   String? get peer => _peer;
   String? get mediaType => _mediaType;
@@ -55,8 +54,8 @@ class CallsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return eventId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -76,8 +75,8 @@ class CallsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return List.unmodifiable(_signals);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -93,8 +92,8 @@ class CallsService extends ChangeNotifier {
       );
       _lastError = null;
       return out;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -109,8 +108,8 @@ class CallsService extends ChangeNotifier {
       );
       _lastError = null;
       return out;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

@@ -41,8 +41,7 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
   Future<void> _loadProfile() async {
     setState(() => _loading = true);
     try {
-      final profileData =
-          ffi_db.dbGetCustomProfileNodes(pubkey: widget.pubkey);
+      final profileData = ffi_db.dbGetCustomProfileNodes(pubkey: widget.pubkey);
       if (profileData.isNotEmpty) {
         try {
           final List<dynamic> nodesList =

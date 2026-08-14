@@ -3,17 +3,16 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Messaging Service
 /// Handles direct messages (NIP-44), group chats, and decryption
-class MessagingService extends ChangeNotifier {
+class MessagingService extends ChangeNotifier with LastErrorMixin {
   static final _hexRegex = RegExp(r'^[0-9a-f]{64}$');
   final Map<String, List<DirectMessage>> _conversations = {};
   final List<EphemeralMedia> _pendingEphemeral = [];
-  String? _lastError;
 
   Map<String, List<DirectMessage>> get conversations => _conversations;
-  String? get lastError => _lastError;
   List<EphemeralMedia> get pendingEphemeral =>
       List.unmodifiable(_pendingEphemeral);
 
@@ -55,11 +54,11 @@ class MessagingService extends ChangeNotifier {
         _conversations[otherPubkey] = messages;
       }
 
-      _lastError = null;
+      lastErrorValue = null;
       notifyListeners();
       return _conversations[otherPubkey]!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -95,11 +94,11 @@ class MessagingService extends ChangeNotifier {
       }
       _conversations[recipientPubkey]!.add(message);
 
-      _lastError = null;
+      lastErrorValue = null;
       notifyListeners();
       return eventId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -115,8 +114,8 @@ class MessagingService extends ChangeNotifier {
     if (trimmed.startsWith('npub1')) {
       try {
         return RustLib.instance.api.crateFfiAuthAuthNpubDecode(npub: trimmed);
-      } catch (e) {
-        _lastError = e.toString();
+      } catch (e, st) {
+        setLastError(e, st);
         notifyListeners();
         throw Exception('Invalid npub: $trimmed');
       }
@@ -138,10 +137,10 @@ class MessagingService extends ChangeNotifier {
         groupId: sorted.join(','),
         participantPubkeysJson: jsonEncode(sorted),
       );
-      _lastError = null;
+      lastErrorValue = null;
       return eventId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -158,8 +157,8 @@ class MessagingService extends ChangeNotifier {
         payload: encryptedContent,
         senderPubkey: senderPubkey,
       );
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -172,10 +171,10 @@ class MessagingService extends ChangeNotifier {
           RustLib.instance.api.crateFfiMessagingMessagingFetchConversations(
         pubkey: pubkey,
       );
-      _lastError = null;
+      lastErrorValue = null;
       return list;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -202,11 +201,11 @@ class MessagingService extends ChangeNotifier {
   Future<void> markAsRead(String otherPubkey) async {
     try {
       if (_conversations.containsKey(otherPubkey)) {
-        _lastError = null;
+        lastErrorValue = null;
         notifyListeners();
       }
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -214,7 +213,7 @@ class MessagingService extends ChangeNotifier {
 
   /// Clear error
   void clearError() {
-    _lastError = null;
+    lastErrorValue = null;
     notifyListeners();
   }
 
@@ -243,10 +242,10 @@ class MessagingService extends ChangeNotifier {
         maxViews: maxViews,
         expiresAt: expiresAt,
       );
-      _lastError = null;
+      lastErrorValue = null;
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -263,11 +262,11 @@ class MessagingService extends ChangeNotifier {
         ..clear()
         ..addAll(list
             .map((e) => EphemeralMedia.fromJson(e as Map<String, dynamic>)));
-      _lastError = null;
+      lastErrorValue = null;
       notifyListeners();
       return pendingEphemeral;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -284,10 +283,10 @@ class MessagingService extends ChangeNotifier {
         _pendingEphemeral[index] = media;
         notifyListeners();
       }
-      _lastError = null;
+      lastErrorValue = null;
       return media;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -298,11 +297,11 @@ class MessagingService extends ChangeNotifier {
     try {
       final ok = RustLib.instance.api.crateFfiEphemeralEphemeralDelete(id: id);
       _pendingEphemeral.removeWhere((m) => m.id == id);
-      _lastError = null;
+      lastErrorValue = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -540,8 +539,7 @@ class IdentityService extends ChangeNotifier {
   Future<String> followUser(String targetPubkey, String myPubkey) async {
     try {
       return RustLib.instance.api.crateFfiIdentityIdentityFollowUser(
-        userPubkey: myPubkey,
-        targetPubkey: targetPubkey,
+        pubkey: targetPubkey,
       );
     } catch (e) {
       _lastError = e.toString();
@@ -555,8 +553,7 @@ class IdentityService extends ChangeNotifier {
   Future<String> unfollowUser(String targetPubkey, String myPubkey) async {
     try {
       final ok = RustLib.instance.api.crateFfiIdentityIdentityUnfollowUser(
-        userPubkey: myPubkey,
-        targetPubkey: targetPubkey,
+        pubkey: targetPubkey,
       );
       return ok ? 'unfollowed' : 'not followed';
     } catch (e) {

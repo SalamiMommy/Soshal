@@ -3,12 +3,13 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Mesh Service
 /// Reticulum P2P mesh networking: transport, interfaces, addressing,
 /// announce, and status. Wraps the 9 `reticulum_*` bridge fns; the pubkey
 /// is resolved lazily per call from the active session account.
-class MeshService extends ChangeNotifier {
+class MeshService extends ChangeNotifier with LastErrorMixin {
   MeshService({String? Function()? pubkey}) : _pubkeyResolver = pubkey;
 
   /// Resolves the active account pubkey at call time (SessionService).
@@ -19,14 +20,12 @@ class MeshService extends ChangeNotifier {
   int _rxPackets = 0;
   int _txPackets = 0;
   int _activeRoutes = 0;
-  String? _lastError;
 
   String? get destinationHash => _destinationHash;
   bool get running => _running;
   int get rxPackets => _rxPackets;
   int get txPackets => _txPackets;
   int get activeRoutes => _activeRoutes;
-  String? get lastError => _lastError;
 
   /// Active account pubkey, or null when no account is selected.
   String? _pubkey() => _pubkeyResolver?.call();
@@ -50,8 +49,8 @@ class MeshService extends ChangeNotifier {
       _lastError = null;
       _parseStatus(json);
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -74,8 +73,8 @@ class MeshService extends ChangeNotifier {
       _lastError = null;
       _parseStatus(json);
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -95,8 +94,8 @@ class MeshService extends ChangeNotifier {
       _lastError = null;
       _parseStatus(json);
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -115,8 +114,8 @@ class MeshService extends ChangeNotifier {
       );
       _lastError = null;
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -131,8 +130,8 @@ class MeshService extends ChangeNotifier {
       );
       _lastError = null;
       return json;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -147,8 +146,8 @@ class MeshService extends ChangeNotifier {
       );
       _lastError = null;
       return json;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -164,8 +163,8 @@ class MeshService extends ChangeNotifier {
       );
       _lastError = null;
       return json;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -181,8 +180,8 @@ class MeshService extends ChangeNotifier {
       _lastError = null;
       _parseStatus(json);
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -197,8 +196,8 @@ class MeshService extends ChangeNotifier {
       _lastError = null;
       _parseStatus(json);
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -226,8 +225,8 @@ class MeshService extends ChangeNotifier {
       if (map.containsKey('tx_packets')) {
         _txPackets = (map['tx_packets'] as num?)?.toInt() ?? 0;
       }
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
     }
   }
 }

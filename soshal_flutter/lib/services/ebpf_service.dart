@@ -2,18 +2,18 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// eBPF Traffic Shaper Service
 /// Controls kernel socket packet filtering, rate limiting, and nanosecond
 /// spam drop statistics.
-class EbpfService extends ChangeNotifier {
+class EbpfService extends ChangeNotifier with LastErrorMixin {
   final bool _enabled = true;
   String _mode = 'SocketFilterBpf';
   int _droppedPackets = 0;
   int _passedPackets = 0;
   int _nanosSaved = 0;
   int _blockedPeersCount = 0;
-  String? _lastError;
 
   bool get enabled => _enabled;
   String get mode => _mode;
@@ -21,7 +21,6 @@ class EbpfService extends ChangeNotifier {
   int get passedPackets => _passedPackets;
   int get nanosSaved => _nanosSaved;
   int get blockedPeersCount => _blockedPeersCount;
-  String? get lastError => _lastError;
 
   /// Block an IP address in the kernel / socket filter
   Future<bool> blockIp(String ip) async {
@@ -29,8 +28,8 @@ class EbpfService extends ChangeNotifier {
       final res = RustLib.instance.api.crateFfiEbpfEbpfBlockIp(ip: ip);
       await refreshStats();
       return res;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return false;
     }
@@ -42,8 +41,8 @@ class EbpfService extends ChangeNotifier {
       final res = RustLib.instance.api.crateFfiEbpfEbpfUnblockIp(ip: ip);
       await refreshStats();
       return res;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return false;
     }
@@ -63,8 +62,8 @@ class EbpfService extends ChangeNotifier {
       _blockedPeersCount = (stats['blocked_peers_count'] as num?)?.toInt() ?? 0;
       _lastError = null;
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
     }
   }

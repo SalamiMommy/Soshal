@@ -5,6 +5,8 @@
 //! sanitized Rust-side before reaching the FTS parser.
 
 use flutter_rust_bridge::frb;
+use nostr_sdk::client::Client;
+use nostr_sdk::prelude::{Filter, Kind};
 use serde::{Deserialize, Serialize};
 use soshal_db_core::repos::search_index::SearchIndexRepo;
 
@@ -98,6 +100,65 @@ pub fn search_mentions(query: String, limit: i32) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn search_global(query: String, limit: i32) -> Result<String, String> {
     super::util::json_ok(run_search(&query, limit.clamp(1, 100) as i64, None)?)
+}
+
+/// Remote NIP-50 search: query relays for matching text notes. Returns a
+/// JSON array of {id, pubkey, content, created_at} for verified events.
+#[frb(serialize)]
+pub async fn search_remote_global(
+    query: String,
+    limit: u64,
+    relays_json: String,
+) -> Result<String, String> {
+    let relays: Vec<String> =
+        serde_json::from_str(&relays_json).map_err(|e| format!("invalid relays JSON: {e}"))?;
+    if relays.is_empty() {
+        return Err("no relay urls".to_string()).into();
+    }
+    if query.trim().is_empty() {
+        return super::util::json_ok(Vec::<serde_json::Value>::new());
+    }
+    for url in &relays {
+        let (valid, _blocked) = soshal_content_core::url::is_valid_relay_url(url);
+        if !valid {
+            return Err(format!("invalid or blocked relay URL: {url}")).into();
+        }
+    }
+    let filter = Filter::new().search(query).limit(limit as usize);
+    let client = Client::builder().build();
+    let mut added = 0usize;
+    for url in &relays {
+        if let Ok(target) = nostr::types::RelayUrl::parse(url) {
+            if client.add_relay(target).await.is_ok() {
+                added += 1;
+            }
+        }
+    }
+    if added == 0 {
+        return Err("no relays could be added".to_string()).into();
+    }
+    let _ = client.connect().await;
+    let events = match client
+        .fetch_events(vec![filter])
+        .timeout(std::time::Duration::from_secs(8))
+        .await
+    {
+        Ok(events) => events,
+        Err(e) => return Err(format!("remote search failed: {e}")).into(),
+    };
+    let results: Vec<serde_json::Value> = events
+        .into_iter()
+        .filter(|e| e.verify().is_ok() && e.kind == Kind::TextNote)
+        .map(|e| {
+            serde_json::json!({
+                "id": e.id.to_hex(),
+                "pubkey": e.pubkey.to_hex(),
+                "content": e.content,
+                "created_at": e.created_at.as_secs(),
+            })
+        })
+        .collect();
+    super::util::json_ok(results)
 }
 
 /// Get trending hashtags from the hashtag index.

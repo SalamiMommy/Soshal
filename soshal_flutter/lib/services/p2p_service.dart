@@ -24,6 +24,8 @@ import 'package:soshal_flutter/ffi/p2p.dart'
         p2PSwarmPoll,
         p2PStopAll;
 
+import 'error_log.dart';
+
 /// P2P Service
 ///
 /// Local-first peer stack: mDNS LAN discovery (advertise + browse), the
@@ -31,12 +33,11 @@ import 'package:soshal_flutter/ffi/p2p.dart'
 /// mmap'd sparse files, and the thermal/battery-aware seeding scheduler.
 /// All key material stays in the Rust signer; Dart only sees pubkeys and
 /// OS power/connectivity facts.
-class P2pService extends ChangeNotifier {
+class P2pService extends ChangeNotifier with LastErrorMixin {
   final List<P2pPeerDto> _peers = [];
   final Map<String, P2pSwarmStatusDto> _downloads = {};
   int? _lanPort;
   int? _quicPort;
-  String? _lastError;
   P2pPowerDto? _power;
   bool _advertising = false;
   bool _browsing = false;
@@ -46,7 +47,6 @@ class P2pService extends ChangeNotifier {
   Map<String, P2pSwarmStatusDto> get downloads => Map.unmodifiable(_downloads);
   int? get lanPort => _lanPort;
   int? get quicPort => _quicPort;
-  String? get lastError => _lastError;
   P2pPowerDto? get power => _power;
   bool get advertising => _advertising;
   bool get browsing => _browsing;
@@ -83,8 +83,8 @@ class P2pService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _lanPort!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -95,8 +95,8 @@ class P2pService extends ChangeNotifier {
     try {
       _browsing = p2PMdnsBrowseStart();
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -113,8 +113,8 @@ class P2pService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return found;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return const [];
     }
@@ -175,8 +175,8 @@ class P2pService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -192,8 +192,8 @@ class P2pService extends ChangeNotifier {
       }
       notifyListeners();
       return status;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return null;
     }
@@ -205,8 +205,8 @@ class P2pService extends ChangeNotifier {
       p2PSwarmCancel(id: id);
       _downloads.remove(id);
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
     }
   }
@@ -229,8 +229,8 @@ class P2pService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _power!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -242,8 +242,8 @@ class P2pService extends ChangeNotifier {
       _power = p2PPowerMode();
       notifyListeners();
       return _power;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return null;
     }
@@ -265,8 +265,8 @@ class P2pService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return manifest;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return {'success': false, 'error_msg': e.toString()};
     }
@@ -285,8 +285,8 @@ class P2pService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return bytes;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return null;
     }
@@ -298,8 +298,8 @@ class P2pService extends ChangeNotifier {
     _pollTimer = null;
     try {
       p2PStopAll();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
     }
     _advertising = false;
     _browsing = false;

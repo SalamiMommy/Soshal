@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/session_service.dart';
 import '../services/signer_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Security settings: honest status of protections on this build.
 class SecurityScreen extends StatefulWidget {
@@ -13,7 +14,6 @@ class SecurityScreen extends StatefulWidget {
 }
 
 class _SecurityScreenState extends State<SecurityScreen> {
-  final signer = SignerService();
   String? _pubkey;
   bool? _locked;
 
@@ -24,6 +24,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
   }
 
   Future<void> _refresh() async {
+    final signer = context.read<SignerService>();
     String? pubkey;
     bool? locked;
     try {
@@ -39,6 +40,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
   }
 
   Future<void> _confirmAndLock() async {
+    final signer = context.read<SignerService>();
     final doIt = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -66,6 +68,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
   @override
   Widget build(BuildContext context) {
     final pubkey = context.read<SessionService>().activePubkey ?? '';
+    final signer = context.read<SignerService>();
     return Scaffold(
       appBar: AppBar(title: const Text('Security')),
       body: ListView(
@@ -205,6 +208,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
   }
 
   Future<void> _signDialog() async {
+    final signer = context.read<SignerService>();
     final controller = TextEditingController();
     String? signature;
     String? error;
@@ -247,10 +251,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                       style: const TextStyle(
                           fontSize: 11, fontFamily: 'monospace')),
                 if (error != null)
-                  Text('Error: $error',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: Theme.of(context).colorScheme.error)),
+                  ErrorStateText('Error: $error'),
                 const SizedBox(height: 8),
                 Text(
                   'Public key: ${(_pubkey ?? '').substring(0, 12)}…',

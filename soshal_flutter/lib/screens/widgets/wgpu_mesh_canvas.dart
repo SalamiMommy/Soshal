@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 
+import '../../widgets/error_state_text.dart';
+
 /// WGPU Mesh Node representation for Flutter rendering canvas
 class WgpuMeshNodeItem {
   final String id;
@@ -156,12 +158,7 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
         width: widget.width,
         height: widget.height,
         color: const Color(0xFF0D1117),
-        child: Center(
-          child: Text(
-            'WGPU Compute Error: $_error',
-            style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-          ),
-        ),
+        child: ErrorStateText('WGPU Compute Error: $_error'),
       );
     }
 

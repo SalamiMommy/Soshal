@@ -4,13 +4,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/ffi/p2p.dart' as moq;
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Streaming Service
 /// Live stream + story rows (kind 30311 / 30312 posts table entries).
-class StreamingService extends ChangeNotifier {
+class StreamingService extends ChangeNotifier with LastErrorMixin {
   final List<StreamRow> _live = [];
   final List<StreamRow> _stories = [];
-  String? _lastError;
 
   int? _localVideoServerPort;
 
@@ -19,7 +19,6 @@ class StreamingService extends ChangeNotifier {
 
   List<StreamRow> get live => _live;
   List<StreamRow> get stories => _stories;
-  String? get lastError => _lastError;
   int? get localVideoServerPort => _localVideoServerPort;
 
   /// Own broadcast stream id, set while `startMoqBroadcast` is active.
@@ -119,8 +118,8 @@ class StreamingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return port;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -133,8 +132,8 @@ class StreamingService extends ChangeNotifier {
         videoId: videoId,
         sourcePath: sourcePath,
       );
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       rethrow;
     }
   }
@@ -169,8 +168,8 @@ class StreamingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return eventId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -185,8 +184,8 @@ class StreamingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -208,8 +207,8 @@ class StreamingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return eventId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -240,8 +239,8 @@ class StreamingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -267,8 +266,8 @@ class StreamingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return json;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -288,8 +287,8 @@ class StreamingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return status;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -319,8 +318,8 @@ class StreamingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return jsonDecode(json) as Map<String, dynamic>;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -413,8 +412,8 @@ class StreamingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return frames.map(decodeMoqGroup).toList();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -438,8 +437,8 @@ class StreamingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return parsed;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -484,7 +483,9 @@ class StreamRow {
         parsedTitle = firstLine.isEmpty ? 'Untitled' : firstLine;
         parsedSummary = content.trim();
       }
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('moq parse fallback: $e');
+      logRuntimeError('moq parse fallback: $e', st);
       final firstLine = content.trim().split('\n').first;
       parsedTitle = firstLine.isEmpty ? 'Untitled' : firstLine;
       parsedSummary = content.trim();

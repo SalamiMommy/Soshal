@@ -1,19 +1,18 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Minis: mini-app registry (URLs) plus WASI content-filter / feed-ranker
 /// plugin execution. Stateless wrapper — screens own their UI state.
-class MinisService {
-  String? lastError;
-
+class MinisService with LastErrorMixin {
   /// Fetch known mini URLs. Backend stub returns an empty list today.
   List<String> fetchMinis() {
     try {
       final minis = RustLib.instance.api.crateFfiMinisMinisFetch();
-      lastError = null;
+      lastErrorValue = null;
       return minis;
-    } catch (e) {
-      lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       rethrow;
     }
   }
@@ -30,10 +29,10 @@ class MinisService {
         text: text,
         wasmBytesHex: wasmBytesHex,
       );
-      lastError = null;
+      lastErrorValue = null;
       return result;
-    } catch (e) {
-      lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       rethrow;
     }
   }
@@ -50,10 +49,10 @@ class MinisService {
         postsJson: postsJson,
         wasmBytesHex: wasmBytesHex,
       );
-      lastError = null;
+      lastErrorValue = null;
       return ranked;
-    } catch (e) {
-      lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       rethrow;
     }
   }

@@ -12,6 +12,7 @@ import '../services/session_service.dart';
 import 'composer_screen.dart';
 import '../services/zap_service.dart';
 import '../services/layout_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Feed Page
 /// Paginated posts, infinite scroll
@@ -728,7 +729,7 @@ class _BlobImageState extends State<_BlobImage> {
           child: Padding(
             padding: const EdgeInsets.all(12),
             child:
-                Text('Image unavailable: $_error', textAlign: TextAlign.center),
+                ErrorStateText('Image unavailable: $_error'),
           ),
         ),
       );
@@ -835,7 +836,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
           child: Padding(
             padding: const EdgeInsets.all(12),
             child:
-                Text('Video unavailable: $_error', textAlign: TextAlign.center),
+                ErrorStateText('Video unavailable: $_error'),
           ),
         ),
       );

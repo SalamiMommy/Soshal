@@ -89,7 +89,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
     }
 
     final text = _contentController.text;
-    if (!RustLib.instance.api.crateFfiFeedFeedValidateNote(content: text)) {
+    if (!context.read<FeedService>().validateNote(text)) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

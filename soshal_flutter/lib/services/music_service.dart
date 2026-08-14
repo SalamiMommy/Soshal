@@ -3,15 +3,14 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Musicloud: kind-31022 track publishing, fetching, sharing to feed and
 /// comment threads. All FFI calls are async — always awaited.
-class MusicService extends ChangeNotifier {
+class MusicService extends ChangeNotifier with LastErrorMixin {
   List<MusicTrack> _tracks = [];
-  String? _lastError;
 
   List<MusicTrack> get tracks => _tracks;
-  String? get lastError => _lastError;
 
   /// Fetch tracks (kind 31022), optionally filtered by author pubkey.
   Future<List<MusicTrack>> fetchTracks({String? author, int limit = 50}) async {
@@ -27,8 +26,8 @@ class MusicService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _tracks;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -52,8 +51,8 @@ class MusicService extends ChangeNotifier {
       );
       _lastError = null;
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -75,8 +74,8 @@ class MusicService extends ChangeNotifier {
       );
       _lastError = null;
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -98,8 +97,8 @@ class MusicService extends ChangeNotifier {
       );
       _lastError = null;
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -123,8 +122,8 @@ class MusicService extends ChangeNotifier {
           .toList();
       _lastError = null;
       return comments;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

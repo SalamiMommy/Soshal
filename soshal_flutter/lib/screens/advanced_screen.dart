@@ -1,8 +1,9 @@
-// ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:soshal_flutter/frb_generated.dart';
+import 'package:provider/provider.dart';
+import '../services/error_log.dart';
+import '../services/network_service.dart';
 
 /// Advanced settings — relay flags (read/write toggles), diagnostics, and
 /// transport probes. Port of the legacy advanced section; relay flag
@@ -27,19 +28,22 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
   }
 
   Future<void> _load() async {
+    final networkService = context.read<NetworkService>();
     try {
-      final diag =
-          RustLib.instance.api.crateFfiNetworkNetworkGetSysDiagnostics();
+      final diag = networkService.fetchSysDiagnostics();
       _diagnostics = jsonDecode(diag) as Map<String, dynamic>?;
       _diagError = null;
     } catch (e) {
       _diagError = '$e';
     }
     try {
-      _i2p = await RustLib.instance.api.crateFfiNetworkNetworkI2PStatus();
-      _freenet =
-          await RustLib.instance.api.crateFfiNetworkNetworkFreenetStatus();
-    } catch (_) {}
+      await networkService.refresh();
+      _i2p = networkService.i2p ?? false;
+      _freenet = networkService.freenet ?? false;
+    } catch (e, st) {
+      debugPrint('network refresh failed: $e');
+      logRuntimeError('network refresh: $e', st);
+    }
     if (mounted) setState(() {});
   }
 

@@ -87,6 +87,41 @@ pub fn get_balance_request() -> nostr::nips::nip47::Request {
     nostr::nips::nip47::Request::get_balance()
 }
 
+/// Validates a BOLT-11 invoice for payment: non-empty, length-capped, and
+/// within the per-payment sat cap. Runs before the invoice ever leaves the
+/// process.
+pub fn validate_pay_invoice(invoice: &str) -> Result<(), String> {
+    if invoice.is_empty() || invoice.len() > 4096 {
+        return Err("invalid bolt11 invoice".into());
+    }
+    if let Some(sats) = super::bolt11_amount_sats(invoice) {
+        if sats > super::NWC_MAX_PAY_SATS {
+            return Err(format!(
+                "payment exceeds {}-sat NWC cap",
+                super::NWC_MAX_PAY_SATS
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Pays a BOLT-11 invoice via the connected NWC provider: builds the NIP-47
+/// pay-invoice request, exchanges it over the wallet relay (NIP-44 v2
+/// ciphertext, kind 23195 response), and returns the serialized response
+/// (preimage confirmation). The wss:// + SSRF guard re-runs inside
+/// `nwc_send_request`.
+pub async fn pay_invoice<
+    S: nostr::key::AsyncGetPublicKey + nostr::event::AsyncSignEvent + Send + Sync + 'static,
+>(
+    signer: S,
+    uri_str: &str,
+    invoice: String,
+) -> Result<String, String> {
+    validate_pay_invoice(&invoice)?;
+    let resp = nwc_send_request(signer, uri_str, pay_invoice_request(invoice)).await?;
+    serde_json::to_string(&resp).map_err(|e| format!("serialize: {e}"))
+}
+
 /// Sends a NIP-47 request to the wallet's relay and waits for the encrypted
 /// response. Signature-verifies every returned event before parsing.
 ///

@@ -3,21 +3,20 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Dating Service
 /// Profile creation/browsing, likes, matches, filters and stats.
-class DatingService extends ChangeNotifier {
+class DatingService extends ChangeNotifier with LastErrorMixin {
   List<DatingCard> _cards = [];
   final List<DatingCard> _matches = [];
   final List<DatingCard> _likes = [];
   DatingCard? _ownProfile;
-  String? _lastError;
 
   List<DatingCard> get cards => _cards;
   List<DatingCard> get matches => _matches;
   List<DatingCard> get likes => _likes;
   DatingCard? get ownProfile => _ownProfile;
-  String? get lastError => _lastError;
 
   Future<List<DatingCard>> fetchProfiles(String userPubkey,
       {int limit = 50}) async {
@@ -57,8 +56,8 @@ class DatingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _matches;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -74,8 +73,8 @@ class DatingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _likes;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -88,8 +87,8 @@ class DatingService extends ChangeNotifier {
       );
       _lastError = null;
       return _parseCards(json);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -104,8 +103,8 @@ class DatingService extends ChangeNotifier {
       );
       _lastError = null;
       return score;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -120,8 +119,8 @@ class DatingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _ownProfile!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       _ownProfile = null;
       notifyListeners();
       rethrow;
@@ -150,8 +149,8 @@ class DatingService extends ChangeNotifier {
       _lastError = null;
       await getOwnProfile(userPubkey);
       return eventId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -173,8 +172,8 @@ class DatingService extends ChangeNotifier {
       _lastError = null;
       await getOwnProfile(userPubkey);
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -189,8 +188,8 @@ class DatingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -261,8 +260,8 @@ class DatingService extends ChangeNotifier {
           decoded is Map<String, dynamic> ? decoded : <String, dynamic>{});
       _lastError = null;
       return stats;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -274,8 +273,8 @@ class DatingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -288,8 +287,8 @@ class DatingService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _cards;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

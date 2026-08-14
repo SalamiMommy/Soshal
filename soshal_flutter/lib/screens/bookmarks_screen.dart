@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/bookmarks_service.dart';
 import '../services/feed_service.dart' show FeedPost;
 import '../services/session_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Bookmarks: locally saved posts, resolved from the local DB cache.
 class BookmarksScreen extends StatefulWidget {
@@ -89,7 +90,6 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Bookmarks'),
@@ -109,10 +109,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text(
-                  'Error: $_error',
-                  style: TextStyle(color: colors.error),
-                ),
+                child: ErrorStateText('Error: $_error'),
               ),
             );
           }

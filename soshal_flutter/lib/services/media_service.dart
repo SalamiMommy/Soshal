@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:soshal_flutter/ffi/media.dart';
 import 'package:soshal_flutter/ffi/p2p.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Media Service
 /// Handles media upload/download, blob storage, and local file serving via
@@ -12,11 +14,9 @@ import 'package:soshal_flutter/frb_generated.dart';
 /// (sendfile) for video playback. LAN peers can be crawled for blobs by
 /// hash alone (`fetchBlobFromLan`) — one TCP/QUIC round trip for the
 /// manifest, then parallel-verified chunk pulls.
-class MediaService extends ChangeNotifier {
-  String? _lastError;
+class MediaService extends ChangeNotifier with LastErrorMixin {
   int? _localServerPort;
 
-  String? get lastError => _lastError;
   int? get localServerPort => _localServerPort;
 
   /// Fetch a blob by hash from LAN peers (crawl-then-swarm), falling back
@@ -53,9 +53,23 @@ class MediaService extends ChangeNotifier {
         debugPrint('media: peer ${peer.ip} failed: $e');
       }
     }
-    _lastError = last.toString();
+    setLastError(last ?? 'null');
     notifyListeners();
     throw Exception('All LAN peers failed: $last');
+  }
+
+  /// Decode an image into uncompressed RGBA pixels on Rust worker threads
+  /// (off the UI isolate). Returns pixels + dimensions.
+  Future<DecodedImageRgbaDto> decodeImageRgba(
+    String filePathOrUrl, {
+    int? maxWidth,
+    int? maxHeight,
+  }) async {
+    return RustLib.instance.api.crateFfiMediaMediaDecodeImageRgba(
+      filePathOrUrl: filePathOrUrl,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+    );
   }
 
   /// Upload media to the chunk store and return the blob manifest.
@@ -79,8 +93,8 @@ class MediaService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return manifest;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -112,8 +126,8 @@ class MediaService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return outPath;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -128,8 +142,8 @@ class MediaService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _localServerPort!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -142,8 +156,8 @@ class MediaService extends ChangeNotifier {
       _localServerPort = null;
       _lastError = null;
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
     }
   }
@@ -163,8 +177,8 @@ class MediaService extends ChangeNotifier {
       final path = RustLib.instance.api.crateFfiMediaMediaGetCachePath();
       _lastError = null;
       return path;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -177,8 +191,8 @@ class MediaService extends ChangeNotifier {
       RustLib.instance.api.crateFfiMediaMediaClearCache(cacheDir: cachePath);
       _lastError = null;
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
     }
   }

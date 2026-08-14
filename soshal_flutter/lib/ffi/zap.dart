@@ -6,8 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `InvoiceInfo`, `LnurlMetadata`, `NwcConnectionInfo`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `nwc_uri`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeSigner`, `InvoiceInfo`, `LnurlMetadata`, `NwcConnectionInfo`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `get_public_key_async`, `sign_event_async`
 
 /// Parse a lud16 address into its parts (Rust-side URL hygiene).
 Future<String> zapParseLnurlMetadata({required String lnurl}) =>
@@ -30,8 +31,10 @@ Future<String> zapGetNwcStatus() =>
 Future<String> zapGetNwcPubkey() =>
     RustLib.instance.api.crateFfiZapZapGetNwcPubkey();
 
-/// Fetch invoice for zap via the connected NWC provider (kind 4 request is
-/// built Rust-side; the response relay listener stores the invoice row).
+/// Fetch invoice for a zap via the connected NWC provider. The NIP-47
+/// make-invoice request is built and exchanged Rust-side (NIP-44 v2
+/// ciphertext, kind 23195 response); returns the serialized response with
+/// the bolt11 invoice.
 Future<String> zapFetchInvoice(
         {required String lnurl,
         required BigInt amountMsat,
@@ -42,6 +45,11 @@ Future<String> zapFetchInvoice(
         amountMsat: amountMsat,
         comment: comment,
         nostrEvent: nostrEvent);
+
+/// Pay a BOLT-11 invoice via the connected NWC provider. Returns the
+/// serialized pay_invoice response (payment preimage).
+Future<String> zapSendPayment({required String bolt11}) =>
+    RustLib.instance.api.crateFfiZapZapSendPayment(bolt11: bolt11);
 
 /// Get total zap amounts for an event from the local DB (invoice amounts
 /// only — never the `amount` tag of an unverified receipt).

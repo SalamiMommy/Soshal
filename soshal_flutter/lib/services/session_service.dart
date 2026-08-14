@@ -3,17 +3,16 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 import 'ffi_bridge.dart';
 
 /// Session Service
 /// Handles multi-account management, session persistence, and keychain
-class SessionService extends ChangeNotifier {
+class SessionService extends ChangeNotifier with LastErrorMixin {
   SessionData? _session;
-  String? _lastError;
   String? _activePubkey;
 
   SessionData? get session => _session;
-  String? get lastError => _lastError;
   String? get activePubkey => _activePubkey;
   SessionAccount? get activeAccount => _session?.accounts.firstWhere(
         (a) => a.pubkey == _activePubkey,
@@ -40,8 +39,8 @@ class SessionService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _session!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -59,8 +58,8 @@ class SessionService extends ChangeNotifier {
         dbPath: dbPath,
         sessionData: jsonEncode(_session!.toJson()),
       );
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -108,11 +107,19 @@ class SessionService extends ChangeNotifier {
 
       _lastError = null;
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Seed a base profile row so the account is indexable/searchable
+  /// (identity-core). Fire-and-forget friendly; never throws in the
+  /// caller-facing flow since the store is best-effort.
+  Future<bool> storeProfile(String profileJson) async {
+    return RustLib.instance.api
+        .crateFfiIdentityIdentityStoreProfile(profile: profileJson);
   }
 
   /// Persist an updated relay list for an account.
@@ -150,8 +157,8 @@ class SessionService extends ChangeNotifier {
 
       _lastError = null;
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -178,8 +185,8 @@ class SessionService extends ChangeNotifier {
 
       _lastError = null;
       notifyListeners();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/network_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Network settings — relay management (add/remove), connection status, and
 /// transport toggles. Port of the legacy network settings section.
@@ -143,10 +144,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Error: $_error',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
+                child: ErrorStateText('Error: $_error'),
               ),
             if (_loading)
               const Padding(

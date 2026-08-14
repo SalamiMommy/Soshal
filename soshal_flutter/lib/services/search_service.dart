@@ -3,21 +3,20 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Search Service
 /// Local FTS5 search across posts, profiles, hashtags and mentions.
-class SearchService extends ChangeNotifier {
+class SearchService extends ChangeNotifier with LastErrorMixin {
   List<SearchResultItem> _results = [];
   List<SearchResultItem> _trendingProfiles = [];
   List<String> _hashtags = [];
   List<String> _trendingHashtags = [];
-  String? _lastError;
 
   List<SearchResultItem> get results => _results;
   List<SearchResultItem> get trendingProfilesList => _trendingProfiles;
   List<String> get hashtags => _hashtags;
   List<String> get trendingHashtagsList => _trendingHashtags;
-  String? get lastError => _lastError;
 
   /// Search posts (returns post rows as raw JSON).
   Future<List<SearchResultItem>> searchPosts(String query,
@@ -51,8 +50,8 @@ class SearchService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _hashtags;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -69,6 +68,25 @@ class SearchService extends ChangeNotifier {
     );
   }
 
+  /// Remote NIP-50 search across relays (verified text notes, raw JSON).
+  Future<String> remoteGlobalSearch(
+      String query, int limit, List<String> relays) async {
+    try {
+      final json = await RustLib.instance.api.crateFfiSearchSearchRemoteGlobal(
+        query: query,
+        limit: BigInt.from(limit),
+        relaysJson: jsonEncode(relays),
+      );
+      _lastError = null;
+      notifyListeners();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   /// Trending hashtags.
   Future<List<String>> trendingHashtags({int limit = 20}) async {
     try {
@@ -79,8 +97,8 @@ class SearchService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _trendingHashtags;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -103,8 +121,8 @@ class SearchService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _trendingProfiles;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -124,8 +142,8 @@ class SearchService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _results;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

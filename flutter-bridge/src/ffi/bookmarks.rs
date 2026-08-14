@@ -3,6 +3,7 @@
 //! Thin wrapper over db-core's `BookmarkRepo` (local bookmark table).
 
 use flutter_rust_bridge::frb;
+use nostr::event::{EventBuilder, Kind, Tag};
 
 /// Save a bookmark for an event. Returns the bookmark id (event id).
 #[frb(sync, serialize)]
@@ -18,6 +19,7 @@ pub fn bookmarks_save(pubkey: String, event_id: String) -> Result<String, String
         soshal_db_core::repos::bookmark::BookmarkRepo::new(db).upsert(&row)?;
         Ok(())
     })?;
+    publish_bookmark_list(&row.pubkey);
     Ok(row.id).into()
 }
 
@@ -36,10 +38,19 @@ pub fn bookmarks_list(pubkey: String, limit: i64, offset: i64) -> Result<String,
 /// Delete a bookmark by id. Returns true if a row was removed.
 #[frb(sync, serialize)]
 pub fn bookmarks_delete(id: String) -> Result<bool, String> {
+    let pubkey = super::db::with_db_result(|db| {
+        soshal_db_core::repos::bookmark::BookmarkRepo::new(db).get_by_id(&id)
+    })?
+    .map(|r| r.pubkey)
+    .unwrap_or_default();
     super::db::with_db_result(|db| {
         soshal_db_core::repos::bookmark::BookmarkRepo::new(db).delete(&id)?;
         Ok(true)
-    })
+    })?;
+    if !pubkey.is_empty() {
+        publish_bookmark_list(&pubkey);
+    }
+    Ok(true)
 }
 
 /// Resolve a bookmarked event from the local DB cache.
@@ -54,4 +65,31 @@ pub fn bookmarks_resolve_post(event_id: String) -> Result<String, String> {
         Some(row) => super::util::json_ok(row),
         None => Ok(String::new()),
     })
+}
+
+/// Best-effort publish of the user's bookmark list (NIP-51 kind 10003) with
+/// one `e` tag per saved bookmark. Signer-locked or unreachable relays leave
+/// bookmarks local-only (DB write already succeeded).
+fn publish_bookmark_list(pubkey: &str) {
+    if super::signer::signer_pubkey().is_err() {
+        return;
+    }
+    let rows = super::db::with_db_result(|db| {
+        soshal_db_core::repos::bookmark::BookmarkRepo::new(db).get_user_bookmarks(pubkey, 1000, 0)
+    })
+    .unwrap_or_default();
+    let mut builder = EventBuilder::new(Kind::from_u16(10003), "");
+    for r in &rows {
+        if let Ok(tag) = Tag::parse(vec!["e".to_string(), r.event_id.clone()]) {
+            builder = builder.tag(tag);
+        }
+    }
+    if let Ok(signed) = super::signer::sign_builder(builder) {
+        if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            let _ = rt.block_on(super::network::network_publish_event(signed));
+        }
+    }
 }

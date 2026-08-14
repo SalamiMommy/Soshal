@@ -328,37 +328,198 @@ pub fn identity_get_wot_status(
     Ok(status.to_string()).into()
 }
 
-/// Sign a kind-3 contact list (follow) event containing the given pubkey.
-/// `user_pubkey` must match the unlocked signer.
+/// Publish a signed event JSON from a sync context, via a short-lived
+/// single-threaded runtime (mirrors `identity_verify_nip05`).
+fn publish_event(signed: String) -> Result<i32, String> {
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => return Err(format!("runtime: {e}")),
+    };
+    runtime.block_on(super::network::network_publish_event(signed))
+}
+
+/// Follow `pubkey`: rebuild the FULL NIP-02 contact list of the unlocked
+/// signer from the local `users.contact_pubkeys` (appending the target when
+/// absent), persist it, sign a kind-3 event and publish. Returns the signed
+/// event JSON.
 #[frb(sync, serialize)]
-pub fn identity_follow_user(user_pubkey: String, target_pubkey: String) -> Result<String, String> {
+pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
     let unlocked = match super::signer::signer_pubkey() {
         Ok(pk) => pk,
         Err(_) => return Err("signer locked".to_string()).into(),
     };
-    if unlocked != user_pubkey {
-        return Err("pubkey does not match unlocked signer".to_string()).into();
-    }
+    let (list, row) = super::db::with_db_result(|db| {
+        let row = UserRepo::new(db).get_by_pubkey(&unlocked)?;
+        let mut follows: Vec<String> = match &row {
+            Some(r) => serde_json::from_str(&r.contact_pubkeys).unwrap_or_default(),
+            None => Vec::new(),
+        };
+        if !follows.contains(&pubkey) {
+            follows.push(pubkey);
+        }
+        Ok((follows, row))
+    })?;
+    let updated = serde_json::to_string(&list).map_err(|e| format!("serialize: {e}"))?;
+    super::db::with_db_result(|db| {
+        let mut r = match row {
+            Some(r) => r,
+            None => UserRow {
+                pubkey: unlocked.clone(),
+                npub: soshal_identity_core::keys::npub_encode(&unlocked).unwrap_or_default(),
+                name: None,
+                display_name: None,
+                about: None,
+                picture: None,
+                banner: None,
+                nip05: None,
+                lud16: None,
+                created_at: soshal_common_core::format::now_secs(),
+                updated_at: soshal_common_core::format::now_secs(),
+                metadata_json: None,
+                contact_pubkeys: String::new(),
+                relay_list: String::from("[]"),
+            },
+        };
+        r.contact_pubkeys = updated;
+        UserRepo::new(db).upsert(&r)?;
+        Ok(())
+    })?;
     let mut builder = EventBuilder::new(Kind::ContactList, "");
-    if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), target_pubkey]) {
-        builder = builder.tag(tag);
+    for f in &list {
+        if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), f.clone()]) {
+            builder = builder.tag(tag);
+        }
     }
-    super::signer::sign_builder(builder)
+    let signed = super::signer::sign_builder(builder)?;
+    publish_event(signed.clone())?;
+    Ok(signed)
 }
 
-/// Unfollow: publish a contact-list event without the target (an empty list
-/// clears the server-side follow set; a full re-publish of remaining follows
-/// is server-side reconciliation).
+/// Unfollow `pubkey`: rebuild the signer's full NIP-02 contact list minus the
+/// target, persist it, sign a kind-3 event and publish. Returns true.
 #[frb(sync, serialize)]
-pub fn identity_unfollow_user(
-    _user_pubkey: String,
-    _target_pubkey: String,
-) -> Result<bool, String> {
-    Err(
-        "unfollow requires the full contact list; re-publish kind 3 via identity_follow_user"
-            .to_string(),
-    )
-    .into()
+pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
+    let unlocked = match super::signer::signer_pubkey() {
+        Ok(pk) => pk,
+        Err(_) => return Err("signer locked".to_string()).into(),
+    };
+    let (list, row) = super::db::with_db_result(|db| {
+        let row = UserRepo::new(db).get_by_pubkey(&unlocked)?;
+        let mut follows: Vec<String> = match &row {
+            Some(r) => serde_json::from_str(&r.contact_pubkeys).unwrap_or_default(),
+            None => Vec::new(),
+        };
+        follows.retain(|f| f != &pubkey);
+        Ok((follows, row))
+    })?;
+    let updated = serde_json::to_string(&list).map_err(|e| format!("serialize: {e}"))?;
+    super::db::with_db_result(|db| {
+        let mut r = match row {
+            Some(r) => r,
+            None => UserRow {
+                pubkey: unlocked.clone(),
+                npub: soshal_identity_core::keys::npub_encode(&unlocked).unwrap_or_default(),
+                name: None,
+                display_name: None,
+                about: None,
+                picture: None,
+                banner: None,
+                nip05: None,
+                lud16: None,
+                created_at: soshal_common_core::format::now_secs(),
+                updated_at: soshal_common_core::format::now_secs(),
+                metadata_json: None,
+                contact_pubkeys: String::new(),
+                relay_list: String::from("[]"),
+            },
+        };
+        r.contact_pubkeys = updated;
+        UserRepo::new(db).upsert(&r)?;
+        Ok(())
+    })?;
+    let mut builder = EventBuilder::new(Kind::ContactList, "");
+    for f in &list {
+        if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), f.clone()]) {
+            builder = builder.tag(tag);
+        }
+    }
+    let signed = super::signer::sign_builder(builder)?;
+    publish_event(signed)?;
+    Ok(true)
+}
+
+/// Fetch the followed pubkeys of `pubkey` from the local contact list.
+/// Returns a JSON array of pubkey strings (`[]` when unknown or empty).
+#[frb(sync, serialize)]
+pub fn identity_fetch_follows(pubkey: String) -> Result<String, String> {
+    let follows = super::db::with_db_result(|db| {
+        let row = UserRepo::new(db).get_by_pubkey(&pubkey)?;
+        Ok(match row {
+            Some(r) => serde_json::from_str::<Vec<String>>(&r.contact_pubkeys).unwrap_or_default(),
+            None => Vec::new(),
+        })
+    })?;
+    serde_json::to_string(&follows).map_err(|e| format!("serialize: {e}"))
+}
+
+/// Publish a NIP-65 relay-list metadata event (kind 10002) for the unlocked
+/// signer. Every URL must be valid `wss://`. Returns the event id.
+#[frb(sync, serialize)]
+pub fn identity_publish_relay_list(relay_urls: Vec<String>) -> Result<String, String> {
+    let unlocked = match super::signer::signer_pubkey() {
+        Ok(pk) => pk,
+        Err(_) => return Err("signer locked".to_string()).into(),
+    };
+    let _ = unlocked;
+    for url in &relay_urls {
+        if !soshal_common_core::url::is_valid_event_relay_url(url) {
+            return Err(format!("invalid relay url: {url}")).into();
+        }
+    }
+    let mut builder = EventBuilder::new(Kind::RelayList, "");
+    for url in &relay_urls {
+        for role in ["read", "write"] {
+            if let Ok(tag) =
+                nostr::event::Tag::parse(vec!["r".to_string(), url.clone(), role.to_string()])
+            {
+                builder = builder.tag(tag);
+            }
+        }
+    }
+    let signed = super::signer::sign_builder(builder)?;
+    publish_event(signed.clone())?;
+    let id = serde_json::from_str::<serde_json::Value>(&signed)
+        .ok()
+        .and_then(|v| v["id"].as_str().map(|s| s.to_string()))
+        .unwrap_or_default();
+    Ok(id)
+}
+
+/// Publish a kind-30085 custom profile event for the unlocked signer.
+/// `pubkey` must match the unlocked signer. Returns the event id.
+#[frb(sync, serialize)]
+pub fn identity_publish_custom_profile(
+    pubkey: String,
+    profile_json: String,
+) -> Result<String, String> {
+    let unlocked = match super::signer::signer_pubkey() {
+        Ok(pk) => pk,
+        Err(_) => return Err("signer locked".to_string()).into(),
+    };
+    if unlocked != pubkey {
+        return Err("pubkey does not match unlocked signer".to_string()).into();
+    }
+    let builder = EventBuilder::new(Kind::Custom(30085), profile_json);
+    let signed = super::signer::sign_builder(builder)?;
+    publish_event(signed.clone())?;
+    let id = serde_json::from_str::<serde_json::Value>(&signed)
+        .ok()
+        .and_then(|v| v["id"].as_str().map(|s| s.to_string()))
+        .unwrap_or_default();
+    Ok(id)
 }
 
 /// Block a user locally (stored in the blocks table; also enforced by feed

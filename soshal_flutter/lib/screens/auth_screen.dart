@@ -1,12 +1,13 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../frb_generated.dart';
 import '../services/sync_service.dart';
 import '../services/auth_service.dart';
+import '../services/error_log.dart';
 import '../services/session_service.dart';
 
 /// Auth Flow Screen
@@ -406,17 +407,18 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
 
       // Seed a base profile row so the user is indexable/searchable
       try {
-        RustLib.instance.api.crateFfiIdentityIdentityStoreProfile(
-          profile: jsonEncode({
-            'pubkey': keypair.publicKey,
-            'content': {
-              'name': '',
-              'display_name': 'New user',
-              'about': '',
-            },
-          }),
-        );
-      } catch (_) {}
+        await sessionService.storeProfile(jsonEncode({
+          'pubkey': keypair.publicKey,
+          'content': {
+            'name': '',
+            'display_name': 'New user',
+            'about': '',
+          },
+        }));
+      } catch (e, st) {
+        debugPrint('onboarding profile save failed: $e');
+        logRuntimeError('onboarding profile save: $e', st);
+      }
 
       // Save session
       await sessionService.saveSession();

@@ -1,6 +1,7 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter/material.dart';
-import 'package:soshal_flutter/frb_generated.dart';
+import 'package:provider/provider.dart';
+import 'package:soshal_flutter/services/settings_service.dart';
 
 /// Language setting — persists a locale code in the `language` settings key.
 /// The legacy UI offered a locale list; the app itself renders English for
@@ -33,9 +34,8 @@ class _LanguageScreenState extends State<LanguageScreen> {
 
   Future<void> _load() async {
     try {
-      final saved =
-          RustLib.instance.api.crateFfiDbDbGetSetting(key: 'language');
-      if (saved != null && saved.isNotEmpty && mounted) {
+      final saved = context.read<SettingsService>().getSetting('language');
+      if (saved.isNotEmpty && mounted) {
         setState(() => _current = saved);
       }
     } catch (_) {}
@@ -43,10 +43,7 @@ class _LanguageScreenState extends State<LanguageScreen> {
 
   Future<void> _save(String code) async {
     try {
-      RustLib.instance.api.crateFfiDbDbSetSetting(
-        key: 'language',
-        value: code,
-      );
+      context.read<SettingsService>().setSetting('language', code);
     } catch (e) {
       debugPrint('save language: $e');
     }

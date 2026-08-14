@@ -2,7 +2,8 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:soshal_flutter/frb_generated.dart';
+import 'package:provider/provider.dart';
+import '../services/media_service.dart';
 
 /// Widget that renders an image decoded by Rust background worker threads.
 /// Offloads image decoding off the Dart UI Isolate to maintain 60/120 FPS scrolling.
@@ -78,8 +79,9 @@ class _RustNativeImageState extends State<RustNativeImage> {
           ? (widget.height! * 2).toInt()
           : 1080;
 
-      final dto = await RustLib.instance.api.crateFfiMediaMediaDecodeImageRgba(
-        filePathOrUrl: widget.filePathOrUrl,
+      final media = context.read<MediaService>();
+      final dto = await media.decodeImageRgba(
+        widget.filePathOrUrl,
         maxWidth: maxWidth,
         maxHeight: maxHeight,
       );

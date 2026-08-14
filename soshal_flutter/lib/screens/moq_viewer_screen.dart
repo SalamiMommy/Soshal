@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../services/audio_codec.dart';
 import '../services/h264_codec.dart';
 import '../services/streaming_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// MoQ live viewer.
 ///
@@ -166,9 +167,9 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
                 children: [
                   const CircularProgressIndicator(),
                   const SizedBox(height: 16),
-                  Text(_error == null
-                      ? 'Waiting for MoQ groups…'
-                      : 'Stream error: $_error'),
+                  _error == null
+                      ? const Text('Waiting for MoQ groups…')
+                      : ErrorStateText('$_error'),
                 ],
               ),
             )

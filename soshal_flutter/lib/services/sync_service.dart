@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 import 'feed_service.dart';
 import 'messaging_service.dart';
 
@@ -12,7 +13,7 @@ import 'messaging_service.dart';
 /// `syncEvents` stream) and routes updates into the domain services:
 /// new feed posts append live, incoming DMs decrypt+land in conversation
 /// lists, reactions and profiles refresh their surfaces.
-class SyncService extends ChangeNotifier {
+class SyncService extends ChangeNotifier with LastErrorMixin {
   StreamSubscription<String>? _subscription;
   Timer? _notifyDebounceTimer;
   Timer? _gcTimer;
@@ -20,13 +21,11 @@ class SyncService extends ChangeNotifier {
   MessagingService? _messaging;
   bool _started = false;
   bool _subscribed = false;
-  String? _lastError;
 
   /// How far back deletions must be acknowledged before tombstones go away.
   static const int _gcConsensusWindowSecs = 7 * 24 * 3600;
 
   bool get started => _started;
-  String? get lastError => _lastError;
 
   void _scheduleNotify() {
     _notifyDebounceTimer?.cancel();
@@ -58,9 +57,9 @@ class SyncService extends ChangeNotifier {
         runScheduledEpochGc();
       });
       _lastError = null;
-    } catch (e) {
+    } catch (e, st) {
       _started = false;
-      _lastError = e.toString();
+      setLastError(e, st);
     }
     notifyListeners();
   }
@@ -70,8 +69,8 @@ class SyncService extends ChangeNotifier {
     if (!_started) return;
     try {
       await RustLib.instance.api.crateFfiSyncSyncStop();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
     }
     _gcTimer?.cancel();
     _gcTimer = null;
@@ -84,7 +83,7 @@ class SyncService extends ChangeNotifier {
     _subscribed = true;
     _subscription = RustLib.instance.api.crateFfiSyncSyncEvents().listen(_route,
         onError: (Object e) {
-      _lastError = e.toString();
+      setLastError(e);
       _scheduleNotify();
     });
   }
@@ -123,8 +122,8 @@ class SyncService extends ChangeNotifier {
         default:
           _scheduleNotify();
       }
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       _scheduleNotify();
     }
   }
@@ -140,8 +139,8 @@ class SyncService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return res;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return {'verified': false, 'error_msg': e.toString()};
     }
@@ -167,8 +166,8 @@ class SyncService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return res;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return {'success': false, 'error_msg': e.toString()};
     }
@@ -197,8 +196,8 @@ class SyncService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return res;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return {'error_msg': e.toString()};
     }

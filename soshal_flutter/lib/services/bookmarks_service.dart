@@ -4,15 +4,14 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'feed_service.dart';
+import 'error_log.dart';
 
 /// Bookmarks Service
 /// Local bookmark storage plus post resolution from the local DB cache.
-class BookmarksService extends ChangeNotifier {
+class BookmarksService extends ChangeNotifier with LastErrorMixin {
   List<BookmarkRow> _bookmarks = [];
-  String? _lastError;
 
   List<BookmarkRow> get bookmarks => _bookmarks;
-  String? get lastError => _lastError;
 
   /// Save a bookmark for an event. Returns the bookmark id.
   Future<String> save(String pubkey, String eventId) async {
@@ -24,8 +23,8 @@ class BookmarksService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -49,8 +48,8 @@ class BookmarksService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _bookmarks;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -65,8 +64,8 @@ class BookmarksService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return removed;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -83,8 +82,8 @@ class BookmarksService extends ChangeNotifier {
       final decoded = jsonDecode(json);
       if (decoded is! Map<String, dynamic>) return null;
       return FeedPost.fromJson(decoded);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       return null;
     }

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/music_service.dart';
 import '../services/shell_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Musicloud: track list, publish form (FAB), and a detail view with
 /// comments and share-to-feed. Playback goes through the global audio bar.
@@ -256,12 +257,7 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
               color: Theme.of(context).colorScheme.errorContainer,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Text(
-                  'Error: $error',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onErrorContainer,
-                  ),
-                ),
+                child: ErrorStateText('Error: $error'),
               ),
             )
           : null,

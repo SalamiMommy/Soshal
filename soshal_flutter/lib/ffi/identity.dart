@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `all_users`, `empty_profile`, `row_to_profile`, `split_nip05`, `verify_nip05_fut`
+// These functions are ignored because they are not marked as `pub`: `all_users`, `empty_profile`, `publish_event`, `row_to_profile`, `split_nip05`, `verify_nip05_fut`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ProfileInfo`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
 
@@ -67,20 +67,35 @@ String identityGetWotStatus(
     RustLib.instance.api.crateFfiIdentityIdentityGetWotStatus(
         targetPubkey: targetPubkey, viewerPubkey: viewerPubkey);
 
-/// Sign a kind-3 contact list (follow) event containing the given pubkey.
-/// `user_pubkey` must match the unlocked signer.
-String identityFollowUser(
-        {required String userPubkey, required String targetPubkey}) =>
-    RustLib.instance.api.crateFfiIdentityIdentityFollowUser(
-        userPubkey: userPubkey, targetPubkey: targetPubkey);
+/// Follow `pubkey`: rebuild the FULL NIP-02 contact list of the unlocked
+/// signer from the local `users.contact_pubkeys` (appending the target when
+/// absent), persist it, sign a kind-3 event and publish. Returns the signed
+/// event JSON.
+String identityFollowUser({required String pubkey}) =>
+    RustLib.instance.api.crateFfiIdentityIdentityFollowUser(pubkey: pubkey);
 
-/// Unfollow: publish a contact-list event without the target (an empty list
-/// clears the server-side follow set; a full re-publish of remaining follows
-/// is server-side reconciliation).
-bool identityUnfollowUser(
-        {required String userPubkey, required String targetPubkey}) =>
-    RustLib.instance.api.crateFfiIdentityIdentityUnfollowUser(
-        userPubkey: userPubkey, targetPubkey: targetPubkey);
+/// Unfollow `pubkey`: rebuild the signer's full NIP-02 contact list minus the
+/// target, persist it, sign a kind-3 event and publish. Returns true.
+bool identityUnfollowUser({required String pubkey}) =>
+    RustLib.instance.api.crateFfiIdentityIdentityUnfollowUser(pubkey: pubkey);
+
+/// Fetch the followed pubkeys of `pubkey` from the local contact list.
+/// Returns a JSON array of pubkey strings (`[]` when unknown or empty).
+String identityFetchFollows({required String pubkey}) =>
+    RustLib.instance.api.crateFfiIdentityIdentityFetchFollows(pubkey: pubkey);
+
+/// Publish a NIP-65 relay-list metadata event (kind 10002) for the unlocked
+/// signer. Every URL must be valid `wss://`. Returns the event id.
+String identityPublishRelayList({required List<String> relayUrls}) =>
+    RustLib.instance.api
+        .crateFfiIdentityIdentityPublishRelayList(relayUrls: relayUrls);
+
+/// Publish a kind-30085 custom profile event for the unlocked signer.
+/// `pubkey` must match the unlocked signer. Returns the event id.
+String identityPublishCustomProfile(
+        {required String pubkey, required String profileJson}) =>
+    RustLib.instance.api.crateFfiIdentityIdentityPublishCustomProfile(
+        pubkey: pubkey, profileJson: profileJson);
 
 /// Block a user locally (stored in the blocks table; also enforced by feed
 /// and DM filtering).

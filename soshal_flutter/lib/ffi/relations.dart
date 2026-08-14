@@ -6,6 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// Send a friend request by following the target (signed kind-3 contact
+/// list). There is no standard NIP friend-request event; follow is the
+/// correct wire format.
 bool relationsSendFriendRequest({required String pubkey}) =>
     RustLib.instance.api
         .crateFfiRelationsRelationsSendFriendRequest(pubkey: pubkey);

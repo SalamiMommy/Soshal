@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../services/audio_codec.dart';
 import '../services/h264_codec.dart';
 import '../services/streaming_service.dart';
+import '../widgets/error_state_text.dart';
 
 /// Live broadcast capture screen.
 ///
@@ -318,8 +319,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
               ? Center(
                   child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text('Camera unavailable: $_error',
-                      textAlign: TextAlign.center),
+                  child: ErrorStateText('Camera unavailable: $_error'),
                 ))
               : Column(
                   children: [
@@ -335,7 +335,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
                           if (_error != null)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: Text('Publish error: $_error'),
+                              child: ErrorStateText('Publish error: $_error'),
                             ),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,

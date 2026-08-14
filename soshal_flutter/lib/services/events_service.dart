@@ -3,21 +3,20 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Events Service
 /// Nearby/user events, create, RSVP and check-in.
-class EventsService extends ChangeNotifier {
+class EventsService extends ChangeNotifier with LastErrorMixin {
   List<SoshalEvent> _events = [];
   SoshalEvent? _detail;
   List<String> _attendees = [];
   List<EventReminder> _reminders = [];
-  String? _lastError;
 
   List<SoshalEvent> get events => _events;
   SoshalEvent? get detail => _detail;
   List<String> get attendees => _attendees;
   List<EventReminder> get reminders => _reminders;
-  String? get lastError => _lastError;
 
   List<EventReminder> remindersForEvent(String eventId) =>
       _reminders.where((r) => r.eventId == eventId).toList();
@@ -56,8 +55,8 @@ class EventsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _detail!;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -88,8 +87,8 @@ class EventsService extends ChangeNotifier {
       );
       _lastError = null;
       return eventId;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -105,8 +104,8 @@ class EventsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -124,8 +123,8 @@ class EventsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -139,8 +138,8 @@ class EventsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _attendees;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -155,8 +154,8 @@ class EventsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _reminders;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -179,8 +178,8 @@ class EventsService extends ChangeNotifier {
       );
       await fetchReminders();
       return id;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -193,8 +192,8 @@ class EventsService extends ChangeNotifier {
       );
       await fetchReminders();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }
@@ -211,8 +210,8 @@ class EventsService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return _events;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       notifyListeners();
       rethrow;
     }

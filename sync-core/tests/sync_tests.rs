@@ -4,10 +4,12 @@
 
 use nostr::event::{Event, EventBuilder, FinalizeEvent, Kind, Tag};
 use nostr::key::Keys;
+use soshal_db_core::repos::bookmark::BookmarkRepo;
 use soshal_db_core::repos::post::{PostRepo, PostRow};
 use soshal_db_core::repos::reaction::ReactionRepo;
 use soshal_db_core::repos::settings::SettingsRepo;
 use soshal_db_core::repos::user::UserRepo;
+use soshal_db_core::repos::zap::ZapRepo;
 use soshal_db_core::Database;
 use soshal_sync_core::gossip::GossipSyncBridge;
 use soshal_sync_core::ingest::{handle, handle_batch, set_watermark, watermark, watermark_key};
@@ -127,6 +129,73 @@ fn ingest_oversized_content_skipped() {
         .get_by_id(&event.id.to_hex())
         .unwrap()
         .is_none());
+}
+
+#[test]
+fn ingest_contact_list_sets_user_contacts() {
+    let db = test_db();
+    let keys = Keys::generate();
+    let a = Keys::generate();
+    let b = Keys::generate();
+    let event = signed_event(
+        &keys,
+        Kind::ContactList,
+        "",
+        vec![
+            vec!["p".to_string(), a.public_key().to_hex()],
+            vec!["p".to_string(), b.public_key().to_hex()],
+        ],
+    );
+    let (tx, _rx) = channel();
+    handle(&db, "", &event, &tx).unwrap();
+    let user = UserRepo::new(&db)
+        .get_by_pubkey(&event.pubkey.to_hex())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        user.contact_pubkeys,
+        format!("{},{}", a.public_key().to_hex(), b.public_key().to_hex())
+    );
+}
+
+#[test]
+fn ingest_zap_receipt_creates_zap_row() {
+    let db = test_db();
+    let keys = Keys::generate();
+    let recipient = Keys::generate();
+    let event = signed_event(
+        &keys,
+        Kind::ZapReceipt,
+        "thanks!",
+        vec![
+            vec!["p".to_string(), recipient.public_key().to_hex()],
+            vec!["e".to_string(), "target-id".to_string()],
+            vec!["amount".to_string(), "21000".to_string()],
+        ],
+    );
+    let (tx, _rx) = channel();
+    handle(&db, "", &event, &tx).unwrap();
+    assert_eq!(ZapRepo::new(&db).sum_by_event("target-id").unwrap(), 21000);
+}
+
+#[test]
+fn ingest_bookmarks_creates_bookmark_row() {
+    let db = test_db();
+    let keys = Keys::generate();
+    seed_user(&db, &keys.public_key().to_hex());
+    let event = signed_event(
+        &keys,
+        Kind::Bookmarks,
+        "saved stuff",
+        vec![vec!["e".to_string(), "post-1".to_string()]],
+    );
+    let (tx, _rx) = channel();
+    handle(&db, "", &event, &tx).unwrap();
+    let row = BookmarkRepo::new(&db)
+        .get_by_id(&event.id.to_hex())
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.event_id, "post-1");
 }
 
 #[test]

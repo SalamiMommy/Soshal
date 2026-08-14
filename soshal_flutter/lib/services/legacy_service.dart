@@ -3,16 +3,14 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'error_log.dart';
 
 /// Legacy Service
 /// Dead-legacy RN domain storage wired into Turso for future features:
 /// huddle posts, guestbook, stream chat, link previews, friend backups,
 /// geohash peers, custom profile nodes, do-not-refetch markers and
 /// diagnostic logs.
-class LegacyService extends ChangeNotifier {
-  String? _lastError;
-
-  String? get lastError => _lastError;
+class LegacyService extends ChangeNotifier with LastErrorMixin {
 
   Future<bool> huddlePostStore({
     required String huddleId,
@@ -30,8 +28,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -47,8 +45,8 @@ class LegacyService extends ChangeNotifier {
       );
       _lastError = null;
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return [];
     }
   }
@@ -61,8 +59,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -83,8 +81,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -102,8 +100,8 @@ class LegacyService extends ChangeNotifier {
       );
       _lastError = null;
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return [];
     }
   }
@@ -117,8 +115,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -131,8 +129,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -151,8 +149,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -168,8 +166,8 @@ class LegacyService extends ChangeNotifier {
       );
       _lastError = null;
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return [];
     }
   }
@@ -182,8 +180,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -202,8 +200,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -215,8 +213,8 @@ class LegacyService extends ChangeNotifier {
       );
       _lastError = null;
       return json == null ? null : jsonDecode(json) as Map<String, dynamic>;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return null;
     }
   }
@@ -233,8 +231,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -246,8 +244,8 @@ class LegacyService extends ChangeNotifier {
       );
       _lastError = null;
       return data;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return null;
     }
   }
@@ -260,8 +258,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -280,8 +278,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -293,8 +291,8 @@ class LegacyService extends ChangeNotifier {
       );
       _lastError = null;
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return [];
     }
   }
@@ -304,8 +302,8 @@ class LegacyService extends ChangeNotifier {
       return RustLib.instance.api.crateFfiLegacyLegacyGeohashPeersPurge(
         staleSecs: staleSecs,
       );
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return BigInt.zero;
     }
   }
@@ -330,8 +328,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -343,8 +341,8 @@ class LegacyService extends ChangeNotifier {
       );
       _lastError = null;
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return [];
     }
   }
@@ -358,8 +356,8 @@ class LegacyService extends ChangeNotifier {
         id: id,
         userPubkey: userPubkey,
       );
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return BigInt.zero;
     }
   }
@@ -373,8 +371,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -382,8 +380,8 @@ class LegacyService extends ChangeNotifier {
   Future<bool> refetchBlocked(String id) async {
     try {
       return RustLib.instance.api.crateFfiLegacyLegacyRefetchBlocked(id: id);
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -396,8 +394,8 @@ class LegacyService extends ChangeNotifier {
       _lastError = null;
       notifyListeners();
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -417,8 +415,8 @@ class LegacyService extends ChangeNotifier {
       );
       _lastError = null;
       return ok;
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return false;
     }
   }
@@ -434,8 +432,8 @@ class LegacyService extends ChangeNotifier {
       );
       _lastError = null;
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return [];
     }
   }
@@ -445,8 +443,8 @@ class LegacyService extends ChangeNotifier {
       return RustLib.instance.api.crateFfiLegacyLegacyDiagnosticPurge(
         olderThanSecs: olderThanSecs,
       );
-    } catch (e) {
-      _lastError = e.toString();
+    } catch (e, st) {
+      setLastError(e, st);
       return BigInt.zero;
     }
   }
