@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/logging_scaffold_messenger.dart';
 
-import 'helpers/test_env.dart';
+import './helpers/test_env.dart';
 
 void main() {
   final env = bootstrapTestEnv('test-logging-sm');
