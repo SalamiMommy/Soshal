@@ -4,6 +4,7 @@ import 'package:soshal_flutter/utils/format.dart';
 
 void main() {
   test('import format compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

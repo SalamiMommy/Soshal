@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/db.dart';
 
 void main() {
   test('import db compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

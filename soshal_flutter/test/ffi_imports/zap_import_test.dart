@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/zap.dart';
 
 void main() {
   test('import zap compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

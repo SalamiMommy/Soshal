@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/live_broadcast_screen.dart';
 
 void main() {
   test('import live_broadcast_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

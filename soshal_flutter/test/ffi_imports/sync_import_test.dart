@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/sync.dart';
 
 void main() {
   test('import sync compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/relations.dart';
 
 void main() {
   test('import relations compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

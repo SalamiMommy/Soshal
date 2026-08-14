@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/moderation_screen.dart';
 
 void main() {
   test('import moderation_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

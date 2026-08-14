@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/headless.dart';
 
 void main() {
   test('import headless compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

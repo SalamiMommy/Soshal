@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/dating.dart';
 
 void main() {
   test('import dating compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

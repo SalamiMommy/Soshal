@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/identity.dart';
 
 void main() {
   test('import identity compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

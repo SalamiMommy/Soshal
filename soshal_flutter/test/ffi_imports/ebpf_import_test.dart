@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/ebpf.dart';
 
 void main() {
   test('import ebpf compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

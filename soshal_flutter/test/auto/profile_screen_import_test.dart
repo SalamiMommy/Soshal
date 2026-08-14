@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/profile_screen.dart';
 
 void main() {
   test('import profile_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

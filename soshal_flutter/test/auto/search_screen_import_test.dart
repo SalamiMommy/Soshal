@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/search_screen.dart';
 
 void main() {
   test('import search_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

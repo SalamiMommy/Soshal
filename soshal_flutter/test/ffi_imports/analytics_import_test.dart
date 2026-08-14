@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/analytics.dart';
 
 void main() {
   test('import analytics compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

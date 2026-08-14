@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/messaging.dart';
 
 void main() {
   test('import messaging compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

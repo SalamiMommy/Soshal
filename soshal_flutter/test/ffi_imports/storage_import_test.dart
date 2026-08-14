@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/storage.dart';
 
 void main() {
   test('import storage compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

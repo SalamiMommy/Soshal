@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/protocol_handler.dart';
 
 void main() {
   test('import protocol_handler compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

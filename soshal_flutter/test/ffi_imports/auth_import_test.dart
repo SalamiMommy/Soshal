@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/auth.dart';
 
 void main() {
   test('import auth compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

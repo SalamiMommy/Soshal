@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/scheduled_screen.dart';
 
 void main() {
   test('import scheduled_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

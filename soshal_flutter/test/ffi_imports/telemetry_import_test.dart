@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/telemetry.dart';
 
 void main() {
   test('import telemetry compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

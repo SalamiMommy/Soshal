@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/friends_screen.dart';
 
 void main() {
   test('import friends_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

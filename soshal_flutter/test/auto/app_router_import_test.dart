@@ -4,6 +4,7 @@ import 'package:soshal_flutter/routes/app_router.dart';
 
 void main() {
   test('import app_router compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

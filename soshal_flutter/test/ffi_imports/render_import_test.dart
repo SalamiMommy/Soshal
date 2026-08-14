@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/render.dart';
 
 void main() {
   test('import render compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

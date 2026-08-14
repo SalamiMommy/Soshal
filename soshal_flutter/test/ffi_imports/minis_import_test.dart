@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/minis.dart';
 
 void main() {
   test('import minis compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

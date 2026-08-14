@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/social.dart';
 
 void main() {
   test('import social compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

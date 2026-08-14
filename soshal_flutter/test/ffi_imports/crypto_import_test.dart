@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/crypto.dart';
 
 void main() {
   test('import crypto compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

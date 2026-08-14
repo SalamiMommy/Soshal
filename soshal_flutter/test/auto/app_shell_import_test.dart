@@ -4,6 +4,7 @@ import 'package:soshal_flutter/widgets/app_shell.dart';
 
 void main() {
   test('import app_shell compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

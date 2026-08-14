@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/network_screen.dart';
 
 void main() {
   test('import network_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

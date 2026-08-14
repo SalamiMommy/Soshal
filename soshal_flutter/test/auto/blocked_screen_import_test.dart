@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/blocked_screen.dart';
 
 void main() {
   test('import blocked_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

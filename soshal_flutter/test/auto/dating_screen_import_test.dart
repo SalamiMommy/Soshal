@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/dating_screen.dart';
 
 void main() {
   test('import dating_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

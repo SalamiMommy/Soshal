@@ -4,6 +4,7 @@ import 'package:soshal_flutter/widgets/rust_native_image.dart';
 
 void main() {
   test('import rust_native_image compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

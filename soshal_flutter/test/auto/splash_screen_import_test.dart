@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/splash_screen.dart';
 
 void main() {
   test('import splash_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

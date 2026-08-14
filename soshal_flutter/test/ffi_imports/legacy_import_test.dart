@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/legacy.dart';
 
 void main() {
   test('import legacy compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

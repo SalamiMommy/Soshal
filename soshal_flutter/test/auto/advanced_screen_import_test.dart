@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/advanced_screen.dart';
 
 void main() {
   test('import advanced_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

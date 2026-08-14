@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/marketplace.dart';
 
 void main() {
   test('import marketplace compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

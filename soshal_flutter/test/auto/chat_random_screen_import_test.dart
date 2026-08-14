@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/chat_random_screen.dart';
 
 void main() {
   test('import chat_random_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

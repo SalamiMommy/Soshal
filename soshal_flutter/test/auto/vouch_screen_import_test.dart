@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/vouch_screen.dart';
 
 void main() {
   test('import vouch_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

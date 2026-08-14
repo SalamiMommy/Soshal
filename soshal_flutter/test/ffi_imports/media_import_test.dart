@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/media.dart';
 
 void main() {
   test('import media compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

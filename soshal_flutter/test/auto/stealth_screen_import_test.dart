@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/stealth_screen.dart';
 
 void main() {
   test('import stealth_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

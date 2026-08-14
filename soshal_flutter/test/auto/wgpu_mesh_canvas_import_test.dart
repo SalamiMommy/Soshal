@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/widgets/wgpu_mesh_canvas.dart';
 
 void main() {
   test('import wgpu_mesh_canvas compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

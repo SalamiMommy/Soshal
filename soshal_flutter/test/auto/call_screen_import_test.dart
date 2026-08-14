@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/call_screen.dart';
 
 void main() {
   test('import call_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

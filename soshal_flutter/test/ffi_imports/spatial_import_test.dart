@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/spatial.dart';
 
 void main() {
   test('import spatial compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

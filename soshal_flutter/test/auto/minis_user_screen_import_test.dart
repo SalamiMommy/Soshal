@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/minis_user_screen.dart';
 
 void main() {
   test('import minis_user_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

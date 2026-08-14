@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/moderation.dart';
 
 void main() {
   test('import moderation compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/signer.dart';
 
 void main() {
   test('import signer compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

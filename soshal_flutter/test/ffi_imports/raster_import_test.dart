@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/raster.dart';
 
 void main() {
   test('import raster compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

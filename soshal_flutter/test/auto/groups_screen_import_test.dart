@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/groups_screen.dart';
 
 void main() {
   test('import groups_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

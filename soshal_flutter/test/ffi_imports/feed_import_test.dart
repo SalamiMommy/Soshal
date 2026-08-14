@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/feed.dart';
 
 void main() {
   test('import feed compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/accounts_screen.dart';
 
 void main() {
   test('import accounts_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/pin.dart';
 
 void main() {
   test('import pin compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/models/widget.dart';
 
 void main() {
   test('import widget compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

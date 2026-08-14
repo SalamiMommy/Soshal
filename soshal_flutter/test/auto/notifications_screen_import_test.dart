@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/notifications_screen.dart';
 
 void main() {
   test('import notifications_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/network.dart';
 
 void main() {
   test('import network compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

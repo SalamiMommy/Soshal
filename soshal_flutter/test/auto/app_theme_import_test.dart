@@ -4,6 +4,7 @@ import 'package:soshal_flutter/theme/app_theme.dart';
 
 void main() {
   test('import app_theme compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/webrtc.dart';
 
 void main() {
   test('import webrtc compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

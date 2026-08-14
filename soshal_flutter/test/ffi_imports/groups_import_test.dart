@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/groups.dart';
 
 void main() {
   test('import groups compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

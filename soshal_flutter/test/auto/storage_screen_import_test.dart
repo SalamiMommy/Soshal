@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/storage_screen.dart';
 
 void main() {
   test('import storage_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

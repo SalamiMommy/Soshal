@@ -4,6 +4,7 @@ import 'package:soshal_flutter/widgets/error_state_text.dart';
 
 void main() {
   test('import error_state_text compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

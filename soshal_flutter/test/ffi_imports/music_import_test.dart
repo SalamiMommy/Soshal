@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/music.dart';
 
 void main() {
   test('import music compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

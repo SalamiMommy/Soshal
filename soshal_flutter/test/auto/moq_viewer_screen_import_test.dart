@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/moq_viewer_screen.dart';
 
 void main() {
   test('import moq_viewer_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

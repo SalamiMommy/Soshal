@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/ephemeral.dart';
 
 void main() {
   test('import ephemeral compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

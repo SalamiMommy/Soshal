@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/bookmarks.dart';
 
 void main() {
   test('import bookmarks compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

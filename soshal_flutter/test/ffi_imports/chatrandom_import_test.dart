@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/chatrandom.dart';
 
 void main() {
   test('import chatrandom compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/analytics_screen.dart';
 
 void main() {
   test('import analytics_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/security_screen.dart';
 
 void main() {
   test('import security_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

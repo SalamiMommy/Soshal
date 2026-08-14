@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/util.dart';
 
 void main() {
   test('import util compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

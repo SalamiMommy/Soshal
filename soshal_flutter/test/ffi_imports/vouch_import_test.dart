@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/vouch.dart';
 
 void main() {
   test('import vouch compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

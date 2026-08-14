@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/turso.dart';
 
 void main() {
   test('import turso compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

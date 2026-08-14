@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/scheduled.dart';
 
 void main() {
   test('import scheduled compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

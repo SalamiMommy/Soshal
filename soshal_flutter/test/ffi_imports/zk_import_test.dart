@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/zk.dart';
 
 void main() {
   test('import zk compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/notifications.dart';
 
 void main() {
   test('import notifications compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

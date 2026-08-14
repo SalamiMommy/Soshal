@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/search.dart';
 
 void main() {
   test('import search compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/audit_screen.dart';
 
 void main() {
   test('import audit_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

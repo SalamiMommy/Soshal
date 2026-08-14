@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/p2p.dart';
 
 void main() {
   test('import p2p compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

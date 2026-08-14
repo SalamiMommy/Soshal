@@ -4,6 +4,7 @@ import 'package:soshal_flutter/main.dart';
 
 void main() {
   test('import main compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

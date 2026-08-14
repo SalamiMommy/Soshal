@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/push.dart';
 
 void main() {
   test('import push compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

@@ -4,6 +4,7 @@ import 'package:soshal_flutter/ffi/audit.dart';
 
 void main() {
   test('import audit compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

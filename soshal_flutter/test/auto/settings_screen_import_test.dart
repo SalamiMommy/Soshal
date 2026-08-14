@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/settings_screen.dart';
 
 void main() {
   test('import settings_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }

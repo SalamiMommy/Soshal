@@ -4,6 +4,7 @@ import 'package:soshal_flutter/screens/backup_screen.dart';
 
 void main() {
   test('import backup_screen compiles', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
     expect(true, isTrue);
   });
 }
