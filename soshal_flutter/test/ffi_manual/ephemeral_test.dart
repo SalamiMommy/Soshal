@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import './helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 import 'package:soshal_flutter/ffi/ephemeral.dart';
 
@@ -7,7 +7,7 @@ void main() {
   test('ephemeral wrappers call api', () {
     final tmp = '/tmp/soshal-test-${DateTime.now().microsecondsSinceEpoch}';
     final env = bootstrapTestEnv(tmp);
-    final api = env.$1 as FakeApi;
+    final api = env.$1;
 
     api.stubString('crateFfiEphemeralEphemeralSave', 'saved');
     api.stubString('crateFfiEphemeralEphemeralGet', '{}');
@@ -22,8 +22,8 @@ void main() {
         mediaType: 'i',
         senderPubkey: 's',
         recipientPubkey: 'r',
-        maxViews: BigInt.from(1),
-        expiresAt: BigInt.from(0));
+        maxViews: 1,
+        expiresAt: 0);
     expect(id, 'saved');
 
     final got = ephemeralGet(id: 'x');

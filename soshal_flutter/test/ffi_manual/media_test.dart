@@ -35,3 +35,4 @@ void main() {
     expect(blob, 'blobid');
     expect(api.callCount('crateFfiMediaMediaDecodeImageRgba'), 1);
   });
+}

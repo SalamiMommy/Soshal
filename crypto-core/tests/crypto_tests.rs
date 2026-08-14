@@ -318,7 +318,10 @@ fn kem_cross_encapsulation_tests() {
 fn hybrid_domain_and_error_tests() {
     let (hybrid_pk, hybrid_sk) = hybrid::keypair().unwrap();
     let (ct, ss_a) = hybrid::encapsulate(&hybrid_pk, b"domain-a").unwrap();
-    assert_eq!(hybrid::decapsulate(&hybrid_sk, &ct, b"domain-a").unwrap(), ss_a);
+    assert_eq!(
+        hybrid::decapsulate(&hybrid_sk, &ct, b"domain-a").unwrap(),
+        ss_a
+    );
     let ss_b = hybrid::decapsulate(&hybrid_sk, &ct, b"domain-b").unwrap();
     assert_ne!(ss_b, ss_a);
 

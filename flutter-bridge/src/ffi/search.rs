@@ -250,7 +250,6 @@ mod tests {
     use crate::ffi::db;
     use std::sync::Mutex;
 
-    static DB_TEST_LOCK: Mutex<()> = Mutex::new(());
     static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn tmp_db(label: &str) -> String {
@@ -293,7 +292,9 @@ mod tests {
 
     #[test]
     fn test_search_posts_happy() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("posts");
         insert_post("p1", "pk1", "hello caveman world", 1, 1000);
         insert_post("p2", "pk1", "unrelated chatter", 1, 2000);
@@ -307,7 +308,9 @@ mod tests {
 
     #[test]
     fn test_search_posts_newest_first_and_limit_clamp() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("order");
         insert_post("p1", "pk1", "soshal alpha", 1, 1000);
         insert_post("p2", "pk1", "soshal beta", 1, 2000);
@@ -321,7 +324,9 @@ mod tests {
 
     #[test]
     fn test_search_profiles_filters_kind() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("profiles");
         insert_post("prof1", "pk1", "alice soshal builder", 0, 1000);
         insert_post("post1", "pk1", "soshal post text", 1, 2000);
@@ -336,7 +341,9 @@ mod tests {
 
     #[test]
     fn test_search_global_matches_both_kinds() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("global");
         insert_post("prof1", "pk1", "soshal alice", 0, 1000);
         insert_post("post1", "pk1", "soshal post", 1, 2000);
@@ -348,7 +355,9 @@ mod tests {
 
     #[test]
     fn test_search_empty_query_returns_empty() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("empty");
         insert_post("p1", "pk1", "soshal content", 1, 1000);
         assert!(parse_arr(&search_posts("   ".to_string(), 10).unwrap()).is_empty());
@@ -358,7 +367,9 @@ mod tests {
 
     #[test]
     fn test_search_no_match_returns_empty() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("miss");
         insert_post("p1", "pk1", "soshal content", 1, 1000);
         assert!(parse_arr(&search_posts("zzzmissing".to_string(), 10).unwrap()).is_empty());
@@ -367,7 +378,9 @@ mod tests {
 
     #[test]
     fn test_search_mentions_matches_profile() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("mentions");
         insert_post("prof1", "pk1", "alice soshal builder", 0, 1000);
         let arr = parse_arr(&search_mentions("alice".to_string(), 10).unwrap());
@@ -378,7 +391,9 @@ mod tests {
 
     #[test]
     fn test_search_hashtags_prefix_ordered() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("hashtags");
         db::db_execute_raw(
             "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES \
@@ -392,7 +407,9 @@ mod tests {
 
     #[test]
     fn test_hashtags_empty_falls_back_to_trending() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("trending");
         db::db_execute_raw(
             "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES \
@@ -408,7 +425,9 @@ mod tests {
 
     #[test]
     fn test_search_trending_profiles_order() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("trendprof");
         db::db_execute_raw(
             "INSERT INTO users (pubkey, npub, name, contact_pubkeys) VALUES \
@@ -425,7 +444,9 @@ mod tests {
 
     #[test]
     fn test_index_and_remove_roundtrip() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("index");
         insert_post("p1", "pk1", "seed body", 1, 1000);
         assert!(search_index_post(

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import './helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 import 'package:soshal_flutter/ffi/ebpf.dart';
 
@@ -7,7 +7,7 @@ void main() {
   test('ebpf wrappers call api', () {
     final tmp = '/tmp/soshal-test-${DateTime.now().microsecondsSinceEpoch}';
     final env = bootstrapTestEnv(tmp);
-    final api = env.$1 as FakeApi;
+    final api = env.$1;
 
     api.stubBool('crateFfiEbpfEbpfBlockIp', true);
     api.stubBool('crateFfiEbpfEbpfUnblockIp', true);

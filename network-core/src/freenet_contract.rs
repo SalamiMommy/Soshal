@@ -301,9 +301,7 @@ mod tests {
         let params = Parameters {
             data: vec![1, 2, 3],
         };
-        let state = State {
-            data: vec![4, 5],
-        };
+        let state = State { data: vec![4, 5] };
         let related = RelatedContracts {
             contracts: vec![RelatedContract {
                 key: "k".to_string(),
@@ -328,8 +326,7 @@ mod tests {
         let decoded: Parameters =
             serde_json::from_str(&serde_json::to_string(&params).unwrap()).unwrap();
         assert_eq!(decoded.data, vec![1, 2, 3]);
-        let decoded: State =
-            serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
+        let decoded: State = serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
         assert_eq!(decoded.data, vec![4, 5]);
         let decoded: RelatedContracts =
             serde_json::from_str(&serde_json::to_string(&related).unwrap()).unwrap();

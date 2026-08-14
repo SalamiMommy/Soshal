@@ -85,6 +85,33 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
     return ok;
   }
 
+  /// List spam reports for a target pubkey (newest first).
+  Future<List<dynamic>> listReports(String targetPubkey,
+      {int limit = 10}) async {
+    try {
+      final json = RustLib.instance.api.crateFfiModerationModerationListReports(
+        targetPubkey: targetPubkey,
+        limit: limit,
+      );
+      return jsonDecode(json) as List<dynamic>;
+    } catch (e, st) {
+      setLastError(e, st);
+      return [];
+    }
+  }
+
+  /// Delete a spam report by id.
+  Future<bool> deleteReport(String reportId) async {
+    try {
+      return RustLib.instance.api.crateFfiModerationModerationDeleteReport(
+        reportId: reportId,
+      );
+    } catch (e, st) {
+      setLastError(e, st);
+      return false;
+    }
+  }
+
   /// Mute a user.
   Future<bool> mute(String muterPubkey, String targetPubkey) async {
     final ok = RustLib.instance.api.crateFfiModerationModerationMuteUser(

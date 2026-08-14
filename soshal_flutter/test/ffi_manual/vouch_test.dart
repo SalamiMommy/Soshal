@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import './helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 import 'package:soshal_flutter/ffi/vouch.dart';
 
@@ -7,7 +7,7 @@ void main() {
   test('vouch wrappers forward to api', () async {
     final tmp = '/tmp/soshal-test-${DateTime.now().microsecondsSinceEpoch}';
     final env = bootstrapTestEnv(tmp);
-    final api = env.$1 as FakeApi;
+    final api = env.$1;
 
     api.stub('crateFfiVouchVouchPublish', (_) => Future.value('evt1'));
     api.stub('crateFfiVouchVouchFetch', (_) => Future.value('[]'));

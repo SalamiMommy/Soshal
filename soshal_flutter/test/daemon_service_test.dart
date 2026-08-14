@@ -12,7 +12,7 @@ void main() {
   });
 
   tearDown(() async {
-    await channel.setMockMethodCallHandler(null);
+    channel.setMockMethodCallHandler(null);
   });
 
   test('extractDaemons returns true on success', () async {

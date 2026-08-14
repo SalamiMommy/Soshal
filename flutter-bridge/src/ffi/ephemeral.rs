@@ -121,7 +121,6 @@ mod tests {
     use crate::ffi::db;
     use std::sync::Mutex;
 
-    static DB_TEST_LOCK: Mutex<()> = Mutex::new(());
     static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn tmp_db(label: &str) -> String {
@@ -156,7 +155,9 @@ mod tests {
 
     #[test]
     fn test_save_get_roundtrip() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("roundtrip");
         let id = save_media("msg1", "pk1", 5, 0);
         let json = ephemeral_get(id.clone()).unwrap();
@@ -172,7 +173,9 @@ mod tests {
 
     #[test]
     fn test_save_rejects_zero_max_views() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("maxviews");
         let res = ephemeral_save(
             "msg_bad".to_string(),
@@ -190,14 +193,18 @@ mod tests {
 
     #[test]
     fn test_get_missing_errors() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("getmiss");
         assert!(ephemeral_get("nope".to_string()).is_err());
     }
 
     #[test]
     fn test_list_pending_filters_recipient_and_state() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("pending");
         let id1 = save_media("msg1", "pk1", 2, 0);
         let id2 = save_media("msg2", "pk1", 1, 0);
@@ -226,7 +233,9 @@ mod tests {
 
     #[test]
     fn test_view_increments_and_expires_at_max() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("view");
         let id = save_media("msg1", "pk1", 2, 0);
         let json = ephemeral_view(id.clone()).unwrap();
@@ -242,14 +251,18 @@ mod tests {
 
     #[test]
     fn test_view_missing_errors() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("viewmiss");
         assert!(ephemeral_view("nope".to_string()).is_err());
     }
 
     #[test]
     fn test_clean_expired() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("clean");
         let now = soshal_common_core::format::now_secs();
         let past = save_media("msg_past", "pk1", 5, now - 100);
@@ -264,7 +277,9 @@ mod tests {
 
     #[test]
     fn test_delete_removes_row() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("delete");
         let id = save_media("msg1", "pk1", 5, 0);
         assert!(ephemeral_delete(id.clone()).unwrap());
@@ -273,7 +288,9 @@ mod tests {
 
     #[test]
     fn test_empty_store() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("empty");
         let json = ephemeral_list_pending("pk1".to_string()).unwrap();
         assert_eq!(json, "[]");

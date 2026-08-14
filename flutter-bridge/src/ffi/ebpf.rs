@@ -26,3 +26,31 @@ pub fn ebpf_unblock_ip(ip: String) -> Result<bool, String> {
 pub fn ebpf_get_stats() -> Result<String, String> {
     Ok(ebpf_get_stats_json())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soshal_network_core::ebpf::EbpfShaperStats;
+
+    fn blocked_count() -> usize {
+        let stats: EbpfShaperStats = serde_json::from_str(&ebpf_get_stats().unwrap()).unwrap();
+        stats.blocked_peers_count
+    }
+
+    #[test]
+    fn test_ebpf_block_unblock_flow() {
+        assert_eq!(blocked_count(), 0);
+
+        assert!(ebpf_block_ip("192.168.1.50".to_string()).unwrap());
+        assert_eq!(blocked_count(), 1);
+
+        assert!(ebpf_block_ip("192.168.1.51".to_string()).unwrap());
+        assert_eq!(blocked_count(), 2);
+
+        assert!(ebpf_unblock_ip("192.168.1.50".to_string()).unwrap());
+        assert_eq!(blocked_count(), 1);
+
+        assert!(!ebpf_unblock_ip("203.0.113.9".to_string()).unwrap());
+        assert_eq!(blocked_count(), 1);
+    }
+}

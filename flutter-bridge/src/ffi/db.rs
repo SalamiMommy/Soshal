@@ -310,11 +310,9 @@ pub fn db_save_custom_profile(pubkey: String, profile_json: String) -> Result<bo
 mod tests {
     use super::*;
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
     #[test]
     fn test_raw_query_roundtrip() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = format!(
             "{}/soshal_test_{}.db",
             std::env::temp_dir().to_string_lossy(),
@@ -339,7 +337,7 @@ mod tests {
 
     #[test]
     fn test_backup_restore_roundtrip() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = format!(
             "{}/soshal_test_{}_backup.db",
             std::env::temp_dir().to_string_lossy(),
@@ -374,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_settings_roundtrip() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = format!(
             "{}/soshal_test_{}_settings.db",
             std::env::temp_dir().to_string_lossy(),
@@ -398,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_storage_stats() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = format!(
             "{}/soshal_test_{}_stats.db",
             std::env::temp_dir().to_string_lossy(),
@@ -423,7 +421,7 @@ mod tests {
 
     #[test]
     fn test_backup_bad_path() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = format!(
             "{}/soshal_test_{}_badpath.db",
             std::env::temp_dir().to_string_lossy(),

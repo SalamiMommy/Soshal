@@ -240,6 +240,22 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
     );
   }
 
+  Future<bool> unmatch(String userPubkey, String profileId) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiDatingDatingUnmatch(
+        userPubkey: userPubkey,
+        profileId: profileId,
+      );
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> report(
       String reporterPubkey, String targetPubkey, String reason) async {
     return _bool(

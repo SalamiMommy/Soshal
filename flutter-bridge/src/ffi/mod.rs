@@ -100,3 +100,6 @@ pub use vouch::*;
 pub use webrtc::*;
 pub use zap::*;
 pub use zk::*;
+
+#[cfg(test)]
+pub(crate) mod test_lock;

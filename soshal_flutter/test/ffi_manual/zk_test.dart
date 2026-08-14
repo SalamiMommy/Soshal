@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import './helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 import 'package:soshal_flutter/ffi/zk.dart';
 
@@ -7,7 +7,7 @@ void main() {
   test('zk wrappers call api', () {
     final tmp = '/tmp/soshal-test-${DateTime.now().microsecondsSinceEpoch}';
     final env = bootstrapTestEnv(tmp);
-    final api = env.$1 as FakeApi;
+    final api = env.$1;
 
     api.stubString('crateFfiZkZkVerifyRollup', '{}');
     api.stubBool('crateFfiZkZkApplyRollup', true);

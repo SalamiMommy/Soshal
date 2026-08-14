@@ -337,6 +337,60 @@ mod tests {
     }
 
     #[test]
+    fn test_moq_group_stream_rejects_oversized_payload() {
+        // Header lies about payload_len; body is truncated. The length field
+        // is validated before any payload copy, so no oversized allocation.
+        let mut bad = Vec::new();
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.extend_from_slice(&1u32.to_le_bytes());
+        bad.extend_from_slice(&1u32.to_le_bytes());
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.push(0u8);
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.extend_from_slice(&((MAX_OBJECT_PAYLOAD as u32) + 1).to_le_bytes());
+        assert_eq!(
+            decode_group_stream(&bad).unwrap_err(),
+            "moq object oversized"
+        );
+    }
+
+    #[test]
+    fn test_moq_group_stream_rejects_oversized_group() {
+        // Encode path: total payload bytes past the group cap.
+        let mut publisher = MoqPublisherSession::new("s".to_string(), "k".to_string());
+        let obj = publisher.create_object(
+            1,
+            MoqTrackType::VideoKeyframe,
+            1,
+            vec![0u8; MAX_GROUP_BYTES + 1],
+        );
+        let group = MoqGroup {
+            group_sequence: 1,
+            objects: vec![obj],
+        };
+        assert_eq!(
+            encode_group_stream(&group).unwrap_err(),
+            "moq group oversized"
+        );
+    }
+
+    #[test]
+    fn test_moq_group_stream_rejects_bad_track_type() {
+        let mut bad = Vec::new();
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.extend_from_slice(&1u32.to_le_bytes());
+        bad.extend_from_slice(&1u32.to_le_bytes());
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.push(3u8);
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.extend_from_slice(&1u32.to_le_bytes());
+        bad.push(0xAA);
+        assert_eq!(decode_group_stream(&bad).unwrap_err(), "moq bad track type");
+    }
+
+    #[test]
     fn test_moq_publisher_subscriber_roundtrip() {
         let stream_id = "test_stream_123".to_string();
         let publisher_pubkey = "pubkey_abc".to_string();

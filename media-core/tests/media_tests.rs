@@ -2,7 +2,6 @@
 
 use soshal_media_core::decoder::decode_to_rgba;
 use soshal_media_core::envelope::{open_dm, open_group, seal_dm, seal_group};
-use soshal_media_core::prefetcher::Prefetcher;
 use soshal_media_core::freenet::{
     freenet_content_hash, freenet_content_hash_json, freenet_contract_hash,
     freenet_contract_hash_json,
@@ -17,6 +16,7 @@ use soshal_media_core::livestream_util::{
 use soshal_media_core::media::guess_mime_type;
 use soshal_media_core::mini_util::{parse_minis, parse_minis_json};
 use soshal_media_core::musicloud_util::{parse_musiclouds, parse_musiclouds_json};
+use soshal_media_core::prefetcher::Prefetcher;
 
 fn event(
     id: &str,

@@ -4,7 +4,9 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/error_log.dart';
 
-import './helpers/test_env.dart';
+import 'helpers/test_env.dart';
+
+class Dummy with LastErrorMixin {}
 
 void main() {
   final env = bootstrapTestEnv('test-error-log');
@@ -23,8 +25,6 @@ void main() {
 
   test('LastErrorMixin sets and clears lastError and logs', () async {
     final dir = env.$2;
-
-    class Dummy with LastErrorMixin {}
 
     final d = Dummy();
     expect(d.lastError, isNull);

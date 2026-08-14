@@ -358,7 +358,8 @@ class _NavigationRailView extends StatelessWidget {
           selectedIndex: _selectedIndex(shell, currentPath),
           onDestinationSelected: (i) {
             if (i >= 0 && i < shell.items.length) {
-              context.go(ShellService.routeForItem[shell.items[i].id] ?? '/feed');
+              context
+                  .go(ShellService.routeForItem[shell.items[i].id] ?? '/feed');
             }
           },
           extended: true,

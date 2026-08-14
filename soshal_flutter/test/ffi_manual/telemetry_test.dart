@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import './helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 import 'package:soshal_flutter/ffi/telemetry.dart';
 
@@ -8,7 +8,7 @@ void main() {
   test('telemetry wrappers call api and return expected types', () {
     final tmp = '/tmp/soshal-test-${DateTime.now().microsecondsSinceEpoch}';
     final env = bootstrapTestEnv(tmp);
-    final api = env.$1 as FakeApi;
+    final api = env.$1;
 
     api.stub('crateFfiTelemetryTelemetryInit', (_) => null);
     api.stub('crateFfiTelemetryTelemetryDumpEncrypted', (_) => Uint8List.fromList([1, 2]));

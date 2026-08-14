@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/streaming_service.dart';
 
-import './helpers/test_env.dart';
+import 'helpers/test_env.dart';
 
 late FakeApi api;
 
@@ -86,7 +86,7 @@ void main() {
 
     test('initLocalVideoServer stores the returned port', () async {
       final streaming = StreamingService();
-      api.stubInt('crateFfiStreamingStreamingStartLocalServer', 8787);
+      api.stub('crateFfiStreamingStreamingStartLocalServer', (_) async => 8787);
 
       expect(await streaming.initLocalVideoServer(), 8787);
       expect(streaming.localVideoServerPort, 8787);

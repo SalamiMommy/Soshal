@@ -347,8 +347,6 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
     struct TestDb {
         path: String,
     }
@@ -398,7 +396,9 @@ mod tests {
 
     #[test]
     fn test_create_group_and_fetch() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("create");
         let owner = "a".repeat(64);
 
@@ -428,14 +428,18 @@ mod tests {
 
     #[test]
     fn test_get_group_info_missing_errors() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("missing");
         assert!(groups_get_group_info("nope".to_string()).is_err());
     }
 
     #[test]
     fn test_join_leave_and_members() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("members");
         let owner = "a".repeat(64);
         let member = "b".repeat(64);
@@ -460,7 +464,9 @@ mod tests {
 
     #[test]
     fn test_role_change_admin_gate() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("role_gate");
         let owner = "a".repeat(64);
         let member = "b".repeat(64);
@@ -496,7 +502,9 @@ mod tests {
 
     #[test]
     fn test_role_ops_on_missing_group_errors() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("missing_group");
         let admin = "a".repeat(64);
         assert!(groups_set_member_role(
@@ -511,7 +519,9 @@ mod tests {
 
     #[test]
     fn test_roles_crud() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("roles_crud");
         let owner = "a".repeat(64);
         create_group("g4", &owner);
@@ -557,7 +567,9 @@ mod tests {
 
     #[test]
     fn test_fetch_messages_empty() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("no_msgs");
         assert_eq!(
             groups_fetch_messages("g5".to_string(), 20, 0).unwrap(),
@@ -567,7 +579,9 @@ mod tests {
 
     #[test]
     fn test_post_message_and_fetch_messages() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("messages");
         let keys = soshal_nostr_core::keys::generate_keys();
         let owner = keys.public_key().to_hex();
@@ -602,7 +616,9 @@ mod tests {
 
     #[test]
     fn test_post_message_locked_signer_errors() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("msg_locked");
         super::super::signer::signer_lock().unwrap();
         assert!(groups_post_message("g5".to_string(), "hi".to_string()).is_err());

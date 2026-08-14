@@ -91,4 +91,53 @@ mod tests {
             WasmComponentHost::filter_content(&plugin, "bad malicious_phishing link").unwrap();
         assert!(!toxic_result.allow);
     }
+
+    #[test]
+    fn test_rank_posts_sorts_longest_first() {
+        let plugin = WasmComponentPlugin {
+            plugin_id: "ranker_01".to_string(),
+            name: "Feed Ranker Wasm".to_string(),
+            component_type: WasmComponentType::FeedRanker,
+            author_pubkey: "npub_author".to_string(),
+            binary_bytes: vec![0x00, 0x61, 0x73, 0x6d],
+        };
+
+        let ranked = WasmComponentHost::rank_posts(
+            &plugin,
+            vec!["a".to_string(), "ccc".to_string(), "bb".to_string()],
+        )
+        .unwrap();
+        assert_eq!(
+            ranked,
+            vec!["ccc".to_string(), "bb".to_string(), "a".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_rank_posts_rejects_wrong_component_type() {
+        let plugin = WasmComponentPlugin {
+            plugin_id: "ranker_02".to_string(),
+            name: "Feed Ranker Wasm".to_string(),
+            component_type: WasmComponentType::ContentFilter,
+            author_pubkey: "npub_author".to_string(),
+            binary_bytes: vec![0x00, 0x61, 0x73, 0x6d],
+        };
+
+        let err = WasmComponentHost::rank_posts(&plugin, vec!["post".to_string()]).unwrap_err();
+        assert_eq!(err, "invalid plugin component type for feed ranking");
+    }
+
+    #[test]
+    fn test_rank_posts_empty_ok() {
+        let plugin = WasmComponentPlugin {
+            plugin_id: "ranker_03".to_string(),
+            name: "Feed Ranker Wasm".to_string(),
+            component_type: WasmComponentType::FeedRanker,
+            author_pubkey: "npub_author".to_string(),
+            binary_bytes: vec![0x00, 0x61, 0x73, 0x6d],
+        };
+
+        let ranked = WasmComponentHost::rank_posts(&plugin, vec![]).unwrap();
+        assert!(ranked.is_empty());
+    }
 }

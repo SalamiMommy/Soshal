@@ -365,9 +365,18 @@ fn cosine_similarity_mismatched_or_empty_returns_zero() {
 #[test]
 fn rank_vector_documents_orders_by_similarity() {
     let docs = vec![
-        VectorDocument { id: "far".into(), embedding: vec![0.0, 1.0] },
-        VectorDocument { id: "near".into(), embedding: vec![0.9, 0.1] },
-        VectorDocument { id: "mid".into(), embedding: vec![0.5, 0.5] },
+        VectorDocument {
+            id: "far".into(),
+            embedding: vec![0.0, 1.0],
+        },
+        VectorDocument {
+            id: "near".into(),
+            embedding: vec![0.9, 0.1],
+        },
+        VectorDocument {
+            id: "mid".into(),
+            embedding: vec![0.5, 0.5],
+        },
     ];
     let ranked = rank_vector_documents(&[1.0, 0.0], &docs, 3);
     let ids: Vec<&str> = ranked.iter().map(|(id, _)| id.as_str()).collect();
@@ -378,9 +387,18 @@ fn rank_vector_documents_orders_by_similarity() {
 #[test]
 fn rank_vector_documents_respects_top_k() {
     let docs = vec![
-        VectorDocument { id: "a".into(), embedding: vec![1.0, 0.0] },
-        VectorDocument { id: "b".into(), embedding: vec![0.5, 0.5] },
-        VectorDocument { id: "c".into(), embedding: vec![0.0, 1.0] },
+        VectorDocument {
+            id: "a".into(),
+            embedding: vec![1.0, 0.0],
+        },
+        VectorDocument {
+            id: "b".into(),
+            embedding: vec![0.5, 0.5],
+        },
+        VectorDocument {
+            id: "c".into(),
+            embedding: vec![0.0, 1.0],
+        },
     ];
     let ranked = rank_vector_documents(&[1.0, 0.0], &docs, 2);
     assert_eq!(ranked.len(), 2);
@@ -396,8 +414,14 @@ fn rank_vector_documents_empty_index_returns_empty() {
 #[test]
 fn rank_vector_documents_dimension_mismatch_scores_zero() {
     let docs = vec![
-        VectorDocument { id: "d1".into(), embedding: vec![1.0, 0.0] },
-        VectorDocument { id: "d2".into(), embedding: vec![0.0, 1.0, 0.0] },
+        VectorDocument {
+            id: "d1".into(),
+            embedding: vec![1.0, 0.0],
+        },
+        VectorDocument {
+            id: "d2".into(),
+            embedding: vec![0.0, 1.0, 0.0],
+        },
     ];
     let ranked = rank_vector_documents(&[1.0, 0.0], &docs, 5);
     assert_eq!(ranked.len(), 2);

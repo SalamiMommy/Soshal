@@ -87,6 +87,55 @@ async fn nip05_validation_errors_without_network() {
     assert!(r3.verified || r3.error.is_some());
 }
 
+#[tokio::test]
+async fn nip05_rejects_private_hostname() {
+    let pk = "aa".repeat(32);
+    let r = verify("user@localhost", &pk).await;
+    assert!(!r.verified);
+    assert!(r
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("nip05 domain is not allowed"));
+}
+
+#[tokio::test]
+async fn nip05_rejects_empty_address() {
+    let pk = "aa".repeat(32);
+    let r = verify("", &pk).await;
+    assert!(!r.verified);
+    assert!(r.error.is_some());
+}
+
+#[tokio::test]
+async fn nip05_resolve_rejects_private_hostname() {
+    let r = resolve("user@localhost").await;
+    assert!(!r.verified);
+    assert!(r
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("nip05 domain is not allowed"));
+}
+
+#[tokio::test]
+async fn nip05_rejects_bad_pubkey_format_before_network() {
+    let r = verify("user@example.com", "not-a-pubkey").await;
+    assert!(!r.verified);
+    assert!(r
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("invalid pubkey"));
+    let r2 = verify("user@example.com", "abcd").await;
+    assert!(!r2.verified);
+    assert!(r2
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("invalid pubkey"));
+}
+
 #[test]
 fn keys_generate_roundtrip() {
     let keys = generate_keypair();

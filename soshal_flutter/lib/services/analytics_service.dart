@@ -6,7 +6,6 @@ import 'error_log.dart';
 /// Analytics Service
 /// Local SLM statistics, embeddings and post classification.
 class AnalyticsService extends ChangeNotifier with LastErrorMixin {
-
   /// Compute engagement/posts stats. Backend stub: returns "stats".
   Future<String> computeStats() async {
     try {

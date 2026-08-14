@@ -3,7 +3,7 @@
 use nostr::nips::nip19::ToBech32;
 use soshal_nostr_core::events::{filter, filter_authors, filter_kinds, text_note};
 use soshal_nostr_core::keys::{from_nsec, from_sk, generate_keys};
-use soshal_nostr_core::models::{verified_event_from_value, NostrEvent};
+use soshal_nostr_core::models::{verified_event_from_value, verify_events_batch, NostrEvent};
 
 const SK_HEX: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 const PK_HEX_ONE: &str = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
@@ -130,6 +130,46 @@ fn verified_event_from_value_rejects_tampered_signature() {
 fn verified_event_from_value_rejects_garbage() {
     assert!(verified_event_from_value(serde_json::json!({"nope": 1})).is_none());
     assert!(verified_event_from_value(serde_json::Value::Null).is_none());
+}
+
+#[test]
+fn verify_events_batch_accepts_all_valid() {
+    let keys = from_sk(SK_HEX).unwrap();
+    let e1 = text_note(&keys, "valid one", vec![]).unwrap();
+    let e2 = text_note(&keys, "valid two", vec![]).unwrap();
+    let e3 = text_note(&keys, "valid three", vec![]).unwrap();
+    let e4 = text_note(&keys, "valid four", vec![]).unwrap();
+    let e5 = text_note(&keys, "valid five", vec![]).unwrap();
+    let results = verify_events_batch(&vec![&e1, &e2, &e3, &e4, &e5]);
+    assert_eq!(results, vec![true, true, true, true, true]);
+}
+
+#[test]
+fn verify_events_batch_flags_tampered() {
+    let keys = from_sk(SK_HEX).unwrap();
+    let e1 = text_note(&keys, "batch valid one", vec![]).unwrap();
+    let e2 = text_note(&keys, "batch valid two", vec![]).unwrap();
+    let e3 = text_note(&keys, "batch valid three", vec![]).unwrap();
+    let mut v4 =
+        serde_json::to_value(text_note(&keys, "batch tamper one", vec![]).unwrap()).unwrap();
+    v4["content"] = serde_json::json!("flipped content");
+    let e4: nostr::event::Event = serde_json::from_value(v4).unwrap();
+    let mut v5 =
+        serde_json::to_value(text_note(&keys, "batch tamper two", vec![]).unwrap()).unwrap();
+    v5["content"] = serde_json::json!("flipped content too");
+    let e5: nostr::event::Event = serde_json::from_value(v5).unwrap();
+    let mut v6 =
+        serde_json::to_value(text_note(&keys, "batch tamper three", vec![]).unwrap()).unwrap();
+    let sig = v6["sig"].as_str().unwrap();
+    let flipped: String = sig
+        .chars()
+        .map(|c| if c == 'a' { 'b' } else { 'a' })
+        .take(sig.len())
+        .collect();
+    v6["sig"] = serde_json::json!(flipped);
+    let e6: nostr::event::Event = serde_json::from_value(v6).unwrap();
+    let results = verify_events_batch(&vec![&e1, &e2, &e3, &e4, &e5, &e6]);
+    assert_eq!(results, vec![true, true, true, false, false, false]);
 }
 
 #[test]

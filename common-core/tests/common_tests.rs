@@ -243,10 +243,7 @@ fn entity_delta_serde_roundtrip() {
         assert_eq!(back, delta);
     }
     assert!(serde_json::from_str::<EntityDelta>("garbage").is_err());
-    assert!(serde_json::from_str::<EntityDelta>(
-        r#"{"PostDeleted":{"post_id":42}}"#
-    )
-    .is_err());
+    assert!(serde_json::from_str::<EntityDelta>(r#"{"PostDeleted":{"post_id":42}}"#).is_err());
 }
 
 #[test]
@@ -254,13 +251,19 @@ fn memory_pressure_level_mapping() {
     use soshal_common_core::memory::MemoryPressureLevel;
 
     assert_eq!(MemoryPressureLevel::from_u8(0), MemoryPressureLevel::Normal);
-    assert_eq!(MemoryPressureLevel::from_u8(1), MemoryPressureLevel::Moderate);
+    assert_eq!(
+        MemoryPressureLevel::from_u8(1),
+        MemoryPressureLevel::Moderate
+    );
     assert_eq!(
         MemoryPressureLevel::from_u8(2),
         MemoryPressureLevel::Critical
     );
     assert_eq!(MemoryPressureLevel::from_u8(3), MemoryPressureLevel::Normal);
-    assert_eq!(MemoryPressureLevel::from_u8(255), MemoryPressureLevel::Normal);
+    assert_eq!(
+        MemoryPressureLevel::from_u8(255),
+        MemoryPressureLevel::Normal
+    );
     assert_eq!(MemoryPressureLevel::Normal as u8, 0);
     assert_eq!(MemoryPressureLevel::Moderate as u8, 1);
     assert_eq!(MemoryPressureLevel::Critical as u8, 2);

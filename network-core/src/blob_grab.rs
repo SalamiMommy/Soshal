@@ -146,9 +146,16 @@ pub fn fetch_blob_from_peer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soshal_media_core::chunking::ChunkRef;
+    use std::io::{BufRead, Read, Write};
     use std::sync::atomic::{AtomicU32, Ordering};
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock() -> std::sync::MutexGuard<'static, ()> {
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     fn tmp_root() -> std::path::PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -234,5 +241,151 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("not found"), "{err}");
+    }
+
+    /// One-shot LAN server that answers every `want_manifest` request with
+    /// `body`, bypassing the CAS so tests can feed hostile/fake manifests.
+    fn raw_manifest_server(body: Vec<u8>) -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+            let mut writer = stream;
+            let _ = reader.read_line(&mut String::new());
+            if writer.write_all(b"OK\n").is_err() {
+                return;
+            }
+            let mut len_buf = [0u8; 4];
+            if reader.read_exact(&mut len_buf).is_err() {
+                return;
+            }
+            let mut payload = vec![0u8; u32::from_le_bytes(len_buf) as usize];
+            if reader.read_exact(&mut payload).is_err() {
+                return;
+            }
+            let _ = writer.write_all(&[0u8]);
+            let _ = writer.write_all(&(body.len() as u32).to_le_bytes());
+            let _ = writer.write_all(&body);
+        });
+        port
+    }
+
+    #[test]
+    fn invalid_blob_hash_rejected() {
+        let _g = lock();
+        let peer = LanPeer {
+            ip: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            tcp_port: 1,
+            quic_port: None,
+        };
+        let err =
+            fetch_blob_from_peer(&peer, [9u8; 32], &"ab".repeat(32), "short", "/tmp/none.bin")
+                .unwrap_err();
+        assert!(err.contains("invalid blob hash"), "{err}");
+    }
+
+    #[test]
+    fn refuses_public_lan_peer() {
+        let _g = lock();
+        let peer = LanPeer {
+            ip: std::net::IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8)),
+            tcp_port: 9999,
+            quic_port: None,
+        };
+        let err = fetch_blob_from_peer(
+            &peer,
+            [9u8; 32],
+            &"ab".repeat(32),
+            &"ab".repeat(32),
+            "/tmp/none.bin",
+        )
+        .unwrap_err();
+        assert!(err.contains("refusing non-private LAN peer"), "{err}");
+    }
+
+    #[test]
+    fn manifest_hash_mismatch_rejected() {
+        let _g = lock();
+        let mismatched = ChunkManifest {
+            blob_hash: "cd".repeat(32),
+            total_size: 1024,
+            chunks: vec![ChunkRef {
+                blake3: "ef".repeat(32),
+                offset: 0,
+                len: 1024,
+            }],
+        };
+        let port = raw_manifest_server(serde_json::to_vec(&mismatched).unwrap());
+        let peer = LanPeer {
+            ip: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            tcp_port: port,
+            quic_port: None,
+        };
+        let err = fetch_blob_from_peer(
+            &peer,
+            [9u8; 32],
+            &"ab".repeat(32),
+            &"ab".repeat(32),
+            "/tmp/none.bin",
+        )
+        .unwrap_err();
+        assert!(err.contains("manifest hash mismatch"), "{err}");
+    }
+
+    #[test]
+    fn oversized_blob_rejected() {
+        let _g = lock();
+        let oversized = ChunkManifest {
+            blob_hash: "ab".repeat(32),
+            total_size: MAX_BLOB_FETCH_BYTES + 1,
+            chunks: vec![],
+        };
+        let port = raw_manifest_server(serde_json::to_vec(&oversized).unwrap());
+        let peer = LanPeer {
+            ip: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            tcp_port: port,
+            quic_port: None,
+        };
+        let err = fetch_blob_from_peer(
+            &peer,
+            [9u8; 32],
+            &"ab".repeat(32),
+            &"ab".repeat(32),
+            "/tmp/none.bin",
+        )
+        .unwrap_err();
+        assert!(err.contains("blob too large"), "{err}");
+    }
+
+    #[test]
+    fn hostile_manifest_rejected() {
+        let _g = lock();
+        let hostile = ChunkManifest {
+            blob_hash: "ab".repeat(32),
+            total_size: 1024,
+            chunks: vec![ChunkRef {
+                blake3: "cd".repeat(32),
+                offset: 1,
+                len: 1024,
+            }],
+        };
+        let port = raw_manifest_server(serde_json::to_vec(&hostile).unwrap());
+        let peer = LanPeer {
+            ip: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            tcp_port: port,
+            quic_port: None,
+        };
+        let err = fetch_blob_from_peer(
+            &peer,
+            [9u8; 32],
+            &"ab".repeat(32),
+            &"ab".repeat(32),
+            "/tmp/none.bin",
+        )
+        .unwrap_err();
+        assert!(err.contains("hostile manifest structure"), "{err}");
     }
 }

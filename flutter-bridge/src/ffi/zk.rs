@@ -26,3 +26,89 @@ pub fn zk_apply_rollup(db_path: String, rollup_json: String) -> Result<bool, Str
     let engine = soshal_sync_core::zk_rollup::get_global_zk_engine();
     engine.apply_rollup_to_db(&conn, &rollup)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soshal_sync_core::zk_rollup::ZkProofType;
+
+    static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    fn tmp_db_path(label: &str) -> String {
+        let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let path = format!(
+            "{}/soshal_zk_{label}_{}_{}.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id(),
+            n
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        path
+    }
+
+    fn valid_rollup(thread_id: &str, ops: u64) -> ZkCrdtRollup {
+        let genesis = "0000000000000000000000000000000000000000000000000000000000000000";
+        let final_state = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
+        ctx.update(thread_id.as_bytes());
+        ctx.update(genesis.as_bytes());
+        ctx.update(final_state.as_bytes());
+        ctx.update(&ops.to_le_bytes());
+        ZkCrdtRollup {
+            thread_id: thread_id.to_string(),
+            genesis_root: genesis.to_string(),
+            final_state_root: final_state.to_string(),
+            operation_count: ops,
+            proof_bytes_hex: hex::encode(ctx.finish()),
+            proof_type: ZkProofType::RiscZeroStark,
+        }
+    }
+
+    #[test]
+    fn verify_rollup_valid_tampered_and_garbage() {
+        let valid_json = serde_json::to_string(&valid_rollup("t1", 3)).unwrap();
+        let out: serde_json::Value =
+            serde_json::from_str(&zk_verify_rollup(valid_json).unwrap()).unwrap();
+        assert_eq!(out["verified"], true);
+
+        let mut tampered = valid_rollup("t2", 2);
+        tampered.proof_bytes_hex = hex::encode([0u8; 32]);
+        let tampered_json = serde_json::to_string(&tampered).unwrap();
+        let mismatch: serde_json::Value =
+            serde_json::from_str(&zk_verify_rollup(tampered_json).unwrap()).unwrap();
+        assert_eq!(mismatch["verified"], false);
+        assert_eq!(
+            mismatch["error_msg"].as_str().unwrap(),
+            "Rollup commitment mismatch"
+        );
+
+        let garbage: serde_json::Value =
+            serde_json::from_str(&zk_verify_rollup("not json".to_string()).unwrap()).unwrap();
+        assert_eq!(garbage["verified"], false);
+        assert!(garbage["error_msg"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid rollup JSON"));
+    }
+
+    #[test]
+    fn apply_rollup_valid_tampered_and_garbage() {
+        let path = tmp_db_path("apply");
+        let valid_json = serde_json::to_string(&valid_rollup("a", 7)).unwrap();
+        assert!(zk_apply_rollup(path.clone(), valid_json).unwrap());
+
+        let mut tampered = valid_rollup("b", 1);
+        tampered.proof_bytes_hex = hex::encode([0u8; 32]);
+        let tampered_json = serde_json::to_string(&tampered).unwrap();
+        assert_eq!(
+            zk_apply_rollup(path.clone(), tampered_json).unwrap_err(),
+            "Rollup commitment mismatch"
+        );
+
+        assert!(zk_apply_rollup(path, "garbage".to_string())
+            .unwrap_err()
+            .contains("Invalid ZK rollup JSON"));
+    }
+}

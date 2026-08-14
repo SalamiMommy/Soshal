@@ -61,32 +61,6 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     _refresh();
   }
 
-  Future<void> _setTransport(bool on) async {
-    final service = context.read<NetworkService>();
-    final mode = on ? TransportMode.i2p : TransportMode.clearnet;
-    try {
-      final ok = await service.setTransportMode(mode);
-      if (!mounted) return;
-      if (ok) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Transport: ${mode.name}')),
-        );
-        await service.reinitRelays();
-        _refresh();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not switch transport')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Transport switch failed: $e')),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final service = context.watch<NetworkService>();

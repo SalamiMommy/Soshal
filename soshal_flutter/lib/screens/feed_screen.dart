@@ -738,8 +738,7 @@ class _BlobImageState extends State<_BlobImage> {
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child:
-                ErrorStateText('Image unavailable: $_error'),
+            child: ErrorStateText('Image unavailable: $_error'),
           ),
         ),
       );
@@ -845,8 +844,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child:
-                ErrorStateText('Video unavailable: $_error'),
+            child: ErrorStateText('Video unavailable: $_error'),
           ),
         ),
       );

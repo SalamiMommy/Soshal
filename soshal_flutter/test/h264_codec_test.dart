@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/h264_codec.dart';
 
-import './helpers/test_env.dart';
+import 'helpers/test_env.dart';
 
 late FakeApi api;
 

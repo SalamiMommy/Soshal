@@ -1,5 +1,4 @@
 // Manual ffi tests for messaging
-import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/ffi/messaging.dart';
 

@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/ffi/p2p.dart';
 import 'package:soshal_flutter/services/p2p_service.dart';
 
-import './helpers/test_env.dart';
+import 'helpers/test_env.dart';
 
 late FakeApi api;
 
@@ -17,7 +17,7 @@ P2pSwarmStatusDto status(String state, [int chunks = 3]) => P2pSwarmStatusDto(
       state: state,
       verifiedChunks: BigInt.from(chunks),
       bytesDownloaded: BigInt.from(chunks * 4096),
-      failures: BigInt.zero,
+      failures: BigInt.from(0),
       failedHashes: const [],
     );
 

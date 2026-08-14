@@ -25,7 +25,6 @@ mod tests {
     use crate::ffi::db;
     use std::sync::Mutex;
 
-    static DB_TEST_LOCK: Mutex<()> = Mutex::new(());
     static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn tmp_db(label: &str) -> String {
@@ -60,14 +59,18 @@ mod tests {
 
     #[test]
     fn test_audit_list_empty() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("empty");
         assert_eq!(audit_list(10, None).unwrap(), "[]");
     }
 
     #[test]
     fn test_audit_list_newest_first_and_limit_clamp() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("order");
         insert_log("a1", "pk1", "kick", 1000);
         insert_log("a2", "pk1", "ban", 3000);
@@ -85,7 +88,9 @@ mod tests {
 
     #[test]
     fn test_audit_list_actor_filter() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("actor");
         insert_log("a1", "pk1", "kick", 1000);
         insert_log("a2", "pk2", "ban", 3000);
@@ -98,7 +103,9 @@ mod tests {
 
     #[test]
     fn test_audit_list_nullable_fields() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("nullable");
         db::db_execute_raw(
             "INSERT INTO audit_logs (id, group_id, actor_pubkey, action, created_at) VALUES ('a1','g1','pk1','kick',1000)"

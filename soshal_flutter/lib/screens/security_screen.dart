@@ -250,8 +250,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                   SelectableText('Signature:\n$signature',
                       style: const TextStyle(
                           fontSize: 11, fontFamily: 'monospace')),
-                if (error != null)
-                  ErrorStateText('Error: $error'),
+                if (error != null) ErrorStateText('Error: $error'),
                 const SizedBox(height: 8),
                 Text(
                   'Public key: ${(_pubkey ?? '').substring(0, 12)}…',

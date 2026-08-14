@@ -246,6 +246,23 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  Future<bool> storyReact(String storyId, String pubkey, String emoji) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiStreamingStreamingStoryReact(
+        storyId: storyId,
+        pubkey: pubkey,
+        emoji: emoji,
+      );
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Publish a video/audio frame via Media over QUIC (MoQ).
   Future<String> publishMoqObject({
     required String streamId,

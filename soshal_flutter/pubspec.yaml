@@ -28,6 +28,8 @@ dev_dependencies:
   hooks: ^2.0.2
   native_assets_cli: ^0.10.0
 
+  path_provider_platform_interface: any
+  plugin_platform_interface: any
 flutter:
   uses-material-design: true
 

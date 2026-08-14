@@ -406,4 +406,140 @@ mod tests {
         server.stop();
         std::fs::remove_dir_all(&root).unwrap();
     }
+
+    #[tokio::test]
+    async fn test_full_file_get_returns_200() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::TcpStream;
+
+        let dir =
+            std::env::temp_dir().join(format!("soshal-video-full-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload = b"full file get payload".to_vec();
+        let path = dir.join("full.mp4");
+        std::fs::write(&path, &payload).unwrap();
+
+        let mut server = LocalVideoServer::start().await.unwrap();
+        server.register_video("fullvid".to_string(), path.to_string_lossy().to_string());
+        let addr = format!("127.0.0.1:{}", server.port());
+
+        let mut sock = TcpStream::connect(&addr).await.unwrap();
+        sock.write_all(
+            b"GET /video/fullvid HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+        let mut resp = Vec::new();
+        sock.read_to_end(&mut resp).await.unwrap();
+        let text = String::from_utf8_lossy(&resp);
+        assert!(text.starts_with("HTTP/1.1 200 OK"));
+        assert!(text.contains(&format!("Content-Length: {}", payload.len())));
+        assert!(text.contains(&format!(
+            "Content-Range: bytes 0-{}/{}\r\n",
+            payload.len() - 1,
+            payload.len()
+        )));
+        assert!(text.ends_with("full file get payload"));
+
+        server.stop();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_malformed_range_start_gt_end_rejected() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::TcpStream;
+
+        let dir =
+            std::env::temp_dir().join(format!("soshal-video-range-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload = b"malformed range payload".to_vec();
+        let path = dir.join("range.mp4");
+        std::fs::write(&path, &payload).unwrap();
+
+        let mut server = LocalVideoServer::start().await.unwrap();
+        server.register_video("rangevid".to_string(), path.to_string_lossy().to_string());
+        let addr = format!("127.0.0.1:{}", server.port());
+
+        let mut sock = TcpStream::connect(&addr).await.unwrap();
+        sock.write_all(
+            b"GET /video/rangevid HTTP/1.1\r\nHost: localhost\r\nRange: bytes=100-50\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+        let mut resp = Vec::new();
+        sock.read_to_end(&mut resp).await.unwrap();
+        let text = String::from_utf8_lossy(&resp);
+        assert!(text.starts_with("HTTP/1.1 206 Partial Content"));
+        assert!(text.contains("Content-Length: 0"));
+
+        server.stop();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_video_route_missing_id_404() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::TcpStream;
+
+        let dir =
+            std::env::temp_dir().join(format!("soshal-video-404-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload = b"registered video payload".to_vec();
+        let path = dir.join("known.mp4");
+        std::fs::write(&path, &payload).unwrap();
+
+        let mut server = LocalVideoServer::start().await.unwrap();
+        server.register_video("known".to_string(), path.to_string_lossy().to_string());
+        let addr = format!("127.0.0.1:{}", server.port());
+
+        let mut sock = TcpStream::connect(&addr).await.unwrap();
+        sock.write_all(
+            b"GET /video/nosuchvideo HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+        let mut resp = Vec::new();
+        sock.read_to_end(&mut resp).await.unwrap();
+        let text = String::from_utf8_lossy(&resp);
+        assert!(text.starts_with("HTTP/1.1 404"));
+        assert!(text.contains("Content-Length: 0"));
+
+        server.stop();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_sendfile_path_full_200_linux() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::TcpStream;
+
+        let dir =
+            std::env::temp_dir().join(format!("soshal-video-sendfile-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload = vec![0xABu8; 5 * 1024 * 1024];
+        let path = dir.join("big.mp4");
+        std::fs::write(&path, &payload).unwrap();
+
+        let mut server = LocalVideoServer::start().await.unwrap();
+        server.register_video("bigvid".to_string(), path.to_string_lossy().to_string());
+        let addr = format!("127.0.0.1:{}", server.port());
+
+        let mut sock = TcpStream::connect(&addr).await.unwrap();
+        sock.write_all(
+            b"GET /video/bigvid HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+        let mut resp = Vec::new();
+        sock.read_to_end(&mut resp).await.unwrap();
+        let text = String::from_utf8_lossy(&resp);
+        assert!(text.starts_with("HTTP/1.1 200 OK"));
+        assert!(text.contains(&format!("Content-Length: {}", payload.len())));
+        let header_end = text.find("\r\n\r\n").expect("header terminator") + 4;
+        assert_eq!(&resp[header_end..], payload);
+
+        server.stop();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

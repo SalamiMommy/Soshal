@@ -122,10 +122,8 @@ mod tests {
 
     #[test]
     fn test_configure_flash_pragmas_enables_wal() {
-        let path = std::env::temp_dir().join(format!(
-            "soshal-flash-wal-test-{}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("soshal-flash-wal-test-{}", std::process::id()));
         let db = soshal_db_core::block_on(libsql::Builder::new_local(&path).build()).unwrap();
         let conn = db.connect().unwrap();
         configure_flash_pragmas(&conn).unwrap();

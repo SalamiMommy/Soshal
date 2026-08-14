@@ -2,7 +2,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/mesh_service.dart';
 
-import './helpers/test_env.dart';
+import 'helpers/test_env.dart';
 
 late FakeApi api;
 
@@ -57,7 +57,7 @@ void main() {
           api.callsOf('crateFfiNetworkReticulumStartAutoInterface').single;
       expect(api.namedArg(inv, 'enabled'), true);
       expect(api.namedArg(inv, 'port'), 1234);
-      expect(api.namedArg(inv, 'intervalMs'), BigInt.from(500));
+      expect(api.namedArg(inv, 'intervalMs'), 500);
       expect(mesh.running, isTrue);
     });
 
@@ -70,7 +70,7 @@ void main() {
       final inv =
           api.callsOf('crateFfiNetworkReticulumStartTcpServer').single;
       expect(api.namedArg(inv, 'port'), 4321);
-      expect(api.namedArg(inv, 'maxConnections'), BigInt.from(8));
+      expect(api.namedArg(inv, 'maxConnections'), 8);
     });
 
     test('sendPacket returns FFI bool and passes args', () async {

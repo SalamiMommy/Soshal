@@ -99,4 +99,54 @@ mod tests {
         let verdict = case.finalize_verdict().unwrap();
         assert_eq!(verdict.group_pubkey_hex, group_pk);
     }
+
+    #[test]
+    fn test_jury_rejects_duplicate_juror_vote() {
+        let group_pk = "group_pubkey_1234567890abcdef1234567890abcdef1234567890abcdef12345";
+        let mut case = ModerationJuryCase::new(
+            "case_002".to_string(),
+            "spammer_pubkey".to_string(),
+            None,
+            "Spam behavior".to_string(),
+            2,
+            3,
+            group_pk.to_string(),
+        );
+
+        let shares = FrostSessionManager::generate_jury_keys(2, 3, group_pk);
+        let msg = "MODERATION_ACTION:case=case_002:target=spammer_pubkey:reason=Spam behavior";
+        let vote1 = FrostSessionManager::sign_share(&shares[0], msg.as_bytes()).unwrap();
+
+        assert!(!case.cast_vote(vote1.clone()).unwrap());
+        let err = case.cast_vote(vote1.clone()).unwrap_err();
+        assert!(err.contains("already voted"));
+        assert!(!case.cast_vote(vote1).is_ok());
+        assert_eq!(case.votes_collected.len(), 1);
+    }
+
+    #[test]
+    fn test_jury_finalize_rejects_insufficient_shares() {
+        let group_pk = "group_pubkey_1234567890abcdef1234567890abcdef1234567890abcdef12345";
+        let mut case = ModerationJuryCase::new(
+            "case_003".to_string(),
+            "spammer_pubkey".to_string(),
+            None,
+            "Spam behavior".to_string(),
+            3,
+            3,
+            group_pk.to_string(),
+        );
+
+        let shares = FrostSessionManager::generate_jury_keys(3, 3, group_pk);
+        let msg = "MODERATION_ACTION:case=case_003:target=spammer_pubkey:reason=Spam behavior";
+
+        for share in shares.iter().take(2) {
+            let vote = FrostSessionManager::sign_share(share, msg.as_bytes()).unwrap();
+            assert!(!case.cast_vote(vote).unwrap());
+        }
+
+        let err = case.finalize_verdict().unwrap_err();
+        assert!(err.contains("insufficient signature shares"));
+        assert_eq!(case.votes_collected.len(), 2);
+    }
 }

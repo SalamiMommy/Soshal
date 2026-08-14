@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import './helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 import 'package:soshal_flutter/ffi/search.dart';
 
@@ -7,7 +7,7 @@ void main() {
   test('search wrappers call expected api methods', () async {
     final tmp = '/tmp/soshal-test-${DateTime.now().microsecondsSinceEpoch}';
     final env = bootstrapTestEnv(tmp);
-    final api = env.$1 as FakeApi;
+    final api = env.$1;
 
     api.stubString('crateFfiSearchSearchPosts', '[]');
     api.stubListString('crateFfiSearchSearchHashtags', ['tag1']);

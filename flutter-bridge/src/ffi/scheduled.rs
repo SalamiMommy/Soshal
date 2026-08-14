@@ -77,7 +77,6 @@ mod tests {
     use crate::ffi::db;
     use std::sync::Mutex;
 
-    static DB_TEST_LOCK: Mutex<()> = Mutex::new(());
     static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn tmp_db(label: &str) -> String {
@@ -105,7 +104,9 @@ mod tests {
 
     #[test]
     fn test_create_list_roundtrip() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("roundtrip");
         let at = soshal_common_core::format::now_secs() + 3600;
         let id = scheduled_create(
@@ -133,7 +134,9 @@ mod tests {
 
     #[test]
     fn test_list_orders_soonest_first() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("order");
         let late = soshal_common_core::format::now_secs() + 7200;
         let early = soshal_common_core::format::now_secs() + 3600;
@@ -147,7 +150,9 @@ mod tests {
 
     #[test]
     fn test_list_filters_pubkey() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("pubkey");
         let at = soshal_common_core::format::now_secs() + 3600;
         scheduled_create("pk1".to_string(), "mine".to_string(), at, vec![]).unwrap();
@@ -159,7 +164,9 @@ mod tests {
 
     #[test]
     fn test_list_empty_store() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("empty");
         let arr = parse_arr(&scheduled_list("pk1".to_string()).unwrap());
         assert!(arr.is_empty());
@@ -167,7 +174,9 @@ mod tests {
 
     #[test]
     fn test_create_rejects_empty_content() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("emptymsg");
         let res = scheduled_create(
             "pk1".to_string(),
@@ -181,7 +190,9 @@ mod tests {
 
     #[test]
     fn test_create_rejects_past_timestamp() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("past");
         let res = scheduled_create(
             "pk1".to_string(),
@@ -195,7 +206,9 @@ mod tests {
 
     #[test]
     fn test_delete_removes_from_list() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("delete");
         let at = soshal_common_core::format::now_secs() + 3600;
         let id = scheduled_create("pk1".to_string(), "draft".to_string(), at, vec![]).unwrap();
@@ -206,7 +219,9 @@ mod tests {
 
     #[test]
     fn test_delete_unknown_id_noop() {
-        let _g = DB_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("unknown");
         assert!(scheduled_delete("sched:missing:1:2".to_string()).unwrap());
     }

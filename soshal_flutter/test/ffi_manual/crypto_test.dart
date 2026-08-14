@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import './helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 import 'package:soshal_flutter/ffi/crypto.dart';
 
@@ -8,7 +8,7 @@ void main() {
   test('crypto wrappers call api and return expected shapes', () async {
     final tmp = '/tmp/soshal-test-${DateTime.now().microsecondsSinceEpoch}';
     final env = bootstrapTestEnv(tmp);
-    final api = env.$1 as FakeApi;
+    final api = env.$1;
 
     api.stubString('crateFfiCryptoCryptoSha256Hex', 'deadbeef');
     api.stub('crateFfiCryptoCryptoSha256', (_) => Uint8List.fromList([1, 2, 3]));

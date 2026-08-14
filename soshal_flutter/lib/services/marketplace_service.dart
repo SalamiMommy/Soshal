@@ -318,6 +318,152 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
     return null;
   }
 
+  Future<bool> reviewListing({
+    required String listingId,
+    required String reviewerPubkey,
+    required int rating,
+    String text = '',
+  }) async {
+    try {
+      final ok =
+          RustLib.instance.api.crateFfiMarketplaceMarketplaceReviewListing(
+        listingId: listingId,
+        reviewerPubkey: reviewerPubkey,
+        rating: rating,
+        text: text,
+      );
+      clearLastError();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<List<dynamic>> listingReviews(String listingId,
+      {int limit = 10}) async {
+    try {
+      final json =
+          RustLib.instance.api.crateFfiMarketplaceMarketplaceListingReviews(
+        listingId: listingId,
+        limit: limit,
+      );
+      final decoded = jsonDecode(json);
+      clearLastError();
+      return decoded as List<dynamic>? ?? [];
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return [];
+    }
+  }
+
+  Future<double> listingRating(String listingId) async {
+    try {
+      final rating =
+          RustLib.instance.api.crateFfiMarketplaceMarketplaceListingRating(
+        listingId: listingId,
+      );
+      clearLastError();
+      return rating;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return 0.0;
+    }
+  }
+
+  Future<Map<String, dynamic>?> pollCreate({
+    required String userPubkey,
+    required String question,
+    required String optionsJson,
+    int expiresInHours = 168,
+  }) async {
+    try {
+      final json =
+          RustLib.instance.api.crateFfiMarketplaceMarketplacePollCreate(
+        userPubkey: userPubkey,
+        question: question,
+        optionsJson: optionsJson,
+        expiresInHours: expiresInHours,
+      );
+      final decoded = jsonDecode(json);
+      clearLastError();
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<bool> pollVote({
+    required String pollId,
+    required String voterPubkey,
+    required int optionIndex,
+  }) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiMarketplaceMarketplacePollVote(
+        pollId: pollId,
+        voterPubkey: voterPubkey,
+        optionIndex: optionIndex,
+      );
+      clearLastError();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> pollClose(String pollId, String userPubkey) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiMarketplaceMarketplacePollClose(
+        pollId: pollId,
+        userPubkey: userPubkey,
+      );
+      clearLastError();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> pollGet(String pollId) async {
+    try {
+      final json = RustLib.instance.api.crateFfiMarketplaceMarketplacePollGet(
+        pollId: pollId,
+      );
+      final decoded = jsonDecode(json);
+      clearLastError();
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<bool> pollHasVoted(String pollId, String voterPubkey) async {
+    try {
+      final ok =
+          RustLib.instance.api.crateFfiMarketplaceMarketplacePollHasVoted(
+        pollId: pollId,
+        voterPubkey: voterPubkey,
+      );
+      clearLastError();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<List<ListingInfo>> _decode(String Function() call) async {
     try {
       final json = call();
