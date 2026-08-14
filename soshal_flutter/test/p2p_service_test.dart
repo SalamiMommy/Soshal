@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/ffi/p2p.dart';
 import 'package:soshal_flutter/services/p2p_service.dart';
 
-import 'helpers/test_env.dart';
+import 'package:soshal_flutter/test/helpers/test_env.dart';
 
 late FakeApi api;
 

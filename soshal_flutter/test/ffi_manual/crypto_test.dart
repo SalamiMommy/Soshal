@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import 'helpers/test_env.dart';
+import 'package:soshal_flutter/test/helpers/test_env.dart';
 
 import 'package:soshal_flutter/ffi/crypto.dart';
 
