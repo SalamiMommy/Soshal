@@ -48,39 +48,57 @@ class _LiveScreenState extends State<LiveScreen> {
     final desc = TextEditingController();
     final url =
         TextEditingController(text: 'https://stream.soshal.example/live');
+    var canGo = false;
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Go live'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: title,
-              decoration: const InputDecoration(labelText: 'Title *'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          void update() {
+            setDialogState(() {
+              canGo = title.text.trim().isNotEmpty &&
+                  title.text.trim().length <= 300 &&
+                  url.text.trim().isNotEmpty &&
+                  url.text.trim().length <= 500;
+            });
+          }
+
+          return AlertDialog(
+            title: const Text('Go live'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: title,
+                  onChanged: (_) => update(),
+                  decoration: const InputDecoration(labelText: 'Title *'),
+                ),
+                TextField(
+                  controller: desc,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                ),
+                TextField(
+                  controller: url,
+                  onChanged: (_) => update(),
+                  decoration: const InputDecoration(labelText: 'Stream URL *'),
+                ),
+              ],
             ),
-            TextField(
-              controller: desc,
-              maxLines: 2,
-              decoration: const InputDecoration(labelText: 'Description'),
-            ),
-            TextField(
-              controller: url,
-              decoration: const InputDecoration(labelText: 'Stream URL *'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Go live'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: canGo
+                    ? () => Navigator.pop(context, true)
+                    : null,
+                child: const Text('Go live'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
