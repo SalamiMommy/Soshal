@@ -19,7 +19,10 @@ String webrtcGetIceConfig({required String privacyLevel}) =>
 List<String> webrtcGetStunServers() =>
     RustLib.instance.api.crateFfiWebrtcWebrtcGetStunServers();
 
-/// Get TURN servers (if enabled)
+/// Get TURN servers (if enabled). Reads the configured TURN endpoint from
+/// the `turn_endpoint` setting (`turn:host:port`, plus optional
+/// `turn_username`/`turn_credential`); returns `[]` when unconfigured.
+/// Server-side TURN provisioning is backend-gated.
 String webrtcGetTurnServers({String? authToken}) => RustLib.instance.api
     .crateFfiWebrtcWebrtcGetTurnServers(authToken: authToken);
 

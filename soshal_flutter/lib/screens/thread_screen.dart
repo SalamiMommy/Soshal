@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/feed_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Post thread screen: root post + replies + reply composer.
 class ThreadScreen extends StatefulWidget {
@@ -18,6 +19,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
   bool _loading = true;
   bool _sending = false;
   List<FeedPost> _thread = [];
+  List<ReactionSummary> _reactionSummary = [];
   final TextEditingController _replyController = TextEditingController();
 
   @override
@@ -37,6 +39,11 @@ class _ThreadScreenState extends State<ThreadScreen> {
     try {
       final api = context.read<FeedService>();
       _thread = await api.fetchThread(widget.eventId);
+      final session = context.read<SessionService>();
+      _reactionSummary = api.aggregateChatReactions(
+        _thread,
+        session.activePubkey ?? '',
+      );
     } catch (e) {
       debugPrint('thread load: $e');
     }
@@ -93,14 +100,40 @@ class _ThreadScreenState extends State<ThreadScreen> {
                           final isRoot = index == 0;
                           return ListTile(
                             title: Text(
-                              post.profileName ??
-                                  (post.pubkey.length >= 12
-                                      ? post.pubkey.substring(0, 12)
-                                      : post.pubkey),
+                              post.profileName ?? firstChars(post.pubkey, 12),
                               style:
                                   const TextStyle(fontWeight: FontWeight.bold),
                             ),
-                            subtitle: Text(post.content),
+                            subtitle: isRoot
+                                ? Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(post.content),
+                                      if (_reactionSummary.isNotEmpty)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(top: 6),
+                                          child: Wrap(
+                                            spacing: 6,
+                                            runSpacing: 4,
+                                            children: [
+                                              for (final s in _reactionSummary)
+                                                Chip(
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  label: Text(
+                                                    '${s.emoji} ${s.count}',
+                                                    style: const TextStyle(
+                                                        fontSize: 12),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
+                                  )
+                                : Text(post.content),
                             trailing: isRoot
                                 ? Row(
                                     mainAxisSize: MainAxisSize.min,

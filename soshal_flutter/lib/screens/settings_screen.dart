@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'dart:convert';
 import '../services/session_service.dart';
 import '../services/network_service.dart';
+import '../services/zap_service.dart';
 import 'share_app_screen.dart';
 
 /// Settings Screen
@@ -101,6 +103,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (pubkey != null) {
                         await session.updateRelays(pubkey, _relays);
                       }
+                      _publishRelayList();
                     },
                   ),
                 );
@@ -124,6 +127,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('Language'),
                 trailing: const Icon(Icons.arrow_forward),
                 onTap: () => context.push('/settings/language'),
+              ),
+            ]),
+            // Lightning section
+            _buildSection('Lightning', [
+              Consumer<ZapService>(
+                builder: (context, zap, _) => ListTile(
+                  title: const Text('NWC Wallet'),
+                  subtitle: Text(
+                    zap.isConnected
+                        ? 'Connected · ${zap.nwcPubkey != null ? zap.nwcPubkey!.substring(0, 16) : ''}…'
+                        : 'Not connected',
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(
+                      zap.isConnected ? Icons.link_off : Icons.add_link,
+                    ),
+                    onPressed: () => _showNwcDialog(zap),
+                  ),
+                ),
+              ),
+              ListTile(
+                title: const Text('Resolve LNURL'),
+                subtitle: const Text('Parse a lud16 address'),
+                trailing: const Icon(Icons.arrow_forward),
+                onTap: () => _showLnurlDialog(),
               ),
             ]),
             // Network section
@@ -205,6 +233,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// Publishes the current relay list as a kind-10002 relay-list event via
+  /// the bridge (best-effort; failures surface as a snackbar).
+  void _publishRelayList() {
+    try {
+      context.read<NetworkService>().publishRelayList(relayUrls: _relays);
+    } catch (e) {
+      debugPrint('publish relay list: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Publish relay list: $e')));
+    }
+  }
+
   void _showRelayDialog() {
     showDialog(
       context: context,
@@ -264,6 +304,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   if (pubkey != null) {
                     await session.updateRelays(pubkey, _relays);
                   }
+                  _publishRelayList();
                   if (!context.mounted) return;
                   Navigator.of(context).pop();
                 }
@@ -273,6 +314,143 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         );
       },
+    );
+  }
+
+  void _showNwcDialog(ZapService zap) {
+    if (zap.isConnected) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Disconnect NWC wallet?'),
+          content:
+              const Text('Disconnects the Nostr Wallet Connect wallet from zap '
+                  'payments. The connection URI is discarded.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                try {
+                  await zap.disconnect();
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('NWC wallet disconnected')),
+                  );
+                } catch (e) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Disconnect failed: $e')));
+                }
+              },
+              child: const Text('Disconnect'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Connect NWC wallet'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'nostr+walletconnect:// URI',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final uri = controller.text.trim();
+              if (uri.isEmpty) return;
+              try {
+                await zap.connect(uri);
+              } catch (e) {
+                if (!context.mounted) return;
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Connect failed: $e')));
+                return;
+              }
+              if (!context.mounted) return;
+              Navigator.of(context).pop();
+            },
+            child: const Text('Connect'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLnurlDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Resolve LNURL'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'LN address (lud16)',
+            hintText: 'name@domain.com',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final lnurl = controller.text.trim();
+              if (lnurl.isEmpty) return;
+              try {
+                final json = await context.read<ZapService>().parseLnurl(lnurl);
+                if (!context.mounted) return;
+                Navigator.of(context).pop();
+                final meta = jsonDecode(json) as Map<String, dynamic>;
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('LNURL resolved'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Name: ${meta['name']}'),
+                        Text('Domain: ${meta['domain']}'),
+                        Text('Callback: ${meta['callback']}'),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                );
+              } catch (e) {
+                if (!context.mounted) return;
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text('Parse failed: $e')));
+              }
+            },
+            child: const Text('Resolve'),
+          ),
+        ],
+      ),
     );
   }
 

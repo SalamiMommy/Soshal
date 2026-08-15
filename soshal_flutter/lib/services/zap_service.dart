@@ -126,6 +126,45 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
       rethrow;
     }
   }
+
+  /// Fetch a BOLT-11 invoice for a zap via the connected NWC provider.
+  /// Returns the serialized invoice JSON (`bolt11`, `amount_msat`, …).
+  Future<String> fetchInvoice({
+    required String lnurl,
+    required int amountMsat,
+    String comment = '',
+    String nostrEvent = '',
+  }) async {
+    try {
+      final json = await RustLib.instance.api.crateFfiZapZapFetchInvoice(
+        lnurl: lnurl,
+        amountMsat: BigInt.from(amountMsat),
+        comment: comment,
+        nostrEvent: nostrEvent,
+      );
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Pay a BOLT-11 invoice via the connected NWC provider. Returns the
+  /// serialized pay_invoice response (payment preimage).
+  Future<String> sendPayment(String bolt11) async {
+    try {
+      final json =
+          await RustLib.instance.api.crateFfiZapZapSendPayment(bolt11: bolt11);
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
 }
 
 /// A zap receipt row.

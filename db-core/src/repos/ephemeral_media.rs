@@ -110,7 +110,7 @@ impl<'a> EphemeralMediaRepo<'a> {
                  viewed_at = ?2,
                  state = CASE WHEN current_views + 1 >= max_views THEN 'expired' ELSE state END
              WHERE id=?1",
-            params![id, now_secs()],
+            params![id, soshal_common_core::format::now_secs()],
         )?;
         if changed == 0 {
             return Err(crate::error::DbError::NotFound);
@@ -160,13 +160,6 @@ impl<'a> EphemeralMediaRepo<'a> {
         }
         Ok(ids)
     }
-}
-
-fn now_secs() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
 }
 
 fn row_to_ephemeral_media(r: &libsql::Row) -> libsql::Result<EphemeralMediaRow> {

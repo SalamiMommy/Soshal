@@ -51,4 +51,14 @@ class AudioService {
       return 0;
     }
   }
+
+  /// PCM sample count for `secs` of 48 kHz mono audio.
+  int pcmLenForSecs(double secs) {
+    try {
+      return RustLib.instance.api.crateFfiUtilUtilPcmLenForSecs(secs: secs).toInt();
+    } catch (e) {
+      debugPrint('pcm len: $e');
+      return 0;
+    }
+  }
 }

@@ -400,9 +400,19 @@ use std::time::Duration as StdDuration;
 
 const MAX_STREAM_FRAME: usize = 1024 * 1024;
 
+/// Current unix time in seconds (beacon replay-protection timestamp).
+fn now_unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// Live MoQ group-log limits: bounded memory, hostile-publisher safe.
 const LIVE_MAX_STREAM_ID: usize = 128;
+const LIVE_MAX_STREAMS: usize = 32;
 const LIVE_STREAM_HISTORY: usize = 128;
+const LIVE_MAX_REPLAY_BYTES: usize = 8 * 1024 * 1024;
 const LIVE_MAX_GROUP_BYTES: usize = 64 * 1024 * 1024;
 const LIVE_POLL_INTERVAL_MS: u64 = 50;
 const LIVE_IDLE_FINISH_MS: u64 = 2000;
@@ -440,6 +450,9 @@ impl LiveStreamRegistry {
             .streams
             .lock()
             .map_err(|_| "live registry poisoned".to_string())?;
+        if streams.len() >= LIVE_MAX_STREAMS && !streams.contains_key(stream_id) {
+            return Err("live registry full".to_string());
+        }
         let log = streams.entry(stream_id.to_string()).or_default();
         let mut lock = log
             .lock()
@@ -739,7 +752,15 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
             Ok(l) => l,
             Err(_) => return,
         };
-        let replay: Vec<Vec<u8>> = lock.entries.iter().map(|(_, g)| g.clone()).collect();
+        let mut replay: Vec<Vec<u8>> = Vec::new();
+        let mut replayed_bytes = 0usize;
+        for (_, g) in lock.entries.iter() {
+            if !replay.is_empty() && replayed_bytes + g.len() > LIVE_MAX_REPLAY_BYTES {
+                break;
+            }
+            replayed_bytes += g.len();
+            replay.push(g.clone());
+        }
         (replay, lock.watermark)
     };
     let mut watermark = wm;
@@ -806,7 +827,13 @@ async fn auth_stream(recv: &mut quinn::RecvStream, key: &[u8; 32]) -> Result<(),
         }
     }
     let line = String::from_utf8_lossy(&line);
-    match crate::lan::parse_beacon(key, crate::lan_transport::LAN_MAGIC, line.trim_end(), 0) {
+    match crate::lan::parse_beacon(
+        key,
+        crate::lan_transport::LAN_MAGIC,
+        line.trim_end(),
+        0,
+        now_unix_secs(),
+    ) {
         Some(_) => Ok(()),
         None => Err("bad hmac beacon".to_string()),
     }
@@ -898,7 +925,12 @@ pub fn fetch_quic_chunk(
                 .await
                 .map_err(|e| format!("open stream: {e}"))?;
 
-            let body = lan::beacon_body(crate::lan_transport::LAN_MAGIC, my_pubkey, 0);
+            let body = lan::beacon_body(
+                crate::lan_transport::LAN_MAGIC,
+                my_pubkey,
+                0,
+                now_unix_secs(),
+            );
             let mac = lan::beacon_mac(&key, &body);
             send.write_all(format!("{body}:{mac}\n").as_bytes())
                 .await
@@ -1010,7 +1042,12 @@ fn fetch_quic_raw(
                 .await
                 .map_err(|e| format!("open stream: {e}"))?;
 
-            let body = lan::beacon_body(crate::lan_transport::LAN_MAGIC, my_pubkey, 0);
+            let body = lan::beacon_body(
+                crate::lan_transport::LAN_MAGIC,
+                my_pubkey,
+                0,
+                now_unix_secs(),
+            );
             let mac = lan::beacon_mac(&key, &body);
             send.write_all(format!("{body}:{mac}\n").as_bytes())
                 .await
@@ -1135,7 +1172,12 @@ pub fn fetch_quic_moq_groups(
                 .await
                 .map_err(|e| format!("open stream: {e}"))?;
 
-            let body = lan::beacon_body(crate::lan_transport::LAN_MAGIC, my_pubkey, 0);
+            let body = lan::beacon_body(
+                crate::lan_transport::LAN_MAGIC,
+                my_pubkey,
+                0,
+                now_unix_secs(),
+            );
             let mac = lan::beacon_mac(&key, &body);
             send.write_all(format!("{body}:{mac}\n").as_bytes())
                 .await

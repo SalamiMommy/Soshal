@@ -386,9 +386,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                           width: 26,
                           height: 26,
                           decoration: BoxDecoration(
-                            color: Color(
-                              0xFF000000 | int.parse(c.substring(1), radix: 16),
-                            ),
+                            color: _hexColor(c),
                             shape: BoxShape.circle,
                             border: Border.all(
                               width: 2,

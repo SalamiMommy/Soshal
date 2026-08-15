@@ -33,3 +33,7 @@ List<String> utilExtractHashtags({required String text}) =>
 bool utilApplyThreadAffinity({required bool targetPerformance}) => RustLib
     .instance.api
     .crateFfiUtilUtilApplyThreadAffinity(targetPerformance: targetPerformance);
+
+/// PCM sample count for `secs` of 48 kHz mono audio.
+BigInt utilPcmLenForSecs({required double secs}) =>
+    RustLib.instance.api.crateFfiUtilUtilPcmLenForSecs(secs: secs);

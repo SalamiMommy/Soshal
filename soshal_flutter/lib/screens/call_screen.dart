@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'dart:convert';
 
 import '../services/calls_service.dart';
+import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Full-screen in-call view for voice/video calls.
 ///
@@ -37,6 +41,12 @@ class _CallScreenState extends State<CallScreen> {
   bool _muted = false;
   bool _speaker = false;
   bool _ending = false;
+  String _privacyLevel = 'friends';
+  String _iceSummary = '';
+  int _signalCount = 0;
+  String? _latestSignal;
+  String? _setupError;
+  bool _sendingOffer = false;
 
   @override
   void initState() {
@@ -46,6 +56,11 @@ class _CallScreenState extends State<CallScreen> {
       peer: widget.peer,
       mediaType: widget.mediaType,
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refreshSignals();
+      _refreshIce();
+    });
   }
 
   @override
@@ -53,12 +68,6 @@ class _CallScreenState extends State<CallScreen> {
     _service.endCall();
     _service.dispose();
     super.dispose();
-  }
-
-  String get _shortPeer {
-    final pk = widget.peer;
-    if (pk.length <= 12) return pk;
-    return '${pk.substring(0, 6)}…${pk.substring(pk.length - 6)}';
   }
 
   String get _elapsedLabel {
@@ -86,6 +95,107 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
+  /// Poll relay for incoming call signals addressed to me (kinds
+  /// 20001-20004, verified + p-tag filtered bridge-side).
+  Future<void> _refreshSignals() async {
+    final pubkey = context.read<SessionService>().activePubkey;
+    if (pubkey == null) {
+      setState(() => _setupError = 'Not signed in');
+      return;
+    }
+    try {
+      final signals = await _service.fetchSignals(pubkey);
+      _signalCount = signals.length;
+      final latest = signals.isNotEmpty ? signals.first : null;
+      _latestSignal = latest == null
+          ? null
+          : '${latest.signalType} · ${latest.pubkey.substring(0, 10)}…';
+      _setupError = null;
+    } catch (e) {
+      _setupError = 'signal poll: $e';
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Rebuild ICE config summary for the chosen privacy level: calls-module
+  /// ICE config + WebRTC-module ICE/peer config + STUN/TURN servers.
+  void _refreshIce() {
+    try {
+      final cfg = _service.iceConfig(_privacyLevel);
+      final webrtc = _service.webrtcIceConfig(_privacyLevel);
+      final peer = _service.createPeerConfig(_privacyLevel);
+      final stun = _service.stunServers();
+      final turn = _service.turnServers();
+      _iceSummary = 'STUN: ${stun.join(', ')}\n'
+          'TURN: $turn\n'
+          'ICE policy: ${_policyFromJson(cfg)}\n'
+          'WebRTC: $webrtc\n'
+          'Peer config: $peer';
+      _setupError = null;
+    } catch (e) {
+      _setupError = 'ICE config: $e';
+    }
+  }
+
+  static String _policyFromJson(String json) {
+    try {
+      final decoded = jsonDecode(json);
+      if (decoded is Map<String, dynamic>) {
+        return decoded['iceTransportPolicy']?.toString() ?? json;
+      }
+    } catch (_) {}
+    return json;
+  }
+
+  /// Build a minimal local SDP, validate + sanitize it (private IPs
+  /// redacted; relay-only for the friends level), attach a candidate, then
+  /// publish the kind-20001 offer signal.
+  Future<void> _sendOffer() async {
+    if (_sendingOffer) return;
+    setState(() => _sendingOffer = true);
+    try {
+      final forceRelay = _privacyLevel == 'friends';
+      final local = 'v=0\r\n'
+          'o=- 0 0 IN IP4 0.0.0.0\r\n'
+          's=-\r\n'
+          'c=IN IP4 192.168.1.50\r\n'
+          't=0 0\r\n'
+          'm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n'
+          'a=candidate:1 1 UDP 1 192.168.1.50 5000 typ host\r\n';
+      if (!_service.validateSdp(local)) {
+        _snack('Local SDP invalid');
+        return;
+      }
+      var sdp = _service.sanitizeSdp(local, forceRelay: forceRelay);
+      final candidates = _service.extractCandidates(sdp);
+      if (candidates.isNotEmpty) {
+        sdp = _service.addCandidateToSdp(sdp, candidates.first);
+      } else {
+        sdp = _service.addCandidateToSdp(
+            sdp, 'a=candidate:1 1 UDP 1 203.0.113.9 5000 typ relay');
+      }
+      sdp = _service.sanitizeSdpWebrtc(sdp, forceRelay: forceRelay);
+      final id = await _service.sendSignal(
+        signalType: 'offer',
+        targetPubkey: widget.peer,
+        callId: widget.callId,
+        sdp: sdp,
+        mediaType: widget.mediaType,
+      );
+      _snack('Offer signal sent · ${id.substring(0, 12)}…');
+    } catch (e) {
+      _snack('Offer error: $e');
+    } finally {
+      if (mounted) setState(() => _sendingOffer = false);
+    }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: SelectableText(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -103,7 +213,7 @@ class _CallScreenState extends State<CallScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  _shortPeer,
+                  shortPubkey(widget.peer),
                   style: theme.textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 8),
@@ -137,7 +247,88 @@ class _CallScreenState extends State<CallScreen> {
                     color: theme.colorScheme.outline,
                   ),
                 ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 24),
+                Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Call setup', style: theme.textTheme.titleSmall),
+                        const SizedBox(height: 8),
+                        SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(
+                                value: 'public', label: Text('Public')),
+                            ButtonSegment(
+                                value: 'friends', label: Text('Friends')),
+                          ],
+                          selected: {_privacyLevel},
+                          onSelectionChanged: (selection) {
+                            setState(() => _privacyLevel = selection.first);
+                            _refreshIce();
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _latestSignal == null
+                                    ? 'Signals: $_signalCount'
+                                    : 'Signals: $_signalCount · '
+                                        'latest: $_latestSignal',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Refresh signals',
+                              icon: const Icon(Icons.refresh, size: 18),
+                              onPressed: _refreshSignals,
+                            ),
+                          ],
+                        ),
+                        if (_setupError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              _setupError!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        if (_iceSummary.isNotEmpty)
+                          SelectableText(
+                            _iceSummary,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.maxFinite,
+                          child: OutlinedButton.icon(
+                            icon: _sendingOffer
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.call_made, size: 18),
+                            label: Text(_sendingOffer
+                                ? 'Sending offer…'
+                                : 'Send offer signal'),
+                            onPressed: _sendingOffer ? null : _sendOffer,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -166,7 +357,7 @@ class _CallScreenState extends State<CallScreen> {
                 ),
                 const SizedBox(height: 32),
                 Text(
-                  'Ending publishes a kind-20004 signal to $_shortPeer',
+                  'Ending publishes a kind-20004 signal to ${shortPubkey(widget.peer)}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.outline,
                   ),

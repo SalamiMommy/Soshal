@@ -57,6 +57,7 @@ lazy_static = "1.4"
 dirs = "5.0"
 bytes = "1.0"
 hex = "0.4"
+zeroize = { workspace = true }
 rand = "0.8"
 getrandom = { workspace = true }
 

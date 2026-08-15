@@ -110,3 +110,7 @@ Future<String> cryptoFrostAggregateSignature(
         threshold: threshold,
         groupPubkey: groupPubkey,
         messageHex: messageHex);
+
+/// BLAKE3 hash of raw bytes; returns 64 hex chars.
+String cryptoBlake3({required List<int> input}) =>
+    RustLib.instance.api.crateFfiCryptoCryptoBlake3(input: input);

@@ -215,7 +215,103 @@ fn test_sort_dating_profiles_ordering() {
 
     let sorted = sort_dating_profiles(input);
     assert_eq!(sorted.len(), 2);
-    assert_eq!(sorted[0].pubkey, "pk2");
+    assert_eq!(sorted[0].pubkey, "pk2", "liked_me=true ranks first");
+    assert_eq!(sorted[1].pubkey, "pk1");
+    assert!(sorted[0].compatibility_score >= sorted[1].compatibility_score);
+    assert!(sorted[0].liked_me);
+    assert!(!sorted[1].liked_me);
+}
+
+fn min_profile(
+    pubkey: &str,
+    liked_me: Option<bool>,
+    liker_total_likes: Option<u32>,
+) -> DatingProfileInput {
+    DatingProfileInput {
+        event_id: Some(format!("e_{pubkey}")),
+        pubkey: pubkey.to_string(),
+        age: Some(27.0),
+        gender: Some("female".to_string()),
+        seeking: Some("male".to_string()),
+        height: None,
+        body_type: None,
+        smoking: None,
+        drinking: None,
+        relationship_intent: None,
+        location_geohash: None,
+        max_distance_km: None,
+        interests: None,
+        politics: None,
+        ethnicity: None,
+        education: None,
+        language: None,
+        preference_weights: None,
+        dealbreakers: None,
+        verified_mutual_friends: None,
+        liked_by_me: None,
+        liked_me,
+        liker_total_likes,
+    }
+}
+
+fn min_self(pubkey: &str) -> DatingProfileInput {
+    DatingProfileInput {
+        event_id: None,
+        pubkey: pubkey.to_string(),
+        age: Some(30.0),
+        gender: Some("male".to_string()),
+        seeking: Some("female".to_string()),
+        height: None,
+        body_type: None,
+        smoking: None,
+        drinking: None,
+        relationship_intent: None,
+        location_geohash: None,
+        max_distance_km: None,
+        interests: None,
+        politics: None,
+        ethnicity: None,
+        education: None,
+        language: None,
+        preference_weights: None,
+        dealbreakers: None,
+        verified_mutual_friends: None,
+        liked_by_me: None,
+        liked_me: None,
+        liker_total_likes: None,
+    }
+}
+
+#[test]
+fn test_sort_tie_break_by_liker_total_likes() {
+    let profiles = vec![
+        min_profile("busy", Some(false), Some(500)),
+        min_profile("quiet", Some(false), Some(2)),
+    ];
+    let sorted = sort_dating_profiles(SortProfilesInput {
+        profiles,
+        self_profile: min_self("self"),
+        self_contacts: vec![],
+        sort_by: None,
+    });
+    assert_eq!(sorted[0].pubkey, "quiet", "fewer likes ranked first on tie");
+    assert_eq!(sorted[1].pubkey, "busy");
+}
+
+#[test]
+fn test_sort_by_age_ascending() {
+    let mut older = min_profile("older", None, None);
+    older.age = Some(35.0);
+    let mut younger = min_profile("younger", None, None);
+    younger.age = Some(22.0);
+    let sorted = sort_dating_profiles(SortProfilesInput {
+        profiles: vec![older, younger],
+        self_profile: min_self("self"),
+        self_contacts: vec![],
+        sort_by: Some("age".to_string()),
+    });
+    assert_eq!(sorted[0].pubkey, "younger");
+    assert_eq!(sorted[1].pubkey, "older");
 }
 
 #[test]

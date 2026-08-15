@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../services/auth_service.dart';
 import '../services/session_service.dart';
+import '../services/shell_service.dart';
 import '../services/signer_service.dart';
+import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
 
 /// Security settings: honest status of protections on this build.
@@ -202,7 +205,339 @@ class _SecurityScreenState extends State<SecurityScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: _signDialog,
           ),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, top: 8),
+            child: Text('Key tools',
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.vpn_key_outlined),
+            title: const Text('Generate new keypair'),
+            subtitle: const Text('Create a fresh identity (pubkey + nsec)'),
+            trailing: OutlinedButton(
+              onPressed: _generateKeypairDialog,
+              child: const Text('Generate'),
+            ),
+          ),
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.key_outlined),
+            title: const Text('Derive pubkey from nsec'),
+            subtitle: const Text('Recover the npub for a secret key — '
+                'no import, no key storage'),
+            trailing: OutlinedButton(
+              onPressed: _derivePubkeyDialog,
+              child: const Text('Derive'),
+            ),
+          ),
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.lock_clock_outlined),
+            title: const Text('Lock app (PIN)'),
+            subtitle: const Text('Show the app lock gate until the PIN is '
+                'entered again'),
+            trailing: OutlinedButton(
+              onPressed: () {
+                final shell = context.read<ShellService>();
+                if (!shell.hasPin && !shell.biometricsEnabled) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: SelectableText(
+                            'No app lock PIN configured — set one in '
+                            'Settings → Privacy')),
+                  );
+                  return;
+                }
+                shell.lockNow();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: SelectableText('App locked')),
+                );
+              },
+              child: const Text('Lock now'),
+            ),
+          ),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, top: 8),
+            child: Text('Crypto tools',
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.draw_outlined),
+            title: const Text('Schnorr sign digest'),
+            subtitle: const Text('SHA-256 the input Dart-side, Schnorr-sign '
+                'the digest with the unlocked key'),
+            trailing: OutlinedButton(
+              onPressed: _schnorrSignDialog,
+              child: const Text('Sign'),
+            ),
+          ),
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.event_note_outlined),
+            title: const Text('Sign event JSON'),
+            subtitle: const Text('Sign an unsigned NIP-59-style event '
+                '(pubkey, created_at, kind, tags, content)'),
+            trailing: OutlinedButton(
+              onPressed: _signUnsignedDialog,
+              child: const Text('Sign'),
+            ),
+          ),
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.lock_outline),
+            title: const Text('NIP-44 encrypt / decrypt'),
+            subtitle: const Text('Round-trip a message to a recipient '
+                'pubkey — encrypt then decrypt back'),
+            trailing: OutlinedButton(
+              onPressed: _nip44Dialog,
+              child: const Text('Run'),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _schnorrSignDialog() async {
+    final signer = context.read<SignerService>();
+    final controller = TextEditingController();
+    String? signature;
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> doSign() async {
+            try {
+              final sig = await signer.schnorrSign(controller.text.trim());
+              setDialogState(() {
+                signature = sig;
+                error = null;
+              });
+            } catch (e) {
+              setDialogState(() {
+                error = e.toString();
+                signature = null;
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Schnorr sign digest'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    hintText: 'Message to hash + sign',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (signature != null)
+                  SelectableText('Signature:\n$signature',
+                      style: const TextStyle(
+                          fontSize: 11, fontFamily: 'monospace')),
+                if (error != null) ErrorStateText('Error: $error'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (controller.text.trim().isEmpty) return;
+                  doSign();
+                },
+                child: const Text('Sign'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _signUnsignedDialog() async {
+    final signer = context.read<SignerService>();
+    final controller = TextEditingController();
+    String? signedJson;
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> doSign() async {
+            try {
+              final signed = await signer.signUnsigned(controller.text.trim());
+              setDialogState(() {
+                signedJson = signed;
+                error = null;
+              });
+            } catch (e) {
+              setDialogState(() {
+                error = e.toString();
+                signedJson = null;
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Sign event JSON'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  maxLines: 6,
+                  decoration: const InputDecoration(
+                    hintText: '{"pubkey":"…","created_at":…,"kind":…,'
+                        '"tags":[],"content":"…"}',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (signedJson != null)
+                  SelectableText(signedJson!,
+                      style: const TextStyle(
+                          fontSize: 11, fontFamily: 'monospace')),
+                if (error != null) ErrorStateText('Error: $error'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (controller.text.trim().isEmpty) return;
+                  doSign();
+                },
+                child: const Text('Sign'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _nip44Dialog() async {
+    final signer = context.read<SignerService>();
+    final textController = TextEditingController();
+    final pubkeyController = TextEditingController(text: _pubkey ?? '');
+    String? ciphertext;
+    String? decrypted;
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> doRoundTrip() async {
+            try {
+              final ct = await signer.nip44Encrypt(
+                  textController.text.trim(), pubkeyController.text.trim());
+              final pt =
+                  await signer.nip44Decrypt(ct, pubkeyController.text.trim());
+              setDialogState(() {
+                ciphertext = ct;
+                decrypted = pt;
+                error = null;
+              });
+            } catch (e) {
+              setDialogState(() {
+                error = e.toString();
+                ciphertext = null;
+                decrypted = null;
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('NIP-44 round-trip'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: textController,
+                  autofocus: true,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    hintText: 'Plaintext to encrypt',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: pubkeyController,
+                  decoration: const InputDecoration(
+                    labelText: 'Recipient pubkey (hex)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (ciphertext != null) ...[
+                  const Text('Ciphertext',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  SelectableText(ciphertext!,
+                      style: const TextStyle(
+                          fontSize: 11, fontFamily: 'monospace')),
+                  const SizedBox(height: 8),
+                  const Text('Decrypted',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  SelectableText(decrypted ?? '',
+                      style: const TextStyle(
+                          fontSize: 11, fontFamily: 'monospace')),
+                  if (decrypted != null)
+                    Text(
+                      decrypted == textController.text.trim()
+                          ? 'Round-trip match ✓'
+                          : 'Round-trip mismatch',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: decrypted == textController.text.trim()
+                            ? Colors.green
+                            : Colors.orange,
+                      ),
+                    ),
+                ],
+                if (error != null) ErrorStateText('Error: $error'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (textController.text.trim().isEmpty ||
+                      pubkeyController.text.trim().isEmpty) {
+                    return;
+                  }
+                  doRoundTrip();
+                },
+                child: const Text('Encrypt + decrypt'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -253,7 +588,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                 if (error != null) ErrorStateText('Error: $error'),
                 const SizedBox(height: 8),
                 Text(
-                  'Public key: ${(_pubkey ?? '').substring(0, 12)}…',
+                  'Public key: ${prefixEllipsis(_pubkey ?? '', 12)}',
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                 ),
               ],
@@ -269,6 +604,144 @@ class _SecurityScreenState extends State<SecurityScreen> {
                   doSign();
                 },
                 child: const Text('Sign'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _generateKeypairDialog() async {
+    final auth = context.read<AuthService>();
+    String? pubkey;
+    String? nsec;
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> doGenerate() async {
+            try {
+              final kp = await auth.generateKeypair();
+              setDialogState(() {
+                pubkey = kp.publicKey;
+                nsec = kp.secretKey;
+                error = null;
+              });
+            } catch (e) {
+              setDialogState(() {
+                error = e.toString();
+                pubkey = null;
+                nsec = null;
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Generate new keypair'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (pubkey != null && nsec != null) ...[
+                  const Text('Public key (hex)',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  SelectableText(pubkey!,
+                      style: const TextStyle(
+                          fontSize: 11, fontFamily: 'monospace')),
+                  const SizedBox(height: 8),
+                  const Text('Secret key (nsec)',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  SelectableText(nsec!,
+                      style: const TextStyle(
+                          fontSize: 11, fontFamily: 'monospace')),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'The secret key is shown only once — copy it now. '
+                    'It is not stored by this app.',
+                    style: TextStyle(fontSize: 12, color: Colors.orange),
+                  ),
+                ] else
+                  const Text('A fresh Nostr identity will be generated.'),
+                if (error != null) ErrorStateText('Error: $error'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+              FilledButton(
+                onPressed: pubkey == null ? doGenerate : null,
+                child: Text(pubkey == null ? 'Generate' : 'Done'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _derivePubkeyDialog() async {
+    final auth = context.read<AuthService>();
+    final controller = TextEditingController();
+    String? npub;
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> doDerive() async {
+            try {
+              final derived =
+                  await auth.getPublicKeyFromNsec(controller.text.trim());
+              setDialogState(() {
+                npub = derived;
+                error = null;
+              });
+            } catch (e) {
+              setDialogState(() {
+                error = e.toString();
+                npub = null;
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Derive pubkey from nsec'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    hintText: 'nsec1…',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (npub != null) ...[
+                  const Text('Public key (npub)',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  SelectableText(npub!,
+                      style: const TextStyle(
+                          fontSize: 11, fontFamily: 'monospace')),
+                ],
+                if (error != null) ErrorStateText('Error: $error'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+              FilledButton(
+                onPressed: controller.text.trim().isEmpty ? null : doDerive,
+                child: const Text('Derive'),
               ),
             ],
           );

@@ -145,6 +145,38 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
     }
   }
 
+  void _handleAddWidget() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Add Widget',
+                  style: Theme.of(sheetContext).textTheme.titleLarge),
+            ),
+            for (final typeInfo in nodeTypes)
+              ListTile(
+                leading: Text(typeInfo.icon),
+                title: Text(typeInfo.label),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  setState(() {
+                    _nodes = [
+                      ..._nodes,
+                      makeDefaultNode(typeInfo.type, _nodes.length)
+                    ];
+                  });
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -254,9 +286,7 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // TODO: Implement widget picker
-        },
+        onPressed: _handleAddWidget,
         child: const Icon(Icons.add),
       ),
     );

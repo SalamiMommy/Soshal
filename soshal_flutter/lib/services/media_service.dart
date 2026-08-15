@@ -73,7 +73,9 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Upload media to the chunk store and return the blob manifest.
-  /// The blob is chunked, deduplicated, and stored in the local CAS.
+  /// `filePath` may be a local file path or an http(s):// URL (SSRF-guarded
+  /// fetch on the Rust side). The blob is chunked, deduplicated, and stored
+  /// in the local CAS.
   Future<Map<String, dynamic>> uploadMedia(String filePath) async {
     try {
       final file = File(filePath);
@@ -194,6 +196,241 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
     } catch (e, st) {
       setLastError(e, st);
       notifyListeners();
+    }
+  }
+
+  /// Upload a local file (or URL, SSRF-guarded) to a Blossom server.
+  /// Returns the server-side hash/url.
+  Future<String> upload(String filePath,
+      {required String blossomServer}) async {
+    try {
+      final result = await RustLib.instance.api.crateFfiMediaMediaUpload(
+        filePath: filePath,
+        blossomServer: blossomServer,
+      );
+      clearLastError();
+      notifyListeners();
+      return result;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Fetch media from a URL and cache it locally; returns the cache path.
+  Future<String> fetch(String url, {String? cacheDir}) async {
+    try {
+      final dir = cacheDir ?? await getCachePath();
+      final path = await RustLib.instance.api.crateFfiMediaMediaFetch(
+        url: url,
+        cacheDir: dir,
+      );
+      clearLastError();
+      notifyListeners();
+      return path;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Load a local media file's bytes off the UI isolate.
+  Future<Uint8List> loadLocal(String path) async {
+    try {
+      final bytes = await RustLib.instance.api.crateFfiMediaMediaLoadLocal(
+        filePath: path,
+      );
+      clearLastError();
+      notifyListeners();
+      return bytes;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// MIME type of a local file (inferred on the Rust side).
+  Future<String> mimeType(String path) async {
+    try {
+      final mime = await RustLib.instance.api.crateFfiMediaMediaGetMimeType(
+        filePath: path,
+      );
+      clearLastError();
+      return mime;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Upload raw bytes to the local chunk store; returns the blob manifest
+  /// (`blob_hash`, `total_size`, `chunks`).
+  Future<Map<String, dynamic>> uploadBlob(List<int> bytes) async {
+    try {
+      final manifestJson =
+          RustLib.instance.api.crateFfiMediaMediaUploadBlob(data: bytes);
+      final manifest = Map<String, dynamic>.from(
+        jsonDecode(manifestJson) as Map,
+      );
+      clearLastError();
+      notifyListeners();
+      return manifest;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Infer an image format (png/jpeg/gif/webp/…) from raw bytes.
+  Future<String?> detectImageFormat(List<int> bytes) async {
+    try {
+      final fmt = RustLib.instance.api
+          .crateFfiMediaMediaDetectImageFormat(bytes: bytes);
+      clearLastError();
+      return fmt;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Content-aware chunking window (min/avg/max) for a MIME type.
+  Future<Map<String, dynamic>> chunkingForMime(String mime) async {
+    try {
+      final json =
+          RustLib.instance.api.crateFfiMediaMediaChunkingForMime(mime: mime);
+      clearLastError();
+      return Map<String, dynamic>.from(jsonDecode(json) as Map);
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Trim media caches under memory pressure (0 normal / 1 moderate / 2 critical).
+  Future<bool> trimCaches(int level) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiMediaMediaTrimCaches(level: level);
+      clearLastError();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Whether the global prefetcher would fetch media for `itemIndex`.
+  Future<bool> shouldPrefetch(int itemIndex) async {
+    try {
+      final ok = RustLib.instance.api
+          .crateFfiMediaMediaShouldPrefetch(itemIndex: itemIndex);
+      clearLastError();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Feed scroll telemetry into the global prefetcher.
+  Future<bool> updateScrollTelemetry({
+    required double velocity,
+    required int topIndex,
+    required int bottomIndex,
+  }) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiMediaMediaUpdateScrollTelemetry(
+        velocity: velocity,
+        topIndex: topIndex,
+        bottomIndex: bottomIndex,
+      );
+      clearLastError();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Encode a thumbhash (hex) from raw image bytes.
+  Future<String> encodeThumbhash(List<int> bytes) async {
+    try {
+      final hex = RustLib.instance.api
+          .crateFfiMediaMediaEncodeThumbhash(bytes: bytes);
+      clearLastError();
+      return hex;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Freenet chunking / verification / reconstruction passes (JSON in/out).
+  Future<String> chunkMediaJson(String input) async {
+    try {
+      final json =
+          RustLib.instance.api.crateFfiMediaMediaChunkMediaJson(input: input);
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<String> verifyChunkJson(String input) async {
+    try {
+      final json =
+          RustLib.instance.api.crateFfiMediaMediaVerifyChunkJson(input: input);
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<String> reconstructMediaJson(String input) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiMediaMediaReconstructMediaJson(input: input);
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// A user's media rows from the local DB (JSON).
+  Future<String> dbUserMedia(String pubkey,
+      {int limit = 50, int offset = 0}) async {
+    try {
+      final json = RustLib.instance.api.crateFfiDbDbGetUserMedia(
+        pubkey: pubkey,
+        limit: limit,
+        offset: offset,
+      );
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
     }
   }
 }

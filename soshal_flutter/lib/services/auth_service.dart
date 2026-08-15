@@ -108,6 +108,21 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// Build an in-process signer from an nsec (diagnostics only); returns
+  /// the derived hex pubkey.
+  Future<String> inProcessSignerPubkey(String nsec) async {
+    try {
+      final pubkey = RustLib.instance.api
+          .crateFfiIdentityIdentityInProcessSigner(nsec: nsec);
+      clearLastError();
+      return pubkey;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   static KeyPair _decode(String json) {
     final map = jsonDecode(json) as Map<String, dynamic>;
     return KeyPair.fromJson(map);

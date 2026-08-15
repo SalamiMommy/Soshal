@@ -1,7 +1,6 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +9,7 @@ import '../services/auth_service.dart';
 import '../services/error_log.dart';
 import '../services/network_service.dart';
 import '../services/session_service.dart';
+import '../services/signer_service.dart';
 
 /// Auth Flow Screen
 /// Login with mnemonic/nsec, generate new key
@@ -386,6 +386,7 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
     try {
       final authService = context.read<AuthService>();
       final sessionService = context.read<SessionService>();
+      final signer = context.read<SignerService>();
 
       // Restore keypair from the confirmed recovery phrase
       final keypair = await authService.restoreFromMnemonic(
@@ -423,6 +424,16 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
 
       // Save session
       await sessionService.saveSession();
+
+      // Persist the nsec to the OS keychain so future launches can restore
+      // the signer without the recovery phrase (desktop keychains only;
+      // swallowed when unavailable, e.g. Android without keystore backend).
+      try {
+        await signer.saveToKeyring(keypair.publicKey);
+      } catch (e, st) {
+        debugPrint('onboarding keychain save failed: $e');
+        logRuntimeError('onboarding keychain save: $e', st);
+      }
 
       // Start the Rust-side background relay sync for the new account.
       if (mounted) {

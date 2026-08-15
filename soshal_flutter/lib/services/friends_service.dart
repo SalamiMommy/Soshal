@@ -52,6 +52,23 @@ class FriendsService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// Refreshes the follow list for `pubkey` straight from relays; returns
+  /// the JSON array of followed pubkeys (kind-3 contacts).
+  Future<String> fetchFollows(String pubkey) async {
+    try {
+      final json = RustLib.instance.api.crateFfiIdentityIdentityFetchFollows(
+        pubkey: pubkey,
+      );
+      clearLastError();
+      notifyListeners();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   /// Add a profile to the in-memory contact list.
   void addContact(ProfileInfo profile) {
     if (_contacts.any((c) => c.pubkey == profile.pubkey)) return;

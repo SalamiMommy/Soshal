@@ -33,8 +33,8 @@ fn is_private_ip_recognizes_ipv6_private() {
 
 #[test]
 fn beacon_body_formats_correctly() {
-    let body = beacon_body("MAGIC", "npub123", 8080);
-    assert_eq!(body, "MAGIC:npub123:8080");
+    let body = beacon_body("MAGIC", "npub123", 8080, 123456);
+    assert_eq!(body, "MAGIC:npub123:8080:123456");
 }
 
 #[test]
@@ -63,11 +63,12 @@ fn parse_beacon_valid() {
         magic,
         "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
         8080,
+        1000,
     );
     let mac = beacon_mac(&key, &body);
     let beacon = format!("{}:{}", body, mac);
 
-    let result = parse_beacon(&key, magic, &beacon, 9000);
+    let result = parse_beacon(&key, magic, &beacon, 9000, 1000);
     assert!(result.is_some());
     let (pubkey, port) = result.unwrap();
     assert_eq!(
@@ -78,6 +79,40 @@ fn parse_beacon_valid() {
 }
 
 #[test]
+fn parse_beacon_accepts_timestamp_skew() {
+    let key = [0u8; 32];
+    let magic = "MAGIC";
+    let body = beacon_body(
+        magic,
+        "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        8080,
+        1000,
+    );
+    let mac = beacon_mac(&key, &body);
+    let beacon = format!("{}:{}", body, mac);
+
+    assert!(parse_beacon(&key, magic, &beacon, 9000, 1120).is_some());
+    assert!(parse_beacon(&key, magic, &beacon, 9000, 880).is_some());
+}
+
+#[test]
+fn parse_beacon_rejects_stale_timestamp() {
+    let key = [0u8; 32];
+    let magic = "MAGIC";
+    let body = beacon_body(
+        magic,
+        "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        8080,
+        1000,
+    );
+    let mac = beacon_mac(&key, &body);
+    let beacon = format!("{}:{}", body, mac);
+
+    assert!(parse_beacon(&key, magic, &beacon, 9000, 2000).is_none());
+    assert!(parse_beacon(&key, magic, &beacon, 9000, 500).is_none());
+}
+
+#[test]
 fn parse_beacon_rejects_wrong_magic() {
     let key = [0u8; 32];
     let magic = "MAGIC";
@@ -85,11 +120,12 @@ fn parse_beacon_rejects_wrong_magic() {
         "WRONG",
         "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
         8080,
+        1000,
     );
     let mac = beacon_mac(&key, &body);
     let beacon = format!("{}:{}", body, mac);
 
-    let result = parse_beacon(&key, magic, &beacon, 9000);
+    let result = parse_beacon(&key, magic, &beacon, 9000, 1000);
     assert!(result.is_none());
 }
 
@@ -101,10 +137,11 @@ fn parse_beacon_rejects_bad_mac() {
         magic,
         "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
         8080,
+        1000,
     );
     let beacon = format!("{}:badmac", body);
 
-    let result = parse_beacon(&key, magic, &beacon, 9000);
+    let result = parse_beacon(&key, magic, &beacon, 9000, 1000);
     assert!(result.is_none());
 }
 
@@ -112,11 +149,11 @@ fn parse_beacon_rejects_bad_mac() {
 fn parse_beacon_rejects_invalid_pubkey() {
     let key = [0u8; 32];
     let magic = "MAGIC";
-    let body = beacon_body(magic, "not64chars", 8080);
+    let body = beacon_body(magic, "not64chars", 8080, 1000);
     let mac = beacon_mac(&key, &body);
     let beacon = format!("{}:{}", body, mac);
 
-    let result = parse_beacon(&key, magic, &beacon, 9000);
+    let result = parse_beacon(&key, magic, &beacon, 9000, 1000);
     assert!(result.is_none());
 }
 
@@ -125,13 +162,13 @@ fn parse_beacon_uses_default_port_on_parse_failure() {
     let key = [0u8; 32];
     let magic = "MAGIC";
     let body = format!(
-        "{}:{}:{}",
-        magic, "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", "invalid"
+        "{}:{}:{}:{}",
+        magic, "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", "invalid", 1000
     );
     let mac = beacon_mac(&key, &body);
     let beacon = format!("{}:{}", body, mac);
 
-    let result = parse_beacon(&key, magic, &beacon, 9000);
+    let result = parse_beacon(&key, magic, &beacon, 9000, 1000);
     assert!(result.is_some());
     let (_, port) = result.unwrap();
     assert_eq!(port, 9000);

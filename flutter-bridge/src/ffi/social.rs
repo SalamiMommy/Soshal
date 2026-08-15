@@ -72,4 +72,22 @@ mod tests {
         got.sort();
         assert_eq!(got, vec!["bob".to_string()]);
     }
+
+    #[test]
+    fn test_suggest_candidates_empty_inputs() {
+        assert!(suggest_candidates("me", &[], &[]).is_empty());
+        assert!(suggest_candidates("me", &["x".to_string()], &[]).is_empty());
+        assert!(suggest_candidates("me", &[], &["me".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn test_suggest_candidates_preserves_input_order() {
+        let my_contacts = vec!["alice".to_string()];
+        let followers = vec!["bob".to_string(), "carol".to_string(), "dave".to_string()];
+        let got = suggest_candidates("me", &my_contacts, &followers);
+        assert_eq!(
+            got,
+            vec!["bob".to_string(), "carol".to_string(), "dave".to_string()]
+        );
+    }
 }

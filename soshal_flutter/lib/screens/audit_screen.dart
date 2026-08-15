@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/audit_service.dart';
+import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
 
 /// Audit Log: read-only security event log stored locally in SQLite.
@@ -34,18 +35,6 @@ class _AuditScreenState extends State<AuditScreen> {
       if (mounted) setState(() => _error = e.toString());
     }
     if (mounted) setState(() => _loading = false);
-  }
-
-  String _shortPk(String pk) {
-    if (pk.length < 12) return pk;
-    return '${pk.substring(0, 6)}…${pk.substring(pk.length - 6)}';
-  }
-
-  String _formatTime(int unix) {
-    final local = DateTime.fromMillisecondsSinceEpoch(unix * 1000).toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)} '
-        '${two(local.hour)}:${two(local.minute)}';
   }
 
   @override
@@ -115,9 +104,9 @@ class _AuditScreenState extends State<AuditScreen> {
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('actor: ${_shortPk(r.actorPubkey)}'),
+                      Text('actor: ${shortPubkey(r.actorPubkey)}'),
                       if (target != null && target.isNotEmpty)
-                        Text('target: ${_shortPk(target)}'),
+                        Text('target: ${shortPubkey(target)}'),
                       if (r.details != null && r.details!.isNotEmpty)
                         Text(r.details!,
                             maxLines: 2, overflow: TextOverflow.ellipsis),
@@ -125,7 +114,7 @@ class _AuditScreenState extends State<AuditScreen> {
                   ),
                   isThreeLine: true,
                   trailing: Text(
-                    _formatTime(r.createdAt),
+                    formatTimestamp(r.createdAt),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),

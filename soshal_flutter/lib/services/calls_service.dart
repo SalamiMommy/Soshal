@@ -115,6 +115,121 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// ICE configuration from the WebRTC module. Sync FFI.
+  String webrtcIceConfig(String privacyLevel) {
+    try {
+      final out = RustLib.instance.api
+          .crateFfiWebrtcWebrtcGetIceConfig(privacyLevel: privacyLevel);
+      clearLastError();
+      return out;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Default STUN servers. Sync FFI.
+  List<String> stunServers() {
+    try {
+      final out = RustLib.instance.api.crateFfiWebrtcWebrtcGetStunServers();
+      clearLastError();
+      return out;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Configured TURN servers JSON (empty list when unprovisioned). Sync FFI.
+  String turnServers({String? authToken}) {
+    try {
+      final out = RustLib.instance.api
+          .crateFfiWebrtcWebrtcGetTurnServers(authToken: authToken);
+      clearLastError();
+      return out;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// WebRTC-module SDP sanitizer (private IP redaction). Sync FFI.
+  String sanitizeSdpWebrtc(String sdp, {bool forceRelay = false}) {
+    try {
+      final out = RustLib.instance.api.crateFfiWebrtcWebrtcSanitizeSdp(
+        sdp: sdp,
+        forceRelay: forceRelay,
+      );
+      clearLastError();
+      return out;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Peer connection config JSON for a privacy level. Sync FFI.
+  String createPeerConfig(String privacyLevel) {
+    try {
+      final out = RustLib.instance.api
+          .crateFfiWebrtcWebrtcCreatePeerConfig(privacyLevel: privacyLevel);
+      clearLastError();
+      return out;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Extract ICE candidates from an SDP. Sync FFI.
+  List<String> extractCandidates(String sdp) {
+    try {
+      final out =
+          RustLib.instance.api.crateFfiWebrtcWebrtcExtractCandidates(sdp: sdp);
+      clearLastError();
+      return out;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Append an ICE candidate line to an SDP. Sync FFI.
+  String addCandidateToSdp(String sdp, String candidate) {
+    try {
+      final out = RustLib.instance.api.crateFfiWebrtcWebrtcAddCandidateToSdp(
+        sdp: sdp,
+        candidate: candidate,
+      );
+      clearLastError();
+      return out;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Basic SDP validity check. Sync FFI.
+  bool validateSdp(String sdp) {
+    try {
+      final out =
+          RustLib.instance.api.crateFfiWebrtcWebrtcValidateSdp(sdp: sdp);
+      clearLastError();
+      return out;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   /// Begin tracking an active call (starts the elapsed timer).
   void startCall({
     required String callId,

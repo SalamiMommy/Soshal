@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -18,7 +19,8 @@ class MessagingService extends ChangeNotifier
       List.unmodifiable(_pendingEphemeral);
 
   /// Insert a DM arriving from the live sync stream (already decrypted by
-  /// the bridge). Conversation is keyed by the peer pubkey.
+  /// the bridge). Conversation is keyed by the peer pubkey. The row is also
+  /// persisted into the local DM store (best-effort, fire-and-forget).
   void insertLiveDm(DirectMessage message) {
     final peer = message.sender;
     if (peer.isEmpty) return;
@@ -28,6 +30,7 @@ class MessagingService extends ChangeNotifier
     if (list.length > 200) {
       list.removeAt(0);
     }
+    unawaited(storeDm(message));
     notifyDeferred();
   }
 
@@ -179,7 +182,8 @@ class MessagingService extends ChangeNotifier
     }
   }
 
-  /// Replace a message's content in the local conversation cache.
+  /// Replace a message's content in the local conversation cache. After a
+  /// decrypt, the plaintext is also persisted to the DM store.
   void updateMessageContent(
     String? otherPubkey,
     DirectMessage message,
@@ -192,7 +196,48 @@ class MessagingService extends ChangeNotifier
     if (index >= 0) {
       final updated = message.deepCopy(content: decrypted, decrypted: true);
       list[index] = updated;
+      unawaited(storeDm(updated));
       notifyDeferred();
+    }
+  }
+
+  /// Persist a DM row into the local store (sync FFI). Best-effort: returns
+  /// false on failure instead of throwing, so the live ingest path never
+  /// breaks on a store hiccup.
+  Future<bool> storeDm(DirectMessage message) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiMessagingMessagingStoreDm(
+        id: message.id,
+        sender: message.sender,
+        recipient: message.recipient,
+        content: message.content,
+        createdAt: BigInt.from(message.createdAt),
+        tagsJson: jsonEncode(const []),
+      );
+      clearLastError();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      return false;
+    }
+  }
+
+  /// Fetch a single ephemeral (burn DM) row by id, fresh from the store.
+  /// Returns null when the row no longer exists.
+  Future<EphemeralMedia?> ephemeralById(String id) async {
+    try {
+      final json = RustLib.instance.api.crateFfiEphemeralEphemeralGet(id: id);
+      if (json.isEmpty) return null;
+      final media = EphemeralMedia.fromJson(
+        jsonDecode(json) as Map<String, dynamic>,
+      );
+      clearLastError();
+      return media;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
     }
   }
 
@@ -296,6 +341,35 @@ class MessagingService extends ChangeNotifier
     try {
       final ok = RustLib.instance.api.crateFfiEphemeralEphemeralDelete(id: id);
       _pendingEphemeral.removeWhere((m) => m.id == id);
+      clearLastError();
+      notifyDeferred();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Burn-DM row by its message id straight from the DB (JSON or null).
+  Future<String> dbEphemeralByMessageId(String messageId) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiDbDbGetEphemeralByMessageId(messageId: messageId);
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Persist a state transition on a burn-DM row.
+  Future<bool> dbMarkEphemeralState(String id, String state) async {
+    try {
+      final ok = RustLib.instance.api
+          .crateFfiDbDbMarkEphemeralState(id: id, state: state);
       clearLastError();
       notifyDeferred();
       return ok;

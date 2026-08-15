@@ -14,6 +14,7 @@ pub mod media;
 pub mod mini_util;
 pub mod musicloud_util;
 pub mod prefetcher;
+pub mod source;
 pub mod thumbhash;
 
 pub fn trim_media_caches(level: soshal_common_core::memory::MemoryPressureLevel) {

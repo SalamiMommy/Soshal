@@ -11,6 +11,7 @@ import 'ffi_bridge.dart';
 class SessionService extends ChangeNotifier with LastErrorMixin {
   SessionData? _session;
   String? _activePubkey;
+  Future<SessionData>? _loadFuture;
 
   SessionData? get session => _session;
   String? get activePubkey => _activePubkey;
@@ -71,7 +72,12 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
   /// self-sufficient instead of dead-ending with "Session not loaded".
   Future<SessionData> _ensureLoaded() async {
     if (_session == null) {
-      await loadSession();
+      _loadFuture ??= loadSession();
+      try {
+        await _loadFuture;
+      } finally {
+        _loadFuture = null;
+      }
     }
     return _session!;
   }
@@ -197,6 +203,73 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
 
   /// Get all accounts
   List<SessionAccount> getAccounts() => _session?.accounts ?? [];
+
+  /// Active account JSON straight from the Rust session file.
+  Future<Map<String, dynamic>> getActiveAccountJson() async {
+    try {
+      final json = RustLib.instance.api.crateFfiSessionSessionGetActive();
+      final decoded = jsonDecode(json);
+      clearLastError();
+      return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// All accounts JSON straight from the Rust session file.
+  Future<List<dynamic>> listAccountsJson() async {
+    try {
+      final json = RustLib.instance.api.crateFfiSessionSessionListAccounts();
+      final decoded = jsonDecode(json);
+      clearLastError();
+      return decoded is List<dynamic> ? decoded : const [];
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Register (or clear, when empty) the push token for the active account
+  /// in the Rust session file.
+  Future<bool> registerPushToken(String token) async {
+    try {
+      final ok = RustLib.instance.api
+          .crateFfiSessionSessionRegisterPushToken(token: token);
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Re-sync the in-memory session from the Rust session file (used by the
+  /// Accounts screen "refresh from Rust" action).
+  Future<SessionData?> refreshFromRust() async {
+    try {
+      final active = await getActiveAccountJson();
+      final accounts = await listAccountsJson();
+      _session = SessionData(
+        activePubkey: active['pubkey'] as String?,
+        accounts: accounts
+            .map((a) => SessionAccount.fromJson(a as Map<String, dynamic>))
+            .toList(),
+      );
+      _activePubkey = _session!.activePubkey;
+      clearLastError();
+      notifyListeners();
+      return _session;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
 }
 
 /// Account entry in the persisted session file (mirrors session.json v2).

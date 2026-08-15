@@ -1,9 +1,137 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../ffi/session.dart';
+import '../services/notifications_service.dart';
+import '../services/session_service.dart';
 
 /// Notification settings: push registration status + in-app toggles.
-class NotificationSettingsScreen extends StatelessWidget {
+class NotificationSettingsScreen extends StatefulWidget {
   /// Notification settings screen.
   const NotificationSettingsScreen({super.key});
+
+  @override
+  State<NotificationSettingsScreen> createState() =>
+      _NotificationSettingsScreenState();
+}
+
+class _NotificationSettingsScreenState
+    extends State<NotificationSettingsScreen> {
+  bool _pushEnabled = false;
+  bool _loaded = false;
+  String _token = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPushState();
+  }
+
+  Future<void> _loadPushState() async {
+    try {
+      final active = sessionGetActive();
+      final json = jsonDecode(active);
+      if (json is Map<String, dynamic>) {
+        final token = json['push_token'] as String?;
+        if (mounted) {
+          setState(() {
+            _token = token ?? '';
+            _pushEnabled = _token.isNotEmpty;
+            _loaded = true;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('notification settings: load push state: $e');
+      if (mounted) setState(() => _loaded = true);
+    }
+  }
+
+  Future<void> _togglePush(bool enabled) async {
+    final session = context.read<SessionService>();
+    final api = context.read<NotificationService>();
+    final pubkey = session.activePubkey;
+    if (pubkey == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign in to change push settings')),
+      );
+      return;
+    }
+    if (!enabled) {
+      try {
+        await api.unregisterPush(pubkey);
+        if (!mounted) return;
+        setState(() => _pushEnabled = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Push notifications disabled for this device.')),
+        );
+      } catch (e) {
+        debugPrint('notification settings: disable push: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to disable push: $e')),
+          );
+        }
+      }
+      return;
+    }
+    // Enabling requires an FCM device token, which is not minted in this
+    // build (needs google-services.json). If one is already on record,
+    // register it; otherwise stay honest: no fake toggle.
+    if (_token.isNotEmpty) {
+      try {
+        await api.registerPush(pubkey, _token);
+        await session.registerPushToken(_token);
+        if (!mounted) return;
+        setState(() => _pushEnabled = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Push notifications enabled for this device.')),
+        );
+      } catch (e) {
+        debugPrint('notification settings: enable push: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to enable push: $e')),
+          );
+        }
+      }
+      return;
+    }
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Push notifications unavailable'),
+        content: const Text(
+          'Enabling push needs Firebase Cloud Messaging setup '
+          '(google-services.json) in the Android build. A device token '
+          'cannot be minted yet, so push stays off for this device.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _tokenLabel() {
+    if (!_loaded) return 'Checking device token status…';
+    if (_token.isEmpty) {
+      return 'No device token registered. Requires FCM setup '
+          '(google-services.json) in the Android build.';
+    }
+    final masked = _token.length <= 12
+        ? _token
+        : '${_token.substring(0, 6)}…${_token.substring(_token.length - 4)}';
+    return 'Registered token: $masked';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,21 +152,21 @@ class NotificationSettingsScreen extends StatelessWidget {
               );
             },
           ),
-          const SwitchListTile(
-            title: Text('Push notifications'),
-            subtitle:
-                Text('Delivered by FCM when the app is backgrounded. Requires '
-                    'google-services.json in the Android build.'),
-            value: true,
-            onChanged: null,
+          SwitchListTile(
+            title: const Text('Push notifications'),
+            subtitle: Text(
+              'Delivered by FCM when the app is backgrounded. '
+              '${_tokenLabel()}',
+            ),
+            value: _pushEnabled,
+            onChanged: _togglePush,
           ),
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('About'),
             subtitle:
                 Text('Push tokens are registered per account and stored in the '
-                    'session file. Disable push for this device by removing '
-                    'the token in a future release.'),
+                    'session file.'),
           ),
         ],
       ),

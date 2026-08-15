@@ -30,7 +30,7 @@ Soshal/
 │       ├── signer.rs          #   in-process signer (nsec via FFI at init; OS keychain
 │       │                      #   ops exchange pubkeys only — never key bytes)
 │       └── frb_generated.rs   # codegen output — do NOT edit by hand
-├── common-core/ … streaming-core/  # 27 *-core crates, pure Rust, tauri-free
+├── common-core/ … streaming-core/  # 30 *-core crates, pure Rust, tauri-free
 ├── scripts/
 │   ├── check-core-compliance.sh    # core-crates purity audit (CI)
 │   └── build-reticulum.sh          # builds rnsd for mesh networking
@@ -38,7 +38,7 @@ Soshal/
 │   ├── android/build.sh            # 3-ABI bridge + flutter build apk [--release]
 │   ├── linux/build.sh              # host bridge + flutter build linux --debug (terminal output)
 │   └── README.md
-└── Cargo.toml               # Workspace root, 28 members (flutter-bridge + 27 cores)
+└── Cargo.toml               # Workspace root, 31 members (flutter-bridge + 30 cores)
 ```
 
 ## Commands
@@ -249,14 +249,27 @@ each migration SQL records its own version
 
 ## Key Architecture Decisions
 
-1. **All-Rust logic** — business logic in 27 `*-core` crates, thin FFI
+1. **All-Rust logic** — business logic in 30 `*-core` crates, thin FFI
    adapter, Flutter UI. Tauri/Dioxus/WASM deleted (2026 migration).
 2. **Thin adapters** — `flutter-bridge/src/ffi/` delegates to cores; no
    business logic in bridge fns.
 3. **In-process signer** — desktop secrets-agent subprocess model retired with
    Tauri; the Flutter app uses the in-process signer + OS keychain.
-4. **Backend-gated surfaces** (stubs today — wire when backend lands):
-   `zap_fetch_invoice` (always Err until NWC relay listener), push
-   notifications (Firebase `google-services.json` + FCM), friend
-   suggestions/requests, `minis_fetch`, WebRTC voice/video. UI is honest about
-   these (no fake buttons).
+4. **Backend-gated surfaces** — mostly real now; remaining gaps are
+   external-infra only:
+   - Real: `zap_fetch_invoice`/`zap_send_payment` (NIP-47 NWC exchange),
+     friend suggestions (WoT over contact graph) + friend requests
+     (kind-3 follows), push token registration (`push_register_token` →
+     session.json; `webrtc_get_turn_servers` reads `turn_endpoint` setting),
+     `minis_fetch` (local DB kind-31020 registry, fed by sync engine),
+     `protocol_handle_avatar` (users.picture, SSRF-guarded HTTPS fetch +
+     placeholder PNG), `analytics_compute_stats` (SQL aggregates),
+     `background_sync_task` (bounded engine pass), dating profile
+     update/report persistence, hashtag extraction + geohash encoding.
+   - Still gated (needs external infra, UI honest about it): FCM delivery
+     (Firebase `google-services.json`), TURN provisioning (server endpoint),
+     WebRTC voice/video media transport (relay signaling kinds 20001-20004
+     work), WASI wasm runtime in minis-core (simulated sort/keyword host;
+     real wasmtime host is roadmap), ZK provers in sync-core zk_rollup
+     (honest SHA-256 commitment), `raster_signal_impeller_frame_ready`
+     (engine-integration no-op).

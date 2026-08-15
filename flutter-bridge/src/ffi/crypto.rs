@@ -187,6 +187,14 @@ pub async fn crypto_frost_aggregate_signature(
         .into()
 }
 
+/// BLAKE3 hash of raw bytes; returns 64 hex chars.
+#[frb(sync, serialize)]
+pub fn crypto_blake3(input: Vec<u8>) -> Result<String, String> {
+    let mut reader = std::io::Cursor::new(input);
+    let out = hash::blake3_hash_stream(&mut reader).map_err(|e| format!("blake3: {e}"))?;
+    Ok(hex::encode(out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

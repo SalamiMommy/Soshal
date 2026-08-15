@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_codec.dart';
 import '../services/h264_codec.dart';
+import '../services/session_service.dart';
 import '../services/streaming_service.dart';
 import '../widgets/error_state_text.dart';
 
@@ -45,6 +47,8 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   bool _audioDecodeReady = false;
   bool _audioTried = false;
   bool _audioGotConfig = false;
+  String? _subStatus;
+  int? _rtSeq;
 
   @override
   void initState() {
@@ -55,8 +59,23 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   Future<void> _run() async {
     _running = true;
     final api = context.read<StreamingService>();
+    var subscribed = false;
     while (_running && mounted) {
       try {
+        if (!subscribed) {
+          try {
+            final status = await api.subscribeMoqStream(
+              streamId: widget.streamId,
+              subscriberPubkey:
+                  context.read<SessionService>().activePubkey ?? '',
+            );
+            final parsed =
+                (jsonDecode(status) as Map<String, dynamic>?)?['status'];
+            if (!mounted) return;
+            setState(() => _subStatus = parsed as String? ?? status);
+            subscribed = true;
+          } catch (_) {}
+        }
         final groups = await api.subscribeLiveFetch(
           addr: widget.addr,
           streamId: widget.streamId,
@@ -86,6 +105,15 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
               if (mounted) setState(() => _frameBytes = bytes);
             }
           }
+        }
+        if (groups.isNotEmpty) {
+          try {
+            final verified =
+                api.decodeMoqGroup(api.encodeMoqGroup(groups.last));
+            final verifiedSeq = (verified['group_sequence'] as num?)?.toInt();
+            if (!mounted) return;
+            setState(() => _rtSeq = verifiedSeq);
+          } catch (_) {}
         }
       } catch (e) {
         if (!mounted || !_running) return;
@@ -190,12 +218,13 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                  _h264DecodeReady
-                      ? 'H.264 · seq $_lastSeq'
-                      : 'MoQ JPEG · seq $_lastSeq',
+                  '${_h264DecodeReady ? 'H.264' : 'MoQ JPEG'} · seq $_lastSeq'
+                  '${_subStatus != null ? '\n$_subStatus' : ''}',
                   style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text('$_frames frames',
-                  style: const TextStyle(color: Colors.grey)),
+              Text(
+                '$_frames frames${_rtSeq != null ? ' · rt $_rtSeq' : ''}',
+                style: const TextStyle(color: Colors.grey),
+              ),
             ],
           ),
         ),

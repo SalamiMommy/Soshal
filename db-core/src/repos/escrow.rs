@@ -97,7 +97,7 @@ impl<'a> EscrowRepo<'a> {
         let changed = crate::query::execute(
             &conn,
             "UPDATE escrows SET status=?2, updated_at=?3 WHERE id=?1",
-            params![id, status, now_secs()],
+            params![id, status, soshal_common_core::format::now_secs()],
         )?;
         if changed == 0 {
             return Err(crate::error::DbError::NotFound);
@@ -111,7 +111,7 @@ impl<'a> EscrowRepo<'a> {
         let changed = crate::query::execute(
             &conn,
             "UPDATE escrows SET escrow_note=?2, updated_at=?3 WHERE id=?1",
-            params![id, note, now_secs()],
+            params![id, note, soshal_common_core::format::now_secs()],
         )?;
         if changed == 0 {
             return Err(crate::error::DbError::NotFound);
@@ -129,13 +129,6 @@ impl<'a> EscrowRepo<'a> {
             row_to_escrow,
         )
     }
-}
-
-fn now_secs() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
 }
 
 fn row_to_escrow(r: &libsql::Row) -> libsql::Result<EscrowRow> {

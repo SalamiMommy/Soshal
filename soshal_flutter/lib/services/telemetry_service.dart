@@ -81,6 +81,15 @@ class TelemetryService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// Runtime info JSON (ring stats, kinds, sealed state).
+  String infoJson() {
+    try {
+      return RustLib.instance.api.crateFfiTelemetryTelemetryInfoJson();
+    } catch (e) {
+      return '{}';
+    }
+  }
+
   void clear() {
     try {
       RustLib.instance.api.crateFfiTelemetryTelemetryClear();

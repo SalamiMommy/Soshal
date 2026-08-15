@@ -4567,6 +4567,7 @@ dependencies = [
  "libsql",
  "serde",
  "serde_json",
+ "soshal-common-core",
  "soshal-content-core",
  "tokio",
 ]
@@ -4645,6 +4646,7 @@ dependencies = [
  "soshal-webrtc-core",
  "soshal-zap-core",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]
@@ -4725,6 +4727,7 @@ dependencies = [
  "soshal-pqc-core",
  "thumbhash",
  "tokio",
+ "url",
 ]
 
 [[package]]

@@ -17,3 +17,12 @@ String contentCompressJsonDict({required String data}) =>
 String contentDecompressJsonDict({required String encoded}) =>
     RustLib.instance.api
         .crateFfiContentContentDecompressJsonDict(encoded: encoded);
+
+/// Parse a text blob leniently, capping nesting/depth; JSON in, JSON out.
+String contentSafeJsonParse({required String text}) =>
+    RustLib.instance.api.crateFfiContentContentSafeJsonParse(text: text);
+
+/// Extract video URLs from an imeta-style tags JSON array (JSON out).
+String contentExtractImetaVideoUrls({required String tagsJson}) =>
+    RustLib.instance.api
+        .crateFfiContentContentExtractImetaVideoUrls(tagsJson: tagsJson);

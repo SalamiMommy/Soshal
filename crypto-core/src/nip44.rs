@@ -340,6 +340,9 @@ pub fn encrypt_padded(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, 
 }
 
 fn decrypt_legacy(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static str> {
+    if decoded.len() <= SALT_LEN {
+        return Err("payload too short");
+    }
     let salt = &decoded[..SALT_LEN];
     let version = decoded[SALT_LEN];
     let encrypted = &decoded[SALT_LEN + VERSION_LEN..];

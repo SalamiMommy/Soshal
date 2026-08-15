@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/search_service.dart';
+import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
 
 /// Hashtag page: posts tagged with a given hashtag.
@@ -40,18 +41,6 @@ class _HashtagScreenState extends State<HashtagScreen> {
       if (mounted) setState(() => _error = e.toString());
     }
     if (mounted) setState(() => _loading = false);
-  }
-
-  String _shortPk(String pk) {
-    if (pk.length < 12) return pk;
-    return '${pk.substring(0, 6)}…${pk.substring(pk.length - 6)}';
-  }
-
-  String _formatTime(int unix) {
-    final local = DateTime.fromMillisecondsSinceEpoch(unix * 1000).toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)} '
-        '${two(local.hour)}:${two(local.minute)}';
   }
 
   @override
@@ -109,7 +98,7 @@ class _HashtagScreenState extends State<HashtagScreen> {
                     radius: 16,
                     child: Text(
                       pubkey.isNotEmpty
-                          ? _shortPk(pubkey).substring(0, 1)
+                          ? shortPubkey(pubkey).substring(0, 1)
                           : '?',
                       style: const TextStyle(fontSize: 12),
                     ),
@@ -120,7 +109,7 @@ class _HashtagScreenState extends State<HashtagScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   subtitle: Text(
-                    '${_shortPk(pubkey)} · ${_formatTime(p.createdAt)}',
+                    '${shortPubkey(pubkey)} · ${formatTimestamp(p.createdAt)}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   onTap: () {

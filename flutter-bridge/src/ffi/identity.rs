@@ -561,6 +561,16 @@ pub fn identity_is_blocked(checker_pubkey: String, target_pubkey: String) -> Res
     super::db::with_db_result(|db| BlockRepo::new(db).is_blocked(&checker_pubkey, &target_pubkey))
 }
 
+/// Build an in-process signer handle from an nsec; returns the derived pubkey.
+/// Used for diagnostics only — the app's live signer lives in `signer.rs`.
+#[frb(sync, serialize)]
+pub fn identity_in_process_signer(nsec: String) -> Result<String, String> {
+    use soshal_identity_core::signers::SignerHandle;
+    let keys = nostr::key::Keys::parse(&nsec).map_err(|e| format!("invalid nsec: {e}"))?;
+    let handle = SignerHandle::in_process(keys);
+    Ok(handle.public_key_hex())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

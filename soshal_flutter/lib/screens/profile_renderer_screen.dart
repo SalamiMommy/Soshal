@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import '../ffi/auth.dart';
 import '../ffi/db.dart' as ffi_db;
 import '../models/custom_profile.dart';
 import '../models/widget.dart';
@@ -147,6 +149,30 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
     }
   }
 
+  void _showQrCode() {
+    final npub = authNpubEncode(publicKey: widget.pubkey);
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Profile QR'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            QrImageView(data: 'nostr:$npub', size: 220),
+            const SizedBox(height: 16),
+            SelectableText(npub, textAlign: TextAlign.center),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -249,9 +275,7 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.qr_code),
-            onPressed: () {
-              // TODO: Implement QR modal
-            },
+            onPressed: _showQrCode,
           ),
           if (isMine)
             _editMode

@@ -157,3 +157,110 @@ pub fn pin_lockout_state() -> Result<String, String> {
         "permanentLocked": permanent,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soshal_identity_core::security::PIN_HARD_LIMIT;
+
+    static PIN_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static DB_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+    fn fresh_db() -> String {
+        let n = DB_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("soshal_pin_{}_{}.db", std::process::id(), n));
+        let path = path.to_string_lossy().to_string();
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        super::super::db::db_init(path.clone()).unwrap();
+        path
+    }
+
+    fn state_json() -> serde_json::Value {
+        serde_json::from_str(&pin_lockout_state().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn pin_set_rejects_invalid_pins() {
+        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = fresh_db();
+        for bad in ["123", "1234567890123", "12a4", "", " 12 "] {
+            let e = pin_set(bad.to_string()).unwrap_err();
+            assert!(e.contains("4-12 digits"), "pin {bad:?} -> {e}");
+        }
+    }
+
+    #[test]
+    fn pin_set_has_verify_roundtrip() {
+        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = fresh_db();
+        assert!(!pin_has().unwrap());
+        assert!(pin_set("2468".to_string()).unwrap());
+        assert!(pin_has().unwrap());
+        assert!(pin_verify("2468".to_string()).unwrap());
+        assert!(!pin_verify("0000".to_string()).unwrap());
+    }
+
+    #[test]
+    fn pin_lockout_after_three_failures() {
+        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = fresh_db();
+        assert!(pin_set("1357".to_string()).unwrap());
+        for _ in 0..3 {
+            assert!(!pin_verify("0000".to_string()).unwrap());
+        }
+        let s = state_json();
+        assert_eq!(s["attemptCount"], 3);
+        let until = s["lockoutUntil"].as_i64().unwrap();
+        let now = now_ms();
+        assert!(until > now, "lockoutUntil {until} should be in the future");
+        assert_eq!(s["permanentLocked"], false);
+        assert!(
+            !pin_verify("1357".to_string()).unwrap(),
+            "correct PIN blocked during lockout"
+        );
+    }
+
+    #[test]
+    fn pin_permanent_lock_after_hard_limit() {
+        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = fresh_db();
+        assert!(pin_set("1357".to_string()).unwrap());
+        for _ in 0..PIN_HARD_LIMIT {
+            assert!(!pin_verify("0000".to_string()).unwrap());
+        }
+        let s = state_json();
+        assert_eq!(s["attemptCount"], PIN_HARD_LIMIT);
+        assert_eq!(s["permanentLocked"], true);
+        assert!(
+            !pin_verify("1357".to_string()).unwrap(),
+            "correct PIN rejected after permanent lock"
+        );
+    }
+
+    #[test]
+    fn pin_clear_requires_current_pin() {
+        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = fresh_db();
+        assert!(pin_set("97531".to_string()).unwrap());
+        assert!(pin_clear("0000".to_string()).is_err(), "wrong PIN rejected");
+        assert!(pin_has().unwrap());
+        assert!(pin_clear("97531".to_string()).unwrap());
+        assert!(!pin_has().unwrap());
+        assert!(!pin_verify("97531".to_string()).unwrap());
+    }
+
+    #[test]
+    fn pin_corrupt_storage_detected() {
+        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let p = fresh_db();
+        super::super::db::db_query_raw(format!(
+            "INSERT INTO settings (key, value) VALUES ('pin_hash', 'garbage') \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+        ))
+        .unwrap();
+        let _ = p;
+        assert!(!pin_verify("1357".to_string()).unwrap());
+    }
+}

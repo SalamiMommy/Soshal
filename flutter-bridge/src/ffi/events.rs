@@ -465,6 +465,24 @@ mod tests {
     }
 
     #[test]
+    fn test_centroid_parse_edges() {
+        assert_eq!(centroid_of(""), (0.0, 0.0));
+        assert_eq!(centroid_of("37.7749"), (0.0, 0.0), "single coord");
+        assert_eq!(
+            centroid_of("37.7749,-122.4194,999"),
+            (0.0, 0.0),
+            "extra parts"
+        );
+        assert_eq!(centroid_of("not,a,coord"), (0.0, 0.0), "unparseable parts");
+        assert_eq!(
+            centroid_of(" 37.7 , -122.4 "),
+            (37.7, -122.4),
+            "trims whitespace"
+        );
+        assert_eq!(centroid_of("37.7,-122.4.5"), (37.7, 0.0), "bad lon part");
+    }
+
+    #[test]
     fn test_haversine_sf_la() {
         let d = haversine((37.7749, -122.4194), (34.0522, -118.2437));
         assert!((540.0..560.0).contains(&d), "got {d}");
@@ -539,4 +557,22 @@ pub fn events_reminder_delete(reminder_id: String) -> Result<bool, String> {
         soshal_db_core::repos::reminder::ReminderRepo::new(db).delete(&reminder_id)?;
         Ok(true)
     })
+}
+
+/// Expiry timestamp (unix secs, 0 if none) parsed from a tags JSON array.
+#[frb(sync, serialize)]
+pub fn events_expiry_from_tags(tags_json: String) -> Result<i64, String> {
+    Ok(soshal_events_core::event::expiry::get_expiry_from_tags_json(&tags_json))
+}
+
+/// Interest score between my interests and a peer's (JSON: score/common).
+#[frb(sync, serialize)]
+pub fn events_interest_score(
+    my_interests_json: String,
+    peer_interests_json: String,
+) -> Result<String, String> {
+    let score = soshal_events_core::event::interest::compute_interest_score_json(&format!(
+        r#"{{"my_interests":{my_interests_json},"peer_interests":{peer_interests_json}}}"#
+    ));
+    Ok(score)
 }

@@ -81,7 +81,7 @@ pub fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
     if keys.public_key().to_hex() != pubkey {
         return Err("pubkey does not match unlocked signer".to_string()).into();
     }
-    let secret = keys.secret_key().to_secret_hex();
+    let secret = zeroize::Zeroizing::new(keys.secret_key().to_secret_hex());
     let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&pubkey)) {
         Ok(e) => e,
         Err(e) => return Err(format!("keychain unavailable: {e}")).into(),

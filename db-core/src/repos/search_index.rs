@@ -12,10 +12,32 @@ impl<'a> SearchIndexRepo<'a> {
 
     pub fn upsert(&self, row: &SearchIndexRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let post_rowid: Option<i64> = crate::query::query_first(
+            &conn,
+            "SELECT rowid FROM posts WHERE id = ?1",
+            params![row.id.as_str()],
+            |r| r.get(0),
+        )?;
+        // FTS5 rows must carry an explicit rowid: posts-backed rows map to
+        // the posts rowid (matching the posts_ai trigger), everything else
+        // gets a deterministic negative rowid. Auto-assigned rowids collide
+        // with trigger inserts and surface as bare `constraint failed`.
+        let neg = negative_rowid(&row.id);
+        let rowid = post_rowid.unwrap_or(neg);
         crate::query::execute(
             &conn,
-            "INSERT OR REPLACE INTO posts_fts (id, pubkey, content) VALUES (?1, ?2, ?3)",
-            params![row.id.as_str(), row.pubkey.as_str(), row.content.as_str()],
+            "DELETE FROM posts_fts WHERE rowid = ?1 OR rowid = ?2",
+            params![rowid, neg],
+        )?;
+        crate::query::execute(
+            &conn,
+            "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                rowid,
+                row.id.as_str(),
+                row.pubkey.as_str(),
+                row.content.as_str()
+            ],
         )?;
         Ok(())
     }
@@ -39,7 +61,29 @@ impl<'a> SearchIndexRepo<'a> {
 
     pub fn delete(&self, id: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(&conn, "DELETE FROM posts_fts WHERE id = ?1", params![id])?;
+        let post_rowid: Option<i64> = crate::query::query_first(
+            &conn,
+            "SELECT rowid FROM posts WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )?;
+        let neg = negative_rowid(id);
+        match post_rowid {
+            Some(rid) => {
+                crate::query::execute(
+                    &conn,
+                    "DELETE FROM posts_fts WHERE rowid = ?1 OR rowid = ?2",
+                    params![rid, neg],
+                )?;
+            }
+            None => {
+                crate::query::execute(
+                    &conn,
+                    "DELETE FROM posts_fts WHERE rowid = ?1",
+                    params![neg],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -60,6 +104,24 @@ pub struct SearchIndexRow {
     pub content: String,
     pub kind: i64,
     pub created_at: i64,
+}
+
+/// Deterministic negative rowid for FTS rows without a backing posts row
+/// (e.g. `profile:{pubkey}`). Negative space is provably disjoint from the
+/// positive posts rowids used by the posts_ai trigger, so these rows can
+/// never collide with trigger inserts.
+fn negative_rowid(id: &str) -> i64 {
+    let h = fnv1a64(id.as_bytes()) as i64;
+    -h.wrapping_abs().max(1)
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
 }
 
 /// Builds an FTS5 MATCH expression from a raw user query. Every term is

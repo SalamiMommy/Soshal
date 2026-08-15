@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
 import 'feed_service.dart';
+import 'ffi_bridge.dart';
 import 'messaging_service.dart';
 
 /// Sync Service
@@ -220,6 +221,55 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
       peerVectorClocks: clocks,
       gcThresholdSecs: _gcConsensusWindowSecs,
     );
+  }
+
+  /// Whether the Rust-side sync engine is running.
+  bool syncRunning() {
+    try {
+      return RustLib.instance.api.crateFfiSyncSyncRunning();
+    } catch (e) {
+      setLastError(e);
+      return false;
+    }
+  }
+
+  /// Outbox summary JSON (pending/broadcast counters).
+  String outboxSummary() {
+    try {
+      return RustLib.instance.api.crateFfiSyncSyncGetOutboxSummary();
+    } catch (e) {
+      return '{}';
+    }
+  }
+
+  /// One bounded background-sync pass over relays (feed + DM ingestion).
+  Future<int> runBackgroundSync() async {
+    try {
+      final dbPath = await FfiBridge.getDbPath();
+      return RustLib.instance.api
+          .crateFfiHeadlessBackgroundSyncTask(dbPath: dbPath);
+    } catch (e, st) {
+      setLastError(e, st);
+      return -1;
+    }
+  }
+
+  /// Apply a verified ZK state rollup directly to the database cache.
+  Future<bool> applyRollup(String rollupJson) async {
+    try {
+      final dbPath = await FfiBridge.getDbPath();
+      final ok = RustLib.instance.api.crateFfiZkZkApplyRollup(
+        dbPath: dbPath,
+        rollupJson: rollupJson,
+      );
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
   }
 
   @override

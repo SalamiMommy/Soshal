@@ -41,7 +41,8 @@ String datingCreateProfile(
         interestsJson: interestsJson);
 
 /// Update dating profile bio/images/interests (a new kind 30082 event;
-/// d-tag identity stays, so relays treat it as a replacement).
+/// d-tag identity stays, so relays treat it as a replacement). Signs and
+/// stores the row locally for immediate swipe use.
 bool datingUpdateProfile(
         {required String userPubkey,
         required String bio,

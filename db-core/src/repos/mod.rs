@@ -40,14 +40,6 @@ pub mod stream_chat;
 pub mod user;
 pub mod zap;
 
-/// Current unix epoch in seconds.
-pub fn now_secs() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
-
 /// Maximum rows any paged query may return.
 pub const MAX_PAGE_LIMIT: i64 = 2000;
 

@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 import '../services/audio_codec.dart';
 import '../services/h264_codec.dart';
+import '../services/session_service.dart';
 import '../services/streaming_service.dart';
 import '../widgets/error_state_text.dart';
 
@@ -54,6 +55,10 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   Uint8List? _aacConfig;
   int _audioGroupsSent = 0;
   bool _recording = false;
+  int? _onWireBytes;
+
+  static String _hexEncode(List<int> bytes) =>
+      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
   /// ~4 fps JPEG fallback track.
   static const Duration _frameInterval = Duration(milliseconds: 250);
@@ -117,14 +122,15 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
         rowStride: plane.bytesPerRow,
       );
       final jpeg = img.encodeJpg(frame, quality: 60);
-      await api.publishLiveGroup(
-        streamId: widget.streamId,
-        group: api.buildVideoGroup(
-          groupSeq: api.nextMoqGroupSeq(),
-          timestampMs: now.millisecondsSinceEpoch,
-          jpeg: jpeg,
-        ),
+      final group = api.buildVideoGroup(
+        groupSeq: api.nextMoqGroupSeq(),
+        timestampMs: now.millisecondsSinceEpoch,
+        jpeg: jpeg,
       );
+      await api.publishLiveGroup(streamId: widget.streamId, group: group);
+      try {
+        _onWireBytes = api.encodeMoqGroup(group).length;
+      } catch (_) {}
       _framesPublished++;
       await _publishH264(image, now, api);
     } catch (e) {
@@ -167,6 +173,19 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
           keyframe: keyframe,
         ),
       );
+      if (keyframe) {
+        try {
+          await api.publishMoqObject(
+            streamId: widget.streamId,
+            publisherPubkey: context.read<SessionService>().activePubkey ?? '',
+            trackId: 1,
+            isKeyframe: true,
+            payloadHex: _hexEncode(nal),
+          );
+        } catch (e) {
+          debugPrint('moq object publish: $e');
+        }
+      }
       _h264Frames++;
     }
   }
@@ -358,6 +377,11 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
                                       : Colors.grey,
                                 ),
                               ),
+                              if (_onWireBytes != null)
+                                Text(
+                                  '$_onWireBytes B/group',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
                             ],
                           ),
                           const SizedBox(height: 8),

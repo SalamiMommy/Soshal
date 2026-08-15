@@ -120,3 +120,8 @@ bool identityIsBlocked(
         {required String checkerPubkey, required String targetPubkey}) =>
     RustLib.instance.api.crateFfiIdentityIdentityIsBlocked(
         checkerPubkey: checkerPubkey, targetPubkey: targetPubkey);
+
+/// Build an in-process signer handle from an nsec; returns the derived pubkey.
+/// Used for diagnostics only — the app's live signer lives in `signer.rs`.
+String identityInProcessSigner({required String nsec}) =>
+    RustLib.instance.api.crateFfiIdentityIdentityInProcessSigner(nsec: nsec);

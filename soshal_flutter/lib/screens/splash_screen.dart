@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/ffi_bridge.dart';
 import '../services/session_service.dart';
+import '../services/shell_service.dart';
 import '../services/signer_service.dart';
 import '../services/sync_service.dart';
 import '../services/error_log.dart';
@@ -34,19 +35,30 @@ class _SplashScreenState extends State<SplashScreen> {
       // Load session
       final sessionService = context.read<SessionService>();
       final signer = context.read<SignerService>();
+      final shell = context.read<ShellService>();
       await sessionService.loadSession();
+      await shell.initialize();
       await signer.refresh();
 
       // Check if user is logged in
       if (sessionService.hasActiveSession()) {
-        // A session without loaded keys (never unlocked this run) routes to
-        // onboarding for re-auth — the lock screen only appears after an
-        // explicit in-session "Lock now".
-        if (signer.locked && !signer.userLocked) {
-          if (mounted) {
-            context.go('/auth');
+        // Persistence: a session with no loaded keys auto-unlocks from the
+        // OS keychain when no PIN is configured. PIN users get the lock
+        // screen first; the signer unlocks after PIN verification. Recovery
+        // phrase is the last resort when neither is available.
+        if (signer.locked && !shell.hasPin) {
+          final activePubkey = sessionService.activePubkey;
+          if (activePubkey != null) {
+            try {
+              await signer.unlockFromKeyring(activePubkey);
+            } catch (_) {}
           }
-          return;
+          if (signer.locked) {
+            if (mounted) {
+              context.go('/auth');
+            }
+            return;
+          }
         }
         // Start the Rust-side background relay sync (feed/messages ingest).
         final relays = sessionService.activeAccount?.relayList ?? <String>[];

@@ -34,7 +34,7 @@ use soshal_db_core::repos::relay::{RelayRepo, RelayRow};
 use soshal_db_core::repos::reminder::{ReminderRepo, ReminderRow};
 use soshal_db_core::repos::repost::{RepostRepo, RepostRow};
 use soshal_db_core::repos::role::{GroupRoleRepo, GroupRoleRow};
-use soshal_db_core::repos::search_index::SearchIndexRepo;
+use soshal_db_core::repos::search_index::{SearchIndexRepo, SearchIndexRow};
 use soshal_db_core::repos::settings::SettingsRepo;
 use soshal_db_core::repos::spam_report::{SpamReportRepo, SpamReportRow};
 use soshal_db_core::repos::story_reaction::{StoryReactionRepo, StoryReactionRow};
@@ -626,6 +626,63 @@ fn test_search_index_crud() {
 }
 
 #[test]
+fn test_search_index_no_fts_rowid_collision() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    insert_test_user(&db, "pk1");
+
+    let post_repo = PostRepo::new(&db);
+    let fts_repo = SearchIndexRepo::new(&db);
+
+    let post = |id: &str, content: &str| PostRow {
+        id: id.into(),
+        pubkey: "pk1".into(),
+        content: content.into(),
+        kind: 1,
+        created_at: 100,
+        tags_json: "[]".into(),
+        sig: None,
+        reply_to: None,
+        root_id: None,
+        mentioned_pubkeys: "[]".into(),
+        mentioned_hashtags: "[]".into(),
+        subject: None,
+        sync_status: "synced".into(),
+        is_deleted: false,
+        scheduled_at: None,
+        freenet_key: None,
+        is_freenet_native: true,
+    };
+
+    post_repo.upsert(&post("pa", "first post")).unwrap();
+    fts_repo
+        .upsert(&SearchIndexRow {
+            id: "pa".into(),
+            pubkey: "pk1".into(),
+            content: "first post".into(),
+            kind: 1,
+            created_at: 100,
+        })
+        .unwrap();
+    post_repo.upsert(&post("pb", "second post")).unwrap();
+    assert_eq!(fts_repo.search("second", 10, 0).unwrap().len(), 1);
+
+    fts_repo.delete("pa").unwrap();
+    assert_eq!(fts_repo.search("first", 10, 0).unwrap().len(), 0);
+
+    fts_repo
+        .upsert(&SearchIndexRow {
+            id: "profile:pk1".into(),
+            pubkey: "pk1".into(),
+            content: "carol the profile".into(),
+            kind: 0,
+            created_at: 100,
+        })
+        .unwrap();
+    fts_repo.delete("profile:pk1").unwrap();
+}
+
+#[test]
 fn test_settings_crud() {
     let db = Database::open_in_memory().unwrap();
     db.migrate().unwrap();
@@ -653,6 +710,41 @@ fn test_zap_crud() {
     };
     repo.upsert(&row1).unwrap();
     assert_eq!(repo.sum_by_event("evt1").unwrap(), 1000);
+
+    let mut row1_updated = ZapRow {
+        id: "z1".into(),
+        pubkey: "pk1".into(),
+        recipient_pubkey: "recipient_pk1".into(),
+        event_id: Some("evt1".into()),
+        amount: 2500,
+        content: Some("Great post!".into()),
+        created_at: 100,
+        zap_type: "public".into(),
+    };
+    repo.upsert(&row1_updated).unwrap();
+    assert_eq!(
+        repo.sum_by_event("evt1").unwrap(),
+        2500,
+        "upsert same id updates amount, no duplicate rows"
+    );
+
+    let row2 = ZapRow {
+        id: "z2".into(),
+        pubkey: "pk2".into(),
+        recipient_pubkey: "recipient_pk2".into(),
+        event_id: Some("evt2".into()),
+        amount: 777,
+        content: None,
+        created_at: 200,
+        zap_type: "private".into(),
+    };
+    repo.upsert(&row2).unwrap();
+    assert_eq!(
+        repo.sum_by_event("evt1").unwrap(),
+        2500,
+        "per-event isolation"
+    );
+    assert_eq!(repo.sum_by_event("evt2").unwrap(), 777);
 }
 
 #[test]

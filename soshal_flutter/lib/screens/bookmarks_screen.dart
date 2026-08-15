@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/bookmarks_service.dart';
 import '../services/feed_service.dart' show FeedPost;
 import '../services/session_service.dart';
+import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
 
 /// Bookmarks: locally saved posts, resolved from the local DB cache.
@@ -64,7 +65,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
       if (mounted) {
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Bookmark removed (${_shortPk(b.eventId)})')),
+          SnackBar(
+              content: Text('Bookmark removed (${shortPubkey(b.eventId)})')),
         );
       }
     } catch (e) {
@@ -74,18 +76,6 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
             .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
       }
     }
-  }
-
-  String _shortPk(String pk) {
-    if (pk.length < 12) return pk;
-    return '${pk.substring(0, 6)}…${pk.substring(pk.length - 6)}';
-  }
-
-  String _formatTime(int unix) {
-    final local = DateTime.fromMillisecondsSinceEpoch(unix * 1000).toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)} '
-        '${two(local.hour)}:${two(local.minute)}';
   }
 
   @override
@@ -147,7 +137,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                 child: post == null
                     ? ListTile(
                         leading: const Icon(Icons.event_busy),
-                        title: Text('event ${_shortPk(b.eventId)}'),
+                        title: Text('event ${shortPubkey(b.eventId)}'),
                         subtitle: const Text('event not cached locally'),
                         isThreeLine: false,
                         trailing: IconButton(
@@ -160,7 +150,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                           radius: 16,
                           child: Text(
                             post.pubkey.isNotEmpty
-                                ? _shortPk(post.pubkey).substring(0, 1)
+                                ? shortPubkey(post.pubkey).substring(0, 1)
                                 : '?',
                             style: const TextStyle(fontSize: 12),
                           ),
@@ -171,7 +161,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         subtitle: Text(
-                          '${_shortPk(post.pubkey)} · ${_formatTime(post.createdAt)}',
+                          '${shortPubkey(post.pubkey)} · ${formatTimestamp(post.createdAt)}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         trailing: IconButton(

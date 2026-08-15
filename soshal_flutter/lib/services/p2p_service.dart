@@ -10,15 +10,22 @@ import 'package:soshal_flutter/ffi/p2p.dart'
         P2pPeerDto,
         P2pPowerDto,
         P2pSwarmStatusDto,
+        p2PLanServerPort,
         p2PLanServerStart,
+        p2PLanServerStop,
         p2PMdnsAdvertiseStart,
+        p2PMdnsAdvertiseStop,
         p2PMdnsBrowseDrain,
         p2PMdnsBrowseStart,
+        p2PMdnsBrowseStop,
         p2PPowerMode,
         p2PPowerUpdate,
         p2PDecodeFountainPayload,
         p2PEncodeFountainPayload,
+        p2PQuicFetchChunk,
+        p2PQuicServerPort,
         p2PQuicServerStart,
+        p2PQuicServerStop,
         p2PSwarmCancel,
         p2PSwarmDownload,
         p2PSwarmPoll,
@@ -102,6 +109,157 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// Stop browsing (and drop the mDNS daemon).
+  Future<bool> stopBrowsing() async {
+    try {
+      final ok = p2PMdnsBrowseStop();
+      _browsing = false;
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Advertise this device's chunk server over mDNS. `port` falls back to
+  /// the running LAN server (or a fresh start), `quicPort` to the running
+  /// QUIC server.
+  Future<bool> startAdvertising({
+    String pubkey = '',
+    int? port,
+    int? quicPort,
+  }) async {
+    try {
+      final p = port ?? _lanPort ?? p2PLanServerPort();
+      _advertising = p2PMdnsAdvertiseStart(
+        pubkey: pubkey,
+        port: p,
+        quicPort: quicPort ?? _quicPort,
+      );
+      clearLastError();
+      notifyListeners();
+      return _advertising;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Stop advertising (and drop the mDNS daemon).
+  Future<bool> stopAdvertising() async {
+    try {
+      final ok = p2PMdnsAdvertiseStop();
+      _advertising = false;
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Start only the QUIC stream media server (no mDNS advertise).
+  /// Returns the bound port.
+  Future<int?> startQuicServer({String storeRoot = ''}) async {
+    try {
+      _quicPort = p2PQuicServerStart(storeRoot: storeRoot);
+      clearLastError();
+      notifyListeners();
+      return _quicPort;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Port of the running QUIC stream server, read live from Rust.
+  Future<int?> quicServerPort() async {
+    try {
+      _quicPort = p2PQuicServerPort();
+      notifyListeners();
+      return _quicPort;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Stop the QUIC stream server.
+  Future<bool> stopQuicServer() async {
+    try {
+      final ok = p2PQuicServerStop();
+      _quicPort = null;
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Port of the running LAN chunk server, read live from Rust.
+  Future<int?> lanServerPort() async {
+    try {
+      _lanPort = p2PLanServerPort();
+      notifyListeners();
+      return _lanPort;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Stop the LAN chunk server.
+  Future<bool> stopLanServer() async {
+    try {
+      final ok = p2PLanServerStop();
+      _lanPort = null;
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Fetch one verified chunk range from a peer over a QUIC stream
+  /// (blob-hash or chunk-hash mode; BLAKE3-verified on the Rust side).
+  Future<Uint8List?> fetchQuicChunk({
+    required String addr,
+    required String hash,
+    required BigInt offset,
+    required BigInt length,
+  }) async {
+    try {
+      final bytes = p2PQuicFetchChunk(
+        addr: addr,
+        hash: hash,
+        offset: offset,
+        length: length,
+      );
+      clearLastError();
+      notifyListeners();
+      return bytes;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return null;
+    }
+  }
+
   /// Drain newly discovered LAN peers.
   Future<List<P2pPeerDto>> drainPeers() async {
     try {
@@ -119,6 +277,10 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
       return const [];
     }
   }
+
+  /// UI-facing wrapper: sample battery/connectivity and push into the Rust
+  /// seeding scheduler now (same path as the periodic poller).
+  Future<void> refreshPowerFromOs() => _pollPower();
 
   /// Sample battery + connectivity and push into the Rust seeding scheduler.
   /// Errors are swallowed: power state simply stays at its last good value.

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import '../services/notifications_service.dart';
 import '../services/session_service.dart';
 import '../services/shell_service.dart';
 import '../services/signer_service.dart';
+import '../utils/format.dart';
 import 'lock_screen.dart';
 import 'signer_lock_screen.dart';
 
@@ -23,10 +25,36 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
+  Timer? _callTimer;
+  Timer? _lockoutTimer;
+
   @override
   void initState() {
     super.initState();
     _bootstrap();
+    // Poll relay kind-20001 call signals addressed to the active account.
+    _callTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      final pubkey = context.read<SessionService>().activePubkey;
+      if (pubkey != null) {
+        context.read<ShellService>().pollCallSignals(pubkey);
+      }
+    });
+    // Keep the PIN lock countdown honest while the lock screen is up.
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      final shell = context.read<ShellService>();
+      if (shell.locked) {
+        shell.refreshLockout();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _callTimer?.cancel();
+    _lockoutTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _bootstrap() async {
@@ -36,6 +64,7 @@ class _AppShellState extends State<AppShell> {
     final pubkey = session.activePubkey;
     if (pubkey != null) {
       context.read<NotificationService>().refreshUnreadCount(pubkey);
+      shell.pollCallSignals(pubkey);
     }
     shell.refreshRelayStatus();
   }
@@ -85,8 +114,6 @@ class _AppShellState extends State<AppShell> {
     final signedIn =
         context.select((SessionService s) => s.activePubkey != null);
     final signerLocked = context.select((SignerService s) => s.locked);
-    final signerUserLocked =
-        context.select((SignerService s) => s.userLocked);
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 800;
@@ -125,7 +152,7 @@ class _AppShellState extends State<AppShell> {
                   ),
                 ],
               ),
-              if (signedIn && signerLocked && signerUserLocked) const SignerLockScreen(),
+              if (signedIn && signerLocked) const SignerLockScreen(),
               if (locked) const LockScreen(),
             ],
           ),
@@ -185,9 +212,36 @@ class _SidebarCoreState extends State<_SidebarCore> {
                 ),
                 const Spacer(),
                 IconButton(
+                  tooltip: 'Edit tabs',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: () => _showEditTabsDialog(context, shell),
+                ),
+                IconButton(
                   tooltip: 'Close',
                   icon: const Icon(Icons.close),
                   onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+        if (shell.rearranging)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                const Icon(Icons.drag_indicator, size: 18),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Drag tabs to reorder',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    shell.saveOrder();
+                    shell.endRearrange();
+                  },
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Done'),
                 ),
               ],
             ),
@@ -304,6 +358,8 @@ class _NavItemTile extends StatelessWidget {
       builder: (context, candidates, rejected) {
         return LongPressDraggable<int>(
           data: index,
+          onDragStarted: () => shell.setDraggedIndex(index),
+          onDragEnd: (_) => shell.setDraggedIndex(null),
           feedback: Material(
             elevation: 4,
             borderRadius: BorderRadius.circular(8),
@@ -357,10 +413,98 @@ IconData navIconFor(String id) {
   return icons[id] ?? Icons.circle_outlined;
 }
 
+/// "Edit tabs" dialog: toggle conditional (extra) nav items and reorder the
+/// sidebar. Persists via [ShellService.setExtraItemsVisible].
+void _showEditTabsDialog(BuildContext context, ShellService shell) {
+  final visible = <String>{
+    for (final item in shell.items)
+      if (ShellService.extraItems.any((e) => e.id == item.id)) item.id,
+  };
+  showDialog<void>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) {
+        void toggle(String id) {
+          setDialogState(() {
+            if (!visible.remove(id)) visible.add(id);
+          });
+        }
+
+        return AlertDialog(
+          title: const Text('Edit tabs'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Extra tabs',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                for (final extra in ShellService.extraItems)
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(extra.label),
+                    value: visible.contains(extra.id),
+                    onChanged: (_) => toggle(extra.id),
+                  ),
+                const Divider(),
+                const Text('Reorder: long-press a tab and drag it.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 8),
+                if (shell.rearranging)
+                  FilledButton.tonalIcon(
+                    onPressed: () {
+                      shell.saveOrder();
+                      shell.endRearrange();
+                    },
+                    icon: const Icon(Icons.check),
+                    label: const Text('Done reordering'),
+                  )
+                else
+                  FilledButton.tonalIcon(
+                    onPressed: () {
+                      shell.beginRearrange();
+                      setDialogState(() {});
+                    },
+                    icon: const Icon(Icons.drag_indicator),
+                    label: const Text('Reorder tabs'),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                if (shell.rearranging) {
+                  shell.endRearrange();
+                }
+                Navigator.of(context).pop();
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                shell.setExtraItemsVisible(visible.toList());
+                if (shell.rearranging) {
+                  shell.saveOrder();
+                  shell.endRearrange();
+                }
+                Navigator.of(context).pop();
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
 class _NavigationRailView extends StatelessWidget {
   final String? currentPath;
   final double maxHeight;
-  const _NavigationRailView({required this.currentPath, required this.maxHeight});
+  const _NavigationRailView(
+      {required this.currentPath, required this.maxHeight});
 
   @override
   Widget build(BuildContext context) {
@@ -385,6 +529,11 @@ class _NavigationRailView extends StatelessWidget {
             'Soshal',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
           ),
+        ),
+        trailing: IconButton(
+          tooltip: 'Edit tabs',
+          icon: const Icon(Icons.edit_outlined),
+          onPressed: () => _showEditTabsDialog(context, shell),
         ),
         destinations: [
           for (final item in shell.items)
@@ -491,9 +640,7 @@ class _IncomingCallBanner extends StatelessWidget {
               as String? ??
           'voice';
     } catch (_) {}
-    final short = peer.length > 12
-        ? '${peer.substring(0, 6)}…${peer.substring(peer.length - 4)}'
-        : peer;
+    final short = shortPubkey(peer, head: 6, tail: 4);
     return Positioned(
       top: 8,
       left: 0,

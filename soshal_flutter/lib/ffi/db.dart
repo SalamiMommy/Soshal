@@ -66,3 +66,60 @@ bool dbSaveCustomProfile(
         {required String pubkey, required String profileJson}) =>
     RustLib.instance.api.crateFfiDbDbSaveCustomProfile(
         pubkey: pubkey, profileJson: profileJson);
+
+/// Fetch a paged feed of posts authored by `pubkeys` (most recent first).
+String dbGetFeed(
+        {required List<String> pubkeys,
+        required PlatformInt64 limit,
+        required PlatformInt64 offset}) =>
+    RustLib.instance.api
+        .crateFfiDbDbGetFeed(pubkeys: pubkeys, limit: limit, offset: offset);
+
+/// Fetch the `limit` most recent posts regardless of author.
+String dbGetRecent({required PlatformInt64 limit}) =>
+    RustLib.instance.api.crateFfiDbDbGetRecent(limit: limit);
+
+/// Fetch a user's media items (paged).
+String dbGetUserMedia(
+        {required String pubkey,
+        required PlatformInt64 limit,
+        required PlatformInt64 offset}) =>
+    RustLib.instance.api
+        .crateFfiDbDbGetUserMedia(pubkey: pubkey, limit: limit, offset: offset);
+
+/// Delete posts older than `cutoff_secs` (relative to now); returns rows removed.
+BigInt dbDeleteOlderThan({required PlatformInt64 cutoffSecs}) =>
+    RustLib.instance.api.crateFfiDbDbDeleteOlderThan(cutoffSecs: cutoffSecs);
+
+/// Delete every stored post; returns rows removed.
+BigInt dbDeleteAllPosts() => RustLib.instance.api.crateFfiDbDbDeleteAllPosts();
+
+/// Trending hashtags by usage count (JSON rows: tag/pubkey/last_used_at/count).
+String dbGetTrendingHashtags({required PlatformInt64 limit}) =>
+    RustLib.instance.api.crateFfiDbDbGetTrendingHashtags(limit: limit);
+
+/// Assign a role to a member of a group.
+bool dbAssignMemberRole(
+        {required String groupId,
+        required String pubkey,
+        required String roleId}) =>
+    RustLib.instance.api.crateFfiDbDbAssignMemberRole(
+        groupId: groupId, pubkey: pubkey, roleId: roleId);
+
+/// Escrow rows where `pubkey` participates as buyer or seller (JSON).
+String dbGetEscrowsByParticipant({required String pubkey}) =>
+    RustLib.instance.api.crateFfiDbDbGetEscrowsByParticipant(pubkey: pubkey);
+
+/// Fetch an ephemeral media row by its message id (JSON or `null`).
+String dbGetEphemeralByMessageId({required String messageId}) =>
+    RustLib.instance.api
+        .crateFfiDbDbGetEphemeralByMessageId(messageId: messageId);
+
+/// Mark an ephemeral media row with a new state.
+bool dbMarkEphemeralState({required String id, required String state}) =>
+    RustLib.instance.api.crateFfiDbDbMarkEphemeralState(id: id, state: state);
+
+/// Purge geohash peer rows not seen within `cutoff_secs_ago`; returns rows removed.
+BigInt dbPurgeStaleGeohashPeers({required PlatformInt64 cutoffSecsAgo}) =>
+    RustLib.instance.api
+        .crateFfiDbDbPurgeStaleGeohashPeers(cutoffSecsAgo: cutoffSecsAgo);

@@ -160,6 +160,51 @@ mod ffi_media_streaming_tests {
     }
 
     #[test]
+    fn media_upload_blob_file_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let data = unique_bytes();
+        let src = temp_path("blob_src");
+        std::fs::write(&src, &data).unwrap();
+        let json = media::media_upload_blob_file(src.clone()).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let hash = manifest["blob_hash"].as_str().unwrap().to_string();
+        assert_eq!(manifest["total_size"].as_u64().unwrap(), data.len() as u64);
+        let out = temp_path("blob_file_out");
+        media::media_fetch_blob(hash, out.clone()).unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), data);
+        assert!(media::media_upload_blob_file(temp_path("no_such_file")).is_err());
+        let _ = std::fs::remove_file(&src);
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn media_upload_blob_file_rejects_ssrf_urls() {
+        let _g = TEST_LOCK.lock().unwrap();
+        for url in [
+            "http://localhost:8080/a.jpg",
+            "http://127.0.0.1/a.jpg",
+            "http://192.168.1.10/a.jpg",
+            "http://foo.localtest.me/a.jpg",
+        ] {
+            let err = media::media_upload_blob_file(url.to_string()).unwrap_err();
+            assert!(
+                err.contains("not allowed") || err.contains("internal address"),
+                "{url}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn media_load_local_roundtrip_and_missing() {
+        let data = unique_bytes();
+        let path = temp_path("local");
+        std::fs::write(&path, &data).unwrap();
+        assert_eq!(media::media_load_local(path.clone()).unwrap(), data);
+        assert!(media::media_load_local(temp_path("missing")).is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn streaming_fetch_empty_with_fresh_db() {
         let _g = TEST_LOCK.lock().unwrap();
         let path = db_path("empty");
@@ -249,16 +294,37 @@ mod ffi_media_streaming_tests {
 
     #[test]
     fn streaming_moq_publish_object() {
-        let obj = streaming::streaming_moq_publish_object(
+        let key = streaming::streaming_moq_publish_object(
             "sid1".to_string(),
             "pk".to_string(),
-            1,
+            7,
             true,
             "0102ff".to_string(),
         )
         .unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&obj).unwrap();
-        assert!(!parsed.as_object().unwrap().is_empty());
+        let parsed: serde_json::Value = serde_json::from_str(&key).unwrap();
+        let h = &parsed["header"];
+        assert_eq!(h["track_id"], 7);
+        assert_eq!(h["track_type"], "VideoKeyframe");
+        assert_eq!(h["group_sequence"], 1, "keyframe bumps group seq");
+        assert_eq!(h["object_sequence"], 3, "payload 3 bytes");
+        assert_eq!(h["payload_size"], 3);
+        assert!(h["timestamp_ms"].as_u64().unwrap() > 0);
+
+        let delta = streaming::streaming_moq_publish_object(
+            "sid1".to_string(),
+            "pk".to_string(),
+            7,
+            false,
+            "ff".to_string(),
+        )
+        .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&delta).unwrap();
+        let h = &parsed["header"];
+        assert_eq!(h["track_type"], "VideoDelta");
+        assert_eq!(h["group_sequence"], 0, "fresh session, delta does not bump");
+        assert_eq!(h["payload_size"], 1);
+
         assert!(streaming::streaming_moq_publish_object(
             "sid1".to_string(),
             "pk".to_string(),
@@ -277,15 +343,37 @@ mod ffi_media_streaming_tests {
         let parsed: serde_json::Value = serde_json::from_str(&res).unwrap();
         assert_eq!(parsed["protocol"], "MediaOverQUIC");
         assert_eq!(parsed["stream_id"], "ab".repeat(32));
-        assert!(parsed["status"] == "live" || parsed["status"] == "unknown");
+        assert_eq!(
+            parsed["status"], "unknown",
+            "no stream registered -> deterministic unknown"
+        );
     }
 
     #[test]
     fn streaming_get_video_url_uninitialized() {
-        assert!(streaming::streaming_get_video_url(
+        let e = streaming::streaming_get_video_url(
             "vid1".to_string(),
             "/tmp/nonexistent.mp4".to_string(),
         )
-        .is_err());
+        .unwrap_err();
+        assert!(e.contains("not initialized"), "got {e}");
+    }
+
+    #[tokio::test]
+    async fn streaming_get_video_url_happy_path() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let port = streaming::streaming_start_local_server().await.unwrap();
+        let url = streaming::streaming_get_video_url(
+            "vid1".to_string(),
+            "/tmp/nonexistent.mp4".to_string(),
+        )
+        .unwrap();
+        assert!(url.contains(&format!("127.0.0.1:{port}")), "url {url}");
+        assert!(url.contains("vid1"), "url {url}");
+        assert!(streaming::streaming_get_video_url(
+            "vid2".to_string(),
+            "/tmp/other.mp4".to_string(),
+        )
+        .is_ok());
     }
 }

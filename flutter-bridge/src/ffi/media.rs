@@ -48,23 +48,24 @@ pub fn media_decode_image_rgba(
     })
 }
 
-/// Upload media to a Blossom server (reads the local file first).
+/// Upload media to a Blossom server. `source` is a local file path or an
+/// `http(s)://` URL (SSRF-guarded fetch).
 #[frb(serialize)]
 pub async fn media_upload(file_path: String, blossom_server: String) -> Result<String, String> {
-    match fs::read(&file_path) {
-        Ok(data) => {
-            let mime_type = infer_mime_type(&file_path);
-            let client = soshal_media_core::blossom::BlossomClient::new(&blossom_server);
-            match client.upload(data, &mime_type).await {
-                Ok(file) => super::util::json_ok(MediaResult {
-                    url: file.url,
-                    mime_type,
-                    size: file.size,
-                }),
-                Err(e) => Err(format!("Upload failed: {e}")).into(),
-            }
-        }
-        Err(e) => Err(format!("Failed to read file: {e}")).into(),
+    let (data, fetched_mime) = match soshal_media_core::source::fetch_source_bytes(&file_path).await
+    {
+        Ok(v) => v,
+        Err(e) => return Err(e).into(),
+    };
+    let mime_type = fetched_mime.unwrap_or_else(|| infer_mime_type(&file_path));
+    let client = soshal_media_core::blossom::BlossomClient::new(&blossom_server);
+    match client.upload(data, &mime_type).await {
+        Ok(file) => super::util::json_ok(MediaResult {
+            url: file.url,
+            mime_type,
+            size: file.size,
+        }),
+        Err(e) => Err(format!("Upload failed: {e}")).into(),
     }
 }
 
@@ -167,13 +168,25 @@ pub fn media_upload_blob(data: Vec<u8>) -> Result<String, String> {
         .into()
 }
 
-/// Upload a local media file directly to the chunk store by path (zero Dart heap memory overhead).
+/// Upload a local media file (or remote URL, SSRF-guarded) directly to the
+/// chunk store (zero Dart heap memory overhead for the file path case).
 #[frb(sync, serialize)]
 pub fn media_upload_blob_file(file_path: String) -> Result<String, String> {
-    let file = fs::File::open(&file_path).map_err(|e| format!("open file failed: {e}"))?;
-    let store = ChunkStore::new(ChunkStore::default_root());
-    let manifest = store.store_reader(file)?;
-    store.save_manifest(&manifest)?;
+    let manifest = if soshal_media_core::source::is_url_source(&file_path) {
+        // URL sources require an async fetch; run it on a scoped runtime.
+        let (data, _) =
+            soshal_db_core::block_on(soshal_media_core::source::fetch_source_bytes(&file_path))?;
+        let store = ChunkStore::new(ChunkStore::default_root());
+        let manifest = store.store_reader(Cursor::new(data))?;
+        store.save_manifest(&manifest)?;
+        manifest
+    } else {
+        let file = fs::File::open(&file_path).map_err(|e| format!("open file failed: {e}"))?;
+        let store = ChunkStore::new(ChunkStore::default_root());
+        let manifest = store.store_reader(file)?;
+        store.save_manifest(&manifest)?;
+        manifest
+    };
     serde_json::to_string(&manifest)
         .map_err(|e| format!("manifest serde: {e}"))
         .into()
@@ -240,4 +253,72 @@ pub fn media_stop_local_server() -> Result<bool, String> {
         s.stop();
     }
     Ok(true).into()
+}
+
+/// Infer an image format (png/jpeg/gif/webp/…) from raw bytes, if recognizable.
+#[frb(sync, serialize)]
+pub fn media_detect_image_format(bytes: Vec<u8>) -> Result<Option<String>, String> {
+    Ok(soshal_media_core::decoder::detect_image_format(&bytes)
+        .map(|f| format!("{f:?}").to_lowercase()))
+}
+
+/// Content-aware chunking window for a MIME type (JSON: min/avg/max).
+#[frb(sync, serialize)]
+pub fn media_chunking_for_mime(mime: String) -> Result<String, String> {
+    let params = soshal_media_core::chunking::ChunkingParams::for_mime(&mime);
+    super::util::json_ok(params)
+}
+
+/// Trim media caches under memory pressure (0 = normal, 1 = moderate, 2 = critical).
+#[frb(sync, serialize)]
+pub fn media_trim_caches(level: u8) -> Result<bool, String> {
+    let lvl = soshal_common_core::memory::MemoryPressureLevel::from_u8(level);
+    soshal_media_core::trim_media_caches(lvl);
+    Ok(true)
+}
+
+/// Whether the global prefetcher would fetch media for a given list index.
+#[frb(sync, serialize)]
+pub fn media_should_prefetch(item_index: u32) -> Result<bool, String> {
+    let prefetcher = soshal_media_core::prefetcher::global_prefetcher();
+    Ok(prefetcher.should_prefetch_media(item_index))
+}
+
+/// Feed scroll telemetry into the global prefetcher (velocity px/s + visible indices).
+#[frb(sync, serialize)]
+pub fn media_update_scroll_telemetry(
+    velocity: f32,
+    top_index: u32,
+    bottom_index: u32,
+) -> Result<bool, String> {
+    let prefetcher = soshal_media_core::prefetcher::global_prefetcher();
+    prefetcher.update_scroll_telemetry(velocity, top_index, bottom_index);
+    Ok(true)
+}
+
+/// Encode a thumbhash (hex) from raw image bytes.
+#[frb(sync, serialize)]
+pub fn media_encode_thumbhash(bytes: Vec<u8>) -> Result<String, String> {
+    let out = soshal_media_core::thumbhash::encode_thumbhash_from_bytes(&bytes)?;
+    Ok(hex::encode(out))
+}
+
+/// Freenet chunking pass (JSON in, JSON out).
+#[frb(sync, serialize)]
+pub fn media_chunk_media_json(input: String) -> Result<String, String> {
+    Ok(soshal_media_core::freenet_media::chunk_media_json(&input))
+}
+
+/// Freenet chunk verification pass (JSON in, JSON out).
+#[frb(sync, serialize)]
+pub fn media_verify_chunk_json(input: String) -> Result<String, String> {
+    Ok(soshal_media_core::freenet_media::verify_chunk_json(&input))
+}
+
+/// Freenet chunk reconstruction pass (JSON in, JSON out).
+#[frb(sync, serialize)]
+pub fn media_reconstruct_media_json(input: String) -> Result<String, String> {
+    Ok(soshal_media_core::freenet_media::reconstruct_media_json(
+        &input,
+    ))
 }

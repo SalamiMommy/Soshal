@@ -33,6 +33,10 @@ use webrtc_ice::url::{SchemeType, Url};
 const CHECK_TIMEOUT_MS: u64 = 3000;
 const GATHER_WAIT_MS: u64 = 2500;
 
+/// Hard cap on stored remote candidates per session; relay-supplied
+/// candidate floods past this are ignored.
+const MAX_REMOTE_CANDIDATES: usize = 32;
+
 /// Snapshot of one NAT session (serialized straight to Dart).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatSessionStatus {
@@ -246,6 +250,7 @@ async fn run_manager(
                     eprintln!("nat: stop flag");
                     break;
                 }
+                prune_failed_sessions(&mut sessions).await;
             }
             cmd = recv_cmd(&rx) => {
                 let cmd = match cmd {
@@ -296,6 +301,9 @@ async fn run_manager(
                                 {
                                     let remote = session.remote_candidates.lock().unwrap();
                                     for raw in &candidates {
+                                        if remote.len() >= MAX_REMOTE_CANDIDATES {
+                                            break;
+                                        }
                                         if remote.contains(raw) {
                                             continue;
                                         }
@@ -391,6 +399,22 @@ enum CmdPump {
     Cmd(NatCommand),
     Idle,
     Closed,
+}
+
+/// Drops sessions whose ICE connectivity checks failed, releasing their
+/// agents and UDP sockets. Called on each manager tick.
+async fn prune_failed_sessions(sessions: &mut HashMap<String, Session>) {
+    let dead: Vec<String> = sessions
+        .iter()
+        .filter(|(_, s)| *s.shared.state.lock().unwrap() == "failed")
+        .map(|(k, _)| k.clone())
+        .collect();
+    for pubkey in dead {
+        if let Some(session) = sessions.remove(&pubkey) {
+            eprintln!("nat: pruning failed session {pubkey}");
+            let _ = session.agent.close().await;
+        }
+    }
 }
 
 async fn recv_cmd(rx: &std::sync::mpsc::Receiver<NatCommand>) -> CmdPump {

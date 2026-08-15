@@ -30,3 +30,61 @@ pub fn render_compute_mesh_frame(
     session.step_simulation(delta_time);
     Ok(session.render_pixel_buffer())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_create_session_returns_json() {
+        let json = render_create_session(64, 48).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(v["session_id"].as_i64().unwrap() > 0);
+        assert_eq!(v["width"], 64);
+        assert_eq!(v["height"], 48);
+    }
+
+    #[test]
+    fn render_frame_empty_nodes_blank_buffer() {
+        let json = render_create_session(8, 8).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let id = v["session_id"].as_i64().unwrap();
+        let buf = render_compute_mesh_frame(id, String::new(), 0.016).unwrap();
+        assert_eq!(buf.len(), 8 * 8 * 4, "RGBA w*h*4");
+        assert_eq!(buf[0], 0x0D, "bg #0D1117");
+        assert_eq!(buf[4], 0x0D);
+    }
+
+    #[test]
+    fn render_frame_draws_node_pixel() {
+        let json = render_create_session(8, 8).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let id = v["session_id"].as_i64().unwrap();
+        let nodes = serde_json::json!([{
+            "id": "n1", "x": 0.0, "y": 0.0, "z": 0.0,
+            "vx": 0.0, "vy": 0.0, "vz": 0.0,
+            "latency_ms": 15, "connections": []
+        }])
+        .to_string();
+        let buf = render_compute_mesh_frame(id, nodes, 0.016).unwrap();
+        let center = (4 * 8 * 4 + 4 * 4) as usize;
+        assert_eq!(buf[center], 0x00, "cyan node pixel");
+        assert_eq!(buf[center + 1], 0xE5);
+        assert_eq!(buf[center + 2], 0xFF);
+    }
+
+    #[test]
+    fn render_invalid_session_errors() {
+        let e = render_compute_mesh_frame(999, String::new(), 0.016).unwrap_err();
+        assert!(e.contains("Session 999 not found"), "got {e}");
+    }
+
+    #[test]
+    fn render_bad_nodes_json_ignored() {
+        let json = render_create_session(4, 4).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let id = v["session_id"].as_i64().unwrap();
+        let buf = render_compute_mesh_frame(id, "not json".to_string(), 0.016).unwrap();
+        assert_eq!(buf.len(), 4 * 4 * 4);
+    }
+}

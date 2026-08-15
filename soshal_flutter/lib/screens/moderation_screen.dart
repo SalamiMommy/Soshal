@@ -16,12 +16,182 @@ class _ModerationScreenState extends State<ModerationScreen> {
   String? _pubkey;
   String _testContent = '';
   bool? _filtered;
+  List<dynamic> _reports = [];
+  bool _reportsLoading = false;
+  String? _checkTarget;
+  ({bool muted, bool blocked, bool restricted})? _restrictionResult;
+  String? _juryCaseJson;
+  String? _juryResult;
 
   @override
   void initState() {
     super.initState();
     _pubkey = context.read<SessionService>().activePubkey;
     context.read<ModerationService>().load(_pubkey ?? '');
+    _loadReports();
+  }
+
+  Future<void> _loadReports() async {
+    final target = _pubkey;
+    if (target == null) return;
+    if (!mounted) return;
+    setState(() => _reportsLoading = true);
+    final reports = await context.read<ModerationService>().listReports(target);
+    if (!mounted) return;
+    setState(() {
+      _reports = reports;
+      _reportsLoading = false;
+    });
+  }
+
+  Future<void> _deleteReport(String reportId) async {
+    final ok = await context.read<ModerationService>().deleteReport(reportId);
+    if (ok) await _loadReports();
+  }
+
+  Future<void> _unblock(String targetPubkey) async {
+    final me = _pubkey;
+    if (me == null) return;
+    await context.read<ModerationService>().unblock(me, targetPubkey);
+  }
+
+  Future<void> _checkRestriction() async {
+    final me = _pubkey;
+    final target = _checkTarget?.trim() ?? '';
+    if (me == null || target.isEmpty) return;
+    final mod = context.read<ModerationService>();
+    if (!mounted) return;
+    setState(() {
+      _restrictionResult = (
+        muted: mod.isMuted(target),
+        blocked: mod.isBlocked(target),
+        restricted: mod.isRestricted(me, target),
+      );
+    });
+  }
+
+  Future<void> _createJuryCase() async {
+    final caseId = TextEditingController(
+        text: DateTime.now().millisecondsSinceEpoch.toString());
+    final target = TextEditingController();
+    final reason = TextEditingController();
+    final threshold = TextEditingController(text: '2');
+    final total = TextEditingController(text: '3');
+    final group = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create jury case'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: caseId,
+                decoration: const InputDecoration(labelText: 'Case id'),
+              ),
+              TextField(
+                controller: target,
+                decoration: const InputDecoration(labelText: 'Target pubkey'),
+              ),
+              TextField(
+                controller: reason,
+                decoration: const InputDecoration(labelText: 'Reason'),
+              ),
+              TextField(
+                controller: threshold,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Threshold'),
+              ),
+              TextField(
+                controller: total,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Total jurors'),
+              ),
+              TextField(
+                controller: group,
+                decoration: const InputDecoration(labelText: 'Group pubkey'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      final json = await context.read<ModerationService>().createJuryCase(
+            caseId: caseId.text.trim(),
+            targetPubkey: target.text.trim(),
+            reason: reason.text.trim(),
+            threshold: int.tryParse(threshold.text.trim()) ?? 2,
+            totalJurors: int.tryParse(total.text.trim()) ?? 3,
+            groupPubkey: group.text.trim(),
+          );
+      if (!mounted) return;
+      setState(() {
+        _juryCaseJson = json;
+        _juryResult = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Jury case failed: $e')));
+      }
+    }
+  }
+
+  Future<void> _submitJuryVote() async {
+    final caseJson = _juryCaseJson;
+    if (caseJson == null) return;
+    final vote = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Submit jury vote'),
+        content: TextField(
+          controller: vote,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'FrostSignatureShare JSON',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Vote'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      final result = await context.read<ModerationService>().submitJuryVote(
+            caseJson: caseJson,
+            voteShareJson: vote.text.trim(),
+          );
+      if (!mounted) return;
+      setState(() => _juryResult = result);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: SelectableText('Vote failed: $e')));
+      }
+    }
   }
 
   Future<void> _addFilter() async {
@@ -97,6 +267,134 @@ class _ModerationScreenState extends State<ModerationScreen> {
               );
             },
           ),
+          const Divider(height: 32),
+          Text('Blocked users', style: Theme.of(context).textTheme.titleMedium),
+          Consumer<ModerationService>(
+            builder: (context, mod, _) {
+              if (mod.blocked.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No blocked users'),
+                );
+              }
+              return Column(
+                children: [
+                  for (final blocked in mod.blocked)
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.block),
+                      title: Text(blocked,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.undo),
+                        tooltip: 'Unblock',
+                        onPressed: () => _unblock(blocked),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          const Divider(height: 32),
+          Text('Reports', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          if (_reportsLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_reports.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('No reports'),
+            )
+          else
+            for (final report in _reports)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.flag_outlined),
+                title: Text(
+                  report['pubkey'] as String? ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  report['reason'] as String? ?? '',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Delete report',
+                  onPressed: () => _deleteReport(report['id'] as String? ?? ''),
+                ),
+              ),
+          const Divider(height: 32),
+          Text('Restriction check',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          TextField(
+            onChanged: (v) => setState(() => _checkTarget = v),
+            decoration: const InputDecoration(
+              hintText: 'Pubkey to check',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            icon: const Icon(Icons.verified_user_outlined),
+            label: const Text('Check'),
+            onPressed: _checkRestriction,
+          ),
+          if (_restrictionResult != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'muted: ${_restrictionResult!.muted} · '
+                'blocked: ${_restrictionResult!.blocked} · '
+                'restricted: ${_restrictionResult!.restricted}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          const Divider(height: 32),
+          Row(
+            children: [
+              Text('Community jury',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.gavel),
+                tooltip: 'Create jury case',
+                onPressed: _createJuryCase,
+              ),
+            ],
+          ),
+          if (_juryCaseJson != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                _juryCaseJson!,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.how_to_vote_outlined),
+              label: const Text('Submit vote'),
+              onPressed: _submitJuryVote,
+            ),
+          ],
+          if (_juryResult != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _juryResult!,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
           const Divider(height: 32),
           Row(
             children: [

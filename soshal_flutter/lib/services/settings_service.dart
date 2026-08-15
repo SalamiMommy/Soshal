@@ -49,4 +49,33 @@ class SettingsService extends ChangeNotifier {
   Future<bool> purgeAllPosts() {
     return safeDelete('UPDATE posts SET is_deleted = 1 WHERE is_deleted = 0');
   }
+
+  /// Absolute path of the active SQLite database file.
+  String dbPath() => RustLib.instance.api.crateFfiDbDbPath();
+
+  /// Storage engine mode string (e.g. `mmap` / `fsync`).
+  String ioEngineMode() =>
+      RustLib.instance.api.crateFfiStorageStorageGetIoEngineMode();
+
+  /// Delete expired ephemeral media rows; returns the expired ids.
+  List<String> cleanExpiredEphemeral() =>
+      RustLib.instance.api.crateFfiEphemeralEphemeralCleanExpired();
+
+  /// SHA-256 of `input` as lowercase hex.
+  String sha256Hex(String input) =>
+      RustLib.instance.api.crateFfiUtilUtilSha256Hex(input: input);
+
+  /// Base64url (no padding) encode.
+  String b64UrlEncode(String input) =>
+      RustLib.instance.api.crateFfiUtilUtilBase64UrlEncode(input: input);
+
+  /// Base64url (no padding) decode; empty string on invalid input.
+  String b64UrlDecode(String input) =>
+      RustLib.instance.api.crateFfiUtilUtilBase64UrlDecode(input: input);
+
+  /// Purge geohash peer rows not seen within `cutoffSecsAgo`; rows removed.
+  int purgeStaleGeohashPeers(int cutoffSecsAgo) =>
+      RustLib.instance.api
+          .crateFfiDbDbPurgeStaleGeohashPeers(cutoffSecsAgo: cutoffSecsAgo)
+          .toInt();
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/music_service.dart';
+import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
 
 /// Musicloud user page: one author's published tracks (kind 31022).
@@ -51,7 +52,7 @@ class _MusicloudUserScreenState extends State<MusicloudUserScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                '${_shortPk(track.pubkey)} · ${_fmtTime(track.createdAt)}',
+                '${shortPubkey(track.pubkey)} · ${relativeTime(track.createdAt)}',
                 style: Theme.of(sheetContext).textTheme.bodySmall,
               ),
               const SizedBox(height: 16),
@@ -146,8 +147,8 @@ class _MusicloudUserScreenState extends State<MusicloudUserScreen> {
                           ),
                           subtitle: Text(
                             [
-                              _shortPk(track.pubkey),
-                              _fmtTime(track.createdAt),
+                              shortPubkey(track.pubkey),
+                              relativeTime(track.createdAt),
                               if (track.hashtags.isNotEmpty)
                                 track.hashtags.map((h) => '#$h').join(' '),
                             ].join(' · '),
@@ -186,19 +187,4 @@ class _MusicloudUserScreenState extends State<MusicloudUserScreen> {
         child: Icon(Icons.music_note,
             color: Theme.of(context).colorScheme.primary),
       );
-
-  static String _shortPk(String pk) => pk.length <= 12
-      ? pk
-      : '${pk.substring(0, 6)}…${pk.substring(pk.length - 6)}';
-
-  static String _fmtTime(int seconds) {
-    if (seconds <= 0) return '';
-    final dt = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inDays > 0) return '${diff.inDays}d ago';
-    if (diff.inHours > 0) return '${diff.inHours}h ago';
-    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
-    return 'just now';
-  }
 }

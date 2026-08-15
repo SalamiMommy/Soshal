@@ -33,7 +33,6 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
 }
 
 #[test]
-#[ignore] // Temporarily skipped due to LAN server timing issues in test environment
 fn swarm_download_roundtrip_over_loopback() {
     let _g = lock();
     let root = tmp_root("store");

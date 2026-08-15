@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
 
@@ -9,13 +10,18 @@ import 'error_log.dart';
 /// Handles feed operations and post publishing
 class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<FeedPost> _posts = [];
+  List<FeedPost> _rankedPosts = [];
+  bool _ranked = false;
   bool _isLoading = false;
+  bool _loadingMore = false;
   int _currentOffset = 0;
   static const String _pinnedKey = 'pinned_posts';
   final Set<String> _pinned = {};
   bool _pinnedLoaded = false;
 
   List<FeedPost> get posts => _posts;
+  List<FeedPost> get displayPosts => _ranked ? _rankedPosts : _posts;
+  bool get isRanked => _ranked;
   bool get isLoading => _isLoading;
   List<String> get pinnedPosts => List.unmodifiable(_pinned.toList());
 
@@ -34,11 +40,16 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       final newPosts = _decodePosts(json);
       if (offset == 0) {
         _posts = newPosts;
+        _ranked = false;
+        _rankedPosts = [];
       } else {
         _posts.addAll(newPosts);
         if (_posts.length > 100) {
           _posts = _posts.sublist(_posts.length - 100);
         }
+      }
+      for (final p in newPosts) {
+        _indexPost(p);
       }
       clearLastError();
       _currentOffset = offset;
@@ -64,6 +75,11 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         limit: limit,
       );
       _posts = _decodePosts(json);
+      _ranked = false;
+      _rankedPosts = [];
+      for (final p in _posts) {
+        _indexPost(p);
+      }
       clearLastError();
       _currentOffset = startIndex;
     } catch (e, st) {
@@ -77,10 +93,11 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     return _posts;
   }
 
-  /// Enqueue post into Rust offline outbox queue for optimistic posting
+  /// Enqueue post into Rust offline outbox queue for optimistic posting.
+  /// The payload content is zstd-dict compressed before enqueue.
   Future<String> enqueueOutboxPost(String content, {String? mediaPath}) async {
     try {
-      final payload = jsonEncode({'content': content, 'kind': 1});
+      final payload = jsonEncode({'content': compressJson(content), 'kind': 1});
       final id = RustLib.instance.api.crateFfiSyncSyncEnqueueOutbox(
         actionType: 'post',
         payloadJson: payload,
@@ -97,7 +114,14 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
 
   /// Load more posts for infinite scroll
   Future<void> loadMore({int limit = 20}) async {
-    await fetchFeed(limit: limit, offset: _currentOffset + limit);
+    if (_loadingMore) return;
+    _loadingMore = true;
+    try {
+      final offset = _currentOffset + limit;
+      await fetchFeed(limit: limit, offset: offset);
+    } finally {
+      _loadingMore = false;
+    }
   }
 
   /// Load pinned post ids from the `pinned_posts` settings key (JSON list).
@@ -179,6 +203,29 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
+  /// Extract hashtags from draft content (sync FFI).
+  List<String> extractHashtags(String text) {
+    try {
+      return RustLib.instance.api
+          .crateFfiContentContentExtractHashtags(text: text);
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      return const [];
+    }
+  }
+
+  /// Extract hashtags from draft content (util-core variant, sync FFI).
+  List<String> utilExtractHashtags(String text) {
+    try {
+      return RustLib.instance.api.crateFfiUtilUtilExtractHashtags(text: text);
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      return const [];
+    }
+  }
+
   /// Publish a reply to an event
   Future<String> publishReply(
     String content,
@@ -252,11 +299,177 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  static List<FeedPost> _decodePosts(String json) {
+  /// Compress a JSON payload into a base64 zstd-dict frame (sync FFI).
+  String compressJson(String payload) {
+    try {
+      return RustLib.instance.api
+          .crateFfiContentContentCompressJsonDict(data: payload);
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      return payload;
+    }
+  }
+
+  /// Decompress a base64 zstd-dict frame produced by [compressJson]; returns
+  /// the input unchanged when it isn't a valid compressed payload.
+  String decompressJson(String payload) {
+    if (payload.isEmpty) return payload;
+    try {
+      final decoded = RustLib.instance.api
+          .crateFfiContentContentDecompressJsonDict(encoded: payload);
+      if (decoded.isEmpty || decoded == payload) return payload;
+      return decoded;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      return payload;
+    }
+  }
+
+  /// Compress a full signed event JSON into zstd bytes (async FFI).
+  Future<Uint8List> compressEvent(String eventJson) async {
+    try {
+      return await RustLib.instance.api
+          .crateFfiFeedFeedCompressEvent(eventJson: eventJson);
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Decompress event bytes produced by [compressEvent] back into JSON.
+  Future<String> decompressEvent(List<int> compressed) async {
+    try {
+      return await RustLib.instance.api
+          .crateFfiFeedFeedDecompressEvent(compressed: compressed);
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Truncate text to [maxLen] chars (util-core, sync FFI).
+  String truncate(String text, int maxLen) {
+    try {
+      return RustLib.instance.api.crateFfiUtilUtilTruncate(
+        input: text,
+        maxLen: BigInt.from(maxLen),
+      );
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      return text;
+    }
+  }
+
+  /// Rank local posts via feed-core and swap the displayed order.
+  /// [postsJson] is an array of `{stats: {...}, hashtags: []}` entries.
+  Future<List<FeedPost>> rankPosts(String postsJson) async {
+    try {
+      final json = await RustLib.instance.api
+          .crateFfiFeedFeedRankPosts(eventsJson: postsJson);
+      final indices = (jsonDecode(json) as List<dynamic>)
+          .map((e) => (e as num).toInt())
+          .toList();
+      _rankedPosts = [
+        for (final i in indices)
+          if (i >= 0 && i < _posts.length) _posts[i],
+      ];
+      _ranked = true;
+      clearLastError();
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+    notifyDeferred();
+    return _rankedPosts;
+  }
+
+  /// Toggle ranked vs chronological feed ordering.
+  Future<void> toggleRanking() async {
+    if (_ranked) {
+      _ranked = false;
+      _rankedPosts = [];
+      notifyDeferred();
+      return;
+    }
+    await rankPosts(jsonEncode([
+      for (final p in _posts)
+        {
+          'stats': {
+            'created_at_secs': p.createdAt.toDouble(),
+            'likes_count': p.reactions,
+            'replies_count': p.replies,
+            'zaps_count': 0,
+            'reposts_count': p.reposts,
+            'wot_distance': 0,
+          },
+          'hashtags': extractHashtags(p.content),
+        },
+    ]));
+  }
+
+  /// Aggregate per-emoji reaction counts for the given thread posts
+  /// (feed-core aggregator; sync FFI).
+  List<ReactionSummary> aggregateChatReactions(
+      List<FeedPost> threadPosts, String selfPubkey) {
+    final reactions = <Map<String, dynamic>>[];
+    for (final p in threadPosts) {
+      for (var i = 0; i < p.reactions; i++) {
+        reactions.add({
+          'emoji': '+',
+          'reactorPubkey': p.liked ? selfPubkey : '',
+        });
+      }
+    }
+    final input =
+        jsonEncode({'reactions': reactions, 'selfPubkey': selfPubkey});
+    try {
+      final json = RustLib.instance.api
+          .crateFfiFeedFeedAggregateChatReactions(input: input);
+      final list = jsonDecode(json) as List<dynamic>;
+      return list
+          .map((e) => ReactionSummary.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      return const [];
+    }
+  }
+
+  /// Index a stored post into the FTS search table (idempotent upsert).
+  void _indexPost(FeedPost post) {
+    if (post.eventId.isEmpty) return;
+    try {
+      RustLib.instance.api.crateFfiSearchSearchIndexPost(
+        eventId: post.eventId,
+        pubkey: post.pubkey,
+        content: post.content,
+        kind: PlatformInt64Util.from(1),
+      );
+    } catch (_) {
+      // Indexing is best-effort; a failed upsert must not break ingest.
+    }
+  }
+
+  /// Decode feed rows; decompress post content that looks compressed, then
+  /// build [FeedPost]s.
+  List<FeedPost> _decodePosts(String json) {
     final list = jsonDecode(json) as List<dynamic>;
-    return list
-        .map((e) => FeedPost.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return list.map((e) {
+      final m = e as Map<String, dynamic>;
+      final content = m['content'] as String? ?? '';
+      if (content.isNotEmpty) {
+        final decoded = decompressJson(content);
+        if (decoded != content) m['content'] = decoded;
+      }
+      return FeedPost.fromJson(m);
+    }).toList();
   }
 
   /// Insert a post arriving from the live sync stream (dedup by event id).
@@ -264,6 +477,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     if (post.eventId.isEmpty) return;
     if (_posts.any((p) => p.eventId == post.eventId)) return;
     _posts.insert(0, post);
+    _indexPost(post);
     notifyDeferred();
   }
 
@@ -287,6 +501,113 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       media: p.media,
     );
     notifyDeferred();
+  }
+
+  /// Paged feed straight from the local DB for the given authors (JSON rows).
+  Future<String> dbFeed(List<String> pubkeys,
+      {int limit = 50, int offset = 0}) async {
+    try {
+      final json = RustLib.instance.api.crateFfiDbDbGetFeed(
+        pubkeys: pubkeys,
+        limit: limit,
+        offset: offset,
+      );
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
+
+  /// Most recent posts from the local DB regardless of author (JSON rows).
+  Future<String> dbRecent({int limit = 50}) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiDbDbGetRecent(limit: limit);
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
+
+  /// Deletes locally stored posts older than `cutoffSecs`; rows removed.
+  Future<int> dbDeleteOlderThan(int cutoffSecs) async {
+    try {
+      final n = RustLib.instance.api
+          .crateFfiDbDbDeleteOlderThan(cutoffSecs: cutoffSecs);
+      clearLastError();
+      return n.toInt();
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
+
+  /// Deletes every locally stored post; rows removed.
+  Future<int> dbDeleteAllPosts() async {
+    try {
+      final n = RustLib.instance.api.crateFfiDbDbDeleteAllPosts();
+      clearLastError();
+      return n.toInt();
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
+
+  /// Freenet ephemeral tags (JSON) for a post keyed by `freenetKey`.
+  Future<String> freenetEphemeralTags(String freenetKey) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiFeedFeedFreenetEphemeralTags(freenetKey: freenetKey);
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
+
+  /// Profile entry (pubkey/content/created_at) extracted from an event JSON.
+  Future<String> profileEntryFromEvent(String eventJson) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiFeedFeedProfileEntryFromEvent(eventJson: eventJson);
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
+
+  /// Lenient JSON parse of a text blob (depth/nesting capped).
+  Future<String> safeJsonParse(String text) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiContentContentSafeJsonParse(text: text);
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
+
+  /// Video URLs extracted from an imeta tags JSON array.
+  Future<String> extractImetaVideoUrls(String tagsJson) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiContentContentExtractImetaVideoUrls(tagsJson: tagsJson);
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
   }
 }
 
@@ -370,6 +691,27 @@ class PostMedia {
       type: json['type'] as String? ?? 'image',
       blobHash: json['blob_hash'] as String? ?? '',
       size: (json['size'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Per-emoji reaction aggregate produced by `aggregate_chat_reactions`.
+class ReactionSummary {
+  final String emoji;
+  final int count;
+  final bool hasReacted;
+
+  ReactionSummary({
+    required this.emoji,
+    required this.count,
+    required this.hasReacted,
+  });
+
+  factory ReactionSummary.fromJson(Map<String, dynamic> json) {
+    return ReactionSummary(
+      emoji: json['emoji'] as String? ?? '+',
+      count: (json['count'] as num?)?.toInt() ?? 0,
+      hasReacted: json['hasReacted'] as bool? ?? false,
     );
   }
 }

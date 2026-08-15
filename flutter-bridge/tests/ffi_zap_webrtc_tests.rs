@@ -9,6 +9,26 @@ mod ffi_tests {
     // shared DB handle (statics are process-global across parallel tests).
     static ZAP_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    fn init_db(name: &str) -> String {
+        let path = format!(
+            "{}/soshal_zap_webrtc_{}_{}.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id(),
+            name
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        db::db_init(path.clone()).unwrap();
+        path
+    }
+
+    fn cleanup(path: &str) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
     const NWC_PUBKEY: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
     const NWC_SECRET: &str = "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
     const NWC_URI: &str = "nostr+walletconnect://abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789?relay=wss://relay.damus.io&secret=f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
@@ -83,6 +103,10 @@ mod ffi_tests {
         let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = zap::zap_disconnect_nwc();
         assert!(zap::zap_disconnect_nwc().unwrap());
+        let status = zap::zap_get_nwc_status().unwrap();
+        let v: serde_json::Value = serde_json::from_str(&status).unwrap();
+        assert_eq!(v["connected"], false);
+        assert!(zap::zap_get_nwc_pubkey().is_err());
     }
 
     // --- zap: network-gated fns probe only the failure-before-connect path
@@ -152,14 +176,44 @@ mod ffi_tests {
     fn zap_ffi_fetch_receipts_uninitialized_db() {
         let r = zap::zap_fetch_receipts("event1".to_string(), 10);
         let e = r.err().unwrap();
-        assert!(!e.is_empty());
+        assert!(e.contains("database not initialized"), "got {e}");
     }
 
     #[test]
     fn zap_ffi_total_msat_uninitialized_db() {
         let r = zap::zap_get_total_msat("event1".to_string());
         let e = r.err().unwrap();
-        assert!(!e.is_empty());
+        assert!(e.contains("database not initialized"), "got {e}");
+    }
+
+    #[test]
+    fn zap_ffi_receipts_and_total_happy_path() {
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let path = init_db("zap_happy");
+        let seed = |id: &str, event: &str, amount: i64, created: i64| {
+            let sql = format!(
+                "INSERT INTO zaps (id, event_id, recipient_pubkey, sender_pubkey, amount_msat, \
+                 comment, created_at, pubkey, amount, content, zap_type) VALUES \
+                 ('{id}', '{event}', 'recv', 'send', {}, 'thanks', {created}, 'send', {}, 'note', 'public')",
+                amount * 1000,
+                amount
+            );
+            db::db_query_raw(sql).unwrap();
+        };
+        seed("z1", "evt-1", 1000, 100);
+        seed("z2", "evt-1", 2000, 200);
+        seed("z_other", "evt-9", 9999, 300);
+
+        let json = zap::zap_fetch_receipts("evt-1".to_string(), 10).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v.as_array().unwrap().len(), 2, "only evt-1 rows");
+        assert_eq!(v[0]["id"], "z2", "newest first (created_at DESC)");
+        assert_eq!(v[1]["id"], "z1");
+        assert_eq!(v[0]["amount"], 2000);
+
+        assert_eq!(zap::zap_get_total_msat("evt-1".to_string()).unwrap(), 3000);
+        assert_eq!(zap::zap_get_total_msat("missing".to_string()).unwrap(), 0);
+        cleanup(&path);
     }
 
     // --- webrtc: ICE configuration ----------------------------------------
@@ -202,10 +256,34 @@ mod ffi_tests {
 
     #[test]
     fn webrtc_ffi_get_turn_servers() {
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let path = init_db("webrtc_turn_empty");
         assert_eq!(webrtc::webrtc_get_turn_servers(None).unwrap(), "[]");
-        let r = webrtc::webrtc_get_turn_servers(Some("token".to_string()));
-        let e = r.err().unwrap();
-        assert!(e.contains("TURN provisioning"));
+        assert_eq!(
+            webrtc::webrtc_get_turn_servers(Some("token".to_string())).unwrap(),
+            "[]"
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn webrtc_ffi_get_turn_servers_from_settings() {
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let path = init_db("webrtc_turn");
+        assert!(db::db_set_setting(
+            "turn_endpoint".to_string(),
+            "turn:turn.example.com:3478".to_string()
+        )
+        .unwrap());
+        assert!(db::db_set_setting("turn_username".to_string(), "u1".to_string()).unwrap());
+        assert!(db::db_set_setting("turn_credential".to_string(), "s3cret".to_string()).unwrap());
+        let json = webrtc::webrtc_get_turn_servers(None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v[0]["urls"][0], "turn:turn.example.com:3478");
+        assert_eq!(v[0]["username"], "u1");
+        assert_eq!(v[0]["credential"], "s3cret");
+        assert_eq!(v[0]["credentialType"], "password");
+        cleanup(&path);
     }
 
     #[test]

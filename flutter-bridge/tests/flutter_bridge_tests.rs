@@ -29,8 +29,13 @@ mod ffi_tests {
     fn test_auth_keypair_generation() {
         let keypair: KeyPairResult =
             serde_json::from_str(&auth::auth_generate_keypair().unwrap()).unwrap();
-        assert!(!keypair.public_key.is_empty());
-        assert!(keypair.secret_key.is_empty() || !keypair.secret_key.is_empty());
+        assert_eq!(keypair.public_key.len(), 64, "pubkey must be 64 hex chars");
+        assert!(keypair.public_key.chars().all(|c| c.is_ascii_hexdigit()));
+        // Security invariant: secret key material never crosses FFI.
+        assert!(
+            keypair.secret_key.is_empty(),
+            "secret key must stay blank across the bridge"
+        );
     }
 
     #[test]
@@ -77,11 +82,14 @@ mod ffi_tests {
     }
 
     #[test]
-    fn test_ffi_result_conversion() {
-        let ok_result: Result<String, String> = Ok("success".to_string());
-        assert_eq!(ok_result, Ok("success".to_string()));
-        let err_result: Result<String, String> = Err("error occurred".to_string());
-        assert_eq!(err_result, Err("error occurred".to_string()));
+    fn test_ffi_error_propagation() {
+        // Exercise real FFI error paths: Result<T, String> must surface the
+        // Rust-side error string to the caller.
+        let err = db::db_path().unwrap_err();
+        assert!(err.contains("database not initialized"), "got {err}");
+        let missing = std::env::temp_dir().join("soshal-no-such-media-file.bin");
+        let err2 = media::media_load_local(missing.to_string_lossy().to_string()).unwrap_err();
+        assert!(!err2.is_empty());
     }
 }
 
@@ -91,7 +99,6 @@ mod integration_tests {
     use soshal_flutter_bridge::*;
 
     #[tokio::test]
-    #[ignore] // Run with: cargo test -- --ignored --test flutter_bridge_tests
     async fn test_auth_flow_end_to_end() {
         let mnemonic = auth::auth_generate_mnemonic().unwrap();
         let restored_kp: KeyPairResult = serde_json::from_str(
@@ -105,15 +112,29 @@ mod integration_tests {
         assert!(npub.starts_with("npub1"));
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn test_database_workflow() {
-        db::db_init("test.db".to_string()).unwrap();
-        let _ = db::db_query_raw("SELECT COUNT(*) FROM sqlite_master".to_string()).unwrap();
+    #[test]
+    fn test_database_workflow() {
+        let path = format!(
+            "{}/soshal_bridge_flow_{}.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        db::db_init(path.clone()).unwrap();
+        let diag = db::db_query_raw("SELECT COUNT(*) AS n FROM sqlite_master".to_string()).unwrap();
+        assert!(diag.contains("\"n\":"));
+        let v: serde_json::Value = serde_json::from_str(&diag).unwrap();
+        let n = v[0]["n"].as_i64().unwrap_or(0);
+        assert!(n > 10, "expected schema tables, got {n}");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore] // Requires live network relays (wss://relay.damus.io, wss://nos.lol)
     async fn test_relay_pool_workflow() {
         let relays = vec![
             "wss://relay.damus.io".to_string(),
@@ -175,7 +196,6 @@ mod integration_tests {
     }
 
     #[test]
-    #[ignore] // Temporarily skipped due to LAN server timing issues in test environment
     fn test_p2p_lan_swarm_loopback_roundtrip() {
         let _g = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = p2p::p2p_stop_all();

@@ -312,6 +312,160 @@ pub fn db_save_custom_profile(pubkey: String, profile_json: String) -> Result<bo
     })
 }
 
+/// Fetch a paged feed of posts authored by `pubkeys` (most recent first).
+#[frb(sync, serialize)]
+pub fn db_get_feed(pubkeys: Vec<String>, limit: i64, offset: i64) -> Result<String, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::post::PostRepo;
+        let repo = PostRepo::new(db);
+        let rows = repo.get_feed(&pubkeys, limit.clamp(1, 200), offset.max(0))?;
+        Ok(serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string()))
+    })
+}
+
+/// Fetch the `limit` most recent posts regardless of author.
+#[frb(sync, serialize)]
+pub fn db_get_recent(limit: i64) -> Result<String, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::post::PostRepo;
+        let repo = PostRepo::new(db);
+        let rows = repo.get_recent(limit.clamp(1, 200))?;
+        Ok(serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string()))
+    })
+}
+
+/// Fetch a user's media items (paged).
+#[frb(sync, serialize)]
+pub fn db_get_user_media(pubkey: String, limit: i64, offset: i64) -> Result<String, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::media::MediaRepo;
+        let repo = MediaRepo::new(db);
+        let rows = repo.get_user_media(&pubkey, limit.clamp(1, 200), offset.max(0))?;
+        Ok(serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string()))
+    })
+}
+
+/// Delete posts older than `cutoff_secs` (relative to now); returns rows removed.
+#[frb(sync, serialize)]
+pub fn db_delete_older_than(cutoff_secs: i64) -> Result<usize, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::post::PostRepo;
+        let repo = PostRepo::new(db);
+        Ok(repo.delete_older_than(cutoff_secs)? as usize)
+    })
+}
+
+/// Delete every stored post; returns rows removed.
+#[frb(sync, serialize)]
+pub fn db_delete_all_posts() -> Result<usize, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::post::PostRepo;
+        let repo = PostRepo::new(db);
+        Ok(repo.delete_all_posts()? as usize)
+    })
+}
+
+/// Trending hashtags by usage count (JSON rows: tag/pubkey/last_used_at/count).
+#[frb(sync, serialize)]
+pub fn db_get_trending_hashtags(limit: i64) -> Result<String, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::hashtag::HashtagRepo;
+        let repo = HashtagRepo::new(db);
+        let rows = repo.get_trending(limit.clamp(1, 100))?;
+        let out: Vec<serde_json::Value> = rows
+            .into_iter()
+            .map(|r| {
+                serde_json::json!({
+                    "tag": r.tag,
+                    "pubkey": r.pubkey,
+                    "last_used_at": r.last_used_at,
+                    "count": r.count,
+                })
+            })
+            .collect();
+        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+    })
+}
+
+/// Assign a role to a member of a group.
+#[frb(sync, serialize)]
+pub fn db_assign_member_role(
+    group_id: String,
+    pubkey: String,
+    role_id: String,
+) -> Result<bool, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::role::GroupRoleRepo;
+        let repo = GroupRoleRepo::new(db);
+        repo.assign_member_role(&group_id, &pubkey, &role_id)?;
+        Ok(true)
+    })
+}
+
+/// Escrow rows where `pubkey` participates as buyer or seller (JSON).
+#[frb(sync, serialize)]
+pub fn db_get_escrows_by_participant(pubkey: String) -> Result<String, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::escrow::EscrowRepo;
+        let repo = EscrowRepo::new(db);
+        let rows = repo.get_by_participant(&pubkey)?;
+        let out: Vec<serde_json::Value> = rows
+            .into_iter()
+            .map(|r| {
+                serde_json::json!({
+                    "id": r.id,
+                    "listing_id": r.listing_id,
+                    "buyer_pubkey": r.buyer_pubkey,
+                    "seller_pubkey": r.seller_pubkey,
+                    "amount_msats": r.amount_msats,
+                    "currency": r.currency,
+                    "status": r.status,
+                    "escrow_note": r.escrow_note,
+                    "created_at": r.created_at,
+                    "updated_at": r.updated_at,
+                })
+            })
+            .collect();
+        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+    })
+}
+
+/// Fetch an ephemeral media row by its message id (JSON or `null`).
+#[frb(sync, serialize)]
+pub fn db_get_ephemeral_by_message_id(message_id: String) -> Result<String, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::ephemeral_media::EphemeralMediaRepo;
+        let repo = EphemeralMediaRepo::new(db);
+        let row = repo.get_by_message_id(&message_id)?;
+        let json = match row {
+            Some(r) => serde_json::to_string(&r).map_err(|e| DbError::Migration(e.to_string()))?,
+            None => "null".to_string(),
+        };
+        Ok(json)
+    })
+}
+
+/// Mark an ephemeral media row with a new state.
+#[frb(sync, serialize)]
+pub fn db_mark_ephemeral_state(id: String, state: String) -> Result<bool, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::ephemeral_media::EphemeralMediaRepo;
+        let repo = EphemeralMediaRepo::new(db);
+        repo.mark_state(&id, &state)?;
+        Ok(true)
+    })
+}
+
+/// Purge geohash peer rows not seen within `cutoff_secs_ago`; returns rows removed.
+#[frb(sync, serialize)]
+pub fn db_purge_stale_geohash_peers(cutoff_secs_ago: i64) -> Result<usize, String> {
+    with_db(|db| {
+        use soshal_db_core::repos::geohash_peer::GeohashPeerRepo;
+        let repo = GeohashPeerRepo::new(db);
+        Ok(repo.purge_stale(cutoff_secs_ago)? as usize)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,6 +575,41 @@ mod tests {
         let stats = db_storage_stats();
         assert!(stats.is_ok());
         assert!(!stats.unwrap().is_empty());
+        *DB.lock().unwrap() = None;
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_feed_and_trending_repos() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let path = format!(
+            "{}/soshal_test_{}_feedrepos.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        assert!(db_init(path.clone()).is_ok());
+        assert!(db_execute_raw(
+            "INSERT INTO users (pubkey, npub, name) VALUES ('pk', 'npub1pk', 't') ON CONFLICT DO NOTHING".to_string()
+        )
+        .is_ok());
+        assert!(db_execute_raw(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+             VALUES ('p1','pk','hello #soshal',1,1000,'[]','synced',0)".to_string()
+        )
+        .is_ok());
+        let feed = db_get_feed(vec!["pk".to_string()], 10, 0);
+        assert!(feed.is_ok());
+        assert!(feed.unwrap().contains("hello #soshal"));
+        let recent = db_get_recent(10);
+        assert!(recent.is_ok());
+        assert!(recent.unwrap().contains("p1"));
+        let purged = db_delete_older_than(1_000_000_000);
+        assert!(purged.is_ok());
+        let gone = db_get_recent(10);
+        assert!(!gone.unwrap().contains("p1"));
         *DB.lock().unwrap() = None;
         let _ = std::fs::remove_file(&path);
     }

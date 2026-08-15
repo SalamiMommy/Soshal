@@ -187,7 +187,8 @@ pub fn dating_create_profile(
 }
 
 /// Update dating profile bio/images/interests (a new kind 30082 event;
-/// d-tag identity stays, so relays treat it as a replacement).
+/// d-tag identity stays, so relays treat it as a replacement). Signs and
+/// stores the row locally for immediate swipe use.
 #[frb(sync, serialize)]
 pub fn dating_update_profile(
     user_pubkey: String,
@@ -195,7 +196,7 @@ pub fn dating_update_profile(
     images_json: String,
     interests_json: String,
 ) -> Result<bool, String> {
-    let own = dating_get_own_profile(user_pubkey)?;
+    let own = dating_get_own_profile(user_pubkey.clone())?;
     let _ = own;
     let images: Vec<String> =
         serde_json::from_str(&images_json).map_err(|e| format!("invalid images JSON: {e}"))?;
@@ -218,7 +219,34 @@ pub fn dating_update_profile(
             .into_iter()
             .filter_map(|t| nostr::event::Tag::parse(t).ok()),
     );
-    let _ = super::signer::sign_builder(builder)?;
+    let signed_json = super::signer::sign_builder(builder)?;
+    let signed: serde_json::Value =
+        serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
+    let event_id = signed["id"].as_str().unwrap_or_default().to_string();
+    let row = soshal_db_core::repos::post::PostRow {
+        id: event_id,
+        pubkey: user_pubkey,
+        content: content.to_string(),
+        kind: KIND_PROFILE,
+        created_at: soshal_common_core::format::now_secs(),
+        tags_json: serde_json::to_string(&vec![vec!["d".to_string(), D_TAG.to_string()]])
+            .unwrap_or_default(),
+        sig: None,
+        reply_to: None,
+        root_id: None,
+        mentioned_pubkeys: String::new(),
+        mentioned_hashtags: String::new(),
+        subject: None,
+        sync_status: "pending".to_string(),
+        is_deleted: false,
+        scheduled_at: None,
+        freenet_key: None,
+        is_freenet_native: false,
+    };
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
+        Ok(())
+    })?;
     Ok(true).into()
 }
 
@@ -525,8 +553,20 @@ pub fn dating_report_profile(
     reason: String,
 ) -> Result<bool, String> {
     let reason = soshal_common_core::format::truncate(&reason, 512);
-    drop((reporter_pubkey, target_pubkey, reason));
-    Ok(true).into()
+    let now = soshal_common_core::format::now_secs();
+    let row = soshal_db_core::repos::spam_report::SpamReportRow {
+        id: format!("rep_{now}_{:x}", rand::random::<u64>()),
+        pubkey: reporter_pubkey,
+        target_id: None,
+        target_pubkey: Some(target_pubkey),
+        reason: Some(reason),
+        tags: "[\"dating\"]".to_string(),
+        created_at: now,
+    };
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::spam_report::SpamReportRepo::new(db).insert(&row)?;
+        Ok(true)
+    })
 }
 
 #[cfg(test)]

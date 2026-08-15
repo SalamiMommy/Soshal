@@ -102,3 +102,13 @@ String eventsReminderUpsert(
 /// Delete a reminder.
 bool eventsReminderDelete({required String reminderId}) => RustLib.instance.api
     .crateFfiEventsEventsReminderDelete(reminderId: reminderId);
+
+/// Expiry timestamp (unix secs, 0 if none) parsed from a tags JSON array.
+PlatformInt64 eventsExpiryFromTags({required String tagsJson}) =>
+    RustLib.instance.api.crateFfiEventsEventsExpiryFromTags(tagsJson: tagsJson);
+
+/// Interest score between my interests and a peer's (JSON: score/common).
+String eventsInterestScore(
+        {required String myInterestsJson, required String peerInterestsJson}) =>
+    RustLib.instance.api.crateFfiEventsEventsInterestScore(
+        myInterestsJson: myInterestsJson, peerInterestsJson: peerInterestsJson);

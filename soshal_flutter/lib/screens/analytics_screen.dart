@@ -114,7 +114,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Analytics')),
       body: ListView(
@@ -136,15 +135,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ),
                 if (_stats != null) ...[
                   const SizedBox(height: 12),
-                  Text(
-                    _stats == 'stats'
-                        ? 'Stats computation is not wired to the backend yet. '
-                            'Once post analytics land in the Rust core, results '
-                            'will appear here.'
-                        : _prettyJson(_stats!),
-                    style: TextStyle(
-                        color:
-                            _stats == 'stats' ? colors.onSurfaceVariant : null),
+                  SelectableText(
+                    _prettyJson(_stats!),
+                    style:
+                        const TextStyle(fontFamily: 'monospace', fontSize: 12),
                   ),
                 ],
               ],

@@ -54,8 +54,8 @@ class _SignerLockScreenState extends State<SignerLockScreen> {
     try {
       final keypair = await auth.restoreFromMnemonic(phrase, '');
       if (activePubkey != null && keypair.publicKey != activePubkey) {
-        setState(() => _error =
-            'Recovery phrase does not match the active account');
+        setState(
+            () => _error = 'Recovery phrase does not match the active account');
       } else {
         await signer.refresh();
       }

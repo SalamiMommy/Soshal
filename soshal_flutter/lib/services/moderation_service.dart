@@ -159,4 +159,67 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
       return false;
     }
   }
+
+  /// Whether `targetPubkey` is blocked or muted by `actorPubkey`.
+  bool isRestricted(String actorPubkey, String targetPubkey) {
+    try {
+      return RustLib.instance.api.crateFfiModerationModerationIsRestricted(
+        actorPubkey: actorPubkey,
+        targetPubkey: targetPubkey,
+      );
+    } catch (e, st) {
+      setLastError(e, st);
+      return false;
+    }
+  }
+
+  /// Create a FROST threshold jury case for community moderation. Returns
+  /// the serialized `ModerationJuryCase` JSON to feed back into
+  /// `submitJuryVote`.
+  Future<String> createJuryCase({
+    required String caseId,
+    required String targetPubkey,
+    required String reason,
+    required int threshold,
+    required int totalJurors,
+    required String groupPubkey,
+  }) async {
+    try {
+      final json =
+          RustLib.instance.api.crateFfiModerationModerationCreateJuryCase(
+        caseId: caseId,
+        targetPubkey: targetPubkey,
+        reason: reason,
+        threshold: threshold,
+        totalJurors: totalJurors,
+        groupPubkey: groupPubkey,
+      );
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
+
+  /// Submit a juror's partial-signature vote to a moderation jury case.
+  /// `caseJson` is the JSON returned by `createJuryCase`; `voteShareJson` a
+  /// serialized `FrostSignatureShare`. Returns verdict status JSON.
+  Future<String> submitJuryVote({
+    required String caseJson,
+    required String voteShareJson,
+  }) async {
+    try {
+      final json =
+          RustLib.instance.api.crateFfiModerationModerationSubmitJuryVote(
+        caseJson: caseJson,
+        voteShareJson: voteShareJson,
+      );
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
 }

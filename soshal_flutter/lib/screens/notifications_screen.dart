@@ -20,7 +20,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _load();
@@ -55,7 +55,20 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final pubkey = session.activePubkey;
     if (pubkey == null) return;
     try {
-      await api.fetchByType(pubkey, type, 50);
+      switch (type) {
+        case 'mention':
+          await api.fetchMentions(pubkey);
+        case 'like':
+          await api.fetchReactions(pubkey);
+        case 'reply':
+          await api.fetchReplies(pubkey);
+        case 'message':
+          await api.fetchMessages(pubkey);
+        case 'follow':
+          await api.fetchFollows(pubkey);
+        default:
+          await api.fetchNotifications(pubkey);
+      }
     } catch (e) {
       debugPrint('type load: $e');
     }
@@ -77,6 +90,31 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       appBar: AppBar(
         title: const Text('Notifications'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh unread',
+            onPressed: () async {
+              final session = context.read<SessionService>();
+              final api = context.read<NotificationService>();
+              final key = session.activePubkey;
+              if (key == null) return;
+              try {
+                final unread = await api.fetchUnread(key);
+                await api.refreshUnreadCount(key);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '${unread.length} unread notification'
+                      '${unread.length == 1 ? '' : 's'}',
+                    ),
+                  ),
+                );
+              } catch (e) {
+                debugPrint('unread refresh: $e');
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.done_all),
             tooltip: 'Mark all read',
@@ -106,8 +144,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
           onTap: (i) {
-            const types = ['', 'mention', 'reaction', 'reply'];
+            const types = ['', 'mention', 'like', 'reply', 'message', 'follow'];
             if (i > 0) _loadType(types[i]);
           },
           tabs: const [
@@ -115,6 +154,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             Tab(text: 'Mentions'),
             Tab(text: 'Reactions'),
             Tab(text: 'Replies'),
+            Tab(text: 'Messages'),
+            Tab(text: 'Follows'),
           ],
         ),
       ),
@@ -124,9 +165,36 @@ class _NotificationsScreenState extends State<NotificationsScreen>
               controller: _tabController,
               children: [
                 _NotificationList(pubkey: pubkey, unreadOnly: false),
-                _NotificationList(pubkey: pubkey, unreadOnly: true),
-                _NotificationList(pubkey: pubkey, unreadOnly: true),
-                _NotificationList(pubkey: pubkey, unreadOnly: true),
+                _NotificationList(
+                  pubkey: pubkey,
+                  unreadOnly: true,
+                  type: 'mention',
+                  onRefresh: () => _loadType('mention'),
+                ),
+                _NotificationList(
+                  pubkey: pubkey,
+                  unreadOnly: true,
+                  type: 'like',
+                  onRefresh: () => _loadType('like'),
+                ),
+                _NotificationList(
+                  pubkey: pubkey,
+                  unreadOnly: true,
+                  type: 'reply',
+                  onRefresh: () => _loadType('reply'),
+                ),
+                _NotificationList(
+                  pubkey: pubkey,
+                  unreadOnly: true,
+                  type: 'message',
+                  onRefresh: () => _loadType('message'),
+                ),
+                _NotificationList(
+                  pubkey: pubkey,
+                  unreadOnly: true,
+                  type: 'follow',
+                  onRefresh: () => _loadType('follow'),
+                ),
               ],
             ),
     );
@@ -134,30 +202,39 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 }
 
 class _NotificationList extends StatelessWidget {
-  /// Notification list with pull-to-refresh and mark-read.
+  /// Notification list with pull-to-refresh, mark-read, and swipe-to-delete.
   const _NotificationList({
     required this.pubkey,
     required this.unreadOnly,
+    this.type,
+    this.onRefresh,
   });
 
   final String pubkey;
   final bool unreadOnly;
 
+  /// Category key (mention/like/reply/message/follow); null shows the "All"
+  /// list.
+  final String? type;
+  final Future<void> Function()? onRefresh;
+
+  Future<void> _refresh(NotificationService api) async {
+    if (onRefresh != null) {
+      await onRefresh!();
+    } else {
+      await api.fetchNotifications(pubkey);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<NotificationService>(
       builder: (context, api, _) {
-        final items =
-            api.notifications.where((n) => !unreadOnly || !n.read).toList();
+        final source = type == null ? api.notifications : api.byType(type!);
+        final items = source.where((n) => !unreadOnly || !n.read).toList();
         if (items.isEmpty) {
           return RefreshIndicator(
-            onRefresh: () async {
-              var session = context.read<SessionService>();
-              var key = session.activePubkey;
-              if (key != null) {
-                await api.fetchNotifications(key);
-              }
-            },
+            onRefresh: () => _refresh(api),
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               children: const [
@@ -168,42 +245,49 @@ class _NotificationList extends StatelessWidget {
           );
         }
         return RefreshIndicator(
-          onRefresh: () async {
-            var session = context.read<SessionService>();
-            var key = session.activePubkey;
-            if (key != null) {
-              await api.fetchNotifications(key);
-            }
-          },
+          onRefresh: () => _refresh(api),
           child: ListView.builder(
             itemExtent: 72.0,
             itemCount: items.length,
             itemBuilder: (context, index) {
               final n = items[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundImage: n.fromAvatar.isNotEmpty
-                      ? ResizeImage.resizeIfNeeded(
-                          128, 128, NetworkImage(n.fromAvatar))
-                      : null,
-                  child: n.fromName.isNotEmpty ? Text(n.fromName[0]) : null,
+              return Dismissible(
+                key: ValueKey(n.id),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  color: Colors.red,
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 16),
+                  child: const Icon(Icons.delete, color: Colors.white),
                 ),
-                title: Text(
-                  n.fromName.isNotEmpty ? n.fromName : n.fromPubkey,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  n.contentPreview,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: n.read
-                    ? null
-                    : const Icon(Icons.circle, size: 12, color: Colors.blue),
-                onTap: () async {
-                  await api.markRead(n.id);
+                onDismissed: (_) {
+                  api.deleteNotification(n.id);
                 },
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: n.fromAvatar.isNotEmpty
+                        ? ResizeImage.resizeIfNeeded(
+                            128, 128, NetworkImage(n.fromAvatar))
+                        : null,
+                    child: n.fromName.isNotEmpty ? Text(n.fromName[0]) : null,
+                  ),
+                  title: Text(
+                    n.fromName.isNotEmpty ? n.fromName : n.fromPubkey,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    n.contentPreview,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: n.read
+                      ? null
+                      : const Icon(Icons.circle, size: 12, color: Colors.blue),
+                  onTap: () async {
+                    await api.markRead(n.id);
+                  },
+                ),
               );
             },
           ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'dart:convert';
 import 'dart:io';
 import 'package:video_player/video_player.dart';
 import '../services/bookmarks_service.dart';
@@ -25,6 +26,7 @@ class FeedScreen extends StatefulWidget {
 
 class _FeedScreenState extends State<FeedScreen> {
   late ScrollController _scrollController;
+  double? _lastScrollPixels;
   FeedService? _feed;
 
   @override
@@ -34,11 +36,18 @@ class _FeedScreenState extends State<FeedScreen> {
     _scrollController.addListener(_onScroll);
 
     // Load initial feed
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final feed = _feed;
       if (feed == null) return;
-      feed.fetchFeed();
+      try {
+        await feed.fetchFeed();
+      } catch (e) {
+        debugPrint('feed load: $e');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Feed load error: $e')));
+      }
       _scheduleLayout(feed);
     });
   }
@@ -78,11 +87,25 @@ class _FeedScreenState extends State<FeedScreen> {
     super.dispose();
   }
 
-  void _onScroll() {
-    if (_scrollController.position.pixels ==
-        _scrollController.position.maxScrollExtent) {
+  void _onScroll() async {
+    final media = context.read<MediaService>();
+    final pos = _scrollController.position;
+    media.updateScrollTelemetry(
+      velocity: pos.pixels - (_lastScrollPixels ?? pos.pixels),
+      topIndex: (pos.pixels / 400).floor().clamp(0, 1 << 30),
+      bottomIndex: (pos.pixels / 400).floor() + 2,
+    );
+    _lastScrollPixels = pos.pixels;
+    if (pos.pixels == pos.maxScrollExtent) {
       // Load more when scrolling to bottom
-      context.read<FeedService>().loadMore();
+      try {
+        await context.read<FeedService>().loadMore();
+      } catch (e) {
+        debugPrint('feed loadMore: $e');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Load more error: $e')));
+      }
     }
   }
 
@@ -93,6 +116,17 @@ class _FeedScreenState extends State<FeedScreen> {
         title: const Text('Soshal'),
         elevation: 0,
         actions: [
+          Consumer<FeedService>(
+            builder: (context, feed, _) => IconButton(
+              icon: const Icon(Icons.sort),
+              tooltip: 'Ranked',
+              color:
+                  feed.isRanked ? Theme.of(context).colorScheme.primary : null,
+              onPressed: () {
+                context.read<FeedService>().toggleRanking();
+              },
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.person),
             onPressed: () {
@@ -122,8 +156,15 @@ class _FeedScreenState extends State<FeedScreen> {
                   const Text('No posts yet'),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () {
-                      feedService.fetchFeed();
+                    onPressed: () async {
+                      try {
+                        await feedService.fetchFeed();
+                      } catch (e) {
+                        debugPrint('feed load: $e');
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: SelectableText('Feed load error: $e')));
+                      }
                     },
                     child: const Text('Refresh'),
                   ),
@@ -134,12 +175,12 @@ class _FeedScreenState extends State<FeedScreen> {
 
           return ListView.builder(
             controller: _scrollController,
-            itemCount: feedService.posts.length + 1,
+            itemCount: feedService.displayPosts.length + 1,
             itemExtentBuilder: (index, _) => context
                 .read<LayoutService>()
-                .extentFor(index, feedService.posts),
+                .extentFor(index, feedService.displayPosts),
             itemBuilder: (context, index) {
-              if (index == feedService.posts.length) {
+              if (index == feedService.displayPosts.length) {
                 if (feedService.isLoading) {
                   return const Padding(
                     padding: EdgeInsets.all(16),
@@ -149,7 +190,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 return const SizedBox.shrink();
               }
 
-              final post = feedService.posts[index];
+              final post = feedService.displayPosts[index];
               return FeedPostCard(post: post);
             },
           );
@@ -206,6 +247,7 @@ class FeedPostCard extends StatefulWidget {
 
 class _FeedPostCardState extends State<FeedPostCard> {
   late bool _liked;
+  late String _preview;
 
   int _totalMsat = 0;
 
@@ -213,6 +255,9 @@ class _FeedPostCardState extends State<FeedPostCard> {
   void initState() {
     super.initState();
     _liked = widget.post.liked;
+    _preview = widget.post.content.length > 320
+        ? context.read<FeedService>().truncate(widget.post.content, 320)
+        : widget.post.content;
     _loadTotal();
   }
 
@@ -346,7 +391,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
             const SizedBox(height: 12),
             // Content
             Text(
-              widget.post.content,
+              _preview,
               style: const TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 12),
@@ -442,42 +487,155 @@ class _FeedPostCardState extends State<FeedPostCard> {
     await zap.fetchReceipts(widget.post.eventId);
     await zap.fetchTotalMsat(widget.post.eventId);
     if (!mounted) return;
+    final lnurl = TextEditingController();
+    final amount = TextEditingController();
+    var sending = false;
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Zaps'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Total: ${(zap.totalMsat / 1000).toStringAsFixed(2)} sats',
-                  style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              if (zap.receipts.isEmpty)
-                const Text('No receipts yet')
-              else
-                for (final r in zap.receipts)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
-                      '⚡ ${(r.amountMsat / 1000).toStringAsFixed(2)} sats · '
-                      '${r.zapperPubkey.substring(0, 10)}…',
-                      style: const TextStyle(fontSize: 13),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Zaps'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Total: ${(zap.totalMsat / 1000).toStringAsFixed(2)} sats',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                if (zap.receipts.isEmpty)
+                  const Text('No receipts yet')
+                else
+                  for (final r in zap.receipts)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(
+                        '⚡ ${(r.amountMsat / 1000).toStringAsFixed(2)} sats · '
+                        '${r.zapperPubkey.substring(0, 10)}…',
+                        style: const TextStyle(fontSize: 13),
+                      ),
                     ),
+                const Divider(),
+                TextField(
+                  controller: lnurl,
+                  decoration: const InputDecoration(
+                    labelText: 'Recipient LN address (lud16)',
+                    hintText: 'name@domain.com',
                   ),
-            ],
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: amount,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Amount (sats)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.maxFinite,
+                  child: FilledButton.icon(
+                    icon: sending
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.bolt, size: 18),
+                    label: Text(sending ? 'Sending…' : 'Send zap'),
+                    onPressed: sending
+                        ? null
+                        : () {
+                            setDialogState(() => sending = true);
+                            _sendZap(
+                              zap,
+                              lnurl.text.trim(),
+                              amount.text.trim(),
+                              setSending: (v) =>
+                                  setDialogState(() => sending = v),
+                              onDone: () async {
+                                await zap.fetchReceipts(widget.post.eventId);
+                                await zap.fetchTotalMsat(widget.post.eventId);
+                              },
+                            );
+                          },
+                  ),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                try {
+                  await zap.disconnect();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: SelectableText('NWC wallet disconnected')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: SelectableText('Disconnect failed: $e')));
+                  }
+                }
+              },
+              child: const Text('Disconnect NWC'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
       ),
     );
+  }
+
+  Future<void> _sendZap(
+    ZapService zap,
+    String lnurl,
+    String amountSats, {
+    required void Function(bool) setSending,
+    required Future<void> Function() onDone,
+  }) async {
+    if (!mounted) return;
+    if (lnurl.isEmpty) {
+      _snack('LN address required');
+      return;
+    }
+    final sats = int.tryParse(amountSats);
+    if (sats == null || sats <= 0) {
+      _snack('Enter a positive amount in sats');
+      return;
+    }
+    try {
+      await zap.parseLnurl(lnurl);
+      final invoiceJson = await zap.fetchInvoice(
+        lnurl: lnurl,
+        amountMsat: sats * 1000,
+        nostrEvent: widget.post.eventId,
+      );
+      final invoice = (jsonDecode(invoiceJson)
+              as Map<String, dynamic>)['bolt11'] as String? ??
+          '';
+      if (invoice.isEmpty) {
+        _snack('No invoice in response');
+        return;
+      }
+      await zap.sendPayment(invoice);
+      await onDone();
+      if (mounted) {
+        _snack('⚡ Zapped $sats sats');
+      }
+    } catch (e) {
+      _snack('Zap error: $e');
+    } finally {
+      setSending(false);
+    }
   }
 
   Widget _buildReactionButton(

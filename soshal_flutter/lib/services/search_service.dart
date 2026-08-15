@@ -57,6 +57,17 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// Search mention rows (pubkey/name pairs from kind-3 contact lists).
+  Future<List<SearchResultItem>> mentions(String query,
+      {int limit = 50}) async {
+    return _run(
+      () => RustLib.instance.api.crateFfiSearchSearchMentions(
+        query: query,
+        limit: limit,
+      ),
+    );
+  }
+
   /// Global search across all indexes (SearchResult rows).
   Future<List<SearchResultItem>> searchGlobal(String query,
       {int limit = 50}) async {
@@ -142,6 +153,25 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
       clearLastError();
       notifyListeners();
       return _results;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Trending hashtags with usage counts straight from the local DB
+  /// (rows: tag/pubkey/last_used_at/count) — richer than the search-core
+  /// name-only list above.
+  Future<List<Map<String, dynamic>>> dbTrendingHashtags({int limit = 20}) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiDbDbGetTrendingHashtags(limit: limit);
+      clearLastError();
+      final list = jsonDecode(json) as List<dynamic>;
+      return list
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
     } catch (e, st) {
       setLastError(e, st);
       notifyListeners();

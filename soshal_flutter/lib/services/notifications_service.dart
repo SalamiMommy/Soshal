@@ -9,10 +9,16 @@ import 'error_log.dart';
 /// Fetches, marks, and counts notifications through the Rust bridge.
 class NotificationService extends ChangeNotifier with LastErrorMixin {
   List<AppNotification> _notifications = [];
+  List<AppNotification> _unread = [];
+  final Map<String, List<AppNotification>> _byType = {};
   int _unreadCount = 0;
 
   List<AppNotification> get notifications => _notifications;
+  List<AppNotification> get unread => _unread;
   int get unreadCount => _unreadCount;
+
+  /// Notifications for a category tab (mention/like/reply/message/follow).
+  List<AppNotification> byType(String type) => _byType[type] ?? const [];
 
   /// Fetch recent notifications (all types).
   Future<List<AppNotification>> fetchNotifications(String pubkey,
@@ -44,10 +50,10 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         userPubkey: pubkey,
         limit: limit,
       );
-      _notifications = parseNotifications(json);
+      _unread = parseNotifications(json);
       clearLastError();
       notifyListeners();
-      return _notifications;
+      return _unread;
     } catch (e, st) {
       setLastError(e, st);
       notifyListeners();
@@ -76,6 +82,109 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// Fetch mentions.
+  Future<List<AppNotification>> fetchMentions(String pubkey,
+      {int limit = 50}) async {
+    return _fetchCategory(
+      pubkey,
+      'mention',
+      () =>
+          RustLib.instance.api.crateFfiNotificationsNotificationsFetchMentions(
+        userPubkey: pubkey,
+        limit: limit,
+      ),
+    );
+  }
+
+  /// Fetch likes/reactions.
+  Future<List<AppNotification>> fetchReactions(String pubkey,
+      {int limit = 50}) async {
+    return _fetchCategory(
+      pubkey,
+      'like',
+      () =>
+          RustLib.instance.api.crateFfiNotificationsNotificationsFetchReactions(
+        userPubkey: pubkey,
+        limit: limit,
+      ),
+    );
+  }
+
+  /// Fetch replies.
+  Future<List<AppNotification>> fetchReplies(String pubkey,
+      {int limit = 50}) async {
+    return _fetchCategory(
+      pubkey,
+      'reply',
+      () => RustLib.instance.api.crateFfiNotificationsNotificationsFetchReplies(
+        userPubkey: pubkey,
+        limit: limit,
+      ),
+    );
+  }
+
+  /// Fetch messages (new DMs).
+  Future<List<AppNotification>> fetchMessages(String pubkey,
+      {int limit = 50}) async {
+    return _fetchCategory(
+      pubkey,
+      'message',
+      () =>
+          RustLib.instance.api.crateFfiNotificationsNotificationsFetchMessages(
+        userPubkey: pubkey,
+        limit: limit,
+      ),
+    );
+  }
+
+  /// Fetch follows.
+  Future<List<AppNotification>> fetchFollows(String pubkey,
+      {int limit = 50}) async {
+    return _fetchCategory(
+      pubkey,
+      'follow',
+      () => RustLib.instance.api.crateFfiNotificationsNotificationsFetchFollows(
+        userPubkey: pubkey,
+        limit: limit,
+      ),
+    );
+  }
+
+  /// Register the platform push token for the active account.
+  Future<bool> registerPush(String userPubkey, String token) async {
+    try {
+      final ok =
+          RustLib.instance.api.crateFfiNotificationsNotificationsRegisterPush(
+        userPubkey: userPubkey,
+        token: token,
+      );
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Unregister from push notifications.
+  Future<bool> unregisterPush(String userPubkey) async {
+    try {
+      final ok =
+          RustLib.instance.api.crateFfiNotificationsNotificationsUnregisterPush(
+        userPubkey: userPubkey,
+      );
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   /// Mark a single notification as read.
   Future<bool> markRead(String notificationId) async {
     try {
@@ -85,6 +194,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
       );
       if (ok) {
         _unreadCount = _unreadCount > 0 ? _unreadCount - 1 : 0;
+        _unread.removeWhere((n) => n.id == notificationId);
       }
       clearLastError();
       notifyListeners();
@@ -141,10 +251,32 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
       );
       if (ok) {
         _notifications.removeWhere((n) => n.id == notificationId);
+        _unread.removeWhere((n) => n.id == notificationId);
+        for (final list in _byType.values) {
+          list.removeWhere((n) => n.id == notificationId);
+        }
       }
       clearLastError();
       notifyListeners();
       return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<List<AppNotification>> _fetchCategory(
+    String pubkey,
+    String type,
+    String Function() call,
+  ) async {
+    try {
+      final list = parseNotifications(call());
+      _byType[type] = list;
+      clearLastError();
+      notifyListeners();
+      return list;
     } catch (e, st) {
       setLastError(e, st);
       notifyListeners();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/scheduled_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Scheduled Posts: draft posts with a future scheduled_at, broadcast by
 /// the sync pipeline when due.
@@ -75,7 +76,7 @@ class _ScheduledScreenState extends State<ScheduledScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.schedule),
                   title: const Text('Schedule for'),
-                  trailing: Text(_fmt(when)),
+                  trailing: Text(formatDateTime(when)),
                   onTap: () async {
                     final picked = await showDatePicker(
                       context: context,
@@ -176,14 +177,10 @@ class _ScheduledScreenState extends State<ScheduledScreen> {
         .showSnackBar(SnackBar(content: SelectableText(message)));
   }
 
-  String _fmt(DateTime t) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
-  }
-
   String _fmtTs(int ts) {
     if (ts <= 0) return 'unscheduled';
-    return _fmt(DateTime.fromMillisecondsSinceEpoch(ts * 1000).toLocal());
+    return formatDateTime(
+        DateTime.fromMillisecondsSinceEpoch(ts * 1000).toLocal());
   }
 
   @override

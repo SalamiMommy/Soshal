@@ -201,7 +201,6 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
     }
 
     #[tokio::test]
-    #[ignore]
     async fn send_signal_requires_unlocked_signer() {
         let _g = CALLS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         super::super::signer::signer_lock().unwrap();
@@ -219,7 +218,6 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
     }
 
     #[tokio::test]
-    #[ignore]
     async fn send_signal_publishes_signed_event_via_network() {
         let _g = CALLS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
@@ -239,7 +237,6 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
     }
 
     #[tokio::test]
-    #[ignore]
     async fn fetch_signals_requires_initialized_relay_client() {
         let err = calls_fetch_signals("deadbeef".into()).await.unwrap_err();
         assert!(err.contains("relay client not initialized"));

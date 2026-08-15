@@ -99,6 +99,9 @@ pub fn musicloud_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
                 _ => {}
             }
         }
+        if hashtags.len() > 10_000 {
+            break;
+        }
     }
     if url.is_empty() {
         return None;
@@ -141,6 +144,9 @@ pub fn musicloud_event_out(ev: &NostrEvent) -> Option<MusicloudEventOut> {
                 "t" => hashtags.push(tag[1].clone()),
                 _ => {}
             }
+        }
+        if hashtags.len() > 10_000 {
+            break;
         }
     }
     if url.is_empty() {

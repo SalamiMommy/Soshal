@@ -43,4 +43,22 @@ class FfiBridge {
     final dir = await getApplicationDocumentsDirectory();
     return '${dir.path}/soshal.db';
   }
+
+  /// Get the backup database path (beside the live DB).
+  static Future<String> getBackupPath() async {
+    final dbPath = await getDbPath();
+    return '${dbPath.substring(0, dbPath.lastIndexOf('/'))}/soshal_backup.db';
+  }
+
+  /// Count rows in a local table.
+  static int dbCount(String table) =>
+      RustLib.instance.api.crateFfiDbDbCount(table: table);
+
+  /// Export the SQLite store to [path].
+  static Future<String> backup(String path) async =>
+      RustLib.instance.api.crateFfiDbDbBackup(backupPath: path);
+
+  /// Restore the SQLite store from [path].
+  static Future<String> restore(String path) async =>
+      RustLib.instance.api.crateFfiDbDbRestore(backupPath: path);
 }

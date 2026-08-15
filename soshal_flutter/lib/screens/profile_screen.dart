@@ -3,7 +3,9 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/feed_service.dart';
 import '../services/messaging_service.dart';
+import '../services/network_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Profile Page
 /// Self and others, WoT indicators
@@ -20,6 +22,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isFollowing = false;
   bool _isBlocked = false;
   bool _isLoading = true;
+  String? _loadError;
   List<FeedPost> _ownPosts = [];
   bool _postsLoading = true;
   String? _wotStatus;
@@ -57,6 +60,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         await _loadWot(pubkey, me ?? pubkey);
       }
       await _loadPosts(pubkey);
+    } catch (e) {
+      debugPrint('profile load: $e');
+      if (mounted) setState(() => _loadError = '$e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -141,6 +147,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
+    if (_loadError != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Profile')),
+        body: Center(child: Text('Profile load error: $_loadError')),
+      );
+    }
+
     final isSelfProfile = pubkey == sessionService.activePubkey;
 
     return Scaffold(
@@ -188,8 +201,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               child: CircleAvatar(
                                 radius: 48,
                                 backgroundImage: profile.picture.isNotEmpty
-                                    ? ResizeImage.resizeIfNeeded(192, 192,
-                                        NetworkImage(profile.picture))
+                                    ? ResizeImage.resizeIfNeeded(
+                                        192, 192, NetworkImage(profile.picture))
                                     : null,
                               ),
                             ),
@@ -317,6 +330,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           label: const Text('Message'),
                         ),
                       const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: () => _showMetadataDialog(pubkey),
+                        icon: const Icon(Icons.info_outline),
+                        label: const Text('Fetch metadata'),
+                      ),
+                      const SizedBox(height: 16),
                       if (isSelfProfile) ...[
                         ListTile(
                           contentPadding: EdgeInsets.zero,
@@ -395,6 +414,85 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
         },
       ),
+    );
+  }
+
+  void _showMetadataDialog(String pubkey) {
+    final schemeField = TextEditingController(text: 'nostr');
+    final hostField = TextEditingController(text: '');
+    final pathField = TextEditingController(text: pubkey);
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Fetch protocol metadata'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: schemeField,
+                decoration: const InputDecoration(
+                  labelText: 'Scheme',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: hostField,
+                decoration: const InputDecoration(
+                  labelText: 'Host',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: pathField,
+                decoration: const InputDecoration(
+                  labelText: 'Path',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final json =
+                    await context.read<NetworkService>().fetchProtocolMetadata(
+                          scheme: schemeField.text.trim(),
+                          host: hostField.text.trim(),
+                          path: pathField.text.trim(),
+                        );
+                if (!context.mounted) return;
+                Navigator.of(context).pop();
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Metadata'),
+                    content: SingleChildScrollView(
+                      child: SelectableText(json),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              child: const Text('Fetch'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -599,7 +697,7 @@ class _PostCard extends StatelessWidget {
                     child: Text(
                       post.eventId.length <= 12
                           ? post.eventId
-                          : '${post.eventId.substring(0, 12)}…',
+                          : prefixEllipsis(post.eventId, 12),
                       style: const TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                   ),

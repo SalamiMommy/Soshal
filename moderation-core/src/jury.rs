@@ -6,6 +6,9 @@ use soshal_crypto_core::frost::{
     FrostSessionManager, FrostSignatureShare, FrostThresholdSignature,
 };
 
+/// Hard cap on collected votes to bound growth from spoofed participants.
+const MAX_VOTES_COLLECTED: usize = 100_000;
+
 /// State of a decentralized moderation jury case.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModerationJuryCase {
@@ -43,6 +46,9 @@ impl ModerationJuryCase {
 
     /// Submit a juror's FROST partial signature vote share on this case.
     pub fn cast_vote(&mut self, vote_share: FrostSignatureShare) -> Result<bool, String> {
+        if self.votes_collected.len() >= MAX_VOTES_COLLECTED {
+            return Err("vote cap reached".to_string());
+        }
         if self
             .votes_collected
             .iter()

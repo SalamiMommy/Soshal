@@ -36,7 +36,7 @@ impl<'a> HuddlePostRepo<'a> {
         if include_expired {
             crate::query::query(&conn, sql, params![huddle_id, limit], Self::map_row)
         } else {
-            let now = crate::repos::now_secs();
+            let now = soshal_common_core::format::now_secs();
             crate::query::query(&conn, sql, params![huddle_id, now, limit], Self::map_row)
         }
     }
@@ -52,7 +52,7 @@ impl<'a> HuddlePostRepo<'a> {
         crate::query::execute(
             &conn,
             "DELETE FROM huddle_posts WHERE expires_at < ?1",
-            params![crate::repos::now_secs()],
+            params![soshal_common_core::format::now_secs()],
         )
     }
 

@@ -11,12 +11,6 @@ class SignerService extends ChangeNotifier {
   bool _locked = true;
   bool get locked => _locked;
 
-  /// Whether the user explicitly locked the signer this session (Security →
-  /// "Lock now"). False at boot: locked state then just means "no key loaded
-  /// yet", which routes to onboarding instead of the lock screen.
-  bool _userLocked = false;
-  bool get userLocked => _userLocked;
-
   String? _pubkey;
   String? get pubkeyHex => _pubkey;
 
@@ -25,7 +19,7 @@ class SignerService extends ChangeNotifier {
     bool locked = true;
     String? pubkey;
     try {
-      pubkey = await _api.crateFfiSignerSignerPubkey();
+      pubkey = _api.crateFfiSignerSignerPubkey();
       locked = false;
     } catch (_) {
       locked = true;
@@ -35,7 +29,6 @@ class SignerService extends ChangeNotifier {
       _pubkey = pubkey;
       notifyListeners();
     }
-    if (!locked) _userLocked = false;
   }
 
   /// Active signer public key (hex). Throws when locked.
@@ -47,7 +40,6 @@ class SignerService extends ChangeNotifier {
   /// Lock the session: wipes in-memory key material.
   Future<bool> lock() async {
     final ok = _api.crateFfiSignerSignerLock();
-    _userLocked = true;
     await refresh();
     return ok;
   }
@@ -79,4 +71,29 @@ class SignerService extends ChangeNotifier {
   /// key ownership without exposing the key.
   Future<String> signText(String message) async =>
       _api.crateFfiSignerSignerSignText(message: message);
+
+  /// Schnorr-sign the SHA-256 digest of `text` (digest computed Dart-side,
+  /// signed Rust-side); returns the 64-byte signature as hex.
+  Future<String> schnorrSign(String text) async {
+    final digest = _api.crateFfiCryptoCryptoSha256Hex(input: text);
+    return _api.crateFfiSignerSignerSchnorrSign(messageHex: digest);
+  }
+
+  /// Sign a NIP-59-style unsigned event JSON (`pubkey`, `created_at`,
+  /// `kind`, `tags`, `content`; `id` optional); returns the fully signed
+  /// event JSON including `id` and `sig`.
+  Future<String> signUnsigned(String eventJson) async =>
+      _api.crateFfiSignerSignerSignUnsigned(eventJson: eventJson);
+
+  /// NIP-44 v2 encrypt `plaintext` to `recipientPubkey` with the unlocked
+  /// key; returns the wire-format base64 payload (`2 ‖ nonce ‖ ct ‖ mac`).
+  Future<String> nip44Encrypt(String plaintext, String recipientPubkey) async =>
+      _api.crateFfiSignerSignerNip44Encrypt(
+          plaintext: plaintext, recipientPubkey: recipientPubkey);
+
+  /// NIP-44 v2 decrypt `ciphertext` (from `senderPubkey`) with the unlocked
+  /// key.
+  Future<String> nip44Decrypt(String ciphertext, String senderPubkey) async =>
+      _api.crateFfiSignerSignerNip44Decrypt(
+          payload: ciphertext, senderPubkey: senderPubkey);
 }

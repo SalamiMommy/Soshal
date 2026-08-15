@@ -892,4 +892,90 @@ mod tests {
         let (valid, _) = soshal_content_core::url::is_valid_relay_url("wss://relay.damus.io");
         assert!(valid);
     }
+
+    #[test]
+    fn test_sys_diagnostics_shape() {
+        let diag = super::network_get_sys_diagnostics().unwrap();
+        let v: serde_json::Value = serde_json::from_str(&diag).unwrap();
+        assert!(v["schema_version"].as_i64().unwrap() > 0);
+        assert!(v["io_engine_mode"].is_string());
+        assert!(v["cpu_topology"].is_object());
+        assert!(v["hardware_crypto"].is_object());
+    }
+
+    #[test]
+    fn test_notify_interface_change_rejects_bad_addr() {
+        let e = super::network_notify_interface_change("10.0.0.1".to_string()).unwrap_err();
+        assert!(e.contains("Invalid IP address format"), "got {e}");
+        assert!(super::network_notify_interface_change("10.0.0.1:9999".to_string()).is_ok());
+    }
+}
+
+/// Close the Reticulum link to a destination (hex address).
+#[frb(sync, serialize)]
+pub fn network_reticulum_close_link(dest_hex: String) -> Result<bool, String> {
+    let guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
+    match guard.as_ref() {
+        Some(node) => {
+            let dest =
+                soshal_network_core::reticulum::address::ReticulumAddress::from_hex(&dest_hex)?;
+            node.link_manager.close_link(&dest);
+            Ok(true)
+        }
+        None => Err("Reticulum not initialized".to_string()),
+    }
+}
+
+/// Active Reticulum links (JSON: LinkInfo list).
+#[frb(sync, serialize)]
+pub fn network_reticulum_get_active_links() -> Result<String, String> {
+    let guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
+    match guard.as_ref() {
+        Some(node) => {
+            let links = node.link_manager.get_active_links();
+            serde_json::to_string(&links).map_err(|e| format!("serialize links: {e}"))
+        }
+        None => Ok("[]".to_string()),
+    }
+}
+
+/// Prune stale Reticulum links; returns count removed.
+#[frb(sync, serialize)]
+pub fn network_reticulum_prune_stale_links() -> Result<usize, String> {
+    let guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
+    match guard.as_ref() {
+        Some(node) => Ok(node.link_manager.prune_stale_links()),
+        None => Err("Reticulum not initialized".to_string()),
+    }
+}
+
+/// Drop expired Reticulum path entries; returns count removed.
+#[frb(sync, serialize)]
+pub fn network_reticulum_prune_routes(now_secs: u64) -> Result<usize, String> {
+    let guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
+    match guard.as_ref() {
+        Some(node) => {
+            let mut table = node.path_table.lock().unwrap_or_else(|e| e.into_inner());
+            Ok(table.prune_expired(now_secs))
+        }
+        None => Err("Reticulum not initialized".to_string()),
+    }
+}
+
+/// Clear all known Reticulum nodes.
+#[frb(sync, serialize)]
+pub fn network_reticulum_reset_nodes() -> Result<bool, String> {
+    soshal_network_core::reticulum::transport::reset_nodes();
+    Ok(true)
+}
+
+/// Proof-of-work node id for a pubkey (hex, `null` when the static nonce fails).
+#[frb(sync, serialize)]
+pub fn network_skademlia_generate_node_id(
+    pubkey: String,
+    static_nonce: u64,
+    dynamic_nonce: u64,
+) -> Result<Option<String>, String> {
+    let id = soshal_network_core::skademlia::generate_node_id(&pubkey, static_nonce, dynamic_nonce);
+    Ok(id.map(|n| hex::encode(n)))
 }

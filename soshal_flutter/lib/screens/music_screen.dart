@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/music_service.dart';
 import '../services/shell_service.dart';
+import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
 
 /// Musicloud: track list, publish form (FAB), and a detail view with
@@ -228,8 +229,8 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
                           ),
                           subtitle: Text(
                             [
-                              _shortPk(track.pubkey),
-                              _fmtTime(track.createdAt),
+                              shortPubkey(track.pubkey),
+                              relativeTime(track.createdAt),
                               if (track.hashtags.isNotEmpty)
                                 track.hashtags.map((h) => '#$h').join(' '),
                             ].join(' · '),
@@ -274,21 +275,6 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
         child: Icon(Icons.music_note,
             color: Theme.of(context).colorScheme.primary),
       );
-
-  static String _shortPk(String pk) => pk.length <= 12
-      ? pk
-      : '${pk.substring(0, 6)}…${pk.substring(pk.length - 6)}';
-
-  static String _fmtTime(int seconds) {
-    if (seconds <= 0) return '';
-    final dt = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inDays > 0) return '${diff.inDays}d ago';
-    if (diff.inHours > 0) return '${diff.inHours}h ago';
-    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
-    return 'just now';
-  }
 }
 
 /// Track detail: share-to-feed form + comment thread.
@@ -410,10 +396,10 @@ class _TrackDetailScreenState extends State<_TrackDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_shortPk(_track.pubkey),
+                    Text(shortPubkey(_track.pubkey),
                         style: Theme.of(context).textTheme.labelMedium),
                     const SizedBox(height: 4),
-                    Text(_fmtTime(_track.createdAt),
+                    Text(relativeTime(_track.createdAt),
                         style: Theme.of(context).textTheme.bodySmall),
                     if (_track.hashtags.isNotEmpty) ...[
                       const SizedBox(height: 8),
@@ -506,7 +492,7 @@ class _TrackDetailScreenState extends State<_TrackDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${_shortPk(c.pubkey)} · ${_fmtTime(c.createdAt)}',
+                    '${shortPubkey(c.pubkey)} · ${relativeTime(c.createdAt)}',
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                   const SizedBox(height: 2),
@@ -546,20 +532,5 @@ class _TrackDetailScreenState extends State<_TrackDetailScreen> {
         ],
       ),
     );
-  }
-
-  static String _shortPk(String pk) => pk.length <= 12
-      ? pk
-      : '${pk.substring(0, 6)}…${pk.substring(pk.length - 6)}';
-
-  static String _fmtTime(int seconds) {
-    if (seconds <= 0) return '';
-    final dt = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inDays > 0) return '${diff.inDays}d ago';
-    if (diff.inHours > 0) return '${diff.inHours}h ago';
-    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
-    return 'just now';
   }
 }

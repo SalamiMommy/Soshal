@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/search_service.dart';
+import '../services/session_service.dart';
 
 /// Search: posts, profiles, hashtags and trending (local FTS5).
 class SearchScreen extends StatefulWidget {
@@ -16,6 +19,8 @@ class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _query = TextEditingController();
   String _mode = 'global';
   bool _loading = false;
+  bool _remoteLoading = false;
+  List<SearchResultItem> _remoteResults = [];
   Future<List<SearchResultItem>>? _trendingProfilesFuture;
 
   @override
@@ -53,13 +58,67 @@ class _SearchScreenState extends State<SearchScreen> {
         case 'hashtags':
           await api.searchHashtags(q);
           break;
+        case 'mentions':
+          await api.mentions(q);
+          break;
         default:
           await api.searchGlobal(q);
+      }
+      if (mounted && _mode == 'global' && api.results.isEmpty) {
+        await _runRemoteSearch();
       }
     } catch (e) {
       debugPrint('search: $e');
     }
     if (mounted) setState(() => _loading = false);
+  }
+
+  /// Remote NIP-50 search across the account's relays (fallback when local
+  /// FTS5 finds nothing, or on explicit button press).
+  Future<void> _runRemoteSearch() async {
+    final q = _query.text.trim();
+    if (q.isEmpty) return;
+    setState(() => _remoteLoading = true);
+    try {
+      final session = context.read<SessionService>();
+      final relays = session.activeAccount?.relayList ?? const <String>[];
+      if (relays.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('No relays configured — add relays in Settings')),
+          );
+        }
+        return;
+      }
+      final json =
+          await context.read<SearchService>().remoteGlobalSearch(q, 20, relays);
+      final decoded = jsonDecode(json);
+      final items = <SearchResultItem>[];
+      if (decoded is List) {
+        for (final e in decoded) {
+          if (e is Map<String, dynamic>) {
+            items.add(SearchResultItem(
+              id: e['id'] as String? ?? '',
+              title: e['content'] as String? ?? '',
+              description: e['content'] as String? ?? '',
+              pubkey: e['pubkey'] as String?,
+              kind: 'post',
+              createdAt: (e['created_at'] as num?)?.toInt() ?? 0,
+            ));
+          }
+        }
+      }
+      if (mounted) setState(() => _remoteResults = items);
+    } catch (e) {
+      debugPrint('remote search: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Remote search failed: $e')),
+        );
+      }
+    }
+    if (mounted) setState(() => _remoteLoading = false);
   }
 
   Future<void> _loadTrending() async {
@@ -86,6 +145,17 @@ class _SearchScreenState extends State<SearchScreen> {
           onSubmitted: (_) => _runSearch(),
         ),
         actions: [
+          IconButton(
+            icon: _remoteLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.public),
+            tooltip: 'Remote search (relays)',
+            onPressed: _remoteLoading ? null : _runRemoteSearch,
+          ),
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: _runSearch,
@@ -180,6 +250,29 @@ class _SearchScreenState extends State<SearchScreen> {
               ],
             );
           }
+          if (api.results.isEmpty && _remoteResults.isNotEmpty) {
+            return ListView.builder(
+              itemCount: _remoteResults.length,
+              itemBuilder: (context, index) {
+                final r = _remoteResults[index];
+                return ListTile(
+                  leading: const Icon(Icons.article_outlined),
+                  title: Text(r.title,
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    r.description,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () {
+                    if (r.id.isNotEmpty) {
+                      context.push('/post/${r.id}');
+                    }
+                  },
+                );
+              },
+            );
+          }
           if (api.results.isEmpty) {
             return ListView(
               children: const [
@@ -225,6 +318,7 @@ class _SearchScreenState extends State<SearchScreen> {
               ('posts', 'Posts'),
               ('profiles', 'People'),
               ('hashtags', 'Tags'),
+              ('mentions', 'Mentions'),
             ])
               Expanded(
                 child: InkWell(

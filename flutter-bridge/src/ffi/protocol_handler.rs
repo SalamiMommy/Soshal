@@ -180,18 +180,63 @@ async fn protocol_handle_avatar(path: &str) -> Result<Vec<u8>, String> {
         return Err("Missing pubkey".to_string());
     }
 
-    // Query database for user profile and avatar URL
-    // If found, fetch via Blossom
-    // Otherwise, return placeholder avatar
+    // Look up the user's `picture` URL from the local profile cache.
+    let picture = super::db::with_db_result(|db| {
+        Ok(soshal_db_core::repos::user::UserRepo::new(db)
+            .get_by_pubkey(pubkey)?
+            .and_then(|u| u.picture))
+    })
+    .ok()
+    .flatten();
 
-    Err("Avatar fetching not yet implemented".to_string())
+    if let Some(url) = picture {
+        if let Ok(bytes) = fetch_avatar_bytes(&url).await {
+            return Ok(bytes);
+        }
+    }
+
+    // Fallback: minimal 1x1 transparent PNG.
+    Ok(PLACEHOLDER_PNG.to_vec())
+}
+
+const PLACEHOLDER_PNG: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+    0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x62, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+    0x42, 0x60, 0x82,
+];
+
+/// Fetch avatar bytes over HTTPS with a 5 MiB cap. `is_valid_media_url`
+/// rejects private/loopback hosts (SSRF guard).
+async fn fetch_avatar_bytes(url: &str) -> Result<Vec<u8>, String> {
+    if !is_valid_media_url(url) {
+        return Err("Invalid avatar URL".to_string());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("avatar fetch: {e}"))?;
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("avatar read: {e}"))?;
+    if bytes.len() > 5 * 1024 * 1024 {
+        return Err("avatar too large".to_string());
+    }
+    Ok(bytes.to_vec())
 }
 
 /// Get metadata for avatar
 fn protocol_metadata_avatar(_path: &str) -> Result<ProtocolResponse, String> {
     Ok(ProtocolResponse {
-        content_type: "image/jpeg".to_string(),
-        content_length: 0,
+        content_type: "image/png".to_string(),
+        content_length: PLACEHOLDER_PNG.len() as u64,
         cache_control: "public, max-age=3600".to_string(),
         etag: "avatar".to_string(),
     })

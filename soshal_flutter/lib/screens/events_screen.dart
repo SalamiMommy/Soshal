@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/events_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Events: nearby list, create dialog, detail with RSVP + check-in.
 class EventsScreen extends StatefulWidget {
@@ -512,19 +513,13 @@ class _EventsScreenState extends State<EventsScreen> {
   String _timeRange(SoshalEvent e) {
     if (e.startTime <= 0) return 'Unscheduled';
     final s = DateTime.fromMillisecondsSinceEpoch(e.startTime * 1000).toLocal();
-    final line = '${_monthShort[s.month - 1]} ${s.day} · ${_clock(s)}';
+    final line = '${_monthShort[s.month - 1]} ${s.day} · ${formatClock12h(s)}';
     if (e.endTime <= 0) return line;
     final en = DateTime.fromMillisecondsSinceEpoch(e.endTime * 1000).toLocal();
     final endClock = en.day == s.day
-        ? _clock(en)
-        : '${_monthShort[en.month - 1]} ${en.day} · ${_clock(en)}';
+        ? formatClock12h(en)
+        : '${_monthShort[en.month - 1]} ${en.day} · ${formatClock12h(en)}';
     return '$line – $endClock';
-  }
-
-  String _clock(DateTime t) {
-    final period = t.hour >= 12 ? 'PM' : 'AM';
-    final h12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
-    return '$h12:${t.minute.toString().padLeft(2, '0')} $period';
   }
 
   String _fmtFullDate(DateTime d) =>
@@ -688,13 +683,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
 
   String _fireTime(EventReminder r) {
     final d = r.fireAt;
-    return '${_monthShort[d.month - 1]} ${d.day} · ${_clock(d)}';
-  }
-
-  String _clock(DateTime t) {
-    final period = t.hour >= 12 ? 'PM' : 'AM';
-    final h12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
-    return '$h12:${t.minute.toString().padLeft(2, '0')} $period';
+    return '${_monthShort[d.month - 1]} ${d.day} · ${formatClock12h(d)}';
   }
 
   void _showAttendees() {
@@ -903,11 +892,6 @@ class _AttendeeModalState extends State<_AttendeeModal> {
     _future = context.read<EventsService>().getAttendees(widget.eventId);
   }
 
-  String _shortPk(String pk) {
-    if (pk.length <= 13) return pk;
-    return '${pk.substring(0, 8)}…${pk.substring(pk.length - 3)}';
-  }
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -952,7 +936,7 @@ class _AttendeeModalState extends State<_AttendeeModal> {
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.person_outline, size: 18),
                       title: Text(
-                        _shortPk(list[i]),
+                        shortPubkey(list[i], head: 8, tail: 3, minLen: 13),
                         style: const TextStyle(fontSize: 12),
                       ),
                     ),

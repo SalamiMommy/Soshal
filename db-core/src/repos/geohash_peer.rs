@@ -62,7 +62,7 @@ impl<'a> GeohashPeerRepo<'a> {
         crate::query::execute(
             &conn,
             "DELETE FROM geohash_peers WHERE last_seen < ?1",
-            params![crate::repos::now_secs() - cutoff_secs_ago],
+            params![soshal_common_core::format::now_secs() - cutoff_secs_ago],
         )
     }
 

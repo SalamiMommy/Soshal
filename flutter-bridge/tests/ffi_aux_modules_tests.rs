@@ -124,9 +124,30 @@ mod ffi_aux_modules_tests {
     }
 
     #[test]
-    fn push_ffi_register_token_noop_true() {
+    fn push_ffi_register_token_persists() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let path = init_db("push_token");
+        let session_path =
+            std::path::Path::new(&std::env::temp_dir().to_string_lossy().to_string())
+                .join("session.json");
+        let _ = std::fs::remove_file(&session_path);
+        assert!(session::session_load(path.clone()).is_ok());
+        assert!(session::session_add_account(
+            "aux_push_pk".to_string(),
+            "npub1auxpush".to_string(),
+            "[]".to_string()
+        )
+        .unwrap());
         assert!(push::push_register_token("aux_device_token".to_string()).unwrap());
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&session_path).unwrap()).unwrap();
+        assert_eq!(saved["accounts"][0]["push_token"], "aux_device_token");
         assert!(push::push_register_token(String::new()).unwrap());
+        let cleared: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&session_path).unwrap()).unwrap();
+        assert!(cleared["accounts"][0]["push_token"].is_null());
+        let _ = std::fs::remove_file(&session_path);
+        cleanup(&path);
     }
 
     #[test]

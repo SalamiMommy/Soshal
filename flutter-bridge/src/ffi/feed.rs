@@ -337,3 +337,20 @@ pub fn feed_compute_card_layouts(requests_json: String) -> Result<String, String
         .map_err(|e| e.to_string())
         .into()
 }
+
+/// Build freenet ephemeral tags for a post (JSON out).
+#[frb(sync, serialize)]
+pub fn feed_freenet_ephemeral_tags(freenet_key: String) -> Result<String, String> {
+    let tags = soshal_feed_core::publish::build_freenet_ephemeral_tags(&freenet_key);
+    serde_json::to_string(&tags)
+        .map_err(|e| e.to_string())
+        .into()
+}
+
+/// Extract profile entry (pubkey/content/created_at) from a nostr event JSON.
+#[frb(sync, serialize)]
+pub fn feed_profile_entry_from_event(event_json: String) -> Result<String, String> {
+    let legacy: soshal_nostr_core::models::NostrEvent =
+        serde_json::from_str(&event_json).map_err(|e| format!("invalid legacy event JSON: {e}"))?;
+    super::util::json_ok(soshal_feed_core::query::profile_entry_from_event(&legacy))
+}

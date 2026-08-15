@@ -214,9 +214,11 @@ class H264Codec : MethodChannel.MethodCallHandler {
             var uPos = 0
             var vPos = 0
             var nvPos = uvOffset
+            val uOff = planeOffset(uPlane)
+            val vOff = planeOffset(vPlane)
             for (row in 0 until uvH) {
-                uPos = uPlane.offsetInBytes + row * uvRowStride
-                vPos = vPlane.offsetInBytes + row * vRowStride
+                uPos = uOff + row * uvRowStride
+                vPos = vOff + row * vRowStride
                 for (col in 0 until uvW) {
                     val u = uBuf.get(uPos).toInt() and 0xFF
                     val v = vBuf.get(vPos).toInt() and 0xFF
@@ -248,7 +250,7 @@ class H264Codec : MethodChannel.MethodCallHandler {
     ) {
         val src = plane.buffer
         val rowStride = plane.rowStride
-        var srcPos = plane.offsetInBytes + crop.top * rowStride + crop.left * pixelStride
+        var srcPos = planeOffset(plane) + crop.top * rowStride + crop.left * pixelStride
         var dstPos = dstOffset
         for (row in 0 until h) {
             var s = srcPos
@@ -285,6 +287,11 @@ class H264Codec : MethodChannel.MethodCallHandler {
         }
         return i420
     }
+
+    /** Logical start offset of a plane's bytes: arrayOffset for heap
+     *  buffers, 0 for direct buffers (absolute get() is buffer-relative). */
+    private fun planeOffset(plane: Image.Plane): Int =
+        if (plane.buffer.hasArray()) plane.buffer.arrayOffset() else 0
 
     private fun release() {
         try {

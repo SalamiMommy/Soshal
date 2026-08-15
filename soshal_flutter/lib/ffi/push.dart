@@ -6,5 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// Register (or clear, when empty) the push token for the active account.
+/// Persisted to session.json; actual FCM delivery is backend-gated (needs
+/// google-services.json in the Android build).
 bool pushRegisterToken({required String token}) =>
     RustLib.instance.api.crateFfiPushPushRegisterToken(token: token);

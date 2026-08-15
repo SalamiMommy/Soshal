@@ -1,6 +1,7 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:soshal_flutter/services/media_service.dart';
 import 'package:soshal_flutter/services/settings_service.dart';
 import '../widgets/error_state_text.dart';
 
@@ -20,6 +21,8 @@ class _StorageScreenState extends State<StorageScreen> {
   String? _error;
   bool _autoDownload = true;
   bool _autoPlay = true;
+  String? _cachePath;
+  int? _serverPort;
 
   @override
   void initState() {
@@ -36,6 +39,13 @@ class _StorageScreenState extends State<StorageScreen> {
       _error = '$e';
     }
     try {
+      final media = context.read<MediaService>();
+      _cachePath = await media.getCachePath();
+      _serverPort = media.localServerPort;
+    } catch (e) {
+      debugPrint('cache path: $e');
+    }
+    try {
       final settings = context.read<SettingsService>();
       final ad = settings.getSetting('auto_download');
       if (ad.isNotEmpty) _autoDownload = ad.toLowerCase() == 'true';
@@ -43,6 +53,35 @@ class _StorageScreenState extends State<StorageScreen> {
       if (ap.isNotEmpty) _autoPlay = ap.toLowerCase() == 'true';
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _clearCache() async {
+    final media = context.read<MediaService>();
+    await media.clearCache();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Media cache cleared')),
+      );
+    }
+    _load();
+  }
+
+  Future<void> _startServer() async {
+    try {
+      final port = await context.read<MediaService>().startLocalServer();
+      if (mounted) setState(() => _serverPort = port);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Server start failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopServer() async {
+    await context.read<MediaService>().stopLocalServer();
+    if (mounted) setState(() => _serverPort = null);
   }
 
   Future<void> _setSetting(String key, bool value) async {
@@ -168,6 +207,35 @@ class _StorageScreenState extends State<StorageScreen> {
               title: const Text('Clear all posts'),
               subtitle: const Text('Delete every locally cached post'),
               onTap: _clearAllPosts,
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.folder_open_outlined),
+              title: const Text('Cache path'),
+              subtitle: Text(
+                _cachePath ?? '…',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cleaning_services_outlined),
+              title: const Text('Clear media cache'),
+              subtitle: const Text('Evict all stored media chunks'),
+              onTap: _clearCache,
+            ),
+            ListTile(
+              leading: const Icon(Icons.dns_outlined),
+              title: const Text('Local media server'),
+              subtitle: Text(
+                _serverPort != null
+                    ? 'Running on port $_serverPort'
+                    : 'Not running',
+              ),
+              trailing: TextButton(
+                onPressed: _serverPort == null ? _startServer : _stopServer,
+                child: Text(_serverPort == null ? 'Start' : 'Stop'),
+              ),
             ),
           ],
         ),

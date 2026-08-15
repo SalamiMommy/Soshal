@@ -36,6 +36,21 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     );
   }
 
+  /// Encodes lat/lng into a geohash string (sync FFI; spatial-core).
+  String encodeGeohash({required double lat, required double lon}) {
+    try {
+      final geohash = RustLib.instance.api
+          .crateFfiSpatialSpatialEncodeGeohash(lat: lat, lon: lon);
+      clearLastError();
+      notifyDeferred();
+      return geohash;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
   Future<List<SoshalEvent>> fetchUserEvents(String userPubkey,
       {int limit = 50}) async {
     return _decode(
@@ -210,6 +225,39 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       clearLastError();
       notifyDeferred();
       return _events;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Expiry timestamp (unix secs, 0 when none) parsed from a tags JSON array.
+  Future<int> expiryFromTags(String tagsJson) async {
+    try {
+      final ts =
+          RustLib.instance.api.crateFfiEventsEventsExpiryFromTags(tagsJson: tagsJson);
+      clearLastError();
+      return ts;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Interest score between my interests and a peer's (JSON: score/common).
+  Future<Map<String, dynamic>> interestScore({
+    required String myInterestsJson,
+    required String peerInterestsJson,
+  }) async {
+    try {
+      final json = RustLib.instance.api.crateFfiEventsEventsInterestScore(
+        myInterestsJson: myInterestsJson,
+        peerInterestsJson: peerInterestsJson,
+      );
+      clearLastError();
+      return Map<String, dynamic>.from(jsonDecode(json) as Map);
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();

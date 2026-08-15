@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/marketplace_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Marketplace: listings, search, create, buy, orders and escrow.
 class MarketplaceScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
   bool _loading = true;
   final TextEditingController _search = TextEditingController();
   Future<List<ListingInfo>>? _sellerListingsFuture;
+  bool _trending = false;
 
   @override
   void initState() {
@@ -169,25 +171,36 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
   Future<void> _listingDialog(ListingInfo listing) async {
     final session = context.read<SessionService>();
     final myPubkey = session.activePubkey ?? '';
+    ListingInfo detail = listing;
+    try {
+      detail = await context.read<MarketplaceService>().getListing(listing.id);
+    } catch (e) {
+      debugPrint('listing detail: $e');
+    }
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(listing.title),
+        title: Text(detail.title),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(listing.priceLabel,
+              Text(detail.priceLabel,
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
-              if (listing.description.isNotEmpty) ...[
-                Text(listing.description),
+              if (detail.description.isNotEmpty) ...[
+                Text(detail.description),
                 const SizedBox(height: 8),
               ],
-              _ListingDetailMeta(listing: listing, myPubkey: myPubkey),
+              _ListingDetailMeta(listing: detail, myPubkey: myPubkey),
               const Divider(height: 20),
-              _EscrowSection(listing: listing, myPubkey: myPubkey),
+              _EscrowSection(listing: detail, myPubkey: myPubkey),
+              const Divider(height: 20),
+              _ReviewsSection(listing: detail, myPubkey: myPubkey),
+              const Divider(height: 20),
+              _PollSection(myPubkey: myPubkey),
             ],
           ),
         ),
@@ -199,7 +212,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
-              _buy(listing);
+              _buy(detail);
             },
             child: const Text('Buy'),
           ),
@@ -280,6 +293,114 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
     }
   }
 
+  Future<void> _orderDetail(OrderInfo order) async {
+    OrderInfo detail = order;
+    try {
+      detail = await context.read<MarketplaceService>().getOrder(order.id);
+    } catch (e) {
+      debugPrint('order detail: $e');
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Order ${firstChars(detail.id, 8)}'),
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Status: ${detail.status}',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text('Amount: ${detail.amount} sats'),
+            Text('Listing: ${firstChars(detail.listingId, 12)}'),
+            Text('Buyer: ${shortPubkey(detail.buyerPubkey, head: 8, tail: 4)}'),
+            Text(
+                'Seller: ${shortPubkey(detail.sellerPubkey, head: 8, tail: 4)}'),
+            if (detail.createdAt > 0)
+              Text('Created: ${formatTimestamp(detail.createdAt)}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editDialog(ListingInfo listing) async {
+    final title = TextEditingController(text: listing.title);
+    final desc = TextEditingController(text: listing.description);
+    final price = TextEditingController(text: listing.price.toString());
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit listing'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: title,
+                decoration: const InputDecoration(labelText: 'Title *'),
+              ),
+              TextField(
+                controller: desc,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Description'),
+              ),
+              TextField(
+                controller: price,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Price *'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      final session = context.read<SessionService>();
+      final pubkey = session.activePubkey;
+      if (pubkey == null) throw Exception('Sign in to edit');
+      final updated = await context.read<MarketplaceService>().updateListing(
+            listing.id,
+            pubkey,
+            title.text.trim(),
+            desc.text.trim(),
+            int.tryParse(price.text.trim()) ?? listing.price,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: SelectableText(updated ? 'Listing updated' : 'No change'),
+          ),
+        );
+      }
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Update failed: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -326,14 +447,34 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: ChoiceChip(
+                          label: const Text('🔥 Trending'),
+                          selected: _trending,
+                          onSelected: (_) async {
+                            _trending = true;
+                            _category = '';
+                            setState(() {});
+                            try {
+                              await context
+                                  .read<MarketplaceService>()
+                                  .trending();
+                            } catch (e) {
+                              debugPrint('trending: $e');
+                            }
+                          },
+                        ),
+                      ),
                       for (final c in _categories)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           child: ChoiceChip(
                             label: Text(c.isEmpty ? 'All' : c),
-                            selected: _category == c,
+                            selected: _category == c && !_trending,
                             onSelected: (_) async {
                               _category = c;
+                              _trending = false;
                               setState(() {});
                               try {
                                 final api = context.read<MarketplaceService>();
@@ -419,7 +560,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${l.priceLabel} · ${l.sellerName.isEmpty ? l.sellerPubkey.substring(0, 8) : l.sellerName}'
+                        '${l.priceLabel} · ${l.sellerName.isEmpty ? firstChars(l.sellerPubkey, 8) : l.sellerName}'
                         '\n${l.category.isEmpty ? 'uncategorized' : l.category}',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -459,8 +600,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
             final o = api.orders[index];
             return ListTile(
               leading: const Icon(Icons.receipt_long),
-              title: Text('Order ${o.id.substring(0, 8)}'),
+              title: Text('Order ${firstChars(o.id, 8)}'),
               subtitle: Text('${o.amount} sats · ${o.status}'),
+              onTap: () => _orderDetail(o),
               trailing: o.status == 'created'
                   ? TextButton(
                       onPressed: () async {
@@ -520,22 +662,33 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                   leading: const Icon(Icons.storefront),
                   title: Text(l.title),
                   subtitle: Text(l.priceLabel),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    tooltip: 'Delete',
-                    onPressed: () async {
-                      try {
-                        await api.deleteListing(l.id, pubkey);
-                        setState(() {});
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: SelectableText('Delete failed: $e')),
-                          );
-                        }
-                      }
-                    },
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        tooltip: 'Edit',
+                        onPressed: () => _editDialog(l),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        tooltip: 'Delete',
+                        onPressed: () async {
+                          try {
+                            await api.deleteListing(l.id, pubkey);
+                            setState(() {});
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content:
+                                        SelectableText('Delete failed: $e')),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ],
                   ),
                 );
               },
@@ -545,11 +698,6 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
       },
     );
   }
-}
-
-String _shortPk(String pk) {
-  if (pk.length <= 12) return pk;
-  return '${pk.substring(0, 8)}…${pk.substring(pk.length - 4)}';
 }
 
 /// Condition pill with the legacy color mapping (new/like new/good/fair).
@@ -657,8 +805,8 @@ class _ListingDetailMetaState extends State<_ListingDetailMeta> {
           children: [
             Expanded(
               child: Text(
-                'Seller: ${listing.sellerName.isEmpty ? _shortPk(seller) : listing.sellerName}'
-                ' · ${_shortPk(seller)}',
+                'Seller: ${listing.sellerName.isEmpty ? shortPubkey(seller, head: 8, tail: 4) : listing.sellerName}'
+                ' · ${shortPubkey(seller, head: 8, tail: 4)}',
                 style: Theme.of(context).textTheme.bodySmall,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -727,6 +875,16 @@ class _EscrowSectionState extends State<_EscrowSection> {
   Future<void> _refresh() async {
     final escrow = await _api.getEscrowByListing(widget.listing.id);
     if (!mounted) return;
+    if (escrow != null) {
+      try {
+        final full = await _api.getEscrow(escrow.id);
+        if (!mounted) return;
+        setState(() => _escrow = full);
+        return;
+      } catch (e) {
+        debugPrint('escrow detail: $e');
+      }
+    }
     setState(() => _escrow = escrow);
   }
 
@@ -747,12 +905,9 @@ class _EscrowSectionState extends State<_EscrowSection> {
     }
     if (!mounted) return;
     try {
-      final escrow = await _api.getEscrowByListing(widget.listing.id);
+      await _refresh();
       if (!mounted) return;
-      setState(() {
-        _escrow = escrow;
-        _busy = false;
-      });
+      setState(() => _busy = false);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
@@ -780,7 +935,8 @@ class _EscrowSectionState extends State<_EscrowSection> {
           'listing to create one first.');
       return;
     }
-    await _run('Escrow funded — ${_shortPk(order.id)}', () async {
+    await _run('Escrow funded — ${shortPubkey(order.id, head: 8, tail: 4)}',
+        () async {
       await _api.createEscrow(
         order.id,
         widget.myPubkey,
@@ -833,12 +989,13 @@ class _EscrowSectionState extends State<_EscrowSection> {
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, escrow.buyerPubkey),
-            child: Text('Resolve for buyer (${_shortPk(escrow.buyerPubkey)})'),
+            child: Text(
+                'Resolve for buyer (${shortPubkey(escrow.buyerPubkey, head: 8, tail: 4)})'),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, escrow.sellerPubkey),
-            child:
-                Text('Resolve for seller (${_shortPk(escrow.sellerPubkey)})'),
+            child: Text(
+                'Resolve for seller (${shortPubkey(escrow.sellerPubkey, head: 8, tail: 4)})'),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context),
@@ -853,11 +1010,6 @@ class _EscrowSectionState extends State<_EscrowSection> {
         () async {
       await _api.resolveEscrow(escrow.id, widget.myPubkey, winner);
     });
-  }
-
-  String _shortPk(String pk) {
-    if (pk.length <= 12) return pk;
-    return '${pk.substring(0, 8)}…${pk.substring(pk.length - 4)}';
   }
 
   @override
@@ -1063,6 +1215,389 @@ class _EscrowSectionState extends State<_EscrowSection> {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(label, style: const TextStyle(fontSize: 12)),
+    );
+  }
+}
+
+/// Listing reviews: average rating + review list + "write review" dialog.
+class _ReviewsSection extends StatefulWidget {
+  const _ReviewsSection({required this.listing, required this.myPubkey});
+
+  final ListingInfo listing;
+  final String myPubkey;
+
+  @override
+  State<_ReviewsSection> createState() => _ReviewsSectionState();
+}
+
+class _ReviewsSectionState extends State<_ReviewsSection> {
+  double _rating = 0;
+  List<dynamic> _reviews = const [];
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final api = context.read<MarketplaceService>();
+    final rating = await api.listingRating(widget.listing.id);
+    final reviews = await api.listingReviews(widget.listing.id);
+    if (!mounted) return;
+    setState(() {
+      _rating = rating;
+      _reviews = reviews;
+      _loaded = true;
+    });
+  }
+
+  Future<void> _reviewDialog() async {
+    final text = TextEditingController();
+    int stars = 5;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Review listing'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Wrap(
+                spacing: 4,
+                children: [
+                  for (var i = 1; i <= 5; i++)
+                    IconButton(
+                      icon: Icon(
+                        i <= stars ? Icons.star : Icons.star_border,
+                        color: const Color(0xFFd97706),
+                      ),
+                      onPressed: () => setDialogState(() => stars = i),
+                    ),
+                ],
+              ),
+              TextField(
+                controller: text,
+                maxLines: 3,
+                decoration:
+                    const InputDecoration(hintText: 'Review text (optional)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final submitted = await context.read<MarketplaceService>().reviewListing(
+          listingId: widget.listing.id,
+          reviewerPubkey: widget.myPubkey,
+          rating: stars,
+          text: text.text.trim(),
+        );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              SelectableText(submitted ? 'Review submitted' : 'Review failed'),
+        ),
+      );
+    }
+    await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.star, color: Color(0xFFd97706), size: 18),
+            const SizedBox(width: 4),
+            Text(
+              _loaded
+                  ? '${_rating.toStringAsFixed(1)} · ${_reviews.length} reviews'
+                  : 'Reviews…',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const Spacer(),
+            if (widget.myPubkey.isNotEmpty)
+              FilledButton.tonal(
+                onPressed: _reviewDialog,
+                child: const Text('Review'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (_loaded && _reviews.isEmpty)
+          Text('No reviews yet — be the first!',
+              style: Theme.of(context).textTheme.bodySmall)
+        else
+          for (final r in _reviews)
+            if (r is Map<String, dynamic>)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.star,
+                            color: const Color(0xFFd97706),
+                            size: 14,
+                            semanticLabel: '${r['rating']} stars'),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${r['rating'] ?? '?'} · ${shortPubkey(r['reviewer'] as String? ?? '', head: 8, tail: 4)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                    if ((r['text'] as String? ?? '').isNotEmpty)
+                      Text(r['text'] as String,
+                          style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+      ],
+    );
+  }
+}
+
+/// Marketplace polls: create dialog, vote, close and status display.
+class _PollSection extends StatefulWidget {
+  const _PollSection({required this.myPubkey});
+
+  final String myPubkey;
+
+  @override
+  State<_PollSection> createState() => _PollSectionState();
+}
+
+class _PollSectionState extends State<_PollSection> {
+  Map<String, dynamic>? _poll;
+  List<String> _options = const [];
+  bool _hasVoted = false;
+  bool _busy = false;
+  final TextEditingController _pollId = TextEditingController();
+
+  MarketplaceService get _api => context.read<MarketplaceService>();
+
+  @override
+  void dispose() {
+    _pollId.dispose();
+    super.dispose();
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: SelectableText(message)));
+  }
+
+  Future<void> _loadPoll(String pollId) async {
+    final poll = await _api.pollGet(pollId);
+    if (!mounted) return;
+    setState(() => _poll = poll);
+    if (poll != null && widget.myPubkey.isNotEmpty) {
+      final voted = await _api.pollHasVoted(pollId, widget.myPubkey);
+      if (mounted) setState(() => _hasVoted = voted);
+    }
+  }
+
+  Future<void> _createDialog() async {
+    if (widget.myPubkey.isEmpty) {
+      _snack('Sign in to create a poll');
+      return;
+    }
+    final question = TextEditingController();
+    final options = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create poll'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: question,
+              decoration: const InputDecoration(labelText: 'Question *'),
+            ),
+            TextField(
+              controller: options,
+              decoration: const InputDecoration(
+                labelText: 'Options * (comma-separated)',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Post'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final optionList = options.text
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (optionList.length < 2) {
+      _snack('A poll needs at least 2 options');
+      return;
+    }
+    setState(() => _busy = true);
+    final poll = await _api.pollCreate(
+      userPubkey: widget.myPubkey,
+      question: question.text.trim(),
+      optionsJson: jsonEncode(optionList),
+    );
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _poll = poll;
+      _options = optionList;
+      _hasVoted = false;
+    });
+    if (poll != null) {
+      _snack('Poll created');
+    } else {
+      _snack('Poll creation failed');
+    }
+  }
+
+  Future<void> _vote(int optionIndex) async {
+    final id = _poll?['id'] as String?;
+    if (id == null || widget.myPubkey.isEmpty) return;
+    final ok = await _api.pollVote(
+      pollId: id,
+      voterPubkey: widget.myPubkey,
+      optionIndex: optionIndex,
+    );
+    if (!mounted) return;
+    _snack(ok ? 'Vote recorded' : 'Vote failed');
+    if (ok) {
+      setState(() => _hasVoted = true);
+      await _loadPoll(id);
+    }
+  }
+
+  Future<void> _closePoll() async {
+    final id = _poll?['id'] as String?;
+    if (id == null || widget.myPubkey.isEmpty) return;
+    final ok = await _api.pollClose(id, widget.myPubkey);
+    if (!mounted) return;
+    _snack(ok ? 'Poll closed' : 'Close failed (owner only)');
+    if (ok) await _loadPoll(id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final poll = _poll;
+    final votes = (poll?['votes'] as List<dynamic>? ?? const []);
+    final labels = _options.isNotEmpty
+        ? _options
+        : [for (var i = 0; i < votes.length; i++) 'Option ${i + 1}'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.how_to_vote, size: 18),
+            const SizedBox(width: 6),
+            Text('Poll', style: Theme.of(context).textTheme.titleSmall),
+            const Spacer(),
+            if (widget.myPubkey.isNotEmpty)
+              FilledButton.tonal(
+                onPressed: _busy ? null : _createDialog,
+                child: const Text('Create'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _pollId,
+                decoration: const InputDecoration(
+                  hintText: 'Poll ID',
+                  isDense: true,
+                ),
+                onSubmitted: (id) {
+                  if (id.trim().isNotEmpty) _loadPoll(id.trim());
+                },
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: 'Load poll',
+              onPressed: () {
+                final id = _pollId.text.trim();
+                if (id.isNotEmpty) _loadPoll(id);
+              },
+            ),
+          ],
+        ),
+        if (poll != null) ...[
+          Text(poll['question'] as String? ?? '',
+              style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 4),
+          for (var i = 0; i < labels.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${labels[i]} — ${votes.length > i ? votes[i] : 0}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  if (!_hasVoted)
+                    TextButton(
+                      onPressed: () => _vote(i),
+                      child: const Text('Vote'),
+                    ),
+                ],
+              ),
+            ),
+          if (_hasVoted)
+            Text('✓ You voted', style: Theme.of(context).textTheme.bodySmall),
+          TextButton.icon(
+            onPressed: widget.myPubkey.isEmpty ? null : _closePoll,
+            icon: const Icon(Icons.lock_outline, size: 16),
+            label: const Text('Close poll'),
+          ),
+        ] else
+          Text('No poll loaded — create one or enter a poll ID above.',
+              style: Theme.of(context).textTheme.bodySmall),
+        if (_busy)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: LinearProgressIndicator(),
+          ),
+      ],
     );
   }
 }

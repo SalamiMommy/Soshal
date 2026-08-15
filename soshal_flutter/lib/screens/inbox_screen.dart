@@ -1,9 +1,16 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../ffi/p2p.dart' show P2pPeerDto;
+import '../services/media_service.dart';
 import '../services/messaging_service.dart';
+import '../services/p2p_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Inbox Screen
 /// DMs with NIP-44 decryption
@@ -18,9 +25,14 @@ class InboxScreen extends StatefulWidget {
 
 class _InboxScreenState extends State<InboxScreen> {
   final _messageController = TextEditingController();
+  final _chunkHashController = TextEditingController();
+  final _mediaTextController = TextEditingController();
+  final _fetchUrlController = TextEditingController();
+  final _blossomServerController = TextEditingController();
   bool _isLoading = false;
   bool _burn = false;
   int _maxViews = 1;
+  String? _mediaResult;
 
   @override
   void initState() {
@@ -61,6 +73,10 @@ class _InboxScreenState extends State<InboxScreen> {
   @override
   void dispose() {
     _messageController.dispose();
+    _chunkHashController.dispose();
+    _mediaTextController.dispose();
+    _fetchUrlController.dispose();
+    _blossomServerController.dispose();
     super.dispose();
   }
 
@@ -146,9 +162,10 @@ class _InboxScreenState extends State<InboxScreen> {
   Future<void> _viewEphemeral(EphemeralMedia media) async {
     try {
       final messagingService = context.read<MessagingService>();
-      final viewed = await messagingService.viewEphemeral(media.id);
+      final fresh = await messagingService.ephemeralById(media.id);
+      final viewed = await messagingService.viewEphemeral((fresh ?? media).id);
       if (mounted) {
-        _showEphemeralViewer(viewed);
+        _showEphemeralViewer(fresh ?? viewed);
       }
     } catch (e) {
       if (mounted) {
@@ -242,6 +259,400 @@ class _InboxScreenState extends State<InboxScreen> {
         ),
       ],
     );
+  }
+
+  Widget _conversationTile(MapEntry<String, List<DirectMessage>> entry) {
+    final pubkey = entry.key;
+    final messages = entry.value;
+    if (messages.isEmpty) return const SizedBox.shrink();
+    final lastMessage = messages.last;
+    final preview = lastMessage.decrypted
+        ? lastMessage.content
+        : '🔒 ${lastMessage.content}';
+    final displayName = pubkey.length >= 16 ? pubkey.substring(0, 16) : pubkey;
+    return ListTile(
+      title: Text(displayName),
+      subtitle: Text(preview, maxLines: 1, overflow: TextOverflow.ellipsis),
+      onTap: () {
+        context.go('/inbox/$pubkey');
+      },
+    );
+  }
+
+  /// LAN discovery controls: mDNS advertise/browse, LAN + QUIC chunk
+  /// servers, power mode snapshot, and a QUIC chunk probe against a
+  /// discovered peer.
+  Widget _lanDiscoverySection(BuildContext context) {
+    final p2p = context.watch<P2pService>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text(
+            'LAN discovery',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (p2p.lanPort == null)
+                ActionChip(
+                  avatar: const Icon(Icons.lan_outlined, size: 18),
+                  label: const Text('LAN server'),
+                  onPressed: () async {
+                    await p2p.start();
+                    if (mounted) setState(() {});
+                  },
+                )
+              else ...[
+                Chip(label: Text('LAN :${p2p.lanPort}')),
+                ActionChip(
+                  label: const Text('Stop LAN'),
+                  onPressed: () async {
+                    await p2p.stopLanServer();
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ],
+              if (p2p.quicPort == null)
+                ActionChip(
+                  avatar: const Icon(Icons.bolt_outlined, size: 18),
+                  label: const Text('QUIC server'),
+                  onPressed: () async {
+                    await p2p.startQuicServer();
+                    if (mounted) setState(() {});
+                  },
+                )
+              else ...[
+                Chip(label: Text('QUIC :${p2p.quicPort}')),
+                ActionChip(
+                  label: const Text('Stop QUIC'),
+                  onPressed: () async {
+                    await p2p.stopQuicServer();
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ],
+              if (p2p.advertising)
+                ActionChip(
+                  avatar: const Icon(Icons.campaign, size: 18),
+                  label: const Text('Advertise: on'),
+                  onPressed: () async {
+                    await p2p.stopAdvertising();
+                    if (mounted) setState(() {});
+                  },
+                )
+              else
+                ActionChip(
+                  avatar: const Icon(Icons.campaign_outlined, size: 18),
+                  label: const Text('Advertise'),
+                  onPressed: () async {
+                    await p2p.startAdvertising();
+                    if (mounted) setState(() {});
+                  },
+                ),
+              if (p2p.browsing)
+                ActionChip(
+                  avatar: const Icon(Icons.wifi_tethering, size: 18),
+                  label: const Text('Browsing…'),
+                  onPressed: () async {
+                    await p2p.stopBrowsing();
+                    if (mounted) setState(() {});
+                  },
+                )
+              else
+                ActionChip(
+                  avatar: const Icon(Icons.wifi_tethering_outlined, size: 18),
+                  label: const Text('Browse LAN'),
+                  onPressed: () async {
+                    await p2p.startBrowsing();
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ActionChip(
+                avatar: const Icon(Icons.refresh, size: 18),
+                label: const Text('Drain peers'),
+                onPressed: () async {
+                  await p2p.drainPeers();
+                  if (mounted) setState(() {});
+                },
+              ),
+              ActionChip(
+                avatar: Icon(
+                  p2p.power?.paused == true
+                      ? Icons.pause_circle_outline
+                      : Icons.battery_charging_full,
+                  size: 18,
+                ),
+                label: Text(p2p.power?.mode ?? 'Power'),
+                onPressed: () async {
+                  await p2p.currentPower();
+                  if (mounted) setState(() {});
+                },
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _chunkHashController,
+                  decoration: const InputDecoration(
+                    labelText: 'Blob hash (QUIC chunk probe)',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Fetch 64 B @ 0 from first QUIC peer',
+                icon: const Icon(Icons.download),
+                onPressed: () => _quicChunkProbe(context, p2p),
+              ),
+            ],
+          ),
+        ),
+        for (final peer in p2p.peers) _peerTile(context, p2p, peer),
+        const Divider(height: 16),
+      ],
+    );
+  }
+
+  Widget _peerTile(BuildContext context, P2pService p2p, P2pPeerDto peer) {
+    return ListTile(
+      dense: true,
+      leading: const Icon(Icons.devices_other, size: 20),
+      title: Text(peer.ip, style: const TextStyle(fontSize: 13)),
+      subtitle: Text(
+        'tcp :${peer.port}${peer.quicPort != null ? ' · quic :${peer.quicPort}' : ''}',
+        style: const TextStyle(fontSize: 12),
+      ),
+      trailing: peer.quicPort != null
+          ? IconButton(
+              icon: const Icon(Icons.download, size: 18),
+              tooltip: 'QUIC probe',
+              onPressed: () => _quicChunkProbe(context, p2p, peer),
+            )
+          : null,
+    );
+  }
+
+  Future<void> _quicChunkProbe(
+    BuildContext context,
+    P2pService p2p, [
+    P2pPeerDto? peer,
+  ]) async {
+    final hash = _chunkHashController.text.trim();
+    P2pPeerDto? target = peer;
+    if (target == null) {
+      for (final p in p2p.peers) {
+        if (p.quicPort != null) {
+          target = p;
+          break;
+        }
+      }
+    }
+    if (hash.isEmpty) {
+      _showSnackBar(context, 'Enter a blob hash first');
+      return;
+    }
+    if (target == null || target.quicPort == null) {
+      _showSnackBar(context, 'No QUIC-capable peers discovered');
+      return;
+    }
+    try {
+      final bytes = await p2p.fetchQuicChunk(
+        addr: target.ip,
+        hash: hash,
+        offset: BigInt.zero,
+        length: BigInt.from(64),
+      );
+      if (!context.mounted) return;
+      _showSnackBar(
+        context,
+        bytes == null
+            ? 'QUIC chunk fetch failed'
+            : 'QUIC chunk: ${bytes.length} B from ${target.ip}',
+      );
+    } catch (e) {
+      if (context.mounted) _showSnackBar(context, 'QUIC probe error: $e');
+    }
+  }
+
+  /// Media tools: chunk-store round trip (text → blob → fetch → verify),
+  /// URL caching, and Blossom upload.
+  Widget _mediaToolsSection(BuildContext context) {
+    final media = context.watch<MediaService>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text(
+            'Media tools',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _mediaTextController,
+                  decoration: const InputDecoration(
+                    labelText: 'Text to store as blob',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Upload → fetch → verify round trip',
+                icon: const Icon(Icons.cloud_upload_outlined),
+                onPressed: () => _mediaRoundTrip(context, media),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _fetchUrlController,
+                  decoration: const InputDecoration(
+                    labelText: 'URL to cache',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Fetch URL into cache',
+                icon: const Icon(Icons.file_download_outlined),
+                onPressed: () => _fetchUrl(context, media),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _blossomServerController,
+                  decoration: const InputDecoration(
+                    labelText: 'Blossom server (upload text)',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Upload text to Blossom',
+                icon: const Icon(Icons.upload_file),
+                onPressed: () => _blossomUpload(context, media),
+              ),
+            ],
+          ),
+        ),
+        if (_mediaResult != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: SelectableText(
+              _mediaResult!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        const Divider(height: 16),
+      ],
+    );
+  }
+
+  Future<void> _mediaRoundTrip(BuildContext context, MediaService media) async {
+    final text = _mediaTextController.text;
+    if (text.isEmpty) {
+      _showSnackBar(context, 'Type some text first');
+      return;
+    }
+    setState(() => _mediaResult = null);
+    try {
+      final bytes = Uint8List.fromList(utf8.encode(text));
+      final manifest = await media.uploadBlob(bytes);
+      final hash = (manifest['blob_hash'] ?? '').toString();
+      if (hash.isEmpty) throw Exception('No blob_hash in manifest');
+      final path = await media.fetchBlob(hash);
+      final mime = await media.mimeType(path);
+      final loaded = await media.loadLocal(path);
+      final roundTrip = utf8.decode(loaded, allowMalformed: true);
+      if (!mounted) return;
+      setState(() {
+        _mediaResult = 'blob $hash · $mime · ${loaded.length} B — '
+            'round trip: ${roundTrip == text ? 'OK' : 'MISMATCH'}'
+            '\n${path.split('/').last}';
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _mediaResult = 'Media round trip error: $e');
+      }
+    }
+  }
+
+  Future<void> _fetchUrl(BuildContext context, MediaService media) async {
+    final url = _fetchUrlController.text.trim();
+    if (url.isEmpty) {
+      _showSnackBar(context, 'Enter a URL');
+      return;
+    }
+    setState(() => _mediaResult = null);
+    try {
+      final path = await media.fetch(url);
+      final mime = await media.mimeType(path);
+      if (!mounted) return;
+      setState(() => _mediaResult = 'Cached: $path ($mime)');
+    } catch (e) {
+      if (mounted) {
+        setState(() => _mediaResult = 'Fetch error: $e');
+      }
+    }
+  }
+
+  Future<void> _blossomUpload(BuildContext context, MediaService media) async {
+    final server = _blossomServerController.text.trim();
+    final text = _mediaTextController.text;
+    if (server.isEmpty) {
+      _showSnackBar(context, 'Enter a Blossom server URL');
+      return;
+    }
+    if (text.isEmpty) {
+      _showSnackBar(context, 'Type some text first');
+      return;
+    }
+    setState(() => _mediaResult = null);
+    try {
+      final file = File(
+          '${Directory.systemTemp.path}/soshal_upload_${DateTime.now().millisecondsSinceEpoch}.txt');
+      await file.writeAsString(text);
+      final result = await media.upload(file.path, blossomServer: server);
+      if (mounted) {
+        setState(() => _mediaResult = 'Blossom result: $result');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _mediaResult = 'Blossom upload error: $e');
+      }
+    }
   }
 
   Widget _ephemeralSection(
@@ -417,7 +828,7 @@ class _InboxScreenState extends State<InboxScreen> {
                           return CheckboxListTile(
                             dense: true,
                             value: selected.contains(pk),
-                            title: Text(_shortPubkey(pk)),
+                            title: Text(prefixEllipsis(pk, 16)),
                             onChanged: (checked) {
                               setDialogState(() {
                                 if (checked == true) {
@@ -498,9 +909,6 @@ class _InboxScreenState extends State<InboxScreen> {
     }
   }
 
-  String _shortPubkey(String pubkey) =>
-      pubkey.length > 16 ? '${pubkey.substring(0, 16)}…' : pubkey;
-
   void _showSnackBar(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: SelectableText(message)),
@@ -529,41 +937,20 @@ class _InboxScreenState extends State<InboxScreen> {
         ),
         body: Consumer<MessagingService>(
           builder: (context, messagingService, child) {
-            final conversations = messagingService.conversations;
-            if (conversations.isEmpty &&
-                messagingService.pendingEphemeral.isEmpty) {
-              return const Center(child: Text('No conversations yet'));
-            }
-
-            final convList = conversations.entries.toList();
-            return ListView.builder(
-              itemExtent: 72.0,
-              itemCount: convList.length + 1,
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return _ephemeralSection(context, messagingService);
-                }
-                final entry = convList[index - 1];
-                final pubkey = entry.key;
-                final messages = entry.value;
-
-                if (messages.isEmpty) return const SizedBox.shrink();
-
-                final lastMessage = messages.last;
-                final preview = lastMessage.decrypted
-                    ? lastMessage.content
-                    : '🔒 ${lastMessage.content}';
-                final displayName =
-                    pubkey.length >= 16 ? pubkey.substring(0, 16) : pubkey;
-                return ListTile(
-                  title: Text(displayName),
-                  subtitle: Text(preview,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  onTap: () {
-                    context.go('/inbox/$pubkey');
-                  },
-                );
-              },
+            final convList = messagingService.conversations.entries.toList();
+            return ListView(
+              children: [
+                _lanDiscoverySection(context),
+                _mediaToolsSection(context),
+                _ephemeralSection(context, messagingService),
+                if (convList.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text('No conversations yet'),
+                  )
+                else
+                  for (final entry in convList) _conversationTile(entry),
+              ],
             );
           },
         ),
@@ -732,7 +1119,8 @@ class _InboxScreenState extends State<InboxScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              _formatTime(message.createdAt),
+              formatClock(DateTime.fromMillisecondsSinceEpoch(
+                  message.createdAt * 1000)),
               style: TextStyle(
                 fontSize: 12,
                 color: isOwn ? Colors.white70 : Colors.grey,
@@ -742,10 +1130,5 @@ class _InboxScreenState extends State<InboxScreen> {
         ),
       ),
     );
-  }
-
-  String _formatTime(int timestamp) {
-    final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
-    return '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 }

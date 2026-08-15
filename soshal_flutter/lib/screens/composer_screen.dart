@@ -1,13 +1,17 @@
 // ignore_for_file: invalid_use_of_internal_member
 
+import 'dart:async';
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../services/audio_service.dart';
 import '../services/feed_service.dart';
-import '../frb_generated.dart';
 import '../services/media_service.dart';
 import '../services/search_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 import '../services/signer_service.dart';
 
 /// Composer Screen
@@ -23,30 +27,119 @@ class _ComposerScreenState extends State<ComposerScreen> {
   final _contentController = TextEditingController();
   final List<String> _tags = [];
   final List<String> _mentions = [];
+  Timer? _tagDebounce;
   List<String> _detectedTags = [];
+  List<SearchResultItem> _mentionResults = [];
+  static final RegExp _mentionRe = RegExp(r'@([A-Za-z0-9_.:\-]{1,})$');
   bool _isPosting = false;
   PostMedia? _pendingMedia;
   bool _uploadingMedia = false;
+  double? _voiceDuration;
+  List<double> _voicePeaks = const [];
+  String? _voiceBlobHash;
+  int _voiceSize = 0;
+
+  /// Pick an audio file, encode it as a voice memo via the Rust storage-core
+  /// codec, and attach it to the post as a blob-backed `audio` media tag.
+  Future<void> _attachVoiceNote() async {
+    try {
+      final picked = await FilePicker.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+      );
+      final path = picked.isEmpty ? null : picked.single.path;
+      if (path == null || !mounted) return;
+      final audio = AudioService();
+      final bytes = await File(path).readAsBytes();
+      final pcm = bytes.length >= 44 && bytes[0] == 0x52 && bytes[8] == 0x57
+          ? bytes.sublist(44)
+          : bytes;
+      if (pcm.isEmpty) throw Exception('No audio samples in $path');
+      final payload = audio.encodeVoice(pcm);
+      final decoded = audio.decodeVoice(payload);
+      if (decoded.isEmpty) throw Exception('Voice encode produced no samples');
+      final duration = audio.durationSecs(payload);
+      final peaks = audio.peaksFor(path);
+      final tmp = File(
+          '${Directory.systemTemp.path}/voice_${DateTime.now().millisecondsSinceEpoch}.vo');
+      await tmp.writeAsBytes(payload);
+      final manifest = await context.read<MediaService>().uploadMedia(tmp.path);
+      final blobHash = manifest['blob_hash'] as String? ?? '';
+      if (blobHash.length != 64) {
+        throw Exception('Voice upload failed (bad manifest)');
+      }
+      if (!mounted) return;
+      setState(() {
+        _voiceDuration = duration;
+        _voicePeaks = peaks;
+        _voiceBlobHash = blobHash;
+        _voiceSize = payload.length;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Voice note failed: $e')),
+        );
+      }
+    }
+  }
 
   void _onContentChanged() {
-    final detected = RustLib.instance.api
-        .crateFfiContentContentExtractHashtags(text: _contentController.text);
-    setState(() => _detectedTags = detected);
+    _tagDebounce?.cancel();
+    _tagDebounce = Timer(const Duration(milliseconds: 300), () async {
+      final text = _contentController.text;
+      final detected = context.read<FeedService>().utilExtractHashtags(text);
+      if (!mounted) return;
+      setState(() => _detectedTags = detected);
+
+      final match = _mentionRe.firstMatch(text);
+      if (match == null) {
+        if (_mentionResults.isNotEmpty) {
+          setState(() => _mentionResults = []);
+        }
+        return;
+      }
+      final query = match.group(1) ?? '';
+      final results = await context
+          .read<SearchService>()
+          .mentions(query, limit: 8)
+          .catchError((e) => <SearchResultItem>[]);
+      if (!mounted) return;
+      setState(() => _mentionResults = results);
+    });
+  }
+
+  /// Insert a picked mention: drop the typed `@query` token and add the
+  /// pubkey chip.
+  void _selectMention(SearchResultItem r) {
+    final key = r.pubkey ?? r.id;
+    if (key.isEmpty) return;
+    final text = _contentController.text;
+    final match = _mentionRe.firstMatch(text);
+    final start = match?.start ?? text.length;
+    final next = text.substring(0, start);
+    _contentController.text = next;
+    _contentController.selection = TextSelection.collapsed(offset: next.length);
+    setState(() {
+      _mentions.add(key);
+      _mentionResults = [];
+    });
   }
 
   @override
   void dispose() {
+    _tagDebounce?.cancel();
     _contentController.dispose();
     super.dispose();
   }
 
   Future<void> _attachMedia() async {
     try {
-      final result = await FilePicker.pickFiles(
+      final picked = await FilePicker.pickFiles(
         type: FileType.any,
         allowMultiple: false,
       );
-      final path = result?.files.single.path;
+      final path = picked.isEmpty ? null : picked.single.path;
       if (path == null || !mounted) return;
       setState(() => _uploadingMedia = true);
       final manifest = await context.read<MediaService>().uploadMedia(path);
@@ -136,6 +229,14 @@ class _ComposerScreenState extends State<ComposerScreen> {
             _pendingMedia!.blobHash,
             _pendingMedia!.size.toString(),
           ],
+        if (_voiceBlobHash != null)
+          [
+            'media',
+            'audio',
+            'blob://$_voiceBlobHash',
+            _voiceBlobHash!,
+            _voiceSize.toString(),
+          ],
       ];
 
       await feedService.publishTextNote(
@@ -143,6 +244,17 @@ class _ComposerScreenState extends State<ComposerScreen> {
         tags,
         sessionService.activePubkey!,
       );
+
+      // Mirror the published note into the offline outbox queue so the sync
+      // engine can fan it out to additional relays.
+      try {
+        await feedService.enqueueOutboxPost(
+          _contentController.text,
+          mediaPath: _pendingMedia?.blobHash,
+        );
+      } catch (e) {
+        debugPrint('outbox enqueue: $e');
+      }
 
       if (mounted) {
         Navigator.of(context).pop();
@@ -203,6 +315,33 @@ class _ComposerScreenState extends State<ComposerScreen> {
               enabled: !_isPosting,
             ),
             const SizedBox(height: 8),
+            if (_mentionResults.isNotEmpty)
+              Material(
+                elevation: 2,
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  height: 160,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _mentionResults.length,
+                    itemBuilder: (context, i) {
+                      final r = _mentionResults[i];
+                      return ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.person_outline, size: 18),
+                        title: Text(r.title,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(
+                          firstChars(r.pubkey ?? r.id, 12),
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        onTap: () => _selectMention(r),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
             if (_detectedTags.isNotEmpty)
               Wrap(
                 spacing: 8,
@@ -247,7 +386,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
                 spacing: 8,
                 children: _mentions.map((mention) {
                   return Chip(
-                    label: Text('@${mention.substring(0, 8)}...'),
+                    label:
+                        Text('@${prefixEllipsis(mention, 8, ellipsis: '...')}'),
                     onDeleted: () {
                       setState(() => _mentions.remove(mention));
                     },
@@ -282,8 +422,48 @@ class _ComposerScreenState extends State<ComposerScreen> {
                       _isPosting || _uploadingMedia ? null : _attachMedia,
                   tooltip: 'Attach media',
                 ),
+                IconButton(
+                  icon: const Icon(Icons.mic),
+                  onPressed:
+                      _isPosting || _uploadingMedia ? null : _attachVoiceNote,
+                  tooltip: 'Attach voice note (WAV / PCM)',
+                ),
               ],
             ),
+            if (_voiceBlobHash != null) ...[
+              const SizedBox(height: 8),
+              Chip(
+                avatar: const Icon(Icons.mic),
+                label: Text(
+                  'Voice note · ${_voiceDuration?.toStringAsFixed(1)}s',
+                ),
+                onDeleted: () => setState(() {
+                  _voiceDuration = null;
+                  _voicePeaks = const [];
+                  _voiceBlobHash = null;
+                  _voiceSize = 0;
+                }),
+              ),
+              if (_voicePeaks.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (final p in _voicePeaks)
+                        Container(
+                          width: 3,
+                          height: 4 + p.clamp(0.0, 1.0).toDouble() * 24,
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary,
+                            borderRadius: BorderRadius.circular(1),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
             if (_pendingMedia != null) ...[
               const SizedBox(height: 8),
               Chip(
@@ -404,7 +584,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
                             title: Text(r.title,
                                 maxLines: 1, overflow: TextOverflow.ellipsis),
                             subtitle: Text(
-                              (r.pubkey ?? r.id).substring(0, 12),
+                              firstChars(r.pubkey ?? r.id, 12),
                               style: const TextStyle(fontSize: 11),
                             ),
                             onTap: () {

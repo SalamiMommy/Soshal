@@ -17,6 +17,16 @@ class _TursoSettingsScreenState extends State<TursoSettingsScreen> {
   final _tokenController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<TursoService>().checkStatus();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _urlController.dispose();
     _tokenController.dispose();
@@ -50,6 +60,13 @@ class _TursoSettingsScreenState extends State<TursoSettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Turso Database Sync'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh status',
+            onPressed: () => context.read<TursoService>().checkStatus(),
+          ),
+        ],
       ),
       body: Consumer<TursoService>(
         builder: (context, turso, child) {

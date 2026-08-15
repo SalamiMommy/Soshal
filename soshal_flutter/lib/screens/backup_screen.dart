@@ -1,8 +1,6 @@
 // ignore_for_file: invalid_use_of_internal_member
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:soshal_flutter/frb_generated.dart';
 import '../services/ffi_bridge.dart';
 import '../services/error_log.dart';
 import '../services/session_service.dart';
@@ -32,7 +30,7 @@ class _BackupScreenState extends State<BackupScreen> {
     final out = <String, int>{};
     for (final t in tables) {
       try {
-        final c = RustLib.instance.api.crateFfiDbDbCount(table: t);
+        final c = FfiBridge.dbCount(t);
         if (c > 0) out[t] = c.toInt();
       } catch (e, st) {
         debugPrint('backup table count failed: $e');
@@ -170,12 +168,8 @@ class _BackupScreenState extends State<BackupScreen> {
 
   Future<void> _export(BuildContext context) async {
     try {
-      final dbPath = await FfiBridge.getDbPath();
-      final backupPath =
-          '${dbPath.substring(0, dbPath.lastIndexOf('/'))}/soshal_backup.db';
-      final result = RustLib.instance.api.crateFfiDbDbBackup(
-        backupPath: backupPath,
-      );
+      final backupPath = await FfiBridge.getBackupPath();
+      final result = await FfiBridge.backup(backupPath);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: SelectableText('Backup written: $result')),
@@ -192,12 +186,8 @@ class _BackupScreenState extends State<BackupScreen> {
 
   Future<void> _restore(BuildContext context) async {
     try {
-      final dbPath = await FfiBridge.getDbPath();
-      final backupPath =
-          '${dbPath.substring(0, dbPath.lastIndexOf('/'))}/soshal_backup.db';
-      RustLib.instance.api.crateFfiDbDbRestore(
-        backupPath: backupPath,
-      );
+      final backupPath = await FfiBridge.getBackupPath();
+      await FfiBridge.restore(backupPath);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: SelectableText('Restored from backup')),

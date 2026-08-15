@@ -100,7 +100,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_audio_peaks_wav_fixture() {
         let pcm = sine_pcm(2.0, 220.0);
         let data_len = (pcm.len() * 2) as u32;

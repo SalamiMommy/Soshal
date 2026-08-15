@@ -127,6 +127,26 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
+  /// Fetch a single dating profile by profile event id (fresh from the
+  /// store, not the swipe deck).
+  Future<DatingCard> getProfile(String profileId) async {
+    try {
+      final json = RustLib.instance.api.crateFfiDatingDatingGetProfile(
+        profileId: profileId,
+      );
+      final card = DatingCard.fromJson(
+        jsonDecode(json) as Map<String, dynamic>,
+      );
+      clearLastError();
+      notifyDeferred();
+      return card;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
   Future<String> createProfile(
     String userPubkey,
     String name,

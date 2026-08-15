@@ -460,11 +460,11 @@ mod tests {
             search_index_profile("pk9".to_string(), "carol".to_string(), String::new()).unwrap()
         );
         assert_eq!(
-            parse_arr(&search_posts("seed".to_string(), 10).unwrap()).len(),
+            parse_arr(&search_posts("indexed".to_string(), 10).unwrap()).len(),
             1
         );
         assert!(search_remove_indexed("p1".to_string()).unwrap());
-        assert!(parse_arr(&search_posts("seed".to_string(), 10).unwrap()).is_empty());
+        assert!(parse_arr(&search_posts("indexed".to_string(), 10).unwrap()).is_empty());
     }
 
     #[test]

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/dating_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Dating: browse cards, like/pass/superlike, matches, likes received.
 class DatingScreen extends StatefulWidget {
@@ -123,7 +124,7 @@ class _DatingScreenState extends State<DatingScreen>
                         ),
                       ],
                     ),
-                    if (_matchCard != null) _buildMatchOverlay(),
+                    if (_matchCard != null) _buildMatchOverlay(pubkey),
                   ],
                 ),
     );
@@ -235,7 +236,7 @@ class _DatingScreenState extends State<DatingScreen>
                                 children: [
                                   Text(
                                     card.name.isEmpty
-                                        ? card.pubkey.substring(0, 12)
+                                        ? firstChars(card.pubkey, 12)
                                         : card.name,
                                     style:
                                         Theme.of(context).textTheme.titleLarge,
@@ -428,9 +429,8 @@ class _DatingScreenState extends State<DatingScreen>
                         ),
                       )
                     : const CircleAvatar(child: Icon(Icons.person)),
-                title:
-                    Text(m.name.isEmpty ? m.pubkey.substring(0, 12) : m.name),
-                subtitle: Text(m.pubkey.substring(0, 12)),
+                title: Text(m.name.isEmpty ? firstChars(m.pubkey, 12) : m.name),
+                subtitle: Text(firstChars(m.pubkey, 12)),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -467,19 +467,144 @@ class _DatingScreenState extends State<DatingScreen>
                       onPressed: () => context.push('/inbox/${m.pubkey}'),
                       child: const Text('Message'),
                     ),
+                    PopupMenuButton<String>(
+                      padding: EdgeInsets.zero,
+                      iconSize: 20,
+                      tooltip: 'More',
+                      onSelected: (value) {
+                        if (value == 'unmatch') {
+                          _confirmUnmatch(api, pubkey, m);
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'unmatch',
+                          child: Text('Unmatch'),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-                onTap: () => _showCompatibility(
-                    api,
-                    pubkey,
-                    m,
-                    m.compatibilityScore * 100 > 0
-                        ? m.compatibilityScore * 100
-                        : 0),
+                onTap: () => _showProfileDetail(api, pubkey, m),
               );
             },
           );
         },
+      ),
+    );
+  }
+
+  /// Match tile tap: fetch the fresh dating profile from the store
+  /// (`dating_get_profile`) and show it as a detail bottom sheet.
+  Future<void> _showProfileDetail(
+    DatingService api,
+    String pubkey,
+    DatingCard match,
+  ) async {
+    final DatingCard profile;
+    try {
+      profile = await api.getProfile(match.pubkey);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Profile fetch error: $e')),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    final name =
+        profile.name.isEmpty ? firstChars(profile.pubkey, 12) : profile.name;
+    final score = await _scoreFor(api, pubkey, profile.pubkey);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) => ListView(
+          controller: scrollController,
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+          children: [
+            if (profile.images.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.network(
+                  profile.images.first,
+                  height: 200,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 200,
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.person, size: 64),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+            Text(
+              profile.age > 0 ? '$name, ${profile.age}' : name,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            if (profile.location.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('📍 ${profile.location}'),
+              ),
+            if (profile.bio.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(profile.bio),
+              ),
+            if (profile.interests.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  spacing: 6,
+                  children: [
+                    for (final i in profile.interests)
+                      Chip(
+                        label: Text('#$i'),
+                        labelStyle: const TextStyle(fontSize: 11),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 16),
+            if (score > 0)
+              Center(
+                child: Text(
+                  '${score.round()}% compatibility',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(color: Colors.green.shade700),
+                ),
+              ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FilledButton.icon(
+                  icon: const Icon(Icons.chat_bubble_outline),
+                  label: const Text('Message'),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    context.push('/inbox/${profile.pubkey}');
+                  },
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -511,20 +636,37 @@ class _DatingScreenState extends State<DatingScreen>
                         ),
                       )
                     : const CircleAvatar(child: Icon(Icons.person)),
-                title:
-                    Text(l.name.isEmpty ? l.pubkey.substring(0, 12) : l.name),
+                title: Text(l.name.isEmpty ? firstChars(l.pubkey, 12) : l.name),
                 subtitle: Text('Liked you'),
-                trailing: TextButton(
-                  onPressed: () async {
-                    await api.like(pubkey, l.pubkey);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: SelectableText('It\'s a match!')),
-                      );
-                    }
-                  },
-                  child: const Text('Match back'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      onPressed: () async {
+                        await api.like(pubkey, l.pubkey);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: SelectableText('It\'s a match!')),
+                          );
+                        }
+                      },
+                      child: const Text('Match back'),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.person_remove, size: 20),
+                      tooltip: 'Unlike',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () async {
+                        await api.unlike(pubkey, l.pubkey);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Removed like')),
+                          );
+                        }
+                      },
+                    ),
+                  ],
                 ),
               );
             },
@@ -542,8 +684,7 @@ class _DatingScreenState extends State<DatingScreen>
     final computed =
         score <= 0 ? await _scoreFor(api, pubkey, match.pubkey) : score;
     if (!mounted || computed <= 0) return;
-    final name =
-        match.name.isEmpty ? match.pubkey.substring(0, 12) : match.name;
+    final name = match.name.isEmpty ? firstChars(match.pubkey, 12) : match.name;
     final String label;
     final String detail;
     if (computed >= 70) {
@@ -611,7 +752,23 @@ class _DatingScreenState extends State<DatingScreen>
   Future<void> _blockCard(
       DatingService api, String pubkey, DatingCard card) async {
     await api.block(pubkey, card.pubkey);
-    if (mounted) setState(() => _cardIndex++);
+    if (!mounted) return;
+    setState(() => _cardIndex++);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Blocked'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            await api.unblock(pubkey, card.pubkey);
+            if (mounted) {
+              setState(() =>
+                  _cardIndex = (_cardIndex - 1).clamp(0, api.cards.length - 1));
+            }
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _reportCard(
@@ -661,9 +818,38 @@ class _DatingScreenState extends State<DatingScreen>
     }
   }
 
-  Widget _buildMatchOverlay() {
+  Future<bool> _confirmUnmatch(
+      DatingService api, String pubkey, DatingCard card) async {
+    final name = card.name.isEmpty ? firstChars(card.pubkey, 12) : card.name;
+    final doIt = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unmatch?'),
+        content: Text('Unmatch with $name? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Unmatch'),
+          ),
+        ],
+      ),
+    );
+    if (doIt != true || !mounted) return false;
+    final ok = await api.unmatch(pubkey, card.pubkey);
+    if (!mounted) return false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Unmatched' : 'Failed to unmatch')),
+    );
+    return ok;
+  }
+
+  Widget _buildMatchOverlay(String pubkey) {
     final card = _matchCard!;
-    final name = card.name.isEmpty ? card.pubkey.substring(0, 12) : card.name;
+    final name = card.name.isEmpty ? firstChars(card.pubkey, 12) : card.name;
     return Positioned.fill(
       child: Container(
         color: Colors.black.withValues(alpha: 0.65),
@@ -692,7 +878,7 @@ class _DatingScreenState extends State<DatingScreen>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  card.pubkey.substring(0, 12),
+                  firstChars(card.pubkey, 12),
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
@@ -714,6 +900,18 @@ class _DatingScreenState extends State<DatingScreen>
                 TextButton(
                   onPressed: () => setState(() => _matchCard = null),
                   child: const Text('Keep Browsing'),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                  onPressed: () async {
+                    final api = context.read<DatingService>();
+                    final ok = await _confirmUnmatch(api, pubkey, card);
+                    if (!mounted) return;
+                    if (ok) setState(() => _matchCard = null);
+                  },
+                  child: const Text('Unmatch'),
                 ),
               ],
             ),

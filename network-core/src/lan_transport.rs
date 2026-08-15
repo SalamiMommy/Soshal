@@ -141,7 +141,11 @@ fn handle_conn(stream: TcpStream, key: [u8; 32], store: &ChunkStore) {
     }
     let mut inner = reader.into_inner();
     // Authenticate: MAC must match the identity-derived key...
-    match lan::parse_beacon(&key, LAN_MAGIC, line.trim_end(), 0) {
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    match lan::parse_beacon(&key, LAN_MAGIC, line.trim_end(), 0, now_secs) {
         Some(_) if !global_power_scheduler().mode().paused() => {
             let _ = writer.write_all(b"OK\n");
         }
@@ -434,7 +438,11 @@ fn lan_exchange(
         .map_err(|e| format!("write timeout: {e}"))?;
 
     // Handshake: same MAC'd beacon body the server expects.
-    let body = lan::beacon_body(LAN_MAGIC, my_pubkey, 0);
+    let ts_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let body = lan::beacon_body(LAN_MAGIC, my_pubkey, 0, ts_secs);
     let mac = lan::beacon_mac(&key, &body);
     stream
         .write_all(format!("{body}:{mac}\n").as_bytes())
@@ -516,11 +524,12 @@ mod tests {
     #[test]
     fn beacon_handshake_roundtrip() {
         let key = [7u8; 32];
-        let body = lan::beacon_body(LAN_MAGIC, &"ab".repeat(32), 9999);
+        let ts_secs = 1_700_000_000;
+        let body = lan::beacon_body(LAN_MAGIC, &"ab".repeat(32), 9999, ts_secs);
         let mac = lan::beacon_mac(&key, &body);
-        let parsed = lan::parse_beacon(&key, LAN_MAGIC, &format!("{body}:{mac}"), 0);
+        let parsed = lan::parse_beacon(&key, LAN_MAGIC, &format!("{body}:{mac}"), 0, ts_secs);
         assert_eq!(parsed, Some(("ab".repeat(32), 9999)));
-        let bad = lan::parse_beacon(&key, LAN_MAGIC, &format!("{body}:f00d"), 0);
+        let bad = lan::parse_beacon(&key, LAN_MAGIC, &format!("{body}:f00d"), 0, ts_secs);
         assert!(bad.is_none());
     }
 

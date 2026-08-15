@@ -107,6 +107,18 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
         );
 
         if (frameBytes.isNotEmpty) {
+          // Allocate a shared frame buffer on the Rust raster side before
+          // painting (Android-only path; failures are silent).
+          BigInt? bufferPtr;
+          try {
+            final fb = await RustLib.instance.api
+                .crateFfiRasterRasterAllocateFrameBuffer(
+              width: widget.width.toInt(),
+              height: widget.height.toInt(),
+            );
+            bufferPtr = fb.bufferPtrAddr;
+          } catch (_) {}
+
           final completer = Completer<ui.Image>();
           ui.decodeImageFromPixels(
             frameBytes,
@@ -122,6 +134,16 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
               _renderedImage = img;
             });
             oldImg?.dispose();
+            if (bufferPtr != null) {
+              try {
+                await RustLib.instance.api
+                    .crateFfiRasterRasterSignalImpellerFrameReady(
+                  textureId: PlatformInt64Util.from(bufferPtr.toInt()),
+                  frameTimestampNs:
+                      BigInt.from(DateTime.now().microsecondsSinceEpoch * 1000),
+                );
+              } catch (_) {}
+            }
           } else {
             img.dispose();
           }

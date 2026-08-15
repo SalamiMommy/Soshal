@@ -33,7 +33,8 @@ mod network_ffi_tests {
 
     #[test]
     fn network_ffi_notify_interface_change_invalid() {
-        assert!(network::network_notify_interface_change("not-an-ip".to_string()).is_err());
+        let e = network::network_notify_interface_change("not-an-ip".to_string()).unwrap_err();
+        assert!(e.contains("Invalid IP address format"), "got {e}");
     }
 
     #[test]
@@ -90,16 +91,35 @@ mod network_ffi_tests {
     #[test]
     fn network_ffi_i2p_stop_session_inert() {
         assert!(!network::i2p_stop_session().unwrap());
+        let status = network::i2p_session_status().unwrap();
+        assert!(status.contains("\"running\":false"), "got {status}");
     }
 
     #[test]
-    fn network_ffi_reconcile_prolly_tree_ok() {
-        let resp = network::network_reconcile_prolly_tree(
-            "[[\"a\",\"1\"],[\"b\",\"2\"]]".to_string(),
-            "abc123".to_string(),
-        )
-        .unwrap();
-        assert!(!resp.is_empty());
+    fn network_ffi_reconcile_prolly_tree_matching_roots() {
+        let kv = "[[\"a\",\"1\"],[\"b\",\"2\"]]".to_string();
+        let tree = soshal_sync_core::prolly_tree::ProllyTree::build(&[
+            ("a".to_string(), "1".to_string()),
+            ("b".to_string(), "2".to_string()),
+        ]);
+        let resp = network::network_reconcile_prolly_tree(kv, tree.root_hash.clone()).unwrap();
+        assert_eq!(resp, "\"Match\"", "equal roots -> Match");
+    }
+
+    #[test]
+    fn network_ffi_reconcile_prolly_tree_divergent_roots() {
+        let kv = "[[\"a\",\"1\"],[\"b\",\"2\"]]".to_string();
+        let other = soshal_sync_core::prolly_tree::ProllyTree::build(&[
+            ("a".to_string(), "1".to_string()),
+            ("b".to_string(), "9".to_string()),
+        ]);
+        let resp = network::network_reconcile_prolly_tree(kv, other.root_hash).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
+        assert!(
+            v["RequestBranch"]["level"] == 0,
+            "divergent roots -> RequestBranch, got {resp}"
+        );
+        assert!(!v["RequestBranch"]["node_hash"].as_str().unwrap().is_empty());
     }
 
     #[test]
@@ -112,19 +132,42 @@ mod network_ffi_tests {
     #[test]
     fn network_ffi_reticulum_stop_inert() {
         assert!(network::network_reticulum_stop().unwrap());
+        assert!(
+            network::network_reticulum_stop().unwrap(),
+            "double stop idempotent"
+        );
+        let status = network::network_reticulum_status().unwrap();
+        assert!(status.contains("\"running\":false"), "got {status}");
     }
 
     #[test]
     fn network_ffi_reticulum_address_from_pubkey() {
-        let addr = network::reticulum_address_from_pubkey("test-pubkey".to_string()).unwrap();
-        assert!(!addr.is_empty());
+        let addr: serde_json::Value = serde_json::from_str(
+            &network::reticulum_address_from_pubkey("test-pubkey".to_string()).unwrap(),
+        )
+        .unwrap();
+        let bytes = addr.as_array().unwrap();
+        assert_eq!(bytes.len(), 16, "16-byte RNS address");
+        let again: serde_json::Value = serde_json::from_str(
+            &network::reticulum_address_from_pubkey("test-pubkey".to_string()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(addr, again, "deterministic derivation");
     }
 
     #[test]
     fn network_ffi_reticulum_address_from_aspect() {
-        let addr =
-            network::reticulum_address_from_aspect("soshal".to_string(), "default".to_string())
-                .unwrap();
-        assert!(!addr.is_empty());
+        let a: serde_json::Value = serde_json::from_str(
+            &network::reticulum_address_from_aspect("soshal".to_string(), "default".to_string())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(a.as_array().unwrap().len(), 16);
+        let b: serde_json::Value = serde_json::from_str(
+            &network::reticulum_address_from_aspect("soshal".to_string(), "dm".to_string())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_ne!(a, b, "distinct aspects -> distinct addresses");
     }
 }

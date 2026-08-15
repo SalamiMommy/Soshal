@@ -7,7 +7,8 @@ import 'error_log.dart';
 
 /// Marketplace Service
 /// NIP-15 style listings, orders and escrow through the bridge.
-class MarketplaceService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
+class MarketplaceService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify {
   List<ListingInfo> _listings = [];
   ListingInfo? _current;
   List<OrderInfo> _orders = [];
@@ -179,6 +180,44 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin, DeferredNot
         buyerPubkey: buyerPubkey,
       ),
     );
+  }
+
+  /// Full order detail by id (fresh DB read, not the orders-tab cache).
+  Future<OrderInfo> getOrder(String orderId) async {
+    try {
+      final json = RustLib.instance.api.crateFfiMarketplaceMarketplaceGetOrder(
+        orderId: orderId,
+      );
+      final order =
+          OrderInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
+      clearLastError();
+      return order;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Full escrow detail by id (fresh DB read).
+  Future<EscrowInfo> getEscrow(String escrowId) async {
+    try {
+      final json = RustLib.instance.api.crateFfiMarketplaceMarketplaceGetEscrow(
+        escrowId: escrowId,
+      );
+      final decoded = jsonDecode(json);
+      final map = decoded is List<dynamic>
+          ? (decoded.isEmpty ? null : decoded.first as Map<String, dynamic>)
+          : decoded as Map<String, dynamic>;
+      if (map == null) throw Exception('Escrow not found');
+      final escrow = EscrowInfo.fromJson(map);
+      clearLastError();
+      return escrow;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
   }
 
   Future<List<OrderInfo>> sellerOrders(String sellerPubkey) async {
@@ -492,6 +531,23 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin, DeferredNot
       clearLastError();
       notifyDeferred();
       return _orders;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Escrow rows where `pubkey` participates as buyer or seller (JSON).
+  Future<List<EscrowInfo>> escrowsByParticipant(String pubkey) async {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiDbDbGetEscrowsByParticipant(pubkey: pubkey);
+      clearLastError();
+      final decoded = jsonDecode(json);
+      return (decoded as List<dynamic>)
+          .map((e) => EscrowInfo.fromJson(e as Map<String, dynamic>))
+          .toList();
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();

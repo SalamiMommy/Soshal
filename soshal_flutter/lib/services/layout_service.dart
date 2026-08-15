@@ -26,8 +26,49 @@ class LayoutService extends ChangeNotifier {
   /// event_id -> media block height in px
   final Map<String, double> _mediaHeights = {};
 
+  /// Posts from the last [refresh] — reused by [updateViewMetrics].
+  List<FeedPost>? _lastPosts;
+
   bool get ready => _ready;
   Map<String, double> get heights => Map.unmodifiable(_heights);
+
+  Map<String, Object> _requestFor(FeedPost p) => {
+        'id': p.eventId,
+        'text': {
+          'content': p.content,
+          'font_size_px': _fontSizePx * _textScale,
+          'line_height_factor': _lineHeightFactor,
+          'max_width_px':
+              (_screenWidth - 16).toDouble(), // card margins + padding
+          'bold': false,
+        },
+        'media': <Map<String, Object>>[],
+        'chrome': {
+          'header_px': _headerPx,
+          'action_px': _actionPx,
+          'padding_px': _paddingPx,
+          'gap_px': _gapPx,
+          'max_media_height_px': 480.0,
+        },
+      };
+
+  /// Compute the layout of a single card via feed-core (sync FFI).
+  (double, double)? _computeCardLayout(FeedPost post) {
+    try {
+      final json = RustLib.instance.api.crateFfiFeedFeedComputeCardLayout(
+        requestJson: jsonEncode(_requestFor(post)),
+      );
+      final m = jsonDecode(json) as Map<String, dynamic>;
+      final id = m['id'] as String? ?? '';
+      if (id.isEmpty) return null;
+      final height = (m['height_px'] as num?)?.toDouble() ?? 0;
+      final media = (m['media_height_px'] as num?)?.toDouble() ?? 0;
+      return (height, media);
+    } catch (e) {
+      debugPrint('card layout: $e');
+      return null;
+    }
+  }
 
   /// Feed cards: compute all layouts for the visible posts in one call.
   Future<void> refresh(
@@ -37,27 +78,8 @@ class LayoutService extends ChangeNotifier {
   }) async {
     _screenWidth = screenWidth;
     _textScale = textScale;
-    final requests = posts
-        .map((p) => {
-              'id': p.eventId,
-              'text': {
-                'content': p.content,
-                'font_size_px': _fontSizePx * _textScale,
-                'line_height_factor': _lineHeightFactor,
-                'max_width_px':
-                    (_screenWidth - 16).toDouble(), // card margins + padding
-                'bold': false,
-              },
-              'media': <Map<String, Object>>[],
-              'chrome': {
-                'header_px': _headerPx,
-                'action_px': _actionPx,
-                'padding_px': _paddingPx,
-                'gap_px': _gapPx,
-                'max_media_height_px': 480.0,
-              },
-            })
-        .toList();
+    _lastPosts = posts;
+    final requests = posts.map((p) => _requestFor(p)).toList();
     try {
       final json = RustLib.instance.api.crateFfiFeedFeedComputeCardLayouts(
           requestsJson: jsonEncode(requests));
@@ -79,7 +101,20 @@ class LayoutService extends ChangeNotifier {
   }
 
   /// Height for a post card, or null when not computed yet (natural layout).
-  double? heightFor(FeedPost post) => _heights[post.eventId];
+  /// Falls back to a per-card [computeCardLayout] call for uncached posts.
+  double? heightFor(FeedPost post) {
+    final cached = _heights[post.eventId];
+    if (cached != null) return cached;
+    final result = _computeCardLayout(post);
+    if (result != null) {
+      _heights[post.eventId] = result.$1;
+      _mediaHeights[post.eventId] = result.$2;
+      _ready = true;
+      notifyListeners();
+      return result.$1;
+    }
+    return null;
+  }
 
   /// For ListView.itemExtentBuilder — index beyond posts maps to null
   /// (loading footer sizes naturally).
@@ -91,5 +126,16 @@ class LayoutService extends ChangeNotifier {
   void updateViewMetrics({required int screenWidth, double textScale = 1.0}) {
     _screenWidth = screenWidth;
     _textScale = textScale;
+    final posts = _lastPosts;
+    if (posts == null) return;
+    for (final p in posts) {
+      final result = _computeCardLayout(p);
+      if (result != null) {
+        _heights[p.eventId] = result.$1;
+        _mediaHeights[p.eventId] = result.$2;
+      }
+    }
+    if (_heights.isNotEmpty) _ready = true;
+    notifyListeners();
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/session_service.dart';
 import '../services/vouch_service.dart';
+import '../utils/format.dart';
 
 /// Vouch: web-of-trust endorsements for a target pubkey.
 class VouchScreen extends StatefulWidget {
@@ -60,23 +61,12 @@ class _VouchScreenState extends State<VouchScreen> {
       final id = await context.read<VouchService>().publish(target, content);
       if (!mounted) return;
       _contentController.clear();
-      setState(() => _status = 'Published ${_short(id)}');
+      setState(() =>
+          _status = 'Published ${prefixEllipsis(id, 16, ellipsis: '...')}');
       await _load();
     } catch (e) {
       if (mounted) setState(() => _status = 'Failed: $e');
     }
-  }
-
-  String _short(String id) =>
-      id.length <= 16 ? id : '${id.substring(0, 16)}...';
-
-  String _time(int createdAt) {
-    if (createdAt <= 0) return '';
-    final t = DateTime.fromMillisecondsSinceEpoch(createdAt * 1000).toLocal();
-    return '${t.year}-${t.month.toString().padLeft(2, '0')}-'
-        '${t.day.toString().padLeft(2, '0')} '
-        '${t.hour.toString().padLeft(2, '0')}:'
-        '${t.minute.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -130,7 +120,8 @@ class _VouchScreenState extends State<VouchScreen> {
                     ?.copyWith(color: Theme.of(context).colorScheme.outline)),
           ],
           const Divider(height: 32),
-          Text('Vouches for ${_short(_targetController.text.trim())}',
+          Text(
+              'Vouches for ${prefixEllipsis(_targetController.text.trim(), 16, ellipsis: '...')}',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           if (_loading)
@@ -158,7 +149,7 @@ class _VouchScreenState extends State<VouchScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(_short(v.pubkey),
+                            Text(prefixEllipsis(v.pubkey, 16, ellipsis: '...'),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold, fontSize: 13)),
                             if (v.content.isNotEmpty) ...[
@@ -168,7 +159,7 @@ class _VouchScreenState extends State<VouchScreen> {
                             if (v.createdAt > 0) ...[
                               const SizedBox(height: 4),
                               Text(
-                                _time(v.createdAt),
+                                formatTimestamp(v.createdAt),
                                 style: Theme.of(context)
                                     .textTheme
                                     .bodySmall

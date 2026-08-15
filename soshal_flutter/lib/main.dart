@@ -1,9 +1,12 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'routes/app_router.dart';
 import 'services/ffi_bridge.dart';
 import 'ffi/db.dart' as ffi_db;
+import 'frb_generated.dart';
 import 'services/auth_service.dart';
 import 'services/feed_service.dart';
 import 'services/session_service.dart';
@@ -130,17 +133,90 @@ class _SoshalAppState extends State<SoshalApp> {
       // relay-gated fetches (chatrandom, musicloud, …) don't fail with
       // "relay client not initialized" before sign-in. Idempotent; account
       // relays take over after auth. Failures land in the outer catch.
-      await context
-          .read<NetworkService>()
-          .initRelays(NetworkService.defaultRelays);
+      final networkService = context.read<NetworkService>();
+      await networkService.initRelays(NetworkService.defaultRelays);
       final syncService = context.read<SyncService>();
       syncService.attach(
         feed: context.read<FeedService>(),
         messaging: context.read<MessagingService>(),
       );
+      // Tell the Rust network stack we came up on Wi-Fi. Resolves the real
+      // local IP + QUIC port; no-ops silently when unavailable.
+      await networkService.notifyInterfaceChange();
+      // Defensive initial deep-link attempt — no plugin installed, so the
+      // default route is parsed as a potential nostr: URI. Failures are
+      // swallowed; the protocol handler stays wired for when a real link
+      // arrives.
+      try {
+        final route = ui.PlatformDispatcher.instance.defaultRouteName;
+        final uri = Uri.tryParse(route);
+        if (uri == null || uri.scheme.isEmpty) {
+          // No deep link.
+        } else if (uri.scheme == 'nostr') {
+          await _handleNostrDeepLink(route);
+        } else {
+          await RustLib.instance.api.crateFfiProtocolHandlerProtocolHandleRequest(
+            scheme: uri.scheme,
+            host: uri.host,
+            path: uri.path,
+          );
+        }
+      } catch (e) {
+        debugPrint('initial deep link: $e');
+      }
     } catch (e) {
       debugPrint('Error initializing FFI bridge: $e');
     }
+  }
+
+  /// Routes a `nostr:` URI to the matching screen: `npub1`/`nprofile1` →
+  /// profile, `note1`/`nevent1` → post. Unknown or malformed payloads are
+  /// ignored silently.
+  Future<void> _handleNostrDeepLink(String raw) async {
+    final rest = raw.startsWith('nostr:') ? raw.substring(6) : raw;
+    final split = rest.indexOf('1');
+    if (split <= 0) return;
+    final hrp = rest.substring(0, split);
+    final data = _bech32Decode(rest);
+    if (data == null || data.length < 32) return;
+    final hex = data
+        .sublist(0, 32)
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
+    switch (hrp) {
+      case 'npub':
+      case 'nprofile':
+        await AppRouter.router.push('/profile/$hex');
+      case 'note':
+      case 'nevent':
+        await AppRouter.router.push('/post/$hex');
+    }
+  }
+
+  /// Minimal bech32 decoder (NIP-19 payloads): converts the 5-bit data part
+  /// back to bytes. No checksum validation — only payloads that decode to at
+  /// least 32 bytes are used.
+  static List<int>? _bech32Decode(String input) {
+    const charset = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+    final lower = input.toLowerCase();
+    final pos = lower.lastIndexOf('1');
+    if (pos < 1) return null;
+    final dataPart = lower.substring(pos + 1);
+    if (dataPart.isEmpty || dataPart.length > 90) return null;
+    var acc = 0;
+    var bits = 0;
+    final out = <int>[];
+    for (final code in dataPart.codeUnits) {
+      final v = charset.indexOf(String.fromCharCode(code));
+      if (v < 0) return null;
+      acc = (acc << 5) | v;
+      bits += 5;
+      if (bits >= 8) {
+        bits -= 8;
+        out.add((acc >> bits) & 0xff);
+      }
+    }
+    return out;
   }
 
   @override

@@ -131,7 +131,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn test_send_publishes_signed_event_via_network() {
         let _g = CHATRANDOM_TEST_LOCK
             .lock()
@@ -150,11 +149,11 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn test_fetch_requires_initialized_relay_client() {
-        let err = chatrandom_fetch("deadbeef".to_string(), Some("deadbeef".to_string()), 50)
+        let pk = "deadbeef".repeat(8);
+        let err = chatrandom_fetch(pk.clone(), Some(pk), 50)
             .await
             .unwrap_err();
-        assert!(err.contains("relay client not initialized"));
+        assert!(err.contains("relay client not initialized"), "got {err}");
     }
 }

@@ -42,13 +42,30 @@ pub fn webrtc_get_stun_servers() -> Result<Vec<String>, String> {
     .into()
 }
 
-/// Get TURN servers (if enabled)
+/// Get TURN servers (if enabled). Reads the configured TURN endpoint from
+/// the `turn_endpoint` setting (`turn:host:port`, plus optional
+/// `turn_username`/`turn_credential`); returns `[]` when unconfigured.
+/// Server-side TURN provisioning is backend-gated.
 #[frb(sync, serialize)]
 pub fn webrtc_get_turn_servers(auth_token: Option<String>) -> Result<String, String> {
-    if auth_token.is_some() {
-        return Err("TURN provisioning requires a server endpoint".to_string()).into();
+    let endpoint = super::db::db_get_setting("turn_endpoint".to_string())?;
+    let Some(endpoint) = endpoint else {
+        return Ok("[]".to_string()).into();
+    };
+    let username = super::db::db_get_setting("turn_username".to_string())?;
+    let credential = super::db::db_get_setting("turn_credential".to_string())?;
+    let mut server = serde_json::json!({
+        "urls": [endpoint],
+    });
+    if let Some(user) = username {
+        server["username"] = serde_json::json!(user);
     }
-    Ok("[]".to_string()).into()
+    if let Some(cred) = credential {
+        server["credential"] = serde_json::json!(cred);
+        server["credentialType"] = serde_json::json!("password");
+    }
+    let _ = auth_token;
+    Ok(serde_json::to_string(&vec![server]).unwrap_or_else(|_| "[]".to_string())).into()
 }
 
 /// Sanitize SDP to remove private IPs. `force_relay` true drops non-relay

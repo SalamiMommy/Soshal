@@ -6,6 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// Fetch known mini URLs from the local registry: kind-31020 rows ingested
+/// by the sync engine (subscription added in sync-core). Newest first.
 List<String> minisFetch() => RustLib.instance.api.crateFfiMinisMinisFetch();
 
 /// Execute a WASI 0.2 Wasm content filter component plugin.

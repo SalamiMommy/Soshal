@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../services/session_service.dart';
 import '../services/shell_service.dart';
+import '../services/signer_service.dart';
 
 /// Full-screen PIN lock overlay (mirrors the legacy rust-native lock screen).
 class LockScreen extends StatefulWidget {
@@ -27,8 +29,24 @@ class _LockScreenState extends State<LockScreen> {
   void _submit(ShellService shell) {
     final pin = _pin.text;
     if (pin.isEmpty) return;
-    shell.unlock(pin);
+    _unlock(shell, pin);
     _pin.clear();
+  }
+
+  Future<void> _unlock(ShellService shell, String pin) async {
+    final ok = await shell.unlock(pin);
+    if (!ok || !mounted) return;
+    // PIN verified: restore the signer from the OS keychain so signed
+    // operations work again. Swallowed — the signer lock overlay offers the
+    // recovery phrase as a last resort when no keychain entry exists.
+    final session = context.read<SessionService>();
+    final pubkey = session.activePubkey;
+    if (pubkey != null) {
+      final signer = context.read<SignerService>();
+      try {
+        await signer.unlockFromKeyring(pubkey);
+      } catch (_) {}
+    }
   }
 
   void _pressDigit(ShellService shell, String d) {

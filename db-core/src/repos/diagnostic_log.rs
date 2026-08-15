@@ -49,7 +49,7 @@ impl<'a> DiagnosticLogRepo<'a> {
         crate::query::execute(
             &conn,
             "DELETE FROM diagnostic_logs WHERE created_at < ?1",
-            params![crate::repos::now_secs() - cutoff_secs_ago],
+            params![soshal_common_core::format::now_secs() - cutoff_secs_ago],
         )
     }
 

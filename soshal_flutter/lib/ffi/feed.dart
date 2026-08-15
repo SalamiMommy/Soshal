@@ -90,3 +90,13 @@ String feedComputeCardLayout({required String requestJson}) =>
 String feedComputeCardLayouts({required String requestsJson}) =>
     RustLib.instance.api
         .crateFfiFeedFeedComputeCardLayouts(requestsJson: requestsJson);
+
+/// Build freenet ephemeral tags for a post (JSON out).
+String feedFreenetEphemeralTags({required String freenetKey}) =>
+    RustLib.instance.api
+        .crateFfiFeedFeedFreenetEphemeralTags(freenetKey: freenetKey);
+
+/// Extract profile entry (pubkey/content/created_at) from a nostr event JSON.
+String feedProfileEntryFromEvent({required String eventJson}) =>
+    RustLib.instance.api
+        .crateFfiFeedFeedProfileEntryFromEvent(eventJson: eventJson);

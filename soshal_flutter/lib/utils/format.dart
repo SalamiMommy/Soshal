@@ -1,19 +1,53 @@
 /// Shared display-format helpers (pubkey truncation, timestamps).
+///
+/// Single canonical home for the snippets historically copy-pasted across
+/// screens and services. Keep formatting logic here, not in widgets.
 library;
 
-/// Truncate a pubkey to `6…6` when longer than 12 chars.
-String shortPubkey(String pk) {
-  if (pk.length <= 12) return pk;
-  return '${pk.substring(0, 6)}…${pk.substring(pk.length - 6)}';
+/// Truncate a pubkey/hex id to `head…tail` when longer than `minLen`.
+///
+/// Defaults to the common `6…6` style. Use `head`/`tail` for denser variants
+/// (e.g. marketplace `8…4`, events `8…3`).
+String shortPubkey(
+  String pk, {
+  int head = 6,
+  int tail = 6,
+  int minLen = 12,
+}) {
+  if (pk.length <= minLen) return pk;
+  return '${pk.substring(0, head)}…${pk.substring(pk.length - tail)}';
 }
+
+/// First `n` chars, guarded (returns input unchanged when shorter).
+String firstChars(String s, int n) => s.length <= n ? s : s.substring(0, n);
+
+/// First `n` chars + ellipsis when truncated; input unchanged when shorter.
+String prefixEllipsis(String s, int n, {String ellipsis = '…'}) =>
+    s.length <= n ? s : '${s.substring(0, n)}$ellipsis';
 
 /// Local `yyyy-MM-dd HH:mm` timestamp; empty string when `unix <= 0`.
 String formatTimestamp(int unix) {
   if (unix <= 0) return '';
-  final local = DateTime.fromMillisecondsSinceEpoch(unix * 1000).toLocal();
+  return formatDateTime(
+      DateTime.fromMillisecondsSinceEpoch(unix * 1000).toLocal());
+}
+
+/// Local `yyyy-MM-dd HH:mm` from a [DateTime].
+String formatDateTime(DateTime dt) {
   String two(int v) => v.toString().padLeft(2, '0');
-  return '${local.year}-${two(local.month)}-${two(local.day)} '
-      '${two(local.hour)}:${two(local.minute)}';
+  return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
+      '${two(dt.hour)}:${two(dt.minute)}';
+}
+
+/// 24h `HH:mm` wall clock.
+String formatClock(DateTime t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+/// 12h `h:mm AM/PM` wall clock.
+String formatClock12h(DateTime t) {
+  final period = t.hour >= 12 ? 'PM' : 'AM';
+  final h12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+  return '$h12:${t.minute.toString().padLeft(2, '0')} $period';
 }
 
 /// Relative time (`just now` / m / h / d ago); empty string when `unix <= 0`.

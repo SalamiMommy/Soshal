@@ -1,7 +1,9 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/ffi/network.dart';
+import 'package:soshal_flutter/ffi/p2p.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
 
@@ -273,6 +275,407 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       setLastError(e, st);
       notifyListeners();
       return {'success': false, 'error_msg': e.toString()};
+    }
+  }
+
+  /// Connects to a Freenet gateway (external-infra; honest label in UI).
+  Future<bool> freenetConnect({
+    required String url,
+    required String authToken,
+  }) async {
+    try {
+      final ok = await RustLib.instance.api.crateFfiNetworkFreenetConnect(
+        url: url,
+        authToken: authToken,
+      );
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Fetches a Freenet contract state for `key`.
+  Future<String> freenetGetContract({
+    required String url,
+    required String authToken,
+    required String key,
+    required bool subscribe,
+  }) async {
+    try {
+      final json = await RustLib.instance.api.crateFfiNetworkFreenetGetContract(
+        url: url,
+        authToken: authToken,
+        key: key,
+        subscribe: subscribe,
+      );
+      clearLastError();
+      notifyListeners();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Puts a contract state (JSON) onto Freenet.
+  Future<String> freenetPutContract({
+    required String url,
+    required String authToken,
+    required String stateJson,
+    required bool subscribe,
+  }) async {
+    try {
+      final json = await RustLib.instance.api.crateFfiNetworkFreenetPutContract(
+        url: url,
+        authToken: authToken,
+        stateJson: stateJson,
+        subscribe: subscribe,
+      );
+      clearLastError();
+      notifyListeners();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Subscribes to a Freenet contract key.
+  Future<bool> freenetSubscribe({
+    required String url,
+    required String authToken,
+    required String key,
+    String? summaryJson,
+  }) async {
+    try {
+      final ok = await RustLib.instance.api.crateFfiNetworkFreenetSubscribe(
+        url: url,
+        authToken: authToken,
+        key: key,
+        summaryJson: summaryJson,
+      );
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Raw SAM connect to a local i2pd daemon (sync FFI).
+  bool i2pConnect({required String samHost, required int samPort}) {
+    try {
+      final ok = RustLib.instance.api
+          .crateFfiNetworkI2PConnect(samHost: samHost, samPort: samPort);
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Creates an I2P SAM session; returns the session destination.
+  String i2pCreateSession({
+    required String samHost,
+    required int samPort,
+    required String sessionId,
+    String? destination,
+  }) {
+    try {
+      final dest = RustLib.instance.api.crateFfiNetworkI2PCreateSession(
+        samHost: samHost,
+        samPort: samPort,
+        sessionId: sessionId,
+        destination: destination,
+      );
+      clearLastError();
+      notifyListeners();
+      return dest;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Generates a fresh I2P destination via SAM.
+  String i2pGenerateDestination({
+    required String samHost,
+    required int samPort,
+  }) {
+    try {
+      final dest = RustLib.instance.api.crateFfiNetworkI2PGenerateDestination(
+        samHost: samHost,
+        samPort: samPort,
+      );
+      clearLastError();
+      notifyListeners();
+      return dest;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Opens a SAM tunnel to a remote I2P destination.
+  bool i2pConnectToDestination({
+    required String samHost,
+    required int samPort,
+    required String sessionId,
+    required String destination,
+  }) {
+    try {
+      final ok = RustLib.instance.api.crateFfiNetworkI2PConnectToDestination(
+        samHost: samHost,
+        samPort: samPort,
+        sessionId: sessionId,
+        destination: destination,
+      );
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Subscribes the relay client to a raw NIP-01 filter; returns the
+  /// subscription id.
+  Future<String> relaySubscribe({required String filterJson}) async {
+    try {
+      final id = await RustLib.instance.api
+          .crateFfiNetworkNetworkSubscribe(filterJson: filterJson);
+      clearLastError();
+      notifyListeners();
+      return id;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Unsubscribes a raw relay subscription by id.
+  Future<bool> relayUnsubscribe({required String subscriptionId}) async {
+    try {
+      final ok = await RustLib.instance.api
+          .crateFfiNetworkNetworkUnsubscribe(subscriptionId: subscriptionId);
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Publishes a raw signed event JSON to the relay client.
+  Future<int> publishEvent({required String eventJson}) async {
+    try {
+      final id = await RustLib.instance.api.crateFfiNetworkNetworkPublishEvent(
+        eventJson: eventJson,
+      );
+      clearLastError();
+      notifyListeners();
+      return id;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Queries relays with a raw NIP-01 filter JSON; returns events JSON.
+  Future<String> queryEvents({required String filterJson}) async {
+    try {
+      final json = await RustLib.instance.api
+          .crateFfiNetworkNetworkQueryEvents(filterJson: filterJson);
+      clearLastError();
+      notifyListeners();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Ingests a BLE beacon announcement for off-grid mesh sync.
+  Future<String?> processBleBeacon({
+    required String beacon,
+    required String localRootHex,
+    required String ownPubkey,
+  }) async {
+    try {
+      final result =
+          await RustLib.instance.api.crateFfiNetworkNetworkProcessBleBeacon(
+        beacon: beacon,
+        localRootHex: localRootHex,
+        ownPubkey: ownPubkey,
+      );
+      clearLastError();
+      notifyListeners();
+      return result;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Verifies a ZK WoT proof commitment (experimental).
+  Future<bool> verifyZkWotProof({
+    required String proofJson,
+    required String expectedWotRoot,
+    required String blacklistedNullifiersJson,
+  }) async {
+    try {
+      final ok =
+          await RustLib.instance.api.crateFfiNetworkNetworkVerifyZkWotProof(
+        proofJson: proofJson,
+        expectedWotRoot: expectedWotRoot,
+        blacklistedNullifiersJson: blacklistedNullifiersJson,
+      );
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Notifies the Rust side that the network interface changed. Resolves the
+  /// local IPv4 address and the running QUIC server port so the bridge
+  /// receives a real `ip:port` SocketAddr; returns false without an error
+  /// when either is unavailable.
+  Future<bool> notifyInterfaceChange() async {
+    final ip = await _localIpv4();
+    if (ip == null) return false;
+    final int port;
+    try {
+      port = p2PQuicServerPort();
+    } catch (_) {
+      return false;
+    }
+    try {
+      final ok = RustLib.instance.api.crateFfiNetworkNetworkNotifyInterfaceChange(
+          newIp: '$ip:$port');
+      clearLastError();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  static Future<String?> _localIpv4() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+          type: InternetAddressType.IPv4, includeLoopback: false);
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          if (addr.isLoopback) continue;
+          return addr.address;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Stops the Reticulum transport (sync FFI).
+  bool reticulumStop() {
+    try {
+      final ok = RustLib.instance.api.crateFfiNetworkNetworkReticulumStop();
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Reticulum transport status JSON (sync FFI).
+  String reticulumStatus() {
+    try {
+      final json = RustLib.instance.api.crateFfiNetworkNetworkReticulumStatus();
+      clearLastError();
+      notifyListeners();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Sends a Reticulum announce for `pubkey` (sync FFI).
+  bool reticulumAnnounce({required String pubkey}) {
+    try {
+      final ok = RustLib.instance.api
+          .crateFfiNetworkNetworkReticulumAnnounce(pubkey: pubkey);
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Publishes the account relay list as a kind-10002 event (sync FFI).
+  String publishRelayList({required List<String> relayUrls}) {
+    try {
+      final result = RustLib.instance.api
+          .crateFfiIdentityIdentityPublishRelayList(relayUrls: relayUrls);
+      clearLastError();
+      return result;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Resolves protocol metadata (NIP-05 / NIP-19 style URI parts).
+  Future<String> fetchProtocolMetadata({
+    required String scheme,
+    required String host,
+    required String path,
+  }) async {
+    try {
+      final json =
+          await RustLib.instance.api.crateFfiProtocolHandlerProtocolGetMetadata(
+        scheme: scheme,
+        host: host,
+        path: path,
+      );
+      clearLastError();
+      return json;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
     }
   }
 }

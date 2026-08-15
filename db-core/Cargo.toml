@@ -8,6 +8,7 @@ libsql = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+soshal-common-core = { path = "../common-core" }
 soshal-content-core = { path = "../content-core" }
 
 [lints]

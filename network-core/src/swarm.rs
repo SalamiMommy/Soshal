@@ -148,9 +148,16 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                     let peer_idx = (w + idx + attempt) % peers.len();
                     let peer = peers[peer_idx];
                     let quic_port = quic_ports.get(peer_idx).copied().flatten();
+                    let offset = match usize::try_from(chr.offset) {
+                        Ok(o) => o,
+                        Err(_) => {
+                            eprintln!("swarm: chunk {}: offset too large for usize", chr.blake3);
+                            continue;
+                        }
+                    };
                     let req = LanChunkRequest {
                         hash: chr.blake3.clone(),
-                        offset: chr.offset as usize,
+                        offset,
                         length: chr.len,
                         want_manifest: false,
                     };
@@ -187,10 +194,53 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
 
                 match got {
                     Some(data) => {
+                        // Hostile manifest guard: chunk range must fit the
+                        // blob and the mmap. Checked arithmetic only — skip
+                        // the chunk on overflow/OOB instead of panicking.
+                        let end = match chr.offset.checked_add(data.len() as u64) {
+                            Some(e) => e,
+                            None => {
+                                eprintln!("swarm: chunk {}: offset overflow", chr.blake3);
+                                continue;
+                            }
+                        };
+                        if end > total {
+                            eprintln!(
+                                "swarm: chunk {}: range {}-{} exceeds blob size {}",
+                                chr.blake3, chr.offset, end, total
+                            );
+                            continue;
+                        }
+                        let off = match usize::try_from(chr.offset) {
+                            Ok(o) => o,
+                            Err(_) => {
+                                eprintln!(
+                                    "swarm: chunk {}: offset too large for usize",
+                                    chr.blake3
+                                );
+                                continue;
+                            }
+                        };
+                        let copy_end = match off.checked_add(data.len()) {
+                            Some(e) => e,
+                            None => {
+                                eprintln!("swarm: chunk {}: copy range overflow", chr.blake3);
+                                continue;
+                            }
+                        };
                         {
                             let mut map = map.lock().unwrap();
-                            map[chr.offset as usize..(chr.offset as usize + data.len())]
-                                .copy_from_slice(&data);
+                            if copy_end > map.len() {
+                                eprintln!(
+                                    "swarm: chunk {}: range {}-{} exceeds mmap len {}",
+                                    chr.blake3,
+                                    off,
+                                    copy_end,
+                                    map.len()
+                                );
+                                continue;
+                            }
+                            map[off..copy_end].copy_from_slice(&data);
                         }
                         done.lock().unwrap().insert(idx);
                     }

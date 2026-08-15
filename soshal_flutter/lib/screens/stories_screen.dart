@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/session_service.dart';
 import '../services/streaming_service.dart';
+import '../utils/format.dart';
 
 /// Stories: followed authors' stories, mark viewed, post your own.
 class StoriesScreen extends StatefulWidget {
@@ -53,6 +54,38 @@ class _StoriesScreenState extends State<StoriesScreen> {
       setState(() => _viewed[story.id] = true);
     } catch (e) {
       debugPrint('mark viewed: $e');
+    }
+  }
+
+  Future<void> _react(StreamRow story) async {
+    const emojis = ['❤️', '😂', '🔥', '👍'];
+    final emoji = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('React to story'),
+        children: [
+          for (final e in emojis)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, e),
+              child: Text(e, style: const TextStyle(fontSize: 24)),
+            ),
+        ],
+      ),
+    );
+    if (emoji == null) return;
+    try {
+      final session = context.read<SessionService>();
+      final pubkey = session.activePubkey;
+      if (pubkey == null) return;
+      final ok = await context
+          .read<StreamingService>()
+          .storyReact(story.id, pubkey, emoji);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Reacted $emoji' : 'React failed')),
+      );
+    } catch (e) {
+      debugPrint('story react: $e');
     }
   }
 
@@ -162,9 +195,7 @@ class _StoriesScreenState extends State<StoriesScreen> {
                               const Icon(Icons.camera_alt, color: Colors.white),
                         ),
                         title: Text(
-                          s.pubkey.length >= 12
-                              ? s.pubkey.substring(0, 12)
-                              : s.pubkey,
+                          firstChars(s.pubkey, 12),
                           style: const TextStyle(fontSize: 13),
                         ),
                         subtitle: Text(
@@ -177,11 +208,20 @@ class _StoriesScreenState extends State<StoriesScreen> {
                                 : Theme.of(context).colorScheme.primary,
                           ),
                         ),
-                        trailing: viewed
-                            ? const Text('seen',
-                                style:
-                                    TextStyle(fontSize: 11, color: Colors.grey))
-                            : null,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (viewed)
+                              const Text('seen',
+                                  style: TextStyle(
+                                      fontSize: 11, color: Colors.grey)),
+                            IconButton(
+                              icon: const Icon(Icons.add_reaction_outlined),
+                              tooltip: 'React',
+                              onPressed: () => _react(s),
+                            ),
+                          ],
+                        ),
                         onTap: () => _view(s),
                       );
                     },

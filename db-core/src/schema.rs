@@ -50,6 +50,9 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
         }
     }
 
-    block_on(conn.execute_batch("COMMIT"))?;
+    if let Err(e) = block_on(conn.execute_batch("COMMIT")) {
+        let _ = block_on(conn.execute_batch("ROLLBACK"));
+        return Err(e.into());
+    }
     Ok(())
 }

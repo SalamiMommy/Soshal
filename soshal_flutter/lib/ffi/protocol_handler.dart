@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `infer_mime_from_path`, `protocol_fetch_from_blossom`, `protocol_handle_avatar`, `protocol_handle_cache`, `protocol_handle_media`, `protocol_handle_relay`, `protocol_load_from_cache`, `protocol_metadata_avatar`, `protocol_metadata_media`
+// These functions are ignored because they are not marked as `pub`: `fetch_avatar_bytes`, `infer_mime_from_path`, `protocol_fetch_from_blossom`, `protocol_handle_avatar`, `protocol_handle_cache`, `protocol_handle_media`, `protocol_handle_relay`, `protocol_load_from_cache`, `protocol_metadata_avatar`, `protocol_metadata_media`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ProtocolResponse`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
 
