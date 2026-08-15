@@ -4886,7 +4886,6 @@ name = "soshal-streaming-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "nix 0.29.0",
  "serde",
  "serde_json",
  "soshal-nostr-core",

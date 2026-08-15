@@ -8,7 +8,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
-nix = { workspace = true }
 soshal-nostr-core = { path = "../nostr-core" }
 
 

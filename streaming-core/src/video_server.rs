@@ -10,11 +10,6 @@ use std::sync::{Arc, RwLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::errno::Errno;
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::sys::sendfile::sendfile;
-
 #[derive(Clone, Default)]
 pub struct VideoRegistry {
     routes: Arc<RwLock<HashMap<String, String>>>,
@@ -258,16 +253,6 @@ async fn serve_video_file(
         return;
     }
 
-    // Zero-copy path: the kernel pipes bytes straight from the file page
-    // cache into the NIC buffer — no user-space copy of the media payload.
-    // The async fallback below stays for platforms without a safe sendfile.
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    {
-        if send_file_zero_copy(socket, &file, start, chunk_len).await {
-            return;
-        }
-    }
-
     let mut remaining = chunk_len;
     let mut buffer = [0u8; 65536];
     while remaining > 0 {
@@ -284,41 +269,6 @@ async fn serve_video_file(
 
         remaining -= bytes_read as u64;
     }
-}
-
-/// Kernel zero-copy file → socket transfer. Handles partial sends and
-/// EAGAIN/EINTR on the nonblocking tokio socket by awaiting writability.
-#[cfg(any(target_os = "linux", target_os = "android"))]
-async fn send_file_zero_copy(
-    socket: &mut tokio::net::TcpStream,
-    file: &File,
-    start: u64,
-    count: u64,
-) -> bool {
-    if count == 0 {
-        return true;
-    }
-    let mut offset = match nix::libc::off_t::try_from(start) {
-        Ok(v) => v,
-        Err(_) => return false, // file offset exceeds off_t range for this platform
-    };
-    let mut remaining = count;
-    while remaining > 0 {
-        // Send at most 4 MiB per call so the event loop stays responsive;
-        // count casts below never wrap against a 4 MiB cap.
-        let batch = remaining.min(4 * 1024 * 1024) as usize;
-        match sendfile(&*socket, file, Some(&mut offset), batch) {
-            Ok(0) => return false, // short file
-            Ok(n) => remaining -= n as u64,
-            Err(Errno::EAGAIN) | Err(Errno::EINTR) => {
-                if socket.writable().await.is_err() {
-                    return false;
-                }
-            }
-            Err(_) => return false,
-        }
-    }
-    true
 }
 
 #[cfg(test)]
