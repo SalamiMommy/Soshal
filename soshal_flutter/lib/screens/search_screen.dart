@@ -169,7 +169,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             onTap: () {
                               final key = p.pubkey ?? p.id;
                               if (key.isNotEmpty) {
-                                context.go('/profile/$key');
+                                context.push('/profile/$key');
                               }
                             },
                           ),
@@ -207,9 +207,9 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
                 onTap: () {
                   if (isProfile && (r.pubkey ?? r.id).isNotEmpty) {
-                    context.go('/profile/${r.pubkey ?? r.id}');
+                    context.push('/profile/${r.pubkey ?? r.id}');
                   } else {
-                    context.go('/post/${r.id}');
+                    context.push('/post/${r.id}');
                   }
                 },
               );

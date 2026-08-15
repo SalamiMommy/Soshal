@@ -332,7 +332,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 ? Text(e.rsvpStatus,
                     style: const TextStyle(color: Colors.green, fontSize: 12))
                 : null,
-            onTap: () => context.go('/events/${e.id}'),
+            onTap: () => context.push('/events/${e.id}'),
           );
         },
       ),
@@ -504,7 +504,7 @@ class _EventsScreenState extends State<EventsScreen> {
               : const CircleAvatar(child: Icon(Icons.event, size: 18)),
           title: Text(e.title),
           subtitle: Text(_timeRange(e)),
-          onTap: () => context.go('/events/${e.id}'),
+          onTap: () => context.push('/events/${e.id}'),
         ),
     ];
   }

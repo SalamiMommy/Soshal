@@ -98,7 +98,7 @@ class _FeedScreenState extends State<FeedScreen> {
             onPressed: () {
               final sessionService = context.read<SessionService>();
               if (sessionService.activePubkey != null) {
-                context.go('/profile/${sessionService.activePubkey}');
+                context.push('/profile/${sessionService.activePubkey}');
               }
             },
           ),
@@ -184,7 +184,7 @@ class _FeedScreenState extends State<FeedScreen> {
             case 3:
               final sessionService = context.read<SessionService>();
               if (sessionService.activePubkey != null) {
-                context.go('/profile/${sessionService.activePubkey}');
+                context.push('/profile/${sessionService.activePubkey}');
               }
               break;
           }
@@ -370,7 +370,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
                   Icons.chat_bubble_outline,
                   Colors.grey,
                   () {
-                    context.go('/post/${widget.post.eventId}');
+                    context.push('/post/${widget.post.eventId}');
                   },
                   label: '${widget.post.replies}',
                 ),

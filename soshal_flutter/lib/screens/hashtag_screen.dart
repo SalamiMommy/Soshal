@@ -124,7 +124,7 @@ class _HashtagScreenState extends State<HashtagScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   onTap: () {
-                    if (p.id.isNotEmpty) context.go('/post/${p.id}');
+                    if (p.id.isNotEmpty) context.push('/post/${p.id}');
                   },
                 ),
               );

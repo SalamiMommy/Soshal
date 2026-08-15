@@ -79,7 +79,7 @@ class _DatingScreenState extends State<DatingScreen>
           IconButton(
             icon: const Icon(Icons.person_add_alt),
             tooltip: 'My dating profile',
-            onPressed: () => context.go('/dating/me'),
+            onPressed: () => context.push('/dating/me'),
           ),
         ],
       ),
@@ -93,7 +93,7 @@ class _DatingScreenState extends State<DatingScreen>
                       const Text('Create your dating profile to start'),
                       const SizedBox(height: 16),
                       FilledButton(
-                        onPressed: () => context.go('/dating/me'),
+                        onPressed: () => context.push('/dating/me'),
                         child: const Text('Create profile'),
                       ),
                     ],
@@ -464,7 +464,7 @@ class _DatingScreenState extends State<DatingScreen>
                     ),
                     const SizedBox(width: 4),
                     TextButton(
-                      onPressed: () => context.go('/inbox/${m.pubkey}'),
+                      onPressed: () => context.push('/inbox/${m.pubkey}'),
                       child: const Text('Message'),
                     ),
                   ],
@@ -590,7 +590,7 @@ class _DatingScreenState extends State<DatingScreen>
             FilledButton(
               onPressed: () {
                 Navigator.pop(context);
-                context.go('/inbox/${match.pubkey}');
+                context.push('/inbox/${match.pubkey}');
               },
               child: const Text('Send a Message'),
             ),
@@ -705,7 +705,7 @@ class _DatingScreenState extends State<DatingScreen>
                     onPressed: () {
                       final pk = card.pubkey;
                       setState(() => _matchCard = null);
-                      context.go('/inbox/$pk');
+                      context.push('/inbox/$pk');
                     },
                     child: const Text('💬 Send a Message'),
                   ),

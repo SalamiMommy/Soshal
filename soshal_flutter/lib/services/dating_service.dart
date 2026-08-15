@@ -7,7 +7,7 @@ import 'error_log.dart';
 
 /// Dating Service
 /// Profile creation/browsing, likes, matches, filters and stats.
-class DatingService extends ChangeNotifier with LastErrorMixin {
+class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<DatingCard> _cards = [];
   final List<DatingCard> _matches = [];
   final List<DatingCard> _likes = [];
@@ -54,11 +54,11 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       _matches.clear();
       _matches.addAll(_parseCards(json));
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _matches;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -71,11 +71,11 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       _likes.clear();
       _likes.addAll(_parseCards(json));
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _likes;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -89,7 +89,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       return _parseCards(json);
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -105,7 +105,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       return score;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -117,12 +117,12 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       );
       _ownProfile = DatingCard.fromJson(jsonDecode(json));
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _ownProfile!;
     } catch (e, st) {
       setLastError(e, st);
       _ownProfile = null;
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -151,7 +151,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -174,7 +174,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -186,11 +186,11 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       );
       _ownProfile = null;
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -247,11 +247,11 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
         profileId: profileId,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return false;
     }
   }
@@ -278,7 +278,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       return stats;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -287,11 +287,11 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
     try {
       final ok = call();
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -301,11 +301,11 @@ class DatingService extends ChangeNotifier with LastErrorMixin {
       final json = call();
       _cards = _parseCards(json);
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _cards;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }

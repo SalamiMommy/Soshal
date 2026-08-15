@@ -197,7 +197,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             if (isSelfProfile)
                               ElevatedButton(
                                 onPressed: () {
-                                  context.go('/settings/edit-profile');
+                                  context.push('/settings/edit-profile');
                                 },
                                 child: const Text('Edit Profile'),
                               )
@@ -311,18 +311,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       if (!isSelfProfile)
                         ElevatedButton.icon(
                           onPressed: () {
-                            context.go('/inbox/$pubkey');
+                            context.push('/inbox/$pubkey');
                           },
                           icon: const Icon(Icons.message),
                           label: const Text('Message'),
                         ),
                       const SizedBox(height: 16),
                       if (isSelfProfile) ...[
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Accounts'),
+                          trailing: const Icon(Icons.arrow_forward),
+                          onTap: () => context.push('/settings/accounts'),
+                        ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Privacy'),
+                          trailing: const Icon(Icons.arrow_forward),
+                          onTap: () => context.push('/settings/privacy'),
+                        ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Privacy Level'),
+                          trailing: const Icon(Icons.arrow_forward),
+                          onTap: () => _showPrivacyDialog(),
+                        ),
                         const Divider(),
                         const SizedBox(height: 16),
                         _PinnedSection(
                           pinned: feedService.pinnedPosts,
-                          onOpen: (id) => context.go('/post/$id'),
+                          onOpen: (id) => context.push('/post/$id'),
                           onUnpin: _pinToggle,
                         ),
                       ],
@@ -366,7 +384,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             post: post,
                             showPinButton: isSelfProfile,
                             pinned: feedService.isPinned(post.eventId),
-                            onTap: () => context.go('/post/${post.eventId}'),
+                            onTap: () => context.push('/post/${post.eventId}'),
                             onPinToggle: () => _pinToggle(post.eventId),
                           ),
                     ],
@@ -377,6 +395,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
         },
       ),
+    );
+  }
+
+  void _showPrivacyDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Privacy Level'),
+          content: const Text('Choose your privacy level'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Public'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Friends Only'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Private'),
+            ),
+          ],
+        );
+      },
     );
   }
 

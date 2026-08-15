@@ -7,7 +7,7 @@ import 'error_log.dart';
 
 /// Groups Service
 /// NIP-29 group membership, info, messages and admin actions.
-class GroupsService extends ChangeNotifier with LastErrorMixin {
+class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<SoshalGroup> _groups = [];
   SoshalGroup? _current;
   List<String> _members = [];
@@ -29,11 +29,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
       );
       _groups = _decodeGroups(json);
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _groups;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -45,11 +45,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
       );
       _current = SoshalGroup.fromJson(jsonDecode(json));
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _current!;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -60,11 +60,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         groupId: groupId,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _members;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -76,11 +76,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         userPubkey: userPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -92,11 +92,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         userPubkey: userPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -111,7 +111,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
       return eventJson;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -130,11 +130,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
           .toList();
       _messages = parsed.length > 200 ? parsed.sublist(0, 200) : parsed;
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _messages;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -158,7 +158,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
       return id;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -177,11 +177,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         adminPubkey: adminPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -198,11 +198,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         adminPubkey: adminPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -216,11 +216,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
           .map((e) => GroupRole.fromJson(e as Map<String, dynamic>))
           .toList();
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _roles;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -248,7 +248,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -259,11 +259,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
         roleId: roleId,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -279,11 +279,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin {
           .map((e) => GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
           .toList();
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _memberRoles;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }

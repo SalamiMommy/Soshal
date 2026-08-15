@@ -36,6 +36,12 @@ static DB_PATH: Mutex<Option<String>> = Mutex::new(None);
 /// schema migrations. Safe to call once per app start.
 #[frb(sync, serialize)]
 pub fn db_init(db_path: String) -> Result<String, String> {
+    // rustls 0.23 is built with both the `ring` (reqwest) and `aws-lc-rs`
+    // (nostr-sdk) features, so no process-level provider is auto-selected.
+    // Install ring unconditionally at startup: without this, any rustls use
+    // (reqwest on a tokio worker, quinn, …) panics before the lazy installs
+    // in sync-core/network-core run.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let db = match Database::open(&db_path) {
         Ok(d) => d,
         Err(e) => return Err(format!("open failed: {e}")).into(),

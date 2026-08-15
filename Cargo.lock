@@ -4611,6 +4611,7 @@ dependencies = [
  "rand 0.8.7",
  "reqwest",
  "ring",
+ "rustls 0.23.43",
  "serde",
  "serde_json",
  "soshal-analytics-core",

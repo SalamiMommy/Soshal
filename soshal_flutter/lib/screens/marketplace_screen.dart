@@ -666,7 +666,7 @@ class _ListingDetailMetaState extends State<_ListingDetailMeta> {
             ),
             if (seller.isNotEmpty && seller != widget.myPubkey)
               FilledButton.tonal(
-                onPressed: () => context.go('/inbox/$seller'),
+                onPressed: () => context.push('/inbox/$seller'),
                 child: const Text('Send DM'),
               ),
           ],

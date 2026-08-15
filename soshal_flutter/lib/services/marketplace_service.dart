@@ -7,7 +7,7 @@ import 'error_log.dart';
 
 /// Marketplace Service
 /// NIP-15 style listings, orders and escrow through the bridge.
-class MarketplaceService extends ChangeNotifier with LastErrorMixin {
+class MarketplaceService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<ListingInfo> _listings = [];
   ListingInfo? _current;
   List<OrderInfo> _orders = [];
@@ -67,11 +67,11 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
           .crateFfiMarketplaceMarketplaceGetListing(listingId: listingId);
       _current = ListingInfo.fromJson(jsonDecode(json));
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _current!;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -104,7 +104,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -126,11 +126,11 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         price: BigInt.from(price),
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -143,11 +143,11 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         sellerPubkey: sellerPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -168,7 +168,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return orderId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -208,7 +208,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return escrowId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -223,11 +223,11 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         reason: reason,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -240,11 +240,11 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         sellerPubkey: sellerPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -262,11 +262,11 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
         winnerPubkey: winnerPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -281,7 +281,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return EscrowInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -336,7 +336,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return false;
     }
   }
@@ -354,7 +354,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return decoded as List<dynamic>? ?? [];
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return [];
     }
   }
@@ -369,7 +369,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return rating;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return 0.0;
     }
   }
@@ -393,7 +393,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return decoded is Map<String, dynamic> ? decoded : null;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return null;
     }
   }
@@ -413,7 +413,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return false;
     }
   }
@@ -428,7 +428,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return false;
     }
   }
@@ -443,7 +443,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return decoded is Map<String, dynamic> ? decoded : null;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return null;
     }
   }
@@ -459,7 +459,7 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return false;
     }
   }
@@ -473,11 +473,11 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
           .toList();
       _listings = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _listings;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -490,11 +490,11 @@ class MarketplaceService extends ChangeNotifier with LastErrorMixin {
           .map((e) => OrderInfo.fromJson(e as Map<String, dynamic>))
           .toList();
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _orders;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }

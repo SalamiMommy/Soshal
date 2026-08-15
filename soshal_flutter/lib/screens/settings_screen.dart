@@ -43,24 +43,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // Account section
             _buildSection('Account', [
               ListTile(
-                title: const Text('Edit Profile'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/edit-profile'),
-              ),
-              ListTile(
-                title: const Text('Accounts'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/accounts'),
-              ),
-              ListTile(
                 title: const Text('Backup'),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/backup'),
+                onTap: () => context.push('/settings/backup'),
               ),
               ListTile(
                 title: const Text('Turso Database Sync'),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/turso'),
+                onTap: () => context.push('/settings/turso'),
               ),
               ListTile(
                 title: const Text('Share Soshal'),
@@ -74,30 +64,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // Privacy section
             _buildSection('Privacy & Security', [
               ListTile(
-                title: const Text('Privacy'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/privacy'),
-              ),
-              ListTile(
-                title: const Text('Privacy Level'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => _showPrivacyDialog(),
-              ),
-              ListTile(
                 title: const Text('Blocked Users'),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/blocked'),
+                onTap: () => context.push('/settings/blocked'),
               ),
               ListTile(
                 title: const Text('Moderation'),
                 subtitle: const Text('Mutes, blocks, word filters'),
                 leading: const Icon(Icons.gpp_maybe_outlined),
-                onTap: () => context.go('/settings/moderation'),
+                onTap: () => context.push('/settings/moderation'),
               ),
               ListTile(
                 title: const Text('Session Security'),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/security'),
+                onTap: () => context.push('/settings/security'),
               ),
             ]),
             // Relay section
@@ -132,61 +112,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () => _showAddRelayDialog(),
               ),
             ]),
-            // Discover section
-            _buildSection('Discover', [
-              ListTile(
-                title: const Text('Dating'),
-                subtitle: const Text('Cards, likes, matches'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/dating'),
-              ),
-              ListTile(
-                title: const Text('Events'),
-                subtitle: const Text('Nearby meetups, RSVP, check-in'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/events'),
-              ),
-              ListTile(
-                title: const Text('Groups'),
-                subtitle: const Text('NIP-29 communities'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/groups'),
-              ),
-              ListTile(
-                title: const Text('Marketplace'),
-                subtitle: const Text('Listings, orders, escrow'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/marketplace'),
-              ),
-              ListTile(
-                title: const Text('Live'),
-                subtitle: const Text('Streams, presence'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/live'),
-              ),
-              ListTile(
-                title: const Text('Stories'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/stories'),
-              ),
-              ListTile(
-                title: const Text('Search'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/search'),
-              ),
-            ]),
             // Appearance section
             _buildSection('Appearance', [
               ListTile(
                 title: const Text('Appearance'),
                 subtitle: const Text('Theme, accent, font size'),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/appearance'),
+                onTap: () => context.push('/settings/appearance'),
               ),
               ListTile(
                 title: const Text('Language'),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/language'),
+                onTap: () => context.push('/settings/language'),
               ),
             ]),
             // Network section
@@ -195,7 +132,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('Network Settings'),
                 subtitle: const Text('Relays, transports'),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/network'),
+                onTap: () => context.push('/settings/network'),
               ),
               Consumer<NetworkService>(
                 builder: (context, net, _) => ListTile(
@@ -216,7 +153,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ListTile(
                 title: const Text('Push Notifications'),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/notifications'),
+                onTap: () => context.push('/settings/notifications'),
               ),
             ]),
             // About section
@@ -224,13 +161,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ListTile(
                 title: const Text('Storage'),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/storage'),
+                onTap: () => context.push('/settings/storage'),
               ),
               ListTile(
                 title: const Text('Advanced'),
                 subtitle: const Text('Transports, diagnostics'),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => context.go('/settings/advanced'),
+                onTap: () => context.push('/settings/advanced'),
               ),
               const ListTile(
                 title: Text('App Version'),
@@ -265,32 +202,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ...children,
         const Divider(),
       ],
-    );
-  }
-
-  void _showPrivacyDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Privacy Level'),
-          content: const Text('Choose your privacy level'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Public'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Friends Only'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Private'),
-            ),
-          ],
-        );
-      },
     );
   }
 

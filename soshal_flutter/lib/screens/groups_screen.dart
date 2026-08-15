@@ -168,7 +168,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                                 onPressed: () => _joinOrLeave(g),
                                 child: const Text('Join'),
                               ),
-                        onTap: () => context.go('/groups/${g.id}'),
+                        onTap: () => context.push('/groups/${g.id}'),
                       );
                     },
                   ),

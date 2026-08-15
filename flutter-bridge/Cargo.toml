@@ -49,6 +49,7 @@ ring = { workspace = true }
 libsql = { workspace = true }
 reqwest = { workspace = true }
 keyring = { workspace = true }
+rustls = { version = "0.23", features = ["ring"] }
 
 # FFI-specific dependencies
 flutter_rust_bridge = "=2.12.0"
