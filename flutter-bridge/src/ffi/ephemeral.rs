@@ -108,34 +108,15 @@ pub fn ephemeral_clean_expired() -> Result<Vec<String>, String> {
     })
 }
 
-fn uuid_like() -> String {
-    use rand::RngCore;
-    let mut b = [0u8; 8];
-    rand::rngs::OsRng.fill_bytes(&mut b);
-    hex::encode(b)
-}
+use super::util::uuid_like;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ffi::db;
-    use std::sync::Mutex;
-
-    static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn tmp_db(label: &str) -> String {
-        let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let path = format!(
-            "{}/soshal_eph_{label}_{}_{}.db",
-            std::env::temp_dir().to_string_lossy(),
-            std::process::id(),
-            n
-        );
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-        db::db_init(path.clone()).unwrap();
-        path
+        db::tmp_db(label, "eph")
     }
 
     fn save_media(message_id: &str, recipient: &str, max_views: i64, expires_at: i64) -> String {

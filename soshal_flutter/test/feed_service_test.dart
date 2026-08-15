@@ -26,6 +26,8 @@ void main() {
       const postJson =
           '[{"id":"p1","pubkey":"pk1","content":"hello","created_at":1000}]';
       api.stubString('crateFfiFeedFeedFetchEvents', postJson);
+      api.stubStringBuilder('crateFfiContentContentDecompressJsonDict',
+          (inv) => api.namedArg(inv, 'encoded') as String);
 
       expect(feed.isLoading, false);
       final result = await feed.fetchFeed();
@@ -116,6 +118,8 @@ void main() {
       feed.addListener(() => notified++);
 
       api.stubString('crateFfiSyncSyncEnqueueOutbox', 'outbox_id_123');
+      api.stubStringBuilder('crateFfiContentContentCompressJsonDict',
+          (inv) => api.namedArg(inv, 'data') as String);
 
       final id = await feed.enqueueOutboxPost('My post content');
 

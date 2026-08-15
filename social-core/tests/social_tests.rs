@@ -1,14 +1,10 @@
 //! Integration tests for soshal-social-core.
 
-use soshal_social_core::chatrandom::{
-    compute_jaccard_score, match_group_chatrandom, rank_chatrandom_peers,
-};
+use soshal_social_core::chatrandom::{match_group_chatrandom, rank_chatrandom_peers};
 use soshal_social_core::compatibility::{
     basic_compatibility, interest_overlap, jaccard_similarity,
 };
-use soshal_social_core::relations::{
-    relation_entry_from_event, review_from_event, validate_presence,
-};
+use soshal_social_core::relations::relation_entry_from_event;
 
 fn event(tags: Vec<Vec<String>>) -> soshal_nostr_core::models::NostrEvent {
     soshal_nostr_core::models::NostrEvent {
@@ -100,50 +96,12 @@ fn jaccard_similarity_empty_defaults_midpoint() {
 }
 
 #[test]
-fn validate_presence_accepts_known_statuses() {
-    for s in ["online", "idle", "dnd", "offline"] {
-        assert!(validate_presence(s).is_ok());
-    }
-    assert!(validate_presence("busy").is_err());
-    assert!(validate_presence("").is_err());
-}
-
-#[test]
 fn relation_entry_from_event_maps_fields() {
     let v = relation_entry_from_event(&event(vec![]));
     assert_eq!(v["id"], "e1");
     assert_eq!(v["pubkey"], "pk1");
     assert_eq!(v["content"], "content");
     assert_eq!(v["created_at"], 1000u64);
-}
-
-#[test]
-fn review_from_event_extracts_rating_tag() {
-    let v = review_from_event(&event(vec![vec!["rating".to_string(), "5".to_string()]]));
-    assert_eq!(v["rating"], 5);
-}
-
-#[test]
-fn review_from_event_null_when_rating_missing_or_invalid() {
-    assert!(review_from_event(&event(vec![]))["rating"].is_null());
-    let bad = review_from_event(&event(vec![vec![
-        "rating".to_string(),
-        "notanumber".to_string(),
-    ]]));
-    assert!(bad["rating"].is_null());
-}
-
-#[test]
-fn compute_jaccard_score_empty_return_zero() {
-    assert_eq!(compute_jaccard_score(&[], &["a".into()]), 0.0);
-    assert_eq!(
-        compute_jaccard_score(&["a".into(), "b".into()], &["b".into()]),
-        0.5
-    );
-    assert_eq!(
-        compute_jaccard_score(&[" Music ".into()], &["music".into()]),
-        1.0
-    );
 }
 
 #[test]

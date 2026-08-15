@@ -58,6 +58,9 @@ mod tests {
     #[tokio::test]
     async fn test_vouch_publish_locked_signer_rejected() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         super::super::signer::signer_lock().unwrap();
         let result = vouch_publish("a".repeat(64), "trusted".to_string()).await;
         assert!(result.is_err());
@@ -67,6 +70,9 @@ mod tests {
     #[tokio::test]
     async fn test_vouch_publish_signs_then_missing_relay() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let result = vouch_publish(keys.public_key().to_hex(), "trusted".to_string()).await;
@@ -79,6 +85,9 @@ mod tests {
     #[tokio::test]
     async fn test_vouch_fetch_requires_relay_client() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         super::super::signer::signer_lock().unwrap();
         let result = vouch_fetch("a".repeat(64)).await;
         assert!(result.is_err());
@@ -88,6 +97,9 @@ mod tests {
     #[test]
     fn test_vouch_fixture_verify_and_mapping() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
         let target = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();

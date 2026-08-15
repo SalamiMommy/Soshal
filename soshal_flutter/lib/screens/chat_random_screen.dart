@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/chatrandom_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Chat Random: interest-based random pairing with strangers via relay
 /// availability announcements and request/accept events.
@@ -151,8 +152,7 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
         .showSnackBar(SnackBar(content: SelectableText(message)));
   }
 
-  String _short(String pubkey) =>
-      pubkey.length <= 16 ? pubkey : '${pubkey.substring(0, 16)}...';
+  String _short(String pubkey) => prefixEllipsis(pubkey, 16);
 
   Map<String, dynamic> _peerContent(ChatrandomPeer peer) {
     try {

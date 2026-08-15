@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../services/session_service.dart';
 import '../services/network_service.dart';
 import '../services/zap_service.dart';
+import '../utils/format.dart';
 import 'share_app_screen.dart';
 
 /// Settings Screen
@@ -136,7 +137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: const Text('NWC Wallet'),
                   subtitle: Text(
                     zap.isConnected
-                        ? 'Connected · ${zap.nwcPubkey != null ? zap.nwcPubkey!.substring(0, 16) : ''}…'
+                        ? 'Connected · ${zap.nwcPubkey != null ? prefixEllipsis(zap.nwcPubkey!, 16) : ''}'
                         : 'Not connected',
                   ),
                   trailing: IconButton(

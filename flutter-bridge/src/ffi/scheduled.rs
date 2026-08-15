@@ -75,23 +75,9 @@ pub fn scheduled_delete(id: String) -> Result<bool, String> {
 mod tests {
     use super::*;
     use crate::ffi::db;
-    use std::sync::Mutex;
-
-    static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn tmp_db(label: &str) -> String {
-        let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let path = format!(
-            "{}/soshal_sched_{label}_{}_{}.db",
-            std::env::temp_dir().to_string_lossy(),
-            std::process::id(),
-            n
-        );
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-        db::db_init(path.clone()).unwrap();
-        path
+        db::tmp_db(label, "sched")
     }
 
     fn parse_arr(json: &str) -> Vec<serde_json::Value> {

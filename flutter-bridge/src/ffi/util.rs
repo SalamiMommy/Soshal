@@ -72,6 +72,13 @@ pub(crate) fn tcp_probe(host: &str, port: u16) -> bool {
     .unwrap_or(false)
 }
 
+pub(crate) fn uuid_like() -> String {
+    use rand::RngCore;
+    let mut b = [0u8; 8];
+    rand::rngs::OsRng.fill_bytes(&mut b);
+    hex::encode(b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

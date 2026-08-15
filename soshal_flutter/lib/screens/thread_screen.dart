@@ -39,6 +39,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
     try {
       final api = context.read<FeedService>();
       _thread = await api.fetchThread(widget.eventId);
+      if (!mounted) return;
       final session = context.read<SessionService>();
       _reactionSummary = api.aggregateChatReactions(
         _thread,

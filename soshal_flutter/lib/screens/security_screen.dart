@@ -115,11 +115,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
             dense: true,
             title: const Text('Signer pubkey'),
             subtitle: Text(
-              _pubkey == null
-                  ? '…'
-                  : (_pubkey!.length > 20
-                      ? '${_pubkey!.substring(0, 16)}…'
-                      : _pubkey!),
+              _pubkey == null ? '…' : prefixEllipsis(_pubkey!, 16),
               style: const TextStyle(fontSize: 11),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

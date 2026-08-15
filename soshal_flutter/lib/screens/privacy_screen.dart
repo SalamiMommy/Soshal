@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/settings_service.dart';
 import '../services/shell_service.dart';
+import '../services/stealth_service.dart';
 
 /// Privacy settings — port of the legacy privacy section: privacy level
 /// (public/private/dark/stealth), dating profile visibility, direct-message
@@ -116,19 +117,20 @@ class _StealthEditorState extends State<_StealthEditor> {
 
   Future<void> _load() async {
     try {
-      final v = context.read<SettingsService>().getSetting('stealth_whitelist');
-      if (v.isNotEmpty) {
-        _field.text = v;
-      }
+      final items = await context.read<StealthService>().load();
+      _field.text = items.join('\n');
     } catch (_) {}
   }
 
   Future<void> _save() async {
     try {
-      context
-          .read<SettingsService>()
-          .setSetting('stealth_whitelist', _field.text);
-      _saved = true;
+      final items = _field.text
+          .split('\n')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      final ok = await context.read<StealthService>().save(items);
+      if (ok) _saved = true;
     } catch (e) {
       debugPrint('save whitelist: $e');
     }

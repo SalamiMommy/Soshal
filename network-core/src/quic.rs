@@ -1242,7 +1242,6 @@ mod stream_tests {
     }
 
     #[test]
-    #[ignore] // Temporarily skipped due to QUIC stream timing issues in test environment
     fn quic_stream_fetch_roundtrip() {
         let root = tmp_root();
         let store = ChunkStore::new(root.clone());
@@ -1269,7 +1268,6 @@ mod stream_tests {
     }
 
     #[test]
-    #[ignore] // Temporarily skipped due to QUIC stream timing issues in test environment
     fn quic_stream_refuses_bad_mac() {
         let root = tmp_root();
         let server = start_quic_stream_server_with_store([7u8; 32], root.clone()).unwrap();
@@ -1295,7 +1293,6 @@ mod stream_tests {
     }
 
     #[test]
-    #[ignore] // Temporarily skipped due to QUIC stream timing issues in test environment
     fn quic_stream_missing_chunk_reports_not_found() {
         let root = tmp_root();
         let server = start_quic_stream_server_with_store([7u8; 32], root).unwrap();

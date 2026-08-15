@@ -241,10 +241,7 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
                     )
                   : ReorderableListView.builder(
                       itemCount: _localNodes.length,
-                      onReorder: (oldIndex, newIndex) {
-                        if (newIndex > oldIndex) {
-                          newIndex -= 1;
-                        }
+                      onReorderItem: (oldIndex, newIndex) {
                         final reordered =
                             List<CustomProfileNode>.from(_localNodes);
                         final item = reordered.removeAt(oldIndex);

@@ -97,17 +97,6 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
-  /// Decode npub to hex public key
-  Future<String> decodeNpub(String npub) async {
-    try {
-      return RustLib.instance.api.crateFfiAuthAuthNpubDecode(npub: npub);
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
-
   /// Build an in-process signer from an nsec (diagnostics only); returns
   /// the derived hex pubkey.
   Future<String> inProcessSignerPubkey(String nsec) async {

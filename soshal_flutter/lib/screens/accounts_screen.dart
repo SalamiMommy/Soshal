@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Account management: list accounts, switch, remove, add new.
 class AccountsScreen extends StatefulWidget {
@@ -88,9 +89,9 @@ class _AccountsScreenState extends State<AccountsScreen> {
                   title: Text(
                     account.npub.isNotEmpty
                         ? account.npub
-                        : account.pubkey.substring(0, 16),
+                        : prefixEllipsis(account.pubkey, 16),
                   ),
-                  subtitle: Text(account.pubkey.substring(0, 24)),
+                  subtitle: Text(prefixEllipsis(account.pubkey, 24)),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

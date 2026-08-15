@@ -269,7 +269,7 @@ class _InboxScreenState extends State<InboxScreen> {
     final preview = lastMessage.decrypted
         ? lastMessage.content
         : '🔒 ${lastMessage.content}';
-    final displayName = pubkey.length >= 16 ? pubkey.substring(0, 16) : pubkey;
+    final displayName = prefixEllipsis(pubkey, 16);
     return ListTile(
       title: Text(displayName),
       subtitle: Text(preview, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -687,9 +687,7 @@ class _InboxScreenState extends State<InboxScreen> {
       'gif' => Icons.gif,
       _ => Icons.image,
     };
-    final sender = media.senderPubkey.length > 12
-        ? '${media.senderPubkey.substring(0, 12)}…'
-        : media.senderPubkey;
+    final sender = prefixEllipsis(media.senderPubkey, 12);
     return ListTile(
       leading: Icon(icon),
       title: Text(sender),
@@ -898,7 +896,7 @@ class _InboxScreenState extends State<InboxScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Group DM sent (${id.substring(0, 12)}…)')),
+          SnackBar(content: Text('Group DM sent (${prefixEllipsis(id, 12)})')),
         );
       }
       _loadConversations();
@@ -960,10 +958,9 @@ class _InboxScreenState extends State<InboxScreen> {
     // Show conversation with specific user
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-            widget.otherPubkey != null && widget.otherPubkey!.length >= 16
-                ? widget.otherPubkey!.substring(0, 16)
-                : (widget.otherPubkey ?? 'Messages')),
+        title: Text(widget.otherPubkey == null
+            ? 'Messages'
+            : prefixEllipsis(widget.otherPubkey!, 16)),
       ),
       body: Column(
         children: [

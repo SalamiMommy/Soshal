@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import 'social_entry.dart';
 
 /// Musicloud: kind-31022 track publishing, fetching, sharing to feed and
 /// comment threads. All FFI calls are async — always awaited.
@@ -171,17 +172,12 @@ class MusicTrack {
 }
 
 /// A comment on a track (kind 1 with `E` tag), serialized via `mini_event_out`.
-class TrackComment {
-  final String id;
-  final String pubkey;
-  final String content;
-  final int createdAt;
-
+class TrackComment extends SocialEntry {
   TrackComment({
-    required this.id,
-    required this.pubkey,
-    required this.content,
-    required this.createdAt,
+    required super.id,
+    required super.pubkey,
+    required super.content,
+    required super.createdAt,
   });
 
   factory TrackComment.fromJson(Map<String, dynamic> json) => TrackComment(

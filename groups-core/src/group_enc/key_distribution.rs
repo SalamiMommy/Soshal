@@ -102,3 +102,86 @@ pub fn parse_key_distribution_content(content: &str) -> ParsedKeyDistContent {
         error_reason: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn member_add_roundtrip() {
+        let out = build_key_distribution_content(&BuildKeyDistInput {
+            group_id: "g1".into(),
+            shared_key: "K".into(),
+            shared_pubkey: "pk-alice".into(),
+            pqc_ct: "ct-for-alice".into(),
+        });
+        assert_eq!(out.group_id, "g1");
+        assert_eq!(out.shared_pubkey, "pk-alice");
+        assert_eq!(out.pqc_ct, "ct-for-alice");
+        let wire = r#"{"groupId":"g1","sharedPubkey":"pk-alice","pqcCt":"ct-for-alice"}"#;
+        let parsed = parse_key_distribution_content(wire);
+        assert!(parsed.valid);
+        assert_eq!(parsed.group_id, out.group_id);
+        assert_eq!(parsed.shared_pubkey, out.shared_pubkey);
+        assert_eq!(parsed.pqc_ct, out.pqc_ct);
+    }
+
+    #[test]
+    fn each_member_gets_own_wrapped_key() {
+        let alice = build_key_distribution_content(&BuildKeyDistInput {
+            group_id: "g1".into(),
+            shared_key: "shared".into(),
+            shared_pubkey: "pk-alice".into(),
+            pqc_ct: "wrap-alice".into(),
+        });
+        let bob = build_key_distribution_content(&BuildKeyDistInput {
+            group_id: "g1".into(),
+            shared_key: "shared".into(),
+            shared_pubkey: "pk-bob".into(),
+            pqc_ct: "wrap-bob".into(),
+        });
+        assert_eq!(alice.group_id, bob.group_id);
+        assert_eq!(alice.pqc_ct, "wrap-alice");
+        assert_eq!(bob.pqc_ct, "wrap-bob");
+        assert_ne!(alice.pqc_ct, bob.pqc_ct);
+    }
+
+    #[test]
+    fn revoked_member_absent_from_new_distribution() {
+        let new_dist = build_key_distribution_content(&BuildKeyDistInput {
+            group_id: "g1".into(),
+            shared_key: "new-shared".into(),
+            shared_pubkey: "pk-bob".into(),
+            pqc_ct: "wrap-bob-new".into(),
+        });
+        let serialized = serde_json::to_string(&new_dist).unwrap();
+        assert!(!serialized.contains("pk-alice"));
+        assert!(!serialized.contains("wrap-alice"));
+        assert!(!serialized.contains("new-shared"));
+        let parsed = parse_key_distribution_content(
+            r#"{"groupId":"g1","sharedPubkey":"pk-bob","pqcCt":"wrap-bob-new"}"#,
+        );
+        assert!(parsed.valid);
+        assert_eq!(parsed.shared_pubkey, "pk-bob");
+        assert_eq!(parsed.pqc_ct, "wrap-bob-new");
+    }
+
+    #[test]
+    fn non_member_cannot_derive_key_material() {
+        let input = BuildKeyDistInput {
+            group_id: "g1".into(),
+            shared_key: "SUPER_SECRET_GROUP_KEY".into(),
+            shared_pubkey: "pk-alice".into(),
+            pqc_ct: "ct-alice".into(),
+        };
+        let out = serde_json::to_string(&build_key_distribution_content(&input)).unwrap();
+        assert!(!out.contains("SUPER_SECRET_GROUP_KEY"));
+        assert!(!out.contains("sharedKey"));
+        let wire = r#"{"groupId":"g1","sharedKey":"SUPER_SECRET_GROUP_KEY","sharedPubkey":"pk-alice","pqcCt":"ct-alice"}"#;
+        let parsed = parse_key_distribution_content(wire);
+        assert!(parsed.valid);
+        let serialized = serde_json::to_string(&parsed).unwrap();
+        assert!(!serialized.contains("SUPER_SECRET_GROUP_KEY"));
+        assert!(!serialized.contains("sharedKey"));
+    }
+}

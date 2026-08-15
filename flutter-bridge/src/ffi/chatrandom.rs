@@ -135,6 +135,9 @@ mod tests {
         let _g = CHATRANDOM_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let err = chatrandom_send(

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'routes/app_router.dart';
 import 'services/ffi_bridge.dart';
+import 'ffi/auth.dart' as ffi_auth;
 import 'ffi/db.dart' as ffi_db;
 import 'frb_generated.dart';
 import 'services/auth_service.dart';
@@ -43,8 +44,10 @@ import 'services/stealth_service.dart';
 import 'services/vouch_service.dart';
 import 'services/calls_service.dart';
 import 'services/chatrandom_service.dart';
+import 'services/crypto_service.dart';
 import 'services/media_service.dart';
 import 'services/mesh_service.dart';
+import 'utils/format.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -95,6 +98,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => VouchService()),
         ChangeNotifierProvider(create: (_) => CallsService()),
         ChangeNotifierProvider(create: (_) => ChatrandomService()),
+        ChangeNotifierProvider(create: (_) => CryptoService()),
         ChangeNotifierProvider(create: (_) => MediaService()),
         ChangeNotifierProvider(create: (_) => SignerService()),
         Provider<MinisService>(create: (_) => MinisService()),
@@ -135,6 +139,7 @@ class _SoshalAppState extends State<SoshalApp> {
       // relays take over after auth. Failures land in the outer catch.
       final networkService = context.read<NetworkService>();
       await networkService.initRelays(NetworkService.defaultRelays);
+      if (!mounted) return;
       final syncService = context.read<SyncService>();
       syncService.attach(
         feed: context.read<FeedService>(),
@@ -155,7 +160,8 @@ class _SoshalAppState extends State<SoshalApp> {
         } else if (uri.scheme == 'nostr') {
           await _handleNostrDeepLink(route);
         } else {
-          await RustLib.instance.api.crateFfiProtocolHandlerProtocolHandleRequest(
+          await RustLib.instance.api
+              .crateFfiProtocolHandlerProtocolHandleRequest(
             scheme: uri.scheme,
             host: uri.host,
             path: uri.path,
@@ -177,18 +183,17 @@ class _SoshalAppState extends State<SoshalApp> {
     final split = rest.indexOf('1');
     if (split <= 0) return;
     final hrp = rest.substring(0, split);
-    final data = _bech32Decode(rest);
-    if (data == null || data.length < 32) return;
-    final hex = data
-        .sublist(0, 32)
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join();
     switch (hrp) {
       case 'npub':
       case 'nprofile':
+        final hex = ffi_auth.authNpubDecode(npub: rest);
+        if (hex.isEmpty) return;
         await AppRouter.router.push('/profile/$hex');
       case 'note':
       case 'nevent':
+        final data = _bech32Decode(rest);
+        if (data == null || data.length < 32) return;
+        final hex = bytesToHex(data.sublist(0, 32));
         await AppRouter.router.push('/post/$hex');
     }
   }

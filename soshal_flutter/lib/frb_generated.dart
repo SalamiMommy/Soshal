@@ -5,54 +5,14 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'ffi/analytics.dart';
-import 'ffi/audit.dart';
 import 'ffi/auth.dart';
-import 'ffi/bookmarks.dart';
-import 'ffi/calls.dart';
-import 'ffi/chatrandom.dart';
-import 'ffi/content.dart';
-import 'ffi/crypto.dart';
-import 'ffi/dating.dart';
 import 'ffi/db.dart';
-import 'ffi/ebpf.dart';
-import 'ffi/ephemeral.dart';
-import 'ffi/events.dart';
-import 'ffi/feed.dart';
-import 'ffi/groups.dart';
-import 'ffi/headless.dart';
-import 'ffi/identity.dart';
-import 'ffi/marketplace.dart';
 import 'ffi/media.dart';
-import 'ffi/messaging.dart';
-import 'ffi/minis.dart';
-import 'ffi/moderation.dart';
-import 'ffi/music.dart';
 import 'ffi/network.dart';
-import 'ffi/notifications.dart';
 import 'ffi/p2p.dart';
-import 'ffi/pin.dart';
-import 'ffi/protocol_handler.dart';
-import 'ffi/push.dart';
+import 'ffi/pqc.dart';
 import 'ffi/raster.dart';
-import 'ffi/relations.dart';
-import 'ffi/render.dart';
-import 'ffi/scheduled.dart';
-import 'ffi/search.dart';
 import 'ffi/session.dart';
-import 'ffi/signer.dart';
-import 'ffi/social.dart';
-import 'ffi/spatial.dart';
-import 'ffi/storage.dart';
-import 'ffi/streaming.dart';
-import 'ffi/sync.dart';
-import 'ffi/telemetry.dart';
-import 'ffi/turso.dart';
-import 'ffi/util.dart';
-import 'ffi/vouch.dart';
-import 'ffi/webrtc.dart';
-import 'ffi/zap.dart';
-import 'ffi/zk.dart';
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
@@ -115,7 +75,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1091452870;
+  int get rustContentHash => 162390068;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -167,12 +127,6 @@ abstract class RustLibApi extends BaseApi {
 
   Future<String> crateFfiCallsCallsFetchSignals({required String myPubkey});
 
-  String crateFfiCallsCallsIceConfig(
-      {required String privacyLevel, required String stunUrl});
-
-  String crateFfiCallsCallsSanitizeSdp(
-      {required String sdp, required bool forceRelay});
-
   Future<String> crateFfiCallsCallsSendSignal(
       {required String signalType,
       required String targetPubkey,
@@ -197,8 +151,6 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiContentContentCompressJsonDict({required String data});
 
   String crateFfiContentContentDecompressJsonDict({required String encoded});
-
-  List<String> crateFfiContentContentExtractHashtags({required String text});
 
   String crateFfiContentContentExtractImetaVideoUrls(
       {required String tagsJson});
@@ -227,12 +179,6 @@ abstract class RustLibApi extends BaseApi {
   Uint8List crateFfiCryptoCryptoHmacSha256(
       {required List<int> key, required List<int> message});
 
-  String crateFfiCryptoCryptoNip44Decrypt(
-      {required String payload, required String senderPubkey});
-
-  String crateFfiCryptoCryptoNip44Encrypt(
-      {required String plaintext, required String recipientPubkey});
-
   Future<String> crateFfiCryptoCryptoPirEvaluateQuery(
       {required String queryJson, required List<String> recordHexList});
 
@@ -252,8 +198,6 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiCryptoCryptoRandomBytes({required int len});
 
   Uint8List crateFfiCryptoCryptoSha256({required List<int> input});
-
-  String crateFfiCryptoCryptoSha256Hex({required String input});
 
   bool crateFfiCryptoCryptoZeroize({required List<int> data});
 
@@ -604,9 +548,6 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiNetworkI2PStopSession();
 
-  bool crateFfiIdentityIdentityBlockUser(
-      {required String blockerPubkey, required String targetPubkey});
-
   String crateFfiIdentityIdentityFetchFollows({required String pubkey});
 
   String crateFfiIdentityIdentityFollowUser({required String pubkey});
@@ -639,9 +580,6 @@ abstract class RustLibApi extends BaseApi {
       {required String query, required int limit});
 
   bool crateFfiIdentityIdentityStoreProfile({required String profile});
-
-  bool crateFfiIdentityIdentityUnblockUser(
-      {required String blockerPubkey, required String targetPubkey});
 
   bool crateFfiIdentityIdentityUnfollowUser({required String pubkey});
 
@@ -812,9 +750,6 @@ abstract class RustLibApi extends BaseApi {
 
   String crateFfiMediaMediaVerifyChunkJson({required String input});
 
-  String crateFfiMessagingMessagingDecryptDm(
-      {required String payload, required String senderPubkey});
-
   List<String> crateFfiMessagingMessagingFetchConversations(
       {required String pubkey});
 
@@ -982,15 +917,6 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiNetworkNetworkReticulumResetNodes();
 
-  String crateFfiNetworkNetworkReticulumStartAutoInterface(
-      {required String pubkey,
-      required bool enabled,
-      required int port,
-      required PlatformInt64 intervalMs});
-
-  String crateFfiNetworkNetworkReticulumStartTransport(
-      {required String pubkey, required String bindAddr});
-
   String crateFfiNetworkNetworkReticulumStatus();
 
   bool crateFfiNetworkNetworkReticulumStop();
@@ -1143,13 +1069,43 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiPinPinVerify({required String pin});
 
+  String crateFfiPqcPqcDsaKeygen();
+
+  String crateFfiPqcPqcDsaSign(
+      {required String messageHex, required String skHex});
+
+  String crateFfiPqcPqcDsaVerify(
+      {required String sigHex,
+      required String messageHex,
+      required String vkHex});
+
+  String crateFfiPqcPqcHkdfSha256(
+      {required String ikmHex,
+      required String saltHex,
+      required String infoHex,
+      required int len});
+
+  String crateFfiPqcPqcHybridSeal(
+      {required String payloadHex, required String recipientPkHex});
+
+  String crateFfiPqcPqcHybridUnseal(
+      {required String ctHex,
+      required String nonceHex,
+      required String b64,
+      required String skHex});
+
+  String crateFfiPqcPqcKemDecaps(
+      {required String ciphertextHex, required String skHex});
+
+  String crateFfiPqcPqcKemEncaps({required String recipientPkHex});
+
+  String crateFfiPqcPqcKemKeygen();
+
   Future<String> crateFfiProtocolHandlerProtocolGetMetadata(
       {required String scheme, required String host, required String path});
 
   Future<Uint8List> crateFfiProtocolHandlerProtocolHandleRequest(
       {required String scheme, required String host, required String path});
-
-  bool crateFfiPushPushRegisterToken({required String token});
 
   Future<ImpellerFrameBufferInfo> crateFfiRasterRasterAllocateFrameBuffer(
       {required int width, required int height});
@@ -1912,62 +1868,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiCallsCallsIceConfig(
-      {required String privacyLevel, required String stunUrl}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(privacyLevel, serializer);
-        sse_encode_String(stunUrl, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__calls__calls_ice_config(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCallsCallsIceConfigConstMeta,
-      argValues: [privacyLevel, stunUrl],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCallsCallsIceConfigConstMeta =>
-      const TaskConstMeta(
-        debugName: "calls_ice_config",
-        argNames: ["privacyLevel", "stunUrl"],
-      );
-
-  @override
-  String crateFfiCallsCallsSanitizeSdp(
-      {required String sdp, required bool forceRelay}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(sdp, serializer);
-        sse_encode_bool(forceRelay, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__calls__calls_sanitize_sdp(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCallsCallsSanitizeSdpConstMeta,
-      argValues: [sdp, forceRelay],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCallsCallsSanitizeSdpConstMeta =>
-      const TaskConstMeta(
-        debugName: "calls_sanitize_sdp",
-        argNames: ["sdp", "forceRelay"],
-      );
-
-  @override
   Future<String> crateFfiCallsCallsSendSignal(
       {required String signalType,
       required String targetPubkey,
@@ -2152,32 +2052,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "content_decompress_json_dict",
         argNames: ["encoded"],
-      );
-
-  @override
-  List<String> crateFfiContentContentExtractHashtags({required String text}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(text, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__content__content_extract_hashtags(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_list_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiContentContentExtractHashtagsConstMeta,
-      argValues: [text],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiContentContentExtractHashtagsConstMeta =>
-      const TaskConstMeta(
-        debugName: "content_extract_hashtags",
-        argNames: ["text"],
       );
 
   @override
@@ -2384,62 +2258,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiCryptoCryptoNip44Decrypt(
-      {required String payload, required String senderPubkey}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(payload, serializer);
-        sse_encode_String(senderPubkey, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__crypto__crypto_nip44_decrypt(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCryptoCryptoNip44DecryptConstMeta,
-      argValues: [payload, senderPubkey],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCryptoCryptoNip44DecryptConstMeta =>
-      const TaskConstMeta(
-        debugName: "crypto_nip44_decrypt",
-        argNames: ["payload", "senderPubkey"],
-      );
-
-  @override
-  String crateFfiCryptoCryptoNip44Encrypt(
-      {required String plaintext, required String recipientPubkey}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(plaintext, serializer);
-        sse_encode_String(recipientPubkey, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__crypto__crypto_nip44_encrypt(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCryptoCryptoNip44EncryptConstMeta,
-      argValues: [plaintext, recipientPubkey],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCryptoCryptoNip44EncryptConstMeta =>
-      const TaskConstMeta(
-        debugName: "crypto_nip44_encrypt",
-        argNames: ["plaintext", "recipientPubkey"],
-      );
-
-  @override
   Future<String> crateFfiCryptoCryptoPirEvaluateQuery(
       {required String queryJson, required List<String> recordHexList}) {
     return handler.executeNormal(NormalTask(
@@ -2626,32 +2444,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateFfiCryptoCryptoSha256ConstMeta => const TaskConstMeta(
         debugName: "crypto_sha256",
-        argNames: ["input"],
-      );
-
-  @override
-  String crateFfiCryptoCryptoSha256Hex({required String input}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(input, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__crypto__crypto_sha256_hex(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCryptoCryptoSha256HexConstMeta,
-      argValues: [input],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCryptoCryptoSha256HexConstMeta =>
-      const TaskConstMeta(
-        debugName: "crypto_sha256_hex",
         argNames: ["input"],
       );
 
@@ -5768,34 +5560,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateFfiIdentityIdentityBlockUser(
-      {required String blockerPubkey, required String targetPubkey}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(blockerPubkey, serializer);
-        sse_encode_String(targetPubkey, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__identity__identity_block_user(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiIdentityIdentityBlockUserConstMeta,
-      argValues: [blockerPubkey, targetPubkey],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiIdentityIdentityBlockUserConstMeta =>
-      const TaskConstMeta(
-        debugName: "identity_block_user",
-        argNames: ["blockerPubkey", "targetPubkey"],
-      );
-
-  @override
   String crateFfiIdentityIdentityFetchFollows({required String pubkey}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
@@ -6143,34 +5907,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "identity_store_profile",
         argNames: ["profile"],
-      );
-
-  @override
-  bool crateFfiIdentityIdentityUnblockUser(
-      {required String blockerPubkey, required String targetPubkey}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(blockerPubkey, serializer);
-        sse_encode_String(targetPubkey, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__identity__identity_unblock_user(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiIdentityIdentityUnblockUserConstMeta,
-      argValues: [blockerPubkey, targetPubkey],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiIdentityIdentityUnblockUserConstMeta =>
-      const TaskConstMeta(
-        debugName: "identity_unblock_user",
-        argNames: ["blockerPubkey", "targetPubkey"],
       );
 
   @override
@@ -7676,34 +7412,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiMessagingMessagingDecryptDm(
-      {required String payload, required String senderPubkey}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(payload, serializer);
-        sse_encode_String(senderPubkey, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__messaging__messaging_decrypt_dm(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiMessagingMessagingDecryptDmConstMeta,
-      argValues: [payload, senderPubkey],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiMessagingMessagingDecryptDmConstMeta =>
-      const TaskConstMeta(
-        debugName: "messaging_decrypt_dm",
-        argNames: ["payload", "senderPubkey"],
-      );
-
-  @override
   List<String> crateFfiMessagingMessagingFetchConversations(
       {required String pubkey}) {
     return handler.executeSync(SyncTask(
@@ -9123,70 +8831,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "network_reticulum_reset_nodes",
         argNames: [],
-      );
-
-  @override
-  String crateFfiNetworkNetworkReticulumStartAutoInterface(
-      {required String pubkey,
-      required bool enabled,
-      required int port,
-      required PlatformInt64 intervalMs}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(pubkey, serializer);
-        sse_encode_bool(enabled, serializer);
-        sse_encode_u_16(port, serializer);
-        sse_encode_i_64(intervalMs, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire
-            .wire__crate__ffi__network__network_reticulum_start_auto_interface(
-                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiNetworkNetworkReticulumStartAutoInterfaceConstMeta,
-      argValues: [pubkey, enabled, port, intervalMs],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta
-      get kCrateFfiNetworkNetworkReticulumStartAutoInterfaceConstMeta =>
-          const TaskConstMeta(
-            debugName: "network_reticulum_start_auto_interface",
-            argNames: ["pubkey", "enabled", "port", "intervalMs"],
-          );
-
-  @override
-  String crateFfiNetworkNetworkReticulumStartTransport(
-      {required String pubkey, required String bindAddr}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(pubkey, serializer);
-        sse_encode_String(bindAddr, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire
-            .wire__crate__ffi__network__network_reticulum_start_transport(
-                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiNetworkNetworkReticulumStartTransportConstMeta,
-      argValues: [pubkey, bindAddr],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiNetworkNetworkReticulumStartTransportConstMeta =>
-      const TaskConstMeta(
-        debugName: "network_reticulum_start_transport",
-        argNames: ["pubkey", "bindAddr"],
       );
 
   @override
@@ -10619,6 +10263,254 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  String crateFfiPqcPqcDsaKeygen() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__pqc__pqc_dsa_keygen(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPqcPqcDsaKeygenConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPqcPqcDsaKeygenConstMeta => const TaskConstMeta(
+        debugName: "pqc_dsa_keygen",
+        argNames: [],
+      );
+
+  @override
+  String crateFfiPqcPqcDsaSign(
+      {required String messageHex, required String skHex}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(messageHex, serializer);
+        sse_encode_String(skHex, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__pqc__pqc_dsa_sign(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPqcPqcDsaSignConstMeta,
+      argValues: [messageHex, skHex],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPqcPqcDsaSignConstMeta => const TaskConstMeta(
+        debugName: "pqc_dsa_sign",
+        argNames: ["messageHex", "skHex"],
+      );
+
+  @override
+  String crateFfiPqcPqcDsaVerify(
+      {required String sigHex,
+      required String messageHex,
+      required String vkHex}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(sigHex, serializer);
+        sse_encode_String(messageHex, serializer);
+        sse_encode_String(vkHex, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__pqc__pqc_dsa_verify(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPqcPqcDsaVerifyConstMeta,
+      argValues: [sigHex, messageHex, vkHex],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPqcPqcDsaVerifyConstMeta => const TaskConstMeta(
+        debugName: "pqc_dsa_verify",
+        argNames: ["sigHex", "messageHex", "vkHex"],
+      );
+
+  @override
+  String crateFfiPqcPqcHkdfSha256(
+      {required String ikmHex,
+      required String saltHex,
+      required String infoHex,
+      required int len}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(ikmHex, serializer);
+        sse_encode_String(saltHex, serializer);
+        sse_encode_String(infoHex, serializer);
+        sse_encode_u_32(len, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__pqc__pqc_hkdf_sha256(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPqcPqcHkdfSha256ConstMeta,
+      argValues: [ikmHex, saltHex, infoHex, len],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPqcPqcHkdfSha256ConstMeta => const TaskConstMeta(
+        debugName: "pqc_hkdf_sha256",
+        argNames: ["ikmHex", "saltHex", "infoHex", "len"],
+      );
+
+  @override
+  String crateFfiPqcPqcHybridSeal(
+      {required String payloadHex, required String recipientPkHex}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(payloadHex, serializer);
+        sse_encode_String(recipientPkHex, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__pqc__pqc_hybrid_seal(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPqcPqcHybridSealConstMeta,
+      argValues: [payloadHex, recipientPkHex],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPqcPqcHybridSealConstMeta => const TaskConstMeta(
+        debugName: "pqc_hybrid_seal",
+        argNames: ["payloadHex", "recipientPkHex"],
+      );
+
+  @override
+  String crateFfiPqcPqcHybridUnseal(
+      {required String ctHex,
+      required String nonceHex,
+      required String b64,
+      required String skHex}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(ctHex, serializer);
+        sse_encode_String(nonceHex, serializer);
+        sse_encode_String(b64, serializer);
+        sse_encode_String(skHex, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__pqc__pqc_hybrid_unseal(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPqcPqcHybridUnsealConstMeta,
+      argValues: [ctHex, nonceHex, b64, skHex],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPqcPqcHybridUnsealConstMeta => const TaskConstMeta(
+        debugName: "pqc_hybrid_unseal",
+        argNames: ["ctHex", "nonceHex", "b64", "skHex"],
+      );
+
+  @override
+  String crateFfiPqcPqcKemDecaps(
+      {required String ciphertextHex, required String skHex}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(ciphertextHex, serializer);
+        sse_encode_String(skHex, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__pqc__pqc_kem_decaps(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPqcPqcKemDecapsConstMeta,
+      argValues: [ciphertextHex, skHex],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPqcPqcKemDecapsConstMeta => const TaskConstMeta(
+        debugName: "pqc_kem_decaps",
+        argNames: ["ciphertextHex", "skHex"],
+      );
+
+  @override
+  String crateFfiPqcPqcKemEncaps({required String recipientPkHex}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(recipientPkHex, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__pqc__pqc_kem_encaps(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPqcPqcKemEncapsConstMeta,
+      argValues: [recipientPkHex],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPqcPqcKemEncapsConstMeta => const TaskConstMeta(
+        debugName: "pqc_kem_encaps",
+        argNames: ["recipientPkHex"],
+      );
+
+  @override
+  String crateFfiPqcPqcKemKeygen() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__pqc__pqc_kem_keygen(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPqcPqcKemKeygenConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPqcPqcKemKeygenConstMeta => const TaskConstMeta(
+        debugName: "pqc_kem_keygen",
+        argNames: [],
+      );
+
+  @override
   Future<String> crateFfiProtocolHandlerProtocolGetMetadata(
       {required String scheme, required String host, required String path}) {
     return handler.executeNormal(NormalTask(
@@ -10674,32 +10566,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "protocol_handle_request",
         argNames: ["scheme", "host", "path"],
-      );
-
-  @override
-  bool crateFfiPushPushRegisterToken({required String token}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(token, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__push__push_register_token(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiPushPushRegisterTokenConstMeta,
-      argValues: [token],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiPushPushRegisterTokenConstMeta =>
-      const TaskConstMeta(
-        debugName: "push_register_token",
-        argNames: ["token"],
       );
 
   @override

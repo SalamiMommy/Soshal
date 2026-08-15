@@ -101,7 +101,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
               try {
                 final unread = await api.fetchUnread(key);
                 await api.refreshUnreadCount(key);
-                if (!mounted) return;
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(

@@ -1,21 +1,17 @@
-use nostr::event::{Event, SignEvent, UnsignedEvent};
+use nostr::event::{SignEvent, UnsignedEvent};
 use nostr::key::{Keys, PublicKey};
 use nostr::nips::nip19::{FromBech32, ToBech32};
 
 pub fn generate_keypair() -> Keys {
-    Keys::generate()
+    soshal_nostr_core::keys::generate_keys()
 }
 
 pub fn parse_key(secret: &str) -> Result<Keys, String> {
-    Keys::parse(secret).map_err(|e| format!("invalid key: {}", e))
+    soshal_nostr_core::keys::from_nsec(secret).map_err(|e| format!("invalid key: {}", e))
 }
 
 pub fn public_key_hex(keys: &Keys) -> String {
     keys.public_key().to_string()
-}
-
-pub fn private_key_hex(keys: &Keys) -> String {
-    keys.secret_key().to_secret_hex()
 }
 
 pub fn npub(keys: &Keys) -> String {
@@ -38,11 +34,6 @@ pub fn nsec(keys: &Keys) -> String {
     keys.secret_key().to_bech32().unwrap_or_default()
 }
 
-pub fn sign_event(keys: &Keys, unsigned: UnsignedEvent) -> Result<Event, String> {
-    keys.sign_event(unsigned)
-        .map_err(|e| format!("signing error: {}", e))
-}
-
 pub fn sign_event_json(keys: &Keys, event_json: &str) -> Result<String, String> {
     let mut val: serde_json::Value =
         serde_json::from_str(event_json).map_err(|e| format!("parse unsigned event: {}", e))?;
@@ -56,6 +47,8 @@ pub fn sign_event_json(keys: &Keys, event_json: &str) -> Result<String, String> 
     }
     let unsigned: UnsignedEvent =
         serde_json::from_value(val).map_err(|e| format!("parse unsigned event: {}", e))?;
-    let signed = sign_event(keys, unsigned)?;
+    let signed = keys
+        .sign_event(unsigned)
+        .map_err(|e| format!("signing error: {}", e))?;
     serde_json::to_string(&signed).map_err(|e| format!("serialize: {}", e))
 }

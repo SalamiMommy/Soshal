@@ -305,7 +305,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Temporarily skipped due to LAN server timing issues in test environment
     fn mmap_sparse_rescue_on_failed_path() {
         let root = tmp_root();
         std::fs::create_dir_all(&root).unwrap();

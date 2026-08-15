@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../ffi/session.dart';
 import '../services/notifications_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Notification settings: push registration status + in-app toggles.
 class NotificationSettingsScreen extends StatefulWidget {
@@ -84,7 +85,6 @@ class _NotificationSettingsScreenState
     if (_token.isNotEmpty) {
       try {
         await api.registerPush(pubkey, _token);
-        await session.registerPushToken(_token);
         if (!mounted) return;
         setState(() => _pushEnabled = true);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -127,9 +127,7 @@ class _NotificationSettingsScreenState
       return 'No device token registered. Requires FCM setup '
           '(google-services.json) in the Android build.';
     }
-    final masked = _token.length <= 12
-        ? _token
-        : '${_token.substring(0, 6)}…${_token.substring(_token.length - 4)}';
+    final masked = shortPubkey(_token, head: 6, tail: 4);
     return 'Registered token: $masked';
   }
 

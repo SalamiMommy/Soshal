@@ -7,10 +7,11 @@ edition = "2021"
 nostr-sdk = { workspace = true }
 nostr = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-rayon = { workspace = true }
 tokio = { workspace = true }
 soshal-content-core = { path = "../content-core" }
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

@@ -206,8 +206,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   /// Extract hashtags from draft content (sync FFI).
   List<String> extractHashtags(String text) {
     try {
-      return RustLib.instance.api
-          .crateFfiContentContentExtractHashtags(text: text);
+      return RustLib.instance.api.crateFfiUtilUtilExtractHashtags(text: text);
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();
@@ -324,30 +323,6 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       setLastError(e, st);
       notifyDeferred();
       return payload;
-    }
-  }
-
-  /// Compress a full signed event JSON into zstd bytes (async FFI).
-  Future<Uint8List> compressEvent(String eventJson) async {
-    try {
-      return await RustLib.instance.api
-          .crateFfiFeedFeedCompressEvent(eventJson: eventJson);
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
-
-  /// Decompress event bytes produced by [compressEvent] back into JSON.
-  Future<String> decompressEvent(List<int> compressed) async {
-    try {
-      return await RustLib.instance.api
-          .crateFfiFeedFeedDecompressEvent(compressed: compressed);
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
     }
   }
 
@@ -503,36 +478,6 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     notifyDeferred();
   }
 
-  /// Paged feed straight from the local DB for the given authors (JSON rows).
-  Future<String> dbFeed(List<String> pubkeys,
-      {int limit = 50, int offset = 0}) async {
-    try {
-      final json = RustLib.instance.api.crateFfiDbDbGetFeed(
-        pubkeys: pubkeys,
-        limit: limit,
-        offset: offset,
-      );
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
-
-  /// Most recent posts from the local DB regardless of author (JSON rows).
-  Future<String> dbRecent({int limit = 50}) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiDbDbGetRecent(limit: limit);
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
-
   /// Deletes locally stored posts older than `cutoffSecs`; rows removed.
   Future<int> dbDeleteOlderThan(int cutoffSecs) async {
     try {
@@ -558,58 +503,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  /// Freenet ephemeral tags (JSON) for a post keyed by `freenetKey`.
-  Future<String> freenetEphemeralTags(String freenetKey) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiFeedFeedFreenetEphemeralTags(freenetKey: freenetKey);
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
   }
-
-  /// Profile entry (pubkey/content/created_at) extracted from an event JSON.
-  Future<String> profileEntryFromEvent(String eventJson) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiFeedFeedProfileEntryFromEvent(eventJson: eventJson);
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
-
-  /// Lenient JSON parse of a text blob (depth/nesting capped).
-  Future<String> safeJsonParse(String text) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiContentContentSafeJsonParse(text: text);
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
-
-  /// Video URLs extracted from an imeta tags JSON array.
-  Future<String> extractImetaVideoUrls(String tagsJson) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiContentContentExtractImetaVideoUrls(tagsJson: tagsJson);
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
-}
 
 /// Feed post (kind 1 / reply) as stored locally.
 class FeedPost {

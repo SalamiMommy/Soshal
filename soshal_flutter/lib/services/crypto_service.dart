@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import '../utils/format.dart';
 
 /// Crypto tools service — diagnostics utilities backed by crypto-core FFI:
 /// hashing/HMAC/HKDF, entropy, zeroize demo, PQC KEM, FROST jury signing,
@@ -13,20 +14,22 @@ class CryptoService extends ChangeNotifier with LastErrorMixin {
 
   /// SHA-256 of `input` as lowercase hex.
   String sha256Hex(String input) =>
-      _api.crateFfiCryptoCryptoSha256Hex(input: input);
+      _api.crateFfiUtilUtilSha256Hex(input: input);
 
   /// SHA-256 of raw bytes (input is a utf8 string here), lowercase hex.
   String sha256Bytes(String input) =>
-      _hex(_api.crateFfiCryptoCryptoSha256(input: utf8.encode(input)));
+      bytesToHex(_api.crateFfiCryptoCryptoSha256(input: utf8.encode(input)));
 
-  /// NIP-44 v2 encrypt via the crypto alias (delegates to the signer key).
+  /// NIP-44 v2 encrypt `plaintext` to `recipientPubkey` with the unlocked
+  /// signer key; returns the wire-format base64 payload.
   String nip44Encrypt(String plaintext, String recipientPubkey) =>
-      _api.crateFfiCryptoCryptoNip44Encrypt(
+      _api.crateFfiSignerSignerNip44Encrypt(
           plaintext: plaintext, recipientPubkey: recipientPubkey);
 
-  /// NIP-44 v2 decrypt via the crypto alias (delegates to the signer key).
+  /// NIP-44 v2 decrypt `payload` from `senderPubkey` with the unlocked signer
+  /// key.
   String nip44Decrypt(String payload, String senderPubkey) =>
-      _api.crateFfiCryptoCryptoNip44Decrypt(
+      _api.crateFfiSignerSignerNip44Decrypt(
           payload: payload, senderPubkey: senderPubkey);
 
   /// Pin the calling thread to performance (true) or efficiency (false) cores.
@@ -36,7 +39,7 @@ class CryptoService extends ChangeNotifier with LastErrorMixin {
 
   /// HMAC-SHA256 over `message` with `key` (both utf8), lowercase hex.
   String hmacSha256(String key, String message) =>
-      _hex(_api.crateFfiCryptoCryptoHmacSha256(
+      bytesToHex(_api.crateFfiCryptoCryptoHmacSha256(
           key: utf8.encode(key), message: utf8.encode(message)));
 
   /// HKDF-SHA256 expand: derive `len` bytes from `ikm` (utf8, empty
@@ -119,19 +122,4 @@ class CryptoService extends ChangeNotifier with LastErrorMixin {
 
   /// Raw SQL console: rows as a JSON array of objects.
   String dbQueryRaw(String sql) => _api.crateFfiDbDbQueryRaw(sql: sql);
-
-  /// BLAKE3 hash of raw bytes; returns 64 hex chars.
-  Future<String> blake3(List<int> bytes) async {
-    try {
-      final hex = await _api.crateFfiCryptoCryptoBlake3(input: bytes);
-      clearLastError();
-      return hex;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
-
-  static String _hex(List<int> bytes) =>
-      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 }

@@ -742,11 +742,8 @@ class _DatingScreenState extends State<DatingScreen>
   }
 
   String _seenLabel(int secs) {
-    final diff = DateTime.now().millisecondsSinceEpoch ~/ 1000 - secs;
-    if (diff < 60) return 'seen now';
-    if (diff < 3600) return 'seen ${diff ~/ 60}m ago';
-    if (diff < 86400) return 'seen ${diff ~/ 3600}h ago';
-    return 'seen ${diff ~/ 86400}d ago';
+    final rel = relativeTime(secs);
+    return rel == 'just now' ? 'seen now' : 'seen $rel';
   }
 
   Future<void> _blockCard(

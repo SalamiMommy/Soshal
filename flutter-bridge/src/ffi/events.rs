@@ -153,18 +153,10 @@ pub fn events_fetch_nearby(
         if e.latitude == 0.0 && e.longitude == 0.0 {
             return false;
         }
-        haversine(center, (e.latitude, e.longitude)) <= radius as f64
+        soshal_spatial_core::distance::haversine_km(center.0, center.1, e.latitude, e.longitude)
+            <= radius as f64
     });
     super::util::json_ok(out)
-}
-
-fn haversine(a: (f64, f64), b: (f64, f64)) -> f64 {
-    let r = 6371.0;
-    let d_lat = (b.0 - a.0).to_radians();
-    let d_lon = (b.1 - a.1).to_radians();
-    let h = (d_lat / 2.0).sin().powi(2)
-        + a.0.to_radians().cos() * b.0.to_radians().cos() * (d_lon / 2.0).sin().powi(2);
-    2.0 * r * h.sqrt().asin()
 }
 
 /// Fetch events the user is involved in (created, RSVPed, or attended).
@@ -244,29 +236,15 @@ pub fn events_create(
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
-    let row = soshal_db_core::repos::post::PostRow {
-        id: event_id,
-        pubkey: creator_pubkey,
-        content: content.to_string(),
-        kind: 31923,
-        created_at: soshal_common_core::format::now_secs(),
-        tags_json: String::new(),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: Some(title),
-        sync_status: "pending".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-    };
-    super::db::with_db_result(|db| {
-        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
-        Ok(())
-    })?;
+    super::db::upsert_post_row(
+        event_id,
+        creator_pubkey,
+        content.to_string(),
+        31923,
+        soshal_common_core::format::now_secs(),
+        String::new(),
+        Some(title),
+    )?;
     Ok(signed_json).into()
 }
 
@@ -329,32 +307,19 @@ pub fn events_rsvp(
                 .filter_map(|t| nostr::event::Tag::parse(t).ok()),
             );
     let _ = super::signer::sign_builder(builder)?;
-    let row = soshal_db_core::repos::post::PostRow {
-        id: format!("rsvp:{}:{}", user_pubkey, rsvp_status),
-        pubkey: user_pubkey,
-        content: rsvp_status,
-        kind: 31924,
-        created_at: soshal_common_core::format::now_secs(),
-        tags_json: format!(
+    super::db::upsert_post_row(
+        format!("rsvp:{}:{}", user_pubkey, rsvp_status),
+        user_pubkey,
+        rsvp_status,
+        31924,
+        soshal_common_core::format::now_secs(),
+        format!(
             r#"[["a","31924:{host}:{d_tag}"],["e","{event_id}"]]"#,
             event_id = event_id.clone()
         ),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: None,
-        sync_status: "pending".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-    };
-    super::db::with_db_result(|db| {
-        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
-        Ok(true)
-    })
+        None,
+    )
+    .map(|_| true)
 }
 
 /// Check in to an event. Enforced via events-core `can_checkin`: only
@@ -394,33 +359,20 @@ pub fn events_check_in(
         }
     }
     let _ = super::signer::sign_builder(builder)?;
-    let row = soshal_db_core::repos::post::PostRow {
-        id: format!("checkin:{}:{}", user_pubkey, event_id),
-        pubkey: user_pubkey.clone(),
+    super::db::upsert_post_row(
+        format!("checkin:{}:{}", user_pubkey, event_id),
+        user_pubkey.clone(),
         content,
-        kind: 9,
-        created_at: soshal_common_core::format::now_secs(),
-        tags_json: format!(
+        9,
+        soshal_common_core::format::now_secs(),
+        format!(
             r#"[["d","badge-{event_id}"],["e","{event_id}"],["p","{user_pubkey}"]]"#,
             event_id = event_id.clone(),
             user_pubkey = user_pubkey.clone()
         ),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: None,
-        sync_status: "pending".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-    };
-    super::db::with_db_result(|db| {
-        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
-        Ok(true)
-    })
+        None,
+    )
+    .map(|_| true)
 }
 
 /// Event details: includes local RSVP + attendee counts.
@@ -484,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_haversine_sf_la() {
-        let d = haversine((37.7749, -122.4194), (34.0522, -118.2437));
+        let d = soshal_spatial_core::distance::haversine_km(37.7749, -122.4194, 34.0522, -118.2437);
         assert!((540.0..560.0).contains(&d), "got {d}");
     }
 

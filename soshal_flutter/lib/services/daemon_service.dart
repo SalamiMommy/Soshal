@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Service for managing bundled networking daemons (I2P, Freenet, Reticulum)
@@ -14,7 +15,7 @@ class DaemonService {
       final result = await _channel.invokeMethod('extractDaemons');
       return result as bool? ?? false;
     } catch (e) {
-      print('Failed to extract daemons: $e');
+      debugPrint('Failed to extract daemons: $e');
       return false;
     }
   }
@@ -26,7 +27,7 @@ class DaemonService {
           .invokeMethod('getDaemonPath', {'daemonName': daemonName});
       return result as String?;
     } catch (e) {
-      print('Failed to get daemon path: $e');
+      debugPrint('Failed to get daemon path: $e');
       return null;
     }
   }
@@ -37,7 +38,7 @@ class DaemonService {
       final result = await _channel.invokeMethod('areDaemonsAvailable');
       return result as bool? ?? false;
     } catch (e) {
-      print('Failed to check daemon availability: $e');
+      debugPrint('Failed to check daemon availability: $e');
       return false;
     }
   }
@@ -51,7 +52,7 @@ class DaemonService {
       }
       return {};
     } catch (e) {
-      print('Failed to get daemon status: $e');
+      debugPrint('Failed to get daemon status: $e');
       return {};
     }
   }
@@ -62,7 +63,7 @@ class DaemonService {
       final result = await _channel.invokeMethod('startDaemons');
       return result as bool? ?? false;
     } catch (e) {
-      print('Failed to start daemons: $e');
+      debugPrint('Failed to start daemons: $e');
       return false;
     }
   }
@@ -73,7 +74,7 @@ class DaemonService {
       final result = await _channel.invokeMethod('stopDaemons');
       return result as bool? ?? false;
     } catch (e) {
-      print('Failed to stop daemons: $e');
+      debugPrint('Failed to stop daemons: $e');
       return false;
     }
   }
@@ -84,7 +85,7 @@ class DaemonService {
       final result = await _channel.invokeMethod('isI2pdRunning');
       return result as bool? ?? false;
     } catch (e) {
-      print('Failed to check i2pd liveness: $e');
+      debugPrint('Failed to check i2pd liveness: $e');
       return false;
     }
   }
@@ -95,7 +96,7 @@ class DaemonService {
       final result = await _channel.invokeMethod('isRnsdRunning');
       return result as bool? ?? false;
     } catch (e) {
-      print('Failed to check rnsd liveness: $e');
+      debugPrint('Failed to check rnsd liveness: $e');
       return false;
     }
   }

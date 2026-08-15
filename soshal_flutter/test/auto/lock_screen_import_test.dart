@@ -1,9 +1,0 @@
-// Auto-generated import test for lock_screen
-import 'package:flutter_test/flutter_test.dart';
-
-void main() {
-  test('import lock_screen compiles', () {
-    TestWidgetsFlutterBinding.ensureInitialized();
-    expect(true, isTrue);
-  });
-}

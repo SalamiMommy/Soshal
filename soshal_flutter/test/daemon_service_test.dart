@@ -8,15 +8,18 @@ void main() {
 
   setUp(() {
     TestWidgetsFlutterBinding.ensureInitialized();
-    channel.setMockMethodCallHandler(null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
   });
 
   tearDown(() async {
-    channel.setMockMethodCallHandler(null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
   });
 
   test('extractDaemons returns true on success', () async {
-    channel.setMockMethodCallHandler((call) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'extractDaemons') return true;
       return null;
     });
@@ -26,7 +29,8 @@ void main() {
   });
 
   test('getDaemonPath returns string and forwards arg', () async {
-    channel.setMockMethodCallHandler((call) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
       expect(call.method, 'getDaemonPath');
       expect(call.arguments['daemonName'], 'i2pd');
       return '/tmp/i2pd';
@@ -37,13 +41,15 @@ void main() {
   });
 
   test('areDaemonsAvailable returns bool', () async {
-    channel.setMockMethodCallHandler((call) async => true);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async => true);
     final ok = await DaemonService.areDaemonsAvailable();
     expect(ok, true);
   });
 
   test('getDaemonStatus maps to DaemonStatus', () async {
-    channel.setMockMethodCallHandler((call) async => {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async => {
           'i2pd': true,
           'freenet': false,
           'reticulum': true,
@@ -59,7 +65,8 @@ void main() {
   });
 
   test('start/stop/isRunning wrappers return false on exception', () async {
-    channel.setMockMethodCallHandler((call) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
       throw Exception('native failure');
     });
 

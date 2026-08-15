@@ -1,9 +1,0 @@
-// Import test for ffi wrapper: util
-import 'package:flutter_test/flutter_test.dart';
-
-void main() {
-  test('import util compiles', () {
-    TestWidgetsFlutterBinding.ensureInitialized();
-    expect(true, isTrue);
-  });
-}

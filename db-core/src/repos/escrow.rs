@@ -119,6 +119,57 @@ impl<'a> EscrowRepo<'a> {
         Ok(())
     }
 
+    /// Returns `(buyer_confirmed, seller_confirmed)` flags; `NotFound` if the escrow is missing.
+    pub fn get_confirms(&self, id: &str) -> Result<(bool, bool), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        let row = crate::query::query_first(
+            &conn,
+            "SELECT buyer_confirmed, seller_confirmed FROM escrows WHERE id=?1",
+            params![id],
+            |r| Ok((r.get::<i64>(0)? != 0, r.get::<i64>(1)? != 0)),
+        )?;
+        match row {
+            Some(confirms) => Ok(confirms),
+            None => Err(crate::error::DbError::NotFound),
+        }
+    }
+
+    /// Marks the buyer's confirmation on the escrow; touches `updated_at`.
+    pub fn set_buyer_confirmed(
+        &self,
+        id: &str,
+        confirmed: bool,
+    ) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        let changed = crate::query::execute(
+            &conn,
+            "UPDATE escrows SET buyer_confirmed=?2, updated_at=?3 WHERE id=?1",
+            params![id, confirmed as i64, soshal_common_core::format::now_secs()],
+        )?;
+        if changed == 0 {
+            return Err(crate::error::DbError::NotFound);
+        }
+        Ok(())
+    }
+
+    /// Marks the seller's confirmation on the escrow; touches `updated_at`.
+    pub fn set_seller_confirmed(
+        &self,
+        id: &str,
+        confirmed: bool,
+    ) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        let changed = crate::query::execute(
+            &conn,
+            "UPDATE escrows SET seller_confirmed=?2, updated_at=?3 WHERE id=?1",
+            params![id, confirmed as i64, soshal_common_core::format::now_secs()],
+        )?;
+        if changed == 0 {
+            return Err(crate::error::DbError::NotFound);
+        }
+        Ok(())
+    }
+
     pub fn list(&self) -> Result<Vec<EscrowRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
         crate::query::query(

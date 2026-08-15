@@ -139,3 +139,215 @@ pub fn validate_swap_event_json(input: &str) -> String {
     };
     json_out(&validate_swap_event(&input), r#"{"valid":false}"#)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nostr::event::{EventBuilder, FinalizeEvent, Kind, Tag};
+
+    fn keys() -> nostr::key::Keys {
+        nostr::key::Keys::parse("0000000000000000000000000000000000000000000000000000000000000001")
+            .unwrap()
+    }
+
+    fn signed_swap(
+        keys: &nostr::key::Keys,
+        d_tag: &str,
+        with_p_tag: bool,
+        role: &str,
+        type_tag: &str,
+        content: &str,
+    ) -> String {
+        let mut builder =
+            EventBuilder::new(Kind::Custom(38383), content).tag(Tag::parse(["d", d_tag]).unwrap());
+        if with_p_tag {
+            builder = builder.tag(Tag::parse(["p", keys.public_key().to_hex().as_str()]).unwrap());
+        }
+        let ev = builder
+            .tag(Tag::parse(["role", role]).unwrap())
+            .tag(Tag::parse(["type", type_tag]).unwrap())
+            .finalize(keys)
+            .unwrap();
+        serde_json::to_string(&ev).unwrap()
+    }
+
+    fn swap_input(event_json: &str, self_pubkey: &str, check_inner: bool) -> String {
+        serde_json::json!({
+            "event_json": event_json,
+            "self_pubkey": self_pubkey,
+            "expected_role": "buyer",
+            "expected_type": "buy_now",
+            "check_inner": check_inner
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn swap_matching_assets_amounts_accepted() {
+        let keys = keys();
+        let pk = keys.public_key().to_hex();
+        let content = format!(r#"{{"id":"inner1","pubkey":"{}"}}"#, pk);
+        let event = signed_swap(&keys, "swap-1", true, "buyer", "buy_now", &content);
+        let v: serde_json::Value =
+            serde_json::from_str(&validate_swap_event_json(&swap_input(&event, &pk, true)))
+                .unwrap();
+        assert_eq!(v["valid"], true);
+        assert_eq!(v["dTag"], "swap-1");
+        assert_eq!(v["innerPubkey"], pk);
+    }
+
+    #[test]
+    fn swap_mismatched_role_or_type_rejected() {
+        let keys = keys();
+        let pk = keys.public_key().to_hex();
+        let wrong_role = signed_swap(&keys, "s1", true, "seller", "buy_now", "{}");
+        let v: serde_json::Value = serde_json::from_str(&validate_swap_event_json(&swap_input(
+            &wrong_role,
+            &pk,
+            false,
+        )))
+        .unwrap();
+        assert_eq!(v["valid"], false);
+
+        let wrong_type = signed_swap(&keys, "s2", true, "buyer", "auction", "{}");
+        let v: serde_json::Value = serde_json::from_str(&validate_swap_event_json(&swap_input(
+            &wrong_type,
+            &pk,
+            false,
+        )))
+        .unwrap();
+        assert_eq!(v["valid"], false);
+    }
+
+    #[test]
+    fn swap_expiry_not_enforced() {
+        let keys = keys();
+        let pk = keys.public_key().to_hex();
+        let ev = EventBuilder::new(Kind::Custom(38383), "{}")
+            .tag(Tag::parse(["d", "swap-x"]).unwrap())
+            .tag(Tag::parse(["p", pk.as_str()]).unwrap())
+            .tag(Tag::parse(["role", "buyer"]).unwrap())
+            .tag(Tag::parse(["type", "buy_now"]).unwrap())
+            .tag(Tag::parse(["expiration", "1"]).unwrap())
+            .finalize(&keys)
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&validate_swap_event_json(&swap_input(
+            &serde_json::to_string(&ev).unwrap(),
+            &pk,
+            false,
+        )))
+        .unwrap();
+        assert_eq!(v["valid"], true);
+    }
+
+    #[test]
+    fn swap_missing_required_tags_rejected() {
+        let keys = keys();
+        let pk = keys.public_key().to_hex();
+
+        let no_d = EventBuilder::new(Kind::Custom(38383), "{}")
+            .tag(Tag::parse(["p", pk.as_str()]).unwrap())
+            .tag(Tag::parse(["role", "buyer"]).unwrap())
+            .tag(Tag::parse(["type", "buy_now"]).unwrap())
+            .finalize(&keys)
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&validate_swap_event_json(&swap_input(
+            &serde_json::to_string(&no_d).unwrap(),
+            &pk,
+            false,
+        )))
+        .unwrap();
+        assert_eq!(v["valid"], false);
+
+        let no_p = signed_swap(&keys, "s2", false, "buyer", "buy_now", "{}");
+        let v: serde_json::Value =
+            serde_json::from_str(&validate_swap_event_json(&swap_input(&no_p, &pk, false)))
+                .unwrap();
+        assert_eq!(v["valid"], false);
+
+        let no_role = EventBuilder::new(Kind::Custom(38383), "{}")
+            .tag(Tag::parse(["d", "s3"]).unwrap())
+            .tag(Tag::parse(["p", pk.as_str()]).unwrap())
+            .tag(Tag::parse(["type", "buy_now"]).unwrap())
+            .finalize(&keys)
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&validate_swap_event_json(&swap_input(
+            &serde_json::to_string(&no_role).unwrap(),
+            &pk,
+            false,
+        )))
+        .unwrap();
+        assert_eq!(v["valid"], false);
+
+        let no_type = EventBuilder::new(Kind::Custom(38383), "{}")
+            .tag(Tag::parse(["d", "s4"]).unwrap())
+            .tag(Tag::parse(["p", pk.as_str()]).unwrap())
+            .tag(Tag::parse(["role", "buyer"]).unwrap())
+            .finalize(&keys)
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&validate_swap_event_json(&swap_input(
+            &serde_json::to_string(&no_type).unwrap(),
+            &pk,
+            false,
+        )))
+        .unwrap();
+        assert_eq!(v["valid"], false);
+    }
+
+    #[test]
+    fn swap_foreign_signer_rejected() {
+        let keys = keys();
+        let event = signed_swap(&keys, "s", true, "buyer", "buy_now", "{}");
+        let v: serde_json::Value = serde_json::from_str(&validate_swap_event_json(&swap_input(
+            &event,
+            "someoneelse",
+            false,
+        )))
+        .unwrap();
+        assert_eq!(v["valid"], false);
+    }
+
+    #[test]
+    fn swap_inner_check_transition() {
+        let keys = keys();
+        let pk = keys.public_key().to_hex();
+        let content = r#"{"id":"inner1","pubkey":"0xdeadbeef"}"#;
+        let event = signed_swap(&keys, "s", true, "buyer", "buy_now", content);
+        let json = event;
+
+        let v: serde_json::Value =
+            serde_json::from_str(&validate_swap_event_json(&swap_input(&json, &pk, false)))
+                .unwrap();
+        assert_eq!(v["valid"], true);
+
+        let v: serde_json::Value =
+            serde_json::from_str(&validate_swap_event_json(&swap_input(&json, &pk, true))).unwrap();
+        assert_eq!(v["valid"], false);
+    }
+
+    #[test]
+    fn swap_malformed_payloads_rejected() {
+        let v: serde_json::Value = serde_json::from_str(&validate_swap_event_json("zzz")).unwrap();
+        assert_eq!(v["valid"], false);
+
+        let unsigned = serde_json::json!({
+            "event_json": r#"{"id":"x","pubkey":"y","content":"","tags":[],"sig":""}"#,
+            "self_pubkey": "y",
+            "expected_role": "buyer",
+            "expected_type": "buy_now",
+            "check_inner": false
+        });
+        let v: serde_json::Value =
+            serde_json::from_str(&validate_swap_event_json(&unsigned.to_string())).unwrap();
+        assert_eq!(v["valid"], false);
+
+        let keys = keys();
+        let pk = keys.public_key().to_hex();
+        let bad_inner = signed_swap(&keys, "s", true, "buyer", "buy_now", "not-json");
+        let v: serde_json::Value = serde_json::from_str(&validate_swap_event_json(&swap_input(
+            &bad_inner, &pk, true,
+        )))
+        .unwrap();
+        assert_eq!(v["valid"], false);
+    }
+}

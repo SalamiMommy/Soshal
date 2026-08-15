@@ -159,30 +159,15 @@ pub fn dating_create_profile(
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
-    let row = soshal_db_core::repos::post::PostRow {
-        id: event_id,
-        pubkey: user_pubkey,
-        content: content.to_string(),
-        kind: KIND_PROFILE,
-        created_at: soshal_common_core::format::now_secs(),
-        tags_json: serde_json::to_string(&vec![vec!["d".to_string(), D_TAG.to_string()]])
-            .unwrap_or_default(),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: Some(name),
-        sync_status: "pending".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-    };
-    super::db::with_db_result(|db| {
-        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
-        Ok(())
-    })?;
+    super::db::upsert_post_row(
+        event_id,
+        user_pubkey,
+        content.to_string(),
+        KIND_PROFILE,
+        soshal_common_core::format::now_secs(),
+        serde_json::to_string(&vec![vec!["d".to_string(), D_TAG.to_string()]]).unwrap_or_default(),
+        Some(name),
+    )?;
     Ok(signed_json).into()
 }
 
@@ -223,30 +208,15 @@ pub fn dating_update_profile(
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
-    let row = soshal_db_core::repos::post::PostRow {
-        id: event_id,
-        pubkey: user_pubkey,
-        content: content.to_string(),
-        kind: KIND_PROFILE,
-        created_at: soshal_common_core::format::now_secs(),
-        tags_json: serde_json::to_string(&vec![vec!["d".to_string(), D_TAG.to_string()]])
-            .unwrap_or_default(),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: None,
-        sync_status: "pending".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-    };
-    super::db::with_db_result(|db| {
-        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
-        Ok(())
-    })?;
+    super::db::upsert_post_row(
+        event_id,
+        user_pubkey,
+        content.to_string(),
+        KIND_PROFILE,
+        soshal_common_core::format::now_secs(),
+        serde_json::to_string(&vec![vec!["d".to_string(), D_TAG.to_string()]]).unwrap_or_default(),
+        None,
+    )?;
     Ok(true).into()
 }
 
@@ -460,23 +430,71 @@ pub fn dating_filter_profiles(
     interests_json: String,
 ) -> Result<String, String> {
     let mut cards: Vec<DatingCardInfo> =
-        serde_json::from_str(&dating_fetch_profiles(user_pubkey, 100)?)
+        serde_json::from_str(&dating_fetch_profiles(user_pubkey.clone(), 100)?)
             .map_err(|e| format!("parse profiles: {e}"))?;
-    if min_age > 0 {
-        cards.retain(|c| c.age >= min_age);
-    }
-    if max_age > 0 {
-        cards.retain(|c| c.age <= max_age);
-    }
     if !interests_json.is_empty() {
         let interests: Vec<String> = serde_json::from_str(&interests_json).unwrap_or_default();
         if !interests.is_empty() {
             cards.retain(|c| c.interests.iter().any(|i| interests.contains(i)));
         }
     }
-    let _ = location_radius_km;
-    cards.truncate(50);
-    super::util::json_ok(cards)
+    let own_location = dating_get_own_profile(user_pubkey.clone())
+        .ok()
+        .and_then(|p| serde_json::from_str::<DatingCardInfo>(&p).ok())
+        .and_then(|c| (!c.location.is_empty()).then_some(c.location));
+    let profiles: Vec<soshal_dating_core::DatingProfileInput> = cards
+        .iter()
+        .map(|c| soshal_dating_core::DatingProfileInput {
+            pubkey: c.pubkey.clone(),
+            age: Some(f64::from(c.age)),
+            location_geohash: (!c.location.is_empty()).then_some(c.location.clone()),
+            interests: Some(c.interests.clone()),
+            ..Default::default()
+        })
+        .collect();
+    let filtered = soshal_dating_core::filter::filter_dating_profiles(
+        soshal_dating_core::FilterDatingProfilesInput {
+            profiles: profiles.clone(),
+            own_gender: None,
+            own_seeking: None,
+            own_location_geohash: own_location,
+            own_max_distance_km: (location_radius_km > 0).then_some(f64::from(location_radius_km)),
+            self_contacts: Vec::new(),
+            hide_friends: None,
+            min_age: (min_age > 0).then_some(f64::from(min_age)),
+            max_age: (max_age > 0).then_some(f64::from(max_age)),
+            body_type: None,
+            smoking: None,
+            drinking: None,
+            relationship_intent: None,
+            politics: None,
+            education: None,
+        },
+    );
+    let kept: Vec<soshal_dating_core::DatingProfileInput> = filtered
+        .into_iter()
+        .filter(|o| o.passes)
+        .map(|o| profiles[o.index].clone())
+        .collect();
+    let sorted =
+        soshal_dating_core::sort::sort_dating_profiles(soshal_dating_core::SortProfilesInput {
+            profiles: kept,
+            self_profile: soshal_dating_core::DatingProfileInput {
+                pubkey: user_pubkey,
+                ..Default::default()
+            },
+            self_contacts: Vec::new(),
+            sort_by: None,
+        });
+    let mut remaining = cards;
+    let mut out = Vec::new();
+    for s in sorted {
+        if let Some(pos) = remaining.iter().position(|c| c.pubkey == s.pubkey) {
+            out.push(remaining.remove(pos));
+        }
+    }
+    out.truncate(50);
+    super::util::json_ok(out)
 }
 
 /// Dating profile statistics from the local graph.
@@ -606,5 +624,28 @@ mod tests {
             "[]".to_string(),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_filter_profiles_radius() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let path = crate::ffi::db::tmp_db("dating_radius", "ffi");
+        let insert = |id: &str, pubkey: &str, age: i64, gh: &str, ts: i64| {
+            super::super::db::db_execute_raw(format!(
+                "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+                 VALUES ('{id}','{pubkey}','{{\"age\":{age},\"bio\":\"\",\"locationGeohash\":\"{gh}\",\"interests\":[]}}',30082,{ts},'[]','synced',0)"
+            ))
+        };
+        assert!(insert("own1", "own", 30, "u33dc0", 300).is_ok());
+        assert!(insert("near1", "near", 25, "u33dc0", 200).is_ok());
+        assert!(insert("far1", "far", 25, "9q8yyk", 100).is_ok());
+        let res = dating_filter_profiles("own".to_string(), 18, 40, 100, "[]".to_string()).unwrap();
+        let cards: Vec<DatingCardInfo> = serde_json::from_str(&res).unwrap();
+        assert!(cards.iter().any(|c| c.pubkey == "near"));
+        assert!(!cards.iter().any(|c| c.pubkey == "far"));
+        assert!(!cards.iter().any(|c| c.pubkey == "own"));
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
     }
 }

@@ -10,6 +10,7 @@ import '../services/moderation_service.dart';
 import '../services/media_service.dart';
 import '../services/p2p_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 import 'composer_screen.dart';
 import '../services/zap_service.dart';
 import '../services/layout_service.dart';
@@ -299,7 +300,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        widget.post.pubkey.substring(0, 16),
+                        prefixEllipsis(widget.post.pubkey, 16),
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.grey,
@@ -512,7 +513,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Text(
                         '⚡ ${(r.amountMsat / 1000).toStringAsFixed(2)} sats · '
-                        '${r.zapperPubkey.substring(0, 10)}…',
+                        '${prefixEllipsis(r.zapperPubkey, 10)}',
                         style: const TextStyle(fontSize: 13),
                       ),
                     ),
@@ -858,31 +859,12 @@ class _BlobImageState extends State<_BlobImage> {
   }
 
   Future<void> _prepare() async {
-    var url = widget.url;
-    final hash = widget.blobHash;
-    final host = Uri.parse(url).host;
-    final isLocal = host.isEmpty ||
-        host == 'localhost' ||
-        host == '127.0.0.1' ||
-        host == '::1';
-    if (hash != null && !isLocal) {
-      final media = context.read<MediaService>();
-      final transport = context.read<P2pService>();
-      try {
-        if (media.localServerPort == null) await media.startLocalServer();
-        try {
-          await media.fetchBlob(hash);
-        } catch (_) {
-          await media.fetchBlobFromLan(
-            hash,
-            peers: transport.peers,
-            outPath: '${Directory.systemTemp.path}/$hash',
-          );
-        }
-        url = media.getLocalUrl(hash);
-      } catch (e) {
-        if (mounted) setState(() => _error = '$e');
-      }
+    final String url;
+    try {
+      url = await _resolveBlobUrl(context, widget.url, widget.blobHash);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+      return;
     }
     if (mounted) setState(() => _resolved = url);
   }
@@ -929,6 +911,34 @@ class _BlobImageState extends State<_BlobImage> {
   }
 }
 
+Future<String> _resolveBlobUrl(
+  BuildContext context,
+  String url,
+  String? hash,
+) async {
+  final host = Uri.parse(url).host;
+  final isLocal = host.isEmpty ||
+      host == 'localhost' ||
+      host == '127.0.0.1' ||
+      host == '::1';
+  if (hash != null && !isLocal) {
+    final media = context.read<MediaService>();
+    final transport = context.read<P2pService>();
+    if (media.localServerPort == null) await media.startLocalServer();
+    try {
+      await media.fetchBlob(hash);
+    } catch (_) {
+      await media.fetchBlobFromLan(
+        hash,
+        peers: transport.peers,
+        outPath: '${Directory.systemTemp.path}/$hash',
+      );
+    }
+    return media.getLocalUrl(hash);
+  }
+  return url;
+}
+
 class _VideoPlayerWidget extends StatefulWidget {
   final String url;
   final String? blobHash;
@@ -956,30 +966,10 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
   /// range server. Honest failure: no peers / no local copy = error UI.
   Future<void> _prepare() async {
     var url = widget.url;
-    final hash = widget.blobHash;
-    final host = Uri.parse(url).host;
-    final isLocal = host.isEmpty ||
-        host == 'localhost' ||
-        host == '127.0.0.1' ||
-        host == '::1';
-    if (hash != null && !isLocal) {
-      final media = context.read<MediaService>();
-      final transport = context.read<P2pService>();
-      try {
-        if (media.localServerPort == null) await media.startLocalServer();
-        try {
-          await media.fetchBlob(hash);
-        } catch (_) {
-          await media.fetchBlobFromLan(
-            hash,
-            peers: transport.peers,
-            outPath: '${Directory.systemTemp.path}/$hash',
-          );
-        }
-        url = media.getLocalUrl(hash);
-      } catch (e) {
-        if (mounted) setState(() => _error = '$e');
-      }
+    try {
+      url = await _resolveBlobUrl(context, widget.url, widget.blobHash);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
     }
     final controller = VideoPlayerController.networkUrl(Uri.parse(url));
     _controller = controller;

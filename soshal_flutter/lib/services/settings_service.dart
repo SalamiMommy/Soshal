@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'crypto_service.dart';
 
 /// Settings key/value persistence plus storage statistics and destructive
 /// post purges. Thin wrapper over the db FFI — screens own their UI state.
@@ -62,8 +63,7 @@ class SettingsService extends ChangeNotifier {
       RustLib.instance.api.crateFfiEphemeralEphemeralCleanExpired();
 
   /// SHA-256 of `input` as lowercase hex.
-  String sha256Hex(String input) =>
-      RustLib.instance.api.crateFfiUtilUtilSha256Hex(input: input);
+  String sha256Hex(String input) => CryptoService().sha256Hex(input);
 
   /// Base64url (no padding) encode.
   String b64UrlEncode(String input) =>
@@ -74,8 +74,7 @@ class SettingsService extends ChangeNotifier {
       RustLib.instance.api.crateFfiUtilUtilBase64UrlDecode(input: input);
 
   /// Purge geohash peer rows not seen within `cutoffSecsAgo`; rows removed.
-  int purgeStaleGeohashPeers(int cutoffSecsAgo) =>
-      RustLib.instance.api
-          .crateFfiDbDbPurgeStaleGeohashPeers(cutoffSecsAgo: cutoffSecsAgo)
-          .toInt();
+  int purgeStaleGeohashPeers(int cutoffSecsAgo) => RustLib.instance.api
+      .crateFfiDbDbPurgeStaleGeohashPeers(cutoffSecsAgo: cutoffSecsAgo)
+      .toInt();
 }

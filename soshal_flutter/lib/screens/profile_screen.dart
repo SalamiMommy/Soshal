@@ -285,7 +285,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ],
                         ),
                       Text(
-                        pubkey.substring(0, 16),
+                        prefixEllipsis(pubkey, 16),
                         style:
                             const TextStyle(color: Colors.grey, fontSize: 12),
                       ),

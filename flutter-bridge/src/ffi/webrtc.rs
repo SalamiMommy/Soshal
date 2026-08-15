@@ -4,25 +4,8 @@
 //! SDP sanitization, and peer connection helpers.
 
 use flutter_rust_bridge::frb;
-use serde::{Deserialize, Serialize};
 use soshal_webrtc_core::ice::ice_config;
 use soshal_webrtc_core::sdp::sanitize_sdp;
-
-/// ICE server configuration
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IceConfig {
-    pub ice_servers: Vec<IceServer>,
-    pub ice_transport_policy: String, // "all" or "relay"
-}
-
-/// Individual ICE server (STUN or TURN)
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IceServer {
-    pub urls: Vec<String>,
-    pub username: Option<String>,
-    pub credential: Option<String>,
-    pub credential_type: Option<String>,
-}
 
 /// Get ICE configuration based on privacy settings.
 /// `privacy_level`: "public" (all), "friends" (relay only).
@@ -133,4 +116,210 @@ pub fn webrtc_add_candidate_to_sdp(sdp: String, candidate: String) -> Result<Str
 pub fn webrtc_validate_sdp(sdp: String) -> Result<bool, String> {
     // Basic SDP format validation
     Ok(sdp.contains("v=0") && sdp.contains("o=")).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ffi::db;
+
+    #[test]
+    fn test_ice_config_public() {
+        let json = webrtc_get_ice_config("public".to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["iceTransportPolicy"], "all");
+        assert_eq!(v["forceRelay"], false);
+        assert_eq!(v["iceServers"][0]["urls"], "stun:stun.l.google.com:19302");
+    }
+
+    #[test]
+    fn test_ice_config_force_relay_levels() {
+        for level in ["friends", "private"] {
+            let json = webrtc_get_ice_config(level.to_string()).unwrap();
+            let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+            assert_eq!(v["iceTransportPolicy"], "relay");
+            assert_eq!(v["forceRelay"], true);
+        }
+    }
+
+    #[test]
+    fn test_ice_config_empty_defaults_all() {
+        let json = webrtc_get_ice_config(String::new()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["iceTransportPolicy"], "all");
+        assert_eq!(v["forceRelay"], false);
+    }
+
+    #[test]
+    fn test_ice_config_unknown_level_forces_relay() {
+        let json = webrtc_get_ice_config("garbage".to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["iceTransportPolicy"], "relay");
+        assert_eq!(v["forceRelay"], true);
+    }
+
+    #[test]
+    fn test_stun_servers() {
+        let servers = webrtc_get_stun_servers().unwrap();
+        assert_eq!(servers.len(), 2);
+        assert!(servers.iter().all(|s| s.starts_with("stun:")));
+    }
+
+    #[test]
+    fn test_turn_servers_empty_when_unconfigured() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("turn_empty", "webrtc");
+        assert_eq!(webrtc_get_turn_servers(None).unwrap(), "[]");
+        assert_eq!(
+            webrtc_get_turn_servers(Some("token".to_string())).unwrap(),
+            "[]"
+        );
+    }
+
+    #[test]
+    fn test_turn_servers_from_settings() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("turn", "webrtc");
+        db::db_set_setting(
+            "turn_endpoint".to_string(),
+            "turn:turn.example.com:3478".to_string(),
+        )
+        .unwrap();
+        let json = webrtc_get_turn_servers(None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v[0]["urls"][0], "turn:turn.example.com:3478");
+        assert!(v[0].get("username").is_none());
+        assert!(v[0].get("credential").is_none());
+        db::db_set_setting("turn_username".to_string(), "u1".to_string()).unwrap();
+        db::db_set_setting("turn_credential".to_string(), "s3cret".to_string()).unwrap();
+        let json = webrtc_get_turn_servers(None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v[0]["username"], "u1");
+        assert_eq!(v[0]["credential"], "s3cret");
+        assert_eq!(v[0]["credentialType"], "password");
+    }
+
+    #[test]
+    fn test_sanitize_sdp_drops_host_candidates() {
+        let sdp = "a=candidate:1 1 UDP 2130706431 192.168.1.5 54321 typ host";
+        assert_eq!(webrtc_sanitize_sdp(sdp.to_string(), false).unwrap(), "");
+        assert_eq!(webrtc_sanitize_sdp(sdp.to_string(), true).unwrap(), "");
+    }
+
+    #[test]
+    fn test_sanitize_sdp_gates_srflx_by_force_relay() {
+        let srflx = "a=candidate:1 1 UDP 2130706431 8.8.8.8 54321 typ srflx";
+        assert_eq!(
+            webrtc_sanitize_sdp(srflx.to_string(), false).unwrap(),
+            srflx
+        );
+        assert_eq!(webrtc_sanitize_sdp(srflx.to_string(), true).unwrap(), "");
+    }
+
+    #[test]
+    fn test_sanitize_sdp_keeps_relay_drops_private_srflx() {
+        let relay = "a=candidate:2 1 UDP 2130706431 66.154.114.51 54322 typ relay";
+        assert_eq!(webrtc_sanitize_sdp(relay.to_string(), true).unwrap(), relay);
+        let private_srflx = "a=candidate:3 1 UDP 2130706431 10.0.0.5 54323 typ srflx";
+        assert_eq!(
+            webrtc_sanitize_sdp(private_srflx.to_string(), false).unwrap(),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_sanitize_sdp_rewrites_private_c_lines() {
+        assert_eq!(
+            webrtc_sanitize_sdp("c=IN IP4 192.168.1.5".to_string(), false).unwrap(),
+            "c=IN IP4 127.0.0.1"
+        );
+        assert_eq!(
+            webrtc_sanitize_sdp("c=IN IP6 fd00::1".to_string(), false).unwrap(),
+            "c=IN IP6 ::1"
+        );
+        assert_eq!(
+            webrtc_sanitize_sdp("c=IN IP4 8.8.8.8".to_string(), false).unwrap(),
+            "c=IN IP4 8.8.8.8"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_sdp_rewrites_origin_address() {
+        assert_eq!(
+            webrtc_sanitize_sdp("o=- 0 0 IN IP4 192.168.1.5".to_string(), false).unwrap(),
+            "o=o=- 0 0 IN IP4 0.0.0.0"
+        );
+        assert_eq!(
+            webrtc_sanitize_sdp("o=- 0 0 IN IP4 8.8.8.8".to_string(), false).unwrap(),
+            "o=o=- 0 0 IN IP4 0.0.0.0"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_sdp_joins_lines_crlf() {
+        assert_eq!(
+            webrtc_sanitize_sdp(
+                "a=candidate:1 1 UDP 2130706431 8.8.8.8 54321 typ srflx\nc=IN IP4 192.168.1.5"
+                    .to_string(),
+                false
+            )
+            .unwrap(),
+            "a=candidate:1 1 UDP 2130706431 8.8.8.8 54321 typ srflx\r\nc=IN IP4 127.0.0.1"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_sdp_empty() {
+        assert_eq!(webrtc_sanitize_sdp(String::new(), false).unwrap(), "");
+    }
+
+    #[test]
+    fn test_create_peer_config() {
+        let json = webrtc_create_peer_config("public".to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["iceTransportPolicy"], "all");
+        assert_eq!(v["bundlePolicy"], "max-bundle");
+        assert_eq!(v["rtcpMuxPolicy"], "require");
+        assert!(!v["iceServers"].as_array().unwrap().is_empty());
+        let json = webrtc_create_peer_config("friends".to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["iceTransportPolicy"], "relay");
+    }
+
+    #[test]
+    fn test_extract_candidates() {
+        let sdp = "v=0\r\na=candidate:1 1 UDP 2130706431 8.8.8.8 54321 typ srflx\r\nm=audio 0 RTP/AVP 0\r\na=candidate:2 1 UDP 2130706431 66.154.114.51 54322 typ relay";
+        let candidates = webrtc_extract_candidates(sdp.to_string()).unwrap();
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates[0].starts_with("a=candidate:1"));
+        assert!(candidates[1].starts_with("a=candidate:2"));
+        assert_eq!(
+            webrtc_extract_candidates("v=0\nm=audio 0 RTP/AVP 0".to_string()).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn test_add_candidate_to_sdp() {
+        assert_eq!(
+            webrtc_add_candidate_to_sdp("v=0".to_string(), "a=candidate:1".to_string()).unwrap(),
+            "v=0\na=candidate:1"
+        );
+        assert_eq!(
+            webrtc_add_candidate_to_sdp("v=0\n".to_string(), "a=candidate:2".to_string()).unwrap(),
+            "v=0\na=candidate:2"
+        );
+    }
+
+    #[test]
+    fn test_validate_sdp() {
+        assert!(webrtc_validate_sdp("v=0\r\no=- 0 0 IN IP4 127.0.0.1".to_string()).unwrap());
+        assert!(!webrtc_validate_sdp("v=0 only".to_string()).unwrap());
+        assert!(!webrtc_validate_sdp("o=- 0 0 IN IP4 127.0.0.1".to_string()).unwrap());
+        assert!(!webrtc_validate_sdp(String::new()).unwrap());
+    }
 }

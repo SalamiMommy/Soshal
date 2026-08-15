@@ -2,12 +2,12 @@
 //! mini/musicloud event mapping.
 
 use soshal_minis_core::events::{
-    custom_profile_content, find_tag_str, mini_event_out, mini_from_event, musicloud_comment_addr,
+    custom_profile_content, mini_event_out, mini_from_event, musicloud_comment_addr,
     musicloud_event_out, musicloud_from_event, sort_by_created_desc, sort_minis_desc,
     sort_musicloud_desc, MiniEventOut, MusicloudEventOut,
 };
 use soshal_minis_core::parse_mini_manifest;
-use soshal_nostr_core::models::NostrEvent;
+use soshal_nostr_core::models::{find_tag_value, NostrEvent};
 
 fn ev(id: &str, kind: u32, content: &str, tags: Vec<Vec<String>>) -> NostrEvent {
     NostrEvent {
@@ -114,9 +114,12 @@ fn tiny_helpers() {
     assert_eq!(v["themeId"], "theme-dark");
     assert_eq!(v["nodes"]["style"], serde_json::json!({}));
     assert!(custom_profile_content(&serde_json::Value::Null, "").is_ok());
-    assert_eq!(find_tag_str(&[tag("a", "1"), tag("b", "2")], "b"), "2");
-    assert_eq!(find_tag_str(&[tag("a", "1")], "missing"), "");
-    assert_eq!(find_tag_str(&[vec!["a".into()]], "a"), "");
+    assert_eq!(
+        find_tag_value(&[tag("a", "1"), tag("b", "2")], "b"),
+        Some("2")
+    );
+    assert_eq!(find_tag_value(&[tag("a", "1")], "missing"), None);
+    assert_eq!(find_tag_value(&[vec!["a".into()]], "a"), None);
 }
 
 #[test]

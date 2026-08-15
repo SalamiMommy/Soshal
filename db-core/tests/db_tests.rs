@@ -102,6 +102,119 @@ fn test_schema_migration_flow() {
     assert!(tables.contains(&"group_roles".to_string()));
     assert!(tables.contains(&"audit_logs".to_string()));
     assert!(tables.contains(&"post_views".to_string()));
+
+    let fts: Vec<String> = soshal_db_core::query::query(
+        &conn,
+        "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='posts_ai'",
+        (),
+        |row| row.get(0),
+    )
+    .unwrap();
+    assert_eq!(fts.len(), 1, "posts_ai trigger must exist (v7)");
+    assert!(
+        fts[0].contains("INSERT OR REPLACE"),
+        "v7 trigger must use INSERT OR REPLACE: {}",
+        fts[0]
+    );
+}
+
+#[test]
+fn test_v7_fts_trigger_replaces_and_deletes() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    insert_test_user(&db, "pkFts");
+    let conn = db.conn().unwrap();
+
+    soshal_db_core::block_on(conn.execute(
+        "INSERT INTO posts (id, pubkey, content, created_at) VALUES ('ev1', 'pkFts', 'hello world', 1)",
+        (),
+    ))
+    .unwrap();
+    let rows: i64 = soshal_db_core::query::query_first(
+        &conn,
+        "SELECT COUNT(*) FROM posts_fts WHERE rowid > 0",
+        (),
+        |row| row.get(0),
+    )
+    .unwrap()
+    .unwrap_or(0);
+    assert_eq!(rows, 1, "insert must populate posts_fts via trigger");
+
+    soshal_db_core::block_on(conn.execute(
+        "UPDATE posts SET content = 'replaced text' WHERE id = 'ev1'",
+        (),
+    ))
+    .unwrap();
+    let text: String = soshal_db_core::query::query_first(
+        &conn,
+        "SELECT content FROM posts_fts WHERE rowid > 0",
+        (),
+        |row| row.get(0),
+    )
+    .unwrap()
+    .unwrap_or_default();
+    assert_eq!(text, "replaced text", "update must replace FTS row (v7)");
+
+    soshal_db_core::block_on(conn.execute("DELETE FROM posts WHERE id = 'ev1'", ())).unwrap();
+    let rows: i64 = soshal_db_core::query::query_first(
+        &conn,
+        "SELECT COUNT(*) FROM posts_fts WHERE rowid > 0",
+        (),
+        |row| row.get(0),
+    )
+    .unwrap()
+    .unwrap_or(0);
+    assert_eq!(rows, 0, "delete must remove FTS row via trigger");
+}
+
+#[test]
+fn test_v6_purges_orphan_fts_rows() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    {
+        let conn = db.conn().unwrap();
+        soshal_db_core::block_on(conn.execute(
+            "INSERT INTO posts_fts(rowid, id, pubkey, content) VALUES (999, 'orphan', 'pk', 'stale')",
+            (),
+        ))
+        .unwrap();
+        soshal_db_core::block_on(conn.execute(
+            "INSERT INTO posts_fts(rowid, id, pubkey, content) VALUES (1, 'kept', 'pk', 'live')",
+            (),
+        ))
+        .unwrap();
+    }
+    insert_test_user(&db, "pkLive");
+    {
+        let conn = db.conn().unwrap();
+        soshal_db_core::block_on(conn.execute(
+            "INSERT INTO posts (rowid, id, pubkey, content, created_at) VALUES (1, 'live1', 'pkLive', 'kept', 1)",
+            (),
+        ))
+        .unwrap();
+    }
+
+    soshal_db_core::schema::migrations::v6_purge_orphan_fts_rows(&db.conn().unwrap()).unwrap();
+
+    let conn = db.conn().unwrap();
+    let orphan: i64 = soshal_db_core::query::query_first(
+        &conn,
+        "SELECT COUNT(*) FROM posts_fts WHERE rowid = 999",
+        (),
+        |row| row.get(0),
+    )
+    .unwrap()
+    .unwrap_or(0);
+    assert_eq!(orphan, 0, "positive rowid without posts row must be purged");
+    let kept: i64 = soshal_db_core::query::query_first(
+        &conn,
+        "SELECT COUNT(*) FROM posts_fts WHERE rowid = 1",
+        (),
+        |row| row.get(0),
+    )
+    .unwrap()
+    .unwrap_or(0);
+    assert_eq!(kept, 1, "posts-backed row must survive");
 }
 
 #[test]
@@ -711,7 +824,7 @@ fn test_zap_crud() {
     repo.upsert(&row1).unwrap();
     assert_eq!(repo.sum_by_event("evt1").unwrap(), 1000);
 
-    let mut row1_updated = ZapRow {
+    let row1_updated = ZapRow {
         id: "z1".into(),
         pubkey: "pk1".into(),
         recipient_pubkey: "recipient_pk1".into(),

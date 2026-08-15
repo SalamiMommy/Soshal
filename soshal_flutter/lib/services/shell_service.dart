@@ -172,7 +172,7 @@ class ShellService extends ChangeNotifier {
       _hasPin = RustLib.instance.api.crateFfiPinPinHas();
       _locked = _hasPin || _biometricsEnabled;
       if (_locked) {
-        await refreshLockout();
+        await refreshLockout(notify: false);
       }
       notifyListeners();
     } catch (e) {
@@ -258,7 +258,7 @@ class ShellService extends ChangeNotifier {
 
   // ─── PIN lock ────────────────────────────────────────────────────────────
 
-  Future<void> refreshLockout() async {
+  Future<void> refreshLockout({bool notify = true}) async {
     try {
       final json = RustLib.instance.api.crateFfiPinPinLockoutState();
       final v = jsonDecode(json) as Map<String, dynamic>;
@@ -267,7 +267,7 @@ class ShellService extends ChangeNotifier {
       _lockoutRemaining =
           (until - DateTime.now().millisecondsSinceEpoch).clamp(0, 1 << 62);
       _permanentLocked = v['permanentLocked'] as bool? ?? false;
-      notifyListeners();
+      if (notify) notifyListeners();
     } catch (e) {
       debugPrint('lockout state: $e');
     }
@@ -287,6 +287,7 @@ class ShellService extends ChangeNotifier {
         _unlockError = null;
       } else {
         _unlockError = 'Wrong PIN';
+        _locked = true;
         await refreshLockout();
       }
       return ok;

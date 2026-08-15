@@ -206,3 +206,144 @@ pub fn session_register_push_token(token: String) -> Result<bool, String> {
         Err(e) => Err(format!("DB not initialized: {e}")).into(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ffi::db;
+
+    static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    fn tmp_session_dir(label: &str) -> (std::path::PathBuf, String) {
+        let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "soshal_session_{label}_{}_{}",
+            std::process::id(),
+            n
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("app.db").to_string_lossy().to_string();
+        (dir, db_path)
+    }
+
+    #[test]
+    fn test_add_account_lists_and_activates_first() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let (dir, db_path) = tmp_session_dir("addlist");
+        session_load(db_path.clone()).unwrap();
+        assert_eq!(session_get_active().unwrap(), "null");
+        session_add_account(
+            "pk1".to_string(),
+            "npub1pk1".to_string(),
+            "[\"wss://relay.a\"]".to_string(),
+        )
+        .unwrap();
+        session_add_account("pk2".to_string(), "npub1pk2".to_string(), "[]".to_string()).unwrap();
+        let json = session_list_accounts().unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 2, "json: {json}");
+        assert_eq!(arr[0]["pubkey"], "pk1");
+        assert_eq!(arr[0]["npub"], "npub1pk1");
+        assert_eq!(arr[0]["relay_list"][0], "wss://relay.a");
+        let active = session_get_active().unwrap();
+        assert!(active.contains("\"pubkey\":\"pk1\""), "active: {active}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_switch_account_updates_active() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let (dir, db_path) = tmp_session_dir("switch");
+        session_load(db_path.clone()).unwrap();
+        session_add_account("pk1".to_string(), "npub1pk1".to_string(), "[]".to_string()).unwrap();
+        session_add_account("pk2".to_string(), "npub1pk2".to_string(), "[]".to_string()).unwrap();
+        assert!(session_switch_account("pk2".to_string()).unwrap());
+        let active = session_get_active().unwrap();
+        assert!(active.contains("\"pubkey\":\"pk2\""), "active: {active}");
+        let err = session_switch_account("nobody".to_string()).unwrap_err();
+        assert!(err.contains("Account not found"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_save_load_roundtrip() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let (dir, db_path) = tmp_session_dir("roundtrip");
+        let data = r#"{"active_pubkey":"pk1","accounts":[{"pubkey":"pk1","npub":"npub1pk1","last_used":1,"relay_list":["wss://relay.a"]}]}"#;
+        assert!(session_save(db_path.clone(), data.to_string()).unwrap());
+        assert!(dir.join("session.json").exists());
+        let loaded = session_load(db_path.clone()).unwrap();
+        assert!(
+            loaded.contains("\"active_pubkey\":\"pk1\""),
+            "loaded: {loaded}"
+        );
+        let active = session_get_active().unwrap();
+        assert!(active.contains("wss://relay.a"), "active: {active}");
+        let err = session_save(db_path.clone(), "not json".to_string()).unwrap_err();
+        assert!(err.contains("Invalid session JSON"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_push_token_register_persists_and_clears() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let (dir, db_path) = tmp_session_dir("push");
+        db::db_init(db_path.clone()).unwrap();
+        session_load(db_path.clone()).unwrap();
+        session_add_account("pk1".to_string(), "npub1pk1".to_string(), "[]".to_string()).unwrap();
+        assert!(session_register_push_token("tok123".to_string()).unwrap());
+        let reloaded = session_load(db_path.clone()).unwrap();
+        assert!(reloaded.contains("tok123"), "reloaded: {reloaded}");
+        assert!(session_register_push_token(String::new()).unwrap());
+        let reloaded = session_load(db_path.clone()).unwrap();
+        assert!(!reloaded.contains("tok123"), "reloaded: {reloaded}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_push_token_requires_active_account() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let (dir, db_path) = tmp_session_dir("pushnone");
+        session_load(db_path.clone()).unwrap();
+        let err = session_register_push_token("tok".to_string()).unwrap_err();
+        assert!(err.contains("No active account"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_errors_when_session_not_loaded() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = tmp_session_dir("notloaded");
+        *SESSION.lock().unwrap() = None;
+        assert!(session_get_active()
+            .unwrap_err()
+            .contains("Session not loaded"));
+        assert!(session_list_accounts()
+            .unwrap_err()
+            .contains("Session not loaded"));
+        assert!(session_switch_account("pk1".to_string())
+            .unwrap_err()
+            .contains("Session not loaded"));
+        let err = session_add_account("pk1".to_string(), "npub1pk1".to_string(), "x".to_string())
+            .unwrap_err();
+        assert!(err.contains("Invalid relays JSON"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

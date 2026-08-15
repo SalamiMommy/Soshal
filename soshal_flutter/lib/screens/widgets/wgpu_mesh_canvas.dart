@@ -1,12 +1,11 @@
-// ignore_for_file: invalid_use_of_internal_member
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-import 'package:soshal_flutter/frb_generated.dart';
+import 'package:provider/provider.dart';
 
+import '../../services/layout_service.dart';
 import '../../widgets/error_state_text.dart';
 
 /// WGPU Mesh Node representation for Flutter rendering canvas
@@ -56,6 +55,7 @@ class WgpuMeshCanvasWidget extends StatefulWidget {
 }
 
 class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
+  late final LayoutService _layout;
   int? _sessionId;
   ui.Image? _renderedImage;
   Timer? _renderTimer;
@@ -65,12 +65,13 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
   @override
   void initState() {
     super.initState();
+    _layout = context.read<LayoutService>();
     _initWgpuSession();
   }
 
   Future<void> _initWgpuSession() async {
     try {
-      final jsonStr = RustLib.instance.api.crateFfiRenderRenderCreateSession(
+      final jsonStr = _layout.createRenderSession(
         width: widget.width.toInt(),
         height: widget.height.toInt(),
       );
@@ -99,9 +100,8 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
       try {
         final nodesJson =
             jsonEncode(widget.nodes.map((n) => n.toJson()).toList());
-        final frameBytes =
-            RustLib.instance.api.crateFfiRenderRenderComputeMeshFrame(
-          sessionId: PlatformInt64Util.from(_sessionId!),
+        final frameBytes = _layout.renderMeshFrame(
+          sessionId: _sessionId!,
           nodesJson: nodesJson,
           deltaTime: 0.033,
         );
@@ -111,8 +111,7 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
           // painting (Android-only path; failures are silent).
           BigInt? bufferPtr;
           try {
-            final fb = await RustLib.instance.api
-                .crateFfiRasterRasterAllocateFrameBuffer(
+            final fb = await _layout.allocateRasterFrameBuffer(
               width: widget.width.toInt(),
               height: widget.height.toInt(),
             );
@@ -136,9 +135,8 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
             oldImg?.dispose();
             if (bufferPtr != null) {
               try {
-                await RustLib.instance.api
-                    .crateFfiRasterRasterSignalImpellerFrameReady(
-                  textureId: PlatformInt64Util.from(bufferPtr.toInt()),
+                await _layout.signalRasterFrameReady(
+                  textureId: bufferPtr.toInt(),
                   frameTimestampNs:
                       BigInt.from(DateTime.now().microsecondsSinceEpoch * 1000),
                 );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/messaging_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Blocked users screen: list + unblock.
 class BlockedScreen extends StatefulWidget {
@@ -51,7 +52,7 @@ class _BlockedScreenState extends State<BlockedScreen> {
                     final pubkey = _blocked[index];
                     return ListTile(
                       leading: const Icon(Icons.block),
-                      title: Text(pubkey.substring(0, 24)),
+                      title: Text(prefixEllipsis(pubkey, 24)),
                       trailing: TextButton(
                         onPressed: () async {
                           final session = context.read<SessionService>();

@@ -345,3 +345,133 @@ pub fn watermark_key(kind: Kind) -> Option<&'static str> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nostr::event::{EventBuilder, FinalizeEvent};
+    use nostr::key::Keys;
+    use nostr::types::Timestamp;
+    use soshal_db_core::query::query_first;
+
+    fn test_db() -> Database {
+        let db = Database::open_in_memory().unwrap();
+        db.migrate().unwrap();
+        db
+    }
+
+    fn channel() -> (
+        tokio::sync::mpsc::Sender<SyncUpdate>,
+        tokio::sync::mpsc::Receiver<SyncUpdate>,
+    ) {
+        tokio::sync::mpsc::channel(16)
+    }
+
+    fn signed_event(keys: &Keys, kind: Kind, content: &str, created_at: u64) -> Event {
+        EventBuilder::new(kind, content)
+            .custom_created_at(Timestamp::from(created_at))
+            .finalize(keys)
+            .unwrap()
+    }
+
+    fn seed_user(db: &Database, pubkey: &str) {
+        UserRepo::new(db).ensure_exists(pubkey).unwrap();
+    }
+
+    #[test]
+    fn watermark_advances_on_successful_ingest() {
+        let db = test_db();
+        let keys = Keys::generate();
+        seed_user(&db, &keys.public_key().to_hex());
+        let event = signed_event(&keys, Kind::TextNote, "hello", 1_700_000_100);
+        let (tx, _rx) = channel();
+
+        set_watermark(&db, WM_FEED, 1_700_000_000);
+        handle(&db, "", &event, &tx).unwrap();
+        // Engine contract (engine.rs): cursor advances only on Ok ingest.
+        let cur = watermark(&db, WM_FEED).max(event.created_at.as_secs());
+        set_watermark(&db, WM_FEED, cur);
+        assert_eq!(watermark(&db, WM_FEED), 1_700_000_100);
+    }
+
+    #[test]
+    fn failed_ingest_does_not_advance_watermark() {
+        let db = test_db();
+        let keys = Keys::generate();
+        let mut event = signed_event(&keys, Kind::TextNote, "hello", 1_700_000_100);
+        event.content = "tampered".to_string();
+        let (tx, _rx) = channel();
+        set_watermark(&db, WM_FEED, 1_700_000_050);
+        assert!(handle(&db, "", &event, &tx).is_err());
+        assert_eq!(watermark(&db, WM_FEED), 1_700_000_050);
+    }
+
+    #[test]
+    fn out_of_order_events_cached_and_watermark_monotonic() {
+        let db = test_db();
+        let keys = Keys::generate();
+        seed_user(&db, &keys.public_key().to_hex());
+        let older = signed_event(&keys, Kind::TextNote, "older", 1_700_000_000);
+        let newer = signed_event(&keys, Kind::TextNote, "newer", 1_700_000_100);
+        let (tx, _rx) = channel();
+
+        handle(&db, "", &newer, &tx).unwrap();
+        handle(&db, "", &older, &tx).unwrap();
+
+        let repo = PostRepo::new(&db);
+        assert_eq!(
+            repo.get_by_id(&older.id.to_hex()).unwrap().unwrap().content,
+            "older"
+        );
+        assert_eq!(
+            repo.get_by_id(&newer.id.to_hex()).unwrap().unwrap().content,
+            "newer"
+        );
+
+        let mut cur = 0u64;
+        for e in [&older, &newer] {
+            if e.created_at.as_secs() > cur {
+                cur = e.created_at.as_secs();
+            }
+        }
+        set_watermark(&db, WM_FEED, cur);
+        assert_eq!(watermark(&db, WM_FEED), 1_700_000_100);
+    }
+
+    #[test]
+    fn watermark_persists_in_settings() {
+        let db = test_db();
+        assert_eq!(watermark(&db, WM_FEED), 0);
+        set_watermark(&db, WM_FEED, 1_700_000_123);
+        assert_eq!(watermark(&db, WM_FEED), 1_700_000_123);
+        assert_eq!(
+            SettingsRepo::new(&db).get(WM_FEED).unwrap().unwrap(),
+            "1700000123"
+        );
+    }
+
+    #[test]
+    fn duplicate_event_single_row_and_double_emit() {
+        let db = test_db();
+        let keys = Keys::generate();
+        seed_user(&db, &keys.public_key().to_hex());
+        let event = signed_event(&keys, Kind::TextNote, "dup", 1_700_000_100);
+        let (tx, mut rx) = channel();
+        handle(&db, "", &event, &tx).unwrap();
+        handle(&db, "", &event, &tx).unwrap();
+
+        let id = event.id.to_hex();
+        let count: i64 = query_first(
+            &db.conn().unwrap(),
+            "SELECT COUNT(*) FROM posts WHERE id = ?1",
+            libsql::params![id.as_str()],
+            |r| r.get::<i64>(0),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(count, 1);
+        assert!(matches!(rx.try_recv().unwrap(), SyncUpdate::Feed { .. }));
+        assert!(matches!(rx.try_recv().unwrap(), SyncUpdate::Feed { .. }));
+        assert!(rx.try_recv().is_err());
+    }
+}

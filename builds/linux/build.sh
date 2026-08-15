@@ -12,20 +12,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-FLUTTER_BIN="${FLUTTER_BIN:-}"
-if [[ -z "$FLUTTER_BIN" ]]; then
-  FLUTTER_BIN="$(command -v flutter || true)"
-fi
-if [[ -z "$FLUTTER_BIN" ]] && [[ -x "$HOME/fvm/default/bin/flutter" ]]; then
-  FLUTTER_BIN="$HOME/fvm/default/bin/flutter"
-fi
-if [[ -z "$FLUTTER_BIN" ]]; then
-  echo "flutter not found on PATH or in ~/fvm; set FLUTTER_BIN to its location" >&2
-  exit 1
-fi
+source "$SCRIPT_DIR/../common.sh"
 
-CACHE_DIR="${SOSHAL_TARGET_DIR:-$HOME/.cache/soshal-targets}/so-linux"   # disk-backed (tmpfs /tmp is too small)
-TOOLS_DIR="${SOSHAL_TARGET_DIR:-$HOME/.cache/soshal-targets}/tools"
+resolve_flutter_bin
+
+CACHE_DIR="$SOSHAL_TARGETS_DIR/so-linux"
+TOOLS_DIR="$SOSHAL_TARGETS_DIR/tools"
 BRIDGE="soshal-flutter-bridge"
 HOST_TRIPLE="${HOST_TRIPLE:-$(rustc -vV 2>/dev/null | sed -n 's/^host: //p' || echo x86_64-unknown-linux-gnu)}"
 

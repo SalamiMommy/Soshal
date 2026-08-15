@@ -82,10 +82,4 @@ class FriendsService extends ChangeNotifier with LastErrorMixin {
     _contacts.removeWhere((c) => c.pubkey == pubkey);
     notifyListeners();
   }
-
-  /// Clear error.
-  void clearError() {
-    clearLastError();
-    notifyListeners();
-  }
 }

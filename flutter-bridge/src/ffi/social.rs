@@ -2,9 +2,12 @@
 //! Compatibility, discovery
 
 use flutter_rust_bridge::frb;
+use soshal_network_core::discovery::{
+    suggest_mutual_friends, AllUserInfo, SuggestMutualFriendsInput,
+};
 
-/// Friend suggestions from the local contact graph: users who follow me but
-/// whom I do not follow yet, sorted by WoT trust score (best first).
+/// Friend suggestions from the local contact graph, delegated to
+/// network-core's mutual-friend discovery (pubkeys only, best first).
 #[frb(sync, serialize)]
 pub fn social_friend_suggestions() -> Result<Vec<String>, String> {
     let me = match super::signer::signer_pubkey() {
@@ -13,32 +16,27 @@ pub fn social_friend_suggestions() -> Result<Vec<String>, String> {
         Err(_) => return Ok(vec![]).into(),
     };
     let users = all_contact_lists()?;
-    let mut my_contacts = Vec::new();
-    let mut followers = Vec::new();
+    let mut self_contacts = Vec::new();
+    let mut all_users = Vec::new();
     for (pubkey, contacts_json) in users {
         let contacts: Vec<String> = serde_json::from_str(&contacts_json).unwrap_or_default();
         if pubkey == me {
-            my_contacts = contacts;
-        } else if contacts.contains(&me) {
-            followers.push(pubkey);
+            self_contacts = contacts;
+        } else {
+            all_users.push(AllUserInfo {
+                pubkey,
+                contacts,
+                wot_distance: 2,
+            });
         }
     }
-    let mut candidates = suggest_candidates(&me, &my_contacts, &followers);
-    candidates.sort_by(|a, b| {
-        let sa = super::identity::identity_get_trust_score(me.clone(), a.clone()).unwrap_or(0.0);
-        let sb = super::identity::identity_get_trust_score(me.clone(), b.clone()).unwrap_or(0.0);
-        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+    let suggestions = suggest_mutual_friends(SuggestMutualFriendsInput {
+        self_pubkey: me,
+        self_contacts,
+        all_users,
+        limit: 100_000,
     });
-    Ok(candidates).into()
-}
-
-/// Pure candidate selection: followers of `me` not already followed by `me`.
-fn suggest_candidates(me: &str, my_contacts: &[String], followers: &[String]) -> Vec<String> {
-    followers
-        .iter()
-        .filter(|p| *p != me && !my_contacts.contains(p))
-        .cloned()
-        .collect()
+    Ok(suggestions.into_iter().map(|s| s.pubkey).collect()).into()
 }
 
 /// Load every stored user's pubkey + contact list (raw query; repos have no
@@ -58,36 +56,4 @@ fn all_contact_lists() -> Result<Vec<(String, String)>, String> {
         }
     }
     Ok(out)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_suggest_candidates_excludes_self_and_followed() {
-        let my_contacts = vec!["alice".to_string()];
-        let followers = vec!["alice".to_string(), "bob".to_string(), "me".to_string()];
-        let mut got = suggest_candidates("me", &my_contacts, &followers);
-        got.sort();
-        assert_eq!(got, vec!["bob".to_string()]);
-    }
-
-    #[test]
-    fn test_suggest_candidates_empty_inputs() {
-        assert!(suggest_candidates("me", &[], &[]).is_empty());
-        assert!(suggest_candidates("me", &["x".to_string()], &[]).is_empty());
-        assert!(suggest_candidates("me", &[], &["me".to_string()]).is_empty());
-    }
-
-    #[test]
-    fn test_suggest_candidates_preserves_input_order() {
-        let my_contacts = vec!["alice".to_string()];
-        let followers = vec!["bob".to_string(), "carol".to_string(), "dave".to_string()];
-        let got = suggest_candidates("me", &my_contacts, &followers);
-        assert_eq!(
-            got,
-            vec!["bob".to_string(), "carol".to_string(), "dave".to_string()]
-        );
-    }
 }

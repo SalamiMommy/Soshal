@@ -260,6 +260,9 @@ mod tests {
 
     #[test]
     fn test_update_json_shapes() {
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let feed = update_json(SyncUpdate::Feed {
             id: "a".into(),
             pubkey: "b".into(),

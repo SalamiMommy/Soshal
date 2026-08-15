@@ -1,6 +1,7 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'crypto_service.dart';
 
 /// Signer Service
 /// In-process key holder: lock/unlock state, OS-keychain persistence.
@@ -75,7 +76,7 @@ class SignerService extends ChangeNotifier {
   /// Schnorr-sign the SHA-256 digest of `text` (digest computed Dart-side,
   /// signed Rust-side); returns the 64-byte signature as hex.
   Future<String> schnorrSign(String text) async {
-    final digest = _api.crateFfiCryptoCryptoSha256Hex(input: text);
+    final digest = _api.crateFfiUtilUtilSha256Hex(input: text);
     return _api.crateFfiSignerSignerSchnorrSign(messageHex: digest);
   }
 
@@ -88,12 +89,10 @@ class SignerService extends ChangeNotifier {
   /// NIP-44 v2 encrypt `plaintext` to `recipientPubkey` with the unlocked
   /// key; returns the wire-format base64 payload (`2 ‖ nonce ‖ ct ‖ mac`).
   Future<String> nip44Encrypt(String plaintext, String recipientPubkey) async =>
-      _api.crateFfiSignerSignerNip44Encrypt(
-          plaintext: plaintext, recipientPubkey: recipientPubkey);
+      CryptoService().nip44Encrypt(plaintext, recipientPubkey);
 
   /// NIP-44 v2 decrypt `ciphertext` (from `senderPubkey`) with the unlocked
   /// key.
   Future<String> nip44Decrypt(String ciphertext, String senderPubkey) async =>
-      _api.crateFfiSignerSignerNip44Decrypt(
-          payload: ciphertext, senderPubkey: senderPubkey);
+      CryptoService().nip44Decrypt(ciphertext, senderPubkey);
 }

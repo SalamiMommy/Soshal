@@ -60,6 +60,7 @@ class _AppShellState extends State<AppShell> {
   Future<void> _bootstrap() async {
     final shell = context.read<ShellService>();
     await shell.initialize();
+    if (!mounted) return;
     final session = context.read<SessionService>();
     final pubkey = session.activePubkey;
     if (pubkey != null) {

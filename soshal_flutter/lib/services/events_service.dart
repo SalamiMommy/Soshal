@@ -232,20 +232,6 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  /// Expiry timestamp (unix secs, 0 when none) parsed from a tags JSON array.
-  Future<int> expiryFromTags(String tagsJson) async {
-    try {
-      final ts =
-          RustLib.instance.api.crateFfiEventsEventsExpiryFromTags(tagsJson: tagsJson);
-      clearLastError();
-      return ts;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
-
   /// Interest score between my interests and a peer's (JSON: score/common).
   Future<Map<String, dynamic>> interestScore({
     required String myInterestsJson,

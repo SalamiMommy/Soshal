@@ -45,59 +45,112 @@ pub struct OrderInfo {
     pub created_at: u64,
 }
 
+/// Core's parsed listing (subset of marketplace-core `ListingOut` mapped
+/// into the bridge `ListingInfo`; dTag/videos/contactMethods stay bridge-side
+/// unexposed — no FFI surface change).
 #[derive(Deserialize)]
-struct ListingContent {
-    title: Option<String>,
-    price: Option<f64>,
-    #[serde(default)]
-    currency: Option<String>,
-    condition: Option<String>,
+struct CoreListingOut {
+    id: String,
+    title: String,
+    price: f64,
+    currency: String,
+    condition: String,
     description: Option<String>,
     #[serde(rename = "locationGeohash")]
     location_geohash: Option<String>,
-    #[serde(default)]
     images: Vec<String>,
-    #[serde(rename = "escrowEnabled", default)]
+    tags: Vec<String>,
+    #[serde(rename = "createdAt")]
+    created_at: f64,
+    #[serde(rename = "escrowEnabled")]
     escrow_enabled: bool,
 }
 
+fn has_tag(tags: &[Vec<String>], name: &str) -> bool {
+    tags.iter()
+        .any(|t| t.first().map(String::as_str) == Some(name))
+}
+
+/// Reshape a DB row (content fields in JSON body) into a kind-30402 event
+/// shape for `parse_listing_json` (title/price/currency/images belong in
+/// tags per NIP-15). Content-provided values become synthetic tags only
+/// when the row's tags_json lacks them, so relay-synced tag-form rows pass
+/// through untouched.
+fn listing_event_from_row(v: &serde_json::Value) -> Option<serde_json::Value> {
+    let id = v["id"].as_str()?.to_string();
+    let pubkey = v["seller_pubkey"].as_str().unwrap_or("").to_string();
+    let content: String = match v["content"].as_str() {
+        Some(s) => s.to_string(),
+        None => v["content"].to_string(),
+    };
+    let created_at = v["created_at"].as_f64().unwrap_or(0.0);
+    let mut tags: Vec<Vec<String>> = match v["tags_json"].as_str() {
+        Some(s) => serde_json::from_str(s).unwrap_or_default(),
+        None => v["tags_json"]
+            .as_array()
+            .and_then(|a| serde_json::from_value(serde_json::Value::Array(a.clone())).ok())
+            .unwrap_or_default(),
+    };
+    if let Ok(content_value) = serde_json::from_str::<serde_json::Value>(&content) {
+        if !has_tag(&tags, "title") {
+            if let Some(t) = content_value["title"].as_str() {
+                tags.push(vec!["title".to_string(), t.to_string()]);
+            }
+        }
+        if !has_tag(&tags, "price") {
+            if let Some(p) = content_value["price"].as_f64() {
+                tags.push(vec!["price".to_string(), p.to_string()]);
+            }
+        }
+        if !has_tag(&tags, "currency") {
+            if let Some(c) = content_value["currency"].as_str() {
+                tags.push(vec!["currency".to_string(), c.to_string()]);
+            }
+        }
+        if !has_tag(&tags, "location") && !has_tag(&tags, "g") {
+            if let Some(g) = content_value["locationGeohash"].as_str() {
+                tags.push(vec!["location".to_string(), g.to_string()]);
+            }
+        }
+        if let Some(imgs) = content_value["images"].as_array() {
+            for img in imgs {
+                if let Some(s) = img.as_str() {
+                    tags.push(vec!["image".to_string(), s.to_string()]);
+                }
+            }
+        }
+    }
+    Some(serde_json::json!({
+        "id": id,
+        "pubkey": pubkey,
+        "content": content,
+        "created_at": created_at,
+        "tags": tags,
+    }))
+}
+
 fn listing_from_value(v: &serde_json::Value) -> Option<ListingInfo> {
-    let content_value: serde_json::Value = match v["content"].as_str() {
-        Some(s) => serde_json::from_str(s).unwrap_or(serde_json::Value::Null),
-        None => v["content"].clone(),
-    };
-    let content: ListingContent = serde_json::from_value(content_value).ok()?;
-    let tags_value: serde_json::Value = match v["tags_json"].as_str() {
-        Some(s) => serde_json::from_str(s).unwrap_or(serde_json::Value::Null),
-        None => v["tags_json"].clone(),
-    };
-    let tags = tags_value.as_array().cloned().unwrap_or_default();
-    let category = tags
-        .iter()
-        .find(|t| {
-            t.as_array()
-                .and_then(|t| t.first())
-                .and_then(|s| s.as_str())
-                == Some("t")
-        })
-        .and_then(|t| t.as_array().and_then(|t| t.get(1)).and_then(|s| s.as_str()))
-        .unwrap_or("")
-        .to_string();
+    let ev = listing_event_from_row(v)?;
+    let parsed = soshal_marketplace_core::listing::parse_listing_json(&ev.to_string());
+    if parsed == "null" {
+        return None;
+    }
+    let out: CoreListingOut = serde_json::from_str(&parsed).ok()?;
     Some(ListingInfo {
-        id: v["id"].as_str()?.to_string(),
+        id: out.id,
         seller_pubkey: v["seller_pubkey"].as_str().unwrap_or("").to_string(),
         seller_name: v["seller_name"].as_str().unwrap_or("").to_string(),
-        title: content.title.unwrap_or_default(),
-        description: content.description.unwrap_or_default(),
-        images: content.images,
-        price: (content.price.unwrap_or(0.0).max(0.0)) as u64,
-        currency: content.currency.unwrap_or_else(|| "sats".to_string()),
-        category,
-        condition: content.condition.unwrap_or_default(),
-        shipping_available: content.location_geohash.is_some(),
-        escrow_enabled: content.escrow_enabled,
-        created_at: v["created_at"].as_i64().unwrap_or(0).max(0) as u64,
-        updated_at: v["created_at"].as_i64().unwrap_or(0).max(0) as u64,
+        title: out.title,
+        description: out.description.unwrap_or_default(),
+        images: out.images,
+        price: out.price.max(0.0) as u64,
+        currency: out.currency,
+        category: out.tags.first().cloned().unwrap_or_default(),
+        condition: out.condition,
+        shipping_available: out.location_geohash.is_some(),
+        escrow_enabled: out.escrow_enabled,
+        created_at: out.created_at.max(0.0) as u64,
+        updated_at: out.created_at.max(0.0) as u64,
         status: if v["is_deleted"].as_bool().unwrap_or(false) {
             "deleted".to_string()
         } else {
@@ -280,33 +333,19 @@ pub fn marketplace_create_listing(
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
     let now = soshal_common_core::format::now_secs();
-    let row = soshal_db_core::repos::post::PostRow {
-        id: event_id,
-        pubkey: seller_pubkey,
-        content: content.to_string(),
-        kind: KIND_LISTING,
-        created_at: now,
-        tags_json: serde_json::to_string(&vec![
+    super::db::upsert_post_row(
+        event_id,
+        seller_pubkey,
+        content.to_string(),
+        KIND_LISTING,
+        now,
+        serde_json::to_string(&vec![
             vec!["d".to_string(), d_tag],
             vec!["t".to_string(), category],
         ])
         .unwrap_or_default(),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: Some(title),
-        sync_status: "pending".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-    };
-    super::db::with_db_result(|db| {
-        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
-        Ok(())
-    })?;
+        Some(title),
+    )?;
     Ok(signed_json).into()
 }
 
@@ -454,33 +493,19 @@ pub fn marketplace_create_order(
         "status": "created",
     });
     let now = soshal_common_core::format::now_secs();
-    let row = soshal_db_core::repos::post::PostRow {
-        id: id.clone(),
-        pubkey: buyer_pubkey,
-        content: content.to_string(),
-        kind: KIND_ORDER,
-        created_at: now,
-        tags_json: serde_json::to_string(&vec![
+    super::db::upsert_post_row(
+        id.clone(),
+        buyer_pubkey,
+        content.to_string(),
+        KIND_ORDER,
+        now,
+        serde_json::to_string(&vec![
             vec!["p".to_string(), seller_pubkey],
             vec!["e".to_string(), listing_id],
         ])
         .unwrap_or_default(),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: None,
-        sync_status: "pending".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-    };
-    super::db::with_db_result(|db| {
-        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
-        Ok(())
-    })?;
+        None,
+    )?;
     Ok(id).into()
 }
 
@@ -573,12 +598,11 @@ pub fn marketplace_create_escrow(
     Ok(escrow_id).into()
 }
 
-/// Release escrow funds. Policy comes from marketplace-core: both parties
-/// must confirm unless a dispute is active (then arbitrator approval is
-/// required) — single-side release is never allowed. The local row records
-/// the buyer-side confirmation; the seller confirm travels via the seller's
-/// app (kind 30402 event), so the escrow state machine stays conservative
-/// here and always refuses unilateral release.
+/// Release escrow funds. Release policy comes from marketplace-core
+/// `can_release`: without a dispute BOTH buyer and seller must have
+/// confirmed; with a dispute only arbitrator approval (a `completed`
+/// resolution) releases. The seller confirm travels via the seller's app;
+/// the local row records the buyer-side confirmation.
 #[frb(sync, serialize)]
 pub fn marketplace_release_escrow(
     escrow_id: String,
@@ -590,9 +614,17 @@ pub fn marketplace_release_escrow(
         let escrow = repo
             .get(&escrow_id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
-        if escrow.status != "disputed" {
+        let (buyer_confirmed, seller_confirmed) = repo.get_confirms(&escrow_id)?;
+        let disputed = escrow.status == "disputed";
+        let arbitrator_approved = escrow.status == "completed";
+        if !soshal_marketplace_core::escrow::can_release(
+            buyer_confirmed,
+            seller_confirmed,
+            arbitrator_approved,
+            disputed,
+        ) {
             return Err(soshal_db_core::error::DbError::Oversized(
-                "release requires both-party confirmation events; see marketplace sync docs"
+                "release requires both-party confirmation; disputed escrows need arbitrator resolution"
                     .to_string(),
             ));
         }
@@ -838,16 +870,12 @@ pub fn marketplace_poll_has_voted(poll_id: String, voter_pubkey: String) -> Resu
     })
 }
 
-fn uuid_like() -> String {
-    use rand::RngCore;
-    let mut b = [0u8; 8];
-    rand::rngs::OsRng.fill_bytes(&mut b);
-    hex::encode(b)
-}
+use super::util::uuid_like;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ffi::{db, signer};
 
     #[test]
     fn test_listing_parse_roundtrip() {
@@ -891,5 +919,450 @@ mod tests {
             false,
         );
         assert!(result.is_err());
+    }
+
+    fn insert_listing(
+        id: &str,
+        seller: &str,
+        title: &str,
+        price: u64,
+        category: &str,
+        created_at: i64,
+    ) {
+        let content = serde_json::json!({
+            "title": title,
+            "price": price as f64,
+            "currency": "sats",
+            "condition": "new",
+            "description": format!("desc {title}"),
+            "images": [],
+            "escrowEnabled": false,
+        });
+        db::db_execute_raw(format!(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+             VALUES ('{id}','{seller}','{}',{KIND_LISTING},{created_at},'[[\"d\",\"{id}\"],[\"t\",\"{category}\"]]','synced',0)",
+            content.to_string().replace('\'', "''")
+        ))
+        .unwrap();
+    }
+
+    fn insert_escrow(id: &str, listing_id: &str, status: &str) {
+        db::db_execute_raw(format!(
+            "INSERT INTO escrows (id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at) \
+             VALUES ('{id}','{listing_id}','buyer1','seller1',5000,'sats','{status}',NULL,100,100)"
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn test_listing_queries_and_crud() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("listings", "market");
+        insert_listing("l1", "seller1", "rust book", 5000, "books", 2000);
+        insert_listing("l2", "seller2", "chess set", 3000, "games", 1000);
+
+        let json = marketplace_fetch_listings(10, 0).unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(arr.len(), 2, "json: {json}");
+        assert_eq!(arr[0]["id"], "l1");
+        assert_eq!(arr[0]["title"], "rust book");
+        assert_eq!(arr[0]["seller_name"], "");
+        let json = marketplace_fetch_listings(0, 0).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Vec<serde_json::Value>>(&json)
+                .unwrap()
+                .len(),
+            1
+        );
+        let json = marketplace_fetch_listings(10, 1).unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(arr[0]["id"], "l2");
+
+        let json = marketplace_search("rust book".to_string(), 10).unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["id"], "l1");
+        assert_eq!(marketplace_search(String::new(), 10).unwrap(), "[]");
+        let json = marketplace_search("zzz".to_string(), 10).unwrap();
+        assert!(serde_json::from_str::<Vec<serde_json::Value>>(&json)
+            .unwrap()
+            .is_empty());
+
+        let info = marketplace_get_listing("l1".to_string()).unwrap();
+        assert!(info.contains("\"title\":\"rust book\""));
+        assert!(marketplace_get_listing("nope".to_string())
+            .unwrap_err()
+            .contains("Listing not found"));
+
+        let content = marketplace_get_content("l1".to_string()).unwrap();
+        assert!(content.contains("rust book"));
+        assert_eq!(marketplace_get_content("nope".to_string()).unwrap(), "{}");
+
+        let json = marketplace_fetch_seller_listings("seller1".to_string()).unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["seller_pubkey"], "seller1");
+        let json = marketplace_fetch_seller_listings("nobody".to_string()).unwrap();
+        assert!(serde_json::from_str::<Vec<serde_json::Value>>(&json)
+            .unwrap()
+            .is_empty());
+
+        let json = marketplace_get_by_category("books".to_string(), 10).unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["category"], "books");
+        let json = marketplace_get_by_category("nope".to_string(), 10).unwrap();
+        assert!(serde_json::from_str::<Vec<serde_json::Value>>(&json)
+            .unwrap()
+            .is_empty());
+
+        let json = marketplace_get_trending(10).unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(arr.len(), 2);
+
+        assert!(marketplace_update_listing(
+            "l1".to_string(),
+            "intruder".to_string(),
+            "x".to_string(),
+            "x".to_string(),
+            1,
+        )
+        .unwrap_err()
+        .contains("only the seller can update"));
+        assert!(marketplace_update_listing(
+            "l1".to_string(),
+            "seller1".to_string(),
+            "rust book 2nd ed".to_string(),
+            "hardcover".to_string(),
+            6000,
+        )
+        .unwrap());
+        let info = marketplace_get_listing("l1".to_string()).unwrap();
+        assert!(info.contains("rust book 2nd ed"), "{info}");
+        assert!(info.contains("\"price\":6000"), "{info}");
+
+        insert_escrow("esc1", "l1", "created");
+        assert!(
+            marketplace_delete_listing("l1".to_string(), "seller1".to_string())
+                .unwrap_err()
+                .contains("open escrows")
+        );
+        db::db_execute_raw("DELETE FROM escrows WHERE id='esc1'".to_string()).unwrap();
+        assert!(marketplace_delete_listing("l1".to_string(), "seller1".to_string()).unwrap());
+        let info = marketplace_get_listing("l1".to_string()).unwrap();
+        assert!(info.contains("\"status\":\"active\""), "{info}");
+        let json = marketplace_fetch_listings(10, 0).unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["id"], "l2");
+    }
+
+    #[test]
+    fn test_create_listing_signs_and_stores() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("create", "market");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk_hex = keys.public_key().to_hex();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+
+        let signed = marketplace_create_listing(
+            "pkA".to_string(),
+            "widget".to_string(),
+            "a widget".to_string(),
+            1000,
+            "sats".to_string(),
+            "tools".to_string(),
+            "new".to_string(),
+            "[\"https://x/a.png\"]".to_string(),
+            true,
+        )
+        .unwrap();
+        let ev: serde_json::Value = serde_json::from_str(&signed).unwrap();
+        assert_eq!(ev["kind"], 30402);
+        assert_eq!(ev["pubkey"], pk_hex);
+        assert!(ev["sig"].as_str().is_some());
+        let event_id = ev["id"].as_str().unwrap();
+
+        let info = marketplace_get_listing(event_id.to_string()).unwrap();
+        assert!(info.contains("\"seller_pubkey\":\"pkA\""), "{info}");
+        assert!(info.contains("widget"));
+        assert!(info.contains("\"shipping_available\":true"), "{info}");
+        assert!(info.contains("\"escrow_enabled\":true"), "{info}");
+        assert!(info.contains("\"category\":\"tools\""), "{info}");
+
+        assert!(marketplace_create_listing(
+            "pkA".to_string(),
+            "w".to_string(),
+            "d".to_string(),
+            0,
+            "sats".to_string(),
+            "tools".to_string(),
+            "new".to_string(),
+            "[]".to_string(),
+            false,
+        )
+        .unwrap_err()
+        .contains("price must be positive"));
+        assert!(marketplace_create_listing(
+            "pkA".to_string(),
+            "w".to_string(),
+            "d".to_string(),
+            10,
+            "sats".to_string(),
+            "tools".to_string(),
+            "new".to_string(),
+            "nope".to_string(),
+            false,
+        )
+        .unwrap_err()
+        .contains("invalid images JSON"));
+        let many = format!("[{}]", vec!["\"https://x/i.png\""; 13].join(","));
+        assert!(marketplace_create_listing(
+            "pkA".to_string(),
+            "w".to_string(),
+            "d".to_string(),
+            10,
+            "sats".to_string(),
+            "tools".to_string(),
+            "new".to_string(),
+            many,
+            false,
+        )
+        .unwrap_err()
+        .contains("too many images"));
+
+        assert!(marketplace_update_listing(
+            event_id.to_string(),
+            "pkA".to_string(),
+            "widget 2".to_string(),
+            "new desc".to_string(),
+            2000,
+        )
+        .unwrap());
+        let info = marketplace_get_listing(event_id.to_string()).unwrap();
+        assert!(info.contains("widget 2"), "{info}");
+        signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_order_and_escrow_flow() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("orders", "market");
+        insert_listing("l1", "seller1", "widget", 5000, "tools", 2000);
+
+        assert!(marketplace_create_order(
+            "l1".to_string(),
+            "buyer1".to_string(),
+            "seller2".to_string(),
+        )
+        .unwrap_err()
+        .contains("seller does not own this listing"));
+        let order_id = marketplace_create_order(
+            "l1".to_string(),
+            "buyer1".to_string(),
+            "seller1".to_string(),
+        )
+        .unwrap();
+
+        let order = marketplace_get_order(order_id.clone()).unwrap();
+        assert!(order.contains("\"status\":\"created\""), "{order}");
+        assert!(order.contains("\"listing_id\":\"l1\""), "{order}");
+        assert!(order.contains("\"seller_pubkey\":\"seller1\""), "{order}");
+        assert!(order.contains("\"buyer_pubkey\":\"\""), "{order}");
+        assert!(marketplace_get_order("nope".to_string())
+            .unwrap_err()
+            .contains("Order not found"));
+
+        let json = marketplace_fetch_buyer_orders("buyer1".to_string()).unwrap();
+        assert!(json.contains(&order_id), "{json}");
+        let json = marketplace_fetch_seller_orders("seller1".to_string()).unwrap();
+        assert!(json.contains(&order_id), "{json}");
+        let json = marketplace_fetch_seller_orders("nobody".to_string()).unwrap();
+        assert_eq!(json, "[]");
+
+        assert!(marketplace_create_escrow(
+            order_id.clone(),
+            "buyer1".to_string(),
+            "seller1".to_string(),
+            5000,
+        )
+        .unwrap_err()
+        .contains("parties do not match"));
+        assert!(marketplace_create_escrow(
+            order_id.clone(),
+            String::new(),
+            "seller1".to_string(),
+            0,
+        )
+        .unwrap_err()
+        .contains("amount must be positive"));
+        let escrow_id =
+            marketplace_create_escrow(order_id.clone(), String::new(), "seller1".to_string(), 5000)
+                .unwrap();
+
+        let escrow = marketplace_get_escrow(escrow_id.clone()).unwrap();
+        assert!(escrow.contains("\"status\":\"created\""), "{escrow}");
+        assert!(marketplace_get_escrow("nope".to_string())
+            .unwrap_err()
+            .contains("Escrow not found"));
+        let by_listing = marketplace_get_escrow_by_listing("l1".to_string()).unwrap();
+        assert!(by_listing.contains(&escrow_id), "{by_listing}");
+        assert_eq!(
+            marketplace_get_escrow_by_listing("zzz".to_string()).unwrap(),
+            "null"
+        );
+
+        assert!(marketplace_release_escrow(escrow_id.clone(), "seller1".to_string()).is_err());
+        assert!(marketplace_resolve_escrow(
+            escrow_id.clone(),
+            "mediator".to_string(),
+            "seller1".to_string(),
+        )
+        .unwrap());
+        let escrow = marketplace_get_escrow(escrow_id.clone()).unwrap();
+        assert!(escrow.contains("\"status\":\"refunded\""), "{escrow}");
+
+        let escrow2 =
+            marketplace_create_escrow(order_id.clone(), String::new(), "seller1".to_string(), 5000)
+                .unwrap();
+        assert!(marketplace_dispute_escrow(
+            escrow2.clone(),
+            "outsider".to_string(),
+            "bad".to_string()
+        )
+        .is_err());
+        assert!(marketplace_dispute_escrow(
+            escrow2.clone(),
+            "seller1".to_string(),
+            "item not as described".to_string(),
+        )
+        .unwrap());
+        // Disputed escrows need arbitrator resolution; caller release refused.
+        assert!(marketplace_release_escrow(escrow2.clone(), "seller1".to_string()).is_err());
+
+        // Non-disputed escrow releases only after BOTH parties confirm.
+        let escrow4 =
+            marketplace_create_escrow(order_id.clone(), String::new(), "seller1".to_string(), 5000)
+                .unwrap();
+        assert!(marketplace_release_escrow(escrow4.clone(), "seller1".to_string()).is_err());
+        db::db_execute_raw(format!(
+            "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id='{escrow4}'"
+        ))
+        .unwrap();
+        assert!(marketplace_release_escrow(escrow4.clone(), "seller1".to_string()).unwrap());
+        let escrow = marketplace_get_escrow(escrow4.clone()).unwrap();
+        assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
+
+        let escrow3 =
+            marketplace_create_escrow(order_id.clone(), String::new(), "seller1".to_string(), 5000)
+                .unwrap();
+        assert!(marketplace_resolve_escrow(
+            escrow3.clone(),
+            "mediator".to_string(),
+            "outsider".to_string(),
+        )
+        .is_err());
+        marketplace_dispute_escrow(escrow3.clone(), String::new(), "refund".to_string()).unwrap();
+        assert!(
+            marketplace_resolve_escrow(escrow3.clone(), "mediator".to_string(), String::new(),)
+                .unwrap()
+        );
+        let escrow = marketplace_get_escrow(escrow3.clone()).unwrap();
+        assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
+        assert!(escrow.contains("resolved by mediator"), "{escrow}");
+    }
+
+    #[test]
+    fn test_reviews() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("reviews", "market");
+        assert!(marketplace_review_listing(
+            "l1".to_string(),
+            "r1".to_string(),
+            5,
+            "great".to_string(),
+        )
+        .unwrap());
+        assert!(marketplace_review_listing(
+            "l1".to_string(),
+            "r2".to_string(),
+            3,
+            "ok".to_string(),
+        )
+        .unwrap());
+        let json = marketplace_listing_reviews("l1".to_string(), 10).unwrap();
+        assert!(
+            json.contains("\"rating\":5") && json.contains("\"rating\":3"),
+            "{json}"
+        );
+        assert!(json.contains("\"reviewer\":\"r1\""), "{json}");
+        assert_eq!(
+            marketplace_listing_reviews("nope".to_string(), 10).unwrap(),
+            "[]"
+        );
+        assert_eq!(marketplace_listing_rating("l1".to_string()).unwrap(), 4.0);
+        assert!(marketplace_listing_rating("nope".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_polls() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("polls", "market");
+        assert!(marketplace_poll_create(
+            "pk1".to_string(),
+            "q?".to_string(),
+            "[\"a\"]".to_string(),
+            24,
+        )
+        .unwrap_err()
+        .contains("at least 2 options"));
+        assert!(marketplace_poll_create(
+            "pk1".to_string(),
+            "q?".to_string(),
+            "nope".to_string(),
+            24,
+        )
+        .unwrap_err()
+        .contains("invalid options JSON"));
+
+        let created = marketplace_poll_create(
+            "pk1".to_string(),
+            "best?".to_string(),
+            "[\"a\",\"b\",\"c\"]".to_string(),
+            24,
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&created).unwrap();
+        let poll_id = v["id"].as_str().unwrap().to_string();
+        assert_eq!(v["question"], "best?");
+
+        let poll = marketplace_poll_get(poll_id.clone()).unwrap();
+        assert!(poll.contains("\"votes\":[0,0,0]"), "{poll}");
+        assert!(!marketplace_poll_has_voted(poll_id.clone(), "v1".to_string()).unwrap());
+        assert!(marketplace_poll_vote(poll_id.clone(), "v1".to_string(), 1).unwrap());
+        assert!(marketplace_poll_has_voted(poll_id.clone(), "v1".to_string()).unwrap());
+        let poll = marketplace_poll_get(poll_id.clone()).unwrap();
+        assert!(poll.contains("\"votes\":[0,1,0]"), "{poll}");
+
+        assert!(marketplace_poll_close(poll_id.clone(), "other".to_string())
+            .unwrap_err()
+            .contains("not poll owner"));
+        assert!(marketplace_poll_close(poll_id.clone(), "pk1".to_string()).unwrap());
+        assert!(marketplace_poll_get("nope".to_string())
+            .unwrap_err()
+            .contains("poll not found"));
     }
 }

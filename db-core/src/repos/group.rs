@@ -97,6 +97,32 @@ impl<'a> GroupRepo<'a> {
         )
     }
 
+    /// Fetch the shared key for a group, or None when absent.
+    pub fn get_shared_key(&self, group_id: &str) -> Result<Option<String>, crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::query_first(
+            &conn,
+            "SELECT key_hex FROM group_shared_keys WHERE group_id = ?1",
+            params![group_id],
+            |row| row.get(0),
+        )
+    }
+
+    /// Store the shared key for a group, replacing any previous value.
+    pub fn set_shared_key(
+        &self,
+        group_id: &str,
+        key_hex: &str,
+    ) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::execute(
+            &conn,
+            "INSERT OR REPLACE INTO group_shared_keys (group_id, key_hex, updated_at) VALUES (?1,?2,?3)",
+            params![group_id, key_hex, soshal_common_core::format::now_secs()],
+        )?;
+        Ok(())
+    }
+
     fn map_row(row: &libsql::Row) -> libsql::Result<GroupRow> {
         Ok(GroupRow {
             id: row.get(0)?,

@@ -27,6 +27,7 @@ void main() {
       final msg = MessagingService();
       var notified = 0;
       msg.addListener(() => notified++);
+      api.stubBool('crateFfiMessagingMessagingStoreDm', true);
 
       final dm = DirectMessage(
         id: 'id1',

@@ -530,3 +530,319 @@ impl P2pState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static GLOBAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn sample_group_json() -> String {
+        serde_json::json!({
+            "group_sequence": 7,
+            "objects": [
+                {
+                    "header": {
+                        "track_id": 1,
+                        "group_sequence": 7,
+                        "object_sequence": 0,
+                        "payload_size": 3,
+                        "track_type": "VideoKeyframe",
+                        "timestamp_ms": 1000
+                    },
+                    "payload": [0, 1, 2]
+                },
+                {
+                    "header": {
+                        "track_id": 2,
+                        "group_sequence": 7,
+                        "object_sequence": 1,
+                        "payload_size": 2,
+                        "track_type": "AudioDatagram",
+                        "timestamp_ms": 1050
+                    },
+                    "payload": [255, 254]
+                }
+            ]
+        })
+        .to_string()
+    }
+
+    fn valid_manifest_json() -> String {
+        serde_json::json!({
+            "blob_hash": "a".repeat(64),
+            "total_size": 0,
+            "chunks": []
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn test_moq_group_roundtrip() {
+        let wire = super::p2p_moq_encode_group(sample_group_json()).unwrap();
+        assert!(!wire.is_empty());
+        let json = super::p2p_moq_decode_group(wire).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["group_sequence"], 7);
+        assert_eq!(v["objects"].as_array().unwrap().len(), 2);
+        assert_eq!(v["objects"][0]["payload"], serde_json::json!([0, 1, 2]));
+        assert_eq!(v["objects"][1]["payload"], serde_json::json!([255, 254]));
+        assert_eq!(v["objects"][0]["header"]["track_type"], "VideoKeyframe");
+        assert_eq!(v["objects"][1]["header"]["track_type"], "AudioDatagram");
+    }
+
+    #[test]
+    fn test_moq_encode_rejects_bad_json() {
+        let e = super::p2p_moq_encode_group("not json".to_string()).unwrap_err();
+        assert!(e.contains("bad moq group"), "got {e}");
+    }
+
+    #[test]
+    fn test_moq_decode_rejects_hostile_input() {
+        assert!(super::p2p_moq_decode_group(Vec::new()).is_err());
+        assert!(super::p2p_moq_decode_group(vec![0x01, 0x00, 0x00, 0x00]).is_err());
+        let mut wire = super::p2p_moq_encode_group(sample_group_json()).unwrap();
+        wire.push(0xFF);
+        let e = super::p2p_moq_decode_group(wire).unwrap_err();
+        assert!(e.contains("trailing"), "got {e}");
+        let mut bad = Vec::new();
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.extend_from_slice(&1u32.to_le_bytes());
+        bad.extend_from_slice(&1u32.to_le_bytes());
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.push(3u8);
+        bad.extend_from_slice(&0u64.to_le_bytes());
+        bad.extend_from_slice(&1u32.to_le_bytes());
+        bad.push(0xAA);
+        let e = super::p2p_moq_decode_group(bad).unwrap_err();
+        assert!(e.contains("bad track type"), "got {e}");
+    }
+
+    #[test]
+    fn test_moq_publish_validation_and_registry() {
+        let _g = GLOBAL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let e = super::p2p_moq_publish_group(String::new(), vec![1]).unwrap_err();
+        assert!(e.contains("bad live stream id"), "got {e}");
+        let e = super::p2p_moq_publish_group("x".repeat(129), vec![1]).unwrap_err();
+        assert!(e.contains("bad live stream id"), "got {e}");
+        let encoded = super::p2p_moq_encode_group(sample_group_json()).unwrap();
+        let first =
+            super::p2p_moq_publish_group("ffi-test-stream".to_string(), encoded.clone()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&first).unwrap();
+        assert_eq!(v["status"], "published");
+        assert_eq!(v["groups"], 1);
+        let second = super::p2p_moq_publish_group("ffi-test-stream".to_string(), encoded).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&second).unwrap();
+        assert_eq!(v["groups"], 2);
+    }
+
+    #[test]
+    fn test_swarm_download_validation() {
+        let e = super::p2p_swarm_download(
+            "not json".to_string(),
+            "[]".to_string(),
+            "[]".to_string(),
+            String::new(),
+            1,
+        )
+        .unwrap_err();
+        assert!(e.contains("bad manifest"), "got {e}");
+        let invalid = serde_json::json!({
+            "blob_hash": "abc",
+            "total_size": 10,
+            "chunks": [{"blake3": "xyz", "offset": 0, "len": 10}]
+        })
+        .to_string();
+        let e = super::p2p_swarm_download(
+            invalid,
+            "[]".to_string(),
+            "[]".to_string(),
+            String::new(),
+            1,
+        )
+        .unwrap_err();
+        assert!(e.contains("manifest failed validation"), "got {e}");
+        let e = super::p2p_swarm_download(
+            valid_manifest_json(),
+            "nope".to_string(),
+            "[]".to_string(),
+            String::new(),
+            1,
+        )
+        .unwrap_err();
+        assert!(e.contains("bad peers"), "got {e}");
+        let e = super::p2p_swarm_download(
+            valid_manifest_json(),
+            "[\"nope\"]".to_string(),
+            "[null]".to_string(),
+            String::new(),
+            1,
+        )
+        .unwrap_err();
+        assert!(e.contains("bad peer"), "got {e}");
+        let e = super::p2p_swarm_download(
+            valid_manifest_json(),
+            "[\"8.8.8.8:7777\"]".to_string(),
+            "[null]".to_string(),
+            String::new(),
+            1,
+        )
+        .unwrap_err();
+        assert!(e.contains("refusing non-private peer"), "got {e}");
+    }
+
+    #[test]
+    fn test_fetch_addr_validation_rejects_non_private() {
+        let e = super::p2p_quic_fetch_chunk("nope".to_string(), "h".to_string(), 0, 0).unwrap_err();
+        assert!(e.contains("bad addr"), "got {e}");
+        let e = super::p2p_quic_fetch_chunk("8.8.8.8:443".to_string(), "h".to_string(), 0, 0)
+            .unwrap_err();
+        assert!(e.contains("refusing non-private peer"), "got {e}");
+        let e =
+            super::p2p_moq_subscribe_fetch("nope".to_string(), "s".to_string(), 100).unwrap_err();
+        assert!(e.contains("bad addr"), "got {e}");
+        let e = super::p2p_moq_subscribe_fetch("8.8.8.8:443".to_string(), "s".to_string(), 100)
+            .unwrap_err();
+        assert!(e.contains("refusing non-private peer"), "got {e}");
+        let e = super::p2p_fetch_blob_from_peer(
+            "h".to_string(),
+            "nope".to_string(),
+            7777,
+            None,
+            String::new(),
+        )
+        .unwrap_err();
+        assert!(e.contains("bad peer ip"), "got {e}");
+    }
+
+    #[test]
+    fn test_no_daemon_state_queries() {
+        let _g = GLOBAL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(super::p2p_lan_server_port()
+            .unwrap_err()
+            .contains("not running"));
+        assert!(super::p2p_quic_server_port()
+            .unwrap_err()
+            .contains("not running"));
+        assert!(super::p2p_swarm_poll("unknown".to_string())
+            .unwrap_err()
+            .contains("unknown download"));
+        assert!(super::p2p_mdns_browse_drain().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_no_daemon_stops_are_noops() {
+        let _g = GLOBAL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(super::p2p_mdns_advertise_stop().unwrap());
+        assert!(super::p2p_mdns_browse_stop().unwrap());
+        assert!(super::p2p_lan_server_stop().unwrap());
+        assert!(super::p2p_quic_server_stop().unwrap());
+        assert!(super::p2p_swarm_cancel("unknown".to_string()).unwrap());
+        assert!(super::p2p_stop_all().unwrap());
+    }
+
+    #[test]
+    fn test_power_snapshot_modes() {
+        let _g = GLOBAL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let full = super::p2p_power_update(true, 100, false, false).unwrap();
+        assert_eq!(full.mode, "full");
+        assert!(!full.paused);
+        assert_eq!(full.max_parallel_uploads, 8);
+        assert_eq!(full.upload_budget_bytes_per_sec, u64::MAX);
+        let throttled = super::p2p_power_update(false, 60, false, false).unwrap();
+        assert_eq!(throttled.mode, "throttled");
+        assert!(!throttled.paused);
+        assert_eq!(throttled.max_parallel_uploads, 2);
+        let paused = super::p2p_power_update(false, 40, true, true).unwrap();
+        assert_eq!(paused.mode, "paused");
+        assert!(paused.paused);
+        assert_eq!(paused.max_parallel_uploads, 0);
+        assert_eq!(paused.upload_budget_bytes_per_sec, 0);
+        let mode = super::p2p_power_mode().unwrap();
+        assert_eq!(mode.mode, "paused");
+        assert!(mode.paused);
+    }
+
+    #[test]
+    fn test_swarm_status_dto_helpers() {
+        let running = P2pSwarmStatusDto::running();
+        assert_eq!(running.state, "running");
+        assert_eq!(running.verified_chunks, 0);
+        assert!(running.failed_hashes.is_empty());
+        let report = SwarmReport {
+            verified_chunks: 3,
+            bytes_downloaded: 4096,
+            failures: 2,
+            failed_hashes: vec!["h1".to_string(), "h2".to_string()],
+        };
+        let done = P2pSwarmStatusDto::from_report(report);
+        assert_eq!(done.state, "done");
+        assert_eq!(done.verified_chunks, 3);
+        assert_eq!(done.bytes_downloaded, 4096);
+        assert_eq!(done.failures, 2);
+        assert_eq!(done.failed_hashes, vec!["h1".to_string(), "h2".to_string()]);
+    }
+
+    #[test]
+    fn test_p2p_state_constructor() {
+        let st = P2pState::new();
+        assert!(st.advertiser.is_none());
+        assert!(st.browser.is_none());
+        assert!(st.lan_server.is_none());
+        assert!(st.quic_server.is_none());
+        assert!(st.downloads.is_empty());
+        assert_eq!(st.next_download, 0);
+    }
+
+    #[test]
+    fn test_peer_dto_from_mdns() {
+        let peer = MdnsPeer {
+            pubkey: "k".to_string(),
+            addr: "10.0.0.3:7777".parse().unwrap(),
+            quic_port: Some(4433),
+        };
+        let dto = P2pPeerDto::from(peer);
+        assert_eq!(dto.pubkey, "k");
+        assert_eq!(dto.ip, "10.0.0.3");
+        assert_eq!(dto.port, 7777);
+        assert_eq!(dto.quic_port, Some(4433));
+    }
+
+    #[test]
+    fn test_fountain_encode_manifest() {
+        let data: Vec<u8> = (0..2000u16).map(|i| (i % 251) as u8).collect();
+        let json = super::p2p_encode_fountain_payload(data, 0.3).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["total_len"], 2000);
+        assert_eq!(v["symbol_size"], 1024);
+        assert_eq!(v["num_source_symbols"], 2);
+        assert!(v["oti_data"].is_array());
+        let e = super::p2p_encode_fountain_payload(Vec::new(), 0.3).unwrap_err();
+        assert!(e.contains("empty payload"), "got {e}");
+    }
+
+    #[test]
+    fn test_fountain_decode_roundtrip() {
+        let data: Vec<u8> = (0..5000u16).map(|i| (i % 251) as u8).collect();
+        let encoded = soshal_storage_core::erasure_fountain::encode_fountain(&data, 0.5).unwrap();
+        let manifest_json = serde_json::to_string(&encoded.manifest).unwrap();
+        let subset = encoded.packets[0..encoded.manifest.num_source_symbols as usize + 1].to_vec();
+        let b64: Vec<String> = subset
+            .iter()
+            .map(|p| soshal_crypto_core::base64::base64_encode_bytes(p))
+            .collect();
+        let packets_json = serde_json::to_string(&b64).unwrap();
+        let decoded = super::p2p_decode_fountain_payload(manifest_json, packets_json).unwrap();
+        assert_eq!(decoded, data);
+        let e =
+            super::p2p_decode_fountain_payload("nope".to_string(), "[]".to_string()).unwrap_err();
+        assert!(e.contains("invalid manifest JSON"), "got {e}");
+        let e = super::p2p_decode_fountain_payload(
+            serde_json::to_string(&encoded.manifest).unwrap(),
+            "[]".to_string(),
+        )
+        .unwrap_err();
+        assert!(e.contains("Insufficient Fountain packets"), "got {e}");
+    }
+}

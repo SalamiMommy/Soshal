@@ -1,7 +1,7 @@
 //! Mini-App / Musicloud / Custom Profile event mapping and content shaping.
 
 use serde::{Deserialize, Serialize};
-use soshal_nostr_core::models::NostrEvent;
+use soshal_nostr_core::models::{find_tag_value, NostrEvent};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,12 +32,12 @@ pub struct MusicloudEventOut {
 /// Maps a kind-31020 mini event to its typed struct. Returns `None` when the
 /// `url` tag is missing.
 pub fn mini_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
-    let url = find_tag_str(&ev.tags, "url");
+    let url = find_tag_value(&ev.tags, "url").unwrap_or("");
     if url.is_empty() {
         return None;
     }
-    let thumb = find_tag_str(&ev.tags, "image");
-    let audience = find_tag_str(&ev.tags, "audience");
+    let thumb = find_tag_value(&ev.tags, "image").unwrap_or("");
+    let audience = find_tag_value(&ev.tags, "audience").unwrap_or("");
     let audience = if audience.is_empty() {
         "public"
     } else {
@@ -56,12 +56,12 @@ pub fn mini_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
 
 /// Maps a kind-31020 mini event to a strongly typed `MiniEventOut` struct.
 pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
-    let url = find_tag_str(&ev.tags, "url");
+    let url = find_tag_value(&ev.tags, "url").unwrap_or("");
     if url.is_empty() {
         return None;
     }
-    let thumb = find_tag_str(&ev.tags, "image");
-    let audience = find_tag_str(&ev.tags, "audience");
+    let thumb = find_tag_value(&ev.tags, "image").unwrap_or("");
+    let audience = find_tag_value(&ev.tags, "audience").unwrap_or("");
     let audience = if audience.is_empty() {
         "public"
     } else {
@@ -199,13 +199,4 @@ pub fn sort_minis_desc(items: &mut [MiniEventOut]) {
 /// Sorts typed `MusicloudEventOut` items by `created_at` descending (newest first).
 pub fn sort_musicloud_desc(items: &mut [MusicloudEventOut]) {
     items.sort_by_key(|b| std::cmp::Reverse(b.created_at));
-}
-
-pub fn find_tag_str<'a>(tags: &'a [Vec<String>], name: &str) -> &'a str {
-    for t in tags {
-        if t.len() >= 2 && t[0] == name {
-            return &t[1];
-        }
-    }
-    ""
 }

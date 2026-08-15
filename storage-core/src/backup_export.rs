@@ -1,6 +1,3 @@
-use serde::{Deserialize, Serialize};
-use soshal_common_core::json_util::json_out;
-
 /// Table names exported per-user, in export order.
 pub const EXPORT_TABLES: [&str; 6] = [
     "users",
@@ -49,57 +46,91 @@ pub fn export_envelope(
     })
 }
 
-#[derive(Deserialize)]
-struct BackupExportInput {
-    db_json: String,
-    kem_public_key_hex: String,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[derive(Serialize)]
-struct BackupExportOutput {
-    success: bool,
-    ciphertext_json: Option<String>,
-    error: Option<String>,
-}
+    fn in_memory_conn() -> libsql::Connection {
+        let db = soshal_db_core::block_on(libsql::Builder::new_local(":memory:").build()).unwrap();
+        db.connect().unwrap()
+    }
 
-#[derive(Serialize)]
-struct EncryptedBackupEnvelope {
-    pqc_ct: String,
-    nonce: String,
-    payload: String,
-    version: u32,
-}
+    fn first_row(conn: &libsql::Connection, sql: &str, cols: &[String]) -> serde_json::Value {
+        soshal_db_core::block_on(async {
+            let mut stmt = conn.prepare(sql).await.unwrap();
+            let mut rows = stmt.query(()).await.unwrap();
+            match rows.next().await.unwrap() {
+                Some(row) => row_to_json(&row, cols),
+                None => panic!("no row"),
+            }
+        })
+    }
 
-pub fn create_encrypted_backup_payload(input: &str) -> String {
-    let input: BackupExportInput = match serde_json::from_str(input) {
-        Ok(v) => v,
-        Err(e) => return crate::util::fail_json("ciphertext_json", &format!("JSON parse: {}", e)),
-    };
+    #[test]
+    fn test_export_envelope_produces_valid_blob() {
+        let env = export_envelope(
+            42,
+            &[(
+                "posts",
+                vec![serde_json::json!({"id": "p1", "content": "hi"})],
+            )],
+        );
+        assert_eq!(env["exportedAt"], 42u64);
+        assert_eq!(env["version"], "1.0.0");
+        assert_eq!(env["data"]["posts"].as_array().unwrap().len(), 1);
+        assert_eq!(env["data"]["posts"][0]["id"], "p1");
+        let serialized = serde_json::to_string(&env).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(parsed, env);
+    }
 
-    let compressed = match soshal_content_core::compress::compress(input.db_json.as_bytes()) {
-        Ok(c) => c,
-        Err(e) => return crate::util::fail_json("ciphertext_json", &format!("compress: {}", e)),
-    };
+    #[test]
+    fn test_export_envelope_deterministic() {
+        let tables = [
+            ("users", vec![serde_json::json!({"id": 1, "name": "a"})]),
+            ("posts", vec![]),
+        ];
+        let a = serde_json::to_string(&export_envelope(7, &tables)).unwrap();
+        let b = serde_json::to_string(&export_envelope(7, &tables)).unwrap();
+        assert_eq!(a, b);
+        let c = serde_json::to_string(&export_envelope(8, &tables)).unwrap();
+        assert_ne!(a, c);
+    }
 
-    let domain = b"soshal-backup-export-v1";
-    let (ct_hex, nonce_hex, encrypted_b64) =
-        match soshal_pqc_core::seal::hybrid_seal(&compressed, &input.kem_public_key_hex, domain) {
-            Ok(v) => v,
-            Err(e) => return crate::util::fail_json("ciphertext_json", &format!("seal: {}", e)),
-        };
+    #[test]
+    fn test_export_envelope_includes_all_export_tables() {
+        let tables: Vec<(&str, Vec<serde_json::Value>)> =
+            EXPORT_TABLES.iter().map(|t| (*t, vec![])).collect();
+        let env = export_envelope(0, &tables);
+        for t in EXPORT_TABLES {
+            assert!(env["data"][t].is_array(), "missing table {t}");
+        }
+        assert_eq!(env["data"].as_object().unwrap().len(), EXPORT_TABLES.len());
+    }
 
-    let envelope = EncryptedBackupEnvelope {
-        pqc_ct: ct_hex,
-        nonce: nonce_hex,
-        payload: encrypted_b64,
-        version: 3,
-    };
+    #[test]
+    fn test_row_to_json_bad_input_yields_null_no_panic() {
+        let conn = in_memory_conn();
+        soshal_db_core::block_on(
+            conn.execute_batch("CREATE TABLE t (a INTEGER); INSERT INTO t VALUES (1);"),
+        )
+        .unwrap();
+        let cols = vec!["a".to_string(), "missing".to_string()];
+        let out = first_row(&conn, "SELECT * FROM t", &cols);
+        assert_eq!(out["a"], 1);
+        assert!(out["missing"].is_null());
+    }
 
-    let out = BackupExportOutput {
-        success: true,
-        ciphertext_json: serde_json::to_string(&envelope).ok(),
-        error: None,
-    };
-
-    json_out(&out, r#"{"success":false,"error":"serialization failed"}"#)
+    #[test]
+    fn test_row_to_json_blob_base64_encoded() {
+        let conn = in_memory_conn();
+        soshal_db_core::block_on(
+            conn.execute_batch("CREATE TABLE t (data BLOB); INSERT INTO t VALUES (X'00FF10');"),
+        )
+        .unwrap();
+        let cols = vec!["data".to_string()];
+        let out = first_row(&conn, "SELECT * FROM t", &cols);
+        let expected = soshal_crypto_core::base64::base64_encode_bytes(&[0x00u8, 0xFF, 0x10]);
+        assert_eq!(out["data"], expected);
+    }
 }

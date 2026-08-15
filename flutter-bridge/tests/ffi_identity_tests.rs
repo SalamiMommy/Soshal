@@ -135,11 +135,11 @@ mod ffi_identity_tests {
         let me = unique_pubkey("me");
         let target = unique_pubkey("tgt");
         assert!(!identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
-        assert!(identity::identity_block_user(me.clone(), target.clone()).unwrap());
+        assert!(moderation::moderation_block_user(me.clone(), target.clone()).unwrap());
         assert!(identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
         let list = identity::identity_get_blocked_users(me.clone()).unwrap();
         assert!(list.contains(&target));
-        assert!(identity::identity_unblock_user(me.clone(), target.clone()).unwrap());
+        assert!(moderation::moderation_unblock_user(me.clone(), target.clone()).unwrap());
         assert!(!identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
         let list = identity::identity_get_blocked_users(me).unwrap();
         assert!(!list.contains(&target));

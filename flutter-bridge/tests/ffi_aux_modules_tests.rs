@@ -124,33 +124,6 @@ mod ffi_aux_modules_tests {
     }
 
     #[test]
-    fn push_ffi_register_token_persists() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let path = init_db("push_token");
-        let session_path =
-            std::path::Path::new(&std::env::temp_dir().to_string_lossy().to_string())
-                .join("session.json");
-        let _ = std::fs::remove_file(&session_path);
-        assert!(session::session_load(path.clone()).is_ok());
-        assert!(session::session_add_account(
-            "aux_push_pk".to_string(),
-            "npub1auxpush".to_string(),
-            "[]".to_string()
-        )
-        .unwrap());
-        assert!(push::push_register_token("aux_device_token".to_string()).unwrap());
-        let saved: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&session_path).unwrap()).unwrap();
-        assert_eq!(saved["accounts"][0]["push_token"], "aux_device_token");
-        assert!(push::push_register_token(String::new()).unwrap());
-        let cleared: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&session_path).unwrap()).unwrap();
-        assert!(cleared["accounts"][0]["push_token"].is_null());
-        let _ = std::fs::remove_file(&session_path);
-        cleanup(&path);
-    }
-
-    #[test]
     fn relations_ffi_send_friend_request_signer_locked() {
         let e = relations::relations_send_friend_request("aux_pubkey".to_string()).unwrap_err();
         assert_eq!(e, "signer locked");
@@ -193,5 +166,90 @@ mod ffi_aux_modules_tests {
     fn social_ffi_friend_suggestions_no_signer_empty() {
         let got = social::social_friend_suggestions().unwrap();
         assert!(got.is_empty());
+    }
+
+    #[test]
+    fn session_ffi_add_list_switch_active() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = format!(
+            "{}/soshal_aux_session_{}_addlist",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = format!("{dir}/app.db");
+        session::session_load(db_path.clone()).unwrap();
+        session::session_add_account(
+            "spk1".to_string(),
+            "npub1spk1".to_string(),
+            "[\"wss://relay.a\"]".to_string(),
+        )
+        .unwrap();
+        session::session_add_account(
+            "spk2".to_string(),
+            "npub1spk2".to_string(),
+            "[]".to_string(),
+        )
+        .unwrap();
+        let list = session::session_list_accounts().unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&list)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 2);
+        assert!(session::session_switch_account("spk2".to_string()).unwrap());
+        let active = session::session_get_active().unwrap();
+        assert!(active.contains("\"pubkey\":\"spk2\""));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn session_ffi_save_load_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = format!(
+            "{}/soshal_aux_session_{}_roundtrip",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = format!("{dir}/app.db");
+        let data = r#"{"active_pubkey":"spk1","accounts":[{"pubkey":"spk1","npub":"npub1spk1","last_used":1,"relay_list":[]}]}"#;
+        assert!(session::session_save(db_path.clone(), data.to_string()).unwrap());
+        let loaded = session::session_load(db_path.clone()).unwrap();
+        assert!(loaded.contains("\"active_pubkey\":\"spk1\""));
+        let active = session::session_get_active().unwrap();
+        assert!(active.contains("\"pubkey\":\"spk1\""));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn session_ffi_push_token_register_and_clear() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = format!(
+            "{}/soshal_aux_session_{}_push",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = format!("{dir}/app.db");
+        assert!(db::db_init(db_path.clone()).is_ok());
+        session::session_load(db_path.clone()).unwrap();
+        session::session_add_account(
+            "spk1".to_string(),
+            "npub1spk1".to_string(),
+            "[]".to_string(),
+        )
+        .unwrap();
+        assert!(session::session_register_push_token("aux_tok".to_string()).unwrap());
+        let reloaded = session::session_load(db_path.clone()).unwrap();
+        assert!(reloaded.contains("aux_tok"));
+        assert!(session::session_register_push_token(String::new()).unwrap());
+        let reloaded = session::session_load(db_path.clone()).unwrap();
+        assert!(!reloaded.contains("aux_tok"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

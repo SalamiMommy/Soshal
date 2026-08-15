@@ -163,15 +163,14 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
   /// Trending hashtags with usage counts straight from the local DB
   /// (rows: tag/pubkey/last_used_at/count) — richer than the search-core
   /// name-only list above.
-  Future<List<Map<String, dynamic>>> dbTrendingHashtags({int limit = 20}) async {
+  Future<List<Map<String, dynamic>>> dbTrendingHashtags(
+      {int limit = 20}) async {
     try {
-      final json = RustLib.instance.api
-          .crateFfiDbDbGetTrendingHashtags(limit: limit);
+      final json =
+          RustLib.instance.api.crateFfiDbDbGetTrendingHashtags(limit: limit);
       clearLastError();
       final list = jsonDecode(json) as List<dynamic>;
-      return list
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } catch (e, st) {
       setLastError(e, st);
       notifyListeners();

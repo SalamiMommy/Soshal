@@ -97,6 +97,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       debugPrint('network refresh failed: $e');
       logRuntimeError('network refresh: $e', st);
     }
+    if (!mounted) return;
     final settings = context.read<SettingsService>();
     final sync = context.read<SyncService>();
     final telemetry = context.read<TelemetryService>();
@@ -497,7 +498,8 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
   Future<void> _purgeGeohashPeers() async {
     final snack = ScaffoldMessenger.of(context);
     try {
-      final n = context.read<SettingsService>().purgeStaleGeohashPeers(7 * 24 * 3600);
+      final n =
+          context.read<SettingsService>().purgeStaleGeohashPeers(7 * 24 * 3600);
       if (!mounted) return;
       setState(() => _meshResult = 'geohash peers purged: $n');
     } catch (e) {
@@ -537,7 +539,8 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
           .read<MeshService>()
           .skademliaNodeId(pubkey: pubkey, staticNonce: 0, dynamicNonce: 0);
       if (!mounted) return;
-      setState(() => _meshResult = 'node id: ${id ?? 'PoW miss (try nonce>0)'}');
+      setState(
+          () => _meshResult = 'node id: ${id ?? 'PoW miss (try nonce>0)'}');
     } catch (e) {
       snack.showSnackBar(SnackBar(content: Text('skademlia: $e')));
     }
@@ -551,7 +554,8 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       return;
     }
     try {
-      final pubkey = await context.read<AuthService>().inProcessSignerPubkey(nsec);
+      final pubkey =
+          await context.read<AuthService>().inProcessSignerPubkey(nsec);
       if (!mounted) return;
       setState(() => _meshResult = 'derived pubkey: $pubkey');
     } catch (e) {
@@ -1214,8 +1218,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
           ),
           if (_meshResult != null) ...[
             const SizedBox(height: 4),
-            SelectableText(_meshResult!,
-                style: const TextStyle(fontSize: 12)),
+            SelectableText(_meshResult!, style: const TextStyle(fontSize: 12)),
           ],
           const Divider(),
           Text('Diagnostics', style: Theme.of(context).textTheme.titleMedium),

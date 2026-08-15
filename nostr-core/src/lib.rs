@@ -1,4 +1,3 @@
-pub mod events;
 pub mod keys;
 pub mod models;
 pub mod relay;

@@ -119,21 +119,6 @@ pub async fn calls_fetch_signals(my_pubkey: String) -> Result<String, String> {
     super::util::json_ok(out)
 }
 
-/// Sanitize an SDP for the local media session.
-#[frb(sync, serialize)]
-pub fn calls_sanitize_sdp(sdp: String, force_relay: bool) -> Result<String, String> {
-    Ok(soshal_webrtc_core::sdp::sanitize_sdp(&sdp, force_relay)).into()
-}
-
-/// ICE configuration for the local peer connection.
-#[frb(sync, serialize)]
-pub fn calls_ice_config(privacy_level: String, stun_url: String) -> Result<String, String> {
-    super::util::json_ok(soshal_webrtc_core::ice::ice_config(
-        &privacy_level,
-        &stun_url,
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,7 +143,7 @@ mod tests {
     #[test]
     fn sanitize_sdp_redacts_private_conn_line() {
         let sdp = "v=0\r\nc=IN IP4 192.168.1.50\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
-        let out = calls_sanitize_sdp(sdp.to_string(), false).unwrap();
+        let out = super::super::webrtc::webrtc_sanitize_sdp(sdp.to_string(), false).unwrap();
         assert!(out.contains("c=IN IP4 127.0.0.1"));
         assert!(!out.contains("192.168.1.50"));
     }
@@ -167,7 +152,7 @@ mod tests {
     fn sanitize_sdp_force_relay_drops_srflx_keeps_relay() {
         let sdp = "v=0\r\na=candidate:2 1 UDP 1686052607 203.0.113.9 5000 typ srflx\r\n\
 a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
-        let out = calls_sanitize_sdp(sdp.to_string(), true).unwrap();
+        let out = super::super::webrtc::webrtc_sanitize_sdp(sdp.to_string(), true).unwrap();
         assert!(!out.contains("srflx"));
         assert!(out.contains("typ relay"));
     }
@@ -175,14 +160,14 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
     #[test]
     fn sanitize_sdp_keeps_public_conn_line() {
         let sdp = "v=0\r\nc=IN IP4 8.8.8.8\r\n";
-        let out = calls_sanitize_sdp(sdp.to_string(), false).unwrap();
+        let out = super::super::webrtc::webrtc_sanitize_sdp(sdp.to_string(), false).unwrap();
         assert!(out.contains("8.8.8.8"));
     }
 
     #[test]
     fn ice_config_public_level_all_candidates() {
         let cfg: serde_json::Value = serde_json::from_str(
-            &calls_ice_config("public".into(), "stun:stun.l.google.com:19302".into()).unwrap(),
+            &super::super::webrtc::webrtc_get_ice_config("public".into()).unwrap(),
         )
         .unwrap();
         assert_eq!(cfg["iceTransportPolicy"], "all");
@@ -190,19 +175,12 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
         assert_eq!(cfg["iceServers"][0]["urls"], "stun:stun.l.google.com:19302");
     }
 
-    #[test]
-    fn ice_config_private_level_forces_relay_no_servers_on_empty_stun() {
-        let cfg: serde_json::Value =
-            serde_json::from_str(&calls_ice_config("private".into(), String::new()).unwrap())
-                .unwrap();
-        assert_eq!(cfg["iceTransportPolicy"], "relay");
-        assert_eq!(cfg["forceRelay"], true);
-        assert_eq!(cfg["iceServers"].as_array().unwrap().len(), 0);
-    }
-
     #[tokio::test]
     async fn send_signal_requires_unlocked_signer() {
         let _g = CALLS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         super::super::signer::signer_lock().unwrap();
         let err = calls_send_signal(
             "offer".into(),
@@ -220,6 +198,9 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
     #[tokio::test]
     async fn send_signal_publishes_signed_event_via_network() {
         let _g = CALLS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let err = calls_send_signal(

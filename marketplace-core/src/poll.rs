@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use soshal_common_core::json_util::{json_in, json_out};
 
-const MAX_TAGS: usize = 100_000;
+const MAX_TAGS_ENTRIES: usize = 100_000;
 const MAX_POLL_OPTIONS: usize = 100;
 const POLL_EXPIRY_DEFAULT: f64 = 604800.0;
 
@@ -43,7 +43,7 @@ struct PollContent {
 use soshal_nostr_core::models::find_tag_value;
 
 pub(crate) fn parse_poll_event(ev: &CalendarEventInput, now_ms: f64) -> Option<PollOut> {
-    if ev.tags.len() > MAX_TAGS {
+    if ev.tags.len() > MAX_TAGS_ENTRIES {
         return None;
     }
     let question: String;

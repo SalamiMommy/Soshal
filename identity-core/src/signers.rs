@@ -64,6 +64,18 @@ impl Signer {
     }
 }
 
+fn shared_secret(sk: &nostr::key::SecretKey, pk: &PublicKey) -> Result<[u8; 32], String> {
+    use secp256k1::{ecdh::SharedSecret, Parity, PublicKey as SecpPublicKey};
+    let xonly = pk.xonly().map_err(|e| format!("pubkey: {e}"))?;
+    let secp_pk = SecpPublicKey::from_x_only_public_key(xonly, Parity::Even);
+    let mut ss = SharedSecret::new(&secp_pk, sk);
+    let bytes = ss.secret_bytes();
+    ss.non_secure_erase();
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&bytes[1..]);
+    Ok(key)
+}
+
 impl SigningOps for Signer {
     fn public_key_hex(&self) -> String {
         self.keys.public_key().to_string()
@@ -108,18 +120,16 @@ impl SigningOps for Signer {
     }
 
     fn nip44_encrypt(&self, to: &PublicKey, content: &str) -> Result<String, String> {
-        nostr::nips::nip44::encrypt(
-            self.keys.secret_key(),
-            to,
-            content,
-            nostr::nips::nip44::Version::V2,
-        )
-        .map_err(|e| format!("encrypt: {e}"))
+        let key = shared_secret(self.keys.secret_key(), to)?;
+        soshal_crypto_core::nip44::encrypt(content.as_bytes(), &key)
+            .map_err(|e| format!("encrypt: {e}"))
     }
 
     fn nip44_decrypt(&self, from: &PublicKey, payload: &str) -> Result<String, String> {
-        nostr::nips::nip44::decrypt(self.keys.secret_key(), from, payload)
-            .map_err(|e| format!("decrypt: {e}"))
+        let key = shared_secret(self.keys.secret_key(), from)?;
+        let plaintext = soshal_crypto_core::nip44::decrypt(payload, &key)
+            .map_err(|e| format!("decrypt: {e}"))?;
+        String::from_utf8(plaintext).map_err(|e| format!("utf8: {e}"))
     }
 }
 

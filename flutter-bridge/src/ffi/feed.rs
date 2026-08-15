@@ -288,11 +288,33 @@ pub fn feed_fetch_thread(event_id: String) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ffi::db;
+
+    fn tmp_db(label: &str) -> String {
+        db::tmp_db(label, "feed")
+    }
+
+    fn insert_post(
+        id: &str,
+        pubkey: &str,
+        content: &str,
+        kind: i64,
+        created_at: i64,
+        tags_json: &str,
+    ) {
+        db::db_execute_raw(format!(
+            "INSERT OR IGNORE INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+             VALUES ('{id}','{pubkey}','{content}',{kind},{created_at},'{tags_json}','synced',0)"
+        ))
+        .unwrap();
+    }
 
     #[test]
     fn test_validate_note() {
         assert!(feed_validate_note("hi".to_string()).unwrap());
         assert!(!feed_validate_note("".to_string()).unwrap());
+        assert!(!feed_validate_note("x".repeat(64001)).unwrap());
+        assert!(feed_validate_note("x".repeat(64000)).unwrap());
     }
 
     #[tokio::test]
@@ -301,6 +323,282 @@ mod tests {
         let compressed = feed_compress_event(event.to_string()).await.unwrap();
         let restored = feed_decompress_event(compressed).await.unwrap();
         assert_eq!(restored, event);
+    }
+
+    #[tokio::test]
+    async fn test_decompress_invalid() {
+        let err = feed_decompress_event(b"not zstd".to_vec())
+            .await
+            .unwrap_err();
+        assert!(err.contains("decompression failed"), "{err}");
+    }
+
+    #[test]
+    fn test_aggregate_chat_reactions() {
+        let input = r#"{"reactions":[{"emoji":"👍","reactorPubkey":"alice"},{"emoji":"👍","reactorPubkey":"self"},{"emoji":"❤️","reactorPubkey":"bob"}],"selfPubkey":"self"}"#;
+        let json = feed_aggregate_chat_reactions(input.to_string()).unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 2, "json: {json}");
+        assert_eq!(arr[0]["emoji"], "❤️");
+        assert_eq!(arr[0]["count"], 1);
+        assert_eq!(arr[0]["hasReacted"], false);
+        assert_eq!(arr[1]["emoji"], "👍");
+        assert_eq!(arr[1]["count"], 2);
+        assert_eq!(arr[1]["hasReacted"], true);
+        assert_eq!(
+            feed_aggregate_chat_reactions("not json".to_string()).unwrap(),
+            "[]"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rank_posts_happy_and_invalid() {
+        let input = r#"[
+            {"stats":{"created_at_secs":100,"likes_count":5,"replies_count":1,"zaps_count":0,"reposts_count":2,"wot_distance":0},"hashtags":["soshal"]},
+            {"stats":{"created_at_secs":200,"likes_count":1,"replies_count":0,"zaps_count":0,"reposts_count":0,"wot_distance":3},"hashtags":[]}
+        ]"#;
+        let ranked = feed_rank_posts(input.to_string()).await.unwrap();
+        let idx: Vec<usize> = serde_json::from_str(&ranked).unwrap();
+        assert_eq!(idx.len(), 2, "ranked: {ranked}");
+        let err = feed_rank_posts("nope".to_string()).await.unwrap_err();
+        assert!(err.contains("invalid stats JSON"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn test_publish_text_note_validation_errors() {
+        let err = feed_publish_text_note(String::new(), "[]".to_string())
+            .await
+            .unwrap_err();
+        assert!(err.contains("content must be 1-64000 chars"), "{err}");
+        let err = feed_publish_text_note("hi".to_string(), "not json".to_string())
+            .await
+            .unwrap_err();
+        assert!(err.contains("invalid tags JSON"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn test_publish_reply_validation_error() {
+        let err = feed_publish_reply(String::new(), "root".to_string(), "reply".to_string())
+            .await
+            .unwrap_err();
+        assert!(err.contains("content must be 1-64000 chars"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn test_reaction_and_delete_require_signer() {
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::signer_lock().unwrap();
+        let err = feed_create_reaction("ev1".to_string(), "👍".to_string())
+            .await
+            .unwrap_err();
+        assert!(err.contains("signer locked"), "{err}");
+        let err = feed_delete_post("ev1".to_string()).await.unwrap_err();
+        assert!(err.contains("signer locked"), "{err}");
+    }
+
+    #[test]
+    fn test_fetch_events_db_paged() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("events");
+        insert_post("p1", "pk1", "first", 1, 3000, "[]");
+        insert_post("p2", "pk2", "second", 1, 2000, "[]");
+        insert_post("p3", "pk3", "third", 1, 1000, "[]");
+        let json =
+            feed_fetch_events(r#"{"limit":2,"offset":0,"filter_type":"any"}"#.to_string()).unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 2, "json: {json}");
+        assert_eq!(arr[0]["event_id"], "p1");
+        assert_eq!(arr[0]["pubkey"], "pk1");
+        assert_eq!(arr[0]["content"], "first");
+        assert_eq!(arr[0]["created_at"], 3000);
+        assert_eq!(arr[0]["reactions"], 0);
+        assert_eq!(arr[0]["liked"], false);
+        let json = feed_fetch_events(r#"{"limit":10,"offset":2,"filter_type":"any"}"#.to_string())
+            .unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["event_id"], "p3");
+        let err = feed_fetch_events("bad".to_string()).unwrap_err();
+        assert!(err.contains("invalid options JSON"), "{err}");
+    }
+
+    #[test]
+    fn test_fetch_events_media_json() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("media");
+        let hash = "a".repeat(64);
+        let tags = format!(r#"[["media","image","blob://{hash}","{hash}","123"]]"#);
+        insert_post("pm", "pk1", "pic", 1, 1000, &tags);
+        insert_post(
+            "pbad",
+            "pk1",
+            "bad",
+            1,
+            900,
+            r#"[["media","video","x","short","1"]]"#,
+        );
+        let json = feed_fetch_events(r#"{"limit":10,"offset":0,"filter_type":"any"}"#.to_string())
+            .unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 2, "json: {json}");
+        let media = arr[0]["media_json"].as_str().unwrap();
+        let mv: serde_json::Value = serde_json::from_str(media).unwrap();
+        assert_eq!(mv["type"], "image");
+        assert_eq!(mv["blob_hash"], hash);
+        assert_eq!(mv["size"], 123);
+        assert!(arr[1]["media_json"].is_null());
+    }
+
+    #[test]
+    fn test_fetch_window_db() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("window");
+        db::db_execute_raw(
+            "INSERT INTO users (pubkey, npub, name) VALUES ('pk1','npub1pk1','tester') ON CONFLICT DO NOTHING"
+                .to_string(),
+        )
+        .unwrap();
+        insert_post("w1", "pk1", "win", 1, 2000, "[]");
+        insert_post("w2", "pk2", "other", 1, 1000, "[]");
+        insert_post("w3", "pk2", "reaction", 7, 3000, "[]");
+        let json = feed_fetch_window(0, 2).unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 2, "json: {json}");
+        assert_eq!(arr[0]["event_id"], "w1");
+        assert_eq!(arr[0]["profile_name"], "tester");
+        assert_eq!(arr[1]["event_id"], "w2");
+        let json = feed_fetch_window(1, 1).unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["event_id"], "w2");
+    }
+
+    #[test]
+    fn test_fetch_thread_db() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("thread");
+        db::db_execute_raw(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+             VALUES ('root','pk1','root post',1,1000,'[]','synced',0)"
+                .to_string(),
+        )
+        .unwrap();
+        db::db_execute_raw(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, root_id) \
+             VALUES ('r1','pk2','reply one',1,2000,'[]','synced',0,'root')"
+                .to_string(),
+        )
+        .unwrap();
+        db::db_execute_raw(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, root_id) \
+             VALUES ('r2','pk2','reply two',1,1500,'[]','synced',0,'root')"
+                .to_string(),
+        )
+        .unwrap();
+        db::db_execute_raw(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+             VALUES ('other','pk3','unrelated',1,3000,'[]','synced',0)"
+                .to_string(),
+        )
+        .unwrap();
+        db::db_execute_raw(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, root_id) \
+             VALUES ('rdel','pk4','deleted',1,2500,'[]','synced',1,'root')"
+                .to_string(),
+        )
+        .unwrap();
+        let json = feed_fetch_thread("root".to_string()).unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 3, "json: {json}");
+        assert_eq!(arr[0]["event_id"], "root");
+        assert_eq!(arr[1]["event_id"], "r2");
+        assert_eq!(arr[2]["event_id"], "r1");
+    }
+
+    #[test]
+    fn test_compute_card_layout() {
+        let req = r#"{"id":"c1","text":{"content":"hello","font_size_px":14,"line_height_factor":1.2,"max_width_px":300,"bold":false,"max_lines":3},"media":[{"w":100,"h":50}]}"#;
+        let json = feed_compute_card_layout(req.to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["id"], "c1");
+        assert!(v["height_px"].as_f64().unwrap() > 0.0);
+        assert_eq!(v["media"].as_array().unwrap().len(), 1);
+        assert!(feed_compute_card_layout("nope".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_compute_card_layouts_batch() {
+        let reqs = r#"[{"id":"a","text":{"content":"x","font_size_px":12,"line_height_factor":1.2,"max_width_px":200,"bold":false,"max_lines":2},"media":[]},{"id":"b","media":[]}]"#;
+        let json = feed_compute_card_layouts(reqs.to_string()).unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 2, "json: {json}");
+        assert_eq!(arr[0]["id"], "a");
+        assert_eq!(arr[1]["id"], "b");
+        assert!(feed_compute_card_layouts("nope".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_freenet_ephemeral_tags() {
+        let json = feed_freenet_ephemeral_tags("contractkey".to_string()).unwrap();
+        let arr: Vec<Vec<String>> = serde_json::from_str(&json).unwrap();
+        assert!(arr.contains(&vec!["freenet".to_string(), "contractkey".to_string()]));
+        assert!(arr.contains(&vec!["ephemeral".to_string(), "true".to_string()]));
+        assert!(arr.contains(&vec!["retention".to_string(), "0".to_string()]));
+    }
+
+    #[test]
+    fn test_profile_entry_from_event() {
+        let ev =
+            r#"{"id":"e1","pubkey":"pk1","content":"hi","created_at":1234,"kind":0,"tags":[]}"#;
+        let json = feed_profile_entry_from_event(ev.to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["pubkey"], "pk1");
+        assert_eq!(v["content"], "hi");
+        assert_eq!(v["created_at"], 1234);
+        let err = feed_profile_entry_from_event("nope".to_string()).unwrap_err();
+        assert!(err.contains("invalid legacy event JSON"), "{err}");
     }
 }
 

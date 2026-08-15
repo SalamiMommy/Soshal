@@ -277,6 +277,9 @@ mod tests {
     #[test]
     fn test_unlock_and_sign_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
         let secret = keys.secret_key().to_secret_hex();
         let pk_hex = keys.public_key().to_hex();
@@ -296,6 +299,9 @@ mod tests {
     #[test]
     fn test_unsigned_event_sign() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
         let json = "{\"pubkey\":\"\",\"created_at\":0,\"kind\":1,\"tags\":[],\"content\":\"hi\"}"
             .to_string();
@@ -317,6 +323,9 @@ mod tests {
     #[test]
     fn test_nip44_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let alice = soshal_nostr_core::keys::generate_keys();
         let bob = soshal_nostr_core::keys::generate_keys();
         signer_unlock(alice.secret_key().to_secret_hex()).unwrap();
@@ -331,6 +340,9 @@ mod tests {
     #[test]
     fn test_keyring_save_unlock_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
         let secret = keys.secret_key().to_secret_hex();
         let pk_hex = keys.public_key().to_hex();
@@ -354,6 +366,9 @@ mod tests {
     #[test]
     fn test_keyring_remove() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
         let secret = keys.secret_key().to_secret_hex();
         let pk_hex = keys.public_key().to_hex();

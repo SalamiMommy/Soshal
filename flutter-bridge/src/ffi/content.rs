@@ -3,12 +3,6 @@
 
 use flutter_rust_bridge::frb;
 use soshal_content_core::compress::{compress_json_dict, decompress_json_dict};
-use soshal_content_core::hashtag;
-
-#[frb(sync, serialize)]
-pub fn content_extract_hashtags(text: String) -> Result<Vec<String>, String> {
-    Ok(hashtag::extract(&text)).into()
-}
 
 /// Compress JSON with the bundled zstd dictionary (feed payloads).
 #[frb(sync, serialize)]
@@ -58,11 +52,14 @@ mod tests {
     #[test]
     fn test_extract_hashtags() {
         assert_eq!(
-            content_extract_hashtags("hello #world and #rust".to_string()).unwrap(),
+            super::super::util::util_extract_hashtags("hello #world and #rust".to_string())
+                .unwrap(),
             vec!["world".to_string(), "rust".to_string()]
         );
-        assert!(content_extract_hashtags("no tags here".to_string())
-            .unwrap()
-            .is_empty());
+        assert!(
+            super::super::util::util_extract_hashtags("no tags here".to_string())
+                .unwrap()
+                .is_empty()
+        );
     }
 }

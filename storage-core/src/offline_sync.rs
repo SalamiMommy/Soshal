@@ -6,17 +6,6 @@ use soshal_crypto_core::hash;
 /// either direction (replay protection + clock-skew bound).
 const MAX_TS_SKEW_SECS: i64 = 7 * 24 * 3600;
 
-#[derive(Deserialize)]
-pub struct EncryptOfflineSyncInput {
-    pub payload_json: String,
-    pub peer_pubkey: String,
-    pub context: String,
-    pub kem_public_key_hex: String,
-    pub dsa_secret_key_hex: String,
-    pub sender_pubkey: Option<String>,
-    pub sender_dsa_pubkey: Option<String>,
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct OfflineSyncEnvelope {
     pub pqc_ct: String,
@@ -26,13 +15,6 @@ pub struct OfflineSyncEnvelope {
     pub dsa_sig: Option<String>,
     #[serde(default)]
     pub ts: Option<i64>,
-}
-
-#[derive(Serialize)]
-pub struct EncryptOfflineSyncOutput {
-    pub success: bool,
-    pub envelope_json: Option<String>,
-    pub error: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -65,90 +47,8 @@ fn derive_conversation_key(shared_secret: &[u8; 32], context: &str) -> Option<[u
     Some(key)
 }
 
-fn fail_encrypt(error: &str) -> String {
-    crate::util::fail_json("envelope_json", error)
-}
-
 fn fail_decrypt(error: &str) -> String {
     crate::util::fail_json("payload_json", error)
-}
-
-pub fn encrypt_offline_sync_json(input: &str) -> String {
-    let input: EncryptOfflineSyncInput = match serde_json::from_str(input) {
-        Ok(v) => v,
-        Err(e) => return fail_encrypt(&format!("JSON parse: {}", e)),
-    };
-
-    // The signature binds the sender identity AND the payload, so a relay
-    // cannot replay the envelope against a different recipient context or
-    // relabel the claimed sender.
-    let sender_pubkey = match input.sender_pubkey.as_deref() {
-        Some(s) if !s.is_empty() => s.to_string(),
-        _ => return fail_encrypt("sender_pubkey is required"),
-    };
-    let sender_dsa_pubkey = match input.sender_dsa_pubkey.as_deref() {
-        Some(s) if !s.is_empty() => s.to_string(),
-        _ => return fail_encrypt("sender_dsa_pubkey is required"),
-    };
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-
-    let compressed = match soshal_content_core::compress::compress(input.payload_json.as_bytes()) {
-        Ok(c) => c,
-        Err(e) => return fail_encrypt(&format!("compress: {}", e)),
-    };
-
-    let (ct_hex, ss_hex) = match soshal_pqc_core::kem::kem_encapsulate(&input.kem_public_key_hex) {
-        Ok(v) => v,
-        Err(e) => return fail_encrypt(&format!("KEM: {}", e)),
-    };
-
-    let ss_arr = match crate::util::hex_to_32_bytes(&ss_hex) {
-        Ok(v) => v,
-        Err(e) => return fail_encrypt(&e),
-    };
-    // Fail closed: if key derivation fails we must not encrypt with a zero
-    // key, and must not attempt to decrypt with one.
-    let conv_key = match derive_conversation_key(&ss_arr, &input.context) {
-        Some(k) => k,
-        None => return fail_encrypt("key derivation failed"),
-    };
-
-    let encrypted = match soshal_crypto_core::nip44::encrypt(&compressed, &conv_key) {
-        Ok(ct) => ct,
-        Err(e) => return fail_encrypt(&format!("NIP-44 encrypt: {}", e)),
-    };
-
-    let sign_msg = format!(
-        "{}|{}|{}|{}|{}",
-        sender_pubkey, sender_dsa_pubkey, ts, ct_hex, encrypted
-    );
-    let dsa_sig = soshal_pqc_core::dsa::dsa_sign(sign_msg.as_bytes(), &input.dsa_secret_key_hex);
-
-    let envelope = OfflineSyncEnvelope {
-        pqc_ct: ct_hex,
-        inner: encrypted,
-        sender_pubkey: Some(sender_pubkey),
-        sender_dsa_pubkey: Some(sender_dsa_pubkey),
-        dsa_sig,
-        ts: Some(ts),
-    };
-
-    let envelope_json = match serde_json::to_string(&envelope) {
-        Ok(s) => s,
-        Err(e) => return fail_encrypt(&format!("envelope serialize: {}", e)),
-    };
-
-    json_out(
-        &EncryptOfflineSyncOutput {
-            success: true,
-            envelope_json: Some(envelope_json),
-            error: None,
-        },
-        &fail_encrypt("serialization failed"),
-    )
 }
 
 pub fn decrypt_offline_sync_json(input: &str) -> String {

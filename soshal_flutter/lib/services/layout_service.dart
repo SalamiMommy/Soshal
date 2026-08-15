@@ -2,8 +2,10 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 
+import '../ffi/raster.dart';
 import 'feed_service.dart';
 
 /// Per-post layout metadata computed in Rust, used by the feed list's
@@ -138,4 +140,39 @@ class LayoutService extends ChangeNotifier {
     if (_heights.isNotEmpty) _ready = true;
     notifyListeners();
   }
+
+  String createRenderSession({required int width, required int height}) =>
+      RustLib.instance.api.crateFfiRenderRenderCreateSession(
+        width: width,
+        height: height,
+      );
+
+  Uint8List renderMeshFrame({
+    required int sessionId,
+    required String nodesJson,
+    required double deltaTime,
+  }) =>
+      RustLib.instance.api.crateFfiRenderRenderComputeMeshFrame(
+        sessionId: PlatformInt64Util.from(sessionId),
+        nodesJson: nodesJson,
+        deltaTime: deltaTime,
+      );
+
+  Future<ImpellerFrameBufferInfo> allocateRasterFrameBuffer({
+    required int width,
+    required int height,
+  }) =>
+      RustLib.instance.api.crateFfiRasterRasterAllocateFrameBuffer(
+        width: width,
+        height: height,
+      );
+
+  Future<bool> signalRasterFrameReady({
+    required int textureId,
+    required BigInt frameTimestampNs,
+  }) =>
+      RustLib.instance.api.crateFfiRasterRasterSignalImpellerFrameReady(
+        textureId: PlatformInt64Util.from(textureId),
+        frameTimestampNs: frameTimestampNs,
+      );
 }

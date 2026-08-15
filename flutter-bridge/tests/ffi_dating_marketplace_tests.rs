@@ -524,9 +524,22 @@ fn test_marketplace_order_escrow_lifecycle() {
         serde_json::from_str(&marketplace::marketplace_get_escrow(escrow2.clone()).unwrap())
             .unwrap();
     assert_eq!(escrow[0]["status"], "disputed");
-    assert!(marketplace::marketplace_release_escrow(escrow2.clone(), seller.clone()).unwrap());
+    assert!(marketplace::marketplace_release_escrow(escrow2.clone(), seller.clone()).is_err());
+    let escrow3 = marketplace::marketplace_create_escrow(
+        order_id.clone(),
+        "".to_string(),
+        seller.clone(),
+        5000,
+    )
+    .unwrap();
+    assert!(marketplace::marketplace_release_escrow(escrow3.clone(), seller.clone()).is_err());
+    db::db_execute_raw(format!(
+        "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id='{escrow3}'"
+    ))
+    .unwrap();
+    assert!(marketplace::marketplace_release_escrow(escrow3.clone(), seller.clone()).unwrap());
     let escrow: serde_json::Value =
-        serde_json::from_str(&marketplace::marketplace_get_escrow(escrow2).unwrap()).unwrap();
+        serde_json::from_str(&marketplace::marketplace_get_escrow(escrow3).unwrap()).unwrap();
     assert_eq!(escrow[0]["status"], "completed");
     assert!(marketplace::marketplace_get_escrow("nonexistent".to_string()).is_err());
     cleanup_db(&path);

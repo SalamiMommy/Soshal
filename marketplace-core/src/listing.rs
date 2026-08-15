@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
+use soshal_common_core::consts::MAX_TAG_VALUE_LEN;
 use soshal_common_core::json_util::{json_in, json_out};
 
-const MAX_TAGS: usize = 100_000;
-const MAX_TAG_VALUE_LEN: usize = 4096;
+const MAX_TAGS_ENTRIES: usize = 100_000;
 const MAX_PRICE: f64 = 1.0e15;
 
 #[derive(Deserialize)]
@@ -52,7 +52,7 @@ struct ListingContent {
 }
 
 fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
-    if ev.tags.len() > MAX_TAGS {
+    if ev.tags.len() > MAX_TAGS_ENTRIES {
         return None;
     }
     let mut d_tag: Option<&str> = None;

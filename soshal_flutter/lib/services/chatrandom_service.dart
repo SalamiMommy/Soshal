@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import 'social_entry.dart';
 
 /// Chat Random Service
 /// Interest-based random pairing: kind-20030 availability announcements and
@@ -78,25 +79,21 @@ class ChatrandomService extends ChangeNotifier with LastErrorMixin {
 }
 
 /// A chatrandom peer event (availability, request or accept).
-class ChatrandomPeer {
-  final String id;
-  final String pubkey;
-  final String content;
-  final int createdAt;
-
+class ChatrandomPeer extends SocialEntry {
   ChatrandomPeer({
-    required this.id,
-    required this.pubkey,
-    required this.content,
-    required this.createdAt,
+    required super.id,
+    required super.pubkey,
+    required super.content,
+    required super.createdAt,
   });
 
   factory ChatrandomPeer.fromJson(Map<String, dynamic> json) {
+    final base = SocialEntry.fromJson(json);
     return ChatrandomPeer(
-      id: json['id'] as String? ?? '',
-      pubkey: json['pubkey'] as String? ?? '',
-      content: json['content'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: base.id,
+      pubkey: base.pubkey,
+      content: base.content,
+      createdAt: base.createdAt,
     );
   }
 }

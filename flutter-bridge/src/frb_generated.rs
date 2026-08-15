@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1091452870;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 162390068;
 
 // Section: executor
 
@@ -576,69 +576,6 @@ fn wire__crate__ffi__calls__calls_fetch_signals_impl(
         },
     )
 }
-fn wire__crate__ffi__calls__calls_ice_config_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "calls_ice_config",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_privacy_level = <String>::sse_decode(&mut deserializer);
-            let api_stun_url = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::calls::calls_ice_config(api_privacy_level, api_stun_url)?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__ffi__calls__calls_sanitize_sdp_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "calls_sanitize_sdp",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_sdp = <String>::sse_decode(&mut deserializer);
-            let api_force_relay = <bool>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::calls::calls_sanitize_sdp(api_sdp, api_force_relay)?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__ffi__calls__calls_send_signal_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -865,36 +802,6 @@ fn wire__crate__ffi__content__content_decompress_json_dict_impl(
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::content::content_decompress_json_dict(api_encoded)?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__ffi__content__content_extract_hashtags_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "content_extract_hashtags",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_text = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::content::content_extract_hashtags(api_text)?;
                 Ok(output_ok)
             })())
         },
@@ -1139,70 +1046,6 @@ fn wire__crate__ffi__crypto__crypto_hmac_sha256_impl(
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::crypto::crypto_hmac_sha256(api_key, api_message)?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__ffi__crypto__crypto_nip44_decrypt_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "crypto_nip44_decrypt",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_payload = <String>::sse_decode(&mut deserializer);
-            let api_sender_pubkey = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::crypto::crypto_nip44_decrypt(api_payload, api_sender_pubkey)?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__ffi__crypto__crypto_nip44_encrypt_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "crypto_nip44_encrypt",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_plaintext = <String>::sse_decode(&mut deserializer);
-            let api_recipient_pubkey = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::crypto::crypto_nip44_encrypt(api_plaintext, api_recipient_pubkey)?;
                 Ok(output_ok)
             })())
         },
@@ -1458,36 +1301,6 @@ fn wire__crate__ffi__crypto__crypto_sha256_impl(
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::crypto::crypto_sha256(api_input)?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__ffi__crypto__crypto_sha256_hex_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "crypto_sha256_hex",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_input = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::crypto::crypto_sha256_hex(api_input)?;
                 Ok(output_ok)
             })())
         },
@@ -5069,40 +4882,6 @@ fn wire__crate__ffi__network__i2p_stop_session_impl(
         },
     )
 }
-fn wire__crate__ffi__identity__identity_block_user_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "identity_block_user",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_blocker_pubkey = <String>::sse_decode(&mut deserializer);
-            let api_target_pubkey = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::identity::identity_block_user(
-                    api_blocker_pubkey,
-                    api_target_pubkey,
-                )?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__ffi__identity__identity_fetch_follows_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -5505,40 +5284,6 @@ fn wire__crate__ffi__identity__identity_store_profile_impl(
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::identity::identity_store_profile(api_profile)?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__ffi__identity__identity_unblock_user_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "identity_unblock_user",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_blocker_pubkey = <String>::sse_decode(&mut deserializer);
-            let api_target_pubkey = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::identity::identity_unblock_user(
-                    api_blocker_pubkey,
-                    api_target_pubkey,
-                )?;
                 Ok(output_ok)
             })())
         },
@@ -7256,38 +7001,6 @@ fn wire__crate__ffi__media__media_verify_chunk_json_impl(
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::media::media_verify_chunk_json(api_input)?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__ffi__messaging__messaging_decrypt_dm_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "messaging_decrypt_dm",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_payload = <String>::sse_decode(&mut deserializer);
-            let api_sender_pubkey = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::messaging::messaging_decrypt_dm(api_payload, api_sender_pubkey)?;
                 Ok(output_ok)
             })())
         },
@@ -9037,78 +8750,6 @@ fn wire__crate__ffi__network__network_reticulum_reset_nodes_impl(
         },
     )
 }
-fn wire__crate__ffi__network__network_reticulum_start_auto_interface_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "network_reticulum_start_auto_interface",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api__pubkey = <String>::sse_decode(&mut deserializer);
-            let api_enabled = <bool>::sse_decode(&mut deserializer);
-            let api_port = <u16>::sse_decode(&mut deserializer);
-            let api_interval_ms = <i64>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::network::network_reticulum_start_auto_interface(
-                    api__pubkey,
-                    api_enabled,
-                    api_port,
-                    api_interval_ms,
-                )?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__ffi__network__network_reticulum_start_transport_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "network_reticulum_start_transport",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_pubkey = <String>::sse_decode(&mut deserializer);
-            let api_bind_addr = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::network::network_reticulum_start_transport(
-                    api_pubkey,
-                    api_bind_addr,
-                )?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__ffi__network__network_reticulum_status_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -10768,6 +10409,297 @@ fn wire__crate__ffi__pin__pin_verify_impl(
         },
     )
 }
+fn wire__crate__ffi__pqc__pqc_dsa_keygen_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pqc_dsa_keygen",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::pqc::pqc_dsa_keygen()?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__pqc__pqc_dsa_sign_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pqc_dsa_sign",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_message_hex = <String>::sse_decode(&mut deserializer);
+            let api_sk_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::pqc::pqc_dsa_sign(api_message_hex, api_sk_hex)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__pqc__pqc_dsa_verify_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pqc_dsa_verify",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sig_hex = <String>::sse_decode(&mut deserializer);
+            let api_message_hex = <String>::sse_decode(&mut deserializer);
+            let api_vk_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok =
+                    crate::ffi::pqc::pqc_dsa_verify(api_sig_hex, api_message_hex, api_vk_hex)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__pqc__pqc_hkdf_sha256_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pqc_hkdf_sha256",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_ikm_hex = <String>::sse_decode(&mut deserializer);
+            let api_salt_hex = <String>::sse_decode(&mut deserializer);
+            let api_info_hex = <String>::sse_decode(&mut deserializer);
+            let api_len = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::pqc::pqc_hkdf_sha256(
+                    api_ikm_hex,
+                    api_salt_hex,
+                    api_info_hex,
+                    api_len,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__pqc__pqc_hybrid_seal_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pqc_hybrid_seal",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_payload_hex = <String>::sse_decode(&mut deserializer);
+            let api_recipient_pk_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok =
+                    crate::ffi::pqc::pqc_hybrid_seal(api_payload_hex, api_recipient_pk_hex)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__pqc__pqc_hybrid_unseal_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pqc_hybrid_unseal",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_ct_hex = <String>::sse_decode(&mut deserializer);
+            let api_nonce_hex = <String>::sse_decode(&mut deserializer);
+            let api_b64 = <String>::sse_decode(&mut deserializer);
+            let api_sk_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::pqc::pqc_hybrid_unseal(
+                    api_ct_hex,
+                    api_nonce_hex,
+                    api_b64,
+                    api_sk_hex,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__pqc__pqc_kem_decaps_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pqc_kem_decaps",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_ciphertext_hex = <String>::sse_decode(&mut deserializer);
+            let api_sk_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::pqc::pqc_kem_decaps(api_ciphertext_hex, api_sk_hex)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__pqc__pqc_kem_encaps_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pqc_kem_encaps",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_recipient_pk_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::pqc::pqc_kem_encaps(api_recipient_pk_hex)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__pqc__pqc_kem_keygen_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pqc_kem_keygen",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::pqc::pqc_kem_keygen()?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__protocol_handler__protocol_get_metadata_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -10847,36 +10779,6 @@ fn wire__crate__ffi__protocol_handler__protocol_handle_request_impl(
                     .await,
                 )
             }
-        },
-    )
-}
-fn wire__crate__ffi__push__push_register_token_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "push_register_token",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_token = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::push::push_register_token(api_token)?;
-                Ok(output_ok)
-            })())
         },
     )
 }
@@ -15396,24 +15298,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__calls__calls_ice_config(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__calls__calls_ice_config_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__calls__calls_sanitize_sdp(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__calls__calls_sanitize_sdp_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__calls__calls_send_signal(
         port_: i64,
         ptr_: *mut u8,
@@ -15472,15 +15356,6 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__content__content_decompress_json_dict_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__content__content_extract_hashtags(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__content__content_extract_hashtags_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -15563,24 +15438,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__crypto__crypto_nip44_decrypt(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__crypto__crypto_nip44_decrypt_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__crypto__crypto_nip44_encrypt(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__crypto__crypto_nip44_encrypt_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__crypto__crypto_pir_evaluate_query(
         port_: i64,
         ptr_: *mut u8,
@@ -15656,15 +15513,6 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__crypto__crypto_sha256_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__crypto__crypto_sha256_hex(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__crypto__crypto_sha256_hex_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -16660,15 +16508,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_block_user(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__identity__identity_block_user_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_fetch_follows(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -16787,15 +16626,6 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__identity__identity_store_profile_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_unblock_user(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__identity__identity_unblock_user_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -17341,15 +17171,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_decrypt_dm(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__messaging__messaging_decrypt_dm_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_fetch_conversations(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -17889,32 +17710,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__network__network_reticulum_start_auto_interface(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__network__network_reticulum_start_auto_interface_impl(
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__network__network_reticulum_start_transport(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__network__network_reticulum_start_transport_impl(
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
-    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__network__network_reticulum_status(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -18441,6 +18236,87 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__pqc__pqc_dsa_keygen(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_dsa_keygen_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__pqc__pqc_dsa_sign(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_dsa_sign_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__pqc__pqc_dsa_verify(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_dsa_verify_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__pqc__pqc_hkdf_sha256(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_hkdf_sha256_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__pqc__pqc_hybrid_seal(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_hybrid_seal_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__pqc__pqc_hybrid_unseal(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_hybrid_unseal_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__pqc__pqc_kem_decaps(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_kem_decaps_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__pqc__pqc_kem_encaps(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_kem_encaps_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__pqc__pqc_kem_keygen(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_kem_keygen_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__protocol_handler__protocol_get_metadata(
         port_: i64,
         ptr_: *mut u8,
@@ -18468,15 +18344,6 @@ mod io {
             rust_vec_len_,
             data_len_,
         )
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__push__push_register_token(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__push__push_register_token_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -19888,24 +19755,6 @@ mod web {
     }
 
     #[wasm_bindgen]
-    pub fn wire__crate__ffi__calls__calls_ice_config(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__calls__calls_ice_config_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__calls__calls_sanitize_sdp(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__calls__calls_sanitize_sdp_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
     pub fn wire__crate__ffi__calls__calls_send_signal(
         port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -19964,15 +19813,6 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__content__content_decompress_json_dict_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__content__content_extract_hashtags(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__content__content_extract_hashtags_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -20055,24 +19895,6 @@ mod web {
     }
 
     #[wasm_bindgen]
-    pub fn wire__crate__ffi__crypto__crypto_nip44_decrypt(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__crypto__crypto_nip44_decrypt_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__crypto__crypto_nip44_encrypt(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__crypto__crypto_nip44_encrypt_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
     pub fn wire__crate__ffi__crypto__crypto_pir_evaluate_query(
         port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -20148,15 +19970,6 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__crypto__crypto_sha256_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__crypto__crypto_sha256_hex(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__crypto__crypto_sha256_hex_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -21152,15 +20965,6 @@ mod web {
     }
 
     #[wasm_bindgen]
-    pub fn wire__crate__ffi__identity__identity_block_user(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__identity__identity_block_user_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
     pub fn wire__crate__ffi__identity__identity_fetch_follows(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -21279,15 +21083,6 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__identity__identity_store_profile_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__identity__identity_unblock_user(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__identity__identity_unblock_user_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -21833,15 +21628,6 @@ mod web {
     }
 
     #[wasm_bindgen]
-    pub fn wire__crate__ffi__messaging__messaging_decrypt_dm(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__messaging__messaging_decrypt_dm_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
     pub fn wire__crate__ffi__messaging__messaging_fetch_conversations(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -22381,32 +22167,6 @@ mod web {
     }
 
     #[wasm_bindgen]
-    pub fn wire__crate__ffi__network__network_reticulum_start_auto_interface(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__network__network_reticulum_start_auto_interface_impl(
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__network__network_reticulum_start_transport(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__network__network_reticulum_start_transport_impl(
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
-    #[wasm_bindgen]
     pub fn wire__crate__ffi__network__network_reticulum_status(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -22933,6 +22693,87 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__pqc__pqc_dsa_keygen(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_dsa_keygen_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__pqc__pqc_dsa_sign(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_dsa_sign_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__pqc__pqc_dsa_verify(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_dsa_verify_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__pqc__pqc_hkdf_sha256(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_hkdf_sha256_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__pqc__pqc_hybrid_seal(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_hybrid_seal_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__pqc__pqc_hybrid_unseal(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_hybrid_unseal_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__pqc__pqc_kem_decaps(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_kem_decaps_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__pqc__pqc_kem_encaps(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_kem_encaps_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__pqc__pqc_kem_keygen(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__pqc__pqc_kem_keygen_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__protocol_handler__protocol_get_metadata(
         port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -22960,15 +22801,6 @@ mod web {
             rust_vec_len_,
             data_len_,
         )
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__push__push_register_token(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__push__push_register_token_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]

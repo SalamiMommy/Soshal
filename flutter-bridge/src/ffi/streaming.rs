@@ -188,33 +188,19 @@ pub fn streaming_start_live(
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
-    let row = soshal_db_core::repos::post::PostRow {
-        id: event_id,
-        pubkey: broadcaster_pubkey,
+    super::db::upsert_post_row(
+        event_id,
+        broadcaster_pubkey,
         content,
-        kind: KIND_LIVE,
-        created_at: soshal_common_core::format::now_secs(),
-        tags_json: serde_json::to_string(&vec![
+        KIND_LIVE,
+        soshal_common_core::format::now_secs(),
+        serde_json::to_string(&vec![
             vec!["d".to_string(), stream_url],
             vec!["status".to_string(), "live".to_string()],
         ])
         .unwrap_or_default(),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: Some(title),
-        sync_status: "pending".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-    };
-    super::db::with_db_result(|db| {
-        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
-        Ok(())
-    })?;
+        Some(title),
+    )?;
     Ok(signed_json).into()
 }
 
@@ -304,33 +290,19 @@ pub fn streaming_post_story(
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
-    let row = soshal_db_core::repos::post::PostRow {
-        id: event_id,
-        pubkey: author_pubkey,
-        content: content_str,
-        kind: KIND_STORY,
-        created_at: soshal_common_core::format::now_secs(),
-        tags_json: serde_json::to_string(&vec![
+    super::db::upsert_post_row(
+        event_id,
+        author_pubkey,
+        content_str,
+        KIND_STORY,
+        soshal_common_core::format::now_secs(),
+        serde_json::to_string(&vec![
             vec!["d".to_string(), "soshal_story".to_string()],
             vec!["expiration".to_string(), expiry.to_string()],
         ])
         .unwrap_or_default(),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: None,
-        sync_status: "pending".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-    };
-    super::db::with_db_result(|db| {
-        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
-        Ok(())
-    })?;
+        None,
+    )?;
     Ok(signed_json).into()
 }
 

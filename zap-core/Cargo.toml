@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 serde_json = { workspace = true }
 soshal-nostr-core = { path = "../nostr-core" }
-regex = { workspace = true }
 serde = { workspace = true }
 url = { workspace = true }
 soshal-common-core = { path = "../common-core" }

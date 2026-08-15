@@ -548,19 +548,24 @@ pub async fn freenet_subscribe(
 // I2P FFI functions
 // ---------------------------------------------------------------------------
 
-/// Connects to I2P SAM bridge
-#[frb(sync, serialize)]
-pub fn i2p_connect(sam_host: String, sam_port: u16) -> Result<bool, String> {
-    use soshal_network_core::i2p_sam::I2PSamClient;
-
-    let mut client = I2PSamClient::new(sam_host, sam_port);
+fn connect_i2p(
+    sam_host: String,
+    sam_port: u16,
+) -> Result<soshal_network_core::i2p_sam::I2PSamClient, String> {
+    let mut client = soshal_network_core::i2p_sam::I2PSamClient::new(sam_host, sam_port);
     client
         .connect()
         .map_err(|e| format!("I2P connection failed: {e}"))?;
-
     client
         .handshake()
         .map_err(|e| format!("I2P handshake failed: {e}"))?;
+    Ok(client)
+}
+
+/// Connects to I2P SAM bridge
+#[frb(sync, serialize)]
+pub fn i2p_connect(sam_host: String, sam_port: u16) -> Result<bool, String> {
+    connect_i2p(sam_host, sam_port)?;
 
     Ok(true)
 }
@@ -573,16 +578,7 @@ pub fn i2p_create_session(
     session_id: String,
     destination: Option<String>,
 ) -> Result<String, String> {
-    use soshal_network_core::i2p_sam::I2PSamClient;
-
-    let mut client = I2PSamClient::new(sam_host, sam_port);
-    client
-        .connect()
-        .map_err(|e| format!("I2P connection failed: {e}"))?;
-
-    client
-        .handshake()
-        .map_err(|e| format!("I2P handshake failed: {e}"))?;
+    let mut client = connect_i2p(sam_host, sam_port)?;
 
     let response = client
         .create_session(&session_id, destination.as_deref())
@@ -594,16 +590,7 @@ pub fn i2p_create_session(
 /// Generates a new I2P destination
 #[frb(sync, serialize)]
 pub fn i2p_generate_destination(sam_host: String, sam_port: u16) -> Result<String, String> {
-    use soshal_network_core::i2p_sam::I2PSamClient;
-
-    let mut client = I2PSamClient::new(sam_host, sam_port);
-    client
-        .connect()
-        .map_err(|e| format!("I2P connection failed: {e}"))?;
-
-    client
-        .handshake()
-        .map_err(|e| format!("I2P handshake failed: {e}"))?;
+    let mut client = connect_i2p(sam_host, sam_port)?;
 
     let destination = client
         .generate_destination()
@@ -620,16 +607,7 @@ pub fn i2p_connect_to_destination(
     session_id: String,
     destination: String,
 ) -> Result<bool, String> {
-    use soshal_network_core::i2p_sam::I2PSamClient;
-
-    let mut client = I2PSamClient::new(sam_host, sam_port);
-    client
-        .connect()
-        .map_err(|e| format!("I2P connection failed: {e}"))?;
-
-    client
-        .handshake()
-        .map_err(|e| format!("I2P handshake failed: {e}"))?;
+    let mut client = connect_i2p(sam_host, sam_port)?;
 
     client
         .create_session(&session_id, None)
@@ -768,33 +746,6 @@ pub struct ReticulumStatusDto {
     pub tx_packets: u64,
 }
 
-/// Start Reticulum UDP transport on the given bind address and pubkey.
-#[frb(sync, serialize)]
-pub fn network_reticulum_start_transport(
-    pubkey: String,
-    bind_addr: String,
-) -> Result<String, String> {
-    let mut guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.is_some() {
-        return Err("Reticulum already running".to_string());
-    }
-
-    let mut node = soshal_network_core::reticulum::ReticulumNode::new(&pubkey);
-    node.start_udp_transport(&bind_addr)
-        .map_err(|e| format!("Failed to start UDP transport: {e}"))?;
-
-    let status = ReticulumStatusDto {
-        running: true,
-        destination_hash: node.destination.to_hex(),
-        active_routes: 0,
-        rx_packets: 0,
-        tx_packets: 0,
-    };
-
-    *guard = Some(node);
-    serde_json::to_string(&status).map_err(|e| format!("serialize status: {e}"))
-}
-
 /// Stop Reticulum transport.
 #[frb(sync, serialize)]
 pub fn network_reticulum_stop() -> Result<bool, String> {
@@ -837,31 +788,6 @@ pub fn network_reticulum_status() -> Result<String, String> {
             };
             serde_json::to_string(&status).map_err(|e| format!("serialize status: {e}"))
         }
-    }
-}
-
-/// Start Reticulum AutoInterface for peer discovery.
-#[frb(sync, serialize)]
-pub fn network_reticulum_start_auto_interface(
-    _pubkey: String,
-    enabled: bool,
-    port: u16,
-    interval_ms: i64,
-) -> Result<String, String> {
-    let mut guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
-    match guard.as_mut() {
-        Some(node) => {
-            let config = soshal_network_core::reticulum::auto_interface::AutoInterfaceConfig {
-                enabled,
-                bind_port: port,
-                discovery_interval_ms: interval_ms as u64,
-            };
-            node.start_auto_interface(config)
-                .map_err(|e| format!("Failed to start AutoInterface: {e}"))?;
-
-            network_reticulum_status()
-        }
-        None => Err("Reticulum not initialized".to_string()),
     }
 }
 
@@ -908,6 +834,196 @@ mod tests {
         let e = super::network_notify_interface_change("10.0.0.1".to_string()).unwrap_err();
         assert!(e.contains("Invalid IP address format"), "got {e}");
         assert!(super::network_notify_interface_change("10.0.0.1:9999".to_string()).is_ok());
+    }
+
+    #[test]
+    fn test_transport_mode_roundtrip() {
+        for name in ["clearnet", "auto", "i2p"] {
+            assert!(super::network_set_transport_mode(name.to_string()).unwrap());
+            assert_eq!(super::network_get_transport_mode().unwrap(), name);
+        }
+        assert!(super::network_set_transport_mode("bogus".to_string()).is_err());
+        assert!(super::network_set_transport_mode("clearnet".to_string()).unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_multi_bearer_state_pure() {
+        let state = super::network_get_multi_bearer_status("pk_test_1".to_string())
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&state).unwrap();
+        assert_eq!(v["own_pubkey"], "pk_test_1");
+        assert_eq!(v["ble_active"], true);
+        assert_eq!(v["wifi_direct_connected"], false);
+    }
+
+    #[tokio::test]
+    async fn test_ble_beacon_pure_logic() {
+        let dev = soshal_network_core::ble::device_name("abcdef1234567890");
+        let beacon = format!("{dev}:deadbeefcafe0000");
+        let call = |b: &str, local: &str| {
+            super::network_process_ble_beacon(b.to_string(), local.to_string(), "pk_x".to_string())
+        };
+        assert_eq!(
+            call(&beacon, "0000000000000000").await.unwrap(),
+            Some("abcdef123456".to_string())
+        );
+        assert_eq!(call(&beacon, "deadbeefcafe0000").await.unwrap(), None);
+        assert_eq!(call("malformed", "0000000000000000").await.unwrap(), None);
+        assert_eq!(
+            call("other:deadbeefcafe0000", "0000000000000000")
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn test_prolly_tree_reconcile_pure() {
+        let kv = vec![
+            ("a".to_string(), "1".to_string()),
+            ("b".to_string(), "2".to_string()),
+        ];
+        let tree = soshal_sync_core::prolly_tree::ProllyTree::build(&kv);
+        let kv_json = serde_json::to_string(&kv).unwrap();
+        let ok = super::network_reconcile_prolly_tree(kv_json.clone(), tree.root_hash).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&ok)
+                .unwrap()
+                .as_str(),
+            Some("Match")
+        );
+        let diff =
+            super::network_reconcile_prolly_tree(kv_json, "different-root".to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&diff).unwrap();
+        assert_eq!(v["RequestBranch"]["node_hash"], "different-root");
+        assert_eq!(v["RequestBranch"]["level"], 0);
+    }
+
+    #[test]
+    fn test_zk_wot_proof_rejects_garbage() {
+        assert!(!super::network_verify_zk_wot_proof(
+            "".to_string(),
+            "root".to_string(),
+            "[]".to_string()
+        )
+        .unwrap());
+        assert!(!super::network_verify_zk_wot_proof(
+            "not json".to_string(),
+            "root".to_string(),
+            "[]".to_string()
+        )
+        .unwrap());
+        assert!(!super::network_verify_zk_wot_proof(
+            "{}".to_string(),
+            "root".to_string(),
+            "[\"n1\"]".to_string()
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn test_skademlia_node_id_pow() {
+        let mut found = None;
+        for nonce in 0..1_000_000u64 {
+            if let Some(id) = super::network_skademlia_generate_node_id(
+                "pow_test_pubkey".to_string(),
+                nonce,
+                nonce,
+            )
+            .unwrap()
+            {
+                found = Some(id);
+                break;
+            }
+        }
+        assert_eq!(found.expect("pow nonce found").len(), 64);
+    }
+
+    #[test]
+    fn test_reticulum_address_derivation() {
+        let a1 = super::reticulum_address_from_pubkey("npub_test".to_string()).unwrap();
+        let a2 = super::reticulum_address_from_pubkey("npub_test".to_string()).unwrap();
+        let a3 = super::reticulum_address_from_pubkey("npub_other".to_string()).unwrap();
+        assert_eq!(a1, a2);
+        assert_ne!(a1, a3);
+        let v: serde_json::Value = serde_json::from_str(&a1).unwrap();
+        assert_eq!(v.as_array().unwrap().len(), 16);
+        let aspect =
+            super::reticulum_address_from_aspect("soshal.app".to_string(), "feed".to_string())
+                .unwrap();
+        let v2: serde_json::Value = serde_json::from_str(&aspect).unwrap();
+        assert_eq!(v2.as_array().unwrap().len(), 16);
+    }
+
+    #[test]
+    fn test_reticulum_request_link_pure() {
+        let dest = soshal_network_core::reticulum::address::ReticulumAddress::from_aspect(
+            "soshal.app",
+            "feed",
+        );
+        let json = super::reticulum_request_link("ignored".to_string(), dest.to_hex()).unwrap();
+        assert!(serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .is_object());
+    }
+
+    #[test]
+    fn test_i2p_session_idle() {
+        assert!(!super::i2p_stop_session().unwrap());
+        let v: serde_json::Value =
+            serde_json::from_str(&super::i2p_session_status().unwrap()).unwrap();
+        assert_eq!(v["running"], false);
+        assert!(v["destination"].is_null());
+    }
+
+    #[test]
+    fn test_reticulum_static_idle() {
+        assert!(super::network_reticulum_stop().unwrap());
+        let v: serde_json::Value =
+            serde_json::from_str(&super::network_reticulum_status().unwrap()).unwrap();
+        assert_eq!(v["running"], false);
+        assert_eq!(super::network_reticulum_get_active_links().unwrap(), "[]");
+        assert!(super::network_reticulum_prune_stale_links().is_err());
+        assert!(super::network_reticulum_prune_routes(0).is_err());
+        assert!(super::network_reticulum_close_link("00".repeat(16)).is_err());
+        assert!(super::network_reticulum_announce("pk".to_string()).is_err());
+        assert!(super::network_reticulum_reset_nodes().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_relay_error_paths_without_client() {
+        assert!(super::network_init_relays(vec![]).await.is_err());
+        assert!(
+            super::network_init_relays(vec!["http://10.0.0.1:7777".to_string()])
+                .await
+                .is_err()
+        );
+        assert!(super::network_add_relay("http://10.0.0.1:7777".to_string())
+            .await
+            .is_err());
+        let e = super::network_add_relay("wss://relay.damus.io".to_string())
+            .await
+            .unwrap_err();
+        assert!(e.contains("not initialized"), "got {e}");
+        assert!(super::network_remove_relay("not a url".to_string())
+            .await
+            .is_err());
+        assert!(super::network_get_relay_status().await.is_err());
+        assert!(super::network_relay_connection_status().await.is_err());
+        assert!(super::network_subscribe("not json".to_string())
+            .await
+            .is_err());
+        assert!(super::network_subscribe("{\"kinds\":[1]}".to_string())
+            .await
+            .is_err());
+        assert!(super::network_query_events("not json".to_string())
+            .await
+            .is_err());
+        assert!(super::network_publish_event("not json".to_string())
+            .await
+            .is_err());
+        assert!(super::network_unsubscribe("any".to_string()).await.is_err());
     }
 }
 

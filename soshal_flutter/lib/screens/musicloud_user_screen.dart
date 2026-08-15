@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/music_service.dart';
 import '../utils/format.dart';
-import '../widgets/error_state_text.dart';
+import '../widgets/user_content_list.dart';
 
 /// Musicloud user page: one author's published tracks (kind 31022).
 class MusicloudUserScreen extends StatefulWidget {
@@ -80,100 +80,54 @@ class _MusicloudUserScreenState extends State<MusicloudUserScreen> {
   Widget build(BuildContext context) {
     final tracks = context.watch<MusicService>().tracks;
     final error = context.watch<MusicService>().lastError;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Music')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: tracks.isEmpty
-                  ? ListView(
-                      children: [
-                        const SizedBox(height: 120),
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.music_note,
-                                  size: 56,
-                                  color: Theme.of(context).colorScheme.outline,
-                                ),
-                                const SizedBox(height: 16),
-                                Text('No tracks published',
-                                    style:
-                                        Theme.of(context).textTheme.titleLarge),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'This author has not published any Musicloud tracks yet.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  : ListView.separated(
-                      itemCount: tracks.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final track = tracks[index];
-                        return ListTile(
-                          leading: track.thumbnail.isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    track.thumbnail,
-                                    width: 48,
-                                    height: 48,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        _trackIcon(context),
-                                  ),
-                                )
-                              : _trackIcon(context),
-                          title: Text(
-                            track.title.isEmpty
-                                ? 'Untitled track'
-                                : track.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            [
-                              shortPubkey(track.pubkey),
-                              relativeTime(track.createdAt),
-                              if (track.hashtags.isNotEmpty)
-                                track.hashtags.map((h) => '#$h').join(' '),
-                            ].join(' · '),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.open_in_new),
-                            tooltip: 'Track URL',
-                            onPressed: () => _openTrack(track),
-                          ),
-                          onTap: () => _openTrack(track),
-                        );
-                      },
-                    ),
-            ),
-      bottomNavigationBar: error != null && error.isNotEmpty
-          ? Material(
-              color: Theme.of(context).colorScheme.errorContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: ErrorStateText('Error: $error'),
-              ),
-            )
-          : null,
+    return UserContentList(
+      title: 'Music',
+      loading: _loading,
+      onRefresh: _load,
+      error: error,
+      emptyIcon: Icons.music_note,
+      emptyTitle: 'No tracks published',
+      emptyBody:
+          'This author has not published any Musicloud tracks yet.',
+      itemCount: tracks.length,
+      itemBuilder: (context, index) {
+        final track = tracks[index];
+        return ListTile(
+          leading: track.thumbnail.isNotEmpty
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    track.thumbnail,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _trackIcon(context),
+                  ),
+                )
+              : _trackIcon(context),
+          title: Text(
+            track.title.isEmpty ? 'Untitled track' : track.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            [
+              shortPubkey(track.pubkey),
+              relativeTime(track.createdAt),
+              if (track.hashtags.isNotEmpty)
+                track.hashtags.map((h) => '#$h').join(' '),
+            ].join(' · '),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.open_in_new),
+            tooltip: 'Track URL',
+            onPressed: () => _openTrack(track),
+          ),
+          onTap: () => _openTrack(track),
+        );
+      },
     );
   }
 

@@ -50,7 +50,7 @@ mod ffi_tests {
 
     #[test]
     fn test_crypto_sha256_hex() {
-        let hash = crypto::crypto_sha256_hex("hello world".to_string()).unwrap();
+        let hash = util::util_sha256_hex("hello world".to_string()).unwrap();
         assert_eq!(
             hash,
             "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"

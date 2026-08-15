@@ -45,12 +45,6 @@ pub async fn messaging_send_dm(
     Ok(signed_json).into()
 }
 
-/// Decrypt a DM payload from `sender_pubkey` with the unlocked signer key.
-#[frb(sync, serialize)]
-pub fn messaging_decrypt_dm(payload: String, sender_pubkey: String) -> Result<String, String> {
-    super::signer::signer_nip44_decrypt(payload, sender_pubkey)
-}
-
 /// Deterministic conversation id for a DM pair: sorted pubkeys joined by
 /// `:`, prefixed `conv:`.
 pub(crate) fn conv_id(my_pubkey: &str, other_pubkey: &str) -> String {
@@ -171,6 +165,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_send_dm_requires_unlocked_signer() {
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         super::super::signer::signer_lock().unwrap();
         let result = messaging_send_dm("hi".to_string(), "a".repeat(64)).await;
         assert!(result.is_err());

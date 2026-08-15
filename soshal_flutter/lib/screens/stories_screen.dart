@@ -73,6 +73,7 @@ class _StoriesScreenState extends State<StoriesScreen> {
       ),
     );
     if (emoji == null) return;
+    if (!mounted) return;
     try {
       final session = context.read<SessionService>();
       final pubkey = session.activePubkey;

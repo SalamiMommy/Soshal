@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/minis_service.dart';
+import '../widgets/user_content_list.dart';
 
 /// Minis user page: lists fetched minis. Mini URLs do not carry author
 /// information, so this shows all fetched minis with the author in context.
@@ -77,68 +78,32 @@ class _MinisUserScreenState extends State<MinisUserScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Minis')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: _minis.isEmpty
-                  ? ListView(
-                      children: [
-                        const SizedBox(height: 120),
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.apps,
-                                  size: 56,
-                                  color: Theme.of(context).colorScheme.outline,
-                                ),
-                                const SizedBox(height: 16),
-                                Text('No minis yet',
-                                    style:
-                                        Theme.of(context).textTheme.titleLarge),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'No minis available. Mini URLs carry no author, so this list shows the full fetched registry.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  : ListView.separated(
-                      itemCount: _minis.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final url = _minis[index];
-                        return ListTile(
-                          leading: Icon(
-                            Icons.apps,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          title: Text(
-                            url,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle:
-                              Text('Mini app URL · viewed by ${widget.pubkey}'),
-                          trailing: const Icon(Icons.open_in_new),
-                          onTap: () => _openMini(url),
-                        );
-                      },
-                    ),
-            ),
+    return UserContentList(
+      title: 'Minis',
+      loading: _loading,
+      onRefresh: _load,
+      emptyIcon: Icons.apps,
+      emptyTitle: 'No minis yet',
+      emptyBody:
+          'No minis available. Mini URLs carry no author, so this list shows the full fetched registry.',
+      itemCount: _minis.length,
+      itemBuilder: (context, index) {
+        final url = _minis[index];
+        return ListTile(
+          leading: Icon(
+            Icons.apps,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          title: Text(
+            url,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text('Mini app URL · viewed by ${widget.pubkey}'),
+          trailing: const Icon(Icons.open_in_new),
+          onTap: () => _openMini(url),
+        );
+      },
     );
   }
 }

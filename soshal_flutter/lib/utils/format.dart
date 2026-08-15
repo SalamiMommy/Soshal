@@ -25,6 +25,10 @@ String firstChars(String s, int n) => s.length <= n ? s : s.substring(0, n);
 String prefixEllipsis(String s, int n, {String ellipsis = '…'}) =>
     s.length <= n ? s : '${s.substring(0, n)}$ellipsis';
 
+/// Bytes as lowercase hex, each byte zero-padded to 2 chars.
+String bytesToHex(List<int> bytes) =>
+    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
 /// Local `yyyy-MM-dd HH:mm` timestamp; empty string when `unix <= 0`.
 String formatTimestamp(int unix) {
   if (unix <= 0) return '';

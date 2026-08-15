@@ -56,6 +56,7 @@ tmp/
 
 # Test coverage output
 coverage/
+lcov.info
 *.profraw
 *.profdata
 
@@ -68,3 +69,11 @@ assets/*.wasm
 # Build artifacts that must not be committed
 *.apk
 *.idsig
+
+# Build artifacts
+soshal_flutter/build/
+target/
+*.apk
+*.idsig
+__pycache__/
+*.pyc

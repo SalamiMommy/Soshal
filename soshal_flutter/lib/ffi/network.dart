@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `client_guard`, `i2p_active`, `i2p_socks_addr`, `transport_mode`
+// These functions are ignored because they are not marked as `pub`: `client_guard`, `connect_i2p`, `i2p_active`, `i2p_socks_addr`, `transport_mode`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `RelayInfo`, `ReticulumStatusDto`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 
@@ -259,12 +259,6 @@ bool networkNotifyInterfaceChange({required String newIp}) =>
 String networkGetSysDiagnostics() =>
     RustLib.instance.api.crateFfiNetworkNetworkGetSysDiagnostics();
 
-/// Start Reticulum UDP transport on the given bind address and pubkey.
-String networkReticulumStartTransport(
-        {required String pubkey, required String bindAddr}) =>
-    RustLib.instance.api.crateFfiNetworkNetworkReticulumStartTransport(
-        pubkey: pubkey, bindAddr: bindAddr);
-
 /// Stop Reticulum transport.
 bool networkReticulumStop() =>
     RustLib.instance.api.crateFfiNetworkNetworkReticulumStop();
@@ -272,15 +266,6 @@ bool networkReticulumStop() =>
 /// Get current Reticulum status.
 String networkReticulumStatus() =>
     RustLib.instance.api.crateFfiNetworkNetworkReticulumStatus();
-
-/// Start Reticulum AutoInterface for peer discovery.
-String networkReticulumStartAutoInterface(
-        {required String pubkey,
-        required bool enabled,
-        required int port,
-        required PlatformInt64 intervalMs}) =>
-    RustLib.instance.api.crateFfiNetworkNetworkReticulumStartAutoInterface(
-        pubkey: pubkey, enabled: enabled, port: port, intervalMs: intervalMs);
 
 /// Announce the active Reticulum destination.
 bool networkReticulumAnnounce({required String pubkey}) => RustLib.instance.api

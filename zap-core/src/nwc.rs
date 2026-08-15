@@ -185,3 +185,182 @@ pub async fn nwc_send_request<
     .map_err(|e| format!("nwc response: {}", e))?;
     serde_json::to_value(&response).map_err(|e| format!("serialize: {}", e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        get_balance_request, make_invoice_request, parse_nwc_uri, pay_invoice_request,
+        validate_pay_invoice, NwcConnectionInfo,
+    };
+    use crate::NWC_MAX_PAY_SATS;
+    use nostr::nips::nip47::{ErrorCode, Method, RequestParams, Response, ResponseResult};
+    use soshal_nostr_core::nostr;
+
+    fn valid_uri() -> String {
+        format!(
+            "nostr+walletconnect://{}?relay=wss://relay.example.com&secret={}",
+            "a".repeat(64),
+            "b".repeat(64)
+        )
+    }
+
+    #[test]
+    fn uri_parses_valid() {
+        let info = parse_nwc_uri(&valid_uri()).unwrap();
+        assert_eq!(info.wallet_pubkey, "a".repeat(64));
+        assert_eq!(info.relay_url, "wss://relay.example.com");
+        assert_eq!(info.secret_hex, "b".repeat(64));
+        assert!(info.lud16.is_none());
+    }
+
+    #[test]
+    fn uri_parses_with_lud16() {
+        let info = parse_nwc_uri(&format!("{}&lud16=me@example.com", valid_uri())).unwrap();
+        assert_eq!(info.lud16.as_deref(), Some("me@example.com"));
+    }
+
+    #[test]
+    fn uri_round_trips_through_nostr_crate() {
+        let parsed = nostr::nips::nip47::NostrWalletConnectUri::parse(valid_uri()).unwrap();
+        assert_eq!(parsed.public_key.to_string(), "a".repeat(64));
+        assert_eq!(parsed.secret.to_secret_hex(), "b".repeat(64));
+        let re = nostr::nips::nip47::NostrWalletConnectUri::parse(parsed.to_string()).unwrap();
+        assert_eq!(re.public_key, parsed.public_key);
+        assert_eq!(re.secret, parsed.secret);
+        assert_eq!(re.relays, parsed.relays);
+    }
+
+    #[test]
+    fn uri_rejects_invalid() {
+        let good = valid_uri();
+        let pubkey = "a".repeat(64);
+        let secret = "b".repeat(64);
+        assert!(parse_nwc_uri("").is_err());
+        assert!(parse_nwc_uri(&"x".repeat(4097)).is_err());
+        assert!(parse_nwc_uri("http://example.com").is_err());
+        assert!(parse_nwc_uri(&good.replace(&pubkey, "short")).is_err());
+        assert!(parse_nwc_uri(&good.replace(&pubkey, &"z".repeat(64))).is_err());
+        assert!(parse_nwc_uri(&good.replace("wss://", "ws://")).is_err());
+        assert!(parse_nwc_uri(&good.replace("relay=wss://", "relay=")).is_err());
+        assert!(parse_nwc_uri(&good.replace("relay.example.com", "127.0.0.1")).is_err());
+        assert!(parse_nwc_uri(&good.replace("relay.example.com", "localhost")).is_err());
+        assert!(parse_nwc_uri(&good.replace("&secret=", "&")).is_err());
+        assert!(parse_nwc_uri(&good.replace(&secret, &"c".repeat(31))).is_err());
+        assert!(parse_nwc_uri(&good.replace(&secret, &"c".repeat(129))).is_err());
+        let oversize = format!(
+            "nostr+walletconnect://{}?relay=wss://relay.example.com&secret={}",
+            "a".repeat(4000),
+            secret
+        );
+        assert!(parse_nwc_uri(&oversize).is_err());
+    }
+
+    #[test]
+    fn uri_secret_length_boundaries() {
+        let base = format!(
+            "nostr+walletconnect://{}?relay=wss://relay.example.com&secret=",
+            "a".repeat(64)
+        );
+        assert!(parse_nwc_uri(&format!("{base}{}", "c".repeat(32))).is_ok());
+        assert!(parse_nwc_uri(&format!("{base}{}", "c".repeat(128))).is_ok());
+        assert!(parse_nwc_uri(&format!("{base}{}", "c".repeat(31))).is_err());
+        assert!(parse_nwc_uri(&format!("{base}{}", "c".repeat(129))).is_err());
+    }
+
+    #[test]
+    fn response_envelope_parses() {
+        let resp =
+            Response::from_json(r#"{"result_type":"get_balance","result":{"balance":250000}}"#)
+                .unwrap();
+        assert_eq!(resp.result_type, Method::GetBalance);
+        assert!(resp.error.is_none());
+        assert_eq!(resp.to_get_balance().unwrap().balance, 250000);
+    }
+
+    #[test]
+    fn error_response_envelope_handled() {
+        let resp = Response::from_json(
+            r#"{"result_type":"pay_invoice","error":{"code":"INSUFFICIENT_BALANCE","message":"wallet empty"}}"#,
+        )
+        .unwrap();
+        assert_eq!(resp.result_type, Method::PayInvoice);
+        assert!(resp.result.is_none());
+        let err = resp.error.clone().unwrap();
+        assert_eq!(err.code, ErrorCode::InsufficientBalance);
+        assert_eq!(err.message, "wallet empty");
+        assert!(resp.clone().to_pay_invoice().is_err());
+        assert!(Response::from_json(r#"{"result_type":"bogus_method","result":{}}"#).is_err());
+    }
+
+    #[test]
+    fn bolt11_invoice_amount_is_authoritative() {
+        let resp = Response::from_json(
+            r#"{"result_type":"make_invoice","result":{"invoice":"lnbc10n","amount":987654321}}"#,
+        )
+        .unwrap();
+        let result = match &resp.result {
+            Some(ResponseResult::MakeInvoice(r)) => r,
+            _ => panic!("expected make_invoice result"),
+        };
+        assert_eq!(result.amount, Some(987654321));
+        assert_eq!(crate::bolt11_amount_sats(&result.invoice), Some(1));
+    }
+
+    #[test]
+    fn validate_pay_invoice_uses_bolt11_amount_only() {
+        assert!(validate_pay_invoice("lnbc10n").is_ok());
+        assert!(validate_pay_invoice("lnbc10m").is_ok());
+        assert_eq!(
+            validate_pay_invoice("lnbc20m").unwrap_err(),
+            format!("payment exceeds {}-sat NWC cap", NWC_MAX_PAY_SATS)
+        );
+        assert!(validate_pay_invoice("lnbc1").is_err());
+        assert!(validate_pay_invoice("lnbc1p").is_ok());
+        assert!(validate_pay_invoice("").is_err());
+        assert!(validate_pay_invoice(&"x".repeat(5000)).is_err());
+    }
+
+    #[test]
+    fn make_invoice_request_uses_msat_and_validates_range() {
+        assert!(make_invoice_request(0, "d".into()).is_err());
+        assert!(make_invoice_request(-1, "d".into()).is_err());
+        assert!(make_invoice_request(21_000_000_001, "d".into()).is_err());
+        let req = make_invoice_request(21_000_000_000, "d".into()).unwrap();
+        assert_eq!(req.method, Method::MakeInvoice);
+        match &req.params {
+            RequestParams::MakeInvoice(p) => assert_eq!(p.amount, 21_000_000_000_000),
+            _ => panic!("expected make_invoice params"),
+        }
+    }
+
+    #[test]
+    fn pay_invoice_request_carries_invoice() {
+        let req = pay_invoice_request("lnbc10n".into());
+        assert_eq!(req.method, Method::PayInvoice);
+        match req.params {
+            RequestParams::PayInvoice(p) => assert_eq!(p.invoice, "lnbc10n"),
+            _ => panic!("expected pay_invoice params"),
+        }
+    }
+
+    #[test]
+    fn get_balance_request_method() {
+        assert_eq!(get_balance_request().method, Method::GetBalance);
+    }
+
+    #[test]
+    fn connection_info_derives() {
+        let info = NwcConnectionInfo {
+            wallet_pubkey: "pk1".into(),
+            relay_url: "wss://relay".into(),
+            secret_hex: "secret".into(),
+            lud16: Some("user@domain".into()),
+        };
+        assert_eq!(info.clone(), info);
+        let json = serde_json::to_string(&info).unwrap();
+        assert_eq!(
+            serde_json::from_str::<NwcConnectionInfo>(&json).unwrap(),
+            info
+        );
+    }
+}

@@ -526,7 +526,7 @@ mod tests {
     /// Boots two managers (simulating two devices), runs a full ICE exchange
     /// over loopback, and asserts both reach `connected`.
     #[test]
-    #[ignore] // Temporarily skipped due to ICE pairing timing issues in test environment
+    #[ignore] // Real ICE agent + UDP loopback pairing: host/timing-dependent (2.5s gather + 8s poll), flaky under CI load
     fn loopback_ice_pairing_reaches_connected() {
         // alice > bob lexicographically, so alice's manager controls.
         let a = spawn_nat_manager("alice".repeat(2)).unwrap();

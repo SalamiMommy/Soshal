@@ -1,5 +1,3 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
-
 use serde::Deserialize;
 use soshal_common_core::json_util::{json_in, json_out};
 
@@ -37,113 +35,8 @@ pub fn is_private_ip(ip: &str) -> bool {
     soshal_common_core::url::is_private_ip_str(ip)
 }
 
-fn ipv4_is_private(addr: Ipv4Addr) -> bool {
-    let octets = addr.octets();
-    let (a, b) = (octets[0], octets[1]);
-    if a == 0 {
-        return true;
-    }
-    if a == 10 {
-        return true;
-    }
-    if a == 100 && (64..=127).contains(&b) {
-        return true;
-    }
-    if a == 127 {
-        return true;
-    }
-    if a == 169 && b == 254 {
-        return true;
-    }
-    if a == 172 && (16..=31).contains(&b) {
-        return true;
-    }
-    if a == 192 && b == 0 {
-        return true;
-    }
-    if a == 192 && b == 2 {
-        return true;
-    }
-    if a == 192 && b == 168 {
-        return true;
-    }
-    if a == 198 && (18..=19).contains(&b) {
-        return true;
-    }
-    if a == 198 && b == 51 && octets[2] == 100 {
-        return true;
-    }
-    if a == 203 && b == 0 && octets[2] == 113 {
-        return true;
-    }
-    if (224..=239).contains(&a) {
-        return true;
-    }
-    if a >= 240 {
-        return true;
-    }
-    false
-}
-
 pub fn is_private_ipv6(ip: &str) -> bool {
-    if let Ok(addr) = ip.parse::<Ipv6Addr>() {
-        return ipv6_is_private(addr);
-    }
-    false
-}
-
-fn ipv6_is_private(addr: Ipv6Addr) -> bool {
-    if addr.is_unspecified() {
-        return true;
-    }
-    if addr.is_loopback() {
-        return true;
-    }
-    if addr.is_multicast() {
-        return true;
-    }
-    let segs = addr.segments();
-    if (segs[0] & 0xffc0) == 0xfe80 {
-        return true;
-    }
-    if (segs[0] & 0xfe00) == 0xfc00 {
-        return true;
-    }
-    if let Some(mapped) = ipv4_mapped(&addr) {
-        return ipv4_is_private(mapped);
-    }
-    // Teredo tunneling (2001::/32) relays over NAT64/other clients: poor
-    // connectivity and trivially spoofed — never treat as a public address.
-    if segs[0] == 0x2001 && segs[1] == 0 {
-        return true;
-    }
-    if segs[0] == 0x2002 {
-        let v4 = Ipv4Addr::new(
-            ((segs[1] >> 8) & 0xff) as u8,
-            (segs[1] & 0xff) as u8,
-            ((segs[2] >> 8) & 0xff) as u8,
-            (segs[2] & 0xff) as u8,
-        );
-        return ipv4_is_private(v4);
-    }
-    if segs[0] == 0 && segs[1] == 0 && segs[2] == 0 && segs[3] == 0 && segs[4] == 0 && segs[5] == 0
-    {
-        let v4 = Ipv4Addr::new(
-            ((segs[6] >> 8) & 0xff) as u8,
-            (segs[6] & 0xff) as u8,
-            ((segs[7] >> 8) & 0xff) as u8,
-            (segs[7] & 0xff) as u8,
-        );
-        return ipv4_is_private(v4);
-    }
-    false
-}
-
-fn ipv4_mapped(addr: &Ipv6Addr) -> Option<Ipv4Addr> {
-    match addr.octets() {
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, a, b, c, d] => Some(Ipv4Addr::new(a, b, c, d)),
-        _ => None,
-    }
+    soshal_common_core::url::is_private_ipv6_str(ip)
 }
 
 pub fn is_safe_candidate(candidate: &str, force_relay: bool) -> bool {

@@ -203,38 +203,11 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
-  /// Closes the Reticulum link to a destination (hex address).
-  Future<bool> closeLink(String destHex) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiNetworkNetworkReticulumCloseLink(
-        destHex: destHex,
-      );
-      clearLastError();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// Active Reticulum links (JSON list).
-  Future<String> activeLinks() async {
-    try {
-      final json = RustLib.instance.api.crateFfiNetworkNetworkReticulumGetActiveLinks();
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
-
   /// Prunes stale Reticulum links; returns the count removed.
   Future<int> pruneStaleLinks() async {
     try {
-      final n = RustLib.instance.api.crateFfiNetworkNetworkReticulumPruneStaleLinks();
+      final n =
+          RustLib.instance.api.crateFfiNetworkNetworkReticulumPruneStaleLinks();
       clearLastError();
       return n.toInt();
     } catch (e, st) {
@@ -258,19 +231,6 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
-  /// Clears all known Reticulum nodes.
-  Future<bool> resetNodes() async {
-    try {
-      final ok = RustLib.instance.api.crateFfiNetworkNetworkReticulumResetNodes();
-      clearLastError();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
-
   /// Proof-of-work node id (hex) for a pubkey, or null when the static
   /// nonce misses the difficulty target.
   Future<String?> skademliaNodeId({
@@ -279,7 +239,8 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
     required int dynamicNonce,
   }) async {
     try {
-      final id = RustLib.instance.api.crateFfiNetworkNetworkSkademliaGenerateNodeId(
+      final id =
+          RustLib.instance.api.crateFfiNetworkNetworkSkademliaGenerateNodeId(
         pubkey: pubkey,
         staticNonce: BigInt.from(staticNonce),
         dynamicNonce: BigInt.from(dynamicNonce),

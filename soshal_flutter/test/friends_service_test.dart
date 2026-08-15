@@ -122,18 +122,15 @@ void main() {
       expect(friends.contacts.single.pubkey, 'pk-2');
     });
 
-    test('clearError resets lastError and notifies', () async {
+    test('clearLastError resets lastError', () async {
       final friends = FriendsService();
       api.stub('crateFfiSocialSocialFriendSuggestions',
           (_) => throw Exception('boom'));
       await expectLater(friends.fetchSuggestions(), throwsException);
       expect(friends.lastError, isNotNull);
 
-      var notified = 0;
-      friends.addListener(() => notified++);
-      friends.clearError();
+      friends.clearLastError();
       expect(friends.lastError, isNull);
-      expect(notified, 1);
     });
   });
 }

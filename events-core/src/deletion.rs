@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use soshal_common_core::json_util::{json_in_borrow, json_out};
 
-pub const MAX_TAGS: usize = 2_000;
+pub use soshal_common_core::consts::MAX_TAGS;
 pub const MAX_TAG_FIELDS: usize = 16;
 pub const MAX_TAG_FIELD_LEN: usize = 1024;
 pub const MAX_OUTPUT_IDS: usize = 5_000;

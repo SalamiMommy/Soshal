@@ -4,7 +4,7 @@ use soshal_streaming_core::events::{
     chatrandom_available_content, chatrandom_peer_from_event, chatrandom_request_parts,
     live_chat_from_event, live_stream_from_event, story_content, story_from_event, stream_content,
 };
-use soshal_streaming_core::{filter_active_stories, merge_live_chat_messages};
+use soshal_streaming_core::merge_live_chat_messages;
 
 fn event(tags: Vec<Vec<String>>) -> soshal_nostr_core::models::NostrEvent {
     soshal_nostr_core::models::NostrEvent {
@@ -122,22 +122,6 @@ fn chatrandom_request_parts_kind_and_content() {
 }
 
 #[test]
-fn filter_active_stories_keeps_only_unexpired() {
-    let stories = serde_json::json!([
-        {"id": "s1", "created_at": 1000, "duration_secs": 100},
-        {"id": "s2", "created_at": 950, "duration_secs": 100}, // expires at 1050
-        {"id": "s3", "created_at": 500, "duration_secs": 0},
-    ]);
-    let out = filter_active_stories(stories.as_array().unwrap(), 1050);
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0]["id"], "s1");
-
-    let out2 = filter_active_stories(stories.as_array().unwrap(), 1000);
-    assert_eq!(out2.len(), 2);
-    assert!(out2.iter().all(|s| s["id"] != "s3"));
-}
-
-#[test]
 fn merge_live_chat_messages_dedupes_and_sorts() {
     let existing = vec![msg("a", 10), msg("b", 30)];
     let incoming = vec![msg("b", 30), msg("c", 20), msg("d", 5)];
@@ -169,22 +153,4 @@ fn merge_live_chat_messages_empty_id_in_existing_ignored() {
     let incoming = vec![msg("y", 20)];
     let out = merge_live_chat_messages(existing, incoming);
     assert_eq!(out.len(), 3);
-}
-
-#[test]
-fn stream_metadata_serde_and_derives() {
-    use soshal_streaming_core::StreamMetadata;
-    let meta = StreamMetadata {
-        id: "s1".into(),
-        title: "Test Stream".into(),
-        summary: Some("Summary".into()),
-        streaming_url: "https://stream.url/live".into(),
-        status: "active".into(),
-        starts_at: Some(100),
-        ends_at: Some(200),
-    };
-    let json_str = serde_json::to_string(&meta).unwrap();
-    let deserialized: StreamMetadata = serde_json::from_str(&json_str).unwrap();
-    assert_eq!(meta, deserialized);
-    assert_eq!(meta.clone(), deserialized);
 }

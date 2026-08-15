@@ -146,6 +146,73 @@ pub fn safe_href(url: &str) -> Option<String> {
     sanitize_link_url(url)
 }
 
+/// True when `addr` is loopback, private, link-local, CGNAT, multicast,
+/// unspecified, or reserved space. Canonical IPv4 predicate for the URL/SSRF
+/// checks in this module.
+fn is_private_ipv4(addr: std::net::Ipv4Addr) -> bool {
+    let o = addr.octets();
+    o[0] == 0
+        || o[0] == 10
+        || o[0] == 127
+        || o[0] == 169 && o[1] == 254
+        || o[0] == 172 && (16..=31).contains(&o[1])
+        || o[0] == 192 && o[1] == 168
+        || o[0] == 100 && (64..=127).contains(&o[1])
+        || addr.is_multicast()
+}
+
+fn is_private_ipv6(addr: std::net::Ipv6Addr) -> bool {
+    if addr.is_unspecified() || addr.is_loopback() || addr.is_multicast() {
+        return true;
+    }
+    let segs = addr.segments();
+    if (segs[0] & 0xffc0) == 0xfe80 {
+        return true;
+    }
+    if (segs[0] & 0xfe00) == 0xfc00 {
+        return true;
+    }
+    if let Some(mapped) = addr.to_ipv4_mapped() {
+        return is_private_ipv4(mapped);
+    }
+    // Teredo tunneling (2001::/32) relays over NAT64/other clients: poor
+    // connectivity and trivially spoofed — never treat as a public address.
+    if segs[0] == 0x2001 && segs[1] == 0 {
+        return true;
+    }
+    if segs[0] == 0x2002 {
+        let v4 = std::net::Ipv4Addr::new(
+            ((segs[1] >> 8) & 0xff) as u8,
+            (segs[1] & 0xff) as u8,
+            ((segs[2] >> 8) & 0xff) as u8,
+            (segs[2] & 0xff) as u8,
+        );
+        return is_private_ipv4(v4);
+    }
+    if segs[0] == 0 && segs[1] == 0 && segs[2] == 0 && segs[3] == 0 && segs[4] == 0 && segs[5] == 0
+    {
+        let v4 = std::net::Ipv4Addr::new(
+            ((segs[6] >> 8) & 0xff) as u8,
+            (segs[6] & 0xff) as u8,
+            ((segs[7] >> 8) & 0xff) as u8,
+            (segs[7] & 0xff) as u8,
+        );
+        return is_private_ipv4(v4);
+    }
+    false
+}
+
+/// True when `host` parses as an IPv6 literal in loopback, private,
+/// link-local, multicast, unspecified, Teredo (2001::/32), 6to4 (2002::/16),
+/// or IPv4-mapped/compatible private space. Parses like
+/// [`is_private_ip_str`] — never treats a non-IPv6 string as private.
+pub fn is_private_ipv6_str(host: &str) -> bool {
+    let host = host.trim().trim_start_matches('[').trim_end_matches(']');
+    host.parse::<std::net::Ipv6Addr>()
+        .map(is_private_ipv6)
+        .unwrap_or(false)
+}
+
 /// True when `host` is a raw IP literal pointing at loopback, private, link-local,
 /// CGNAT, multicast, or unspecified space (IPv4 and IPv6). Used for post-DNS-resolve
 /// checks to block SSRF into internal networks.
@@ -156,37 +223,15 @@ pub fn is_private_ip_str(host: &str) -> bool {
         Err(_) => return false,
     };
     match ip {
-        std::net::IpAddr::V4(v4) => {
-            let o = v4.octets();
-            o[0] == 0
-                || o[0] == 10
-                || o[0] == 127
-                || o[0] == 169 && o[1] == 254
-                || o[0] == 172 && (16..=31).contains(&o[1])
-                || o[0] == 192 && o[1] == 168
-                || o[0] == 100 && (64..=127).contains(&o[1])
-                || v4.is_multicast()
-        }
+        std::net::IpAddr::V4(v4) => is_private_ipv4(v4),
         std::net::IpAddr::V6(v6) => {
             // IPv4-mapped IPv6 (::ffff:127.0.0.1) must be judged as the
             // embedded IPv4 address; otherwise loopback/private guards
             // are bypassed with a V6-form literal.
             if let Some(mapped_v4) = v6.to_ipv4_mapped() {
-                let o = mapped_v4.octets();
-                return o[0] == 0
-                    || o[0] == 10
-                    || o[0] == 127
-                    || o[0] == 169 && o[1] == 254
-                    || o[0] == 172 && (16..=31).contains(&o[1])
-                    || o[0] == 192 && o[1] == 168
-                    || o[0] == 100 && (64..=127).contains(&o[1])
-                    || mapped_v4.is_multicast();
+                return is_private_ipv4(mapped_v4);
             }
-            v6.is_loopback()
-                || v6.is_multicast()
-                || v6.is_unspecified()
-                || v6.octets()[0] & 0xfe == 0xfc // fc00::/7 unique-local
-                || v6.octets()[0] == 0xfe && v6.octets()[1] & 0xc0 == 0x80 // fe80::/10 link-local
+            is_private_ipv6(v6)
         }
     }
 }

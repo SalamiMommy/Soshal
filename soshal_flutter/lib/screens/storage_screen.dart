@@ -45,6 +45,7 @@ class _StorageScreenState extends State<StorageScreen> {
     } catch (e) {
       debugPrint('cache path: $e');
     }
+    if (!mounted) return;
     try {
       final settings = context.read<SettingsService>();
       final ad = settings.getSetting('auto_download');

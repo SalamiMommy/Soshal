@@ -534,7 +534,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Temporarily skipped due to LAN server timing issues in test environment
     fn fetch_from_server_roundtrip() {
         let root = tmp_root();
         let store = ChunkStore::new(root.clone());

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import 'social_entry.dart';
 
 /// Vouch Service
 /// Kind-31989 web-of-trust vouches, signed in-process and relay-published;
@@ -51,25 +52,21 @@ class VouchService extends ChangeNotifier with LastErrorMixin {
 }
 
 /// A verified vouch entry for a target pubkey.
-class VouchEntry {
-  final String id;
-  final String pubkey;
-  final String content;
-  final int createdAt;
-
+class VouchEntry extends SocialEntry {
   VouchEntry({
-    required this.id,
-    required this.pubkey,
-    required this.content,
-    required this.createdAt,
+    required super.id,
+    required super.pubkey,
+    required super.content,
+    required super.createdAt,
   });
 
   factory VouchEntry.fromJson(Map<String, dynamic> json) {
+    final base = SocialEntry.fromJson(json);
     return VouchEntry(
-      id: json['id'] as String? ?? '',
-      pubkey: json['pubkey'] as String? ?? '',
-      content: json['content'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: base.id,
+      pubkey: base.pubkey,
+      content: base.content,
+      createdAt: base.createdAt,
     );
   }
 }

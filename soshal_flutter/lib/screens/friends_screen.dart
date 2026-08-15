@@ -19,7 +19,7 @@ class FriendsScreen extends StatefulWidget {
 }
 
 class _FriendsScreenState extends State<FriendsScreen> {
-  final FriendsService _service = FriendsService();
+  late final FriendsService _service;
   final TextEditingController _addQuery = TextEditingController();
   final TextEditingController _contactFilter = TextEditingController();
   List<ProfileInfo> _searchResults = [];
@@ -31,6 +31,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
   @override
   void initState() {
     super.initState();
+    _service = context.read<FriendsService>();
     _loadSuggestions();
   }
 
@@ -44,7 +45,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   @override
   void dispose() {
-    _service.dispose();
     _addQuery.dispose();
     _contactFilter.dispose();
     super.dispose();

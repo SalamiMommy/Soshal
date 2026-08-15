@@ -9,6 +9,7 @@ use nostr_sdk::client::Client;
 use nostr_sdk::prelude::{Filter, Kind};
 use serde::{Deserialize, Serialize};
 use soshal_db_core::repos::search_index::SearchIndexRepo;
+use soshal_search_core::fts5::format_fts5_query;
 
 /// Search result item
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -26,9 +27,13 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
     if query.trim().is_empty() {
         return Ok(Vec::new());
     }
+    let fts_query = format_fts5_query(query);
+    if fts_query.is_empty() {
+        return Ok(Vec::new());
+    }
     super::db::with_db_result(|db| {
         let repo = SearchIndexRepo::new(db);
-        let rows = repo.search(query, limit, 0)?;
+        let rows = repo.search(&fts_query, limit, 0)?;
         let mut out: Vec<SearchResult> = rows
             .into_iter()
             .filter(|r| kind.map(|k| r.kind == k).unwrap_or(true))
@@ -248,23 +253,9 @@ pub fn search_remove_indexed(id: String) -> Result<bool, String> {
 mod tests {
     use super::*;
     use crate::ffi::db;
-    use std::sync::Mutex;
-
-    static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn tmp_db(label: &str) -> String {
-        let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let path = format!(
-            "{}/soshal_search_{label}_{}_{}.db",
-            std::env::temp_dir().to_string_lossy(),
-            std::process::id(),
-            n
-        );
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-        db::db_init(path.clone()).unwrap();
-        path
+        db::tmp_db(label, "search")
     }
 
     fn insert_user(pubkey: &str, name: &str) {

@@ -121,8 +121,8 @@ void main() {
       expect(api.namedArg(inv, 'location'), 'Berlin');
       expect(api.namedArg(inv, 'latitude'), 52.52);
       expect(api.namedArg(inv, 'longitude'), 13.405);
-      expect(api.namedArg(inv, 'startTime'), 1700000000);
-      expect(api.namedArg(inv, 'endTime'), 1700003600);
+      expect(api.namedArg(inv, 'startTime'), BigInt.from(1700000000));
+      expect(api.namedArg(inv, 'endTime'), BigInt.from(1700003600));
       expect(api.namedArg(inv, 'imageUrl'), 'https://x/e.png');
     });
 

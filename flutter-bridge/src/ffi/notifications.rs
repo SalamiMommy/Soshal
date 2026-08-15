@@ -226,23 +226,11 @@ pub fn notifications_unregister_push(user_pubkey: String) -> Result<bool, String
 mod tests {
     use super::*;
     use crate::ffi::{db, session};
-    use std::sync::Mutex;
 
     static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn tmp_db(label: &str) -> String {
-        let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let path = format!(
-            "{}/soshal_notif_{label}_{}_{}.db",
-            std::env::temp_dir().to_string_lossy(),
-            std::process::id(),
-            n
-        );
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-        db::db_init(path.clone()).unwrap();
-        path
+        db::tmp_db(label, "notif")
     }
 
     fn insert_notification(

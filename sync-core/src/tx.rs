@@ -17,11 +17,6 @@ pub const STATUS_APPLIED: &str = "applied";
 pub const STATUS_FAILED: &str = "failed";
 pub const STATUS_ROLLED_BACK: &str = "rolled_back";
 
-/// Action kinds `revert.rs` knows how to undo.
-pub const KIND_POST: &str = "post";
-pub const KIND_LIKE: &str = "like";
-pub const KIND_PROFILE: &str = "profile";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TxNode {
     pub id: String,
@@ -230,14 +225,14 @@ mod tests {
     fn fail_post_rolls_back_dependent_like() {
         let db = mem_db();
         let post_id = "post_1";
-        tx_begin(&db, post_id, KIND_POST, r#"{"id":"post_1"}"#, 1).unwrap();
+        tx_begin(&db, post_id, revert::KIND_POST, r#"{"id":"post_1"}"#, 1).unwrap();
         tx_mark_applied(&db, post_id).unwrap();
 
         let like_id = "like_1";
         tx_begin(
             &db,
             like_id,
-            KIND_LIKE,
+            revert::KIND_LIKE,
             r#"{"id":"like_1","event_id":"post_1"}"#,
             2,
         )
@@ -292,8 +287,8 @@ mod tests {
     #[test]
     fn failed_leaf_does_not_roll_back_parent() {
         let db = mem_db();
-        tx_begin(&db, "p", KIND_POST, r#"{"id":"p"}"#, 1).unwrap();
-        tx_begin(&db, "l", KIND_LIKE, r#"{"id":"l"}"#, 2).unwrap();
+        tx_begin(&db, "p", revert::KIND_POST, r#"{"id":"p"}"#, 1).unwrap();
+        tx_begin(&db, "l", revert::KIND_LIKE, r#"{"id":"l"}"#, 2).unwrap();
         tx_link(&db, "p", "l").unwrap();
         tx_mark_applied(&db, "p").unwrap();
         tx_mark_applied(&db, "l").unwrap();

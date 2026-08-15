@@ -13,6 +13,7 @@ ring = { workspace = true }
 hex = { workspace = true }
 pbkdf2 = { workspace = true }
 sha2 = { workspace = true }
+secp256k1 = "0.30"
 subtle = { workspace = true }
 zeroize = { workspace = true }
 reqwest = { workspace = true }
@@ -20,6 +21,7 @@ url = { workspace = true }
 tokio = { workspace = true }
 soshal-crypto-core = { path = "../crypto-core" }
 soshal-common-core = { path = "../common-core" }
+soshal-nostr-core = { path = "../nostr-core" }
 
 [lints]
 workspace = true

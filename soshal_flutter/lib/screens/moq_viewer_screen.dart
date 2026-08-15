@@ -64,6 +64,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
       try {
         if (!subscribed) {
           try {
+            if (!mounted) return;
             final status = await api.subscribeMoqStream(
               streamId: widget.streamId,
               subscriberPubkey:

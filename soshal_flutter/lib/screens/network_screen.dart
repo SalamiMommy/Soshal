@@ -8,6 +8,7 @@ import '../services/events_service.dart';
 import '../services/network_service.dart';
 import '../services/p2p_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
 import 'widgets/wgpu_mesh_canvas.dart';
 
@@ -674,7 +675,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
 
   String _shortHash(String? hash) {
     if (hash == null || hash.isEmpty) return '—';
-    return hash.length <= 16 ? hash : '${hash.substring(0, 16)}…';
+    return prefixEllipsis(hash, 16);
   }
 
   @override
@@ -1154,7 +1155,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
                       leading: const Icon(Icons.devices_other),
                       title: Text('${peer.ip}:${peer.port}'),
                       subtitle: Text(
-                        '${peer.pubkey.length > 12 ? peer.pubkey.substring(0, 12) : peer.pubkey}…'
+                        '${prefixEllipsis(peer.pubkey, 12)}'
                         ' · QUIC ${peer.quicPort ?? '—'}',
                       ),
                     ),

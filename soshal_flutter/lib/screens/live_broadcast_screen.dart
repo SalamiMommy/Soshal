@@ -9,6 +9,7 @@ import '../services/audio_codec.dart';
 import '../services/h264_codec.dart';
 import '../services/session_service.dart';
 import '../services/streaming_service.dart';
+import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
 
 /// Live broadcast capture screen.
@@ -56,9 +57,6 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   int _audioGroupsSent = 0;
   bool _recording = false;
   int? _onWireBytes;
-
-  static String _hexEncode(List<int> bytes) =>
-      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
   /// ~4 fps JPEG fallback track.
   static const Duration _frameInterval = Duration(milliseconds: 250);
@@ -173,6 +171,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
           keyframe: keyframe,
         ),
       );
+      if (!mounted) return;
       if (keyframe) {
         try {
           await api.publishMoqObject(
@@ -180,7 +179,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
             publisherPubkey: context.read<SessionService>().activePubkey ?? '',
             trackId: 1,
             isKeyframe: true,
-            payloadHex: _hexEncode(nal),
+            payloadHex: bytesToHex(nal),
           );
         } catch (e) {
           debugPrint('moq object publish: $e');
@@ -207,6 +206,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
     await _camera?.dispose();
     await H264Codec.release();
     await AudioCodec.release();
+    if (!mounted) return;
     await context.read<StreamingService>().stopMoqBroadcast();
     if (mounted) {
       if (recorded != null) _toast('Recorded: $recorded');

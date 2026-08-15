@@ -30,22 +30,11 @@ pub fn zk_apply_rollup(db_path: String, rollup_json: String) -> Result<bool, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ffi::db;
     use soshal_sync_core::zk_rollup::ZkProofType;
 
-    static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
     fn tmp_db_path(label: &str) -> String {
-        let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let path = format!(
-            "{}/soshal_zk_{label}_{}_{}.db",
-            std::env::temp_dir().to_string_lossy(),
-            std::process::id(),
-            n
-        );
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-        path
+        db::tmp_db_path(label, "zk")
     }
 
     fn valid_rollup(thread_id: &str, ops: u64) -> ZkCrdtRollup {

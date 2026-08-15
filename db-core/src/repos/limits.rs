@@ -7,7 +7,7 @@
 //! before they land on disk.
 
 /// Longest accepted single content payload (bytes).
-pub const MAX_CONTENT_BYTES: usize = 64 * 1024;
+pub use soshal_common_core::consts::MAX_CONTENT_BYTES;
 
 /// Longest accepted serialized event payload — content + tags (bytes).
 pub const MAX_BATCH_BYTES: usize = 2 * 1024 * 1024;

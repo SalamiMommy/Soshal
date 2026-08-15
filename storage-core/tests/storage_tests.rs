@@ -1,47 +1,21 @@
 //! Integration tests for soshal-storage-core.
 
 use soshal_storage_core::audio_waveform::{extract_peaks, extract_peaks_u8};
-use soshal_storage_core::backup_export::{
-    create_encrypted_backup_payload, export_envelope, row_to_json, EXPORT_TABLES,
-};
+use soshal_storage_core::backup_export::{export_envelope, row_to_json, EXPORT_TABLES};
 use soshal_storage_core::backup_restore::{
-    backup_post_event_payload, backup_post_meta, decrypt_backup_payload, unwrap_backup_db,
+    backup_post_event_payload, backup_post_meta, unwrap_backup_db,
 };
 use soshal_storage_core::cuckoo_cache::ChunkCuckooFilter;
 use soshal_storage_core::erasure_fountain::{decode_fountain, encode_fountain};
-use soshal_storage_core::eviction::{estimate_eviction, execute_incremental_vacuum};
+use soshal_storage_core::eviction::execute_incremental_vacuum;
 use soshal_storage_core::flash_wal::{configure_flash_pragmas, FlashWalFlusher};
-use soshal_storage_core::offline_sync::{decrypt_offline_sync_json, encrypt_offline_sync_json};
+use soshal_storage_core::offline_sync::decrypt_offline_sync_json;
 use soshal_storage_core::util::{fail_json, hex_to_32_bytes};
 use soshal_storage_core::zram_cache::ZramCacheManager;
 
 // ---------------------------------------------------------------------------
 // Eviction
 // ---------------------------------------------------------------------------
-
-#[test]
-fn estimate_eviction_under_cap_requires_no_deletion() {
-    let est = estimate_eviction(1000, 800, 100).unwrap();
-    assert_eq!(est.overshoot_bytes, 0);
-    assert_eq!(est.posts_to_delete, 0);
-    assert_eq!(est.posts_after_eviction, 800);
-}
-
-#[test]
-fn estimate_eviction_over_cap_rounds_up() {
-    let est = estimate_eviction(1000, 1200, 100).unwrap();
-    assert_eq!(est.overshoot_bytes, 200);
-    assert_eq!(est.posts_to_delete, 3);
-    assert_eq!(est.posts_after_eviction, 900);
-}
-
-#[test]
-fn estimate_eviction_invalid_inputs_return_none() {
-    assert!(estimate_eviction(0, 100, 10).is_none());
-    assert!(estimate_eviction(-5, 100, 10).is_none());
-    assert!(estimate_eviction(100, 200, 0).is_none());
-    assert!(estimate_eviction(100, 200, -1).is_none());
-}
 
 #[test]
 fn incremental_vacuum_frees_deleted_pages() {
@@ -100,80 +74,6 @@ fn hex_to_32_bytes_validation() {
 // ---------------------------------------------------------------------------
 // Backup export / restore roundtrip
 // ---------------------------------------------------------------------------
-
-#[test]
-fn backup_encrypt_decrypt_roundtrip() {
-    let (kem_pub, kem_sk) = soshal_pqc_core::hybrid::hybrid_keygen().unwrap();
-    let db_json = r#"{"posts":[{"id":"p1","content":"hi"}]}"#;
-    let input = serde_json::json!({
-        "db_json": db_json,
-        "kem_public_key_hex": kem_pub
-    });
-    let out = create_encrypted_backup_payload(&input.to_string());
-    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(v["success"], true);
-    let ciphertext_json = v["ciphertext_json"].as_str().unwrap();
-
-    let restore = serde_json::json!({
-        "payload": ciphertext_json,
-        "sk_hex": kem_sk
-    });
-    let out = decrypt_backup_payload(&restore.to_string());
-    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(v["success"], true);
-    assert_eq!(v["db_json"].as_str().unwrap(), db_json);
-}
-
-#[test]
-fn backup_export_rejects_bad_json() {
-    let out = create_encrypted_backup_payload("garbage");
-    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(v["success"], false);
-}
-
-#[test]
-fn backup_restore_rejects_unsupported_version() {
-    let (kem_pub, kem_sk) = soshal_pqc_core::hybrid::hybrid_keygen().unwrap();
-    let input = serde_json::json!({
-        "db_json": "{}",
-        "kem_public_key_hex": kem_pub
-    });
-    let out = create_encrypted_backup_payload(&input.to_string());
-    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    let mut envelope: serde_json::Value =
-        serde_json::from_str(v["ciphertext_json"].as_str().unwrap()).unwrap();
-    envelope["version"] = serde_json::json!(2);
-
-    let restore = serde_json::json!({"payload": envelope.to_string(), "sk_hex": kem_sk});
-    let out = decrypt_backup_payload(&restore.to_string());
-    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(v["success"], false);
-    assert!(v["error"]
-        .as_str()
-        .unwrap()
-        .contains("unsupported envelope version"));
-}
-
-#[test]
-fn backup_restore_rejects_tampered_envelope() {
-    let (kem_pub, kem_sk) = soshal_pqc_core::hybrid::hybrid_keygen().unwrap();
-    let input = serde_json::json!({
-        "db_json": "{}",
-        "kem_public_key_hex": kem_pub
-    });
-    let out = create_encrypted_backup_payload(&input.to_string());
-    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    let mut envelope: serde_json::Value =
-        serde_json::from_str(v["ciphertext_json"].as_str().unwrap()).unwrap();
-    let mut payload = envelope["payload"].as_str().unwrap().to_string();
-    payload.push('A');
-    envelope["payload"] = serde_json::json!(payload);
-
-    let restore = serde_json::json!({"payload": envelope.to_string(), "sk_hex": kem_sk});
-    let out = decrypt_backup_payload(&restore.to_string());
-    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(v["success"], false);
-}
 
 #[test]
 fn export_envelope_builds_versioned_payload() {
@@ -331,120 +231,6 @@ fn extract_peaks_u8_scales_to_byte_range() {
 // ---------------------------------------------------------------------------
 // Offline sync
 // ---------------------------------------------------------------------------
-
-fn offline_sync_roundtrip(
-    envelope_json: &str,
-    kem_sk: &str,
-    dsa_pk: &str,
-    sender: &str,
-) -> serde_json::Value {
-    let input = serde_json::json!({
-        "envelope_json": envelope_json,
-        "context": "f2f-test",
-        "kem_secret_key_hex": kem_sk,
-        "dsa_public_key_hex": dsa_pk,
-        "sender_pubkey": sender
-    });
-    let out = decrypt_offline_sync_json(&input.to_string());
-    serde_json::from_str(&out).unwrap()
-}
-
-#[test]
-fn offline_sync_encrypt_decrypt_roundtrip() {
-    let (kem_pub, kem_sk) = soshal_pqc_core::kem::kem_keygen().unwrap();
-    let (dsa_sk, dsa_pk) = soshal_pqc_core::dsa::dsa_keygen(None).unwrap();
-    let input = serde_json::json!({
-        "payload_json": r#"{"msg":"hi","n":7}"#,
-        "peer_pubkey": "peer1",
-        "context": "f2f-test",
-        "kem_public_key_hex": kem_pub,
-        "dsa_secret_key_hex": dsa_sk,
-        "sender_pubkey": "alice",
-        "sender_dsa_pubkey": dsa_pk
-    });
-    let out = encrypt_offline_sync_json(&input.to_string());
-    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(v["success"], true);
-    let envelope = v["envelope_json"].as_str().unwrap();
-
-    let dec = offline_sync_roundtrip(envelope, &kem_sk, &dsa_pk, "alice");
-    assert_eq!(dec["success"], true);
-    let parsed: serde_json::Value =
-        serde_json::from_str(dec["payload_json"].as_str().unwrap()).unwrap();
-    assert_eq!(parsed["msg"], "hi");
-    assert_eq!(parsed["n"], 7);
-}
-
-#[test]
-fn offline_sync_rejects_wrong_expected_sender() {
-    let (kem_pub, kem_sk) = soshal_pqc_core::kem::kem_keygen().unwrap();
-    let (dsa_sk, dsa_pk) = soshal_pqc_core::dsa::dsa_keygen(None).unwrap();
-    let input = serde_json::json!({
-        "payload_json": "{}",
-        "peer_pubkey": "peer1",
-        "context": "f2f-test",
-        "kem_public_key_hex": kem_pub,
-        "dsa_secret_key_hex": dsa_sk,
-        "sender_pubkey": "alice",
-        "sender_dsa_pubkey": dsa_pk
-    });
-    let v: serde_json::Value =
-        serde_json::from_str(&encrypt_offline_sync_json(&input.to_string())).unwrap();
-    let envelope = v["envelope_json"].as_str().unwrap();
-
-    let dec = offline_sync_roundtrip(envelope, &kem_sk, &dsa_pk, "mallory");
-    assert_eq!(dec["success"], false);
-    let err = dec["error"].as_str().unwrap();
-    assert_eq!(err, "envelope sender does not match expected sender");
-}
-
-#[test]
-fn offline_sync_rejects_tampered_envelope() {
-    let (kem_pub, kem_sk) = soshal_pqc_core::kem::kem_keygen().unwrap();
-    let (dsa_sk, dsa_pk) = soshal_pqc_core::dsa::dsa_keygen(None).unwrap();
-    let input = serde_json::json!({
-        "payload_json": "{}",
-        "peer_pubkey": "peer1",
-        "context": "f2f-test",
-        "kem_public_key_hex": kem_pub,
-        "dsa_secret_key_hex": dsa_sk,
-        "sender_pubkey": "alice",
-        "sender_dsa_pubkey": dsa_pk
-    });
-    let v: serde_json::Value =
-        serde_json::from_str(&encrypt_offline_sync_json(&input.to_string())).unwrap();
-    let mut env: serde_json::Value =
-        serde_json::from_str(v["envelope_json"].as_str().unwrap()).unwrap();
-    let mut ct = env["pqc_ct"].as_str().unwrap().to_string();
-    ct.insert(0, '0');
-    env["pqc_ct"] = serde_json::json!(ct);
-
-    let dec = offline_sync_roundtrip(&env.to_string(), &kem_sk, &dsa_pk, "alice");
-    assert_eq!(dec["success"], false);
-    assert!(dec["error"]
-        .as_str()
-        .unwrap()
-        .contains("DSA signature verification failed"));
-}
-
-#[test]
-fn offline_sync_requires_sender_pubkeys_on_encrypt() {
-    let (kem_pub, _) = soshal_pqc_core::kem::kem_keygen().unwrap();
-    let (dsa_sk, dsa_pk) = soshal_pqc_core::dsa::dsa_keygen(None).unwrap();
-    let input = serde_json::json!({
-        "payload_json": "{}",
-        "peer_pubkey": "peer1",
-        "context": "f2f-test",
-        "kem_public_key_hex": kem_pub,
-        "dsa_secret_key_hex": dsa_sk,
-        "sender_pubkey": "",
-        "sender_dsa_pubkey": dsa_pk
-    });
-    let v: serde_json::Value =
-        serde_json::from_str(&encrypt_offline_sync_json(&input.to_string())).unwrap();
-    assert_eq!(v["success"], false);
-    assert_eq!(v["error"], "sender_pubkey is required");
-}
 
 #[test]
 fn offline_sync_rejects_missing_signature_on_decrypt() {

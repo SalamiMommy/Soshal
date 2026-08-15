@@ -12,12 +12,7 @@ use soshal_db_core::repos::spam_report::{SpamReportRepo, SpamReportRow};
 
 const MUTED_USERS_KEY: &str = "muted_users";
 
-fn uuid_like() -> String {
-    use rand::RngCore;
-    let mut b = [0u8; 8];
-    rand::rngs::OsRng.fill_bytes(&mut b);
-    hex::encode(b)
-}
+use super::util::uuid_like;
 
 fn muted_list_key(pubkey: &str) -> String {
     if pubkey.is_empty() {

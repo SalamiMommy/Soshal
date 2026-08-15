@@ -45,6 +45,9 @@ import '../screens/privacy_screen.dart';
 import '../screens/storage_screen.dart';
 import '../screens/advanced_screen.dart';
 import '../screens/network_settings_screen.dart';
+import '../screens/share_app_screen.dart';
+import '../screens/live_broadcast_screen.dart';
+import '../screens/moq_viewer_screen.dart';
 import '../screens/profile_builder_screen.dart';
 import '../screens/profile_renderer_screen.dart';
 import '../widgets/app_shell.dart';
@@ -157,6 +160,20 @@ class AppRouter {
             builder: (context, state) => const LiveScreen(),
           ),
           GoRoute(
+            path: '/live/broadcast/:streamId',
+            builder: (context, state) => LiveBroadcastScreen(
+              streamId: state.pathParameters['streamId'] ?? '',
+              title: state.uri.queryParameters['title'] ?? '',
+            ),
+          ),
+          GoRoute(
+            path: '/live/viewer/:streamId',
+            builder: (context, state) => MoqViewerScreen(
+              addr: state.uri.queryParameters['addr'] ?? '',
+              streamId: state.pathParameters['streamId'] ?? '',
+            ),
+          ),
+          GoRoute(
             path: '/stories',
             builder: (context, state) => const StoriesScreen(),
           ),
@@ -237,6 +254,10 @@ class AppRouter {
           GoRoute(
             path: '/settings',
             builder: (context, state) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: '/settings/share',
+            builder: (context, state) => const ShareAppScreen(),
           ),
           GoRoute(
             path: '/settings/edit-profile',

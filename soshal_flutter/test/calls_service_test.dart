@@ -113,13 +113,13 @@ void main() {
     test('sanitizeSdp returns redacted sdp, error rethrows', () {
       final calls = CallsService();
       api.stubString(
-          'crateFfiCallsCallsSanitizeSdp', 'v=0 redacted');
+          'crateFfiWebrtcWebrtcSanitizeSdp', 'v=0 redacted');
       expect(calls.sanitizeSdp('v=0 192.168.1.5', forceRelay: true),
           'v=0 redacted');
-      final inv = api.callsOf('crateFfiCallsCallsSanitizeSdp').single;
+      final inv = api.callsOf('crateFfiWebrtcWebrtcSanitizeSdp').single;
       expect(api.namedArg(inv, 'forceRelay'), isTrue);
 
-      api.stub('crateFfiCallsCallsSanitizeSdp',
+      api.stub('crateFfiWebrtcWebrtcSanitizeSdp',
           (_) => throw Exception('sdp boom'));
       expect(() => calls.sanitizeSdp('v=0'), throwsA(anything));
       expect(calls.lastError, contains('sdp boom'));
@@ -128,11 +128,10 @@ void main() {
     test('iceConfig returns config, forwards privacy level', () {
       final calls = CallsService();
       api.stubString(
-          'crateFfiCallsCallsIceConfig', '{"iceServers":[]}');
-      expect(calls.iceConfig('strict', stunUrl: 'stun://x'), '{"iceServers":[]}');
-      final inv = api.callsOf('crateFfiCallsCallsIceConfig').single;
+          'crateFfiWebrtcWebrtcGetIceConfig', '{"iceServers":[]}');
+      expect(calls.iceConfig('strict'), '{"iceServers":[]}');
+      final inv = api.callsOf('crateFfiWebrtcWebrtcGetIceConfig').single;
       expect(api.namedArg(inv, 'privacyLevel'), 'strict');
-      expect(api.namedArg(inv, 'stunUrl'), 'stun://x');
     });
   });
 
@@ -176,7 +175,7 @@ void main() {
           reason: 'timer cancelled after endCall');
     });
 
-    test('clearError clears lastError', () async {
+    test('clearLastError clears lastError', () async {
       final calls = CallsService();
       api.stub('crateFfiCallsCallsSendSignal',
           (_) => throw Exception('boom'));
@@ -189,7 +188,7 @@ void main() {
         throwsA(anything),
       );
       expect(calls.lastError, contains('boom'));
-      calls.clearError();
+      calls.clearLastError();
       expect(calls.lastError, isNull);
     });
   });

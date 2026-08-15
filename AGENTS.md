@@ -45,7 +45,7 @@ Soshal/
 
 ```bash
 cargo check --workspace                        # Type-check all crates
-cargo test --workspace                         # Run all Rust tests (~460: cores + bridge)
+cargo test --workspace                         # Run all Rust tests (~1385: cores + bridge)
 cargo fmt --check                              # Format check (pre-commit hook)
 cargo clippy --workspace -- -D warnings        # Lint (pre-commit hook)
 cargo audit                                    # Dependency audit (pre-push + CI)
@@ -150,6 +150,15 @@ rebuild all 3 `.so`s, re-run `flutter analyze` + bridge tests. Generated Dart
 methods are snake_case `crateFfi<Module><Fn>`; `#[frb(sync)]` fns return plain
 values (awaiting them is harmless, not an error).
 
+**Glue-trim ritual**: only 7 `lib/ffi/*.dart` glue files are kept (auth, db,
+media, network, p2p, raster, session). After EVERY regen run
+`scripts/trim-ffi-glue.sh` (deletes the 41 un-kept glue files + strips their
+`import 'ffi/…'` lines from `frb_generated.dart`, `frb_generated.io.dart` AND
+`frb_generated.web.dart`). 6 smoke tests stay in `test/ffi_manual/`:
+auth/db/media/network/p2p/session (`test/ffi_manual/push_test.dart` etc. were
+deleted — do not restore). `lib/ffi/raster.dart` must be kept: `frb_generated.dart`
+references its `ImpellerFrameBufferInfo`.
+
 **KNOWN codegen bug — io.dart corruption (frb 2.12.0)**: after EVERY regen,
 check `grep -n "typedef bool" soshal_flutter/lib/frb_generated.io.dart`. The
 cst-merge step deterministically splices a stray `typedef bool =
@@ -220,7 +229,16 @@ each migration SQL records its own version
 - `.husky/pre-commit`: `cargo fmt --check` + clippy
 - `.husky/pre-push`: `cargo check --workspace && cargo test --workspace` (+ audit if installed)
 - `.github/workflows/ci.yml`: fmt, check, test, cargo-audit, ffi-bridge-tests,
-  core-compliance, flutter-lint (pinned SHAs)
+  core-compliance, flutter-lint (pinned SHAs), plus a `coverage` job that gates
+  line coverage ≥80% (`cargo llvm-cov --workspace --fail-under-lines 80`) and
+  `flutter test` inside the flutter-lint job.
+- Test-parallelism rule: bridge tests touching the process-global signer state
+  (`signer_lock`/`signer_unlock`) MUST hold `test_lock::SIGNER_TEST_LOCK`;
+  tests touching the global DB handle hold `DB_TEST_LOCK`. Missing the signer
+  lock = cross-module flake ("signer locked" assertions racing unlocks).
+- db-core in-memory gotcha: `Database::open_in_memory` pools connections and
+  extra `connect()`s get FRESH empty in-memory databases — never hold one
+  `conn()` guard while calling a repo method (it forces a second, empty conn).
 
 ## Security Invariants (inherited from the pre-Flutter hardening audit)
 
@@ -257,19 +275,18 @@ each migration SQL records its own version
    Tauri; the Flutter app uses the in-process signer + OS keychain.
 4. **Backend-gated surfaces** — mostly real now; remaining gaps are
    external-infra only:
-   - Real: `zap_fetch_invoice`/`zap_send_payment` (NIP-47 NWC exchange),
-     friend suggestions (WoT over contact graph) + friend requests
-     (kind-3 follows), push token registration (`push_register_token` →
-     session.json; `webrtc_get_turn_servers` reads `turn_endpoint` setting),
-     `minis_fetch` (local DB kind-31020 registry, fed by sync engine),
-     `protocol_handle_avatar` (users.picture, SSRF-guarded HTTPS fetch +
-     placeholder PNG), `analytics_compute_stats` (SQL aggregates),
-     `background_sync_task` (bounded engine pass), dating profile
-     update/report persistence, hashtag extraction + geohash encoding.
+- Real: `zap_fetch_invoice`/`zap_send_payment` (NIP-47 NWC exchange),
+      friend suggestions (WoT over contact graph) + friend requests
+      (kind-3 follows), `webrtc_get_turn_servers` reads `turn_endpoint`
+      setting, `minis_fetch` (local DB kind-31020 registry, fed by sync
+      engine), `analytics_compute_stats` (SQL aggregates),
+      `background_sync_task` (bounded engine pass), dating profile
+      update/report persistence, hashtag extraction + geohash encoding.
    - Still gated (needs external infra, UI honest about it): FCM delivery
-     (Firebase `google-services.json`), TURN provisioning (server endpoint),
-     WebRTC voice/video media transport (relay signaling kinds 20001-20004
-     work), WASI wasm runtime in minis-core (simulated sort/keyword host;
-     real wasmtime host is roadmap), ZK provers in sync-core zk_rollup
-     (honest SHA-256 commitment), `raster_signal_impeller_frame_ready`
-     (engine-integration no-op).
+      (Firebase `google-services.json`), TURN provisioning (server endpoint),
+      WebRTC voice/video media transport (relay signaling kinds 20001-20004
+      work), WASI wasm runtime in minis-core (simulated sort/keyword host;
+      real wasmtime host is roadmap), ZK provers in sync-core zk_rollup
+      (honest SHA-256 commitment), `raster_signal_impeller_frame_ready`
+      (engine-integration no-op). `protocol_handle_avatar` is private inside
+      protocol_handler.rs (was pub, downgraded — not an FFI surface).

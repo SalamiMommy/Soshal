@@ -11,6 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+source "$SCRIPT_DIR/../common.sh"
+
 MODE="debug"
 OUT_NAME="soshal_flutter.apk"
 if [[ "${1:-}" == "--release" ]]; then
@@ -23,24 +25,14 @@ fi
 
 ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 NDK_VERSION="${NDK_VERSION:-27.1.12297006}"
-FLUTTER_BIN="${FLUTTER_BIN:-}"
-if [[ -z "$FLUTTER_BIN" ]]; then
-  FLUTTER_BIN="$(command -v flutter || true)"
-fi
-if [[ -z "$FLUTTER_BIN" ]] && [[ -x "$HOME/fvm/default/bin/flutter" ]]; then
-  FLUTTER_BIN="$HOME/fvm/default/bin/flutter"
-fi
-if [[ -z "$FLUTTER_BIN" ]]; then
-  echo "flutter not found on PATH or in ~/fvm; set FLUTTER_BIN to its location" >&2
-  exit 1
-fi
+resolve_flutter_bin
 
 NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION"
 NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
 SYSROOT="$NDK_BIN/../sysroot"
 JNI_LIBS="$PROJECT_ROOT/soshal_flutter/android/app/src/main/jniLibs"
 ASSETS_DIR="$PROJECT_ROOT/soshal_flutter/android/app/src/main/assets/daemons"
-TARGETS_DIR="${SOSHAL_TARGET_DIR:-$HOME/.cache/soshal-targets}"   # disk-backed (tmpfs /tmp is too small)
+TARGETS_DIR="$SOSHAL_TARGETS_DIR"
 NDK_ALIAS_DIR="$TARGETS_DIR/ndk-bin"
 DAEMONS_CACHE="$TARGETS_DIR/daemons"
 BRIDGE="soshal-flutter-bridge"

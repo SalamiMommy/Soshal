@@ -4,35 +4,6 @@ pub mod events;
 pub mod moq;
 pub mod video_server;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct StreamMetadata {
-    pub id: String,
-    pub title: String,
-    pub summary: Option<String>,
-    pub streaming_url: String,
-    pub status: String,
-    pub starts_at: Option<i64>,
-    pub ends_at: Option<i64>,
-}
-
-/// Filters stories list to active non-expired items.
-pub fn filter_active_stories(
-    stories: &[serde_json::Value],
-    now_secs: i64,
-) -> Vec<serde_json::Value> {
-    stories
-        .iter()
-        .filter(|s| {
-            let created = s["created_at"].as_i64().unwrap_or(0);
-            let duration = s["duration_secs"].as_i64().unwrap_or(86400);
-            created + duration > now_secs
-        })
-        .cloned()
-        .collect()
-}
-
 pub const MAX_LIVE_CHAT_MESSAGES: usize = 500;
 
 /// Merges and deduplicates live chat messages by ID with a sliding-window cap.

@@ -8,6 +8,7 @@ use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 use soshal_db_core::repos::group::GroupRepo;
 use soshal_db_core::repos::role::{GroupRoleRepo, GroupRoleRow};
+use soshal_groups_core::group_enc::seal::group_message_envelope;
 
 /// Group info result
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -125,6 +126,13 @@ pub fn groups_leave(group_id: String, user_pubkey: String) -> Result<bool, Strin
 /// JSON (for relay publish in a later pipeline).
 #[frb(sync, serialize)]
 pub fn groups_post_message(group_id: String, content: String) -> Result<String, String> {
+    let content = super::db::with_db_result(|db| {
+        let key = GroupRepo::new(db).get_shared_key(&group_id)?;
+        Ok(match key {
+            Some(k) => group_message_envelope(&content, Some(&k)),
+            None => content,
+        })
+    })?;
     let signed = super::signer::sign_builder(nostr::event::EventBuilder::new(
         nostr::event::Kind::from_u16(1059),
         content.clone(),
@@ -345,7 +353,6 @@ pub fn groups_create(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
     struct TestDb {
         path: String,
@@ -582,6 +589,9 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("messages");
         let keys = soshal_nostr_core::keys::generate_keys();
         let owner = keys.public_key().to_hex();
@@ -617,6 +627,9 @@ mod tests {
     #[test]
     fn test_post_message_locked_signer_errors() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("msg_locked");

@@ -322,3 +322,256 @@ pub fn media_reconstruct_media_json(input: String) -> Result<String, String> {
         &input,
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soshal_media_core::chunking::{chunk_bytes, ChunkManifest};
+
+    const PNG_1X1_RGBA: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    #[test]
+    fn infer_mime_type_covers_extensions() {
+        assert_eq!(infer_mime_type("photo.PNG"), "image/png");
+        assert_eq!(infer_mime_type("a.jpeg"), "image/jpeg");
+        assert_eq!(infer_mime_type("b.gif"), "image/gif");
+        assert_eq!(infer_mime_type("c.webp"), "image/webp");
+        assert_eq!(infer_mime_type("d.mp4"), "video/mp4");
+        assert_eq!(infer_mime_type("e.webm"), "video/webm");
+        assert_eq!(infer_mime_type("f.mov"), "video/quicktime");
+        assert_eq!(infer_mime_type("g.wav"), "audio/wav");
+        assert_eq!(infer_mime_type("h.mp3"), "audio/mpeg");
+        assert_eq!(infer_mime_type("i.m4a"), "audio/mp4");
+        assert_eq!(infer_mime_type("j.xyz"), "application/octet-stream");
+        assert_eq!(infer_mime_type("noext"), "application/octet-stream");
+        assert_eq!(infer_mime_type(".png"), "image/png");
+        assert_eq!(infer_mime_type("a.b.png"), "image/png");
+        assert_eq!(infer_mime_type("dir.with.dots/file.JPG"), "image/jpeg");
+    }
+
+    #[test]
+    fn cache_filename_deterministic_and_unique() {
+        let a = generate_cache_filename("https://example.com/blob/abc");
+        let b = generate_cache_filename("https://example.com/blob/abc");
+        assert_eq!(a, b);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(!a.is_empty());
+        let c = generate_cache_filename("https://example.com/blob/abd");
+        assert_ne!(a, c);
+        assert_ne!(
+            generate_cache_filename("https://example.com"),
+            generate_cache_filename("http://example.com")
+        );
+    }
+
+    #[test]
+    fn chunking_size_caps_per_mime() {
+        let video = serde_json::from_str::<serde_json::Value>(
+            &media_chunking_for_mime("video/mp4".to_string()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(video["min"], 1024 * 1024);
+        assert_eq!(video["avg"], 4 * 1024 * 1024);
+        assert_eq!(video["max"], 16 * 1024 * 1024);
+        let audio = serde_json::from_str::<serde_json::Value>(
+            &media_chunking_for_mime("audio/wav".to_string()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(audio["min"], 32 * 1024);
+        assert_eq!(audio["avg"], 128 * 1024);
+        assert_eq!(audio["max"], 512 * 1024);
+        let other = serde_json::from_str::<serde_json::Value>(
+            &media_chunking_for_mime("application/octet-stream".to_string()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(other["min"], 64 * 1024);
+        assert_eq!(other["avg"], 256 * 1024);
+        assert_eq!(other["max"], 1024 * 1024);
+    }
+
+    #[test]
+    fn detect_image_format_from_bytes() {
+        assert_eq!(
+            media_detect_image_format(PNG_1X1_RGBA.to_vec()).unwrap(),
+            Some("png".to_string())
+        );
+        let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+        assert_eq!(
+            media_detect_image_format(jpeg.to_vec()).unwrap(),
+            Some("jpeg".to_string())
+        );
+        assert_eq!(media_detect_image_format(vec![0u8; 16]).unwrap(), None);
+        assert_eq!(media_detect_image_format(Vec::new()).unwrap(), None);
+    }
+
+    #[test]
+    fn thumbhash_roundtrip_png() {
+        let hex_hash = media_encode_thumbhash(PNG_1X1_RGBA.to_vec()).unwrap();
+        let bytes = hex::decode(&hex_hash).unwrap();
+        assert!(!bytes.is_empty());
+        assert!(bytes.len() <= 40);
+        let frame = soshal_media_core::thumbhash::decode_thumbhash_to_rgba(&bytes).unwrap();
+        assert!(frame.width > 0 && frame.height > 0);
+        assert_eq!(
+            frame.pixels.len(),
+            frame.width as usize * frame.height as usize * 4
+        );
+    }
+
+    #[test]
+    fn thumbhash_rejects_garbage_bytes() {
+        let err = media_encode_thumbhash(vec![0u8; 32]).unwrap_err();
+        assert!(err.contains("thumbhash"), "{err}");
+    }
+
+    #[test]
+    fn ssrf_guard_rejects_private_loopback_rebinding() {
+        for url in [
+            "http://localhost:8080/a.jpg",
+            "http://127.0.0.1/a.jpg",
+            "http://127.1/a.jpg",
+            "http://127.0.1.9/a.jpg",
+            "http://192.168.1.10/a.jpg",
+            "http://10.0.0.5/a.jpg",
+            "http://172.16.0.1/a.jpg",
+            "http://172.31.255.1/a.jpg",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://0.0.0.0/a.jpg",
+            "http://0/a.jpg",
+            "http://0x7f.1.1.1/a.jpg",
+            "http://2130706433/a.jpg",
+            "http://[::1]/a.jpg",
+            "http://[fc00::1]/a.jpg",
+            "http://[fe80::1]/a.jpg",
+            "http://foo.nip.io/a.jpg",
+            "http://foo.xip.io/a.jpg",
+            "http://foo.sslip.io/a.jpg",
+            "http://foo.localtest.me/a.jpg",
+            "http://foo.loca.lt/a.jpg",
+            "ftp://example.com/a.jpg",
+            "javascript:alert(1)",
+            "not-a-url",
+            "",
+        ] {
+            assert!(!is_valid_media_url(url), "expected reject: {url}");
+        }
+    }
+
+    #[test]
+    fn ssrf_guard_accepts_public_hosts() {
+        for url in [
+            "https://example.com/blob/abc",
+            "http://example.com:8080/a.jpg",
+            "https://sub.example.org/path?q=1",
+            "https://blossom.example.net/",
+        ] {
+            assert!(is_valid_media_url(url), "expected accept: {url}");
+        }
+        let too_long = format!("https://example.com/{}", "a".repeat(2100));
+        assert!(!is_valid_media_url(&too_long));
+    }
+
+    #[test]
+    fn media_fetch_rejects_bad_url_before_network() {
+        let cache = std::env::temp_dir()
+            .join(format!("soshal_media_inline_{}", std::process::id()))
+            .to_string_lossy()
+            .to_string();
+        let err = soshal_db_core::block_on(media_fetch(
+            "http://127.0.0.1/a.jpg".to_string(),
+            cache.clone(),
+        ))
+        .unwrap_err();
+        assert!(err.contains("Invalid media URL"), "{err}");
+        let err = soshal_db_core::block_on(media_fetch(
+            "https://example.com".to_string(),
+            cache.clone(),
+        ))
+        .unwrap_err();
+        assert!(err.contains("must point to a blob path"), "{err}");
+    }
+
+    #[test]
+    fn blob_manifest_hash_helpers() {
+        let data: Vec<u8> = (0..300 * 1024).map(|i| (i % 251) as u8).collect();
+        let m = chunk_bytes(&data).unwrap();
+        assert_eq!(m.blob_hash.len(), 64);
+        assert!(m.blob_hash.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(m.total_size, data.len() as u64);
+        assert!(m.is_valid());
+        let same = chunk_bytes(&data).unwrap();
+        assert_eq!(same.blob_hash, m.blob_hash);
+        let mut tampered = m.clone();
+        tampered.chunks[0].len += 1;
+        assert!(!tampered.is_valid());
+        let empty = chunk_bytes(&[]).unwrap();
+        assert_eq!(empty.total_size, 0);
+        assert!(empty.is_valid());
+        let mut oversized = ChunkManifest {
+            blob_hash: "0".repeat(64),
+            total_size: 10,
+            chunks: vec![soshal_media_core::chunking::ChunkRef {
+                blake3: "0".repeat(64),
+                offset: 0,
+                len: 11,
+            }],
+        };
+        assert!(!oversized.is_valid());
+        oversized.chunks[0].len = 10;
+        assert!(oversized.is_valid());
+    }
+
+    #[test]
+    fn freenet_chunk_verify_reconstruct_roundtrip() {
+        use soshal_crypto_core::base64::base64_encode_bytes;
+        let data = vec![b'x'; 3000];
+        let b64 = base64_encode_bytes(&data);
+        let chunk_json = format!(r#"{{"dataB64":"{b64}","chunkSize":1024}}"#);
+        let out = media_chunk_media_json(chunk_json).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["chunkCount"], 3);
+        assert_eq!(parsed["totalSize"], 3000);
+        assert_eq!(parsed["contentHash"].as_str().unwrap().len(), 64);
+        let hashes: Vec<String> = parsed["chunkHashes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h.as_str().unwrap().to_string())
+            .collect();
+        let mut chunks_b64 = Vec::new();
+        for (i, hash) in hashes.iter().enumerate() {
+            let chunk = &data[i * 1024..((i + 1) * 1024).min(3000)];
+            let chunk_b64 = base64_encode_bytes(chunk);
+            chunks_b64.push(chunk_b64.clone());
+            let verify_in = format!(r#"{{"dataB64":"{chunk_b64}","expectedHash":"{hash}"}}"#);
+            let v: serde_json::Value =
+                serde_json::from_str(&media_verify_chunk_json(verify_in).unwrap()).unwrap();
+            assert_eq!(v["valid"], true);
+        }
+        let recon_in = format!(
+            r#"{{"chunksB64":{}}}"#,
+            serde_json::to_string(&chunks_b64).unwrap()
+        );
+        let recon: serde_json::Value =
+            serde_json::from_str(&media_reconstruct_media_json(recon_in).unwrap()).unwrap();
+        assert_eq!(recon["totalSize"], 3000);
+        assert_eq!(recon["dataB64"], b64);
+    }
+
+    #[test]
+    fn prefetch_gating_follows_velocity() {
+        media_update_scroll_telemetry(0.0, 0, 10).unwrap();
+        assert!(media_should_prefetch(8).unwrap());
+        assert!(!media_should_prefetch(100).unwrap());
+        media_update_scroll_telemetry(5000.0, 0, 10).unwrap();
+        assert!(!media_should_prefetch(8).unwrap());
+        media_update_scroll_telemetry(0.0, 0, 10).unwrap();
+        assert!(media_should_prefetch(8).unwrap());
+    }
+}

@@ -1,9 +1,0 @@
-// Import test for ffi wrapper: p2p
-import 'package:flutter_test/flutter_test.dart';
-
-void main() {
-  test('import p2p compiles', () {
-    TestWidgetsFlutterBinding.ensureInitialized();
-    expect(true, isTrue);
-  });
-}

@@ -106,3 +106,117 @@ pub fn derive_msg_key(
     let next_chain = out[32..64].to_vec();
     Ok((msg_key, next_chain))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pqc_ratchet::{decrypt_ratchet, encrypt_ratchet, init_state, RatchetInput};
+
+    fn make_ratchet_pair(ctx: &str) -> (RatchetInput, RatchetInput) {
+        let (bob_pk, bob_sk) = soshal_pqc_core::hybrid::hybrid_keygen().unwrap();
+        let (alice_pk, alice_sk) = soshal_pqc_core::hybrid::hybrid_keygen().unwrap();
+        let bob = init_state("", ctx, &bob_sk, &bob_pk);
+        let alice = init_state(&bob_pk, ctx, &alice_sk, &alice_pk);
+        (alice, bob)
+    }
+
+    #[test]
+    fn test_ratchet_step_advances_state() {
+        let ss = [0x11u8; 32];
+        let root0 = init_root(&ss, "ctx").unwrap();
+        let (root1, chain1) = derive_root_step(&ss, &hex::encode(root0), "ctx").unwrap();
+        let (root2, chain2) = derive_root_step(&ss, &hex::encode(root1), "ctx").unwrap();
+        assert_ne!(root0, root1);
+        assert_ne!(root1, root2);
+        assert_ne!(chain1, chain2);
+
+        let (mk1, next1) = derive_msg_key(&hex::encode(chain1), "ctx").unwrap();
+        let (mk2, next2) = derive_msg_key(&hex::encode(&next1), "ctx").unwrap();
+        assert_ne!(mk1, mk2);
+        assert_ne!(next1, next2);
+
+        let (alice, _bob) = make_ratchet_pair("ctx");
+        let (alice2, _h1, _c1) = encrypt_ratchet(&alice, "first").unwrap();
+        let (alice3, _h2, _c2) = encrypt_ratchet(&alice2, "second").unwrap();
+        assert_ne!(alice.sending_chain_key, alice2.sending_chain_key);
+        assert_ne!(alice2.sending_chain_key, alice3.sending_chain_key);
+        assert_eq!(alice3.sending_chain_counter, 2);
+    }
+
+    #[test]
+    fn test_init_root_symmetric_both_directions() {
+        let ss = b"shared-secret-from-kem";
+        let alice_root = init_root(ss, "dm:alice:bob").unwrap();
+        let bob_root = init_root(ss, "dm:alice:bob").unwrap();
+        assert_eq!(alice_root, bob_root);
+        let other_ctx = init_root(ss, "dm:bob:alice").unwrap();
+        assert_ne!(alice_root, other_ctx);
+        let other_ss = init_root(b"different-shared-secret", "dm:alice:bob").unwrap();
+        assert_ne!(alice_root, other_ss);
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_roundtrip_after_ratchet() {
+        let (mut alice, mut bob) = make_ratchet_pair("dm:a:b");
+        for i in 0..3 {
+            let (a_out, h, ct) = encrypt_ratchet(&alice, &format!("msg-{i}")).unwrap();
+            let (b_out, pt) = decrypt_ratchet(&bob, &h, &ct).unwrap();
+            assert_eq!(pt, format!("msg-{i}"));
+            alice = a_out;
+            bob = b_out;
+        }
+        let (b_out, h, ct) = encrypt_ratchet(&bob, "reply from bob").unwrap();
+        let (a_out, pt) = decrypt_ratchet(&alice, &h, &ct).unwrap();
+        assert_eq!(pt, "reply from bob");
+        assert_eq!(a_out.chain_counter, b_out.chain_counter);
+    }
+
+    #[test]
+    fn test_wrong_ratchet_state_fails_decryption() {
+        let (alice, bob) = make_ratchet_pair("dm:a:b");
+        let (alice2, h, ct) = encrypt_ratchet(&alice, "secret").unwrap();
+        let (bob2, pt) = decrypt_ratchet(&bob, &h, &ct).unwrap();
+        assert_eq!(pt, "secret");
+
+        let (eve, _) = make_ratchet_pair("dm:a:b");
+        assert!(decrypt_ratchet(&eve, &h, &ct).is_err());
+
+        let mut tampered = ct.clone();
+        tampered.push('!');
+        assert!(decrypt_ratchet(&bob, &h, &tampered).is_err());
+
+        assert!(decrypt_ratchet(&bob2, &h, &ct).is_err());
+
+        let (_, h2, ct2) = encrypt_ratchet(&alice2, "next").unwrap();
+        let far_ahead = crate::pqc_ratchet::HeaderOutput {
+            version: crate::pqc_ratchet::RATCHET_VERSION,
+            pk: h2.pk,
+            ct: h2.ct,
+            seq: 0,
+            chain_counter: bob2.chain_counter + 2,
+        };
+        assert!(decrypt_ratchet(&bob2, &far_ahead, &ct2).is_err());
+    }
+
+    #[test]
+    fn test_compress_decompress_roundtrip_and_tamper() {
+        let original = "hello ratchet, compressed with deflate";
+        let compressed = compress_json(original).unwrap();
+        assert!(compressed.starts_with("z:"));
+        assert_eq!(
+            decompress_json(&compressed).unwrap(),
+            serde_json::to_vec(original).unwrap()
+        );
+
+        let mut tampered = compressed.clone();
+        let last = tampered.len() - 1;
+        tampered.replace_range(last..last + 1, "!");
+        assert!(decompress_json(&tampered).is_err());
+
+        assert!(decompress_json("z:!!!not-base64").is_err());
+        assert!(decompress_json("plain text without z prefix").is_err());
+
+        let big = "x".repeat(MAX_INPUT_LEN + 1);
+        assert!(compress_json(&big).is_err());
+    }
+}

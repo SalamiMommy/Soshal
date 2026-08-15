@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import 'moderation_service.dart';
 
 /// Messaging Service
 /// Handles direct messages (NIP-44), group chats, and decryption
@@ -155,7 +156,7 @@ class MessagingService extends ChangeNotifier
     String recipientSk,
   ) async {
     try {
-      return RustLib.instance.api.crateFfiMessagingMessagingDecryptDm(
+      return RustLib.instance.api.crateFfiSignerSignerNip44Decrypt(
         payload: encryptedContent,
         senderPubkey: senderPubkey,
       );
@@ -255,12 +256,6 @@ class MessagingService extends ChangeNotifier
     }
   }
 
-  /// Clear error
-  void clearError() {
-    clearLastError();
-    notifyDeferred();
-  }
-
   /// Register a burn DM (disappearing media) against a sent message.
   /// Sync FFI; returns the ephemeral row id.
   Future<String> saveEphemeral({
@@ -351,34 +346,6 @@ class MessagingService extends ChangeNotifier
     }
   }
 
-  /// Burn-DM row by its message id straight from the DB (JSON or null).
-  Future<String> dbEphemeralByMessageId(String messageId) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiDbDbGetEphemeralByMessageId(messageId: messageId);
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
-
-  /// Persist a state transition on a burn-DM row.
-  Future<bool> dbMarkEphemeralState(String id, String state) async {
-    try {
-      final ok = RustLib.instance.api
-          .crateFfiDbDbMarkEphemeralState(id: id, state: state);
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
 }
 
 /// Identity Service
@@ -386,6 +353,7 @@ class MessagingService extends ChangeNotifier
 class IdentityService extends ChangeNotifier
     with LastErrorMixin, DeferredNotify {
   final Map<String, ProfileInfo> _profiles = {};
+  late final ModerationService _moderation = ModerationService();
 
   Map<String, ProfileInfo> get profiles => _profiles;
 
@@ -507,6 +475,24 @@ class IdentityService extends ChangeNotifier
     }
   }
 
+  /// Publish custom profile to relays (Nostr kind 30085)
+  Future<String> publishCustomProfile(String pubkey, String profileJson) async {
+    try {
+      final eventId = RustLib.instance.api
+          .crateFfiIdentityIdentityPublishCustomProfile(
+        pubkey: pubkey,
+        profileJson: profileJson,
+      );
+      clearLastError();
+      notifyDeferred();
+      return eventId;
+    } catch (e) {
+      setLastError(e);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
   /// Verify NIP-05 identifier
   Future<bool> verifyNip05(String nip05) async {
     try {
@@ -547,37 +533,13 @@ class IdentityService extends ChangeNotifier
   }
 
   /// Block a user (blocker must be the active account).
-  Future<bool> blockUser(String blockerPubkey, String targetPubkey) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiIdentityIdentityBlockUser(
-        blockerPubkey: blockerPubkey,
-        targetPubkey: targetPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e) {
-      setLastError(e);
-      notifyDeferred();
-      rethrow;
-    }
+  Future<bool> blockUser(String blockerPubkey, String targetPubkey) {
+    return _moderation.block(blockerPubkey, targetPubkey);
   }
 
   /// Unblock a user.
-  Future<bool> unblockUser(String blockerPubkey, String targetPubkey) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiIdentityIdentityUnblockUser(
-        blockerPubkey: blockerPubkey,
-        targetPubkey: targetPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e) {
-      setLastError(e);
-      notifyDeferred();
-      rethrow;
-    }
+  Future<bool> unblockUser(String blockerPubkey, String targetPubkey) {
+    return _moderation.unblock(blockerPubkey, targetPubkey);
   }
 
   /// List users blocked by the given account.
@@ -633,12 +595,6 @@ class IdentityService extends ChangeNotifier
       notifyDeferred();
       rethrow;
     }
-  }
-
-  /// Clear error
-  void clearError() {
-    clearLastError();
-    notifyDeferred();
   }
 }
 

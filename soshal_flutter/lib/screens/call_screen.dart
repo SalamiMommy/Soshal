@@ -37,7 +37,7 @@ class CallScreen extends StatefulWidget {
 }
 
 class _CallScreenState extends State<CallScreen> {
-  final CallsService _service = CallsService();
+  late final CallsService _service;
   bool _muted = false;
   bool _speaker = false;
   bool _ending = false;
@@ -51,6 +51,7 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void initState() {
     super.initState();
+    _service = context.read<CallsService>();
     _service.startCall(
       callId: widget.callId,
       peer: widget.peer,
@@ -66,7 +67,6 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void dispose() {
     _service.endCall();
-    _service.dispose();
     super.dispose();
   }
 
@@ -109,7 +109,7 @@ class _CallScreenState extends State<CallScreen> {
       final latest = signals.isNotEmpty ? signals.first : null;
       _latestSignal = latest == null
           ? null
-          : '${latest.signalType} · ${latest.pubkey.substring(0, 10)}…';
+          : '${latest.signalType} · ${prefixEllipsis(latest.pubkey, 10)}';
       _setupError = null;
     } catch (e) {
       _setupError = 'signal poll: $e';
@@ -122,14 +122,13 @@ class _CallScreenState extends State<CallScreen> {
   void _refreshIce() {
     try {
       final cfg = _service.iceConfig(_privacyLevel);
-      final webrtc = _service.webrtcIceConfig(_privacyLevel);
       final peer = _service.createPeerConfig(_privacyLevel);
       final stun = _service.stunServers();
       final turn = _service.turnServers();
       _iceSummary = 'STUN: ${stun.join(', ')}\n'
           'TURN: $turn\n'
           'ICE policy: ${_policyFromJson(cfg)}\n'
-          'WebRTC: $webrtc\n'
+          'WebRTC: $cfg\n'
           'Peer config: $peer';
       _setupError = null;
     } catch (e) {
@@ -174,7 +173,7 @@ class _CallScreenState extends State<CallScreen> {
         sdp = _service.addCandidateToSdp(
             sdp, 'a=candidate:1 1 UDP 1 203.0.113.9 5000 typ relay');
       }
-      sdp = _service.sanitizeSdpWebrtc(sdp, forceRelay: forceRelay);
+      sdp = _service.sanitizeSdp(sdp, forceRelay: forceRelay);
       final id = await _service.sendSignal(
         signalType: 'offer',
         targetPubkey: widget.peer,
@@ -182,7 +181,7 @@ class _CallScreenState extends State<CallScreen> {
         sdp: sdp,
         mediaType: widget.mediaType,
       );
-      _snack('Offer signal sent · ${id.substring(0, 12)}…');
+      _snack('Offer signal sent · ${prefixEllipsis(id, 12)}');
     } catch (e) {
       _snack('Offer error: $e');
     } finally {

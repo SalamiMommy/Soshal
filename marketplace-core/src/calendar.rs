@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
+use soshal_common_core::consts::MAX_TAG_VALUE_LEN;
 use soshal_common_core::json_util::{json_in, json_out};
 
-const MAX_TAGS: usize = 100_000;
-const MAX_TAG_VALUE_LEN: usize = 4096;
+const MAX_TAGS_ENTRIES: usize = 100_000;
 
 #[derive(Deserialize)]
 struct CalendarEventInput {
@@ -48,7 +48,7 @@ pub struct CalendarEventOut {
 use soshal_nostr_core::models::find_tag_value;
 
 fn parse_calendar_event(ev: &CalendarEventInput) -> Option<CalendarEventOut> {
-    if ev.tags.len() > MAX_TAGS {
+    if ev.tags.len() > MAX_TAGS_ENTRIES {
         return None;
     }
     let d_tag = find_tag_value(&ev.tags, "d")

@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../ffi/db.dart' as ffi_db;
-import '../frb_generated.dart';
 import '../models/custom_profile.dart';
 import '../models/widget.dart';
+import '../services/messaging_service.dart';
 import '../services/session_service.dart';
 
 /// ProfileBuilderScreen. Drag-and-drop custom profile builder. Add, remove,
@@ -93,6 +93,7 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
     setState(() => _saving = true);
     try {
       final sessionService = context.read<SessionService>();
+      final messagingService = context.read<IdentityService>();
       final pubkey = sessionService.activePubkey;
       if (pubkey == null) {
         if (mounted) {
@@ -112,9 +113,9 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
 
       // Publish to relays (Nostr event kind 30085)
       try {
-        RustLib.instance.api.crateFfiIdentityIdentityPublishCustomProfile(
-          pubkey: pubkey,
-          profileJson: jsonEncode(profile.toJson()),
+        await messagingService.publishCustomProfile(
+          pubkey,
+          jsonEncode(profile.toJson()),
         );
       } catch (e) {
         debugPrint('Failed to publish to relays: $e');
@@ -258,10 +259,7 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
                       )
                     : ReorderableListView.builder(
                         itemCount: _nodes.length,
-                        onReorder: (oldIndex, newIndex) {
-                          if (newIndex > oldIndex) {
-                            newIndex -= 1;
-                          }
+                        onReorderItem: (oldIndex, newIndex) {
                           final reordered =
                               List<CustomProfileNode>.from(_nodes);
                           final item = reordered.removeAt(oldIndex);

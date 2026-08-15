@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/inbox_screen.dart';
+import 'package:soshal_flutter/services/media_service.dart';
 import 'package:soshal_flutter/services/messaging_service.dart';
+import 'package:soshal_flutter/services/p2p_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 
 import 'helpers/test_env.dart';
@@ -69,12 +71,15 @@ Future<void> pumpInbox(
       ),
     ],
   );
+  final p2p = P2pService();
   await tester.pumpWidget(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(
             create: (_) => messaging ?? MessagingService()),
         ChangeNotifierProvider(create: (_) => session),
+        ChangeNotifierProvider(create: (_) => p2p),
+        ChangeNotifierProvider(create: (_) => MediaService()),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
@@ -128,8 +133,10 @@ void main() {
     final session = await seedSession();
     await pumpInbox(tester, session: session);
 
-    expect(find.text(alicePubkey.substring(0, 16)), findsOneWidget);
-    expect(find.text(bobPubkey.substring(0, 16)), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('second conv'), 200,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('${alicePubkey.substring(0, 16)}…'), findsOneWidget);
+    expect(find.text('${bobPubkey.substring(0, 16)}…'), findsOneWidget);
     expect(find.text('hey alice'), findsOneWidget);
     expect(find.text('second conv'), findsOneWidget);
     expect(api.callCount('crateFfiMessagingMessagingFetchConversations'), 1);
@@ -158,7 +165,10 @@ void main() {
     final session = await seedSession();
     await pumpInbox(tester, session: session);
 
-    await tester.tap(find.text(alicePubkey.substring(0, 16)));
+    final aliceTile = find.text('${alicePubkey.substring(0, 16)}…');
+    await tester.scrollUntilVisible(aliceTile, 200,
+        scrollable: find.byType(Scrollable).first);
+    await tester.tap(aliceTile);
     await tester.pumpAndSettle();
 
     final inbox =
@@ -178,6 +188,8 @@ void main() {
     final session = await seedSession();
     await pumpInbox(tester, session: session);
 
+    await tester.scrollUntilVisible(find.text('No conversations yet'), 200,
+        scrollable: find.byType(Scrollable).first);
     expect(find.text('No conversations yet'), findsOneWidget);
   });
 
@@ -203,6 +215,8 @@ void main() {
     final session = await seedSession();
     await pumpInbox(tester, session: session);
 
+    await tester.scrollUntilVisible(find.text('🔒 ciphertext'), 200,
+        scrollable: find.byType(Scrollable).first);
     expect(find.text('🔒 ciphertext'), findsOneWidget);
   });
 }

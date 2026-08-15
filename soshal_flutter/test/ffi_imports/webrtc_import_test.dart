@@ -1,9 +1,0 @@
-// Import test for ffi wrapper: webrtc
-import 'package:flutter_test/flutter_test.dart';
-
-void main() {
-  test('import webrtc compiles', () {
-    TestWidgetsFlutterBinding.ensureInitialized();
-    expect(true, isTrue);
-  });
-}

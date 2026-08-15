@@ -575,8 +575,8 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       return false;
     }
     try {
-      final ok = RustLib.instance.api.crateFfiNetworkNetworkNotifyInterfaceChange(
-          newIp: '$ip:$port');
+      final ok = RustLib.instance.api
+          .crateFfiNetworkNetworkNotifyInterfaceChange(newIp: '$ip:$port');
       clearLastError();
       return ok;
     } catch (e, st) {

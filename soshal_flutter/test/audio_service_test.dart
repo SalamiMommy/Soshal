@@ -21,13 +21,13 @@ void main() {
       final audio = AudioService();
       api.stub(
         'crateFfiStorageStorageGetAudioPeaks',
-        (_) => <double>[0.1, 0.5, 0.9],
+        (_) => Float32List.fromList([0.1, 0.5, 0.9]),
       );
 
       final peaks = audio.peaksFor('/voice/a.m4a');
       expect(peaks.length, 3, reason: 'bucket count');
-      expect(peaks[0], 0.1);
-      expect(peaks[2], 0.9);
+      expect(peaks[0], closeTo(0.1, 1e-6));
+      expect(peaks[2], closeTo(0.9, 1e-6));
       final inv =
           api.callsOf('crateFfiStorageStorageGetAudioPeaks').single;
       expect(api.namedArg(inv, 'path'), '/voice/a.m4a');

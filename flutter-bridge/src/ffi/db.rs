@@ -281,6 +281,40 @@ pub(crate) fn with_db_string<T>(
         .map_err(|e| e.trim_start_matches("db: migration: ").to_string())
 }
 
+pub(crate) fn upsert_post_row(
+    id: String,
+    pubkey: String,
+    content: String,
+    kind: i64,
+    created_at: i64,
+    tags_json: String,
+    subject: Option<String>,
+) -> Result<(), String> {
+    let row = soshal_db_core::repos::post::PostRow {
+        id,
+        pubkey,
+        content,
+        kind,
+        created_at,
+        tags_json,
+        sig: None,
+        reply_to: None,
+        root_id: None,
+        mentioned_pubkeys: String::new(),
+        mentioned_hashtags: String::new(),
+        subject,
+        sync_status: "pending".to_string(),
+        is_deleted: false,
+        scheduled_at: None,
+        freenet_key: None,
+        is_freenet_native: false,
+    };
+    with_db_result(|db| {
+        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
+        Ok(())
+    })
+}
+
 /// Get custom profile nodes for a user from the database.
 #[frb(sync, serialize)]
 pub fn db_get_custom_profile_nodes(pubkey: String) -> Result<String, String> {
@@ -464,6 +498,29 @@ pub fn db_purge_stale_geohash_peers(cutoff_secs_ago: i64) -> Result<usize, Strin
         let repo = GeohashPeerRepo::new(db);
         Ok(repo.purge_stale(cutoff_secs_ago)? as usize)
     })
+}
+
+#[cfg(test)]
+pub(crate) fn tmp_db_path(label: &str, prefix: &str) -> String {
+    static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let path = format!(
+        "{}/soshal_{prefix}_{label}_{}_{}.db",
+        std::env::temp_dir().to_string_lossy(),
+        std::process::id(),
+        n
+    );
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(format!("{path}-wal"));
+    let _ = std::fs::remove_file(format!("{path}-shm"));
+    path
+}
+
+#[cfg(test)]
+pub(crate) fn tmp_db(label: &str, prefix: &str) -> String {
+    let path = tmp_db_path(label, prefix);
+    db_init(path.clone()).unwrap();
+    path
 }
 
 #[cfg(test)]

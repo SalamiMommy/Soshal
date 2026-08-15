@@ -42,9 +42,73 @@ pub fn parse_lud16_url_secure(lud16: &str) -> Result<(String, String, String), S
 
 /// Extracts the host string from a URL.
 pub fn host_of(url_str: &str) -> Result<String, String> {
-    url::Url::parse(url_str)
-        .map_err(|e| format!("invalid url: {e}"))?
-        .host_str()
-        .map(|h| h.to_string())
-        .ok_or_else(|| "url has no host".into())
+    soshal_common_core::url::domain(url_str).ok_or_else(|| "url has no host".into())
+}
+
+#[cfg(test)]
+mod tests {
+    #[allow(deprecated)]
+    use super::parse_lud16_url;
+    use super::{host_of, parse_lud16_url_secure};
+
+    #[test]
+    fn valid_lud16_parses() {
+        let (user, domain, url) = parse_lud16_url_secure("alice@example.com").unwrap();
+        assert_eq!(user, "alice");
+        assert_eq!(domain, "example.com");
+        assert_eq!(url, "https://example.com/.well-known/lnurlp/alice");
+        let (u, _, _) = parse_lud16_url_secure("bob-1_x.y@sub.domain.org").unwrap();
+        assert_eq!(u, "bob-1_x.y");
+    }
+
+    #[test]
+    fn lud16_url_is_https_only() {
+        for lud16 in ["alice@example.com", "bob@sub.domain.org"] {
+            assert!(
+                parse_lud16_url_secure(lud16)
+                    .unwrap()
+                    .2
+                    .starts_with("https://"),
+                "non-https url for {lud16}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_lud16_rejected() {
+        for bad in [
+            "",
+            "no-at-sign",
+            "@domain.com",
+            "user@",
+            "user@domain.com@evil.org",
+            "../admin@domain.com",
+            "a/b@domain.com",
+            "a?b@domain.com",
+            "a#b@domain.com",
+            "sp ace@domain.com",
+            "usér@domain.com",
+        ] {
+            assert!(parse_lud16_url_secure(bad).is_err(), "accepted: {bad}");
+        }
+        let long_user = format!("{}@domain.com", "u".repeat(65));
+        assert!(parse_lud16_url_secure(&long_user).is_err());
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn legacy_parse_does_not_allowlist_user() {
+        let (user, _, url) = parse_lud16_url("../admin@domain.com").unwrap();
+        assert_eq!(user, "../admin");
+        assert_eq!(url, "https://domain.com/.well-known/lnurlp/../admin");
+        assert!(parse_lud16_url("").is_err());
+    }
+
+    #[test]
+    fn host_of_behavior() {
+        assert_eq!(host_of("https://example.com/path").unwrap(), "example.com");
+        assert_eq!(host_of("wss://relay.nostr.com").unwrap(), "relay.nostr.com");
+        assert!(host_of("not a url").is_err());
+        assert!(host_of("https://").is_err());
+    }
 }

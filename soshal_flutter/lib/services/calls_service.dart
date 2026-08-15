@@ -86,7 +86,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
   /// redacted). Sync FFI.
   String sanitizeSdp(String sdp, {bool forceRelay = false}) {
     try {
-      final out = RustLib.instance.api.crateFfiCallsCallsSanitizeSdp(
+      final out = RustLib.instance.api.crateFfiWebrtcWebrtcSanitizeSdp(
         sdp: sdp,
         forceRelay: forceRelay,
       );
@@ -100,23 +100,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// ICE server configuration JSON for the given privacy level. Sync FFI.
-  String iceConfig(String privacyLevel, {String stunUrl = ''}) {
-    try {
-      final out = RustLib.instance.api.crateFfiCallsCallsIceConfig(
-        privacyLevel: privacyLevel,
-        stunUrl: stunUrl,
-      );
-      clearLastError();
-      return out;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// ICE configuration from the WebRTC module. Sync FFI.
-  String webrtcIceConfig(String privacyLevel) {
+  String iceConfig(String privacyLevel) {
     try {
       final out = RustLib.instance.api
           .crateFfiWebrtcWebrtcGetIceConfig(privacyLevel: privacyLevel);
@@ -147,22 +131,6 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     try {
       final out = RustLib.instance.api
           .crateFfiWebrtcWebrtcGetTurnServers(authToken: authToken);
-      clearLastError();
-      return out;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// WebRTC-module SDP sanitizer (private IP redaction). Sync FFI.
-  String sanitizeSdpWebrtc(String sdp, {bool forceRelay = false}) {
-    try {
-      final out = RustLib.instance.api.crateFfiWebrtcWebrtcSanitizeSdp(
-        sdp: sdp,
-        forceRelay: forceRelay,
-      );
       clearLastError();
       return out;
     } catch (e, st) {
@@ -257,12 +225,6 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     _peer = null;
     _mediaType = null;
     _startedAt = null;
-    notifyListeners();
-  }
-
-  /// Clear error.
-  void clearError() {
-    clearLastError();
     notifyListeners();
   }
 

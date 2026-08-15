@@ -8,21 +8,24 @@ pub fn analytics_compute_stats() -> Result<String, String> {
     let my_pubkey = super::signer::signer_pubkey().unwrap_or_default();
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
-        let total_posts: i64 = soshal_db_core::query::query_first(
+        let rows: Vec<(String, i64)> = soshal_db_core::query::query(
             &conn,
-            "SELECT COUNT(*) FROM posts WHERE pubkey = ?1 AND kind = 1 AND is_deleted = 0",
+            "SELECT p.pubkey, (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id) \
+             FROM posts p WHERE p.pubkey = ?1 AND p.kind = 1 AND p.is_deleted = 0",
             [my_pubkey.as_str()],
-            |r| r.get(0),
-        )?
-        .unwrap_or(0);
-        let total_reactions: i64 = soshal_db_core::query::query_first(
-            &conn,
-            "SELECT COUNT(*) FROM reactions r JOIN posts p ON p.id = r.event_id \
-             WHERE p.pubkey = ?1 AND p.kind = 1 AND p.is_deleted = 0",
-            [my_pubkey.as_str()],
-            |r| r.get(0),
-        )?
-        .unwrap_or(0);
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let posts: Vec<soshal_analytics_core::PostInput> = rows
+            .into_iter()
+            .map(|(pubkey, likes)| soshal_analytics_core::PostInput {
+                pubkey,
+                local_stats: Some(soshal_analytics_core::LocalStats {
+                    likes_count: Some(likes as u64),
+                    reposts_count: None,
+                }),
+            })
+            .collect();
+        let out = soshal_analytics_core::posts::compute_analytics_posts(&posts, &my_pubkey);
         let total_zap_msat: i64 = soshal_db_core::query::query_first(
             &conn,
             "SELECT COALESCE(SUM(amount_msat), 0) FROM zaps WHERE recipient_pubkey = ?1",
@@ -31,8 +34,8 @@ pub fn analytics_compute_stats() -> Result<String, String> {
         )?
         .unwrap_or(0);
         Ok(serde_json::json!({
-            "totalPosts": total_posts,
-            "totalReactions": total_reactions,
+            "totalPosts": out.total_posts,
+            "totalReactions": out.total_reactions,
             "totalZapMsat": total_zap_msat,
         })
         .to_string())

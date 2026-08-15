@@ -389,3 +389,128 @@ fn decrypt_legacy(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'stat
     }
     unpad(&plaintext)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_roundtrip_multiple_lengths() {
+        let key = [0x42u8; 32];
+        for len in [1usize, 100, 5000] {
+            let pt: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+            let ct = encrypt(&pt, &key).unwrap();
+            assert_eq!(decrypt(&ct, &key).unwrap(), pt);
+        }
+    }
+
+    #[test]
+    fn test_encryption_nonce_random_per_call() {
+        let key = [0x42u8; 32];
+        let a = encrypt(b"same plaintext", &key).unwrap();
+        let b = encrypt(b"same plaintext", &key).unwrap();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_v2_envelope_format() {
+        let key = [0x42u8; 32];
+        let pt = b"envelope";
+        let ct = encrypt(pt, &key).unwrap();
+        let bytes = general_purpose::STANDARD.decode(&ct).unwrap();
+        assert_eq!(bytes[0], VERSION_PADDED);
+        assert_eq!(
+            bytes.len(),
+            VERSION_LEN + SALT_LEN + 2 + calc_padding(pt.len()) + 32
+        );
+    }
+
+    #[test]
+    fn test_tampered_nonce_fails() {
+        let key = [0x42u8; 32];
+        let ct = encrypt(b"tamper nonce", &key).unwrap();
+        let mut bytes = general_purpose::STANDARD.decode(&ct).unwrap();
+        bytes[VERSION_LEN + 1] ^= 0x01;
+        assert!(decrypt(&general_purpose::STANDARD.encode(&bytes), &key).is_err());
+    }
+
+    #[test]
+    fn test_tampered_ciphertext_fails() {
+        let key = [0x42u8; 32];
+        let ct = encrypt(b"tamper ciphertext", &key).unwrap();
+        let mut bytes = general_purpose::STANDARD.decode(&ct).unwrap();
+        bytes[VERSION_LEN + SALT_LEN + 4] ^= 0x01;
+        assert!(decrypt(&general_purpose::STANDARD.encode(&bytes), &key).is_err());
+    }
+
+    #[test]
+    fn test_tampered_hmac_fails() {
+        let key = [0x42u8; 32];
+        let ct = encrypt(b"tamper hmac", &key).unwrap();
+        let mut bytes = general_purpose::STANDARD.decode(&ct).unwrap();
+        let last = bytes.len() - 1;
+        bytes[last] ^= 0x01;
+        bytes[last - 1] ^= 0x01;
+        assert!(decrypt(&general_purpose::STANDARD.encode(&bytes), &key).is_err());
+    }
+
+    #[test]
+    fn test_wrong_key_fails() {
+        let key = [0x42u8; 32];
+        let wrong = [0x00u8; 32];
+        let ct = encrypt(b"secret", &key).unwrap();
+        assert!(decrypt(&ct, &wrong).is_err());
+        assert_eq!(decrypt(&ct, &key).unwrap(), b"secret");
+    }
+
+    #[test]
+    fn test_legacy_decode_path() {
+        let key = [0x42u8; 32];
+        let legacy_ct = encrypt_padded(b"legacy stored data", &key).unwrap();
+        let mut buf = legacy_ct[..SALT_LEN].to_vec();
+        buf.push(VERSION_LEGACY);
+        buf.extend_from_slice(&legacy_ct[SALT_LEN..]);
+        let encoded = general_purpose::STANDARD.encode(&buf);
+        assert_eq!(decrypt(&encoded, &key).unwrap(), b"legacy stored data");
+    }
+
+    #[test]
+    fn test_error_paths() {
+        let key = [0x42u8; 32];
+        assert_eq!(encrypt(b"", &key), Err("empty plaintext"));
+        assert!(decrypt("", &key).is_err());
+        assert!(decrypt("not base64!!!", &key).is_err());
+        assert!(decrypt(&general_purpose::STANDARD.encode([]), &key).is_err());
+        let big = vec![0u8; u16::MAX as usize + 1];
+        assert_eq!(encrypt(&big, &key), Err("plaintext too large"));
+    }
+
+    #[test]
+    fn test_pad_unpad_error_paths() {
+        assert_eq!(pad(b""), Err("empty plaintext"));
+        assert!(unpad(b"").is_err());
+        let mut too_short = vec![0u8; 34];
+        too_short[0] = 0x01;
+        assert!(unpad(&too_short).is_err());
+        let zero_len = vec![0u8; 34];
+        assert_eq!(unpad(&zero_len), Err("empty plaintext"));
+        assert_eq!(
+            unpad_in_place(pad(b"in place").unwrap()).unwrap(),
+            b"in place"
+        );
+    }
+
+    #[test]
+    fn test_decrypt_spec_rejects_malformed() {
+        let key = [0x42u8; 32];
+        assert_eq!(
+            decrypt_spec(&[VERSION_PADDED; 1], &key),
+            Err("payload too short")
+        );
+        assert_eq!(
+            decrypt_spec(&[VERSION_LEGACY; 100], &key),
+            Err("unsupported payload version")
+        );
+        assert_eq!(decrypt_legacy(&[], &key), Err("payload too short"));
+    }
+}

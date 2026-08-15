@@ -1,5 +1,6 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soshal_flutter/ffi/auth.dart' as ffi_auth;
 import 'package:soshal_flutter/services/auth_service.dart';
 
 import 'helpers/test_env.dart';
@@ -186,8 +187,7 @@ void main() {
       const hexKey = 'abc123';
       api.stubString('crateFfiAuthAuthNpubDecode', hexKey);
 
-      final auth = AuthService();
-      final result = await auth.decodeNpub(npub);
+      final result = ffi_auth.authNpubDecode(npub: npub);
 
       expect(result, hexKey);
       final inv = api.callsOf('crateFfiAuthAuthNpubDecode').single;

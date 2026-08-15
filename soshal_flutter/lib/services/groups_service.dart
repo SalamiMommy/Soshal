@@ -294,28 +294,6 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         .map((e) => SoshalGroup.fromJson(e as Map<String, dynamic>))
         .toList();
   }
-
-  /// Persist a member role assignment in the local DB.
-  Future<bool> assignMemberRole({
-    required String groupId,
-    required String pubkey,
-    required String roleId,
-  }) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiDbDbAssignMemberRole(
-        groupId: groupId,
-        pubkey: pubkey,
-        roleId: roleId,
-      );
-      clearLastError();
-      await fetchMembersWithRoles(groupId);
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
 }
 
 /// Group info.
@@ -352,7 +330,7 @@ class SoshalGroup {
       picture: json['picture'] as String? ?? '',
       owner: json['owner'] as String? ?? '',
       members: (json['members'] as num?)?.toInt() ?? 0,
-      isMember: isMember || id.isNotEmpty,
+      isMember: isMember,
       role: json['role'] as String? ?? (isMember ? 'member' : ''),
       createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
     );

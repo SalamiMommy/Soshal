@@ -23,7 +23,6 @@ import 'package:soshal_flutter/ffi/p2p.dart'
         p2PDecodeFountainPayload,
         p2PEncodeFountainPayload,
         p2PQuicFetchChunk,
-        p2PQuicServerPort,
         p2PQuicServerStart,
         p2PQuicServerStop,
         p2PSwarmCancel,
@@ -179,19 +178,6 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
-  /// Port of the running QUIC stream server, read live from Rust.
-  Future<int?> quicServerPort() async {
-    try {
-      _quicPort = p2PQuicServerPort();
-      notifyListeners();
-      return _quicPort;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      return null;
-    }
-  }
-
   /// Stop the QUIC stream server.
   Future<bool> stopQuicServer() async {
     try {
@@ -204,19 +190,6 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
       setLastError(e, st);
       notifyListeners();
       return false;
-    }
-  }
-
-  /// Port of the running LAN chunk server, read live from Rust.
-  Future<int?> lanServerPort() async {
-    try {
-      _lanPort = p2PLanServerPort();
-      notifyListeners();
-      return _lanPort;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      return null;
     }
   }
 

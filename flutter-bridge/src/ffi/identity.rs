@@ -522,33 +522,6 @@ pub fn identity_publish_custom_profile(
     Ok(id)
 }
 
-/// Block a user locally (stored in the blocks table; also enforced by feed
-/// and DM filtering).
-#[frb(sync, serialize)]
-pub fn identity_block_user(blocker_pubkey: String, target_pubkey: String) -> Result<bool, String> {
-    let row = soshal_db_core::repos::block::BlockRow {
-        pubkey: blocker_pubkey.clone(),
-        blocked_pubkey: target_pubkey.clone(),
-        created_at: soshal_common_core::format::now_secs(),
-    };
-    super::db::with_db_result(|db| {
-        BlockRepo::new(db).upsert(&row)?;
-        Ok(true)
-    })
-}
-
-/// Unblock a user locally.
-#[frb(sync, serialize)]
-pub fn identity_unblock_user(
-    blocker_pubkey: String,
-    target_pubkey: String,
-) -> Result<bool, String> {
-    super::db::with_db_result(|db| {
-        BlockRepo::new(db).delete(&blocker_pubkey, &target_pubkey)?;
-        Ok(true)
-    })
-}
-
 /// Get the local blocked list for a user.
 #[frb(sync, serialize)]
 pub fn identity_get_blocked_users(pubkey: String) -> Result<Vec<String>, String> {

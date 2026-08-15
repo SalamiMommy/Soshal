@@ -43,11 +43,10 @@ class _ComposerScreenState extends State<ComposerScreen> {
   /// codec, and attach it to the post as a blob-backed `audio` media tag.
   Future<void> _attachVoiceNote() async {
     try {
-      final picked = await FilePicker.pickFiles(
+      final picked = await FilePicker.pickFile(
         type: FileType.any,
-        allowMultiple: false,
       );
-      final path = picked.isEmpty ? null : picked.single.path;
+      final path = picked?.path;
       if (path == null || !mounted) return;
       final audio = AudioService();
       final bytes = await File(path).readAsBytes();
@@ -63,6 +62,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
       final tmp = File(
           '${Directory.systemTemp.path}/voice_${DateTime.now().millisecondsSinceEpoch}.vo');
       await tmp.writeAsBytes(payload);
+      if (!mounted) return;
       final manifest = await context.read<MediaService>().uploadMedia(tmp.path);
       final blobHash = manifest['blob_hash'] as String? ?? '';
       if (blobHash.length != 64) {
@@ -135,11 +135,10 @@ class _ComposerScreenState extends State<ComposerScreen> {
 
   Future<void> _attachMedia() async {
     try {
-      final picked = await FilePicker.pickFiles(
+      final picked = await FilePicker.pickFile(
         type: FileType.any,
-        allowMultiple: false,
       );
-      final path = picked.isEmpty ? null : picked.single.path;
+      final path = picked?.path;
       if (path == null || !mounted) return;
       setState(() => _uploadingMedia = true);
       final manifest = await context.read<MediaService>().uploadMedia(path);
@@ -210,6 +209,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
     } finally {
       setState(() => _isPosting = false);
     }
+    if (!mounted) return;
     try {
       final feedService = context.read<FeedService>();
       final sessionService = context.read<SessionService>();
@@ -475,7 +475,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
                           : Icons.audiotrack,
                 ),
                 label: Text(
-                  '${_pendingMedia!.type}: ${_pendingMedia!.blobHash.substring(0, 10)}…',
+                  '${_pendingMedia!.type}: ${prefixEllipsis(_pendingMedia!.blobHash, 10)}',
                   overflow: TextOverflow.ellipsis,
                 ),
                 onDeleted: () => setState(() => _pendingMedia = null),

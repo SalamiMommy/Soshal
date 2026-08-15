@@ -33,7 +33,7 @@ Future<void> pumpComposer(WidgetTester tester, {String? sessionPubkey}) async {
         ChangeNotifierProvider<SessionService>(
           create: (_) => FakeSession(pubkey: sessionPubkey),
         ),
-        Provider(create: (_) => SignerService()),
+        ChangeNotifierProvider(create: (_) => SignerService()),
       ],
       child: MaterialApp(
         navigatorKey: navKey,
@@ -63,7 +63,7 @@ void main() {
   setUp(() {
     api.handlers.clear();
     api.calls.clear();
-    api.stubListString('crateFfiContentContentExtractHashtags', []);
+    api.stubListString('crateFfiUtilUtilExtractHashtags', []);
     api.stubBool('crateFfiSignerSignerIsLocked', false);
   });
 
@@ -79,14 +79,14 @@ void main() {
 
   testWidgets('typing detects hashtags and shows tag chips', (tester) async {
     api.stubListString(
-      'crateFfiContentContentExtractHashtags',
+      'crateFfiUtilUtilExtractHashtags',
       ['flutter', 'dart'],
     );
 
     await pumpComposer(tester);
 
     await tester.enterText(find.byType(TextField), '#flutter #dart hello');
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 301));
 
     expect(find.text('#flutter'), findsOneWidget);
     expect(find.text('#dart'), findsOneWidget);

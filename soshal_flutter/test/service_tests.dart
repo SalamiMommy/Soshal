@@ -275,7 +275,7 @@ void main() {
   group('MessagingService', () {
     test('insertLiveDm dedups and caps at 200', () {
       final ms = MessagingService();
-      final msg = (String id) => DirectMessage(
+      DirectMessage msg(String id) => DirectMessage(
             id: id,
             sender: 'peer-1',
             recipient: 'me',

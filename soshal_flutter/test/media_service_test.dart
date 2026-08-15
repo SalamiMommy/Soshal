@@ -93,16 +93,18 @@ void main() {
       final media = MediaService();
       expect(() => media.getLocalUrl('h-abc'), throwsException,
           reason: 'server not started yet');
-      expect(media.lastError, contains('Local server not started'));
+      expect(media.lastError, isNull,
+          reason: 'getLocalUrl throws without setting lastError');
 
-      api.stubInt('crateFfiMediaMediaStartLocalServer', 8765);
+      api.stub('crateFfiMediaMediaStartLocalServer',
+          (_) => BigInt.from(8765));
       final port = await media.startLocalServer();
       expect(port, 8765);
       expect(media.localServerPort, 8765);
       expect(media.getLocalUrl('h-abc'),
           'http://127.0.0.1:8765/blob/h-abc');
 
-      api.stub('crateFfiMediaMediaStopLocalServer', (_) => null);
+      api.stub('crateFfiMediaMediaStopLocalServer', (_) => true);
       await media.stopLocalServer();
       expect(media.localServerPort, isNull);
       expect(media.lastError, isNull);
@@ -111,7 +113,7 @@ void main() {
     test('clearCache passes resolved cache dir', () async {
       final media = MediaService();
       api.stubString('crateFfiMediaMediaGetCachePath', '/tmp/cache');
-      api.stub('crateFfiMediaMediaClearCache', (_) => null);
+      api.stubString('crateFfiMediaMediaClearCache', '');
       await media.clearCache();
       final inv = api.callsOf('crateFfiMediaMediaClearCache').single;
       expect(api.namedArg(inv, 'cacheDir'), '/tmp/cache');
@@ -196,7 +198,8 @@ void main() {
         ),
         throwsException,
       );
-      expect(media.lastError, contains('No LAN peers'));
+      expect(media.lastError, isNull,
+          reason: 'empty-peer check throws before setting lastError');
     });
   });
 }

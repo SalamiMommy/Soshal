@@ -64,16 +64,6 @@ fn nwc_uri() -> Result<String, String> {
     guard.clone().ok_or_else(|| "NWC not connected".to_string())
 }
 
-/// Lightning invoice info (display layer; issued by the NWC provider).
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct InvoiceInfo {
-    pub bolt11: String,
-    pub amount_msat: u64,
-    pub description: String,
-    pub expiry: u64,
-    pub payment_hash: String,
-}
-
 /// LNURL (lud16) parse result.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LnurlMetadata {
@@ -208,4 +198,181 @@ pub fn zap_fetch_receipts(event_id: String, limit: i32) -> Result<String, String
         limit
     ))?;
     Ok(json).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static NWC_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    const NWC_PUBKEY: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+    const NWC_SECRET: &str = "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
+    const NWC_URI: &str = "nostr+walletconnect://abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789?relay=wss://relay.damus.io&secret=f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
+
+    #[test]
+    fn test_parse_lnurl_metadata_valid() {
+        let json = zap_parse_lnurl_metadata("alice@example.com".to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["name"], "alice");
+        assert_eq!(v["domain"], "example.com");
+        assert_eq!(
+            v["callback"],
+            "https://example.com/.well-known/lnurlp/alice"
+        );
+        let json = zap_parse_lnurl_metadata("bob-1_x.y@sub.example.org".to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["name"], "bob-1_x.y");
+        assert_eq!(v["domain"], "sub.example.org");
+        assert!(v["callback"].as_str().unwrap().starts_with("https://"));
+    }
+
+    #[test]
+    fn test_parse_lnurl_metadata_rejects_malformed() {
+        for bad in [
+            String::new(),
+            "not-an-address".to_string(),
+            "@example.com".to_string(),
+            "user@".to_string(),
+            "../admin@example.com".to_string(),
+            "us er@example.com".to_string(),
+            format!("{}@example.com", "a".repeat(65)),
+        ] {
+            assert!(
+                zap_parse_lnurl_metadata(bad.clone()).is_err(),
+                "accepted {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_connect_nwc_rejects_invalid_uris() {
+        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = zap_disconnect_nwc();
+        assert!(zap_connect_nwc("not a uri".to_string()).is_err());
+        let bad_scheme = zap_connect_nwc(format!(
+            "https://{NWC_PUBKEY}?relay=wss://relay.damus.io&secret={NWC_SECRET}"
+        ));
+        assert!(bad_scheme.is_err());
+        let cleartext = zap_connect_nwc(format!(
+            "nostr+walletconnect://{NWC_PUBKEY}?relay=ws://relay.example.com&secret={NWC_SECRET}"
+        ));
+        let e = cleartext.err().unwrap();
+        assert!(e.contains("wss"));
+        let no_relay = zap_connect_nwc(format!(
+            "nostr+walletconnect://{NWC_PUBKEY}?secret={NWC_SECRET}"
+        ));
+        let e = no_relay.err().unwrap();
+        assert!(e.contains("relay"));
+        let no_secret = zap_connect_nwc(format!(
+            "nostr+walletconnect://{NWC_PUBKEY}?relay=wss://relay.damus.io"
+        ));
+        let e = no_secret.err().unwrap();
+        assert!(e.contains("secret"));
+        let bad_pubkey = zap_connect_nwc(format!(
+            "nostr+walletconnect://short?relay=wss://relay.damus.io&secret={NWC_SECRET}"
+        ));
+        assert!(bad_pubkey.is_err());
+        let long = zap_connect_nwc("x".repeat(5000));
+        let e = long.err().unwrap();
+        assert!(e.contains("too long"));
+        assert!(zap_connect_nwc(String::new()).is_err());
+    }
+
+    #[test]
+    fn test_connect_nwc_roundtrip_status_and_pubkey() {
+        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = zap_disconnect_nwc();
+        assert!(zap_connect_nwc(NWC_URI.to_string()).unwrap());
+        let status = zap_get_nwc_status().unwrap();
+        let v: serde_json::Value = serde_json::from_str(&status).unwrap();
+        assert_eq!(v["connected"], true);
+        assert_eq!(v["wallet_pubkey"], NWC_PUBKEY);
+        assert!(!status.contains(NWC_SECRET));
+        assert_eq!(zap_get_nwc_pubkey().unwrap(), NWC_PUBKEY);
+        assert!(zap_disconnect_nwc().unwrap());
+        let status = zap_get_nwc_status().unwrap();
+        let v: serde_json::Value = serde_json::from_str(&status).unwrap();
+        assert_eq!(v["connected"], false);
+        assert!(zap_get_nwc_pubkey().is_err());
+    }
+
+    #[test]
+    fn test_disconnect_nwc_when_not_connected() {
+        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = zap_disconnect_nwc();
+        assert!(zap_disconnect_nwc().unwrap());
+        assert!(zap_get_nwc_pubkey().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_invoice_validation_before_connect() {
+        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = zap_disconnect_nwc();
+        let bad_lnurl = zap_fetch_invoice(
+            "not-an-address".to_string(),
+            1000,
+            String::new(),
+            String::new(),
+        )
+        .await;
+        let e = bad_lnurl.err().unwrap();
+        assert!(e.contains("LNURL parse failed"));
+        let zero = zap_fetch_invoice(
+            "bob@example.com".to_string(),
+            0,
+            String::new(),
+            String::new(),
+        )
+        .await;
+        let e = zero.err().unwrap();
+        assert!(e.contains("amount must be positive"));
+        let disconnected = zap_fetch_invoice(
+            "bob@example.com".to_string(),
+            1000,
+            String::new(),
+            String::new(),
+        )
+        .await;
+        let e = disconnected.err().unwrap();
+        assert!(e.contains("NWC not connected"));
+    }
+
+    #[tokio::test]
+    async fn test_send_payment_fails_when_disconnected() {
+        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = zap_disconnect_nwc();
+        let r = zap_send_payment("lnbc1fake".to_string()).await;
+        let e = r.err().unwrap();
+        assert!(e.contains("NWC not connected"));
+    }
+
+    #[test]
+    fn test_bolt11_amount_parse() {
+        use soshal_zap_core::{bolt11_amount_sats, parse_msats_from_bolt11};
+        assert_eq!(parse_msats_from_bolt11("lnbc2500u"), 250_000_000);
+        assert_eq!(parse_msats_from_bolt11("LNBC2500U"), 250_000_000);
+        assert_eq!(parse_msats_from_bolt11("lnbc10m"), 1_000_000_000);
+        assert_eq!(parse_msats_from_bolt11("lnbc1"), 100_000_000_000);
+        assert_eq!(parse_msats_from_bolt11("lnbc1p"), 0);
+        assert_eq!(parse_msats_from_bolt11("lnbc"), 0);
+        assert_eq!(parse_msats_from_bolt11(""), 0);
+        assert_eq!(parse_msats_from_bolt11("garbage"), 0);
+        assert_eq!(parse_msats_from_bolt11(&"x".repeat(4097)), 0);
+        assert_eq!(parse_msats_from_bolt11("lnbc99999999999999999999m"), 0);
+        assert_eq!(bolt11_amount_sats("lnbc2500u"), Some(250_000));
+        assert_eq!(bolt11_amount_sats("lnbc1p"), None);
+        assert_eq!(bolt11_amount_sats("lnbc"), None);
+    }
+
+    #[test]
+    fn test_bolt11_validate_pay_invoice() {
+        use soshal_zap_core::nwc::validate_pay_invoice;
+        assert!(validate_pay_invoice("").is_err());
+        assert!(validate_pay_invoice(&"x".repeat(4097)).is_err());
+        assert!(validate_pay_invoice("lnbc2500u").is_ok());
+        assert!(validate_pay_invoice("lnbc10m").is_ok());
+        let e = validate_pay_invoice("lnbc20m").err().unwrap();
+        assert!(e.contains("cap"));
+    }
 }
