@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/ffi_bridge.dart';
 import '../services/session_service.dart';
+import '../services/signer_service.dart';
 import '../services/sync_service.dart';
 import '../services/error_log.dart';
 
@@ -32,10 +33,21 @@ class _SplashScreenState extends State<SplashScreen> {
 
       // Load session
       final sessionService = context.read<SessionService>();
+      final signer = context.read<SignerService>();
       await sessionService.loadSession();
+      await signer.refresh();
 
       // Check if user is logged in
       if (sessionService.hasActiveSession()) {
+        // A session without loaded keys (never unlocked this run) routes to
+        // onboarding for re-auth — the lock screen only appears after an
+        // explicit in-session "Lock now".
+        if (signer.locked && !signer.userLocked) {
+          if (mounted) {
+            context.go('/auth');
+          }
+          return;
+        }
         // Start the Rust-side background relay sync (feed/messages ingest).
         final relays = sessionService.activeAccount?.relayList ?? <String>[];
         if (relays.isNotEmpty && mounted) {

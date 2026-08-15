@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 import '../services/notifications_service.dart';
 import '../services/session_service.dart';
 import '../services/shell_service.dart';
+import '../services/signer_service.dart';
 import 'lock_screen.dart';
+import 'signer_lock_screen.dart';
 
 /// Adaptive app shell: NavigationRail on wide screens, drawer + hamburger on
 /// narrow ones. Mirrors the legacy rust-native sidebar layout (reorderable
@@ -80,6 +82,11 @@ class _AppShellState extends State<AppShell> {
     final incomingCall = context.select((ShellService s) => s.incomingCall);
     final audioPlaying = context.select((ShellService s) => s.audioPlaying);
     final locked = context.select((ShellService s) => s.locked);
+    final signedIn =
+        context.select((SessionService s) => s.activePubkey != null);
+    final signerLocked = context.select((SignerService s) => s.locked);
+    final signerUserLocked =
+        context.select((SignerService s) => s.userLocked);
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 800;
@@ -118,6 +125,7 @@ class _AppShellState extends State<AppShell> {
                   ),
                 ],
               ),
+              if (signedIn && signerLocked && signerUserLocked) const SignerLockScreen(),
               if (locked) const LockScreen(),
             ],
           ),

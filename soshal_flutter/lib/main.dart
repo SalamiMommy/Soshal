@@ -93,7 +93,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => CallsService()),
         ChangeNotifierProvider(create: (_) => ChatrandomService()),
         ChangeNotifierProvider(create: (_) => MediaService()),
-        Provider<SignerService>(create: (_) => SignerService()),
+        ChangeNotifierProvider(create: (_) => SignerService()),
         Provider<MinisService>(create: (_) => MinisService()),
       ],
       child: const SoshalApp(),
