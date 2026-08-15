@@ -170,12 +170,12 @@ fn haversine(a: (f64, f64), b: (f64, f64)) -> f64 {
 /// Fetch events the user is involved in (created, RSVPed, or attended).
 #[frb(sync, serialize)]
 pub fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result<String, String> {
+    let pk = user_pubkey.replace('\'', "''");
     let json = super::db::db_query_raw(event_rows_sql(
         &format!(
-            "AND (p.pubkey = '{}' OR p.id IN (SELECT event_id FROM posts WHERE kind = 31924 AND pubkey = '{}') OR p.id IN (SELECT event_id FROM posts WHERE kind = 9 AND pubkey = '{}'))",
-            user_pubkey.replace('\'', "''"),
-            user_pubkey.replace('\'', "''"),
-            user_pubkey.replace('\'', "''")
+            "AND (p.pubkey = '{pk}' OR EXISTS (SELECT 1 FROM posts r WHERE r.pubkey = '{pk}' \
+             AND (r.tags_json LIKE '%\"e\",\"' || p.id || '\"%' \
+                  OR r.id = 'checkin:' || '{pk}' || ':' || p.id)))"
         ),
         limit,
     ))?;
@@ -323,7 +323,7 @@ pub fn events_rsvp(
             .tags(
                 vec![
                     vec!["a".to_string(), format!("31924:{host}:{d_tag}")],
-                    vec!["e".to_string(), event_id],
+                    vec!["e".to_string(), event_id.clone()],
                 ]
                 .into_iter()
                 .filter_map(|t| nostr::event::Tag::parse(t).ok()),
@@ -335,7 +335,10 @@ pub fn events_rsvp(
         content: rsvp_status,
         kind: 31924,
         created_at: soshal_common_core::format::now_secs(),
-        tags_json: String::new(),
+        tags_json: format!(
+            r#"[["a","31924:{host}:{d_tag}"],["e","{event_id}"]]"#,
+            event_id = event_id.clone()
+        ),
         sig: None,
         reply_to: None,
         root_id: None,
@@ -393,11 +396,15 @@ pub fn events_check_in(
     let _ = super::signer::sign_builder(builder)?;
     let row = soshal_db_core::repos::post::PostRow {
         id: format!("checkin:{}:{}", user_pubkey, event_id),
-        pubkey: user_pubkey,
+        pubkey: user_pubkey.clone(),
         content,
         kind: 9,
         created_at: soshal_common_core::format::now_secs(),
-        tags_json: String::new(),
+        tags_json: format!(
+            r#"[["d","badge-{event_id}"],["e","{event_id}"],["p","{user_pubkey}"]]"#,
+            event_id = event_id.clone(),
+            user_pubkey = user_pubkey.clone()
+        ),
         sig: None,
         reply_to: None,
         root_id: None,
