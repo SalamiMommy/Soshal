@@ -53,6 +53,27 @@ pub(crate) fn conv_id(my_pubkey: &str, other_pubkey: &str) -> String {
     format!("conv:{}", pair.join(":"))
 }
 
+/// Seal DM content at rest (AES-GCM under the signer-derived key) before DB
+/// writes.
+pub(crate) fn seal_dm_content(content: String) -> Result<String, String> {
+    let key = super::signer::signer_at_rest_key()?;
+    let sealed = soshal_crypto_core::at_rest::seal_at_rest(&key, content.as_bytes())?;
+    Ok(format!("seal1:{sealed}"))
+}
+
+/// Unseal DM content stored via `seal_dm_content`; legacy plaintext rows
+/// (pre-seal) pass through unchanged.
+pub(crate) fn unseal_dm_content(stored: String) -> Result<String, String> {
+    match stored.strip_prefix("seal1:") {
+        Some(sealed) => {
+            let key = super::signer::signer_at_rest_key()?;
+            let plain = soshal_crypto_core::at_rest::open_at_rest(&key, sealed)?;
+            String::from_utf8(plain).map_err(|e| format!("unseal utf8: {e}"))
+        }
+        None => Ok(stored),
+    }
+}
+
 /// Fetch the most recent DMs with a peer from the local DB (both directions,
 /// newest first).
 #[frb(sync, serialize)]
@@ -70,16 +91,17 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
             .into_iter()
             .map(|row| {
                 let is_own = row.pubkey == my_pk;
-                DirectMessage {
+                Ok(DirectMessage {
                     id: row.id,
                     sender: row.pubkey,
-                    content: row.content,
+                    content: unseal_dm_content(row.content)?,
                     created_at: row.created_at.max(0) as u64,
                     decrypted: false,
                     is_own,
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<DirectMessage>, String>>()
+            .map_err(soshal_db_core::error::DbError::Migration)?;
         Ok(dms)
     })
     .map(super::util::json_ok)?
@@ -120,6 +142,7 @@ pub fn messaging_store_dm(
     created_at: u64,
     tags_json: String,
 ) -> Result<bool, String> {
+    let content = seal_dm_content(content)?;
     let cid = conv_id(&sender, &recipient);
     let row = soshal_db_core::repos::message::MessageRow {
         id,

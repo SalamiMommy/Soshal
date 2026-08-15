@@ -129,7 +129,21 @@ pub fn groups_post_message(group_id: String, content: String) -> Result<String, 
     let content = super::db::with_db_result(|db| {
         let key = GroupRepo::new(db).get_shared_key(&group_id)?;
         Ok(match key {
-            Some(k) => group_message_envelope(&content, Some(&k)),
+            Some(k) => {
+                let k = match k.strip_prefix("seal1:") {
+                    Some(sealed) => {
+                        let plain = soshal_crypto_core::at_rest::open_at_rest(
+                            &super::signer::signer_at_rest_key()
+                                .map_err(soshal_db_core::error::DbError::Migration)?,
+                            sealed,
+                        )
+                        .map_err(soshal_db_core::error::DbError::Migration)?;
+                        hex::encode(plain)
+                    }
+                    None => k,
+                };
+                group_message_envelope(&content, Some(&k))
+            }
             None => content,
         })
     })?;

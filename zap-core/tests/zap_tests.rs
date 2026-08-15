@@ -105,34 +105,32 @@ fn nwc_uri_rejects_bad_inputs() {
 
 #[test]
 fn bolt11_msat_parsing_units() {
-    assert_eq!(parse_msats_from_bolt11("lnbc10n"), 1000);
-    assert_eq!(parse_msats_from_bolt11("LNBC123m"), 123 * 100_000_000);
-    assert_eq!(parse_msats_from_bolt11("lnbc1u"), 100_000);
-    assert_eq!(parse_msats_from_bolt11("lnbc5p"), 0);
-    assert_eq!(parse_msats_from_bolt11("lnbc1"), 100_000_000_000);
+    assert_eq!(parse_msats_from_bolt11("lnbc10n"), Ok(1000));
+    assert_eq!(parse_msats_from_bolt11("LNBC123m"), Ok(123 * 100_000_000));
+    assert_eq!(parse_msats_from_bolt11("lnbc1u"), Ok(100_000));
+    assert_eq!(parse_msats_from_bolt11("lnbc5p"), Ok(0));
+    assert_eq!(parse_msats_from_bolt11("lnbc1"), Ok(100_000_000_000));
     assert_eq!(bolt11_amount_sats("lnbc10n"), Some(1));
 }
 
 #[test]
 fn bolt11_rejects_malformed() {
-    assert_eq!(parse_msats_from_bolt11(""), 0);
-    assert_eq!(parse_msats_from_bolt11("no prefix"), 0);
-    assert_eq!(parse_msats_from_bolt11("lnbc"), 0);
-    assert_eq!(parse_msats_from_bolt11("lnbcabc"), 0);
-    assert_eq!(parse_msats_from_bolt11(&"x".repeat(5000)), 0);
-    assert_eq!(
-        parse_msats_from_bolt11(&format!("lnbc{}", "9".repeat(20))),
-        0
-    );
+    assert_eq!(parse_msats_from_bolt11(""), Ok(0));
+    assert_eq!(parse_msats_from_bolt11("no prefix"), Ok(0));
+    assert_eq!(parse_msats_from_bolt11("lnbc"), Ok(0));
+    assert_eq!(parse_msats_from_bolt11("lnbcabc"), Ok(0));
+    assert_eq!(parse_msats_from_bolt11(&"x".repeat(5000)), Ok(0));
+    assert!(parse_msats_from_bolt11(&format!("lnbc{}", "9".repeat(20))).is_err());
     assert_eq!(bolt11_amount_sats("lnbc1p"), None);
 }
 
 #[test]
 fn bolt11_overflow_safe() {
-    assert_eq!(parse_msats_from_bolt11("lnbc999999999999999999m"), 0);
+    assert!(parse_msats_from_bolt11("lnbc999999999999999999m").is_err());
+    assert!(parse_msats_from_bolt11("lnbc10001m").is_err());
     assert_eq!(
         parse_msats_from_bolt11(&format!("lnbc{}m", "1")),
-        100_000_000
+        Ok(100_000_000)
     );
 }
 

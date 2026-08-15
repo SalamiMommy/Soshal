@@ -196,18 +196,60 @@ async fn verify_nip05_fut(nip05: &str) -> Result<(bool, String), String> {
     // identity-core exposes the record struct; construct the URL and fetch.
     let (name, domain) = split_nip05(nip05);
     let url = format!("https://{domain}/.well-known/nostr.json?name={name}");
-    let mut builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(8));
+    if !soshal_common_core::url::is_valid_media_url(&url) {
+        return Err("nip05 domain is not allowed (private or local host)".into());
+    }
+    let host = reqwest::Url::parse(&url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_string()))
+        .ok_or_else(|| "nip05 url has no host".to_string())?;
+    let mut pinned_addrs: Vec<std::net::SocketAddr> = Vec::new();
+    match tokio::net::lookup_host((host.as_str(), 443)).await {
+        Ok(addrs) => {
+            for addr in addrs {
+                if soshal_common_core::url::is_private_ip_str(&addr.ip().to_string()) {
+                    return Err("nip05 domain resolves to an internal address".into());
+                }
+                pinned_addrs.push(addr);
+            }
+        }
+        Err(_) => return Err("nip05 domain does not resolve".into()),
+    }
+    if pinned_addrs.is_empty() {
+        return Err("nip05 domain does not resolve".into());
+    }
+    let mut builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none());
     if let Some(addr) = super::network::i2p_socks_addr() {
         if let Ok(proxy) = reqwest::Proxy::all(format!("socks5://{addr}")) {
             builder = builder.proxy(proxy);
         }
     }
-    let client = builder.build().map_err(|e| e.to_string())?;
+    let client = builder
+        .resolve_to_addrs(&host, &pinned_addrs)
+        .build()
+        .map_err(|e| e.to_string())?;
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Ok((false, String::new()));
     }
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    const MAX_NIP05_BODY: usize = 256 * 1024;
+    if let Some(len) = resp.content_length() {
+        if len as usize > MAX_NIP05_BODY {
+            return Err("nip05 response too large".into());
+        }
+    }
+    let mut body = Vec::new();
+    let mut resp = resp;
+    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+        if body.len() + chunk.len() > MAX_NIP05_BODY {
+            return Err("nip05 response too large".into());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let json: serde_json::Value =
+        serde_json::from_slice(&body).map_err(|e| format!("invalid nip05 response: {e}"))?;
     let entry = json
         .pointer(&format!("/names/{name}"))
         .and_then(|v| v.as_str())

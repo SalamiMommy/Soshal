@@ -26,13 +26,17 @@ const MULT_N: u64 = 100;
 /// by 10^8, letting NWC/LNURL cap checks pass while the real invoice is huge.
 const MULT_DEFAULT: u64 = 100_000_000_000;
 
+/// Parse-level BOLT-11 amount cap (msats) — rejects absurd invoices at parse
+/// time; the per-payment NWC cap (NWC_MAX_PAY_SATS) stays the caller's check.
+const MAX_PARSE_BOLT11_MSATS: u64 = 1_000_000_000_000;
+
 /// Parses msats from a BOLT11 invoice string (extracts amount field).
 ///
-/// Returns 0 when no amount is present, the input is malformed, too long, or
-/// the multiplication overflows.
-pub fn parse_msats_from_bolt11(bolt11: &str) -> u64 {
+/// Returns 0 when no amount is present, the input is malformed, or too long.
+/// Returns an error when the amount overflows or exceeds the zap cap.
+pub fn parse_msats_from_bolt11(bolt11: &str) -> Result<u64, String> {
     if bolt11.len() > 4096 {
-        return 0;
+        return Ok(0);
     }
 
     let bytes = bolt11.as_bytes();
@@ -41,38 +45,43 @@ pub fn parse_msats_from_bolt11(bolt11: &str) -> u64 {
         .position(|w| w.eq_ignore_ascii_case(b"lnbc"))
     {
         Some(p) => p + 4,
-        None => return 0,
+        None => return Ok(0),
     };
 
     let rest = &bytes[pos..];
-    let mut amount: u64 = 0;
+    let mut amount: u128 = 0;
     let mut digit_len = 0usize;
     for &b in rest.iter().take(18) {
         if b.is_ascii_digit() {
-            amount = match amount
-                .checked_mul(10)
-                .and_then(|a| a.checked_add((b - b'0') as u64))
-            {
-                Some(n) => n,
-                None => return 0,
-            };
+            amount = amount * 10 + (b - b'0') as u128;
             digit_len += 1;
         } else {
             break;
         }
     }
     if digit_len == 0 {
-        return 0;
+        return Ok(0);
     }
 
     let unit = rest.get(digit_len).copied().map(|b| b.to_ascii_lowercase());
-    match unit {
-        Some(b'p') => amount / 10,
-        Some(b'n') => amount.checked_mul(MULT_N).unwrap_or(0),
-        Some(b'u') => amount.checked_mul(MULT_U).unwrap_or(0),
-        Some(b'm') => amount.checked_mul(MULT_M).unwrap_or(0),
-        _ => amount.checked_mul(MULT_DEFAULT).unwrap_or(0),
+    let msats = match unit {
+        Some(b'p') => Some(amount / 10),
+        Some(b'n') => amount.checked_mul(MULT_N as u128),
+        Some(b'u') => amount.checked_mul(MULT_U as u128),
+        Some(b'm') => amount.checked_mul(MULT_M as u128),
+        _ => amount.checked_mul(MULT_DEFAULT as u128),
     }
+    .ok_or_else(|| "BOLT-11 amount overflow".to_string())?;
+
+    let msats =
+        u64::try_from(msats).map_err(|_| "BOLT-11 amount exceeds u64 msat range".to_string())?;
+    if msats > MAX_PARSE_BOLT11_MSATS {
+        return Err(format!(
+            "BOLT-11 amount exceeds zap cap ({} msat)",
+            MAX_PARSE_BOLT11_MSATS
+        ));
+    }
+    Ok(msats)
 }
 
 /// Per-payment cap for NWC payments (sats).
@@ -85,7 +94,7 @@ pub const NWC_TOKEN_TTL_SECS: u64 = 300;
 /// Extracts the amount (sats) from a `lnbc` bolt11 invoice. Returns `None`
 /// when the amount is missing, unparseable, or rounds down to zero sats.
 pub fn bolt11_amount_sats(invoice: &str) -> Option<u64> {
-    let sats = parse_msats_from_bolt11(invoice) / 1000;
+    let sats = parse_msats_from_bolt11(invoice).ok()? / 1000;
     if sats == 0 {
         return None;
     }

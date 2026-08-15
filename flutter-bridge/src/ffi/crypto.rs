@@ -7,7 +7,7 @@
 use flutter_rust_bridge::frb;
 use rand::RngCore;
 use soshal_crypto_core::hash;
-use soshal_crypto_core::pqc;
+use zeroize::Zeroize;
 
 /// SHA256 hash of raw bytes.
 #[frb(sync, serialize)]
@@ -22,42 +22,25 @@ pub fn crypto_hmac_sha256(key: Vec<u8>, message: Vec<u8>) -> Result<Vec<u8>, Str
 }
 
 /// PQC KEM: generate a hybrid (X25519 + ML-KEM-768) keypair.
-/// PQC KEM: generate post-quantum hybrid keypair off the UI isolate.
-/// Returns JSON `{"pk": "<hex>", "sk": "<hex>"}`.
+/// Disabled: KEM secret key must not cross FFI into the Dart heap;
+/// PQ-KEM remains Rust-side-only infrastructure.
 #[frb(serialize)]
 pub async fn crypto_pqc_kem_keygen() -> Result<String, String> {
-    let (pk, sk) = pqc::hybrid::keypair().map_err(|e| e.to_string())?;
-    Ok(serde_json::json!({ "pk": hex::encode(pk), "sk": hex::encode(sk) }).to_string()).into()
+    Err("PQ-KEM FFI disabled: key material must not cross to Dart".to_string()).into()
 }
 
 /// PQC KEM: encapsulate to a hybrid public key.
-/// Returns JSON `{"ct": "<hex>", "ss": "<hex>"}`.
+/// Disabled: PQ-KEM FFI surface disabled; key material must not cross to Dart.
 #[frb(serialize)]
-pub async fn crypto_pqc_kem_encaps(recipient_pk: String) -> Result<String, String> {
-    let pk_bytes: [u8; pqc::hybrid::PUBLIC_KEY_LEN] = hex::decode(&recipient_pk)
-        .map_err(|e| e.to_string())?
-        .try_into()
-        .map_err(|_| "invalid hybrid public key length")?;
-    let (ct, ss) =
-        pqc::hybrid::encapsulate(&pk_bytes, b"soshal-ffi-v1").map_err(|e| e.to_string())?;
-    Ok(serde_json::json!({ "ct": hex::encode(ct), "ss": hex::encode(ss) }).to_string()).into()
+pub async fn crypto_pqc_kem_encaps(_recipient_pk: String) -> Result<String, String> {
+    Err("PQ-KEM FFI disabled: key material must not cross to Dart".to_string()).into()
 }
 
 /// PQC KEM: decapsulate a hybrid ciphertext with the secret key.
-/// Returns the 32-byte shared secret as hex.
+/// Disabled: PQ-KEM FFI surface disabled; key material must not cross to Dart.
 #[frb(serialize)]
-pub async fn crypto_pqc_kem_decaps(ciphertext: String, sk: String) -> Result<String, String> {
-    let ct_bytes: [u8; pqc::hybrid::CIPHERTEXT_LEN] = hex::decode(&ciphertext)
-        .map_err(|e| e.to_string())?
-        .try_into()
-        .map_err(|_| "invalid hybrid ciphertext length")?;
-    let sk_bytes: [u8; pqc::hybrid::SECRET_KEY_LEN] = hex::decode(&sk)
-        .map_err(|e| e.to_string())?
-        .try_into()
-        .map_err(|_| "invalid hybrid secret key length")?;
-    let ss = pqc::hybrid::decapsulate(&sk_bytes, &ct_bytes, b"soshal-ffi-v1")
-        .map_err(|e| e.to_string())?;
-    Ok(hex::encode(ss)).into()
+pub async fn crypto_pqc_kem_decaps(_ciphertext: String, _sk: String) -> Result<String, String> {
+    Err("PQ-KEM FFI disabled: key material must not cross to Dart".to_string()).into()
 }
 
 /// HKDF-SHA256 key expansion (RFC 5869) with the given salt and info.
@@ -73,14 +56,14 @@ pub fn crypto_hkdf_expand(
     Ok(hex::encode(okm)).into()
 }
 
-/// Zeroize helper: accepts a buffer and returns success; the Rust side uses
-/// `zeroize` internally on key material (this keeps a destroy-by-pointer
-/// hook for Dart-level sensitive buffers that wish to clear after use).
+/// Zeroize helper: scrubs buffer contents in place before returning.
+/// The Rust side uses `zeroize` internally on key material (this keeps a
+/// destroy-by-pointer hook for Dart-level sensitive buffers that wish to
+/// clear after use).
 #[frb(sync, serialize)]
 pub fn crypto_zeroize(data: Vec<u8>) -> Result<bool, String> {
     let mut buf = data;
-    buf.resize(0, 0);
-    buf.clear();
+    buf.zeroize();
     Ok(true).into()
 }
 
@@ -128,43 +111,28 @@ pub async fn crypto_pir_evaluate_query(
 }
 
 /// FROST: generate jury key shares for t-of-n community moderation.
+/// Disabled: frost is a NON-CRYPTOGRAPHIC simulation (deterministic,
+/// forgeable hashes); real threshold signing is a feature project.
 #[frb(serialize)]
 pub async fn crypto_frost_generate_jury_keys(
-    threshold: u32,
-    total_participants: u32,
-    group_pubkey: String,
+    _threshold: u32,
+    _total_participants: u32,
+    _group_pubkey: String,
 ) -> Result<String, String> {
-    let shares = soshal_crypto_core::frost::FrostSessionManager::generate_jury_keys(
-        threshold,
-        total_participants,
-        &group_pubkey,
-    );
-    serde_json::to_string(&shares)
-        .map_err(|e| format!("json encode error: {e}"))
-        .into()
+    Err("frost is non-cryptographic simulation, disabled".to_string()).into()
 }
 
 /// FROST: aggregate partial signature shares into a valid single Schnorr threshold signature.
+/// Disabled: frost is a NON-CRYPTOGRAPHIC simulation (deterministic,
+/// forgeable hashes); real threshold signing is a feature project.
 #[frb(serialize)]
 pub async fn crypto_frost_aggregate_signature(
-    shares_json: String,
-    threshold: u32,
-    group_pubkey: String,
-    message_hex: String,
+    _shares_json: String,
+    _threshold: u32,
+    _group_pubkey: String,
+    _message_hex: String,
 ) -> Result<String, String> {
-    let shares: Vec<soshal_crypto_core::frost::FrostSignatureShare> =
-        serde_json::from_str(&shares_json).map_err(|e| format!("invalid shares json: {e}"))?;
-    let message_bytes =
-        hex::decode(&message_hex).map_err(|e| format!("invalid message hex: {e}"))?;
-    let threshold_sig = soshal_crypto_core::frost::FrostSessionManager::aggregate_signature(
-        &shares,
-        threshold,
-        &group_pubkey,
-        &message_bytes,
-    )?;
-    serde_json::to_string(&threshold_sig)
-        .map_err(|e| format!("json encode error: {e}"))
-        .into()
+    Err("frost is non-cryptographic simulation, disabled".to_string()).into()
 }
 
 /// BLAKE3 hash of raw bytes; returns 64 hex chars.
@@ -257,69 +225,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_pqc_kem_roundtrip() {
-        let keygen = crypto_pqc_kem_keygen().await.unwrap();
-        let kp: serde_json::Value = serde_json::from_str(&keygen).unwrap();
-        let pk = kp["pk"].as_str().unwrap().to_string();
-        let sk = kp["sk"].as_str().unwrap().to_string();
-        assert_eq!(pk.len(), 1217 * 2);
-        assert_eq!(sk.len(), 96 * 2);
-        let enc = crypto_pqc_kem_encaps(pk).await.unwrap();
-        let e: serde_json::Value = serde_json::from_str(&enc).unwrap();
-        let ct = e["ct"].as_str().unwrap().to_string();
-        assert_eq!(ct.len(), 1121 * 2);
-        let ss = crypto_pqc_kem_decaps(ct, sk).await.unwrap();
-        assert_eq!(ss, e["ss"].as_str().unwrap());
-        assert_eq!(ss.len(), 64);
-    }
-
-    #[tokio::test]
-    async fn test_pqc_kem_wrong_secret_key_mismatches() {
-        let a: serde_json::Value =
-            serde_json::from_str(&crypto_pqc_kem_keygen().await.unwrap()).unwrap();
-        let b: serde_json::Value =
-            serde_json::from_str(&crypto_pqc_kem_keygen().await.unwrap()).unwrap();
-        let e: serde_json::Value = serde_json::from_str(
-            &crypto_pqc_kem_encaps(a["pk"].as_str().unwrap().to_string())
-                .await
-                .unwrap(),
-        )
-        .unwrap();
-        let dec = crypto_pqc_kem_decaps(
-            e["ct"].as_str().unwrap().to_string(),
-            b["sk"].as_str().unwrap().to_string(),
-        )
-        .await;
-        match dec {
-            Ok(ss) => assert_ne!(ss, e["ss"].as_str().unwrap()),
-            Err(err) => assert!(err.contains("invalid hybrid"), "{err}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_pqc_kem_invalid_lengths() {
-        let err = crypto_pqc_kem_encaps("deadbeef".to_string())
+    async fn test_pqc_kem_disabled() {
+        let err = crypto_pqc_kem_keygen().await.unwrap_err();
+        assert!(err.contains("key material must not cross to Dart"), "{err}");
+        let err = crypto_pqc_kem_encaps("ab".repeat(1217).to_string())
             .await
             .unwrap_err();
-        assert!(err.contains("invalid hybrid public key length"), "{err}");
-        let err = crypto_pqc_kem_encaps("zz".to_string()).await.unwrap_err();
-        assert!(err.contains("Invalid character"), "{err}");
-        let err = crypto_pqc_kem_decaps("dead".to_string(), "beef".to_string())
+        assert!(err.contains("key material must not cross to Dart"), "{err}");
+        let err = crypto_pqc_kem_decaps("cd".repeat(1121).to_string(), "ef".repeat(96).to_string())
             .await
             .unwrap_err();
-        assert!(err.contains("invalid hybrid ciphertext length"), "{err}");
-        let kp: serde_json::Value =
-            serde_json::from_str(&crypto_pqc_kem_keygen().await.unwrap()).unwrap();
-        let e: serde_json::Value = serde_json::from_str(
-            &crypto_pqc_kem_encaps(kp["pk"].as_str().unwrap().to_string())
-                .await
-                .unwrap(),
-        )
-        .unwrap();
-        let err = crypto_pqc_kem_decaps(e["ct"].as_str().unwrap().to_string(), "beef".to_string())
-            .await
-            .unwrap_err();
-        assert!(err.contains("invalid hybrid secret key length"), "{err}");
+        assert!(err.contains("key material must not cross to Dart"), "{err}");
     }
 
     #[tokio::test]
@@ -364,79 +280,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_frost_generate_jury_keys() {
-        let group_pk =
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
-        let json = crypto_frost_generate_jury_keys(3, 5, group_pk.clone())
-            .await
-            .unwrap();
-        let arr = serde_json::from_str::<serde_json::Value>(&json)
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .clone();
-        assert_eq!(arr.len(), 5);
-        assert_eq!(arr[0]["participant_id"].as_u64(), Some(1));
-        assert_eq!(arr[4]["participant_id"].as_u64(), Some(5));
-        assert_eq!(arr[0]["threshold"].as_u64(), Some(3));
-        assert_eq!(arr[0]["total_participants"].as_u64(), Some(5));
-        assert_eq!(arr[0]["group_pubkey_hex"], group_pk);
-        assert!(!arr[0]["secret_share_hex"].as_str().unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_frost_aggregate_signature_roundtrip() {
-        let group_pk =
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
-        let shares_json = crypto_frost_generate_jury_keys(3, 5, group_pk.clone())
-            .await
-            .unwrap();
-        let shares: Vec<soshal_crypto_core::frost::FrostKeyShare> =
-            serde_json::from_str(&shares_json).unwrap();
-        let message = b"Ban spammer npub_123";
-        let sig_shares: Vec<soshal_crypto_core::frost::FrostSignatureShare> = shares
-            .iter()
-            .take(3)
-            .map(|s| {
-                soshal_crypto_core::frost::FrostSessionManager::sign_share(s, message).unwrap()
-            })
-            .collect();
-        let sig_json = crypto_frost_aggregate_signature(
-            serde_json::to_string(&sig_shares).unwrap(),
-            3,
-            group_pk.clone(),
-            hex::encode(message),
-        )
-        .await
-        .unwrap();
-        let sig: serde_json::Value = serde_json::from_str(&sig_json).unwrap();
-        assert_eq!(sig["group_pubkey_hex"], group_pk);
-        assert_eq!(sig["schnorr_signature_hex"].as_str().unwrap().len(), 96);
-        let expected_msg_hash = hex::encode(crypto_sha256(message.to_vec()).unwrap());
-        assert_eq!(sig["message_hash_hex"], expected_msg_hash);
-    }
-
-    #[tokio::test]
-    async fn test_frost_aggregate_insufficient_shares() {
+    async fn test_frost_disabled_non_cryptographic() {
         let group_pk = "ab".repeat(32);
-        let shares_json = crypto_frost_generate_jury_keys(3, 5, group_pk.clone())
+        let err = crypto_frost_generate_jury_keys(3, 5, group_pk.clone())
             .await
-            .unwrap();
-        let shares: Vec<soshal_crypto_core::frost::FrostKeyShare> =
-            serde_json::from_str(&shares_json).unwrap();
-        let sig_shares: Vec<soshal_crypto_core::frost::FrostSignatureShare> = shares
-            .iter()
-            .take(2)
-            .map(|s| soshal_crypto_core::frost::FrostSessionManager::sign_share(s, b"msg").unwrap())
-            .collect();
-        let err = crypto_frost_aggregate_signature(
-            serde_json::to_string(&sig_shares).unwrap(),
-            3,
-            group_pk,
-            hex::encode(b"msg"),
-        )
-        .await
-        .unwrap_err();
-        assert!(err.contains("insufficient signature shares"), "{err}");
+            .unwrap_err();
+        assert!(err.contains("non-cryptographic simulation"), "{err}");
+        let err =
+            crypto_frost_aggregate_signature("[]".to_string(), 3, group_pk, hex::encode(b"msg"))
+                .await
+                .unwrap_err();
+        assert!(err.contains("non-cryptographic simulation"), "{err}");
     }
 }

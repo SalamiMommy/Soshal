@@ -94,13 +94,13 @@ pub fn validate_pay_invoice(invoice: &str) -> Result<(), String> {
     if invoice.is_empty() || invoice.len() > 4096 {
         return Err("invalid bolt11 invoice".into());
     }
-    if let Some(sats) = super::bolt11_amount_sats(invoice) {
-        if sats > super::NWC_MAX_PAY_SATS {
-            return Err(format!(
-                "payment exceeds {}-sat NWC cap",
-                super::NWC_MAX_PAY_SATS
-            ));
-        }
+    let msats = super::parse_msats_from_bolt11(invoice)
+        .map_err(|_| "invalid bolt11 invoice".to_string())?;
+    if msats > 0 && msats / 1000 > super::NWC_MAX_PAY_SATS {
+        return Err(format!(
+            "payment exceeds {}-sat NWC cap",
+            super::NWC_MAX_PAY_SATS
+        ));
     }
     Ok(())
 }

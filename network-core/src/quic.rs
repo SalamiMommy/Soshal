@@ -320,6 +320,9 @@ fn transport_config() -> TransportConfig {
     cfg.stream_receive_window((8 * 1024 * 1024u32).into());
     cfg.receive_window((16 * 1024 * 1024u32).into());
     cfg.keep_alive_interval(Some(std::time::Duration::from_secs(15)));
+    cfg.max_idle_timeout(Some(
+        quinn::IdleTimeout::try_from(std::time::Duration::from_secs(30)).expect("idle timeout"),
+    ));
     cfg
 }
 
@@ -413,6 +416,7 @@ const LIVE_MAX_STREAM_ID: usize = 128;
 const LIVE_MAX_STREAMS: usize = 32;
 const LIVE_STREAM_HISTORY: usize = 128;
 const LIVE_MAX_REPLAY_BYTES: usize = 8 * 1024 * 1024;
+const MAX_MOQ_FETCH_BYTES: usize = 64 * 1024 * 1024;
 const LIVE_MAX_GROUP_BYTES: usize = 64 * 1024 * 1024;
 const LIVE_POLL_INTERVAL_MS: u64 = 50;
 const LIVE_IDLE_FINISH_MS: u64 = 2000;
@@ -486,6 +490,7 @@ pub fn moq_stream_known(stream_id: &str) -> bool {
 }
 const STREAM_CONNECT_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 const STREAM_EXCHANGE_TIMEOUT: StdDuration = StdDuration::from_secs(15);
+const AUTH_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
 /// Handle for the QUIC stream media server (mirrors `LanServerHandle`).
 pub struct QuicStreamServerHandle {
@@ -811,32 +816,36 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
 async fn auth_stream(recv: &mut quinn::RecvStream, key: &[u8; 32]) -> Result<(), String> {
     let mut line = Vec::with_capacity(128);
     let mut byte = [0u8; 1];
-    loop {
-        match recv.read(&mut byte).await {
-            Ok(None) => return Err("eof during handshake".to_string()),
-            Ok(Some(_)) => {
-                if byte[0] == b'\n' {
-                    break;
+    tokio::time::timeout(AUTH_TIMEOUT, async {
+        loop {
+            match recv.read(&mut byte).await {
+                Ok(None) => return Err("eof during handshake".to_string()),
+                Ok(Some(_)) => {
+                    if byte[0] == b'\n' {
+                        break;
+                    }
+                    line.push(byte[0]);
+                    if line.len() > 512 {
+                        return Err("handshake line too long".to_string());
+                    }
                 }
-                line.push(byte[0]);
-                if line.len() > 512 {
-                    return Err("handshake line too long".to_string());
-                }
+                Err(_) => return Err("handshake read error".to_string()),
             }
-            Err(_) => return Err("handshake read error".to_string()),
         }
-    }
-    let line = String::from_utf8_lossy(&line);
-    match crate::lan::parse_beacon(
-        key,
-        crate::lan_transport::LAN_MAGIC,
-        line.trim_end(),
-        0,
-        now_unix_secs(),
-    ) {
-        Some(_) => Ok(()),
-        None => Err("bad hmac beacon".to_string()),
-    }
+        let line = String::from_utf8_lossy(&line);
+        match crate::lan::parse_beacon(
+            key,
+            crate::lan_transport::LAN_MAGIC,
+            line.trim_end(),
+            0,
+            now_unix_secs(),
+        ) {
+            Some(_) => Ok(()),
+            None => Err("bad hmac beacon".to_string()),
+        }
+    })
+    .await
+    .map_err(|_| "auth handshake timed out".to_string())?
 }
 
 async fn read_exact_async(recv: &mut quinn::RecvStream, buf: &mut [u8]) -> Result<(), String> {
@@ -1198,6 +1207,7 @@ pub fn fetch_quic_moq_groups(
             send.finish().map_err(|e| format!("finish: {e}"))?;
 
             let mut out: Vec<Vec<u8>> = Vec::new();
+            let mut total_bytes = 0usize;
             loop {
                 let mut kind = [0u8; 1];
                 if read_exact_async(&mut recv, &mut kind).await.is_err() {
@@ -1208,6 +1218,10 @@ pub fn fetch_quic_moq_groups(
                 let len = u32::from_le_bytes(len_buf) as usize;
                 if len > MAX_STREAM_FRAME {
                     return Err("oversized moq frame".to_string());
+                }
+                total_bytes += len;
+                if total_bytes > MAX_MOQ_FETCH_BYTES {
+                    return Err("moq fetch byte budget exceeded".to_string());
                 }
                 let mut data = vec![0u8; len];
                 read_exact_async(&mut recv, &mut data).await?;

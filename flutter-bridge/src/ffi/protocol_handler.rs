@@ -129,6 +129,12 @@ fn protocol_load_from_cache(filename: &str) -> Result<Vec<u8>, String> {
     let file_path = cache_dir.join(filename);
 
     // Prevent directory traversal
+    let cache_dir = cache_dir
+        .canonicalize()
+        .map_err(|e| format!("Cache dir: {}", e))?;
+    let file_path = file_path
+        .canonicalize()
+        .map_err(|e| format!("Cache read failed: {}", e))?;
     if !file_path.starts_with(&cache_dir) {
         return Err("Path traversal detected".to_string());
     }
@@ -215,21 +221,27 @@ async fn fetch_avatar_bytes(url: &str) -> Result<Vec<u8>, String> {
     }
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("http client: {e}"))?;
-    let resp = client
+    let mut resp = client
         .get(url)
         .send()
         .await
         .map_err(|e| format!("avatar fetch: {e}"))?;
-    let bytes = resp
-        .bytes()
+    let max = 5 * 1024 * 1024;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
         .await
-        .map_err(|e| format!("avatar read: {e}"))?;
-    if bytes.len() > 5 * 1024 * 1024 {
-        return Err("avatar too large".to_string());
+        .map_err(|e| format!("avatar read: {e}"))?
+    {
+        if bytes.len() + chunk.len() > max {
+            return Err("avatar too large".to_string());
+        }
+        bytes.extend_from_slice(&chunk);
     }
-    Ok(bytes.to_vec())
+    Ok(bytes)
 }
 
 /// Get metadata for avatar
@@ -268,6 +280,12 @@ async fn protocol_handle_cache(path: &str) -> Result<Vec<u8>, String> {
     let file_path = cache_dir.join(path.trim_start_matches('/'));
 
     // Prevent directory traversal
+    let cache_dir = cache_dir
+        .canonicalize()
+        .map_err(|e| format!("Cache dir: {}", e))?;
+    let file_path = file_path
+        .canonicalize()
+        .map_err(|e| format!("Cache read failed: {}", e))?;
     if !file_path.starts_with(&cache_dir) {
         return Err("Path traversal detected".to_string());
     }

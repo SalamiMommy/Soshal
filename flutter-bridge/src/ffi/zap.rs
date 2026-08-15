@@ -192,11 +192,41 @@ pub fn zap_fetch_receipts(event_id: String, limit: i32) -> Result<String, String
     if limit <= 0 || limit > 500 {
         return Err("limit must be 1..=500".to_string()).into();
     }
-    let json = super::db::db_query_raw(format!(
-        "SELECT * FROM zaps WHERE event_id = '{}' ORDER BY created_at DESC LIMIT {}",
-        event_id.replace('\'', "''"),
-        limit
-    ))?;
+    let json = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let out = soshal_db_core::block_on(async {
+            let mut stmt = conn
+                .prepare("SELECT * FROM zaps WHERE event_id = ?1 ORDER BY created_at DESC LIMIT ?2")
+                .await?;
+            let mut rows = stmt
+                .query(libsql::params![event_id.as_str(), limit as i64])
+                .await?;
+            let names: Vec<String> = stmt
+                .columns()
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect();
+            let mut out = Vec::new();
+            while let Some(row) = rows.next().await? {
+                let mut obj = serde_json::Map::new();
+                for (i, name) in names.iter().enumerate() {
+                    let val = match row.get_value(i as i32) {
+                        Ok(libsql::Value::Null) => serde_json::Value::Null,
+                        Ok(libsql::Value::Integer(n)) => serde_json::json!(n),
+                        Ok(libsql::Value::Real(r)) => serde_json::json!(r),
+                        Ok(libsql::Value::Text(t)) => serde_json::json!(t),
+                        Ok(libsql::Value::Blob(b)) => serde_json::json!(hex::encode(b)),
+                        Err(_) => serde_json::Value::Null,
+                    };
+                    obj.insert(name.clone(), val);
+                }
+                out.push(serde_json::Value::Object(obj));
+            }
+            Ok::<_, libsql::Error>(out)
+        })
+        .map_err(soshal_db_core::error::DbError::from)?;
+        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+    })?;
     Ok(json).into()
 }
 
@@ -350,16 +380,16 @@ mod tests {
     #[test]
     fn test_bolt11_amount_parse() {
         use soshal_zap_core::{bolt11_amount_sats, parse_msats_from_bolt11};
-        assert_eq!(parse_msats_from_bolt11("lnbc2500u"), 250_000_000);
-        assert_eq!(parse_msats_from_bolt11("LNBC2500U"), 250_000_000);
-        assert_eq!(parse_msats_from_bolt11("lnbc10m"), 1_000_000_000);
-        assert_eq!(parse_msats_from_bolt11("lnbc1"), 100_000_000_000);
-        assert_eq!(parse_msats_from_bolt11("lnbc1p"), 0);
-        assert_eq!(parse_msats_from_bolt11("lnbc"), 0);
-        assert_eq!(parse_msats_from_bolt11(""), 0);
-        assert_eq!(parse_msats_from_bolt11("garbage"), 0);
-        assert_eq!(parse_msats_from_bolt11(&"x".repeat(4097)), 0);
-        assert_eq!(parse_msats_from_bolt11("lnbc99999999999999999999m"), 0);
+        assert_eq!(parse_msats_from_bolt11("lnbc2500u"), Ok(250_000_000));
+        assert_eq!(parse_msats_from_bolt11("LNBC2500U"), Ok(250_000_000));
+        assert_eq!(parse_msats_from_bolt11("lnbc10m"), Ok(1_000_000_000));
+        assert_eq!(parse_msats_from_bolt11("lnbc1"), Ok(100_000_000_000));
+        assert_eq!(parse_msats_from_bolt11("lnbc1p"), Ok(0));
+        assert_eq!(parse_msats_from_bolt11("lnbc"), Ok(0));
+        assert_eq!(parse_msats_from_bolt11(""), Ok(0));
+        assert_eq!(parse_msats_from_bolt11("garbage"), Ok(0));
+        assert_eq!(parse_msats_from_bolt11(&"x".repeat(4097)), Ok(0));
+        assert!(parse_msats_from_bolt11("lnbc99999999999999999999m").is_err());
         assert_eq!(bolt11_amount_sats("lnbc2500u"), Some(250_000));
         assert_eq!(bolt11_amount_sats("lnbc1p"), None);
         assert_eq!(bolt11_amount_sats("lnbc"), None);

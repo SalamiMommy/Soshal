@@ -132,14 +132,52 @@ pub fn streaming_fetch_live(limit: i32) -> Result<String, String> {
 /// Fetch live streams from followed users (contact graph join).
 #[frb(sync, serialize)]
 pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
-         JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LIVE} AND p.is_deleted = 0 \
-         AND u.contact_pubkeys LIKE '%\"{}\"%' \
-         ORDER BY p.created_at DESC LIMIT 100",
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let escaped = user_pubkey
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let pattern = format!("%\"{escaped}\"%");
+    let json = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let out = soshal_db_core::block_on(async {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
+                     JOIN users u ON u.pubkey = p.pubkey \
+                     WHERE p.kind = ?1 AND p.is_deleted = 0 \
+                     AND u.contact_pubkeys LIKE ?2 ESCAPE '\\' \
+                     ORDER BY p.created_at DESC LIMIT 100",
+                )
+                .await?;
+            let mut rows = stmt
+                .query(libsql::params![KIND_LIVE, pattern.as_str()])
+                .await?;
+            let names: Vec<String> = stmt
+                .columns()
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect();
+            let mut out = Vec::new();
+            while let Some(row) = rows.next().await? {
+                let mut obj = serde_json::Map::new();
+                for (i, name) in names.iter().enumerate() {
+                    let val = match row.get_value(i as i32) {
+                        Ok(libsql::Value::Null) => serde_json::Value::Null,
+                        Ok(libsql::Value::Integer(n)) => serde_json::json!(n),
+                        Ok(libsql::Value::Real(r)) => serde_json::json!(r),
+                        Ok(libsql::Value::Text(t)) => serde_json::json!(t),
+                        Ok(libsql::Value::Blob(b)) => serde_json::json!(hex::encode(b)),
+                        Err(_) => serde_json::Value::Null,
+                    };
+                    obj.insert(name.clone(), val);
+                }
+                out.push(serde_json::Value::Object(obj));
+            }
+            Ok::<_, libsql::Error>(out)
+        })
+        .map_err(soshal_db_core::error::DbError::from)?;
+        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+    })?;
     // NOTE: contact_pubkeys holds the user's own contacts, so "followed"
     // semantics here use the reverse direction (followers live). Relay-side
     // filtering in the Tauri layer handles the forward direction.
@@ -207,10 +245,36 @@ pub fn streaming_start_live(
 /// End a live stream: replace the local `status` tag with `ended`.
 #[frb(sync, serialize)]
 pub fn streaming_end_live(stream_id: String, broadcaster_pubkey: String) -> Result<bool, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT pubkey, tags_json FROM posts WHERE kind = {KIND_LIVE} AND id = '{}'",
-        stream_id.replace('\'', "''")
-    ))?;
+    let json = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let out = soshal_db_core::block_on(async {
+            let mut stmt = conn
+                .prepare("SELECT pubkey, tags_json FROM posts WHERE kind = ?1 AND id = ?2")
+                .await?;
+            let mut rows = stmt
+                .query(libsql::params![KIND_LIVE, stream_id.as_str()])
+                .await?;
+            let mut out = Vec::new();
+            while let Some(row) = rows.next().await? {
+                let mut obj = serde_json::Map::new();
+                for (i, name) in ["pubkey", "tags_json"].iter().enumerate() {
+                    let val = match row.get_value(i as i32) {
+                        Ok(libsql::Value::Null) => serde_json::Value::Null,
+                        Ok(libsql::Value::Integer(n)) => serde_json::json!(n),
+                        Ok(libsql::Value::Real(r)) => serde_json::json!(r),
+                        Ok(libsql::Value::Text(t)) => serde_json::json!(t),
+                        Ok(libsql::Value::Blob(b)) => serde_json::json!(hex::encode(b)),
+                        Err(_) => serde_json::Value::Null,
+                    };
+                    obj.insert(name.to_string(), val);
+                }
+                out.push(serde_json::Value::Object(obj));
+            }
+            Ok::<_, libsql::Error>(out)
+        })
+        .map_err(soshal_db_core::error::DbError::from)?;
+        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+    })?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let row = rows.first().ok_or("stream not found".to_string())?;
     if row["pubkey"].as_str().unwrap_or("") != broadcaster_pubkey {
@@ -229,15 +293,17 @@ pub fn streaming_end_live(stream_id: String, broadcaster_pubkey: String) -> Resu
     {
         tags.push(vec!["status".to_string(), "ended".to_string()]);
     }
-    super::db::db_execute_raw(format!(
-        "UPDATE posts SET tags_json = '{}', sync_status = 'edited' WHERE id = '{}'",
-        serde_json::to_string(&tags)
-            .unwrap_or_default()
-            .replace('\'', "''"),
-        stream_id.replace('\'', "''")
-    ))
-    .map(|_| true)
-    .into()
+    let tags_json = serde_json::to_string(&tags).unwrap_or_default();
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        soshal_db_core::block_on(conn.execute(
+            "UPDATE posts SET tags_json = ?1, sync_status = 'edited' WHERE id = ?2",
+            libsql::params![tags_json.as_str(), stream_id.as_str()],
+        ))
+        .map_err(soshal_db_core::error::DbError::from)?;
+        Ok(())
+    })?;
+    Ok(true).into()
 }
 
 /// Post a story (kind 30078, d = `soshal_story`, expiration tag 24h unless

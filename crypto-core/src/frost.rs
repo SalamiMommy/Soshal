@@ -1,5 +1,10 @@
 //! FROST Threshold Signatures Engine (secp256k1 / Schnorr NIP-01 compatible).
 //! Facilitates decentralized community moderation juries and multi-sig actions.
+//!
+//! WARNING: NON-CRYPTOGRAPHIC SIMULATION. Secret shares and signatures are
+//! deterministic string hashes, forgeable by anyone — not real FROST/Schnorr.
+//! Exposed over FFI only as disabled stubs; real threshold signing is a
+//! feature project. Keep naming honest.
 
 use serde::{Deserialize, Serialize};
 

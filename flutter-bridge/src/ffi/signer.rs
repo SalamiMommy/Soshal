@@ -139,8 +139,10 @@ pub(crate) fn lan_key() -> Result<[u8; 32], String> {
         Some(k) => k,
         None => return Err("signer locked".to_string()),
     };
-    let secret_hex = keys.secret_key().to_secret_hex();
-    let secret = hex::decode(secret_hex).map_err(|e| format!("secret decode: {e}"))?;
+    let secret_hex = zeroize::Zeroizing::new(keys.secret_key().to_secret_hex());
+    let secret = zeroize::Zeroizing::new(
+        hex::decode(&*secret_hex).map_err(|e| format!("secret decode: {e}"))?,
+    );
     let mut derived = soshal_crypto_core::hash::hkdf_sha256(
         &secret,
         b"soshal-lan-salt-v1",
@@ -155,6 +157,21 @@ pub(crate) fn lan_key() -> Result<[u8; 32], String> {
         *b = 0;
     }
     Ok(out)
+}
+
+/// Identity-derived at-rest encryption key (HKDF from the unlocked secret),
+/// used by domain modules to seal key material persisted in SQLite.
+pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
+    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let keys = match guard.as_ref() {
+        Some(k) => k,
+        None => return Err("signer locked".to_string()),
+    };
+    let secret_hex = zeroize::Zeroizing::new(keys.secret_key().to_secret_hex());
+    let secret = zeroize::Zeroizing::new(
+        hex::decode(&*secret_hex).map_err(|e| format!("secret decode: {e}"))?,
+    );
+    soshal_crypto_core::at_rest::at_rest_key(&secret)
 }
 
 /// Sign a Schnorr message digest (32 bytes, hex) with the unlocked key.

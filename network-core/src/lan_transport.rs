@@ -34,6 +34,7 @@ pub const LAN_MAGIC: &str = "soshal-lan";
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
 const MAX_HANDSHAKE_LINE: usize = 512;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LanChunkRequest {
@@ -128,6 +129,7 @@ fn handle_conn(stream: TcpStream, key: [u8; 32], store: &ChunkStore) {
     if !lan::is_private_ip(peer_addr.ip()) {
         return;
     }
+    let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
     let peer = match stream.try_clone() {
         Ok(p) => p,
         Err(_) => return,

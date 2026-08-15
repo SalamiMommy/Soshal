@@ -14,6 +14,58 @@ use std::sync::Mutex;
 
 static DB: Mutex<Option<Database>> = Mutex::new(None);
 
+/// Tables that `db_count` may count (mirrors the schema migrations).
+const COUNTABLE_TABLES: &[&str] = &[
+    "audit_logs",
+    "banned_members",
+    "blocks",
+    "bookmarks",
+    "custom_profile_nodes",
+    "custom_profiles",
+    "dating_unmatches",
+    "diagnostic_logs",
+    "do_not_refetch_items",
+    "ephemeral_media",
+    "escrows",
+    "friend_backups",
+    "geohash_peers",
+    "group_invites",
+    "group_join_requests",
+    "group_members",
+    "group_messages",
+    "group_roles",
+    "group_shared_keys",
+    "groups",
+    "guestbook_entries",
+    "hashtags",
+    "huddle_posts",
+    "link_previews",
+    "marketplace_reviews",
+    "media_blobs",
+    "messages",
+    "muted_conversations",
+    "musicloud_comments",
+    "musiclouds",
+    "notifications",
+    "outbox_queue",
+    "poll_votes",
+    "polls",
+    "post_views",
+    "posts",
+    "reactions",
+    "relays",
+    "reminders",
+    "reposts",
+    "settings",
+    "spam_reports",
+    "story_reactions",
+    "stream_chat",
+    "tx_edges",
+    "tx_nodes",
+    "users",
+    "zaps",
+];
+
 fn with_db<T>(f: impl FnOnce(&Database) -> Result<T, DbError>) -> Result<T, String> {
     let db = {
         let guard = DB.lock().unwrap_or_else(|e| e.into_inner());
@@ -113,6 +165,9 @@ pub fn db_execute_raw(sql: String) -> Result<usize, String> {
 /// Get the row count of a table.
 #[frb(sync, serialize)]
 pub fn db_count(table: String) -> Result<i64, String> {
+    if !COUNTABLE_TABLES.contains(&table.as_str()) {
+        return Err(format!("db: unknown table: {table}"));
+    }
     with_db(|db| {
         let conn = db.conn().map_err(DbError::from)?;
         let sql = format!("SELECT COUNT(*) AS c FROM {table}");

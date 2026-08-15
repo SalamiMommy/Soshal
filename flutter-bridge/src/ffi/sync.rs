@@ -62,11 +62,15 @@ fn update_json(update: SyncUpdate) -> Option<String> {
                 Ok(pk) => pk,
                 Err(_) => return None,
             };
+            let sealed = match super::messaging::seal_dm_content(plain.clone()) {
+                Ok(s) => s,
+                Err(_) => return None,
+            };
             if super::messaging::messaging_store_dm(
                 id.clone(),
                 sender.clone(),
                 recipient,
-                plain.clone(),
+                sealed,
                 created_at,
                 "[]".to_string(),
             )
