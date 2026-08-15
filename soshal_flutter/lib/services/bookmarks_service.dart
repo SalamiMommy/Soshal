@@ -8,7 +8,8 @@ import 'error_log.dart';
 
 /// Bookmarks Service
 /// Local bookmark storage plus post resolution from the local DB cache.
-class BookmarksService extends ChangeNotifier with LastErrorMixin {
+class BookmarksService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify {
   List<BookmarkRow> _bookmarks = [];
 
   List<BookmarkRow> get bookmarks => _bookmarks;
@@ -21,11 +22,11 @@ class BookmarksService extends ChangeNotifier with LastErrorMixin {
         eventId: eventId,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return id;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -46,11 +47,11 @@ class BookmarksService extends ChangeNotifier with LastErrorMixin {
               .toList()
           : <BookmarkRow>[];
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _bookmarks;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -62,11 +63,11 @@ class BookmarksService extends ChangeNotifier with LastErrorMixin {
         id: id,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return removed;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -84,7 +85,7 @@ class BookmarksService extends ChangeNotifier with LastErrorMixin {
       return FeedPost.fromJson(decoded);
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return null;
     }
   }

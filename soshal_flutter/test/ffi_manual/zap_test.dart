@@ -12,7 +12,7 @@ void main() {
 
     api.stub('crateFfiZapZapParseLnurlMetadata', (_) => Future.value('{}'));
     api.stub('crateFfiZapZapConnectNwc', (_) => Future.value(true));
-    api.stub('crateFfiZapZapGetTotalMsat', (_) => Future.value(123));
+    api.stub('crateFfiZapZapGetTotalMsat', (_) => Future.value(BigInt.from(123)));
     api.stub('crateFfiZapZapFetchReceipts', (_) => Future.value('[]'));
 
     final meta = await zapParseLnurlMetadata(lnurl: 'lnurl');

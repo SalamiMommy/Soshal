@@ -8,7 +8,8 @@ import 'error_log.dart';
 
 /// Streaming Service
 /// Live stream + story rows (kind 30311 / 30312 posts table entries).
-class StreamingService extends ChangeNotifier with LastErrorMixin {
+class StreamingService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify {
   final List<StreamRow> _live = [];
   final List<StreamRow> _stories = [];
 
@@ -116,11 +117,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
           .crateFfiStreamingStreamingStartLocalServer();
       _localVideoServerPort = port;
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return port;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -166,11 +167,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         streamUrl: streamUrl,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -182,11 +183,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         broadcasterPubkey: broadcasterPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -205,11 +206,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         expiresInHours: expiresInHours,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -237,11 +238,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         viewerPubkey: viewerPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -254,11 +255,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         emoji: emoji,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return false;
     }
   }
@@ -281,11 +282,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         payloadHex: payloadHex,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return json;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -302,11 +303,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         subscriberPubkey: subscriberPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return status;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -333,11 +334,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
       final encoded = encodeMoqGroup(group);
       final json = moq.p2PMoqPublishGroup(streamId: streamId, encoded: encoded);
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return jsonDecode(json) as Map<String, dynamic>;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -360,7 +361,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
     );
     _activeMoqStreamId = streamId;
     _moqGroupCounter = 0;
-    notifyListeners();
+    notifyDeferred();
   }
 
   /// End the local MoQ broadcast (publishes a stop control group).
@@ -381,7 +382,7 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
         // best-effort stop frame
       }
     }
-    notifyListeners();
+    notifyDeferred();
   }
 
   static Map<String, dynamic> _controlGroup({
@@ -427,11 +428,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
           .map((g) => _hexToBytes(g as String))
           .toList();
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return frames.map(decodeMoqGroup).toList();
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -452,11 +453,11 @@ class StreamingService extends ChangeNotifier with LastErrorMixin {
           .map((e) => StreamRow.fromJson(e as Map<String, dynamic>))
           .toList();
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return parsed;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }

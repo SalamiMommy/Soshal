@@ -99,7 +99,7 @@ void main() {
 
     test('fetchTotalMsat returns parsed total and passes eventId', () async {
       final zap = ZapService();
-      api.stubInt('crateFfiZapZapGetTotalMsat', 21000);
+      api.stub('crateFfiZapZapGetTotalMsat', (_) => BigInt.from(21000));
 
       expect(await zap.fetchTotalMsat('ev-1'), 21000);
       expect(zap.totalMsat, 21000);

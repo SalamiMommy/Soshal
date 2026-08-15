@@ -60,7 +60,7 @@ void main() {
       });
       api.stubString('crateFfiFfiBridgeGetDbPath', env.$2);
 
-      expect(() => session.loadSession(), throwsException);
+      await expectLater(session.loadSession(), throwsException);
       expect(session.lastError, isNotNull);
     });
 
@@ -84,7 +84,7 @@ void main() {
 
       expect(result, true);
       final inv = api.callsOf('crateFfiSessionSessionSave').single;
-      expect(api.namedArg(inv, 'dbPath'), env.$2);
+      expect(api.namedArg(inv, 'dbPath'), '${env.$2}/soshal.db');
       expect(api.namedArg(inv, 'sessionData'), isNotNull);
     });
 
@@ -93,7 +93,7 @@ void main() {
       const sessionJson = '{"active_pubkey": null, "accounts": []}';
       api.stubString('crateFfiSessionSessionLoad', sessionJson);
       api.stubString('crateFfiFfiBridgeGetDbPath', env.$2);
-      api.stub('crateFfiSessionSessionAddAccount', (_) {});
+      api.stub("crateFfiSessionSessionAddAccount", (_) => true);
 
       expect(session.session, isNull);
       await session.addAccount('newpk', 'newpub', ['relay1']);
@@ -105,7 +105,7 @@ void main() {
       const sessionJson = '{"active_pubkey": null, "accounts": []}';
       api.stubString('crateFfiSessionSessionLoad', sessionJson);
       api.stubString('crateFfiFfiBridgeGetDbPath', env.$2);
-      api.stub('crateFfiSessionSessionAddAccount', (_) {});
+      api.stub("crateFfiSessionSessionAddAccount", (_) => true);
 
       var notified = 0;
       session.addListener(() => notified++);
@@ -130,7 +130,7 @@ void main() {
       }''';
       api.stubString('crateFfiSessionSessionLoad', sessionJson);
       api.stubString('crateFfiFfiBridgeGetDbPath', env.$2);
-      api.stub('crateFfiSessionSessionAddAccount', (_) {});
+      api.stub("crateFfiSessionSessionAddAccount", (_) => true);
 
       await session.loadSession();
       expect(session.activePubkey, 'pk1');
@@ -213,7 +213,7 @@ void main() {
       }''';
       api.stubString('crateFfiSessionSessionLoad', sessionJson);
       api.stubString('crateFfiFfiBridgeGetDbPath', env.$2);
-      api.stub('crateFfiSessionSessionSwitchAccount', (_) {});
+      api.stub('crateFfiSessionSessionSwitchAccount', (_) => true);
 
       await session.loadSession();
       expect(session.activePubkey, 'pk1');
@@ -241,6 +241,7 @@ void main() {
         () => session.switchAccount('nonexistent'),
         throwsException,
       );
+      await Future<void>.value();
       expect(session.lastError, isNotNull);
     });
 

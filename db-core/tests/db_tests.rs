@@ -1,20 +1,44 @@
 use soshal_db_core::repos::audit_log::{AuditLogRepo, AuditLogRow};
+use soshal_db_core::repos::banned_member::{BannedMemberRepo, BannedMemberRow};
 use soshal_db_core::repos::block::{BlockRepo, BlockRow};
 use soshal_db_core::repos::bookmark::{BookmarkRepo, BookmarkRow};
+use soshal_db_core::repos::conversation_mute::ConversationMuteRepo;
+use soshal_db_core::repos::dating_unmatch::DatingUnmatchRepo;
+use soshal_db_core::repos::diagnostic_log::{DiagnosticLogRepo, DiagnosticLogRow};
+use soshal_db_core::repos::ephemeral_media::{EphemeralMediaRepo, EphemeralMediaRow};
+use soshal_db_core::repos::escrow::{EscrowRepo, EscrowRow};
+use soshal_db_core::repos::friend_backup::{FriendBackupRepo, FriendBackupRow};
+use soshal_db_core::repos::geohash_peer::{GeohashPeerRepo, GeohashPeerRow};
 use soshal_db_core::repos::group::{GroupRepo, GroupRow};
+use soshal_db_core::repos::group_invite::{GroupInviteRepo, GroupInviteRow};
+use soshal_db_core::repos::group_join_request::{GroupJoinRequestRepo, GroupJoinRequestRow};
+use soshal_db_core::repos::guestbook::{GuestbookEntryRow, GuestbookRepo};
 use soshal_db_core::repos::hashtag::{HashtagRepo, HashtagRow};
+use soshal_db_core::repos::huddle_post::{HuddlePostRepo, HuddlePostRow};
+use soshal_db_core::repos::limits::{self, notification_too_big, row_too_big};
+use soshal_db_core::repos::link_preview::{LinkPreviewRepo, LinkPreviewRow};
+use soshal_db_core::repos::marketplace_review::{MarketplaceReviewRepo, MarketplaceReviewRow};
 use soshal_db_core::repos::media::{MediaRepo, MediaRow};
 use soshal_db_core::repos::message::{MessageRepo, MessageRow};
+use soshal_db_core::repos::musicloud::{
+    MusicloudCommentRepo, MusicloudCommentRow, MusicloudRepo, MusicloudRow,
+};
 use soshal_db_core::repos::notification::{NotificationRepo, NotificationRow};
+use soshal_db_core::repos::poll::{PollRepo, PollRow, PollVoteRow};
 use soshal_db_core::repos::post::{PostRepo, PostRow};
 use soshal_db_core::repos::post_views::PostViewsRepo;
+use soshal_db_core::repos::profile_node::{ProfileNodeRepo, ProfileNodeRow};
 use soshal_db_core::repos::reaction::{ReactionRepo, ReactionRow};
+use soshal_db_core::repos::refetch_item::{RefetchItemRepo, RefetchItemRow};
 use soshal_db_core::repos::relay::{RelayRepo, RelayRow};
 use soshal_db_core::repos::reminder::{ReminderRepo, ReminderRow};
 use soshal_db_core::repos::repost::{RepostRepo, RepostRow};
 use soshal_db_core::repos::role::{GroupRoleRepo, GroupRoleRow};
 use soshal_db_core::repos::search_index::SearchIndexRepo;
 use soshal_db_core::repos::settings::SettingsRepo;
+use soshal_db_core::repos::spam_report::{SpamReportRepo, SpamReportRow};
+use soshal_db_core::repos::story_reaction::{StoryReactionRepo, StoryReactionRow};
+use soshal_db_core::repos::stream_chat::{StreamChatRepo, StreamChatRow};
 use soshal_db_core::repos::user::{UserRepo, UserRow};
 use soshal_db_core::repos::zap::{ZapRepo, ZapRow};
 use soshal_db_core::schema::SCHEMA_VERSION;
@@ -648,4 +672,741 @@ fn test_settings_delete_and_db_clone() {
         .unwrap()
         .unwrap();
     assert_eq!(val, 1);
+}
+
+#[test]
+fn test_escrow_create_update_list() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = EscrowRepo::new(&db);
+
+    let row = EscrowRow {
+        id: "esc1".into(),
+        listing_id: "lis1".into(),
+        buyer_pubkey: "buyer1".into(),
+        seller_pubkey: "seller1".into(),
+        amount_msats: 5000,
+        currency: "sats".into(),
+        status: "created".into(),
+        escrow_note: None,
+        created_at: 1000,
+        updated_at: 1000,
+    };
+    repo.create(&row).unwrap();
+    let found = repo.get("esc1").unwrap().unwrap();
+    assert_eq!(found.amount_msats, 5000);
+    assert_eq!(repo.get_by_listing("lis1").unwrap().len(), 1);
+
+    repo.update_status("esc1", "funded").unwrap();
+    assert_eq!(repo.get("esc1").unwrap().unwrap().status, "funded");
+    repo.set_note("esc1", "dispute note").unwrap();
+    assert_eq!(
+        repo.get("esc1").unwrap().unwrap().escrow_note.as_deref(),
+        Some("dispute note")
+    );
+}
+
+#[test]
+fn test_ephemeral_media_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = EphemeralMediaRepo::new(&db);
+
+    let row = EphemeralMediaRow {
+        id: "em1".into(),
+        message_id: "msg1".into(),
+        conversation_id: "conv1".into(),
+        conversation_type: "dm".into(),
+        media_url: "https://example.com/x.jpg".into(),
+        media_type: "image".into(),
+        sender_pubkey: "sender1".into(),
+        recipient_pubkey: "recipient1".into(),
+        max_views: 2,
+        current_views: 0,
+        state: "pending".into(),
+        expires_at: Some(2000),
+        created_at: 1000,
+        viewed_at: None,
+    };
+    repo.create(&row).unwrap();
+    let found = repo.get("em1").unwrap().unwrap();
+    assert_eq!(found.recipient_pubkey, "recipient1");
+    assert_eq!(
+        repo.get_pending_for_recipient("recipient1").unwrap().len(),
+        1
+    );
+
+    repo.increment_view_count("em1").unwrap();
+    repo.increment_view_count("em1").unwrap();
+    let expired = repo.get("em1").unwrap().unwrap();
+    assert_eq!(expired.state, "expired");
+    assert_eq!(expired.current_views, 2);
+
+    let gone = repo.clean_expired(3000).unwrap();
+    assert_eq!(gone, vec!["em1".to_string()]);
+    assert!(repo.get("em1").unwrap().is_none());
+}
+
+#[test]
+fn test_marketplace_review_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = MarketplaceReviewRepo::new(&db);
+
+    let r1 = MarketplaceReviewRow {
+        id: "rev1".into(),
+        listing_id: "lis1".into(),
+        reviewer_pubkey: "buyer1".into(),
+        rating: 5,
+        text: "great".into(),
+        created_at: 1000,
+    };
+    let r2 = MarketplaceReviewRow {
+        id: "rev2".into(),
+        listing_id: "lis1".into(),
+        reviewer_pubkey: "buyer2".into(),
+        rating: 3,
+        text: "ok".into(),
+        created_at: 2000,
+    };
+    repo.insert(&r1).unwrap();
+    repo.insert(&r2).unwrap();
+    let list = repo.list_by_listing("lis1", 10).unwrap();
+    assert_eq!(list.len(), 2);
+    assert_eq!(repo.average_for("lis1").unwrap().unwrap(), 4.0);
+}
+
+#[test]
+fn test_poll_crud_and_votes() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = PollRepo::new(&db);
+
+    let poll = PollRow {
+        id: "poll1".into(),
+        pubkey: "pk1".into(),
+        question: "Best option?".into(),
+        options: "[\"a\",\"b\"]".into(),
+        expires_at: 2000,
+        closed: false,
+        created_at: 1000,
+    };
+    repo.upsert_poll(&poll).unwrap();
+    let found = repo.get_poll("poll1").unwrap().unwrap();
+    assert_eq!(found.options, "[\"a\",\"b\"]");
+    assert_eq!(repo.list_by_author("pk1", 10).unwrap().len(), 1);
+
+    let vote = PollVoteRow {
+        id: "v1".into(),
+        poll_id: "poll1".into(),
+        option_id: 1,
+        voter_pubkey: "voter1".into(),
+        voted_at: 1500,
+    };
+    repo.vote(&vote).unwrap();
+    assert!(repo.has_voted("poll1", "voter1").unwrap());
+    assert_eq!(repo.option_count("poll1", 1).unwrap(), 1);
+
+    repo.set_closed("poll1", true).unwrap();
+    assert!(repo.get_poll("poll1").unwrap().unwrap().closed);
+}
+
+#[test]
+fn test_spam_report_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = SpamReportRepo::new(&db);
+
+    let row = SpamReportRow {
+        id: "sp1".into(),
+        pubkey: "reporter1".into(),
+        target_id: Some("evt1".into()),
+        target_pubkey: Some("target1".into()),
+        reason: Some("spam".into()),
+        tags: "[\"spam\",\"duplicate\"]".into(),
+        created_at: 1000,
+    };
+    repo.insert(&row).unwrap();
+    let list = repo.list_by_target("target1", 10).unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].tags, "[\"spam\",\"duplicate\"]");
+
+    repo.delete("sp1").unwrap();
+    assert!(repo.list_by_target("target1", 10).unwrap().is_empty());
+}
+
+#[test]
+fn test_diagnostic_log_insert_list_purge() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = DiagnosticLogRepo::new(&db);
+
+    let l1 = DiagnosticLogRow {
+        id: "dl1".into(),
+        level: "error".into(),
+        service: "feed".into(),
+        method: "load".into(),
+        message: "boom".into(),
+        created_at: 1000,
+    };
+    let l2 = DiagnosticLogRow {
+        id: "dl2".into(),
+        level: "info".into(),
+        service: "auth".into(),
+        method: "login".into(),
+        message: "ok".into(),
+        created_at: 2000,
+    };
+    repo.insert(&l1).unwrap();
+    repo.insert(&l2).unwrap();
+    assert_eq!(repo.list(10, None).unwrap().len(), 2);
+    let errors = repo.list(10, Some("error")).unwrap();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].id, "dl1");
+
+    assert_eq!(repo.purge_before(0).unwrap(), 2);
+    assert!(repo.list(10, None).unwrap().is_empty());
+}
+
+#[test]
+fn test_refetch_item_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = RefetchItemRepo::new(&db);
+
+    let row = RefetchItemRow {
+        id: "evt1".into(),
+        pubkey: Some("pk1".into()),
+        reason: Some("too large".into()),
+        created_at: 1000,
+    };
+    repo.insert(&row).unwrap();
+    assert!(repo.contains("evt1").unwrap());
+    assert_eq!(repo.list(10).unwrap().len(), 1);
+
+    repo.delete("evt1").unwrap();
+    assert!(!repo.contains("evt1").unwrap());
+}
+
+#[test]
+fn test_profile_node_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = ProfileNodeRepo::new(&db);
+
+    let row = ProfileNodeRow {
+        id: "pn1".into(),
+        user_pubkey: "u1".into(),
+        node_type: "text".into(),
+        styles: "{\"bg\":\"#fff\"}".into(),
+        properties: "{\"links\":[\"a\",\"b\"]}".into(),
+        layout_row: 0,
+        layout_col: 0,
+        sort_order: 1,
+    };
+    repo.upsert(&row).unwrap();
+    let list = repo.list_by_user("u1").unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].properties, "{\"links\":[\"a\",\"b\"]}");
+    assert_eq!(repo.delete_all_for("u1").unwrap(), 1);
+    assert!(repo.list_by_user("u1").unwrap().is_empty());
+}
+
+#[test]
+fn test_geohash_peer_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = GeohashPeerRepo::new(&db);
+
+    let p1 = GeohashPeerRow {
+        pubkey: "peer1".into(),
+        geohash: "u33d".into(),
+        purpose: "dating".into(),
+        first_seen: 1000,
+        last_seen: 2000,
+    };
+    let p2 = GeohashPeerRow {
+        pubkey: "peer2".into(),
+        geohash: "u33d".into(),
+        purpose: "both".into(),
+        first_seen: 1000,
+        last_seen: 3000,
+    };
+    repo.upsert(&p1).unwrap();
+    repo.upsert(&p2).unwrap();
+    assert_eq!(repo.list_by_geohash("u33d").unwrap().len(), 2);
+    assert_eq!(repo.list_by_purpose("dating").unwrap().len(), 2);
+
+    repo.delete("peer1").unwrap();
+    assert_eq!(repo.list_by_geohash("u33d").unwrap().len(), 1);
+}
+
+#[test]
+fn test_friend_backup_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = FriendBackupRepo::new(&db);
+
+    let row = FriendBackupRow {
+        user_pubkey: "u1".into(),
+        encrypted_data: "{\"v\":1}".into(),
+        updated_at: 1000,
+    };
+    repo.upsert(&row).unwrap();
+    let found = repo.get("u1").unwrap().unwrap();
+    assert_eq!(found.encrypted_data, "{\"v\":1}");
+
+    let updated = FriendBackupRow {
+        user_pubkey: "u1".into(),
+        encrypted_data: "{\"v\":2}".into(),
+        updated_at: 2000,
+    };
+    repo.upsert(&updated).unwrap();
+    assert_eq!(repo.get("u1").unwrap().unwrap().updated_at, 2000);
+
+    repo.delete("u1").unwrap();
+    assert!(repo.get("u1").unwrap().is_none());
+}
+
+#[test]
+fn test_link_preview_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = LinkPreviewRepo::new(&db);
+
+    let row = LinkPreviewRow {
+        url: "https://example.com/a".into(),
+        domain: "example.com".into(),
+        title: "Example".into(),
+        description: "A page".into(),
+        image: Some("https://example.com/i.png".into()),
+        favicon: None,
+        cached_at: 1000,
+    };
+    repo.upsert(&row).unwrap();
+    let found = repo.get("https://example.com/a").unwrap().unwrap();
+    assert_eq!(found.title, "Example");
+    assert_eq!(found.image.as_deref(), Some("https://example.com/i.png"));
+    assert_eq!(repo.list_recent(10).unwrap().len(), 1);
+
+    repo.delete("https://example.com/a").unwrap();
+    assert!(repo.get("https://example.com/a").unwrap().is_none());
+}
+
+#[test]
+fn test_stream_chat_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = StreamChatRepo::new(&db);
+
+    let m1 = StreamChatRow {
+        id: "sc1".into(),
+        stream_id: "s1".into(),
+        pubkey: "pk1".into(),
+        text: "hi".into(),
+        created_at: 1000,
+    };
+    let m2 = StreamChatRow {
+        id: "sc2".into(),
+        stream_id: "s1".into(),
+        pubkey: "pk2".into(),
+        text: "yo".into(),
+        created_at: 2000,
+    };
+    repo.insert(&m1).unwrap();
+    repo.insert(&m2).unwrap();
+    let list = repo.list_by_stream("s1", 10).unwrap();
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[0].text, "hi");
+
+    assert_eq!(repo.delete_for_stream("s1").unwrap(), 2);
+    assert!(repo.list_by_stream("s1", 10).unwrap().is_empty());
+}
+
+#[test]
+fn test_guestbook_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = GuestbookRepo::new(&db);
+
+    let row = GuestbookEntryRow {
+        id: "gb1".into(),
+        profile_pubkey: "profile1".into(),
+        sender_pubkey: "sender1".into(),
+        sender_name: Some("Bob".into()),
+        sender_avatar: None,
+        content: "nice profile".into(),
+        created_at: 1000,
+        signature: Some("sig1".into()),
+        approved: false,
+    };
+    repo.insert(&row).unwrap();
+    assert_eq!(
+        repo.list_by_profile("profile1", 10, false).unwrap().len(),
+        1
+    );
+    assert!(repo
+        .list_by_profile("profile1", 10, true)
+        .unwrap()
+        .is_empty());
+
+    repo.set_approved("gb1", true).unwrap();
+    assert_eq!(repo.list_by_profile("profile1", 10, true).unwrap().len(), 1);
+
+    repo.delete("gb1").unwrap();
+    assert!(repo
+        .list_by_profile("profile1", 10, false)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn test_huddle_post_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = HuddlePostRepo::new(&db);
+
+    let row = HuddlePostRow {
+        id: "hp1".into(),
+        huddle_id: "h1".into(),
+        pubkey: "pk1".into(),
+        content: "hi".into(),
+        created_at: 1000,
+        expires_at: 500,
+    };
+    repo.insert(&row).unwrap();
+    assert_eq!(repo.list_by_huddle("h1", 10, true).unwrap().len(), 1);
+    assert!(repo.list_by_huddle("h1", 10, false).unwrap().is_empty());
+
+    assert_eq!(repo.delete_expired().unwrap(), 1);
+    assert!(repo.list_by_huddle("h1", 10, true).unwrap().is_empty());
+}
+
+#[test]
+fn test_banned_member_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = BannedMemberRepo::new(&db);
+
+    let row = BannedMemberRow {
+        group_id: "g1".into(),
+        pubkey: "bad1".into(),
+        banned_by: "admin1".into(),
+        reason: "spam".into(),
+        banned_at: 1000,
+    };
+    repo.insert(&row).unwrap();
+    assert!(repo.is_banned("g1", "bad1").unwrap());
+    assert_eq!(repo.list_by_group("g1").unwrap().len(), 1);
+
+    repo.delete("g1", "bad1").unwrap();
+    assert!(!repo.is_banned("g1", "bad1").unwrap());
+}
+
+#[test]
+fn test_group_join_request_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = GroupJoinRequestRepo::new(&db);
+
+    let row = GroupJoinRequestRow {
+        group_id: "g1".into(),
+        pubkey: "u1".into(),
+        status: "pending".into(),
+        requested_at: 1000,
+    };
+    repo.upsert(&row).unwrap();
+    let found = repo.get("g1", "u1").unwrap().unwrap();
+    assert_eq!(found.status, "pending");
+    assert_eq!(repo.list_by_group("g1", None).unwrap().len(), 1);
+    assert_eq!(repo.list_by_group("g1", Some("pending")).unwrap().len(), 1);
+
+    let approved = GroupJoinRequestRow {
+        group_id: "g1".into(),
+        pubkey: "u1".into(),
+        status: "approved".into(),
+        requested_at: 1000,
+    };
+    repo.upsert(&approved).unwrap();
+    assert_eq!(repo.get("g1", "u1").unwrap().unwrap().status, "approved");
+
+    repo.delete("g1", "u1").unwrap();
+    assert!(repo.get("g1", "u1").unwrap().is_none());
+}
+
+#[test]
+fn test_group_invite_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = GroupInviteRepo::new(&db);
+
+    let row = GroupInviteRow {
+        id: "gi1".into(),
+        group_id: "g1".into(),
+        created_by: "admin1".into(),
+        token: "tok1".into(),
+        max_uses: 5,
+        uses: 0,
+        expires_at: 2000,
+        created_at: 1000,
+    };
+    repo.create(&row).unwrap();
+    let found = repo.get_by_token("tok1").unwrap().unwrap();
+    assert_eq!(found.group_id, "g1");
+    assert_eq!(repo.list_by_group("g1").unwrap().len(), 1);
+
+    repo.increment_uses("gi1").unwrap();
+    assert_eq!(repo.get_by_token("tok1").unwrap().unwrap().uses, 1);
+
+    repo.delete("gi1").unwrap();
+    assert!(repo.get_by_token("tok1").unwrap().is_none());
+}
+
+#[test]
+fn test_musicloud_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = MusicloudRepo::new(&db);
+
+    let row = MusicloudRow {
+        id: "mc1".into(),
+        pubkey: "pk1".into(),
+        audio_url: "https://example.com/a.mp3".into(),
+        title: Some("Song".into()),
+        duration: Some(120),
+        text_overlay: None,
+        thumbnail: None,
+        likes: 0,
+        liked: false,
+        bookmarked: false,
+        audience: "public".into(),
+        created_at: 1000,
+    };
+    repo.upsert(&row).unwrap();
+    assert_eq!(repo.list(10, 0).unwrap().len(), 1);
+    assert_eq!(repo.list_by_author("pk1", 10).unwrap().len(), 1);
+
+    repo.set_like("mc1", true).unwrap();
+    let liked = repo.list(10, 0).unwrap();
+    assert!(liked[0].liked);
+    assert_eq!(liked[0].likes, 1);
+    repo.set_bookmark("mc1", true).unwrap();
+    assert!(repo.list(10, 0).unwrap()[0].bookmarked);
+
+    repo.delete("mc1").unwrap();
+    assert!(repo.list(10, 0).unwrap().is_empty());
+}
+
+#[test]
+fn test_musicloud_comment_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = MusicloudCommentRepo::new(&db);
+
+    let c1 = MusicloudCommentRow {
+        id: "cm1".into(),
+        track_id: "mc1".into(),
+        pubkey: "pk2".into(),
+        content: "nice".into(),
+        created_at: 1000,
+    };
+    let c2 = MusicloudCommentRow {
+        id: "cm2".into(),
+        track_id: "mc1".into(),
+        pubkey: "pk3".into(),
+        content: "cool".into(),
+        created_at: 2000,
+    };
+    repo.insert(&c1).unwrap();
+    repo.insert(&c2).unwrap();
+    let list = repo.list_by_track("mc1", 10).unwrap();
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[0].content, "nice");
+}
+
+#[test]
+fn test_story_reaction_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = StoryReactionRepo::new(&db);
+
+    let row = StoryReactionRow {
+        story_id: "st1".into(),
+        pubkey: "u1".into(),
+        emoji: "🔥".into(),
+        created_at: 1000,
+    };
+    repo.react(&row).unwrap();
+    assert!(repo.reacted_with("st1", "u1", "🔥").unwrap());
+    assert_eq!(repo.list_by_story("st1", 10).unwrap().len(), 1);
+
+    repo.react(&row).unwrap();
+    assert_eq!(repo.list_by_story("st1", 10).unwrap().len(), 1);
+
+    repo.unreact("st1", "u1", "🔥").unwrap();
+    assert!(!repo.reacted_with("st1", "u1", "🔥").unwrap());
+}
+
+#[test]
+fn test_conversation_mute_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = ConversationMuteRepo::new(&db);
+
+    repo.mute("conv1", 1000).unwrap();
+    assert!(repo.is_muted("conv1").unwrap());
+    assert_eq!(repo.list().unwrap(), vec!["conv1".to_string()]);
+
+    repo.unmute("conv1").unwrap();
+    assert!(!repo.is_muted("conv1").unwrap());
+    assert!(repo.list().unwrap().is_empty());
+}
+
+#[test]
+fn test_dating_unmatch_crud() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = DatingUnmatchRepo::new(&db);
+
+    repo.upsert("u1", 1000).unwrap();
+    assert!(repo.is_unmatched("u1").unwrap());
+    assert_eq!(repo.list().unwrap(), vec!["u1".to_string()]);
+
+    repo.upsert("u1", 2000).unwrap();
+    assert_eq!(repo.list().unwrap().len(), 1);
+
+    repo.delete("u1").unwrap();
+    assert!(!repo.is_unmatched("u1").unwrap());
+}
+
+#[test]
+fn test_limits_helpers() {
+    assert!(!row_too_big("x", "[]"));
+    let big = "x".repeat(limits::MAX_CONTENT_BYTES + 1);
+    assert!(row_too_big(&big, "[]"));
+    let huge_tags = "y".repeat(limits::MAX_BATCH_BYTES);
+    assert!(row_too_big("x", &huge_tags));
+    assert!(!notification_too_big("short"));
+    let long = "z".repeat(limits::MAX_NOTIFICATION_BYTES + 1);
+    assert!(notification_too_big(&long));
+}
+
+#[test]
+fn test_migration_rollback_on_step_failure() {
+    let db = Database::open_in_memory().unwrap();
+    {
+        let conn = db.conn().unwrap();
+        soshal_db_core::block_on(conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')));",
+        ))
+        .unwrap();
+        soshal_db_core::block_on(conn.execute_batch(
+            "CREATE TRIGGER fail_mig BEFORE INSERT ON _migrations BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+        ))
+        .unwrap();
+    }
+    assert!(db.migrate().is_err());
+    {
+        let conn = db.conn().unwrap();
+        let version: i64 = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT COALESCE(MAX(version), 0) FROM _migrations",
+            (),
+            |row| row.get(0),
+        )
+        .unwrap()
+        .unwrap_or(0);
+        assert_eq!(version, 0);
+        let users: Vec<String> = soshal_db_core::query::query(
+            &conn,
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='users'",
+            (),
+            |row| row.get(0),
+        )
+        .unwrap();
+        assert!(users.is_empty());
+        soshal_db_core::block_on(conn.execute_batch("DROP TRIGGER fail_mig;")).unwrap();
+    }
+    db.migrate().unwrap();
+    {
+        let conn = db.conn().unwrap();
+        let version: i64 = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT COALESCE(MAX(version), 0) FROM _migrations",
+            (),
+            |row| row.get(0),
+        )
+        .unwrap()
+        .unwrap_or(0);
+        assert_eq!(version, SCHEMA_VERSION);
+        let users: Vec<String> = soshal_db_core::query::query(
+            &conn,
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='users'",
+            (),
+            |row| row.get(0),
+        )
+        .unwrap();
+        assert_eq!(users.len(), 1);
+    }
+}
+
+#[test]
+fn test_async_query_api() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let conn = db.conn().unwrap();
+    soshal_db_core::block_on(async {
+        use soshal_db_core::libsql::params;
+        let n = soshal_db_core::query::execute_async(
+            &conn,
+            "INSERT INTO users (pubkey, npub, created_at, updated_at) VALUES (?1,?2,?3,?4)",
+            params!["async_pk", "npub_async", 1000i64, 1000i64],
+        )
+        .await
+        .unwrap();
+        assert_eq!(n, 1);
+
+        let rows = soshal_db_core::query::query_async(
+            &conn,
+            "SELECT pubkey, npub FROM users WHERE pubkey=?1",
+            params!["async_pk"],
+            |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?)),
+        )
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "async_pk");
+        assert_eq!(rows[0].1, "npub_async");
+
+        let first = soshal_db_core::query::query_first_async(
+            &conn,
+            "SELECT npub FROM users WHERE pubkey=?1",
+            params!["async_pk"],
+            |r| r.get::<String>(0),
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.as_deref(), Some("npub_async"));
+
+        let missing = soshal_db_core::query::query_first_async(
+            &conn,
+            "SELECT npub FROM users WHERE pubkey=?1",
+            params!["nope"],
+            |r| r.get::<String>(0),
+        )
+        .await
+        .unwrap();
+        assert!(missing.is_none());
+
+        let capped = soshal_db_core::query::query_capacity_async(
+            &conn,
+            "SELECT pubkey FROM users",
+            (),
+            4,
+            |r| r.get::<String>(0),
+        )
+        .await
+        .unwrap();
+        assert_eq!(capped, vec!["async_pk".to_string()]);
+    });
 }

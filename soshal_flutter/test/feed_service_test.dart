@@ -206,7 +206,7 @@ void main() {
       feed.addListener(() => notified++);
 
       api.stubString('crateFfiDbDbGetSetting', '[]');
-      api.stub('crateFfiDbDbSetSetting', (_) {});
+      api.stub("crateFfiDbDbSetSetting", (_) => true);
 
       await feed.loadPinnedPosts();
       final result = await feed.togglePin('newpost');
@@ -219,7 +219,7 @@ void main() {
     test('togglePin removes pinned post', () async {
       final feed = FeedService();
       api.stubString('crateFfiDbDbGetSetting', '["post1"]');
-      api.stub('crateFfiDbDbSetSetting', (_) {});
+      api.stub("crateFfiDbDbSetSetting", (_) => true);
 
       await feed.loadPinnedPosts();
       expect(feed.isPinned('post1'), true);

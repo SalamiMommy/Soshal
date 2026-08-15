@@ -126,6 +126,13 @@ class _SoshalAppState extends State<SoshalApp> {
       context.read<TelemetryService>().init();
       context.read<ShellService>().initialize();
       context.read<ThemeService>().load();
+      // Bring up the shared relay client before any screen touches it, so
+      // relay-gated fetches (chatrandom, musicloud, …) don't fail with
+      // "relay client not initialized" before sign-in. Idempotent; account
+      // relays take over after auth. Failures land in the outer catch.
+      await context
+          .read<NetworkService>()
+          .initRelays(NetworkService.defaultRelays);
       final syncService = context.read<SyncService>();
       syncService.attach(
         feed: context.read<FeedService>(),

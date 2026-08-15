@@ -15,11 +15,18 @@ void main() {
   });
 
   test('init returns a future and is idempotent (no error thrown)', () async {
-    // We cannot actually call RustLib.init here; just ensure init() returns
-    // a Future object and multiple calls return same future type.
+    // The Rust cdylib is not present in the test environment, so
+    // RustLib.init() will fail to load it; that failure must surface as an
+    // (awaitable) error on the returned future, never as a sync throw, and
+    // concurrent callers must share one init future.
     final f1 = FfiBridge.init();
     final f2 = FfiBridge.init();
+    expect(identical(f1, f2), true);
     expect(f1, isA<Future<void>>());
-    expect(f2, isA<Future<void>>());
+    try {
+      await f1;
+    } catch (_) {
+      // load failure expected without the .so
+    }
   });
 }

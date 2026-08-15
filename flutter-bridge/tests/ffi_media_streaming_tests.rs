@@ -204,8 +204,7 @@ mod ffi_media_streaming_tests {
         assert_eq!(arr[0]["content"], "hello stories");
         assert!(streaming::streaming_mark_story_viewed(id.clone(), pk.clone()).unwrap());
         let react = streaming::streaming_story_react(id.clone(), pk, "❤️".to_string());
-        assert!(react.is_err());
-        assert!(react.unwrap_err().contains("story_reactions"));
+        assert!(react.is_ok());
         signer::signer_lock().unwrap();
         remove_db(&path);
     }

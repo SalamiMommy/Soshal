@@ -183,13 +183,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              margin: const EdgeInsets.only(top: -40),
+                            Transform.translate(
+                              offset: const Offset(0, -40),
                               child: CircleAvatar(
                                 radius: 48,
                                 backgroundImage: profile.picture.isNotEmpty
-                                    ? ResizeImage.resizeIfNeeded(
-                                        192, 192, NetworkImage(profile.picture))
+                                    ? ResizeImage.resizeIfNeeded(192, 192,
+                                        NetworkImage(profile.picture))
                                     : null,
                               ),
                             ),

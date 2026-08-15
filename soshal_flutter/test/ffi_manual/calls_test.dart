@@ -15,7 +15,7 @@ void main() {
     api.stubString('crateFfiCallsCallsIceConfig', 'ice');
 
     final ev = await callsSendSignal(signalType: 'offer', targetPubkey: 't', callId: 'c');
-    final sigs = callsFetchSignals(myPubkey: 'me');
+    final sigs = await callsFetchSignals(myPubkey: 'me');
     final s = callsSanitizeSdp(sdp: 's', forceRelay: true);
     final ice = callsIceConfig(privacyLevel: 'low', stunUrl: 'stun');
 

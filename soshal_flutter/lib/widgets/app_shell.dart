@@ -89,7 +89,11 @@ class _AppShellState extends State<AppShell> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (wide) _NavigationRailView(currentPath: _currentPath),
+                  if (wide)
+                    _NavigationRailView(
+                      currentPath: _currentPath,
+                      maxHeight: constraints.maxHeight,
+                    ),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -347,38 +351,41 @@ IconData navIconFor(String id) {
 
 class _NavigationRailView extends StatelessWidget {
   final String? currentPath;
-  const _NavigationRailView({required this.currentPath});
+  final double maxHeight;
+  const _NavigationRailView({required this.currentPath, required this.maxHeight});
 
   @override
   Widget build(BuildContext context) {
     final shell = context.watch<ShellService>();
-    return Expanded(
-      child: SingleChildScrollView(
-        child: NavigationRail(
-          selectedIndex: _selectedIndex(shell, currentPath),
-          onDestinationSelected: (i) {
-            if (i >= 0 && i < shell.items.length) {
-              context
-                  .go(ShellService.routeForItem[shell.items[i].id] ?? '/feed');
-            }
-          },
-          extended: true,
-          leading: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'Soshal',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
+    // Use the parent's provided maxHeight so the NavigationRail gets the
+    // exact bounded height from the Row/LayoutBuilder instead of relying on
+    // MediaQuery (which can differ) and avoid unbounded/overflow issues.
+    return SizedBox(
+      height: maxHeight,
+      child: NavigationRail(
+        scrollable: true,
+        selectedIndex: _selectedIndex(shell, currentPath),
+        onDestinationSelected: (i) {
+          if (i >= 0 && i < shell.items.length) {
+            context.go(ShellService.routeForItem[shell.items[i].id] ?? '/feed');
+          }
+        },
+        extended: true,
+        leading: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            'Soshal',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
           ),
-          destinations: [
-            for (final item in shell.items)
-              NavigationRailDestination(
-                icon: Icon(navIconFor(item.id)),
-                selectedIcon: Icon(navIconFor(item.id)),
-                label: Text(item.label),
-              ),
-          ],
         ),
+        destinations: [
+          for (final item in shell.items)
+            NavigationRailDestination(
+              icon: Icon(navIconFor(item.id)),
+              selectedIcon: Icon(navIconFor(item.id)),
+              label: Text(item.label),
+            ),
+        ],
       ),
     );
   }

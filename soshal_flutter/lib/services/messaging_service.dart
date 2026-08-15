@@ -7,7 +7,8 @@ import 'error_log.dart';
 
 /// Messaging Service
 /// Handles direct messages (NIP-44), group chats, and decryption
-class MessagingService extends ChangeNotifier with LastErrorMixin {
+class MessagingService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify {
   static final _hexRegex = RegExp(r'^[0-9a-f]{64}$');
   final Map<String, List<DirectMessage>> _conversations = {};
   final List<EphemeralMedia> _pendingEphemeral = [];
@@ -27,7 +28,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
     if (list.length > 200) {
       list.removeAt(0);
     }
-    notifyListeners();
+    notifyDeferred();
   }
 
   /// Fetch DMs with a specific contact
@@ -44,8 +45,6 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
       final list = jsonDecode(json) as List<dynamic>;
       final messages = list
           .map((e) => DirectMessage.fromJson(e as Map<String, dynamic>))
-          .toList()
-          .reversed
           .toList();
 
       if (messages.length > 200) {
@@ -55,11 +54,11 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
       }
 
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _conversations[otherPubkey]!;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -95,11 +94,11 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
       _conversations[recipientPubkey]!.add(message);
 
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -116,7 +115,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
         return RustLib.instance.api.crateFfiAuthAuthNpubDecode(npub: trimmed);
       } catch (e, st) {
         setLastError(e, st);
-        notifyListeners();
+        notifyDeferred();
         throw Exception('Invalid npub: $trimmed');
       }
     }
@@ -141,7 +140,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -159,7 +158,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
       );
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -175,7 +174,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
       return list;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -193,7 +192,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
     if (index >= 0) {
       final updated = message.deepCopy(content: decrypted, decrypted: true);
       list[index] = updated;
-      notifyListeners();
+      notifyDeferred();
     }
   }
 
@@ -202,11 +201,11 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
     try {
       if (_conversations.containsKey(otherPubkey)) {
         clearLastError();
-        notifyListeners();
+        notifyDeferred();
       }
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -214,7 +213,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
   /// Clear error
   void clearError() {
     clearLastError();
-    notifyListeners();
+    notifyDeferred();
   }
 
   /// Register a burn DM (disappearing media) against a sent message.
@@ -246,7 +245,7 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
       return id;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -263,11 +262,11 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
         ..addAll(list
             .map((e) => EphemeralMedia.fromJson(e as Map<String, dynamic>)));
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return pendingEphemeral;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -281,13 +280,13 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
       final index = _pendingEphemeral.indexWhere((m) => m.id == id);
       if (index >= 0) {
         _pendingEphemeral[index] = media;
-        notifyListeners();
+        notifyDeferred();
       }
       clearLastError();
       return media;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -298,11 +297,11 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
       final ok = RustLib.instance.api.crateFfiEphemeralEphemeralDelete(id: id);
       _pendingEphemeral.removeWhere((m) => m.id == id);
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -310,7 +309,8 @@ class MessagingService extends ChangeNotifier with LastErrorMixin {
 
 /// Identity Service
 /// Handles profiles, WoT status, and NIP-05 verification
-class IdentityService extends ChangeNotifier with LastErrorMixin {
+class IdentityService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify {
   final Map<String, ProfileInfo> _profiles = {};
 
   Map<String, ProfileInfo> get profiles => _profiles;
@@ -329,11 +329,11 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
       _profiles[pubkey] = profile;
 
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return profile;
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -347,11 +347,11 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
           ProfileInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
       _profiles[pubkey] = profile;
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return profile;
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -369,7 +369,7 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
           .toList();
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -424,11 +424,11 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
       );
 
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return eventId;
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -440,7 +440,7 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
           .crateFfiIdentityIdentityVerifyNip05(nip05: nip05);
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -480,11 +480,11 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
         targetPubkey: targetPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -497,11 +497,11 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
         targetPubkey: targetPubkey,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -515,7 +515,7 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
       return list;
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -528,7 +528,7 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
       );
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -541,7 +541,7 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
       );
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -556,7 +556,7 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
       return ok ? 'unfollowed' : 'not followed';
     } catch (e) {
       setLastError(e);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -564,7 +564,7 @@ class IdentityService extends ChangeNotifier with LastErrorMixin {
   /// Clear error
   void clearError() {
     clearLastError();
-    notifyListeners();
+    notifyDeferred();
   }
 }
 

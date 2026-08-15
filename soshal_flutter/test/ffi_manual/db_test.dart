@@ -12,7 +12,7 @@ void main() {
     api.stubString('crateFfiDbDbInit', 'ok');
     api.stubString('crateFfiDbDbPath', '/tmp/db');
     api.stubString('crateFfiDbDbQueryRaw', '[]');
-    api.stub('crateFfiDbDbExecuteRaw', (_) => 2);
+    api.stub('crateFfiDbDbExecuteRaw', (_) => BigInt.from(2));
     api.stubBool('crateFfiDbDbSetSetting', true);
 
     final init = dbInit(dbPath: '/tmp/db');
@@ -25,7 +25,7 @@ void main() {
     expect(rows, '[]');
 
     final affected = dbExecuteRaw(sql: 'UPDATE');
-    expect(affected, 2);
+    expect(affected, BigInt.from(2));
 
     final s = dbSetSetting(key: 'k', value: 'v');
     expect(s, true);

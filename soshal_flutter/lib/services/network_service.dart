@@ -10,6 +10,14 @@ import 'error_log.dart';
 class NetworkService extends ChangeNotifier with LastErrorMixin {
   static const String _modeKey = 'transport_mode';
 
+  /// Relays used when none are configured for the active account yet.
+  /// Initialized at app bootstrap so relay-gated features (chatrandom,
+  /// musicloud, …) work before sign-in.
+  static const List<String> defaultRelays = [
+    'wss://relay.nostr.band',
+    'wss://nos.lol',
+  ];
+
   bool? _i2p;
   bool? _freenet;
   List<RelayInfo> _relays = [];

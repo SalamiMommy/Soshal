@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -34,4 +35,15 @@ mixin LastErrorMixin {
   void clearLastError() {
     _lastError = null;
   }
+}
+
+/// [ChangeNotifier.notifyListeners] deferred to the next microtask.
+/// Bridge fns are `#[frb(sync)]`, so `await service.fetchX()` runs
+/// synchronously: a fetch reachable from `initState` would call
+/// [notifyListeners] mid-build and trip the "setState() or
+/// markNeedsBuild() called during build" assertion. Microtasks drain
+/// only after the frame's synchronous pipeline completes, so this is
+/// safe from build/layout/paint.
+mixin DeferredNotify on ChangeNotifier {
+  void notifyDeferred() => scheduleMicrotask(notifyListeners);
 }

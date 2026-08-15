@@ -8,6 +8,11 @@ import 'helpers/test_env.dart';
 
 late FakeApi api;
 
+/// Drain DeferredNotify microtasks (services now notify via
+/// scheduleMicrotask, so listeners fire one microtask after the action).
+Future<void> flushMicrotasks() => Future<void>.value();
+
+
 void main() {
   final env = bootstrapTestEnv('test-messaging');
   api = env.$1;
@@ -38,6 +43,7 @@ void main() {
       expect(msg.conversations['peer1'], isNotNull);
       expect(msg.conversations['peer1']!.length, 1);
       expect(msg.conversations['peer1']!.first.content, 'hello');
+      await flushMicrotasks();
       expect(notified, 1);
     });
 
@@ -143,6 +149,7 @@ void main() {
 
       expect(result.length, 1);
       expect(result.first.content, 'hello');
+      await flushMicrotasks();
       expect(notified, 1);
       final inv = api.callsOf('crateFfiMessagingMessagingFetchDms').single;
       expect(api.namedArg(inv, 'withPubkey'), 'peer1');
@@ -209,6 +216,7 @@ void main() {
       expect(msg.conversations['recipient_pk']!.length, 1);
       expect(msg.conversations['recipient_pk']!.first.content, 'test msg');
       expect(msg.conversations['recipient_pk']!.first.isOwn, true);
+      await flushMicrotasks();
       expect(notified, 1);
 
       final inv = api.callsOf('crateFfiMessagingMessagingSendDm').single;

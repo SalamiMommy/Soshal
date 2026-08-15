@@ -7,7 +7,7 @@ import 'error_log.dart';
 
 /// Feed Service
 /// Handles feed operations and post publishing
-class FeedService extends ChangeNotifier with LastErrorMixin {
+class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<FeedPost> _posts = [];
   bool _isLoading = false;
   int _currentOffset = 0;
@@ -47,7 +47,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
       rethrow;
     } finally {
       _isLoading = false;
-      notifyListeners();
+      notifyDeferred();
     }
 
     return _posts;
@@ -71,7 +71,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
       rethrow;
     } finally {
       _isLoading = false;
-      notifyListeners();
+      notifyDeferred();
     }
 
     return _posts;
@@ -86,11 +86,11 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
         payloadJson: payload,
         mediaPath: mediaPath,
       );
-      notifyListeners();
+      notifyDeferred();
       return id;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -115,7 +115,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
       _pinned.clear();
       _pinnedLoaded = true;
     }
-    notifyListeners();
+    notifyDeferred();
     return pinnedPosts;
   }
 
@@ -138,11 +138,11 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
         value: jsonEncode(_pinned.toList()),
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _pinned.contains(eventId);
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -162,7 +162,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -174,7 +174,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
           .crateFfiFeedFeedValidateNote(content: content);
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return false;
     }
   }
@@ -195,7 +195,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -209,7 +209,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
       return _decodePosts(json);
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -227,7 +227,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
       );
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -247,7 +247,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
       return result;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -264,7 +264,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
     if (post.eventId.isEmpty) return;
     if (_posts.any((p) => p.eventId == post.eventId)) return;
     _posts.insert(0, post);
-    notifyListeners();
+    notifyDeferred();
   }
 
   /// Apply a live reaction to a cached post (bump the counter if known).
@@ -286,7 +286,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin {
       profilePicture: p.profilePicture,
       media: p.media,
     );
-    notifyListeners();
+    notifyDeferred();
   }
 }
 

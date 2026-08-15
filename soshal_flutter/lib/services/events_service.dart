@@ -7,7 +7,7 @@ import 'error_log.dart';
 
 /// Events Service
 /// Nearby/user events, create, RSVP and check-in.
-class EventsService extends ChangeNotifier with LastErrorMixin {
+class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<SoshalEvent> _events = [];
   SoshalEvent? _detail;
   List<String> _attendees = [];
@@ -53,11 +53,11 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
       );
       _detail = SoshalEvent.fromJson(jsonDecode(json));
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _detail!;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -89,7 +89,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -102,11 +102,11 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
         rsvpStatus: status,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -121,11 +121,11 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
         longitude: longitude,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -136,11 +136,11 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
         eventId: eventId,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _attendees;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -152,11 +152,11 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
           .map((e) => EventReminder.fromJson(e as Map<String, dynamic>))
           .toList();
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _reminders;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -180,7 +180,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
       return id;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -194,7 +194,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -208,11 +208,11 @@ class EventsService extends ChangeNotifier with LastErrorMixin {
           .toList();
       _events = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _events;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }

@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../services/sync_service.dart';
 import '../services/auth_service.dart';
 import '../services/error_log.dart';
+import '../services/network_service.dart';
 import '../services/session_service.dart';
 
 /// Auth Flow Screen
@@ -398,7 +399,7 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
       await sessionService.loadSession();
 
       // Add to session
-      const defaultRelays = ['wss://relay.nostr.band', 'wss://nos.lol'];
+      const defaultRelays = NetworkService.defaultRelays;
       await sessionService.addAccount(
         keypair.publicKey,
         npub,

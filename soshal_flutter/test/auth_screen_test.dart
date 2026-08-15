@@ -25,6 +25,7 @@ void main() {
     api.stubString('crateFfiAuthAuthGenerateMnemonic', phrase);
 
     final router = GoRouter(
+      initialLocation: '/auth',
       routes: [
         GoRoute(path: '/auth', builder: (_, __) => const AuthScreen()),
         GoRoute(

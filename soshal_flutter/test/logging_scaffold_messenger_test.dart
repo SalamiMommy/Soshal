@@ -12,32 +12,36 @@ void main() {
 
   testWidgets('showSnackBar logs text to error log', (tester) async {
     final dir = env.$2;
+    final logFile = File('$dir/soshal-error.log');
+    if (logFile.existsSync()) logFile.deleteSync();
 
     await tester.pumpWidget(
       LoggingScaffoldMessenger(
-        child: MaterialApp(
-          home: Builder(
-            builder: (context) => Scaffold(
-              body: Center(
-                child: ElevatedButton(
-                  onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('snack hello')),
-                  ),
-                  child: const Text('tap'),
-                ),
-              ),
-            ),
+        child: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 600)),
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Material(child: const Scaffold(body: Center())),
           ),
         ),
       ),
     );
 
-    await tester.tap(find.text('tap'));
-    await tester.pumpAndSettle();
+    // Trigger inside runAsync: logRuntimeError's dart:io writes only
+    // complete on the real event loop, which the FakeAsync test zone
+    // never turns.
+    await tester.runAsync(() async {
+      tester
+          .state<LoggingScaffoldMessengerState>(
+            find.byType(LoggingScaffoldMessenger),
+          )
+          .showSnackBar(const SnackBar(content: Text('snack hello')));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
 
-    final file = File('$dir/soshal-error.log');
-    expect(await file.exists(), true);
-    final content = await file.readAsString();
-    expect(content, contains('SnackBar: snack hello'));
-  });
+    expect(logFile.existsSync(), true);
+    expect(logFile.readAsStringSync(), contains('SnackBar: snack hello'));
+  }, timeout: const Timeout(Duration(seconds: 15)));
 }

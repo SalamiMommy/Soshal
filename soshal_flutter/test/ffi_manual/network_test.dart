@@ -23,7 +23,7 @@ void main() {
   test('networkGetRelayStatus and networkPublishEvent', () async {
     api.stubString('crateFfiNetworkNetworkGetRelayStatus', '[{"url":"r"}]');
     api.stub('crateFfiNetworkNetworkPublishEvent', (_) => Future.value(3));
-    final status = networkGetRelayStatus();
+    final status = await networkGetRelayStatus();
     final published = await networkPublishEvent(eventJson: '{}');
     expect(status, '[{"url":"r"}]');
     expect(published, 3);
