@@ -149,12 +149,6 @@ mod tests {
     use soshal_media_core::chunking::ChunkRef;
     use std::io::{BufRead, Read, Write};
 
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn lock() -> std::sync::MutexGuard<'static, ()> {
-        LOCK.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
     #[test]
     fn hash_only_fetch_over_quic_then_tcp() {
         let root = soshal_test_util::tmp_root("blob_grab");
@@ -268,7 +262,7 @@ mod tests {
 
     #[test]
     fn invalid_blob_hash_rejected() {
-        let _g = lock();
+        let _g = soshal_test_util::test_lock();
         let peer = LanPeer {
             ip: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
             tcp_port: 1,
@@ -282,7 +276,7 @@ mod tests {
 
     #[test]
     fn refuses_public_lan_peer() {
-        let _g = lock();
+        let _g = soshal_test_util::test_lock();
         let peer = LanPeer {
             ip: std::net::IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8)),
             tcp_port: 9999,
@@ -301,7 +295,7 @@ mod tests {
 
     #[test]
     fn manifest_hash_mismatch_rejected() {
-        let _g = lock();
+        let _g = soshal_test_util::test_lock();
         let mismatched = ChunkManifest {
             blob_hash: "cd".repeat(32),
             total_size: 1024,
@@ -330,7 +324,7 @@ mod tests {
 
     #[test]
     fn oversized_blob_rejected() {
-        let _g = lock();
+        let _g = soshal_test_util::test_lock();
         let oversized = ChunkManifest {
             blob_hash: "ab".repeat(32),
             total_size: MAX_BLOB_FETCH_BYTES + 1,
@@ -355,7 +349,7 @@ mod tests {
 
     #[test]
     fn hostile_manifest_rejected() {
-        let _g = lock();
+        let _g = soshal_test_util::test_lock();
         let hostile = ChunkManifest {
             blob_hash: "ab".repeat(32),
             total_size: 1024,

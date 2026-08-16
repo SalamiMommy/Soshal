@@ -22,6 +22,7 @@ class _MinisScreenState extends State<MinisScreen> {
   String? _filterResult;
   bool _rankOn = false;
   List<String> _ranked = [];
+  bool _wasmRuntimeUnavailable = false;
 
   @override
   void initState() {
@@ -42,17 +43,17 @@ class _MinisScreenState extends State<MinisScreen> {
   void _runFilter() {
     final text = _filterText.trim();
     if (text.isEmpty) return;
-    try {
-      final result = context.read<MinisService>().runFilter(
-            pluginId: 'content-filter',
-            text: text,
-            wasmBytesHex: '',
-          );
-      if (!mounted) return;
-      setState(() => _filterResult = result);
-    } catch (e) {
-      if (mounted) setState(() => _filterResult = 'error: $e');
-    }
+    final service = context.read<MinisService>();
+    final result = service.runFilter(
+      pluginId: 'content-filter',
+      text: text,
+      wasmBytesHex: '',
+    );
+    if (!mounted) return;
+    setState(() {
+      _wasmRuntimeUnavailable = service.wasmRuntimeUnavailable;
+      _filterResult = _wasmRuntimeUnavailable ? null : result;
+    });
   }
 
   Future<void> _toggleRank(bool on) async {
@@ -62,24 +63,19 @@ class _MinisScreenState extends State<MinisScreen> {
       return;
     }
     if (_minis.isEmpty) return;
-    try {
-      final posts = _minis.map((u) => jsonEncode({'url': u})).toList();
-      final ranked = context.read<MinisService>().rankFeed(
-            pluginId: 'feed-ranker',
-            postsJson: posts,
-            wasmBytesHex: '',
-          );
-      if (!mounted) return;
-      setState(() => _ranked = ranked);
-    } catch (e) {
-      debugPrint('rank feed: $e');
-      if (mounted) {
-        setState(() {
-          _rankOn = false;
-          _ranked = [];
-        });
-      }
-    }
+    final service = context.read<MinisService>();
+    final posts = _minis.map((u) => jsonEncode({'url': u})).toList();
+    final ranked = service.rankFeed(
+      pluginId: 'feed-ranker',
+      postsJson: posts,
+      wasmBytesHex: '',
+    );
+    if (!mounted) return;
+    setState(() {
+      _wasmRuntimeUnavailable = service.wasmRuntimeUnavailable;
+      _ranked = ranked;
+      if (_wasmRuntimeUnavailable) _rankOn = false;
+    });
   }
 
   void _openMini(String url) {
@@ -133,6 +129,32 @@ class _MinisScreenState extends State<MinisScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  if (_wasmRuntimeUnavailable) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'WASM runtime unavailable (roadmap): plugin '
+                            'execution is simulated in this build.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   Text('Content filter plugin',
                       style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),

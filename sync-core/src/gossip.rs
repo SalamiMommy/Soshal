@@ -48,11 +48,10 @@ impl GossipSyncBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nostr::event::{EventBuilder, FinalizeEvent, Kind};
+    use nostr::event::Kind;
     use nostr::key::Keys;
     use soshal_db_core::query::query_first;
     use soshal_db_core::repos::post::PostRepo;
-    use soshal_db_core::repos::user::UserRepo;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_gossip_bridge_initialization() {
@@ -181,12 +180,9 @@ mod tests {
     async fn gossip_event_roundtrip_ingests() {
         let db = soshal_test_util::test_db();
         let keys = Keys::generate();
-        UserRepo::new(&db)
-            .ensure_exists(&keys.public_key().to_hex())
-            .unwrap();
-        let event = EventBuilder::new(Kind::TextNote, "mesh roundtrip")
-            .finalize(&keys)
-            .unwrap();
+        soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
+        let event =
+            soshal_test_util::signed_event(&keys, Kind::TextNote, "mesh roundtrip", 1_700_000_000);
         let msg = PlumTreeMessage::Gossip {
             message_id: event.id.to_hex(),
             payload_json: serde_json::to_string(&event).unwrap(),

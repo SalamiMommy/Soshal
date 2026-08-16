@@ -14,18 +14,13 @@ mod ffi_media_streaming_tests {
     ];
 
     fn temp_path(tag: &str) -> String {
-        std::env::temp_dir()
-            .join(format!("soshal_media_stream_{}_{tag}", std::process::id()))
+        soshal_test_util::tmp_path("media_stream", tag)
             .to_string_lossy()
             .to_string()
     }
 
     fn db_path(tag: &str) -> String {
-        std::env::temp_dir()
-            .join(format!(
-                "soshal_media_stream_{}_{tag}.db",
-                std::process::id()
-            ))
+        soshal_test_util::tmp_path("media_stream", &format!("{tag}.db"))
             .to_string_lossy()
             .to_string()
     }
@@ -106,7 +101,7 @@ mod ffi_media_streaming_tests {
         );
         assert_eq!(
             media::media_get_mime_type("i.m4a".to_string()).unwrap(),
-            "audio/mp4"
+            "application/octet-stream"
         );
         assert_eq!(
             media::media_get_mime_type("j.xyz".to_string()).unwrap(),

@@ -983,12 +983,10 @@ mod tests {
         let v: serde_json::Value =
             serde_json::from_str(&super::network_reticulum_status().unwrap()).unwrap();
         assert_eq!(v["running"], false);
-        assert_eq!(super::network_reticulum_get_active_links().unwrap(), "[]");
         assert!(super::network_reticulum_prune_stale_links().is_err());
         assert!(super::network_reticulum_prune_routes(0).is_err());
-        assert!(super::network_reticulum_close_link("00".repeat(16)).is_err());
         assert!(super::network_reticulum_announce("pk".to_string()).is_err());
-        assert!(super::network_reticulum_reset_nodes().unwrap());
+        soshal_network_core::reticulum::transport::reset_nodes();
     }
 
     #[tokio::test]
@@ -1027,34 +1025,6 @@ mod tests {
     }
 }
 
-/// Close the Reticulum link to a destination (hex address).
-#[frb(sync, serialize)]
-pub fn network_reticulum_close_link(dest_hex: String) -> Result<bool, String> {
-    let guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
-    match guard.as_ref() {
-        Some(node) => {
-            let dest =
-                soshal_network_core::reticulum::address::ReticulumAddress::from_hex(&dest_hex)?;
-            node.link_manager.close_link(&dest);
-            Ok(true)
-        }
-        None => Err("Reticulum not initialized".to_string()),
-    }
-}
-
-/// Active Reticulum links (JSON: LinkInfo list).
-#[frb(sync, serialize)]
-pub fn network_reticulum_get_active_links() -> Result<String, String> {
-    let guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
-    match guard.as_ref() {
-        Some(node) => {
-            let links = node.link_manager.get_active_links();
-            serde_json::to_string(&links).map_err(|e| format!("serialize links: {e}"))
-        }
-        None => Ok("[]".to_string()),
-    }
-}
-
 /// Prune stale Reticulum links; returns count removed.
 #[frb(sync, serialize)]
 pub fn network_reticulum_prune_stale_links() -> Result<usize, String> {
@@ -1076,13 +1046,6 @@ pub fn network_reticulum_prune_routes(now_secs: u64) -> Result<usize, String> {
         }
         None => Err("Reticulum not initialized".to_string()),
     }
-}
-
-/// Clear all known Reticulum nodes.
-#[frb(sync, serialize)]
-pub fn network_reticulum_reset_nodes() -> Result<bool, String> {
-    soshal_network_core::reticulum::transport::reset_nodes();
-    Ok(true)
 }
 
 /// Proof-of-work node id for a pubkey (hex, `null` when the static nonce fails).

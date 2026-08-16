@@ -72,36 +72,9 @@ pub fn revert(conn: &Connection, kind: &str, payload_json: &str) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soshal_db_core::repos::post::{PostRepo, PostRow};
+    use soshal_db_core::repos::post::PostRepo;
     use soshal_db_core::repos::reaction::{ReactionRepo, ReactionRow};
     use soshal_db_core::repos::user::{UserRepo, UserRow};
-    use soshal_db_core::Database;
-
-    fn seed_user(db: &Database, pubkey: &str) {
-        UserRepo::new(db).ensure_exists(pubkey).unwrap();
-    }
-
-    fn post_row(id: &str) -> PostRow {
-        PostRow {
-            id: id.to_string(),
-            pubkey: "aa".repeat(32),
-            content: "hello".to_string(),
-            kind: 1,
-            created_at: 1_700_000_000,
-            tags_json: "[]".to_string(),
-            sig: None,
-            reply_to: None,
-            root_id: None,
-            mentioned_pubkeys: String::new(),
-            mentioned_hashtags: String::new(),
-            subject: None,
-            sync_status: "synced".to_string(),
-            is_deleted: false,
-            scheduled_at: None,
-            freenet_key: None,
-            is_freenet_native: false,
-        }
-    }
 
     fn user_row(pubkey: &str, name: &str) -> UserRow {
         UserRow {
@@ -145,8 +118,10 @@ mod tests {
     #[test]
     fn revert_post_tombstones_and_double_revert_is_idempotent() {
         let db = soshal_test_util::test_db();
-        seed_user(&db, &"aa".repeat(32));
-        PostRepo::new(&db).upsert(&post_row("post-1")).unwrap();
+        soshal_test_util::seed_user(&db, &"aa".repeat(32));
+        PostRepo::new(&db)
+            .upsert(&soshal_test_util::post_row("post-1"))
+            .unwrap();
         let conn = db.conn().unwrap();
         revert(&conn, KIND_POST, r#"{"id":"post-1"}"#).unwrap();
         revert(&conn, KIND_POST, r#"{"id":"post-1"}"#).unwrap();
@@ -158,7 +133,7 @@ mod tests {
     #[test]
     fn revert_like_double_revert_is_noop() {
         let db = soshal_test_util::test_db();
-        seed_user(&db, &"aa".repeat(32));
+        soshal_test_util::seed_user(&db, &"aa".repeat(32));
         ReactionRepo::new(&db)
             .upsert(&ReactionRow {
                 id: "like-1".to_string(),
@@ -195,8 +170,10 @@ mod tests {
     #[test]
     fn revert_invalid_targets_are_noop_or_error() {
         let db = soshal_test_util::test_db();
-        seed_user(&db, &"aa".repeat(32));
-        PostRepo::new(&db).upsert(&post_row("post-1")).unwrap();
+        soshal_test_util::seed_user(&db, &"aa".repeat(32));
+        PostRepo::new(&db)
+            .upsert(&soshal_test_util::post_row("post-1"))
+            .unwrap();
         let conn = db.conn().unwrap();
         assert!(revert(&conn, KIND_POST, "not-json").is_err());
         assert!(revert(&conn, KIND_POST, r#"{"id":42}"#).is_ok());

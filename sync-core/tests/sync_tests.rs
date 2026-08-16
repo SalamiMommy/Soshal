@@ -7,12 +7,11 @@ use nostr::key::Keys;
 use sha2::{Digest, Sha256};
 use soshal_db_core::query::query_first;
 use soshal_db_core::repos::bookmark::BookmarkRepo;
-use soshal_db_core::repos::post::{PostRepo, PostRow};
+use soshal_db_core::repos::post::PostRepo;
 use soshal_db_core::repos::reaction::ReactionRepo;
 use soshal_db_core::repos::settings::SettingsRepo;
 use soshal_db_core::repos::user::UserRepo;
 use soshal_db_core::repos::zap::ZapRepo;
-use soshal_db_core::Database;
 use soshal_sync_core::epoch_gc::EpochGarbageCollector;
 use soshal_sync_core::gossip::GossipSyncBridge;
 use soshal_sync_core::ingest::{handle, handle_batch, set_watermark, watermark, watermark_key};
@@ -46,38 +45,11 @@ fn channel() -> (mpsc::Sender<SyncUpdate>, mpsc::Receiver<SyncUpdate>) {
     mpsc::channel(16)
 }
 
-/// FK: `posts.pubkey` references `users(pubkey)` — ensure the author exists.
-fn seed_user(db: &Database, pubkey: &str) {
-    UserRepo::new(db).ensure_exists(pubkey).unwrap();
-}
-
-fn post_row(id: &str, content: &str) -> PostRow {
-    PostRow {
-        id: id.to_string(),
-        pubkey: "aa".repeat(32),
-        content: content.to_string(),
-        kind: 1,
-        created_at: 1_700_000_000,
-        tags_json: "[]".to_string(),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: None,
-        sync_status: "synced".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-    }
-}
-
 #[test]
 fn ingest_text_note_caches_post_and_emits_feed() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    seed_user(&db, &keys.public_key().to_hex());
+    soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(&keys, Kind::TextNote, "hello mesh", vec![]);
     let (tx, mut rx) = channel();
     handle(&db, "", &event, &tx).unwrap();
@@ -103,7 +75,7 @@ fn ingest_text_note_caches_post_and_emits_feed() {
 fn ingest_freenet_tag_sets_native_fields() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    seed_user(&db, &keys.public_key().to_hex());
+    soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(
         &keys,
         Kind::TextNote,
@@ -185,7 +157,7 @@ fn ingest_zap_receipt_creates_zap_row() {
 fn ingest_bookmarks_creates_bookmark_row() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    seed_user(&db, &keys.public_key().to_hex());
+    soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(
         &keys,
         Kind::Bookmarks,
@@ -288,7 +260,7 @@ fn ingest_reaction_caches_with_e_tag() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let target = Keys::generate();
-    seed_user(&db, &keys.public_key().to_hex());
+    soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(
         &keys,
         Kind::Reaction,
@@ -359,7 +331,7 @@ fn ingest_batch_applies_all_events() {
     let keys = Keys::generate();
     let e1 = signed_event(&keys, Kind::TextNote, "one", vec![]);
     let e2 = signed_event(&keys, Kind::TextNote, "two", vec![]);
-    seed_user(&db, &e1.pubkey.to_hex());
+    soshal_test_util::seed_user(&db, &e1.pubkey.to_hex());
     let (tx, _rx) = channel();
     handle_batch(&db, "", &[e1.clone(), e2.clone()], &tx).unwrap();
     assert!(PostRepo::new(&db)
@@ -392,9 +364,9 @@ fn watermark_roundtrip_and_kind_mapping() {
 #[test]
 fn revert_post_tombstones_not_deletes() {
     let db = soshal_test_util::test_db();
-    seed_user(&db, &"aa".repeat(32));
+    soshal_test_util::seed_user(&db, &"aa".repeat(32));
     PostRepo::new(&db)
-        .upsert(&post_row("post-1", "hello"))
+        .upsert(&soshal_test_util::post_row("post-1"))
         .unwrap();
     let conn = db.conn().unwrap();
     revert(&conn, KIND_POST, r#"{"id":"post-1"}"#).unwrap();
@@ -407,7 +379,7 @@ fn revert_post_tombstones_not_deletes() {
 fn revert_like_removes_reaction() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    seed_user(&db, &keys.public_key().to_hex());
+    soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(
         &keys,
         Kind::Reaction,
@@ -486,7 +458,7 @@ fn revert_unknown_kind_and_bad_payload_are_noops() {
 async fn gossip_forwards_to_eager_peers_and_ingests() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    seed_user(&db, &keys.public_key().to_hex());
+    soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(&keys, Kind::TextNote, "gossiped", vec![]);
     let msg = gossip_msg(&event);
     let bridge = GossipSyncBridge::new("self");
@@ -520,7 +492,7 @@ async fn gossip_forwards_to_eager_peers_and_ingests() {
 async fn gossip_duplicate_emits_prune() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    seed_user(&db, &keys.public_key().to_hex());
+    soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(&keys, Kind::TextNote, "dup", vec![]);
     let msg = gossip_msg(&event);
     let bridge = GossipSyncBridge::new("self");
@@ -545,15 +517,15 @@ async fn gossip_duplicate_emits_prune() {
 fn epoch_gc_prunes_old_tombstones_keeps_new_and_live() {
     let db = soshal_test_util::test_db();
     let pubkey = "aa".repeat(32);
-    seed_user(&db, &pubkey);
+    soshal_test_util::seed_user(&db, &pubkey);
     let repo = PostRepo::new(&db);
-    let mut old_tomb = post_row("old_tomb", "gone");
+    let mut old_tomb = soshal_test_util::post_row_content("old_tomb", "gone");
     old_tomb.is_deleted = true;
     old_tomb.created_at = 86_000;
-    let mut new_tomb = post_row("new_tomb", "kept");
+    let mut new_tomb = soshal_test_util::post_row_content("new_tomb", "kept");
     new_tomb.is_deleted = true;
     new_tomb.created_at = 87_000;
-    let mut live = post_row("live_old", "live");
+    let mut live = soshal_test_util::post_row_content("live_old", "live");
     live.created_at = 1_000;
     repo.upsert(&old_tomb).unwrap();
     repo.upsert(&new_tomb).unwrap();

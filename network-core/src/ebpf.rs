@@ -44,37 +44,26 @@ pub struct EbpfShaper {
 
 impl Default for EbpfShaper {
     fn default() -> Self {
-        Self::new(EbpfMode::SocketFilterBpf)
+        Self::new(EbpfMode::UserSpaceFallback).expect("user-space fallback cannot fail")
     }
 }
 
 impl EbpfShaper {
-    /// Create a new traffic shaper instance with requested mechanism tag
-    pub fn new(requested_mode: EbpfMode) -> Self {
-        let mode = match requested_mode {
-            EbpfMode::KernelTcXdp => {
-                #[cfg(target_os = "linux")]
-                {
-                    let is_root = std::env::var("USER").map(|u| u == "root").unwrap_or(false);
-                    if is_root {
-                        EbpfMode::KernelTcXdp
-                    } else {
-                        EbpfMode::SocketFilterBpf
-                    }
-                }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    EbpfMode::UserSpaceFallback
-                }
-            }
-            other => other,
-        };
-
-        Self {
-            mode,
-            blocked_ips: Arc::new(Mutex::new(HashSet::new())),
-            dropped_packets: Arc::new(Mutex::new(0)),
-            passed_packets: Arc::new(Mutex::new(0)),
+    /// Create a new traffic shaper instance with requested mechanism tag.
+    /// Kernel eBPF modes are NOT implemented — returns `Err` for them; only
+    /// the user-space fallback path is available.
+    pub fn new(requested_mode: EbpfMode) -> Result<Self, String> {
+        match requested_mode {
+            EbpfMode::KernelTcXdp | EbpfMode::SocketFilterBpf => Err(
+                "kernel eBPF mode unavailable: eBPF not compiled, user-space fallback only (roadmap)"
+                    .to_string(),
+            ),
+            EbpfMode::UserSpaceFallback => Ok(Self {
+                mode: EbpfMode::UserSpaceFallback,
+                blocked_ips: Arc::new(Mutex::new(HashSet::new())),
+                dropped_packets: Arc::new(Mutex::new(0)),
+                passed_packets: Arc::new(Mutex::new(0)),
+            }),
         }
     }
 
@@ -170,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_ebpf_shaper_packet_filtering() {
-        let shaper = EbpfShaper::new(EbpfMode::UserSpaceFallback);
+        let shaper = EbpfShaper::new(EbpfMode::UserSpaceFallback).unwrap();
         assert!(shaper.inspect_packet("192.168.1.50", 128));
 
         shaper.block_ip("192.168.1.50");
@@ -180,5 +169,17 @@ mod tests {
         assert_eq!(stats.dropped_packets, 1);
         assert_eq!(stats.passed_packets, 1);
         assert_eq!(stats.blocked_peers_count, 1);
+    }
+
+    #[test]
+    fn test_ebpf_kernel_modes_rejected() {
+        let err = EbpfShaper::new(EbpfMode::KernelTcXdp).unwrap_err();
+        assert!(err.contains("kernel eBPF mode unavailable"));
+        let err = EbpfShaper::new(EbpfMode::SocketFilterBpf).unwrap_err();
+        assert!(err.contains("kernel eBPF mode unavailable"));
+        assert_eq!(
+            EbpfShaper::default().stats().mode,
+            EbpfMode::UserSpaceFallback
+        );
     }
 }

@@ -9,5 +9,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 soshal-nostr-core = { path = "../nostr-core" }
 
+[dev-dependencies]
+soshal-test-util = { path = "../test-util" }
+
 [lints]
 workspace = true

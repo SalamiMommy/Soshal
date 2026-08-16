@@ -161,15 +161,10 @@ mod tests {
     use soshal_identity_core::security::PIN_HARD_LIMIT;
 
     static PIN_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    static DB_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
     fn fresh_db() -> String {
-        let n = DB_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("soshal_pin_{}_{}.db", std::process::id(), n));
+        let path = soshal_test_util::tmp_path("pin", "pin.db");
         let path = path.to_string_lossy().to_string();
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
         super::super::db::db_init(path.clone()).unwrap();
         path
     }

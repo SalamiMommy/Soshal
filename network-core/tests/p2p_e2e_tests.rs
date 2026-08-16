@@ -10,17 +10,10 @@ use soshal_media_core::chunking::{ChunkManifest, ChunkRef};
 use soshal_network_core::lan_transport::start_lan_server_with_store;
 use soshal_network_core::swarm::{spawn_swarm_download, SwarmConfig};
 use std::net::SocketAddr;
-use std::sync::Mutex;
-
-static LOCK: Mutex<()> = Mutex::new(());
-
-fn lock() -> std::sync::MutexGuard<'static, ()> {
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 #[test]
 fn swarm_download_roundtrip_over_loopback() {
-    let _g = lock();
+    let _g = soshal_test_util::test_lock();
     let root = soshal_test_util::tmp_root("store");
     let store = ChunkStore::new(root.clone());
     let data: Vec<u8> = (0..2 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
@@ -59,7 +52,7 @@ fn swarm_download_roundtrip_over_loopback() {
 
 #[test]
 fn swarm_download_fails_cleanly_without_server() {
-    let _g = lock();
+    let _g = soshal_test_util::test_lock();
     let manifest = ChunkManifest {
         blob_hash: "ab".repeat(32),
         total_size: 1024,
@@ -90,7 +83,7 @@ fn swarm_download_fails_cleanly_without_server() {
 
 #[test]
 fn swarm_download_rejects_public_peer() {
-    let _g = lock();
+    let _g = soshal_test_util::test_lock();
     let manifest = ChunkManifest {
         blob_hash: "ab".repeat(32),
         total_size: 1024,

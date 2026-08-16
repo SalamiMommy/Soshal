@@ -20,12 +20,9 @@ fn unlock(secret: &str) -> String {
 }
 
 fn setup_db(name: &str) -> String {
-    let path = format!(
-        "{}/soshal_dm_{}_{}.db",
-        std::env::temp_dir().to_string_lossy(),
-        std::process::id(),
-        name
-    );
+    let path = soshal_test_util::tmp_path("dm", name)
+        .to_string_lossy()
+        .to_string();
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(format!("{path}-wal"));
     let _ = std::fs::remove_file(format!("{path}-shm"));

@@ -7,10 +7,8 @@
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
+use soshal_common_core::consts::{KIND_LIVE, KIND_STORY};
 use soshal_streaming_core::events;
-
-const KIND_LIVE: i64 = 30311;
-const KIND_STORY: i64 = 30078;
 
 /// Live stream info
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -150,7 +148,7 @@ pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, Stri
                 )
                 .await?;
             let mut rows = stmt
-                .query(libsql::params![KIND_LIVE, pattern.as_str()])
+                .query(libsql::params![KIND_LIVE as i64, pattern.as_str()])
                 .await?;
             let names: Vec<String> = stmt
                 .columns()
@@ -210,18 +208,16 @@ pub fn streaming_start_live(
         "status": "live",
     })
     .to_string();
-    let builder = nostr::event::EventBuilder::new(
-        nostr::event::Kind::from_u16(KIND_LIVE as u16),
-        content.clone(),
-    )
-    .tags(
-        vec![
-            vec!["d".to_string(), stream_url.clone()],
-            vec!["status".to_string(), "live".to_string()],
-        ]
-        .into_iter()
-        .filter_map(|t| nostr::event::Tag::parse(t).ok()),
-    );
+    let builder =
+        nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(KIND_LIVE), content.clone())
+            .tags(
+                vec![
+                    vec!["d".to_string(), stream_url.clone()],
+                    vec!["status".to_string(), "live".to_string()],
+                ]
+                .into_iter()
+                .filter_map(|t| nostr::event::Tag::parse(t).ok()),
+            );
     let signed_json = super::signer::sign_builder(builder)?;
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
@@ -230,7 +226,7 @@ pub fn streaming_start_live(
         event_id,
         broadcaster_pubkey,
         content,
-        KIND_LIVE,
+        KIND_LIVE as i64,
         soshal_common_core::format::now_secs(),
         serde_json::to_string(&vec![
             vec!["d".to_string(), stream_url],
@@ -252,7 +248,7 @@ pub fn streaming_end_live(stream_id: String, broadcaster_pubkey: String) -> Resu
                 .prepare("SELECT pubkey, tags_json FROM posts WHERE kind = ?1 AND id = ?2")
                 .await?;
             let mut rows = stmt
-                .query(libsql::params![KIND_LIVE, stream_id.as_str()])
+                .query(libsql::params![KIND_LIVE as i64, stream_id.as_str()])
                 .await?;
             let mut out = Vec::new();
             while let Some(row) = rows.next().await? {
@@ -335,7 +331,7 @@ pub fn streaming_post_story(
     };
     let expiry = soshal_common_core::format::now_secs() + hours as i64 * 3600;
     let mut builder = nostr::event::EventBuilder::new(
-        nostr::event::Kind::from_u16(KIND_STORY as u16),
+        nostr::event::Kind::from_u16(KIND_STORY),
         content_str.clone(),
     )
     .tags(
@@ -360,7 +356,7 @@ pub fn streaming_post_story(
         event_id,
         author_pubkey,
         content_str,
-        KIND_STORY,
+        KIND_STORY as i64,
         soshal_common_core::format::now_secs(),
         serde_json::to_string(&vec![
             vec!["d".to_string(), "soshal_story".to_string()],

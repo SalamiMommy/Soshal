@@ -150,50 +150,6 @@ class _ModerationScreenState extends State<ModerationScreen> {
     }
   }
 
-  Future<void> _submitJuryVote() async {
-    final caseJson = _juryCaseJson;
-    if (caseJson == null) return;
-    final vote = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Submit jury vote'),
-        content: TextField(
-          controller: vote,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'FrostSignatureShare JSON',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Vote'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    try {
-      final result = await context.read<ModerationService>().submitJuryVote(
-            caseJson: caseJson,
-            voteShareJson: vote.text.trim(),
-          );
-      if (!mounted) return;
-      setState(() => _juryResult = result);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Vote failed: $e')));
-      }
-    }
-  }
-
   Future<void> _addFilter() async {
     final controller = TextEditingController();
     final value = await showDialog<String>(
@@ -379,10 +335,9 @@ class _ModerationScreenState extends State<ModerationScreen> {
                 style: const TextStyle(fontSize: 12),
               ),
             ),
-            FilledButton.icon(
-              icon: const Icon(Icons.how_to_vote_outlined),
-              label: const Text('Submit vote'),
-              onPressed: _submitJuryVote,
+            Text(
+              'FROST jury voting unavailable: threshold signing on roadmap',
+              style: const TextStyle(fontSize: 12),
             ),
           ],
           if (_juryResult != null)

@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 soshal-db-core = { path = "../db-core" }
+soshal-nostr-core = { path = "../nostr-core" }
+nostr = { workspace = true }

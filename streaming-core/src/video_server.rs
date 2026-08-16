@@ -2,6 +2,7 @@
 //! Binds strictly to 127.0.0.1 on an ephemeral port.
 //! Manages HTTP range requests, chunk buffering, disk decryption, and HLS proxying natively.
 
+use soshal_common_core::format::is_valid_hex;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -44,10 +45,6 @@ enum Route<'a> {
     Blob(&'a str),
 }
 
-fn is_hex_64(s: &str) -> bool {
-    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
-}
-
 fn parse_route(path: &str) -> Option<Route<'_>> {
     if let Some(id) = path.strip_prefix("/video/") {
         if !id.is_empty() && !id.contains('/') {
@@ -55,7 +52,7 @@ fn parse_route(path: &str) -> Option<Route<'_>> {
         }
     }
     if let Some(hash) = path.strip_prefix("/blob/") {
-        if is_hex_64(hash) {
+        if hash.len() == 64 && is_valid_hex(hash) {
             return Some(Route::Blob(hash));
         }
     }

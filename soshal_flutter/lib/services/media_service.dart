@@ -83,6 +83,9 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
         throw Exception('File not found: $filePath');
       }
 
+      final mime = await mimeType(filePath);
+      final window = await chunkingForMime(mime);
+
       final manifestJson =
           RustLib.instance.api.crateFfiMediaMediaUploadBlobFile(
         filePath: filePath,
@@ -91,6 +94,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
       final manifest = Map<String, dynamic>.from(
         jsonDecode(manifestJson) as Map,
       );
+      manifest['chunking'] = window;
 
       clearLastError();
       notifyListeners();

@@ -22,6 +22,7 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _remoteLoading = false;
   List<SearchResultItem> _remoteResults = [];
   Future<List<SearchResultItem>>? _trendingProfilesFuture;
+  Future<List<Map<String, dynamic>>>? _trendingHashtagsFuture;
 
   @override
   void initState() {
@@ -31,6 +32,8 @@ class _SearchScreenState extends State<SearchScreen> {
         setState(() {
           _trendingProfilesFuture =
               context.read<SearchService>().trendingProfiles();
+          _trendingHashtagsFuture =
+              context.read<SearchService>().dbTrendingHashtags();
         });
       }
     });
@@ -124,6 +127,8 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _loadTrending() async {
     setState(() => _loading = true);
     try {
+      _trendingHashtagsFuture =
+          context.read<SearchService>().dbTrendingHashtags();
       await context.read<SearchService>().trendingHashtags();
     } catch (e) {
       debugPrint('trending: $e');
@@ -195,22 +200,34 @@ class _SearchScreenState extends State<SearchScreen> {
                   child: Text('Trending hashtags',
                       style: Theme.of(context).textTheme.titleMedium),
                 ),
-                if (api.hashtags.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('Nothing trending yet'),
-                  )
-                else
-                  for (final tag in api.hashtags)
-                    ListTile(
-                      leading: const Icon(Icons.trending_up),
-                      title: Text('#$tag'),
-                      onTap: () {
-                        _query.text = tag;
-                        _mode = 'posts';
-                        _runSearch();
-                      },
-                    ),
+                FutureBuilder<List<Map<String, dynamic>>>(
+                  future: _trendingHashtagsFuture,
+                  builder: (context, snapshot) {
+                    final tags = snapshot.data ?? [];
+                    if (tags.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('Nothing trending yet'),
+                      );
+                    }
+                    return Column(
+                      children: [
+                        for (final tag in tags)
+                          ListTile(
+                            leading: const Icon(Icons.trending_up),
+                            title: Text('#${tag['tag']}'),
+                            onTap: () {
+                              final t = tag['tag'] as String? ?? '';
+                              if (t.isEmpty) return;
+                              _query.text = t;
+                              _mode = 'posts';
+                              _runSearch();
+                            },
+                          ),
+                      ],
+                    );
+                  },
+                ),
                 const SizedBox(height: 8),
                 Padding(
                   padding: const EdgeInsets.all(16),

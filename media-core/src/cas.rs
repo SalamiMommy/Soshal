@@ -374,18 +374,10 @@ pub fn manifest_bytes(store: &ChunkStore, manifest: &ChunkManifest) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-
-    fn tmp_root() -> PathBuf {
-        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!("soshal_cas_test_{}_{}", std::process::id(), n))
-    }
 
     #[test]
     fn put_get_roundtrip_and_dedup() {
-        let store = ChunkStore::new(tmp_root());
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
         let data = vec![5u8; 1024];
         assert!(store.put(&data));
         assert!(!store.put(&data));
@@ -397,14 +389,14 @@ mod tests {
 
     #[test]
     fn put_rejects_mismatched_hash() {
-        let store = ChunkStore::new(tmp_root());
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
         let data = vec![1u8; 32];
         assert!(!store.put_verified(&"00".repeat(32), &data));
     }
 
     #[test]
     fn store_file_reconstructs_exactly() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("cas");
         fs::create_dir_all(&root).unwrap();
         let store = ChunkStore::new(root.join("chunks"));
         let src = root.join("blob.bin");
@@ -424,7 +416,7 @@ mod tests {
 
     #[test]
     fn shared_region_dedups_across_blobs() {
-        let store = ChunkStore::new(tmp_root());
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
         let shared: Vec<u8> = (0..2 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
         let mut a = shared.clone();
         a.extend_from_slice(&[1u8; 1000]);
@@ -450,13 +442,13 @@ mod tests {
 
     #[test]
     fn get_missing_returns_none() {
-        let store = ChunkStore::new(tmp_root());
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
         assert!(store.get(&"ab".repeat(32)).is_none());
     }
 
     #[test]
     fn get_mmap_zero_copy_read() {
-        let store = ChunkStore::new(tmp_root());
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
         let data: Vec<u8> = (0..2 * 1024 * 1024).map(|i| (i % 253) as u8).collect();
         store.put(&data);
         let hash = blake3::hash(&data).to_hex().to_string();
@@ -468,7 +460,7 @@ mod tests {
 
     #[test]
     fn manifest_roundtrip_and_blob_slice_ranges() {
-        let store = ChunkStore::new(tmp_root());
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
         let data: Vec<u8> = (0..3 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
         let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
         store.save_manifest(&m).unwrap();
@@ -487,7 +479,7 @@ mod tests {
 
     #[test]
     fn load_manifest_rejects_corrupt() {
-        let store = ChunkStore::new(tmp_root());
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
         let path = store.manifest_path(&"aa".repeat(32));
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, "{\"blob_hash\":\"wrong\"").unwrap();
@@ -496,7 +488,7 @@ mod tests {
 
     #[test]
     fn chunk_index_resolves_owner_manifest() {
-        let store = ChunkStore::new(tmp_root());
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
         let data: Vec<u8> = (0..3 * 1024 * 1024).map(|i| (i % 249) as u8).collect();
         let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
         store.save_manifest(&m).unwrap();
@@ -519,7 +511,7 @@ mod tests {
 
     #[test]
     fn index_refreshes_after_external_manifest_write() {
-        let store = ChunkStore::new(tmp_root());
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
         let data: Vec<u8> = (0..1024 * 1024).map(|i| (i % 247) as u8).collect();
         let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
 

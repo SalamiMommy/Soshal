@@ -12,11 +12,13 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   SoshalEvent? _detail;
   List<String> _attendees = [];
   List<EventReminder> _reminders = [];
+  Map<String, double> _scores = {};
 
   List<SoshalEvent> get events => _events;
   SoshalEvent? get detail => _detail;
   List<String> get attendees => _attendees;
   List<EventReminder> get reminders => _reminders;
+  Map<String, double> get scores => _scores;
 
   List<EventReminder> remindersForEvent(String eventId) =>
       _reminders.where((r) => r.eventId == eventId).toList();
@@ -249,6 +251,28 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       notifyDeferred();
       rethrow;
     }
+  }
+
+  /// Score loaded events against my interests via their hashtags.
+  Future<void> scoreEvents(List<String> myInterests) async {
+    final out = <String, double>{};
+    for (final e in _events) {
+      try {
+        final tags = RustLib.instance.api.crateFfiUtilUtilExtractHashtags(
+          text: '${e.title} ${e.description}',
+        );
+        if (tags.isEmpty) continue;
+        final res = await interestScore(
+          myInterestsJson: jsonEncode(myInterests),
+          peerInterestsJson: jsonEncode(tags),
+        );
+        out[e.id] = (res['score'] as num?)?.toDouble() ?? 0;
+      } catch (_) {
+        out[e.id] = 0;
+      }
+    }
+    _scores = out;
+    notifyDeferred();
   }
 }
 

@@ -55,20 +55,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final pubkey = session.activePubkey;
     if (pubkey == null) return;
     try {
-      switch (type) {
-        case 'mention':
-          await api.fetchMentions(pubkey);
-        case 'like':
-          await api.fetchReactions(pubkey);
-        case 'reply':
-          await api.fetchReplies(pubkey);
-        case 'message':
-          await api.fetchMessages(pubkey);
-        case 'follow':
-          await api.fetchFollows(pubkey);
-        default:
-          await api.fetchNotifications(pubkey);
-      }
+      await api.fetchByType(pubkey, type, 50);
     } catch (e) {
       debugPrint('type load: $e');
     }

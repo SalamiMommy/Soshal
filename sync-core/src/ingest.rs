@@ -349,9 +349,7 @@ pub fn watermark_key(kind: Kind) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nostr::event::{EventBuilder, FinalizeEvent};
     use nostr::key::Keys;
-    use nostr::types::Timestamp;
     use soshal_db_core::query::query_first;
 
     fn channel() -> (
@@ -361,23 +359,12 @@ mod tests {
         tokio::sync::mpsc::channel(16)
     }
 
-    fn signed_event(keys: &Keys, kind: Kind, content: &str, created_at: u64) -> Event {
-        EventBuilder::new(kind, content)
-            .custom_created_at(Timestamp::from(created_at))
-            .finalize(keys)
-            .unwrap()
-    }
-
-    fn seed_user(db: &Database, pubkey: &str) {
-        UserRepo::new(db).ensure_exists(pubkey).unwrap();
-    }
-
     #[test]
     fn watermark_advances_on_successful_ingest() {
         let db = soshal_test_util::test_db();
         let keys = Keys::generate();
-        seed_user(&db, &keys.public_key().to_hex());
-        let event = signed_event(&keys, Kind::TextNote, "hello", 1_700_000_100);
+        soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
+        let event = soshal_test_util::signed_event(&keys, Kind::TextNote, "hello", 1_700_000_100);
         let (tx, _rx) = channel();
 
         set_watermark(&db, WM_FEED, 1_700_000_000);
@@ -392,7 +379,8 @@ mod tests {
     fn failed_ingest_does_not_advance_watermark() {
         let db = soshal_test_util::test_db();
         let keys = Keys::generate();
-        let mut event = signed_event(&keys, Kind::TextNote, "hello", 1_700_000_100);
+        let mut event =
+            soshal_test_util::signed_event(&keys, Kind::TextNote, "hello", 1_700_000_100);
         event.content = "tampered".to_string();
         let (tx, _rx) = channel();
         set_watermark(&db, WM_FEED, 1_700_000_050);
@@ -404,9 +392,9 @@ mod tests {
     fn out_of_order_events_cached_and_watermark_monotonic() {
         let db = soshal_test_util::test_db();
         let keys = Keys::generate();
-        seed_user(&db, &keys.public_key().to_hex());
-        let older = signed_event(&keys, Kind::TextNote, "older", 1_700_000_000);
-        let newer = signed_event(&keys, Kind::TextNote, "newer", 1_700_000_100);
+        soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
+        let older = soshal_test_util::signed_event(&keys, Kind::TextNote, "older", 1_700_000_000);
+        let newer = soshal_test_util::signed_event(&keys, Kind::TextNote, "newer", 1_700_000_100);
         let (tx, _rx) = channel();
 
         handle(&db, "", &newer, &tx).unwrap();
@@ -448,8 +436,8 @@ mod tests {
     fn duplicate_event_single_row_and_double_emit() {
         let db = soshal_test_util::test_db();
         let keys = Keys::generate();
-        seed_user(&db, &keys.public_key().to_hex());
-        let event = signed_event(&keys, Kind::TextNote, "dup", 1_700_000_100);
+        soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
+        let event = soshal_test_util::signed_event(&keys, Kind::TextNote, "dup", 1_700_000_100);
         let (tx, mut rx) = channel();
         handle(&db, "", &event, &tx).unwrap();
         handle(&db, "", &event, &tx).unwrap();

@@ -11,7 +11,6 @@
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use memmap2::MmapMut;
-use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -349,7 +348,7 @@ fn now_ms() -> u64 {
 }
 
 fn checksum(data: &[u8]) -> [u8; 8] {
-    let d = Sha256::digest(data);
+    let d = soshal_crypto_core::hash::sha256(data);
     let mut out = [0u8; 8];
     out.copy_from_slice(&d[..8]);
     out

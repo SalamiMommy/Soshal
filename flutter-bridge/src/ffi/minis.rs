@@ -35,23 +35,12 @@ pub fn minis_fetch() -> Result<Vec<String>, String> {
 /// still simulated in minis-core; wasm bytes must be valid hex).
 #[frb(sync, serialize)]
 pub fn minis_wasm_execute_filter(
-    plugin_id: String,
-    text: String,
+    _plugin_id: String,
+    _text: String,
     wasm_bytes_hex: String,
 ) -> Result<String, String> {
-    let binary_bytes = hex::decode(&wasm_bytes_hex).map_err(|_| "invalid wasm hex".to_string())?;
-    let author_pubkey = super::signer::signer_pubkey()?;
-    let plugin = soshal_minis_core::runtime::WasmComponentPlugin {
-        plugin_id,
-        name: "Wasm Filter".to_string(),
-        component_type: soshal_minis_core::runtime::WasmComponentType::ContentFilter,
-        author_pubkey,
-        binary_bytes,
-    };
-
-    let result = soshal_minis_core::runtime::WasmComponentHost::filter_content(&plugin, &text)?;
-    serde_json::to_string(&result)
-        .map_err(|e| format!("json encode error: {e}"))
+    hex::decode(&wasm_bytes_hex).map_err(|_| "invalid wasm hex".to_string())?;
+    Err("wasm runtime unavailable: WASI component host on roadmap, runtime simulated".to_string())
         .into()
 }
 
@@ -59,21 +48,13 @@ pub fn minis_wasm_execute_filter(
 /// simulated in minis-core; wasm bytes must be valid hex).
 #[frb(sync, serialize)]
 pub fn minis_wasm_rank_feed(
-    plugin_id: String,
-    posts_json: Vec<String>,
+    _plugin_id: String,
+    _posts_json: Vec<String>,
     wasm_bytes_hex: String,
 ) -> Result<Vec<String>, String> {
-    let binary_bytes = hex::decode(&wasm_bytes_hex).map_err(|_| "invalid wasm hex".to_string())?;
-    let author_pubkey = super::signer::signer_pubkey()?;
-    let plugin = soshal_minis_core::runtime::WasmComponentPlugin {
-        plugin_id,
-        name: "Wasm Ranker".to_string(),
-        component_type: soshal_minis_core::runtime::WasmComponentType::FeedRanker,
-        author_pubkey,
-        binary_bytes,
-    };
-
-    soshal_minis_core::runtime::WasmComponentHost::rank_posts(&plugin, posts_json).into()
+    hex::decode(&wasm_bytes_hex).map_err(|_| "invalid wasm hex".to_string())?;
+    Err("wasm runtime unavailable: WASI component host on roadmap, runtime simulated".to_string())
+        .into()
 }
 
 #[cfg(test)]
@@ -138,35 +119,22 @@ mod tests {
     }
 
     #[test]
-    fn wasm_filter_flags_malicious_phishing() {
+    fn wasm_filter_returns_unavailable_error() {
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-        let clean_json = minis_wasm_execute_filter(
+        let err = minis_wasm_execute_filter(
             "f1".to_string(),
             "hello world".to_string(),
             "0061736d".to_string(),
         )
-        .unwrap();
-        let clean: serde_json::Value = serde_json::from_str(&clean_json).unwrap();
-        assert_eq!(clean["allow"], true);
-        assert_eq!(clean["reason"], "Clean");
-
-        let toxic_json = minis_wasm_execute_filter(
-            "f1".to_string(),
-            "bad malicious_phishing link".to_string(),
-            "0061736d".to_string(),
-        )
-        .unwrap();
-        let toxic: serde_json::Value = serde_json::from_str(&toxic_json).unwrap();
-        assert_eq!(toxic["allow"], false);
-        assert_eq!(toxic["score"].as_f64().unwrap(), 0.95);
-        assert!(toxic["reason"]
-            .as_str()
-            .unwrap()
-            .contains("Toxic content flagged"));
+        .unwrap_err();
+        assert_eq!(
+            err,
+            "wasm runtime unavailable: WASI component host on roadmap, runtime simulated"
+        );
         super::super::signer::signer_lock().unwrap();
     }
 
@@ -185,21 +153,21 @@ mod tests {
     }
 
     #[test]
-    fn wasm_rank_sorts_longest_first() {
+    fn wasm_rank_returns_unavailable_error() {
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-        let ranked = minis_wasm_rank_feed(
+        let err = minis_wasm_rank_feed(
             "r1".to_string(),
             vec!["a".to_string(), "ccc".to_string(), "bb".to_string()],
             "0061736d".to_string(),
         )
-        .unwrap();
+        .unwrap_err();
         assert_eq!(
-            ranked,
-            vec!["ccc".to_string(), "bb".to_string(), "a".to_string()]
+            err,
+            "wasm runtime unavailable: WASI component host on roadmap, runtime simulated"
         );
         super::super::signer::signer_lock().unwrap();
     }

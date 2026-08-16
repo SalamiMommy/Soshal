@@ -6,17 +6,6 @@ use soshal_streaming_core::events::{
 };
 use soshal_streaming_core::merge_live_chat_messages;
 
-fn event(tags: Vec<Vec<String>>) -> soshal_nostr_core::models::NostrEvent {
-    soshal_nostr_core::models::NostrEvent {
-        id: "e1".into(),
-        pubkey: "pk1".into(),
-        content: "content".into(),
-        tags,
-        created_at: 1000.0,
-        kind: 1,
-    }
-}
-
 fn msg(id: &str, created_at: i64) -> serde_json::Value {
     serde_json::json!({"id": id, "content": format!("m-{}", id), "created_at": created_at})
 }
@@ -41,11 +30,12 @@ fn story_content_builds_media_and_optional_text() {
 
 #[test]
 fn story_from_event_maps_fields_and_default_audience() {
-    let ev = event(vec![vec!["expiration".into(), "123".into()]]);
+    let ev =
+        soshal_test_util::nostr_event("content", vec![vec!["expiration".into(), "123".into()]]);
     let v = story_from_event(&ev);
-    assert_eq!(v["id"], "e1");
+    assert_eq!(v["id"], "id1");
     assert_eq!(v["pubkey"], "pk1");
-    assert_eq!(v["created_at"], 1000u64);
+    assert_eq!(v["created_at"], 100u64);
     assert_eq!(v["expiration"], "123");
     assert_eq!(v["audience"], "public");
     assert_eq!(v["content"], "content");
@@ -53,9 +43,9 @@ fn story_from_event_maps_fields_and_default_audience() {
 
 #[test]
 fn live_chat_from_event_maps_fields() {
-    let v = live_chat_from_event(&event(vec![]));
-    assert_eq!(v["id"], "e1");
-    assert_eq!(v["created_at"], 1000u64);
+    let v = live_chat_from_event(&soshal_test_util::nostr_event("content", vec![]));
+    assert_eq!(v["id"], "id1");
+    assert_eq!(v["created_at"], 100u64);
     assert_eq!(v["content"], "content");
 }
 
@@ -77,17 +67,20 @@ fn stream_content_builds_json_and_skips_empty_category() {
 
 #[test]
 fn live_stream_from_event_defaults_d_audience_category() {
-    let ev = event(vec![
-        vec!["d".into(), "my-stream".into()],
-        vec!["status".into(), "live".into()],
-    ]);
+    let ev = soshal_test_util::nostr_event(
+        "content",
+        vec![
+            vec!["d".into(), "my-stream".into()],
+            vec!["status".into(), "live".into()],
+        ],
+    );
     let v = live_stream_from_event(&ev);
     assert_eq!(v["d_tag"], "my-stream");
     assert_eq!(v["status_tag"], "live");
     assert_eq!(v["audience"], "public");
     assert_eq!(v["category"], "Other");
 
-    let v2 = live_stream_from_event(&event(vec![]));
+    let v2 = live_stream_from_event(&soshal_test_util::nostr_event("content", vec![]));
     assert!(v2["d_tag"].is_null());
     assert!(v2["status_tag"].is_null());
 }
@@ -103,8 +96,8 @@ fn chatrandom_available_content_builds_json() {
 
 #[test]
 fn chatrandom_peer_from_event_maps_fields() {
-    let v = chatrandom_peer_from_event(&event(vec![]));
-    assert_eq!(v["id"], "e1");
+    let v = chatrandom_peer_from_event(&soshal_test_util::nostr_event("content", vec![]));
+    assert_eq!(v["id"], "id1");
     assert_eq!(v["pubkey"], "pk1");
 }
 

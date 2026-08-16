@@ -6,17 +6,6 @@ use soshal_social_core::compatibility::{
 };
 use soshal_social_core::relations::relation_entry_from_event;
 
-fn event(tags: Vec<Vec<String>>) -> soshal_nostr_core::models::NostrEvent {
-    soshal_nostr_core::models::NostrEvent {
-        id: "e1".into(),
-        pubkey: "pk1".into(),
-        content: "content".into(),
-        tags,
-        created_at: 1000.0,
-        kind: 31989,
-    }
-}
-
 #[test]
 fn interest_overlap_matches_case_sensitively_by_default() {
     let a = vec![
@@ -97,11 +86,11 @@ fn jaccard_similarity_empty_defaults_midpoint() {
 
 #[test]
 fn relation_entry_from_event_maps_fields() {
-    let v = relation_entry_from_event(&event(vec![]));
-    assert_eq!(v["id"], "e1");
+    let v = relation_entry_from_event(&soshal_test_util::nostr_event("content", vec![]));
+    assert_eq!(v["id"], "id1");
     assert_eq!(v["pubkey"], "pk1");
     assert_eq!(v["content"], "content");
-    assert_eq!(v["created_at"], 1000u64);
+    assert_eq!(v["created_at"], 100u64);
 }
 
 #[test]

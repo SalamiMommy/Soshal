@@ -118,13 +118,11 @@ impl EpochGarbageCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soshal_db_core::schema::migrate;
 
     #[test]
     fn test_crdt_epoch_gc_tombstone_pruning() {
-        let db = soshal_db_core::Database::open_in_memory().unwrap();
+        let db = soshal_test_util::test_db();
         let conn = db.conn().unwrap();
-        migrate(&conn).unwrap();
 
         let mut clocks = HashMap::new();
         clocks.insert("peer1".to_string(), 100000);

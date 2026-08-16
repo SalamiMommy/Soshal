@@ -71,7 +71,9 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         notificationType: type,
         limit: limit,
       );
-      _notifications = parseNotifications(json);
+      final parsed = parseNotifications(json);
+      _notifications = parsed;
+      _byType[type] = parsed;
       clearLastError();
       notifyListeners();
       return _notifications;

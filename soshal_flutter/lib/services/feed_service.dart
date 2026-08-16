@@ -19,6 +19,10 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   final Set<String> _pinned = {};
   bool _pinnedLoaded = false;
 
+  /// Best-effort hook invoked after a full feed refresh (offset 0). Set by
+  /// [SyncService.attach] to trigger peer reconciliation; failures are silent.
+  void Function()? onRefreshed;
+
   List<FeedPost> get posts => _posts;
   List<FeedPost> get displayPosts => _ranked ? _rankedPosts : _posts;
   bool get isRanked => _ranked;
@@ -42,6 +46,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         _posts = newPosts;
         _ranked = false;
         _rankedPosts = [];
+        _reconcileAfterRefresh();
       } else {
         _posts.addAll(newPosts);
         if (_posts.length > 100) {
@@ -445,6 +450,16 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       }
       return FeedPost.fromJson(m);
     }).toList();
+  }
+
+  /// Fire the post-refresh reconcile hook; sync is best-effort so failures
+  /// are swallowed here.
+  void _reconcileAfterRefresh() {
+    try {
+      onRefreshed?.call();
+    } catch (_) {
+      // Best-effort; a failed reconcile must not break the refresh path.
+    }
   }
 
   /// Insert a post arriving from the live sync stream (dedup by event id).

@@ -6,6 +6,7 @@
 
 use crate::Database;
 use libsql::params;
+use soshal_common_core::format::now_secs;
 
 /// Count of placeholders used by [`PostViewsRepo::mark_seen`] batches.
 const BATCH_MAX: usize = 500;
@@ -29,10 +30,7 @@ impl<'a> PostViewsRepo<'a> {
         if post_ids.is_empty() {
             return Ok(());
         }
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
+        let now = now_secs();
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
             for chunk in post_ids.chunks(BATCH_MAX) {

@@ -286,14 +286,22 @@ each migration SQL records its own version
       (outbox-relayed, 500 m geofence), push token scoping (active
       account), preference-aware compatibility score (dealbreakers +
       weights), identicon avatar fallback (media-core, seeded by pubkey).
-   - Still gated (needs external infra, UI honest about it): FCM delivery
-      (Firebase `google-services.json`), TURN provisioning (server endpoint),
-      WebRTC voice/video media transport (relay signaling kinds 20001-20004
-      work), WASI wasm runtime in minis-core (simulated sort/keyword host;
-      real wasmtime host is roadmap), ZK provers in sync-core zk_rollup
-      (honest SHA-256 commitment), `raster_signal_impeller_frame_ready`
-      (engine-integration no-op), real FROST in crypto-core (jury
-      moderation), eBPF kernel modes in network-core (user-space fallback
-      only), freenet seednode announce (simulated). `protocol_handle_avatar`
-      is private inside
+   - Still gated (needs external infra, UI honest about it; fake-success
+      stubs honest-ified 2026-08 — silent simulations now return explicit
+      `Err` + UI "unavailable (roadmap)" notes): FCM delivery (Firebase
+      `google-services.json`; `registerPushToken` guarded on token presence),
+      TURN provisioning (server endpoint; `webrtc_get_turn_servers` Err when
+      `turn_endpoint` unset), WebRTC voice/video media transport (relay
+      signaling kinds 20001-20004 work), WASI wasm runtime in minis-core
+      (`minis_wasm_execute_filter`/`minis_wasm_rank_feed` Err — hex
+      validation kept, wasmtime host roadmap; minis screen shows badge),
+      ZK provers in sync-core zk_rollup (honest SHA-256 commitment; sync
+      service verifies after apply, labels "commitment" not "proof"),
+      `raster_signal_impeller_frame_ready` (engine-integration no-op), real
+      FROST in crypto-core (bridge Err "non-cryptographic simulation,
+      disabled"; moderation screen: no fake share input, "jury voting
+      unavailable" note), eBPF kernel modes in network-core (`KernelTcXdp`/
+      `SocketFilterBpf` Err at `EbpfShaper::new`; user-space fallback only),
+      freenet seednode announce (`announce_to_seednodes_json` Err).
+      `protocol_handle_avatar` is private inside
       protocol_handler.rs (was pub, downgraded — not an FFI surface).

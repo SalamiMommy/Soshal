@@ -1,14 +1,7 @@
 //! Integration tests for soshal-media-core.
 
 use soshal_media_core::decoder::decode_to_rgba;
-use soshal_media_core::freenet::{
-    freenet_content_hash, freenet_content_hash_json, freenet_contract_hash,
-    freenet_contract_hash_json,
-};
 use soshal_media_core::freenet_media::{chunk_media, reconstruct_media, verify_chunk, CHUNK_SIZE};
-use soshal_media_core::freenet_post::{
-    build_freenet_post_contract, verify_and_unpack_freenet_post,
-};
 use soshal_media_core::media::guess_mime_type;
 use soshal_media_core::prefetcher::Prefetcher;
 
@@ -120,98 +113,6 @@ fn reconstruct_media_rejects_empty_or_oversized() {
     assert!(reconstruct_media(&too_many).is_none());
     let bad = vec!["not-b64!".to_string()];
     assert!(reconstruct_media(&bad).is_none());
-}
-
-// ---------------------------------------------------------------------------
-// Freenet post contract
-// ---------------------------------------------------------------------------
-
-#[test]
-fn build_freenet_post_contract_is_deterministic() {
-    let a = build_freenet_post_contract("pk1", "hello", 100, None, None, Some("sig1".to_string()))
-        .unwrap();
-    let b = build_freenet_post_contract("pk1", "hello", 100, None, None, Some("sig1".to_string()))
-        .unwrap();
-    assert_eq!(a.contract_key, b.contract_key);
-    assert_eq!(a.content_hash, b.content_hash);
-    assert!(a.contract_key.starts_with("freenet://"));
-    assert_eq!(a.content_hash.len(), 64);
-
-    let different =
-        build_freenet_post_contract("pk2", "hello", 100, None, None, Some("sig1".to_string()))
-            .unwrap();
-    assert_ne!(a.contract_key, different.contract_key);
-}
-
-#[test]
-fn build_freenet_post_contract_rejects_empty_content() {
-    assert!(build_freenet_post_contract("pk1", "", 100, None, None, None).is_err());
-}
-
-#[test]
-fn verify_and_unpack_freenet_post_roundtrip() {
-    let contract = build_freenet_post_contract(
-        "pk1",
-        "post body",
-        123,
-        Some("reply-id".to_string()),
-        Some("root-id".to_string()),
-        Some("sig".to_string()),
-    )
-    .unwrap();
-    let payload = verify_and_unpack_freenet_post(&contract.payload_json).unwrap();
-    assert_eq!(payload.author_pubkey, "pk1");
-    assert_eq!(payload.content, "post body");
-    assert_eq!(payload.created_at, 123);
-    assert_eq!(payload.reply_to.as_deref(), Some("reply-id"));
-    assert_eq!(payload.root_id.as_deref(), Some("root-id"));
-    assert_eq!(payload.signature.as_deref(), Some("sig"));
-}
-
-#[test]
-fn verify_and_unpack_freenet_post_rejects_bad_input() {
-    assert!(verify_and_unpack_freenet_post("").is_err());
-    assert!(verify_and_unpack_freenet_post("not json").is_err());
-    assert!(verify_and_unpack_freenet_post(r#"{"content":"no author"}"#).is_err());
-}
-
-// ---------------------------------------------------------------------------
-// Freenet hashes
-// ---------------------------------------------------------------------------
-
-#[test]
-fn freenet_contract_hash_is_deterministic_and_domain_separated() {
-    let h1 = freenet_contract_hash("key", "params");
-    assert_eq!(h1.len(), 64);
-    assert_eq!(h1, freenet_contract_hash("key", "params"));
-    assert_ne!(h1, freenet_contract_hash("key", "other"));
-    assert_ne!(h1, freenet_contract_hash("other", "params"));
-}
-
-#[test]
-fn freenet_content_hash_hashes_decoded_bytes() {
-    let raw = b"media bytes";
-    let b64 = soshal_crypto_core::base64::base64_encode_bytes(raw);
-    let h = freenet_content_hash(&b64);
-    assert_eq!(h, soshal_crypto_core::hash::sha256_hex(raw));
-    assert_eq!(freenet_content_hash("not base64!"), "");
-}
-
-#[test]
-fn freenet_hash_json_apis() {
-    let out = freenet_contract_hash_json(r#"{"key":"k","parameters":"p"}"#);
-    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(v["contract_hash"].as_str().unwrap().len(), 64);
-
-    let out2 = freenet_content_hash_json(&serde_json::json!({"data": "aGVsbG8="}).to_string());
-    let v2: serde_json::Value = serde_json::from_str(&out2).unwrap();
-    assert_eq!(
-        v2["content_hash"],
-        soshal_crypto_core::hash::sha256_hex(b"hello")
-    );
-
-    assert_eq!(freenet_contract_hash_json("garbage"), "");
-    assert_eq!(freenet_content_hash_json("garbage"), "");
 }
 
 // ---------------------------------------------------------------------------

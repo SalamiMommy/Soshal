@@ -114,11 +114,9 @@ mod integration_tests {
 
     #[test]
     fn test_database_workflow() {
-        let path = format!(
-            "{}/soshal_bridge_flow_{}.db",
-            std::env::temp_dir().to_string_lossy(),
-            std::process::id()
-        );
+        let path = soshal_test_util::tmp_path("bridge_flow", "flow.db")
+            .to_string_lossy()
+            .to_string();
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
@@ -244,6 +242,177 @@ mod integration_tests {
         );
 
         p2p::p2p_stop_all().unwrap();
+        signer::signer_lock().unwrap();
+    }
+
+    // --- signer: process-global key state (SIGNER static in the lib) ------
+    //
+    // Every test here mutates the process-global signer, so it holds BOTH the
+    // repo-wide soshal_test_util::test_lock() AND the module P2P_TEST_LOCK
+    // (the p2p tests above unlock/lock the same SIGNER under P2P_TEST_LOCK).
+    // Fixed acquisition order: test_lock() first, P2P_TEST_LOCK second; the
+    // p2p tests never take test_lock(), so there is no lock cycle.
+
+    fn unlock_fresh_signer() -> (String, String) {
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        let secret = keys.secret_key().to_secret_hex();
+        signer::signer_unlock(secret.clone()).unwrap();
+        (pk, secret)
+    }
+
+    #[test]
+    fn test_signer_locked_error_paths() {
+        let _t = soshal_test_util::test_lock();
+        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        signer::signer_lock().unwrap();
+        assert!(signer::signer_is_locked().unwrap());
+        assert!(signer::signer_pubkey()
+            .unwrap_err()
+            .contains("signer locked"));
+        assert!(signer::signer_schnorr_sign("00".repeat(32))
+            .unwrap_err()
+            .contains("signer locked"));
+        assert!(signer::signer_sign_text("hi".to_string())
+            .unwrap_err()
+            .contains("signer locked"));
+        let unsigned =
+            "{\"pubkey\":\"\",\"created_at\":0,\"kind\":1,\"tags\":[],\"content\":\"hi\"}"
+                .to_string();
+        assert!(signer::signer_sign_unsigned(unsigned)
+            .unwrap_err()
+            .contains("signer locked"));
+        assert!(
+            signer::signer_nip44_encrypt("secret".to_string(), "aa".repeat(32))
+                .unwrap_err()
+                .contains("signer locked")
+        );
+        assert!(
+            signer::signer_nip44_decrypt("bad".to_string(), "aa".repeat(32))
+                .unwrap_err()
+                .contains("signer locked")
+        );
+        assert!(signer::signer_save_to_keyring("aa".repeat(32))
+            .unwrap_err()
+            .contains("signer locked"));
+        // invalid secret never replaces the (empty) signer state
+        let bad = signer::signer_unlock("not-a-secret-key".to_string()).unwrap_err();
+        assert!(bad.contains("invalid secret key"), "got {bad}");
+        assert!(signer::signer_is_locked().unwrap());
+    }
+
+    #[test]
+    fn test_signer_unlock_pubkey_and_lock_roundtrip() {
+        let _t = soshal_test_util::test_lock();
+        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (pk, _) = unlock_fresh_signer();
+        assert!(!signer::signer_is_locked().unwrap());
+        assert_eq!(signer::signer_pubkey().unwrap(), pk);
+        assert!(signer::signer_lock().unwrap());
+        assert!(signer::signer_is_locked().unwrap());
+        assert!(signer::signer_pubkey().is_err());
+    }
+
+    #[test]
+    fn test_signer_schnorr_and_text_signing() {
+        let _t = soshal_test_util::test_lock();
+        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = unlock_fresh_signer();
+        // 32-byte digest (64 hex chars) -> 64-byte schnorr sig (128 hex chars)
+        let sig = signer::signer_schnorr_sign("42".repeat(32)).unwrap();
+        assert_eq!(sig.len(), 128);
+        assert!(sig.chars().all(|c| c.is_ascii_hexdigit()));
+        // text signing hashes SHA-256 internally, then signs
+        let text_sig = signer::signer_sign_text("integration test".to_string()).unwrap();
+        assert_eq!(text_sig.len(), 128);
+        // bad hex and wrong digest length
+        let e = signer::signer_schnorr_sign("zz".to_string()).unwrap_err();
+        assert!(e.contains("invalid hex"), "got {e}");
+        let e = signer::signer_schnorr_sign("00".repeat(16)).unwrap_err();
+        assert!(e.contains("32 bytes"), "got {e}");
+    }
+
+    #[test]
+    fn test_signer_sign_unsigned_event() {
+        let _t = soshal_test_util::test_lock();
+        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (pk, _) = unlock_fresh_signer();
+        let mut v: serde_json::Value = serde_json::from_str(
+            "{\"pubkey\":\"\",\"created_at\":0,\"kind\":1,\"tags\":[],\"content\":\"hello\"}",
+        )
+        .unwrap();
+        v["pubkey"] = serde_json::json!(pk);
+        v["created_at"] = serde_json::json!(soshal_common_core::format::now_secs());
+        let signed = signer::signer_sign_unsigned(v.to_string()).unwrap();
+        let ev: serde_json::Value = serde_json::from_str(&signed).unwrap();
+        assert_eq!(ev["pubkey"], v["pubkey"]);
+        assert!(ev.get("id").is_some());
+        assert!(ev.get("sig").is_some());
+        assert_eq!(ev["sig"].as_str().unwrap().len(), 128);
+        // malformed unsigned event JSON
+        let e = signer::signer_sign_unsigned("not json".to_string()).unwrap_err();
+        assert!(e.contains("invalid unsigned event"), "got {e}");
+    }
+
+    #[test]
+    fn test_signer_nip44_encrypt_decrypt_roundtrip() {
+        let _t = soshal_test_util::test_lock();
+        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let alice = soshal_nostr_core::keys::generate_keys();
+        let bob = soshal_nostr_core::keys::generate_keys();
+        signer::signer_unlock(alice.secret_key().to_secret_hex()).unwrap();
+        let payload =
+            signer::signer_nip44_encrypt("secret dm".to_string(), bob.public_key().to_hex())
+                .unwrap();
+        // invalid recipient pubkey
+        let e = signer::signer_nip44_encrypt("x".to_string(), "not-hex".to_string()).unwrap_err();
+        assert!(e.contains("invalid recipient pubkey"), "got {e}");
+        // decrypt as bob (unlock replaces alice's key in the SIGNER static)
+        signer::signer_unlock(bob.secret_key().to_secret_hex()).unwrap();
+        let plain =
+            signer::signer_nip44_decrypt(payload.clone(), alice.public_key().to_hex()).unwrap();
+        assert_eq!(plain, "secret dm");
+        // tampered payload -> decrypt fails
+        let mut tampered = payload.into_bytes();
+        let mid = tampered.len() / 2;
+        tampered[mid] ^= 0x01;
+        let e = signer::signer_nip44_decrypt(
+            String::from_utf8(tampered).unwrap(),
+            alice.public_key().to_hex(),
+        )
+        .unwrap_err();
+        assert!(e.contains("nip44 decrypt"), "got {e}");
+        signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_signer_keyring_save_unlock_remove() {
+        let _t = soshal_test_util::test_lock();
+        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (pk, _) = unlock_fresh_signer();
+        // mismatched pubkey is rejected before any keychain access
+        let e = signer::signer_save_to_keyring("bb".repeat(32)).unwrap_err();
+        assert!(e.contains("pubkey does not match"), "got {e}");
+        // unknown account: nothing stored -> Err (keychain missing or entry absent)
+        assert!(signer::signer_unlock_from_keyring("cc".repeat(32)).is_err());
+        // save/unlock/remove roundtrip; keychain may be unavailable on
+        // headless CI, so a non-empty Err is tolerated there
+        match signer::signer_save_to_keyring(pk.clone()) {
+            Ok(true) => {
+                signer::signer_lock().unwrap();
+                assert!(signer::signer_is_locked().unwrap());
+                assert!(signer::signer_unlock_from_keyring(pk.clone()).unwrap());
+                assert!(!signer::signer_is_locked().unwrap());
+                assert_eq!(signer::signer_pubkey().unwrap(), pk);
+                match signer::signer_remove_from_keyring(pk.clone()) {
+                    Ok(true) => assert!(signer::signer_unlock_from_keyring(pk).is_err()),
+                    Ok(false) => {}
+                    Err(e) => assert!(!e.is_empty()),
+                }
+            }
+            Ok(false) => panic!("save_to_keyring returned false"),
+            Err(e) => assert!(!e.is_empty(), "keychain error must be non-empty"),
+        }
         signer::signer_lock().unwrap();
     }
 }

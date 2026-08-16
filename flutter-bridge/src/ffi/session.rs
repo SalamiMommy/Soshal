@@ -106,10 +106,7 @@ pub fn session_add_account(
             let account = SessionAccount {
                 pubkey,
                 npub,
-                last_used: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
+                last_used: soshal_common_core::format::now_secs() as u64,
                 relay_list: relays,
                 push_token: None,
             };

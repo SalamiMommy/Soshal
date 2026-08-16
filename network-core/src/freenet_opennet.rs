@@ -79,33 +79,22 @@ pub struct AnnounceOutput {
 }
 
 /// Simulates or executes an Opennet node reference announcement to active seednodes.
-pub fn announce_to_seednodes_json(input_json: &str) -> String {
-    let Ok(input) = serde_json::from_str::<AnnounceInput>(input_json) else {
-        return serde_json::to_string(&AnnounceOutput {
+pub fn announce_to_seednodes_json(input_json: &str) -> Result<String, String> {
+    if serde_json::from_str::<AnnounceInput>(input_json).is_err() {
+        return Ok(serde_json::to_string(&AnnounceOutput {
             success: false,
             total_seednodes: 0,
             successful_announcements: 0,
             seednodes_attempted: Vec::new(),
             message: "Invalid JSON input payload".to_string(),
         })
-        .unwrap_or_default();
-    };
+        .unwrap_or_default());
+    }
 
-    let seednodes = resolve_seednodes(input.custom_seednodes.as_deref());
-    let total = seednodes.len();
-
-    serde_json::to_string(&AnnounceOutput {
-        success: true,
-        total_seednodes: total,
-        successful_announcements: total,
-        seednodes_attempted: seednodes,
-        message: format!(
-            "Node reference {} successfully announced to {} seednodes (Opennet active)",
-            &input.noderef.identity.chars().take(8).collect::<String>(),
-            total
-        ),
-    })
-    .unwrap_or_default()
+    Err(
+        "freenet seednode announce unavailable: no seednode endpoint implemented (roadmap)"
+            .to_string(),
+    )
 }
 
 #[cfg(test)]
@@ -163,18 +152,15 @@ mod tests {
     }
 
     #[test]
-    fn announce_to_seednodes_json_roundtrip() {
+    fn announce_to_seednodes_json_unavailable() {
         let noderef = build_opennet_noderef("identity1234", "10.0.0.5", 22720, "sig");
         let input = AnnounceInput {
             noderef: noderef.clone(),
             custom_seednodes: Some(vec!["10.0.0.9:9000".to_string()]),
         };
         let json = serde_json::to_string(&input).unwrap();
-        let out: AnnounceOutput = serde_json::from_str(&announce_to_seednodes_json(&json)).unwrap();
-        assert!(out.success);
-        assert_eq!(out.total_seednodes, DEFAULT_SEEDNODES.len() + 1);
-        assert_eq!(out.successful_announcements, out.total_seednodes);
-        assert!(out.message.contains("identity"));
+        let err = announce_to_seednodes_json(&json).unwrap_err();
+        assert!(err.contains("seednode announce unavailable"));
         let roundtrip: AnnounceInput = serde_json::from_str(&json).unwrap();
         assert_eq!(roundtrip.noderef, noderef);
     }
@@ -182,7 +168,7 @@ mod tests {
     #[test]
     fn announce_to_seednodes_json_rejects_garbage() {
         let out: AnnounceOutput =
-            serde_json::from_str(&announce_to_seednodes_json("not json")).unwrap();
+            serde_json::from_str(&announce_to_seednodes_json("not json").unwrap()).unwrap();
         assert!(!out.success);
         assert_eq!(out.total_seednodes, 0);
         assert!(out.seednodes_attempted.is_empty());

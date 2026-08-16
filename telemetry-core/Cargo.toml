@@ -4,12 +4,12 @@ version = { workspace = true }
 edition = "2021"
 
 [dependencies]
-memmap2 = "0.9"
+memmap2 = { workspace = true }
 chacha20poly1305 = { workspace = true }
 zeroize = { workspace = true }
 getrandom = { workspace = true }
-sha2 = { workspace = true }
 soshal-common-core = { path = "../common-core" }
+soshal-crypto-core = { path = "../crypto-core" }
 
 [lints]
 workspace = true

@@ -243,8 +243,6 @@ mod tests {
     use super::*;
     use crate::ffi::{db, session};
 
-    static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
     fn tmp_db(label: &str) -> String {
         db::tmp_db(label, "notif")
     }
@@ -576,10 +574,7 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let dir =
-            std::env::temp_dir().join(format!("soshal_notif_push_{}_{}", std::process::id(), n));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = soshal_test_util::tmp_root("notif_push");
         let db_path = dir.join("app.db").to_string_lossy().to_string();
         db::db_init(db_path.clone()).unwrap();
         let session = r#"{"active_pubkey":"pk1","accounts":[{"pubkey":"pk1","npub":"npub1pk1","last_used":1,"relay_list":[]}]}"#;

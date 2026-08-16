@@ -1,6 +1,7 @@
 use crate::MAX_CONTENT_LEN;
 use crate::MAX_TAGS;
 use serde::{Deserialize, Serialize};
+use soshal_common_core::consts::{KIND_EVENT, KIND_LISTING};
 use soshal_common_core::json_util::{json_in, json_out};
 
 pub type SearchEventStub = soshal_nostr_core::models::NostrEvent;
@@ -37,7 +38,7 @@ pub fn event_to_search_result(input: &EventToSearchResultInput) -> Option<Search
     let title: String;
     let mut subtitle = String::new();
     let mut image_url: Option<String> = None;
-    match kind {
+    match kind as u16 {
         0 => {
             result_type = "user".to_string();
             match serde_json::from_str::<serde_json::Value>(&ev.content) {
@@ -71,7 +72,7 @@ pub fn event_to_search_result(input: &EventToSearchResultInput) -> Option<Search
             title = ev.content.chars().take(80).collect::<String>();
             subtitle = format!("{}...", ev.pubkey.chars().take(8).collect::<String>());
         }
-        31923 => {
+        KIND_EVENT => {
             result_type = "event".to_string();
             let [d_tag, title_tag] = find_tag_values_map(&ev.tags, ["d", "title"]);
             let d_str = d_tag.unwrap_or("");
@@ -83,7 +84,7 @@ pub fn event_to_search_result(input: &EventToSearchResultInput) -> Option<Search
             };
             subtitle = soshal_common_core::format::truncate(&ev.content, 80);
         }
-        30402 => {
+        KIND_LISTING => {
             result_type = "listing".to_string();
             let [title_tag, price_tag, image_tag] =
                 find_tag_values_map(&ev.tags, ["title", "price", "image"]);

@@ -7,8 +7,8 @@
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
+use soshal_common_core::consts::KIND_PROFILE;
 
-const KIND_PROFILE: i64 = 30082;
 const D_TAG: &str = "dating_profile";
 
 /// Dating profile card
@@ -148,7 +148,7 @@ pub fn dating_create_profile(
         "images": images,
     });
     let builder = nostr::event::EventBuilder::new(
-        nostr::event::Kind::from_u16(KIND_PROFILE as u16),
+        nostr::event::Kind::from_u16(KIND_PROFILE),
         content.to_string(),
     )
     .tags(
@@ -164,7 +164,7 @@ pub fn dating_create_profile(
         event_id,
         user_pubkey,
         content.to_string(),
-        KIND_PROFILE,
+        KIND_PROFILE as i64,
         soshal_common_core::format::now_secs(),
         serde_json::to_string(&vec![vec!["d".to_string(), D_TAG.to_string()]]).unwrap_or_default(),
         Some(name),
@@ -197,7 +197,7 @@ pub fn dating_update_profile(
         "images": images,
     });
     let builder = nostr::event::EventBuilder::new(
-        nostr::event::Kind::from_u16(KIND_PROFILE as u16),
+        nostr::event::Kind::from_u16(KIND_PROFILE),
         content.to_string(),
     )
     .tags(
@@ -213,7 +213,7 @@ pub fn dating_update_profile(
         event_id,
         user_pubkey,
         content.to_string(),
-        KIND_PROFILE,
+        KIND_PROFILE as i64,
         soshal_common_core::format::now_secs(),
         serde_json::to_string(&vec![vec!["d".to_string(), D_TAG.to_string()]]).unwrap_or_default(),
         None,
@@ -532,17 +532,32 @@ pub fn dating_filter_profiles(
 #[frb(sync, serialize)]
 pub fn dating_get_stats(user_pubkey: String) -> Result<String, String> {
     let own_json = super::db::db_query_raw(format!(
-        "SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}' AND is_deleted = 0 LIMIT 1",
+        "SELECT id, content FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}' AND is_deleted = 0 LIMIT 1",
         user_pubkey.replace('\'', "''")
     ))?;
     let own: Vec<serde_json::Value> = serde_json::from_str(&own_json).unwrap_or_default();
-    let own_id = own.first().and_then(|r| r["id"].as_str()).unwrap_or("");
+    let own_row = own.first();
+    let own_id = own_row.and_then(|r| r["id"].as_str()).unwrap_or("");
+    let photo_count = own_row
+        .and_then(|r| r["content"].as_str())
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(c).ok())
+        .map(|c| c["images"].as_array().map(|a| a.len()).unwrap_or(0))
+        .unwrap_or(0) as i64;
     let likes_json = super::db::db_query_raw(format!(
         "SELECT COUNT(*) AS c FROM reactions WHERE event_id IN \
-         (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}') AND content IN ('+','super')",
+         (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}') AND content = '+'",
         user_pubkey.replace('\'', "''")
     ))?;
     let likes: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&likes_json)
+        .ok()
+        .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
+        .unwrap_or(0);
+    let superlikes_json = super::db::db_query_raw(format!(
+        "SELECT COUNT(*) AS c FROM reactions WHERE event_id IN \
+         (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}') AND content = 'super'",
+        user_pubkey.replace('\'', "''")
+    ))?;
+    let superlikes: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&superlikes_json)
         .ok()
         .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
         .unwrap_or(0);
@@ -561,10 +576,10 @@ pub fn dating_get_stats(user_pubkey: String) -> Result<String, String> {
     let stats = serde_json::json!({
         "profile_views": views,
         "likes_received": likes,
-        "superlike_received": 0,
+        "superlike_received": superlikes,
         "matches": matches,
         "profile_complete": !own_id.is_empty(),
-        "photo_count": 0,
+        "photo_count": photo_count,
     });
     Ok(serde_json::to_string(&stats).unwrap()).into()
 }
@@ -664,7 +679,7 @@ mod tests {
         let insert = |id: &str, pubkey: &str, age: i64, gh: &str, ts: i64| {
             super::super::db::db_execute_raw(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
-                 VALUES ('{id}','{pubkey}','{{\"age\":{age},\"bio\":\"\",\"locationGeohash\":\"{gh}\",\"interests\":[]}}',30082,{ts},'[]','synced',0)"
+                 VALUES ('{id}','{pubkey}','{{\"age\":{age},\"bio\":\"\",\"locationGeohash\":\"{gh}\",\"interests\":[]}}',{KIND_PROFILE},{ts},'[]','synced',0)"
             ))
         };
         assert!(insert("own1", "own", 30, "u33dc0", 300).is_ok());
@@ -687,7 +702,7 @@ mod tests {
         let insert = |id: &str, pubkey: &str, smoking: &str, ts: i64| {
             super::super::db::db_execute_raw(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
-                 VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"u33dc0\",\"interests\":[],\"smoking\":\"{smoking}\"}}',30082,{ts},'[]','synced',0)"
+                 VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"u33dc0\",\"interests\":[],\"smoking\":\"{smoking}\"}}',{KIND_PROFILE},{ts},'[]','synced',0)"
             ))
         };
         assert!(insert("self1", "selfpk", "never", 300).is_ok());

@@ -8,10 +8,8 @@
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
+use soshal_common_core::consts::{KIND_LISTING, KIND_ORDER};
 use soshal_db_core::repos::escrow::EscrowRepo;
-
-const KIND_LISTING: i64 = 30402;
-const KIND_ORDER: i64 = 30403;
 
 /// Marketplace listing info
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -264,7 +262,7 @@ pub fn marketplace_get_listing(listing_id: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn marketplace_get_content(listing_id: String) -> Result<String, String> {
     let sql = format!(
-        "SELECT content FROM posts WHERE id = '{}' AND kind = 30402 LIMIT 1",
+        "SELECT content FROM posts WHERE id = '{}' AND kind = {KIND_LISTING} LIMIT 1",
         listing_id.replace('\'', "''")
     );
     let json = super::db::db_query_raw(sql)?;
@@ -317,7 +315,7 @@ pub fn marketplace_create_listing(
         "escrowEnabled": true,
     });
     let builder = nostr::event::EventBuilder::new(
-        nostr::event::Kind::from_u16(KIND_LISTING as u16),
+        nostr::event::Kind::from_u16(KIND_LISTING),
         content.to_string(),
     )
     .tags(
@@ -337,7 +335,7 @@ pub fn marketplace_create_listing(
         event_id,
         seller_pubkey,
         content.to_string(),
-        KIND_LISTING,
+        KIND_LISTING as i64,
         now,
         serde_json::to_string(&vec![
             vec!["d".to_string(), d_tag],
@@ -377,7 +375,7 @@ pub fn marketplace_update_listing(
         id: listing_id,
         pubkey: seller_pubkey,
         content: content.to_string(),
-        kind: KIND_LISTING,
+        kind: KIND_LISTING as i64,
         created_at: now,
         tags_json: String::new(),
         sig: None,
@@ -497,7 +495,7 @@ pub fn marketplace_create_order(
         id.clone(),
         buyer_pubkey,
         content.to_string(),
-        KIND_ORDER,
+        KIND_ORDER as i64,
         now,
         serde_json::to_string(&vec![
             vec!["p".to_string(), seller_pubkey],

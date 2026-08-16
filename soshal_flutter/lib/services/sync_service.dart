@@ -28,6 +28,12 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
 
   bool get started => _started;
 
+  Map<String, dynamic>? _lastRollupVerification;
+
+  /// Result of the latest rollup commitment verification (null until one
+  /// runs). Honest label: SHA-256 commitment check, not a ZK proof.
+  Map<String, dynamic>? get lastRollupVerification => _lastRollupVerification;
+
   void _scheduleNotify() {
     _notifyDebounceTimer?.cancel();
     _notifyDebounceTimer = Timer(const Duration(milliseconds: 150), () {
@@ -40,6 +46,7 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
       {required FeedService feed, required MessagingService messaging}) {
     _feed = feed;
     _messaging = messaging;
+    feed.onRefreshed = () => unawaited(reconcileFeedWithPeer(''));
   }
 
   /// Start the engine + stream subscription for the given relays.
@@ -129,7 +136,8 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
-  /// Verify a ZK-STARK state rollup payload for instantaneous feed thread validation
+  /// Verify a SHA-256 state-rollup commitment payload (honest label: this is
+  /// a commitment check, NOT a ZK proof).
   Future<Map<String, dynamic>> verifyZkRollup(String rollupJson) async {
     try {
       final resJson = RustLib.instance.api.crateFfiZkZkVerifyRollup(
@@ -254,7 +262,9 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
-  /// Apply a verified ZK state rollup directly to the database cache.
+  /// Apply a SHA-256 commitment rollup to the database cache, then re-verify
+  /// it so the honest verification status is exposed via
+  /// [lastRollupVerification].
   Future<bool> applyRollup(String rollupJson) async {
     try {
       final dbPath = await FfiBridge.getDbPath();
@@ -262,10 +272,12 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
         dbPath: dbPath,
         rollupJson: rollupJson,
       );
+      _lastRollupVerification = ok ? await verifyZkRollup(rollupJson) : null;
       clearLastError();
       notifyListeners();
       return ok;
     } catch (e, st) {
+      _lastRollupVerification = null;
       setLastError(e, st);
       notifyListeners();
       return false;

@@ -10,12 +10,9 @@ mod ffi_tests {
     static ZAP_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn init_db(name: &str) -> String {
-        let path = format!(
-            "{}/soshal_zap_webrtc_{}_{}.db",
-            std::env::temp_dir().to_string_lossy(),
-            std::process::id(),
-            name
-        );
+        let path = soshal_test_util::tmp_path("zap_webrtc", &format!("{name}.db"))
+            .to_string_lossy()
+            .to_string();
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
@@ -27,136 +24,6 @@ mod ffi_tests {
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
-    }
-
-    const NWC_PUBKEY: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
-    const NWC_SECRET: &str = "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
-
-    // --- zap: LNURL parsing ------------------------------------------------
-
-    #[test]
-    fn zap_ffi_parse_lnurl_metadata_valid() {
-        let json = zap::zap_parse_lnurl_metadata("alice@example.com".to_string()).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["name"], "alice");
-        assert_eq!(v["domain"], "example.com");
-        assert_eq!(
-            v["callback"],
-            "https://example.com/.well-known/lnurlp/alice"
-        );
-    }
-
-    #[test]
-    fn zap_ffi_parse_lnurl_metadata_invalid() {
-        let no_at = zap::zap_parse_lnurl_metadata("not-an-address".to_string());
-        assert!(no_at.is_err());
-        let empty_domain = zap::zap_parse_lnurl_metadata("user@".to_string());
-        assert!(empty_domain.is_err());
-        let traversal = zap::zap_parse_lnurl_metadata("../admin@example.com".to_string());
-        assert!(traversal.is_err());
-    }
-
-    // --- zap: NWC connect/disconnect/status (in-process state only; the
-    //     connect path stores the URI Rust-side and opens no connection) ----
-
-    #[test]
-    fn zap_ffi_connect_nwc_invalid_uri() {
-        let garbage = zap::zap_connect_nwc("not a uri".to_string());
-        assert!(garbage.is_err());
-        let long = zap::zap_connect_nwc("x".repeat(5000));
-        let e = long.err().unwrap();
-        assert!(e.contains("too long"));
-    }
-
-    #[test]
-    fn zap_ffi_connect_nwc_rejects_cleartext_relay() {
-        let uri = format!(
-            "nostr+walletconnect://{NWC_PUBKEY}?relay=ws://relay.example.com&secret={NWC_SECRET}"
-        );
-        let r = zap::zap_connect_nwc(uri);
-        let e = r.err().unwrap();
-        assert!(e.contains("wss"));
-    }
-
-    #[test]
-    fn zap_ffi_connect_nwc_roundtrip() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        assert!(zap::zap_connect_nwc(zap::NWC_URI.to_string()).unwrap());
-
-        let status = zap::zap_get_nwc_status().unwrap();
-        let v: serde_json::Value = serde_json::from_str(&status).unwrap();
-        assert_eq!(v["connected"], true);
-        assert_eq!(v["wallet_pubkey"], NWC_PUBKEY);
-        assert_eq!(zap::zap_get_nwc_pubkey().unwrap(), NWC_PUBKEY);
-
-        assert!(zap::zap_disconnect_nwc().unwrap());
-        let status = zap::zap_get_nwc_status().unwrap();
-        let v: serde_json::Value = serde_json::from_str(&status).unwrap();
-        assert_eq!(v["connected"], false);
-        let e = zap::zap_get_nwc_pubkey().err().unwrap();
-        assert!(!e.is_empty());
-    }
-
-    #[test]
-    fn zap_ffi_disconnect_returns_ok_when_not_connected() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let _ = zap::zap_disconnect_nwc();
-        assert!(zap::zap_disconnect_nwc().unwrap());
-        let status = zap::zap_get_nwc_status().unwrap();
-        let v: serde_json::Value = serde_json::from_str(&status).unwrap();
-        assert_eq!(v["connected"], false);
-        assert!(zap::zap_get_nwc_pubkey().is_err());
-    }
-
-    // --- zap: network-gated fns probe only the failure-before-connect path
-    //     (disconnected state); never opens an NWC relay connection --------
-
-    #[tokio::test]
-    async fn zap_ffi_fetch_invoice_fails_before_connect() {
-        {
-            let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            let _ = zap::zap_disconnect_nwc();
-        }
-        let bad_lnurl = zap::zap_fetch_invoice(
-            "not-an-address".to_string(),
-            1000,
-            String::new(),
-            String::new(),
-        )
-        .await;
-        let e = bad_lnurl.err().unwrap();
-        assert!(e.contains("LNURL parse failed"));
-
-        let zero_amount = zap::zap_fetch_invoice(
-            "bob@example.com".to_string(),
-            0,
-            String::new(),
-            String::new(),
-        )
-        .await;
-        let e = zero_amount.err().unwrap();
-        assert!(e.contains("amount must be positive"));
-
-        let disconnected = zap::zap_fetch_invoice(
-            "bob@example.com".to_string(),
-            1000,
-            String::new(),
-            String::new(),
-        )
-        .await;
-        let e = disconnected.err().unwrap();
-        assert!(e.contains("NWC not connected"));
-    }
-
-    #[tokio::test]
-    async fn zap_ffi_send_payment_fails_when_disconnected() {
-        {
-            let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            let _ = zap::zap_disconnect_nwc();
-        }
-        let r = zap::zap_send_payment("lnbc1fake".to_string()).await;
-        let e = r.err().unwrap();
-        assert!(e.contains("NWC not connected"));
     }
 
     // --- zap: DB-backed fns (no db_init in this binary -> deterministic
@@ -254,13 +121,14 @@ mod ffi_tests {
     }
 
     #[test]
-    fn webrtc_ffi_get_turn_servers() {
+    fn webrtc_ffi_get_turn_servers_unconfigured_errs() {
         let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let path = init_db("webrtc_turn_empty");
-        assert_eq!(webrtc::webrtc_get_turn_servers(None).unwrap(), "[]");
+        let expected = "turn provisioning unavailable: no turn_endpoint configured (server endpoint on roadmap)".to_string();
+        assert_eq!(webrtc::webrtc_get_turn_servers(None).unwrap_err(), expected);
         assert_eq!(
-            webrtc::webrtc_get_turn_servers(Some("token".to_string())).unwrap(),
-            "[]"
+            webrtc::webrtc_get_turn_servers(Some("token".to_string())).unwrap_err(),
+            expected
         );
         cleanup(&path);
     }
@@ -418,5 +286,140 @@ mod ffi_tests {
             .unwrap(),
             "a=candidate:1 1 UDP 2130706431 8.8.8.8 54321 typ srflx\r\nc=IN IP4 127.0.0.1"
         );
+    }
+
+    // --- zap: NWC lifecycle + LNURL parsing (no live NWC exchange) --------
+    // NWC state is process-global (statics in the lib) -> ZAP_TEST_LOCK.
+
+    #[test]
+    fn zap_ffi_parse_lnurl_metadata_valid() {
+        let json = zap::zap_parse_lnurl_metadata("alice@example.com".to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["name"], "alice");
+        assert_eq!(v["domain"], "example.com");
+        assert_eq!(
+            v["callback"],
+            "https://example.com/.well-known/lnurlp/alice"
+        );
+        let json = zap::zap_parse_lnurl_metadata("bob_1.x@sub.example.org".to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["name"], "bob_1.x");
+        assert_eq!(v["domain"], "sub.example.org");
+        assert!(v["callback"].as_str().unwrap().starts_with("https://"));
+    }
+
+    #[test]
+    fn zap_ffi_parse_lnurl_metadata_rejects_malformed() {
+        for bad in [
+            String::new(),
+            "not-an-address".to_string(),
+            "@example.com".to_string(),
+            "user@".to_string(),
+            "../admin@example.com".to_string(),
+            "us er@example.com".to_string(),
+            format!("{}@example.com", "a".repeat(65)),
+        ] {
+            assert!(
+                zap::zap_parse_lnurl_metadata(bad.clone()).is_err(),
+                "accepted {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn zap_ffi_connect_nwc_rejects_invalid_uri() {
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = zap::zap_disconnect_nwc();
+        let e = zap::zap_connect_nwc("not-a-wallet-connect-uri".to_string()).unwrap_err();
+        assert!(e.contains("invalid NWC URI"), "got {e}");
+        let long = format!("nostr+walletconnect://{}", "a".repeat(5000));
+        let e = zap::zap_connect_nwc(long).unwrap_err();
+        assert!(e.contains("NWC URI too long"), "got {e}");
+        // failed connects never leave NWC state behind
+        assert!(zap::zap_get_nwc_pubkey().is_err());
+    }
+
+    #[test]
+    fn zap_ffi_nwc_connect_status_pubkey_never_leaks_secret() {
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = zap::zap_disconnect_nwc();
+        let status = zap::zap_get_nwc_status().unwrap();
+        let v: serde_json::Value = serde_json::from_str(&status).unwrap();
+        assert_eq!(v["connected"], false);
+        assert!(zap::zap_get_nwc_pubkey().is_err());
+
+        assert!(zap::zap_connect_nwc(zap::NWC_URI.to_string()).unwrap());
+        let status = zap::zap_get_nwc_status().unwrap();
+        let v: serde_json::Value = serde_json::from_str(&status).unwrap();
+        assert_eq!(v["connected"], true);
+        assert_eq!(
+            v["wallet_pubkey"],
+            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+        );
+        // Security invariant: the NWC secret never leaves Rust.
+        assert!(
+            !status.contains("f0f0f0f0"),
+            "status leaked NWC secret material"
+        );
+        assert_eq!(
+            zap::zap_get_nwc_pubkey().unwrap(),
+            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+        );
+
+        assert!(zap::zap_disconnect_nwc().unwrap());
+        let status = zap::zap_get_nwc_status().unwrap();
+        let v: serde_json::Value = serde_json::from_str(&status).unwrap();
+        assert_eq!(v["connected"], false);
+        assert!(zap::zap_get_nwc_pubkey().is_err());
+    }
+
+    // Lock held across the await deliberately: ZAP_TEST_LOCK serializes the
+    // process-global NWC state so no other test can mutate it mid-flight.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn zap_ffi_fetch_invoice_error_paths_no_network() {
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = zap::zap_disconnect_nwc();
+        // invalid lud16 -> parse error before any NWC state
+        let e = zap::zap_fetch_invoice(
+            "not-an-address".to_string(),
+            1000,
+            String::new(),
+            String::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(e.contains("LNURL parse failed"), "got {e}");
+        // zero amount -> rejected before any NWC state
+        let e = zap::zap_fetch_invoice(
+            "bob@example.com".to_string(),
+            0,
+            String::new(),
+            String::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(e.contains("amount must be positive"), "got {e}");
+        // no NWC connection -> fails before any relay exchange
+        let e = zap::zap_fetch_invoice(
+            "bob@example.com".to_string(),
+            1000,
+            "thanks".to_string(),
+            String::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(e.contains("NWC not connected"), "got {e}");
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn zap_ffi_send_payment_error_paths_no_network() {
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = zap::zap_disconnect_nwc();
+        let e = zap::zap_send_payment("lnbc1fake".to_string())
+            .await
+            .unwrap_err();
+        assert!(e.contains("NWC not connected"), "got {e}");
     }
 }

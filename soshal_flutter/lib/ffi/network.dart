@@ -271,15 +271,6 @@ String networkReticulumStatus() =>
 bool networkReticulumAnnounce({required String pubkey}) => RustLib.instance.api
     .crateFfiNetworkNetworkReticulumAnnounce(pubkey: pubkey);
 
-/// Close the Reticulum link to a destination (hex address).
-bool networkReticulumCloseLink({required String destHex}) =>
-    RustLib.instance.api
-        .crateFfiNetworkNetworkReticulumCloseLink(destHex: destHex);
-
-/// Active Reticulum links (JSON: LinkInfo list).
-String networkReticulumGetActiveLinks() =>
-    RustLib.instance.api.crateFfiNetworkNetworkReticulumGetActiveLinks();
-
 /// Prune stale Reticulum links; returns count removed.
 BigInt networkReticulumPruneStaleLinks() =>
     RustLib.instance.api.crateFfiNetworkNetworkReticulumPruneStaleLinks();
@@ -288,10 +279,6 @@ BigInt networkReticulumPruneStaleLinks() =>
 BigInt networkReticulumPruneRoutes({required BigInt nowSecs}) =>
     RustLib.instance.api
         .crateFfiNetworkNetworkReticulumPruneRoutes(nowSecs: nowSecs);
-
-/// Clear all known Reticulum nodes.
-bool networkReticulumResetNodes() =>
-    RustLib.instance.api.crateFfiNetworkNetworkReticulumResetNodes();
 
 /// Proof-of-work node id for a pubkey (hex, `null` when the static nonce fails).
 String? networkSkademliaGenerateNodeId(

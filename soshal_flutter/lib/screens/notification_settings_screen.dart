@@ -28,8 +28,7 @@ class _NotificationSettingsScreenState
 
   Future<void> _loadPushState() async {
     try {
-      final json =
-          await context.read<SessionService>().getActiveAccountJson();
+      final json = await context.read<SessionService>().getActiveAccountJson();
       final token = json['push_token'] as String?;
       if (mounted) {
         setState(() {
@@ -79,6 +78,9 @@ class _NotificationSettingsScreenState
     // register it; otherwise stay honest: no fake toggle.
     if (_token.isNotEmpty) {
       try {
+        // Mirror the token into the Rust session file for the active
+        // account; the settings screen reads it back on load.
+        await session.registerPushToken(_token);
         await api.registerPush(pubkey, _token);
         if (!mounted) return;
         setState(() => _pushEnabled = true);

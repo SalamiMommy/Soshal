@@ -5,9 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'routes/app_router.dart';
 import 'services/ffi_bridge.dart';
-import 'ffi/auth.dart' as ffi_auth;
-import 'ffi/db.dart' as ffi_db;
-import 'frb_generated.dart';
+
 import 'services/auth_service.dart';
 import 'services/feed_service.dart';
 import 'services/session_service.dart';
@@ -132,7 +130,7 @@ class _SoshalAppState extends State<SoshalApp> {
       // Open the shared settings DB (migrations included) before any
       // service touches it — shell/theme/settings reads fail otherwise
       // ("database not initialized").
-      ffi_db.dbInit(dbPath: await FfiBridge.getDbPath());
+      context.read<SettingsService>().dbInit(dbPath: await FfiBridge.getDbPath());
       if (!mounted) return;
       context.read<TelemetryService>().init();
       context.read<ShellService>().initialize();
@@ -164,12 +162,13 @@ class _SoshalAppState extends State<SoshalApp> {
         } else if (uri.scheme == 'nostr') {
           await _handleNostrDeepLink(route);
         } else {
-          await RustLib.instance.api
-              .crateFfiProtocolHandlerProtocolHandleRequest(
-            scheme: uri.scheme,
-            host: uri.host,
-            path: uri.path,
-          );
+          await context
+              .read<AuthService>()
+              .handleNostrProtocolRequest(
+                scheme: uri.scheme,
+                host: uri.host,
+                path: uri.path,
+              );
         }
       } catch (e) {
         debugPrint('initial deep link: $e');
@@ -190,7 +189,7 @@ class _SoshalAppState extends State<SoshalApp> {
     switch (hrp) {
       case 'npub':
       case 'nprofile':
-        final hex = ffi_auth.authNpubDecode(npub: rest);
+        final hex = await context.read<AuthService>().decodeNpub(rest);
         if (hex.isEmpty) return;
         await AppRouter.router.push('/profile/$hex');
       case 'note':

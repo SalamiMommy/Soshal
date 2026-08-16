@@ -7,12 +7,9 @@ mod ffi_tests {
 
     fn init_db(name: &str) -> (String, std::sync::MutexGuard<'static, ()>) {
         let g = DB_LOCK.lock().unwrap();
-        let path = format!(
-            "{}/soshal_mod_{}_{}.db",
-            std::env::temp_dir().to_string_lossy(),
-            std::process::id(),
-            name
-        );
+        let path = soshal_test_util::tmp_path("mod", name)
+            .to_string_lossy()
+            .to_string();
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));

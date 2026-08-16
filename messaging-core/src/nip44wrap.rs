@@ -41,35 +41,31 @@ pub fn unwrap_message(payload: &str, key: &[u8; nip44::KEY_LEN]) -> Result<Vec<u
 mod tests {
     use super::*;
 
-    fn key(byte: u8) -> [u8; nip44::KEY_LEN] {
-        [byte; nip44::KEY_LEN]
-    }
-
     #[test]
     fn wrap_unwrap_roundtrip() {
         let plaintext = b"dm wrap roundtrip";
-        let wrapped = wrap_message(plaintext, &key(0x42)).unwrap();
+        let wrapped = wrap_message(plaintext, &soshal_test_util::fill_key()).unwrap();
         assert!(!wrapped.ciphertext.is_empty());
         assert!(wrapped.conversation_pubkey.is_none());
         assert_eq!(
-            unwrap_message(&wrapped.ciphertext, &key(0x42)).unwrap(),
+            unwrap_message(&wrapped.ciphertext, &soshal_test_util::fill_key()).unwrap(),
             plaintext
         );
     }
 
     #[test]
     fn wrong_key_fails() {
-        let wrapped = wrap_message(b"secret", &key(0x42)).unwrap();
-        assert!(unwrap_message(&wrapped.ciphertext, &key(0x01)).is_err());
+        let wrapped = wrap_message(b"secret", &soshal_test_util::fill_key()).unwrap();
+        assert!(unwrap_message(&wrapped.ciphertext, &[0u8; nip44::KEY_LEN]).is_err());
     }
 
     #[test]
     fn tampered_ciphertext_fails() {
-        let wrapped = wrap_message(b"secret", &key(0x42)).unwrap();
+        let wrapped = wrap_message(b"secret", &soshal_test_util::fill_key()).unwrap();
         let mut bytes = wrapped.ciphertext.into_bytes();
         let mid = bytes.len() / 2;
         bytes[mid] ^= 0x01;
         let tampered = String::from_utf8(bytes).unwrap();
-        assert!(unwrap_message(&tampered, &key(0x42)).is_err());
+        assert!(unwrap_message(&tampered, &soshal_test_util::fill_key()).is_err());
     }
 }

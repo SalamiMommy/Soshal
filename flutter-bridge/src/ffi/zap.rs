@@ -284,40 +284,6 @@ mod tests {
     }
 
     #[test]
-    fn test_connect_nwc_rejects_invalid_uris() {
-        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let _ = zap_disconnect_nwc();
-        assert!(zap_connect_nwc("not a uri".to_string()).is_err());
-        let bad_scheme = zap_connect_nwc(format!(
-            "https://{NWC_PUBKEY}?relay=wss://relay.damus.io&secret={NWC_SECRET}"
-        ));
-        assert!(bad_scheme.is_err());
-        let cleartext = zap_connect_nwc(format!(
-            "nostr+walletconnect://{NWC_PUBKEY}?relay=ws://relay.example.com&secret={NWC_SECRET}"
-        ));
-        let e = cleartext.err().unwrap();
-        assert!(e.contains("wss"));
-        let no_relay = zap_connect_nwc(format!(
-            "nostr+walletconnect://{NWC_PUBKEY}?secret={NWC_SECRET}"
-        ));
-        let e = no_relay.err().unwrap();
-        assert!(e.contains("relay"));
-        let no_secret = zap_connect_nwc(format!(
-            "nostr+walletconnect://{NWC_PUBKEY}?relay=wss://relay.damus.io"
-        ));
-        let e = no_secret.err().unwrap();
-        assert!(e.contains("secret"));
-        let bad_pubkey = zap_connect_nwc(format!(
-            "nostr+walletconnect://short?relay=wss://relay.damus.io&secret={NWC_SECRET}"
-        ));
-        assert!(bad_pubkey.is_err());
-        let long = zap_connect_nwc("x".repeat(5000));
-        let e = long.err().unwrap();
-        assert!(e.contains("too long"));
-        assert!(zap_connect_nwc(String::new()).is_err());
-    }
-
-    #[test]
     fn test_connect_nwc_roundtrip_status_and_pubkey() {
         let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = zap_disconnect_nwc();
@@ -383,34 +349,5 @@ mod tests {
         let r = zap_send_payment("lnbc1fake".to_string()).await;
         let e = r.err().unwrap();
         assert!(e.contains("NWC not connected"));
-    }
-
-    #[test]
-    fn test_bolt11_amount_parse() {
-        use soshal_zap_core::{bolt11_amount_sats, parse_msats_from_bolt11};
-        assert_eq!(parse_msats_from_bolt11("lnbc2500u"), Ok(250_000_000));
-        assert_eq!(parse_msats_from_bolt11("LNBC2500U"), Ok(250_000_000));
-        assert_eq!(parse_msats_from_bolt11("lnbc10m"), Ok(1_000_000_000));
-        assert_eq!(parse_msats_from_bolt11("lnbc1"), Ok(100_000_000_000));
-        assert_eq!(parse_msats_from_bolt11("lnbc1p"), Ok(0));
-        assert_eq!(parse_msats_from_bolt11("lnbc"), Ok(0));
-        assert_eq!(parse_msats_from_bolt11(""), Ok(0));
-        assert_eq!(parse_msats_from_bolt11("garbage"), Ok(0));
-        assert_eq!(parse_msats_from_bolt11(&"x".repeat(4097)), Ok(0));
-        assert!(parse_msats_from_bolt11("lnbc99999999999999999999m").is_err());
-        assert_eq!(bolt11_amount_sats("lnbc2500u"), Some(250_000));
-        assert_eq!(bolt11_amount_sats("lnbc1p"), None);
-        assert_eq!(bolt11_amount_sats("lnbc"), None);
-    }
-
-    #[test]
-    fn test_bolt11_validate_pay_invoice() {
-        use soshal_zap_core::nwc::validate_pay_invoice;
-        assert!(validate_pay_invoice("").is_err());
-        assert!(validate_pay_invoice(&"x".repeat(4097)).is_err());
-        assert!(validate_pay_invoice("lnbc2500u").is_ok());
-        assert!(validate_pay_invoice("lnbc10m").is_ok());
-        let e = validate_pay_invoice("lnbc20m").err().unwrap();
-        assert!(e.contains("cap"));
     }
 }

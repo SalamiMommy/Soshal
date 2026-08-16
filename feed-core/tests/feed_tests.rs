@@ -7,19 +7,6 @@ use soshal_feed_core::ranking::{rank_posts, score_post, AlgoWeights, PostStats};
 use soshal_feed_core::reaction::{
     aggregate_message_reactions, AggregateReactionsInput, RawMessageReaction,
 };
-use soshal_nostr_core::models::NostrEvent;
-
-fn event(content: &str, tags: Vec<Vec<String>>) -> NostrEvent {
-    NostrEvent {
-        id: "id1".into(),
-        pubkey: "pk1".into(),
-        content: content.into(),
-        tags,
-        created_at: 100.0,
-        kind: 1,
-    }
-}
-
 #[test]
 fn test_validate_content() {
     assert!(validate_note_content("hello").is_ok());
@@ -29,7 +16,7 @@ fn test_validate_content() {
 
 #[test]
 fn timeline_entry_shape() {
-    let out = timeline_entry_from_event(&event("hi", vec![]));
+    let out = timeline_entry_from_event(&soshal_test_util::nostr_event("hi", vec![]));
     assert_eq!(out["id"], "id1");
     assert_eq!(out["created_at"], 100);
     assert!(out.get("tags").is_none());
@@ -37,7 +24,10 @@ fn timeline_entry_shape() {
 
 #[test]
 fn with_tags_includes_tags() {
-    let out = event_with_tags_from_event(&event("hi", vec![vec!["t".into(), "x".into()]]));
+    let out = event_with_tags_from_event(&soshal_test_util::nostr_event(
+        "hi",
+        vec![vec!["t".into(), "x".into()]],
+    ));
     assert_eq!(out["tags"][0], serde_json::json!(["t", "x"]));
 }
 
@@ -77,14 +67,14 @@ fn buffer_trims_excess() {
 #[test]
 fn reply_map_counts_once_per_event() {
     let events = vec![
-        event("r1", vec![vec!["e".into(), "t1".into()]]),
-        event("r2", vec![vec!["e".into(), "t1".into()]]),
-        event(
+        soshal_test_util::nostr_event("r1", vec![vec!["e".into(), "t1".into()]]),
+        soshal_test_util::nostr_event("r2", vec![vec!["e".into(), "t1".into()]]),
+        soshal_test_util::nostr_event(
             "r3",
             vec![vec!["e".into(), "t1".into()], vec!["e".into(), "t2".into()]],
         ),
-        event("root", vec![]),
-        event("x", vec![vec!["p".into(), "t1".into()]]),
+        soshal_test_util::nostr_event("root", vec![]),
+        soshal_test_util::nostr_event("x", vec![vec!["p".into(), "t1".into()]]),
     ];
     let map = aggregate_reply_map(&events);
     assert_eq!(map.get("t1"), Some(&3));
@@ -95,8 +85,8 @@ fn reply_map_counts_once_per_event() {
 #[test]
 fn reply_map_skips_non_kind1() {
     let events = vec![
-        event("reaction", vec![vec!["e".into(), "t1".into()]]),
-        event("reply", vec![vec!["e".into(), "t1".into()]]),
+        soshal_test_util::nostr_event("reaction", vec![vec!["e".into(), "t1".into()]]),
+        soshal_test_util::nostr_event("reply", vec![vec!["e".into(), "t1".into()]]),
     ];
     let mut events = events;
     events[0].kind = 7;
@@ -107,10 +97,10 @@ fn reply_map_skips_non_kind1() {
 #[test]
 fn reaction_map_aggregates() {
     let events = vec![
-        event("👍", vec![vec!["e".into(), "t1".into()]]),
-        event("👍", vec![vec!["e".into(), "t1".into()]]),
-        event("", vec![vec!["e".into(), "t2".into()]]),
-        event("x", vec![vec!["p".into(), "t1".into()]]),
+        soshal_test_util::nostr_event("👍", vec![vec!["e".into(), "t1".into()]]),
+        soshal_test_util::nostr_event("👍", vec![vec!["e".into(), "t1".into()]]),
+        soshal_test_util::nostr_event("", vec![vec!["e".into(), "t2".into()]]),
+        soshal_test_util::nostr_event("x", vec![vec!["p".into(), "t1".into()]]),
     ];
     let map = aggregate_reaction_map(&events);
     assert_eq!(map["t1"]["count"], 2);

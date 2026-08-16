@@ -74,8 +74,7 @@ mod tests {
 
     #[test]
     fn test_feed_window_query() {
-        let db = Database::open_in_memory().unwrap();
-        db.migrate().unwrap();
+        let db = soshal_test_util::test_db();
         let posts = fetch_feed_window(&db, 0, 10).unwrap();
         assert_eq!(posts.len(), 0);
     }

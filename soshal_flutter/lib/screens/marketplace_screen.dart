@@ -278,9 +278,17 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
           listing.sellerPubkey,
           listing.price,
         );
+        var escrowCount = '';
+        try {
+          final escrows = await api.escrowsByParticipant(pubkey);
+          escrowCount = ' (${escrows.length} total)';
+        } catch (_) {}
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Escrow $escrowId created')),
+            SnackBar(
+              content:
+                  SelectableText('Escrow $escrowId created$escrowCount'),
+            ),
           );
         }
       } catch (e) {

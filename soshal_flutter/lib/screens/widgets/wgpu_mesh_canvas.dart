@@ -71,6 +71,11 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
 
   Future<void> _initWgpuSession() async {
     try {
+      _layout.updateViewMetrics(
+        screenWidth:
+            (widget.width * MediaQuery.devicePixelRatioOf(context)).round(),
+        textScale: MediaQuery.textScalerOf(context).scale(1.0),
+      );
       final jsonStr = _layout.createRenderSession(
         width: widget.width.toInt(),
         height: widget.height.toInt(),

@@ -10,21 +10,6 @@ use soshal_search_core::row_map::{map_search_row, map_search_row_json, SearchRow
 use soshal_search_core::vector_search::{cosine_similarity, rank_vector_documents, VectorDocument};
 use soshal_search_core::{MAX_CONTENT_LEN, MAX_FTS5_TERMS};
 
-fn event(
-    kind: u32,
-    content: &str,
-    tags: Vec<Vec<String>>,
-) -> soshal_nostr_core::models::NostrEvent {
-    soshal_nostr_core::models::NostrEvent {
-        id: "id1".into(),
-        pubkey: "pubkey1".into(),
-        content: content.into(),
-        tags,
-        created_at: 1234.0,
-        kind,
-    }
-}
-
 #[test]
 fn sanitize_fts5_term_strips_punctuation() {
     assert_eq!(sanitize_fts5_term("hello").as_deref(), Some("hello"));
@@ -169,7 +154,7 @@ fn map_search_row_json_rejects_invalid_or_oversize() {
 #[test]
 fn event_to_search_result_maps_user_kind() {
     let input = EventToSearchResultInput {
-        event: event(
+        event: soshal_test_util::nostr_event_kind(
             0,
             r#"{"display_name":"Alice","about":"hello","picture":"https://x/a"}"#,
             vec![],
@@ -186,31 +171,31 @@ fn event_to_search_result_maps_user_kind() {
 #[test]
 fn event_to_search_result_user_falls_back_to_pubkey_prefix() {
     let input = EventToSearchResultInput {
-        event: event(0, "not-json", vec![]),
+        event: soshal_test_util::nostr_event_kind(0, "not-json", vec![]),
         kind: 0,
     };
     let out = event_to_search_result(&input).unwrap();
-    assert_eq!(out.title, "pubkey1");
+    assert_eq!(out.title, "pk1");
 }
 
 #[test]
 fn event_to_search_result_maps_post_kind() {
     let content = "post content here";
     let input = EventToSearchResultInput {
-        event: event(1, content, vec![]),
+        event: soshal_test_util::nostr_event_kind(1, content, vec![]),
         kind: 1,
     };
     let out = event_to_search_result(&input).unwrap();
     assert_eq!(out.result_type, "post");
     assert_eq!(out.title, content);
-    assert_eq!(out.subtitle, "pubkey1...");
+    assert_eq!(out.subtitle, "pk1...");
 }
 
 #[test]
 fn event_to_search_result_post_truncates_title() {
     let content = "x".repeat(100);
     let input = EventToSearchResultInput {
-        event: event(1, &content, vec![]),
+        event: soshal_test_util::nostr_event_kind(1, &content, vec![]),
         kind: 1,
     };
     let out = event_to_search_result(&input).unwrap();
@@ -220,7 +205,7 @@ fn event_to_search_result_post_truncates_title() {
 #[test]
 fn event_to_search_result_maps_event_kind_with_title_tag() {
     let input = EventToSearchResultInput {
-        event: event(
+        event: soshal_test_util::nostr_event_kind(
             31923,
             "some event content",
             vec![
@@ -238,7 +223,7 @@ fn event_to_search_result_maps_event_kind_with_title_tag() {
 #[test]
 fn event_to_search_result_event_kind_falls_back_to_d_tag() {
     let input = EventToSearchResultInput {
-        event: event(
+        event: soshal_test_util::nostr_event_kind(
             31923,
             "content",
             vec![vec!["d".into(), "fallback-d".into()]],
@@ -252,7 +237,7 @@ fn event_to_search_result_event_kind_falls_back_to_d_tag() {
 #[test]
 fn event_to_search_result_maps_listing_kind() {
     let input = EventToSearchResultInput {
-        event: event(
+        event: soshal_test_util::nostr_event_kind(
             30402,
             "listing body",
             vec![
@@ -273,7 +258,7 @@ fn event_to_search_result_maps_listing_kind() {
 #[test]
 fn event_to_search_result_unsupported_kind_returns_none() {
     let input = EventToSearchResultInput {
-        event: event(7, "content", vec![]),
+        event: soshal_test_util::nostr_event_kind(7, "content", vec![]),
         kind: 7,
     };
     assert!(event_to_search_result(&input).is_none());
@@ -309,20 +294,20 @@ fn event_to_search_result_json_rejects_invalid_input() {
 fn event_to_search_result_display_name_and_listing_defaults() {
     // User metadata with displayName / name fallbacks
     let input1 = EventToSearchResultInput {
-        event: event(0, r#"{"displayName":"Bob"}"#, vec![]),
+        event: soshal_test_util::nostr_event_kind(0, r#"{"displayName":"Bob"}"#, vec![]),
         kind: 0,
     };
     assert_eq!(event_to_search_result(&input1).unwrap().title, "Bob");
 
     let input2 = EventToSearchResultInput {
-        event: event(0, r#"{"name":"Charlie"}"#, vec![]),
+        event: soshal_test_util::nostr_event_kind(0, r#"{"name":"Charlie"}"#, vec![]),
         kind: 0,
     };
     assert_eq!(event_to_search_result(&input2).unwrap().title, "Charlie");
 
     // Listing default title
     let input3 = EventToSearchResultInput {
-        event: event(30402, "listing body", vec![]),
+        event: soshal_test_util::nostr_event_kind(30402, "listing body", vec![]),
         kind: 30402,
     };
     assert_eq!(

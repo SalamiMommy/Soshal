@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use soshal_common_core::format::now_secs;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const LINK_TIMEOUT_SECS: u64 = 300; // 5 minutes
 const MAX_PENDING_LINKS: usize = 50;
@@ -117,10 +116,7 @@ impl LinkManager {
         if let Some(link) = links.get_mut(&from_dest) {
             if link.state == LinkState::Pending {
                 link.state = LinkState::Established;
-                link.last_activity = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
+                link.last_activity = now_secs() as u64;
 
                 // Store encryption context from proof
                 let encryption = ReticulumEncryption::from_key(proof_data.to_vec());
@@ -171,10 +167,7 @@ impl LinkManager {
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
 
         if let Some(link) = links.get_mut(dest) {
-            link.last_activity = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
+            link.last_activity = now_secs() as u64;
         }
     }
 
@@ -189,10 +182,7 @@ impl LinkManager {
 
     /// Prunes stale links
     pub fn prune_stale_links(&self) -> usize {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = now_secs() as u64;
 
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
         let mut enc_map = self.encryption.lock().unwrap_or_else(|e| e.into_inner());

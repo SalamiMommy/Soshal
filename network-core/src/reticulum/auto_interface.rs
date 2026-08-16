@@ -17,6 +17,7 @@ const AUTO_DISCOVERY_PORT: u16 = 4242;
 const AUTO_DISCOVERY_GROUP: &str = "ff02::1"; // IPv6 all-nodes multicast
 const BEACON_INTERVAL_MS: u64 = 5000; // 5 seconds
 const BEACON_MAGIC: &[u8] = b"RN\0"; // Reticulum magic bytes
+const BEACON_VERSION: u32 = 1; // Metadata interface version
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoInterfaceConfig {
@@ -140,7 +141,9 @@ impl AutoInterface {
         let mut beacon = Vec::new();
         beacon.extend_from_slice(BEACON_MAGIC);
         beacon.extend_from_slice(destination.0.as_ref());
-        beacon.extend_from_slice(&[0u8; 8]); // Placeholder for additional metadata
+        // Metadata: interface version (u32 LE) + beacon interval seconds (u32 LE)
+        beacon.extend_from_slice(&BEACON_VERSION.to_le_bytes());
+        beacon.extend_from_slice(&(BEACON_INTERVAL_MS as u32 / 1000).to_le_bytes());
         beacon
     }
 

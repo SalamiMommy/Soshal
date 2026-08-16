@@ -100,6 +100,17 @@ ensure_download() {
   fi
 }
 
+# Single stub fallback: writes a failing placeholder when a download fails
+create_stub() {
+  local path="$1" msg="$2"
+  cat > "$path" << EOF
+#!/system/bin/sh
+echo "$msg"
+exit 1
+EOF
+  chmod +x "$path"
+}
+
 # Download and prepare I2P router (i2pd) for Android
 ensure_i2pd() {
   local version="${I2PD_VERSION:-2.50.0}"
@@ -123,14 +134,7 @@ ensure_reticulum() {
   
   # For now, create a stub script since Reticulum requires Python runtime
   # In production, this would use Python-for-Android to package rnsd
-  cat > "$cache_dir/rnsd" << 'EOF'
-#!/system/bin/sh
-# Reticulum daemon stub for Android
-# Full implementation requires Python-for-Android packaging
-echo "Reticulum daemon requires Python runtime - not bundled in APK"
-exit 1
-EOF
-  chmod +x "$cache_dir/rnsd"
+  create_stub "$cache_dir/rnsd" "Reticulum daemon requires Python runtime - not bundled in APK"
   echo "  reticulum: stub prepared (requires Python runtime)"
 }
 
@@ -144,24 +148,14 @@ bundle_daemons() {
     cp "$DAEMONS_CACHE/i2pd/i2pd" "$ASSETS_DIR/i2pd"
   else
     # Create stub if download failed
-    cat > "$ASSETS_DIR/i2pd" << 'EOF'
-#!/system/bin/sh
-echo "I2P daemon not available - download failed"
-exit 1
-EOF
-    chmod +x "$ASSETS_DIR/i2pd"
+    create_stub "$ASSETS_DIR/i2pd" "I2P daemon not available - download failed"
   fi
   
   if [[ -f "$DAEMONS_CACHE/freenet/freenet" ]]; then
     cp "$DAEMONS_CACHE/freenet/freenet" "$ASSETS_DIR/freenet"
   else
     # Create stub if download failed
-    cat > "$ASSETS_DIR/freenet" << 'EOF'
-#!/system/bin/sh
-echo "Freenet daemon not available - download failed"
-exit 1
-EOF
-    chmod +x "$ASSETS_DIR/freenet"
+    create_stub "$ASSETS_DIR/freenet" "Freenet daemon not available - download failed"
   fi
   
   # Always use Reticulum stub (requires Python runtime)

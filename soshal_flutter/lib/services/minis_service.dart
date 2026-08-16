@@ -5,6 +5,12 @@ import 'error_log.dart';
 /// Minis: mini-app registry (URLs) plus WASI content-filter / feed-ranker
 /// plugin execution. Stateless wrapper — screens own their UI state.
 class MinisService with LastErrorMixin {
+  bool _wasmRuntimeUnavailable = false;
+
+  /// True after a plugin call fails: the WASI host is on the roadmap, so
+  /// execution is simulated and errors are expected.
+  bool get wasmRuntimeUnavailable => _wasmRuntimeUnavailable;
+
   /// Fetch known mini URLs. Backend stub returns an empty list today.
   List<String> fetchMinis() {
     try {
@@ -30,10 +36,12 @@ class MinisService with LastErrorMixin {
         wasmBytesHex: wasmBytesHex,
       );
       clearLastError();
+      _wasmRuntimeUnavailable = false;
       return result;
     } catch (e, st) {
       setLastError(e, st);
-      rethrow;
+      _wasmRuntimeUnavailable = true;
+      return '';
     }
   }
 
@@ -50,10 +58,12 @@ class MinisService with LastErrorMixin {
         wasmBytesHex: wasmBytesHex,
       );
       clearLastError();
+      _wasmRuntimeUnavailable = false;
       return ranked;
     } catch (e, st) {
       setLastError(e, st);
-      rethrow;
+      _wasmRuntimeUnavailable = true;
+      return const [];
     }
   }
 }

@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_audio_peaks_missing_file_errors() {
-        let path = std::env::temp_dir().join("soshal-storage-no-such-file.wav");
+        let path = soshal_test_util::tmp_path("storage", "no-such-file.wav");
         assert!(storage_get_audio_peaks(path.to_string_lossy().to_string()).is_err());
     }
 
@@ -120,8 +120,7 @@ mod tests {
         for s in &pcm {
             wav.extend_from_slice(&s.to_le_bytes());
         }
-        let path =
-            std::env::temp_dir().join(format!("soshal-storage-test-{}.wav", std::process::id()));
+        let path = soshal_test_util::tmp_path("storage", "fixture.wav");
         std::fs::write(&path, &wav).unwrap();
         let peaks = storage_get_audio_peaks(path.to_string_lossy().to_string()).unwrap();
         let _ = std::fs::remove_file(&path);

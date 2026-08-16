@@ -69,21 +69,9 @@ BigInt mediaStartLocalServer() =>
 bool mediaStopLocalServer() =>
     RustLib.instance.api.crateFfiMediaMediaStopLocalServer();
 
-/// Infer an image format (png/jpeg/gif/webp/…) from raw bytes, if recognizable.
-String? mediaDetectImageFormat({required List<int> bytes}) =>
-    RustLib.instance.api.crateFfiMediaMediaDetectImageFormat(bytes: bytes);
-
 /// Content-aware chunking window for a MIME type (JSON: min/avg/max).
 String mediaChunkingForMime({required String mime}) =>
     RustLib.instance.api.crateFfiMediaMediaChunkingForMime(mime: mime);
-
-/// Trim media caches under memory pressure (0 = normal, 1 = moderate, 2 = critical).
-bool mediaTrimCaches({required int level}) =>
-    RustLib.instance.api.crateFfiMediaMediaTrimCaches(level: level);
-
-/// Whether the global prefetcher would fetch media for a given list index.
-bool mediaShouldPrefetch({required int itemIndex}) =>
-    RustLib.instance.api.crateFfiMediaMediaShouldPrefetch(itemIndex: itemIndex);
 
 /// Feed scroll telemetry into the global prefetcher (velocity px/s + visible indices).
 bool mediaUpdateScrollTelemetry(
@@ -92,22 +80,6 @@ bool mediaUpdateScrollTelemetry(
         required int bottomIndex}) =>
     RustLib.instance.api.crateFfiMediaMediaUpdateScrollTelemetry(
         velocity: velocity, topIndex: topIndex, bottomIndex: bottomIndex);
-
-/// Encode a thumbhash (hex) from raw image bytes.
-String mediaEncodeThumbhash({required List<int> bytes}) =>
-    RustLib.instance.api.crateFfiMediaMediaEncodeThumbhash(bytes: bytes);
-
-/// Freenet chunking pass (JSON in, JSON out).
-String mediaChunkMediaJson({required String input}) =>
-    RustLib.instance.api.crateFfiMediaMediaChunkMediaJson(input: input);
-
-/// Freenet chunk verification pass (JSON in, JSON out).
-String mediaVerifyChunkJson({required String input}) =>
-    RustLib.instance.api.crateFfiMediaMediaVerifyChunkJson(input: input);
-
-/// Freenet chunk reconstruction pass (JSON in, JSON out).
-String mediaReconstructMediaJson({required String input}) =>
-    RustLib.instance.api.crateFfiMediaMediaReconstructMediaJson(input: input);
 
 class DecodedImageRgbaDto {
   final int width;

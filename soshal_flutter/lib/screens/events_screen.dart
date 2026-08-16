@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/events_service.dart';
+import '../services/dating_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 
@@ -73,11 +74,22 @@ class _EventsScreenState extends State<EventsScreen> {
     try {
       final api = context.read<EventsService>();
       final session = context.read<SessionService>();
+      final dating = context.read<DatingService>();
       if (_mineOnly && session.activePubkey != null) {
         await api.fetchUserEvents(session.activePubkey!);
       } else {
         await api.fetchNearby(radiusKm: _radiusKm);
       }
+      var mine = const <String>[];
+      final pk = session.activePubkey;
+      if (pk != null) {
+        try {
+          mine = (await dating.getOwnProfile(pk)).interests;
+        } catch (_) {
+          mine = const [];
+        }
+      }
+      await api.scoreEvents(mine);
     } catch (e) {
       debugPrint('events load: $e');
     }
@@ -290,7 +302,9 @@ class _EventsScreenState extends State<EventsScreen> {
                     Expanded(
                       child: _viewMode == 'calendar'
                           ? _buildCalendar(api.events)
-                          : _buildList(api.events),
+                          : _buildList([...api.events]
+                            ..sort((a, b) => (api.scores[b.id] ?? 0)
+                                .compareTo(api.scores[a.id] ?? 0))),
                     ),
                   ],
                 );

@@ -9,5 +9,8 @@ soshal-crypto-core = { path = "../crypto-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+[dev-dependencies]
+soshal-test-util = { path = "../test-util" }
+
 [lints]
 workspace = true

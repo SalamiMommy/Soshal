@@ -4312,6 +4312,7 @@ dependencies = [
  "soshal-common-core",
  "soshal-db-core",
  "soshal-nostr-core",
+ "soshal-test-util",
 ]
 
 [[package]]
@@ -4445,6 +4446,7 @@ dependencies = [
  "soshal-crypto-core",
  "soshal-nostr-core",
  "soshal-pqc-core",
+ "soshal-test-util",
  "thumbhash",
  "tokio",
  "url",
@@ -4458,6 +4460,7 @@ dependencies = [
  "serde_json",
  "soshal-common-core",
  "soshal-crypto-core",
+ "soshal-test-util",
 ]
 
 [[package]]
@@ -4561,6 +4564,7 @@ dependencies = [
  "soshal-common-core",
  "soshal-content-core",
  "soshal-nostr-core",
+ "soshal-test-util",
 ]
 
 [[package]]
@@ -4571,6 +4575,7 @@ dependencies = [
  "serde_json",
  "soshal-common-core",
  "soshal-nostr-core",
+ "soshal-test-util",
 ]
 
 [[package]]
@@ -4612,6 +4617,7 @@ dependencies = [
  "bytes",
  "serde",
  "serde_json",
+ "soshal-common-core",
  "soshal-nostr-core",
  "soshal-test-util",
  "tokio",
@@ -4632,6 +4638,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "soshal-common-core",
+ "soshal-crypto-core",
  "soshal-db-core",
  "soshal-network-core",
  "soshal-test-util",
@@ -4646,8 +4653,8 @@ dependencies = [
  "chacha20poly1305",
  "getrandom 0.4.3",
  "memmap2",
- "sha2",
  "soshal-common-core",
+ "soshal-crypto-core",
  "soshal-test-util",
  "zeroize",
 ]
@@ -4656,7 +4663,9 @@ dependencies = [
 name = "soshal-test-util"
 version = "0.1.0"
 dependencies = [
+ "nostr",
  "soshal-db-core",
+ "soshal-nostr-core",
 ]
 
 [[package]]

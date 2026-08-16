@@ -149,9 +149,8 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
   }
 
   void _showQrCode() {
-    final npub = context
-        .read<ProfileService>()
-        .npubEncode(publicKey: widget.pubkey);
+    final npub =
+        context.read<ProfileService>().npubEncode(publicKey: widget.pubkey);
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(

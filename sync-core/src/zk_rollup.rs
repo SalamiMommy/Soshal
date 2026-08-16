@@ -8,7 +8,6 @@
 
 use libsql::{params, Connection};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use soshal_db_core::block_on;
 use std::sync::OnceLock;
 
@@ -83,12 +82,12 @@ impl ZkRollupEngine {
 
         // Verify commitment binding:
         // Hash(genesis_root || final_state_root || operation_count) must match proof tag
-        let mut hasher = Sha256::new();
-        hasher.update(rollup.thread_id.as_bytes());
-        hasher.update(rollup.genesis_root.as_bytes());
-        hasher.update(rollup.final_state_root.as_bytes());
-        hasher.update(rollup.operation_count.to_le_bytes());
-        let expected_digest = hasher.finalize();
+        let mut input = Vec::new();
+        input.extend_from_slice(rollup.thread_id.as_bytes());
+        input.extend_from_slice(rollup.genesis_root.as_bytes());
+        input.extend_from_slice(rollup.final_state_root.as_bytes());
+        input.extend_from_slice(&rollup.operation_count.to_le_bytes());
+        let expected_digest = soshal_crypto_core::hash::sha256(&input);
 
         // Commitment check: first 32 bytes must contain the digest
         let is_valid = if proof_bytes.len() >= 32 {
@@ -188,30 +187,28 @@ pub fn verify_zk_rollup_json(rollup_json: &str) -> String {
 mod tests {
     use super::*;
     use soshal_db_core::query::query_first;
-    use soshal_db_core::Database;
 
     fn valid_rollup(thread_id: &str, ops: u64) -> ZkCrdtRollup {
         let genesis = "0000000000000000000000000000000000000000000000000000000000000000";
         let final_state = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
-        let mut hasher = Sha256::new();
-        hasher.update(thread_id.as_bytes());
-        hasher.update(genesis.as_bytes());
-        hasher.update(final_state.as_bytes());
-        hasher.update(ops.to_le_bytes());
+        let mut input = Vec::new();
+        input.extend_from_slice(thread_id.as_bytes());
+        input.extend_from_slice(genesis.as_bytes());
+        input.extend_from_slice(final_state.as_bytes());
+        input.extend_from_slice(&ops.to_le_bytes());
         ZkCrdtRollup {
             thread_id: thread_id.to_string(),
             genesis_root: genesis.to_string(),
             final_state_root: final_state.to_string(),
             operation_count: ops,
-            proof_bytes_hex: hex::encode(hasher.finalize()),
+            proof_bytes_hex: soshal_crypto_core::hash::sha256_hex(&input),
             proof_type: ZkProofType::RiscZeroStark,
         }
     }
 
     #[test]
     fn apply_rollup_to_db_writes_row_and_upserts() {
-        let db = Database::open_in_memory().unwrap();
-        db.migrate().unwrap();
+        let db = soshal_test_util::test_db();
         let conn = db.conn().unwrap();
 
         let engine = ZkRollupEngine::new();
@@ -249,8 +246,7 @@ mod tests {
 
     #[test]
     fn apply_rollup_to_db_rejects_invalid_proof() {
-        let db = Database::open_in_memory().unwrap();
-        db.migrate().unwrap();
+        let db = soshal_test_util::test_db();
         let conn = db.conn().unwrap();
         let mut rollup = valid_rollup("t2", 1);
         rollup.proof_bytes_hex = "zz".to_string();
@@ -301,14 +297,12 @@ mod tests {
         let final_state = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
         let ops = 500u64;
 
-        let mut hasher = Sha256::new();
-        hasher.update(thread_id.as_bytes());
-        hasher.update(genesis.as_bytes());
-        hasher.update(final_state.as_bytes());
-        hasher.update(ops.to_le_bytes());
-        let digest = hasher.finalize();
-
-        let proof_hex = hex::encode(digest);
+        let mut input = Vec::new();
+        input.extend_from_slice(thread_id.as_bytes());
+        input.extend_from_slice(genesis.as_bytes());
+        input.extend_from_slice(final_state.as_bytes());
+        input.extend_from_slice(&ops.to_le_bytes());
+        let proof_hex = soshal_crypto_core::hash::sha256_hex(&input);
 
         let rollup = ZkCrdtRollup {
             thread_id: thread_id.to_string(),

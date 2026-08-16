@@ -165,7 +165,9 @@ async fn engine_loop(
                 ])
                 .since(since_meta),
             // Minis (31020): mini-app registry URLs land in `posts`.
-            Filter::new().kinds([Kind::from(31020)]).since(since_meta),
+            Filter::new()
+                .kinds([Kind::from(soshal_common_core::consts::KIND_MINIS)])
+                .since(since_meta),
             // Self-sync: re-import our own reaction/post events + caches.
             Filter::new().kinds([Kind::Reaction]).authors([pk]),
             Filter::new().authors([pk]),

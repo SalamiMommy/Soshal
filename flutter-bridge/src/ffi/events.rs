@@ -7,6 +7,7 @@
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
+use soshal_common_core::consts::{KIND_EVENT, KIND_EVENT_RSVP};
 use soshal_events_core::checkin::{can_checkin, within_checkin_radius};
 
 const EVENT_KINDS: &str = "31922,31923";
@@ -123,9 +124,9 @@ fn rsvp_for_user(rows: &[serde_json::Value], my_pk: &str) -> String {
 
 fn attendees_count(event_id: &str) -> i32 {
     super::db::db_query_raw(format!(
-        "SELECT COUNT(DISTINCT pubkey) AS c FROM posts WHERE kind = 31924 \
-         AND content = 'accepted' AND tags_json LIKE '%\"{}\"%'",
-        event_id.replace('\'', "''")
+        "SELECT COUNT(DISTINCT pubkey) AS c FROM posts WHERE kind = {KIND_EVENT_RSVP} \
+         AND content = 'accepted' AND tags_json LIKE '%\"{eid}\"%'",
+        eid = event_id.replace('\'', "''")
     ))
     .ok()
     .and_then(|json| {
@@ -222,16 +223,18 @@ pub fn events_create(
         "end": end_time,
         "image": if image_url.is_empty() { serde_json::Value::Null } else { serde_json::json!(image_url) },
     });
-    let builder =
-        nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(31923), content.to_string())
-            .tags(
-                vec![
-                    vec!["d".to_string(), d_tag],
-                    vec!["t".to_string(), "date".to_string()],
-                ]
-                .into_iter()
-                .filter_map(|t| nostr::event::Tag::parse(t).ok()),
-            );
+    let builder = nostr::event::EventBuilder::new(
+        nostr::event::Kind::from_u16(KIND_EVENT),
+        content.to_string(),
+    )
+    .tags(
+        vec![
+            vec!["d".to_string(), d_tag],
+            vec!["t".to_string(), "date".to_string()],
+        ]
+        .into_iter()
+        .filter_map(|t| nostr::event::Tag::parse(t).ok()),
+    );
     let signed_json = super::signer::sign_builder(builder)?;
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
@@ -240,7 +243,7 @@ pub fn events_create(
         event_id,
         creator_pubkey,
         content.to_string(),
-        31923,
+        KIND_EVENT as i64,
         soshal_common_core::format::now_secs(),
         String::new(),
         Some(title),
@@ -296,16 +299,18 @@ pub fn events_rsvp(
     } else {
         event_d
     };
-    let builder =
-        nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(31924), rsvp_status.clone())
-            .tags(
-                vec![
-                    vec!["a".to_string(), format!("31924:{host}:{d_tag}")],
-                    vec!["e".to_string(), event_id.clone()],
-                ]
-                .into_iter()
-                .filter_map(|t| nostr::event::Tag::parse(t).ok()),
-            );
+    let builder = nostr::event::EventBuilder::new(
+        nostr::event::Kind::from_u16(KIND_EVENT_RSVP),
+        rsvp_status.clone(),
+    )
+    .tags(
+        vec![
+            vec!["a".to_string(), format!("{KIND_EVENT_RSVP}:{host}:{d_tag}")],
+            vec!["e".to_string(), event_id.clone()],
+        ]
+        .into_iter()
+        .filter_map(|t| nostr::event::Tag::parse(t).ok()),
+    );
     let signed_json = super::signer::sign_builder(builder)?;
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
@@ -327,12 +332,9 @@ pub fn events_rsvp(
         format!("rsvp:{}:{}", user_pubkey, rsvp_status),
         user_pubkey,
         rsvp_status,
-        31924,
+        KIND_EVENT_RSVP as i64,
         soshal_common_core::format::now_secs(),
-        format!(
-            r#"[["a","31924:{host}:{d_tag}"],["e","{event_id}"]]"#,
-            event_id = event_id.clone()
-        ),
+        format!(r#"[["a","{KIND_EVENT_RSVP}:{host}:{d_tag}"],["e","{event_id}"]]"#),
         None,
     )
     .map(|_| true)
@@ -431,9 +433,9 @@ pub fn events_get_event(event_id: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn events_get_attendees(event_id: String) -> Result<Vec<String>, String> {
     let json = super::db::db_query_raw(format!(
-        "SELECT DISTINCT pubkey FROM posts WHERE kind = 31924 AND content = 'accepted' \
-         AND tags_json LIKE '%\"{}\"%' ORDER BY created_at DESC LIMIT 200",
-        event_id.replace('\'', "''")
+        "SELECT DISTINCT pubkey FROM posts WHERE kind = {KIND_EVENT_RSVP} AND content = 'accepted' \
+         AND tags_json LIKE '%\"{eid}\"%' ORDER BY created_at DESC LIMIT 200",
+        eid = event_id.replace('\'', "''")
     ))?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     Ok(rows

@@ -12,7 +12,6 @@ use base64::Engine;
 use oxidelta::compress::encoder::CompressOptions;
 use oxidelta::compress::{decoder, encoder};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 /// Wire representation of a binary patch between two event payloads.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -76,8 +75,7 @@ pub fn apply_event_patch(old_bytes: &[u8], patch: &EventPatch) -> Result<Vec<u8>
 }
 
 fn verify_new_id(bytes: &[u8], expected: &str) -> Result<Vec<u8>, String> {
-    let digest = Sha256::digest(bytes);
-    let hex = hex::encode(digest);
+    let hex = soshal_crypto_core::hash::sha256_hex(bytes);
     if hex == expected {
         Ok(bytes.to_vec())
     } else {
@@ -96,7 +94,7 @@ mod tests {
         let old: Vec<u8> = (0..8192).map(|i| (i % 251) as u8).collect();
         let mut new = old.clone();
         new[4096] = 99;
-        let new_id = hex::encode(Sha256::digest(&new));
+        let new_id = soshal_crypto_core::hash::sha256_hex(&new);
 
         let patch = compute_event_patch("base", &new_id, &old, &new).unwrap();
         assert!(patch.full_b64.is_none());
@@ -108,7 +106,7 @@ mod tests {
     fn real_json_mutation_wins() {
         let old = br#"{"id":"x","content":"this is a feed post body","pubkey":"abc","created_at":100,"tags":[["t","a"],["t","b"]]}"#.to_vec();
         let new = br#"{"id":"x","content":"this is a feed post body","pubkey":"abc","created_at":100,"tags":[["t","a"],["t","b"],["t","c"]]}"#.to_vec();
-        let new_id = hex::encode(Sha256::digest(&new));
+        let new_id = soshal_crypto_core::hash::sha256_hex(&new);
         let patch = compute_event_patch("base", &new_id, &old, &new).unwrap();
         assert!(patch.full_b64.is_none());
         assert!(B64.decode(&patch.patch_b64).unwrap().len() < new.len());
@@ -128,7 +126,7 @@ mod tests {
             seed ^= seed << 17;
             new.push(seed as u8);
         }
-        let new_id = hex::encode(Sha256::digest(&new));
+        let new_id = soshal_crypto_core::hash::sha256_hex(&new);
         let patch = compute_event_patch("base", &new_id, &old, &new).unwrap();
         assert!(patch.full_b64.is_some());
         assert_eq!(apply_event_patch(&old, &patch).unwrap(), new);
@@ -138,7 +136,7 @@ mod tests {
     fn corrupt_patch_rejected() {
         let old = br#"{"content":"before"}"#.to_vec();
         let new = br#"{"content":"after"}"#.to_vec();
-        let new_id = hex::encode(Sha256::digest(&new));
+        let new_id = soshal_crypto_core::hash::sha256_hex(&new);
         let mut patch = compute_event_patch("base", &new_id, &old, &new).unwrap();
         // Corrupt the fallback: decodes fine but hash mismatches.
         patch.full_b64 = Some(B64.encode([1u8; 64]));

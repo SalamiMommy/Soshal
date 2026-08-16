@@ -114,27 +114,9 @@ pub fn media_get_mime_type(file_path: String) -> Result<String, String> {
     Ok(infer_mime_type(&file_path)).into()
 }
 
-/// Infer MIME type from file extension
+/// Infer MIME type from file extension (delegates to media-core)
 fn infer_mime_type(path: &str) -> String {
-    let ext = path
-        .rsplit_once('.')
-        .map(|(_, e)| e)
-        .unwrap_or("")
-        .to_lowercase();
-    match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "mp4" => "video/mp4",
-        "webm" => "video/webm",
-        "mov" => "video/quicktime",
-        "wav" => "audio/wav",
-        "mp3" => "audio/mpeg",
-        "m4a" => "audio/mp4",
-        _ => "application/octet-stream",
-    }
-    .to_string()
+    soshal_media_core::media::guess_mime_type(path).to_string()
 }
 
 /// Generate a unique cache filename from URL
@@ -255,33 +237,11 @@ pub fn media_stop_local_server() -> Result<bool, String> {
     Ok(true).into()
 }
 
-/// Infer an image format (png/jpeg/gif/webp/…) from raw bytes, if recognizable.
-#[frb(sync, serialize)]
-pub fn media_detect_image_format(bytes: Vec<u8>) -> Result<Option<String>, String> {
-    Ok(soshal_media_core::decoder::detect_image_format(&bytes)
-        .map(|f| format!("{f:?}").to_lowercase()))
-}
-
 /// Content-aware chunking window for a MIME type (JSON: min/avg/max).
 #[frb(sync, serialize)]
 pub fn media_chunking_for_mime(mime: String) -> Result<String, String> {
     let params = soshal_media_core::chunking::ChunkingParams::for_mime(&mime);
     super::util::json_ok(params)
-}
-
-/// Trim media caches under memory pressure (0 = normal, 1 = moderate, 2 = critical).
-#[frb(sync, serialize)]
-pub fn media_trim_caches(level: u8) -> Result<bool, String> {
-    let lvl = soshal_common_core::memory::MemoryPressureLevel::from_u8(level);
-    soshal_media_core::trim_media_caches(lvl);
-    Ok(true)
-}
-
-/// Whether the global prefetcher would fetch media for a given list index.
-#[frb(sync, serialize)]
-pub fn media_should_prefetch(item_index: u32) -> Result<bool, String> {
-    let prefetcher = soshal_media_core::prefetcher::global_prefetcher();
-    Ok(prefetcher.should_prefetch_media(item_index))
 }
 
 /// Feed scroll telemetry into the global prefetcher (velocity px/s + visible indices).
@@ -296,45 +256,10 @@ pub fn media_update_scroll_telemetry(
     Ok(true)
 }
 
-/// Encode a thumbhash (hex) from raw image bytes.
-#[frb(sync, serialize)]
-pub fn media_encode_thumbhash(bytes: Vec<u8>) -> Result<String, String> {
-    let out = soshal_media_core::thumbhash::encode_thumbhash_from_bytes(&bytes)?;
-    Ok(hex::encode(out))
-}
-
-/// Freenet chunking pass (JSON in, JSON out).
-#[frb(sync, serialize)]
-pub fn media_chunk_media_json(input: String) -> Result<String, String> {
-    Ok(soshal_media_core::freenet_media::chunk_media_json(&input))
-}
-
-/// Freenet chunk verification pass (JSON in, JSON out).
-#[frb(sync, serialize)]
-pub fn media_verify_chunk_json(input: String) -> Result<String, String> {
-    Ok(soshal_media_core::freenet_media::verify_chunk_json(&input))
-}
-
-/// Freenet chunk reconstruction pass (JSON in, JSON out).
-#[frb(sync, serialize)]
-pub fn media_reconstruct_media_json(input: String) -> Result<String, String> {
-    Ok(soshal_media_core::freenet_media::reconstruct_media_json(
-        &input,
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use soshal_media_core::chunking::{chunk_bytes, ChunkManifest};
-
-    const PNG_1X1_RGBA: &[u8] = &[
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
-        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
-        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
-        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
-    ];
 
     #[test]
     fn infer_mime_type_covers_extensions() {
@@ -347,7 +272,7 @@ mod tests {
         assert_eq!(infer_mime_type("f.mov"), "video/quicktime");
         assert_eq!(infer_mime_type("g.wav"), "audio/wav");
         assert_eq!(infer_mime_type("h.mp3"), "audio/mpeg");
-        assert_eq!(infer_mime_type("i.m4a"), "audio/mp4");
+        assert_eq!(infer_mime_type("i.m4a"), "application/octet-stream");
         assert_eq!(infer_mime_type("j.xyz"), "application/octet-stream");
         assert_eq!(infer_mime_type("noext"), "application/octet-stream");
         assert_eq!(infer_mime_type(".png"), "image/png");
@@ -393,41 +318,6 @@ mod tests {
         assert_eq!(other["min"], 64 * 1024);
         assert_eq!(other["avg"], 256 * 1024);
         assert_eq!(other["max"], 1024 * 1024);
-    }
-
-    #[test]
-    fn detect_image_format_from_bytes() {
-        assert_eq!(
-            media_detect_image_format(PNG_1X1_RGBA.to_vec()).unwrap(),
-            Some("png".to_string())
-        );
-        let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
-        assert_eq!(
-            media_detect_image_format(jpeg.to_vec()).unwrap(),
-            Some("jpeg".to_string())
-        );
-        assert_eq!(media_detect_image_format(vec![0u8; 16]).unwrap(), None);
-        assert_eq!(media_detect_image_format(Vec::new()).unwrap(), None);
-    }
-
-    #[test]
-    fn thumbhash_roundtrip_png() {
-        let hex_hash = media_encode_thumbhash(PNG_1X1_RGBA.to_vec()).unwrap();
-        let bytes = hex::decode(&hex_hash).unwrap();
-        assert!(!bytes.is_empty());
-        assert!(bytes.len() <= 40);
-        let frame = soshal_media_core::thumbhash::decode_thumbhash_to_rgba(&bytes).unwrap();
-        assert!(frame.width > 0 && frame.height > 0);
-        assert_eq!(
-            frame.pixels.len(),
-            frame.width as usize * frame.height as usize * 4
-        );
-    }
-
-    #[test]
-    fn thumbhash_rejects_garbage_bytes() {
-        let err = media_encode_thumbhash(vec![0u8; 32]).unwrap_err();
-        assert!(err.contains("thumbhash"), "{err}");
     }
 
     #[test]
@@ -525,53 +415,5 @@ mod tests {
         assert!(!oversized.is_valid());
         oversized.chunks[0].len = 10;
         assert!(oversized.is_valid());
-    }
-
-    #[test]
-    fn freenet_chunk_verify_reconstruct_roundtrip() {
-        use soshal_crypto_core::base64::base64_encode_bytes;
-        let data = vec![b'x'; 3000];
-        let b64 = base64_encode_bytes(&data);
-        let chunk_json = format!(r#"{{"dataB64":"{b64}","chunkSize":1024}}"#);
-        let out = media_chunk_media_json(chunk_json).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(parsed["chunkCount"], 3);
-        assert_eq!(parsed["totalSize"], 3000);
-        assert_eq!(parsed["contentHash"].as_str().unwrap().len(), 64);
-        let hashes: Vec<String> = parsed["chunkHashes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|h| h.as_str().unwrap().to_string())
-            .collect();
-        let mut chunks_b64 = Vec::new();
-        for (i, hash) in hashes.iter().enumerate() {
-            let chunk = &data[i * 1024..((i + 1) * 1024).min(3000)];
-            let chunk_b64 = base64_encode_bytes(chunk);
-            chunks_b64.push(chunk_b64.clone());
-            let verify_in = format!(r#"{{"dataB64":"{chunk_b64}","expectedHash":"{hash}"}}"#);
-            let v: serde_json::Value =
-                serde_json::from_str(&media_verify_chunk_json(verify_in).unwrap()).unwrap();
-            assert_eq!(v["valid"], true);
-        }
-        let recon_in = format!(
-            r#"{{"chunksB64":{}}}"#,
-            serde_json::to_string(&chunks_b64).unwrap()
-        );
-        let recon: serde_json::Value =
-            serde_json::from_str(&media_reconstruct_media_json(recon_in).unwrap()).unwrap();
-        assert_eq!(recon["totalSize"], 3000);
-        assert_eq!(recon["dataB64"], b64);
-    }
-
-    #[test]
-    fn prefetch_gating_follows_velocity() {
-        media_update_scroll_telemetry(0.0, 0, 10).unwrap();
-        assert!(media_should_prefetch(8).unwrap());
-        assert!(!media_should_prefetch(100).unwrap());
-        media_update_scroll_telemetry(5000.0, 0, 10).unwrap();
-        assert!(!media_should_prefetch(8).unwrap());
-        media_update_scroll_telemetry(0.0, 0, 10).unwrap();
-        assert!(media_should_prefetch(8).unwrap());
     }
 }

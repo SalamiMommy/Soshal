@@ -11,6 +11,16 @@ RELEASE_DIR="$PROJECT_ROOT/target/release"
 
 mkdir -p "$RELEASE_DIR"
 
+# Single stub fallback: writes a failing rnsd placeholder when a step fails
+create_stub() {
+    cat > "$RELEASE_DIR/rnsd" << EOF
+#!/bin/bash
+echo "$1"
+exit 1
+EOF
+    chmod +x "$RELEASE_DIR/rnsd"
+}
+
 PLATFORM="$(uname -m)-$(uname -s | tr '[:upper:]' '[:lower:]')"
 case "$PLATFORM" in
     x86_64-linux|aarch64-linux|x86_64-darwin|aarch64-darwin)
@@ -45,12 +55,7 @@ echo "Downloading rns wheel from $RNS_URL..."
 cd "$BUILD_DIR"
 if ! curl -L -f -o "$RNS_WHEEL" "$RNS_URL"; then
     echo "Failed to download rns wheel; creating stub"
-    cat > "$RELEASE_DIR/rnsd" << 'EOF'
-#!/bin/bash
-echo "Reticulum daemon stub - wheel download failed"
-exit 1
-EOF
-    chmod +x "$RELEASE_DIR/rnsd"
+    create_stub "Reticulum daemon stub - wheel download failed"
     exit 0
 fi
 
@@ -64,12 +69,7 @@ source "$BUILD_DIR/venv/bin/activate"
 echo "Installing rns wheel and PyInstaller..."
 $PIP_CMD install "$RNS_WHEEL" pyinstaller 2>&1 | tail -5 || {
     echo "Failed to install rns or PyInstaller"
-    cat > "$RELEASE_DIR/rnsd" << 'EOF'
-#!/bin/bash
-echo "Reticulum daemon stub - install failed"
-exit 1
-EOF
-    chmod +x "$RELEASE_DIR/rnsd"
+    create_stub "Reticulum daemon stub - install failed"
     exit 0
 }
 
@@ -143,12 +143,7 @@ pyinstaller \
     --console \
     "$BUILD_DIR/rnsd_wrapper.py" 2>&1 | tail -10 || {
     echo "PyInstaller failed; creating stub"
-    cat > "$RELEASE_DIR/rnsd" << 'EOF'
-#!/bin/bash
-echo "Reticulum daemon stub - PyInstaller failed"
-exit 1
-EOF
-    chmod +x "$RELEASE_DIR/rnsd"
+    create_stub "Reticulum daemon stub - PyInstaller failed"
     exit 0
 }
 

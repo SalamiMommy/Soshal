@@ -27,13 +27,20 @@ pub fn webrtc_get_stun_servers() -> Result<Vec<String>, String> {
 
 /// Get TURN servers (if enabled). Reads the configured TURN endpoint from
 /// the `turn_endpoint` setting (`turn:host:port`, plus optional
-/// `turn_username`/`turn_credential`); returns `[]` when unconfigured.
-/// Server-side TURN provisioning is backend-gated.
+/// `turn_username`/`turn_credential`); errors when unconfigured —
+/// server-side TURN provisioning is backend-gated (roadmap).
 #[frb(sync, serialize)]
-pub fn webrtc_get_turn_servers(auth_token: Option<String>) -> Result<String, String> {
+pub fn webrtc_get_turn_servers(_auth_token: Option<String>) -> Result<String, String> {
     let endpoint = super::db::db_get_setting("turn_endpoint".to_string())?;
-    let Some(endpoint) = endpoint else {
-        return Ok("[]".to_string()).into();
+    let endpoint = match endpoint {
+        Some(e) if !e.trim().is_empty() => e,
+        _ => {
+            return Err(
+                "turn provisioning unavailable: no turn_endpoint configured (server endpoint on roadmap)"
+                    .to_string(),
+            )
+            .into()
+        }
     };
     let username = super::db::db_get_setting("turn_username".to_string())?;
     let credential = super::db::db_get_setting("turn_credential".to_string())?;
@@ -47,7 +54,6 @@ pub fn webrtc_get_turn_servers(auth_token: Option<String>) -> Result<String, Str
         server["credential"] = serde_json::json!(cred);
         server["credentialType"] = serde_json::json!("password");
     }
-    let _ = auth_token;
     Ok(serde_json::to_string(&vec![server]).unwrap_or_else(|_| "[]".to_string())).into()
 }
 
@@ -160,15 +166,29 @@ mod tests {
     }
 
     #[test]
-    fn test_turn_servers_empty_when_unconfigured() {
+    fn test_turn_servers_err_when_unconfigured() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = db::tmp_db("turn_empty", "webrtc");
-        assert_eq!(webrtc_get_turn_servers(None).unwrap(), "[]");
+        let expected = "turn provisioning unavailable: no turn_endpoint configured (server endpoint on roadmap)".to_string();
+        assert_eq!(webrtc_get_turn_servers(None).unwrap_err(), expected);
         assert_eq!(
-            webrtc_get_turn_servers(Some("token".to_string())).unwrap(),
-            "[]"
+            webrtc_get_turn_servers(Some("token".to_string())).unwrap_err(),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_turn_servers_err_when_endpoint_empty() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("turn_empty_str", "webrtc");
+        db::db_set_setting("turn_endpoint".to_string(), "  ".to_string()).unwrap();
+        assert_eq!(
+            webrtc_get_turn_servers(None).unwrap_err(),
+            "turn provisioning unavailable: no turn_endpoint configured (server endpoint on roadmap)"
         );
     }
 

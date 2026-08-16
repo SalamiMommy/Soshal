@@ -325,10 +325,7 @@ mod tests {
         // build with correct pubkey
         let mut v: serde_json::Value = serde_json::from_str(&json).unwrap();
         v["pubkey"] = serde_json::json!(keys.public_key().to_hex());
-        v["created_at"] = serde_json::json!(std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs());
+        v["created_at"] = serde_json::json!(soshal_common_core::format::now_secs());
         signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let signed = signer_sign_unsigned(v.to_string()).unwrap();
         let ev: serde_json::Value = serde_json::from_str(&signed).unwrap();

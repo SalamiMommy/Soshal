@@ -9,6 +9,7 @@ serde_json = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
 soshal-nostr-core = { path = "../nostr-core" }
+soshal-common-core = { path = "../common-core" }
 
 
 [lints]

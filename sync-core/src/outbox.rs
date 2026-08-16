@@ -178,8 +178,7 @@ mod tests {
 
     #[test]
     fn test_outbox_workflow() {
-        let db = Database::open_in_memory().unwrap();
-        db.migrate().unwrap();
+        let db = soshal_test_util::test_db();
 
         enqueue_outbox_item(&db, "item1", "post", "{}", None, 100).unwrap();
         let pending = fetch_pending_outbox_items(&db, 100, 10).unwrap();

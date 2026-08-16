@@ -118,19 +118,12 @@ mod tests {
 
     #[tokio::test]
     async fn path_source_reads_local_file() {
-        let dir = std::env::temp_dir().join(format!(
-            "soshal-src-test-{}-{}",
-            std::process::id(),
-            soshal_common_core::format::now_secs()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("blob.bin");
+        let path = soshal_test_util::tmp_path("source", "blob.bin");
         let bytes = vec![1u8, 2, 3, 4, 5];
         std::fs::write(&path, &bytes).unwrap();
         let (data, mime) = fetch_source_bytes(path.to_str().unwrap()).await.unwrap();
         assert_eq!(data, bytes);
         assert!(mime.is_none());
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
