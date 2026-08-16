@@ -125,22 +125,6 @@ mod tests {
 
     static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    struct TempDir(std::path::PathBuf);
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn tmp_path() -> (TempDir, std::path::PathBuf) {
-        static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("soshal-bridge-tele-{}-{}", std::process::id(), n));
-        std::fs::create_dir_all(&dir).unwrap();
-        (TempDir(dir.clone()), dir.join("rec.bin"))
-    }
-
     fn reset() {
         *lock().unwrap() = None;
     }
@@ -152,7 +136,7 @@ mod tests {
     #[test]
     fn test_init_and_info_json() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
         let v: serde_json::Value = serde_json::from_str(&telemetry_info_json().unwrap()).unwrap();
@@ -166,7 +150,7 @@ mod tests {
     #[test]
     fn test_record_and_read_all() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
         telemetry_record(1, "signed-in".to_string()).unwrap();
@@ -189,7 +173,7 @@ mod tests {
     #[test]
     fn test_record_unknown_kind_errors() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
         assert!(telemetry_record(99, "bogus".to_string()).is_err());
@@ -212,7 +196,7 @@ mod tests {
     #[test]
     fn test_crash_seals_and_blocks_writes() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
         telemetry_mark_crash("fatal: oom".to_string()).unwrap();
@@ -230,7 +214,7 @@ mod tests {
     #[test]
     fn test_clear_wipes_entries() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
         telemetry_record(2, "ffi-call".to_string()).unwrap();
@@ -247,7 +231,7 @@ mod tests {
     #[test]
     fn test_dump_encrypted() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
         telemetry_record(4, "ffi-boot".to_string()).unwrap();
@@ -259,7 +243,7 @@ mod tests {
     #[test]
     fn test_reopen_persists_records() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
         telemetry_record(1, "persist-me".to_string()).unwrap();

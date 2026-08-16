@@ -4,6 +4,7 @@ use super::address::ReticulumAddress;
 use super::crypto::ReticulumEncryption;
 use super::packet::{ReticulumPacket, ReticulumPacketType};
 use serde::{Deserialize, Serialize};
+use soshal_common_core::format::now_secs;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -49,10 +50,7 @@ impl LinkManager {
             return Err("Maximum pending links reached".to_string());
         }
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = now_secs() as u64;
 
         let link_info = LinkInfo {
             remote_destination: remote_dest,
@@ -81,10 +79,7 @@ impl LinkManager {
     ) -> Result<ReticulumPacket, String> {
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = now_secs() as u64;
 
         // Create encryption context for this link
         let encryption = ReticulumEncryption::new();

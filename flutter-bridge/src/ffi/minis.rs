@@ -31,20 +31,21 @@ pub fn minis_fetch() -> Result<Vec<String>, String> {
     Ok(urls).into()
 }
 
-/// Execute a WASI 0.2 Wasm content filter component plugin.
+/// Execute a WASI 0.2 Wasm content filter component plugin (runtime itself
+/// still simulated in minis-core; wasm bytes must be valid hex).
 #[frb(sync, serialize)]
 pub fn minis_wasm_execute_filter(
     plugin_id: String,
     text: String,
     wasm_bytes_hex: String,
 ) -> Result<String, String> {
-    let binary_bytes =
-        hex::decode(&wasm_bytes_hex).unwrap_or_else(|_| vec![0x00, 0x61, 0x73, 0x6d]);
+    let binary_bytes = hex::decode(&wasm_bytes_hex).map_err(|_| "invalid wasm hex".to_string())?;
+    let author_pubkey = super::signer::signer_pubkey()?;
     let plugin = soshal_minis_core::runtime::WasmComponentPlugin {
         plugin_id,
         name: "Wasm Filter".to_string(),
         component_type: soshal_minis_core::runtime::WasmComponentType::ContentFilter,
-        author_pubkey: "npub_author".to_string(),
+        author_pubkey,
         binary_bytes,
     };
 
@@ -54,20 +55,21 @@ pub fn minis_wasm_execute_filter(
         .into()
 }
 
-/// Execute a WASI 0.2 Wasm feed ranker component plugin.
+/// Execute a WASI 0.2 Wasm feed ranker component plugin (runtime itself still
+/// simulated in minis-core; wasm bytes must be valid hex).
 #[frb(sync, serialize)]
 pub fn minis_wasm_rank_feed(
     plugin_id: String,
     posts_json: Vec<String>,
     wasm_bytes_hex: String,
 ) -> Result<Vec<String>, String> {
-    let binary_bytes =
-        hex::decode(&wasm_bytes_hex).unwrap_or_else(|_| vec![0x00, 0x61, 0x73, 0x6d]);
+    let binary_bytes = hex::decode(&wasm_bytes_hex).map_err(|_| "invalid wasm hex".to_string())?;
+    let author_pubkey = super::signer::signer_pubkey()?;
     let plugin = soshal_minis_core::runtime::WasmComponentPlugin {
         plugin_id,
         name: "Wasm Ranker".to_string(),
         component_type: soshal_minis_core::runtime::WasmComponentType::FeedRanker,
-        author_pubkey: "npub_author".to_string(),
+        author_pubkey,
         binary_bytes,
     };
 
@@ -137,10 +139,15 @@ mod tests {
 
     #[test]
     fn wasm_filter_flags_malicious_phishing() {
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let clean_json = minis_wasm_execute_filter(
             "f1".to_string(),
             "hello world".to_string(),
-            "zz".to_string(),
+            "0061736d".to_string(),
         )
         .unwrap();
         let clean: serde_json::Value = serde_json::from_str(&clean_json).unwrap();
@@ -150,7 +157,7 @@ mod tests {
         let toxic_json = minis_wasm_execute_filter(
             "f1".to_string(),
             "bad malicious_phishing link".to_string(),
-            "nothex".to_string(),
+            "0061736d".to_string(),
         )
         .unwrap();
         let toxic: serde_json::Value = serde_json::from_str(&toxic_json).unwrap();
@@ -160,19 +167,40 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Toxic content flagged"));
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn wasm_filter_rejects_invalid_hex() {
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let err =
+            minis_wasm_execute_filter("f1".to_string(), "hello".to_string(), "zz".to_string())
+                .unwrap_err();
+        assert_eq!(err, "invalid wasm hex");
+        super::super::signer::signer_lock().unwrap();
     }
 
     #[test]
     fn wasm_rank_sorts_longest_first() {
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let ranked = minis_wasm_rank_feed(
             "r1".to_string(),
             vec!["a".to_string(), "ccc".to_string(), "bb".to_string()],
-            "zz".to_string(),
+            "0061736d".to_string(),
         )
         .unwrap();
         assert_eq!(
             ranked,
             vec!["ccc".to_string(), "bb".to_string(), "a".to_string()]
         );
+        super::super::signer::signer_lock().unwrap();
     }
 }

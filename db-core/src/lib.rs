@@ -54,8 +54,6 @@ pub struct Database {
 
 struct PoolInner {
     db: libsql::Database,
-    #[allow(dead_code)]
-    path: Option<String>,
     turso_state: TursoState,
     turso_config: Mutex<Option<TursoConfig>>,
     state: Mutex<PoolState>,
@@ -75,7 +73,6 @@ impl Database {
         Ok(Self {
             inner: Arc::new(PoolInner {
                 db,
-                path: Some(path.to_string()),
                 turso_state: TursoState::new(),
                 turso_config: Mutex::new(None),
                 state: Mutex::new(PoolState {
@@ -94,7 +91,6 @@ impl Database {
         Ok(Self {
             inner: Arc::new(PoolInner {
                 db,
-                path: None,
                 turso_state: TursoState::new(),
                 turso_config: Mutex::new(None),
                 state: Mutex::new(PoolState {
@@ -142,10 +138,7 @@ impl Database {
             let _ = block_on(conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);"));
         }
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = soshal_common_core::format::now_secs() as u64;
 
         self.inner.turso_state.set_synced(now);
         Ok(format!("Turso sync complete: target {}", config.url))

@@ -14,10 +14,7 @@ use soshal_identity_core::security::{
 const PIN_HASH_KEY: &str = "pin_hash";
 
 fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
+    soshal_common_core::format::now_secs() * 1000
 }
 
 fn with_repo<T>(

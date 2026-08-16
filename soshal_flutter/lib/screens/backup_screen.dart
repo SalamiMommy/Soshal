@@ -1,8 +1,9 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../services/ffi_bridge.dart';
+import '../services/backup_service.dart';
 import '../services/error_log.dart';
+import '../services/ffi_bridge.dart';
 import '../services/session_service.dart';
 
 /// Backup screen: account identifiers + recovery guidance.
@@ -30,7 +31,7 @@ class _BackupScreenState extends State<BackupScreen> {
     final out = <String, int>{};
     for (final t in tables) {
       try {
-        final c = FfiBridge.dbCount(t);
+        final c = context.read<BackupService>().dbCount(t);
         if (c > 0) out[t] = c.toInt();
       } catch (e, st) {
         debugPrint('backup table count failed: $e');
@@ -167,9 +168,10 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   Future<void> _export(BuildContext context) async {
+    final backupService = context.read<BackupService>();
     try {
-      final backupPath = await FfiBridge.getBackupPath();
-      final result = await FfiBridge.backup(backupPath);
+      final backupPath = await backupService.getBackupPath();
+      final result = await backupService.backup(backupPath);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: SelectableText('Backup written: $result')),
@@ -185,9 +187,10 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   Future<void> _restore(BuildContext context) async {
+    final backupService = context.read<BackupService>();
     try {
-      final backupPath = await FfiBridge.getBackupPath();
-      await FfiBridge.restore(backupPath);
+      final backupPath = await backupService.getBackupPath();
+      await backupService.restore(backupPath);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: SelectableText('Restored from backup')),

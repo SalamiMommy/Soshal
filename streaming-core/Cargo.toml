@@ -13,3 +13,5 @@ soshal-nostr-core = { path = "../nostr-core" }
 
 [lints]
 workspace = true
+[dev-dependencies]
+soshal-test-util = { path = "../test-util" }

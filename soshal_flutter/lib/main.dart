@@ -38,6 +38,7 @@ import 'services/friends_service.dart';
 import 'services/minis_service.dart';
 import 'services/analytics_service.dart';
 import 'services/audit_service.dart';
+import 'services/backup_service.dart';
 import 'services/bookmarks_service.dart';
 import 'services/scheduled_service.dart';
 import 'services/stealth_service.dart';
@@ -47,6 +48,7 @@ import 'services/chatrandom_service.dart';
 import 'services/crypto_service.dart';
 import 'services/media_service.dart';
 import 'services/mesh_service.dart';
+import 'services/profile_service.dart';
 import 'utils/format.dart';
 
 void main() {
@@ -81,6 +83,7 @@ void main() {
             pubkey: () => ctx.read<SessionService>().activePubkey,
           ),
         ),
+        ChangeNotifierProvider(create: (_) => ProfileService()),
         ChangeNotifierProvider(create: (_) => P2pService()),
         ChangeNotifierProvider(create: (_) => ModerationService()),
         ChangeNotifierProvider(create: (_) => EbpfService()),
@@ -101,6 +104,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => CryptoService()),
         ChangeNotifierProvider(create: (_) => MediaService()),
         ChangeNotifierProvider(create: (_) => SignerService()),
+        ChangeNotifierProvider(create: (_) => BackupService()),
         Provider<MinisService>(create: (_) => MinisService()),
       ],
       child: const SoshalApp(),

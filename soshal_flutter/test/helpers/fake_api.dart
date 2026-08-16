@@ -104,16 +104,8 @@ class FakeApi extends RustLibApi {
       _asyncCall<String>('crateFfiCryptoCryptoPqcKemKeygen', [], {});
 
   @override
-  Future<Uint8List> crateFfiFeedFeedCompressEvent({required String eventJson}) =>
-      _asyncCall<Uint8List>('crateFfiFeedFeedCompressEvent', [], {#eventJson: eventJson});
-
-  @override
   Future<String> crateFfiFeedFeedCreateReaction({required String eventId, required String reactionType}) =>
       _asyncCall<String>('crateFfiFeedFeedCreateReaction', [], {#eventId: eventId, #reactionType: reactionType});
-
-  @override
-  Future<String> crateFfiFeedFeedDecompressEvent({required List<int> compressed}) =>
-      _asyncCall<String>('crateFfiFeedFeedDecompressEvent', [], {#compressed: compressed});
 
   @override
   Future<String> crateFfiFeedFeedDeletePost({required String eventId}) =>

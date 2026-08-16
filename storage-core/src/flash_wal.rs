@@ -59,7 +59,10 @@ impl FlashWalFlusher {
         let count = self.pending_sqls.len();
         block_on(conn.execute_batch("BEGIN IMMEDIATE;"))?;
         for sql in &self.pending_sqls {
-            let _ = block_on(conn.execute_batch(sql));
+            if let Err(e) = block_on(conn.execute_batch(sql)) {
+                let _ = block_on(conn.execute_batch("ROLLBACK;"));
+                return Err(e);
+            }
         }
         block_on(conn.execute_batch("COMMIT;"))?;
 
@@ -113,10 +116,36 @@ mod tests {
         let db = soshal_db_core::block_on(libsql::Builder::new_local(":memory:").build()).unwrap();
         let conn = db.connect().unwrap();
         let mut flusher = FlashWalFlusher::new();
-        flusher.push_sql(&"x".repeat(FLASH_WAL_BLOCK_SIZE));
+        flusher.push_sql(&"SELECT 1;".repeat(FLASH_WAL_BLOCK_SIZE / 9 + 1));
         assert!(flusher.should_flush());
         assert_eq!(flusher.flush_to_db(&conn).unwrap(), 1);
         assert!(!flusher.should_flush());
+        assert_eq!(flusher.current_bytes, 0);
+    }
+
+    #[test]
+    fn test_flush_bad_sql_keeps_buffer() {
+        let db = soshal_db_core::block_on(libsql::Builder::new_local(":memory:").build()).unwrap();
+        let conn = db.connect().unwrap();
+        configure_flash_pragmas(&conn).unwrap();
+
+        let mut flusher = FlashWalFlusher::new();
+        let good_sql = "CREATE TABLE IF NOT EXISTS test_wal (id INT);".to_string();
+        let bad_sql = "INSERT INTO nonexistent_table (id) VALUES (1);".to_string();
+        flusher.push_sql(&good_sql);
+        flusher.push_sql(&bad_sql);
+        let bytes_before = flusher.current_bytes;
+
+        assert!(flusher.flush_to_db(&conn).is_err());
+        assert_eq!(flusher.pending_sqls.len(), 2);
+        assert_eq!(flusher.current_bytes, bytes_before);
+
+        // Caller-side recovery: drop bad statement, keep the good ones buffered.
+        flusher.pending_sqls = vec![good_sql];
+        flusher.current_bytes = flusher.pending_sqls.iter().map(|s| s.len()).sum();
+        let flushed = flusher.flush_to_db(&conn).unwrap();
+        assert_eq!(flushed, 1);
+        assert_eq!(flusher.pending_sqls.len(), 0);
         assert_eq!(flusher.current_bytes, 0);
     }
 

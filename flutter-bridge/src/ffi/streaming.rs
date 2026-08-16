@@ -472,18 +472,21 @@ pub fn streaming_moq_publish_object(
     serde_json::to_string(&obj).map_err(|e| format!("json encode error: {e}"))
 }
 
-/// Check live stream availability and report transport status. Subscription
-/// itself happens per-peer via `p2p_moq_subscribe_fetch` (QUIC stream fetch).
+/// Check live stream availability and report transport status, echoing the
+/// requesting subscriber pubkey. network-core keeps no per-subscriber
+/// registry; the actual subscription happens per-peer via
+/// `p2p_moq_subscribe_fetch` (QUIC stream fetch) on the subscriber side and
+/// `serve_moq_subscription` on the publisher side.
 #[frb(sync, serialize)]
 pub fn streaming_moq_subscribe_stream(
     stream_id: String,
     subscriber_pubkey: String,
 ) -> Result<String, String> {
-    let _subscriber_pubkey = subscriber_pubkey;
     let known = soshal_network_core::quic::moq_stream_known(&stream_id);
     super::util::json_ok(serde_json::json!({
         "status": if known { "live" } else { "unknown" },
         "stream_id": stream_id,
+        "subscriber": subscriber_pubkey,
         "protocol": "MediaOverQUIC",
     }))
 }

@@ -403,14 +403,6 @@ use std::time::Duration as StdDuration;
 
 const MAX_STREAM_FRAME: usize = 1024 * 1024;
 
-/// Current unix time in seconds (beacon replay-protection timestamp).
-fn now_unix_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
 /// Live MoQ group-log limits: bounded memory, hostile-publisher safe.
 const LIVE_MAX_STREAM_ID: usize = 128;
 const LIVE_MAX_STREAMS: usize = 32;
@@ -838,7 +830,7 @@ async fn auth_stream(recv: &mut quinn::RecvStream, key: &[u8; 32]) -> Result<(),
             crate::lan_transport::LAN_MAGIC,
             line.trim_end(),
             0,
-            now_unix_secs(),
+            soshal_common_core::format::now_secs() as u64,
         ) {
             Some(_) => Ok(()),
             None => Err("bad hmac beacon".to_string()),
@@ -938,7 +930,7 @@ pub fn fetch_quic_chunk(
                 crate::lan_transport::LAN_MAGIC,
                 my_pubkey,
                 0,
-                now_unix_secs(),
+                soshal_common_core::format::now_secs() as u64,
             );
             let mac = lan::beacon_mac(&key, &body);
             send.write_all(format!("{body}:{mac}\n").as_bytes())
@@ -1055,7 +1047,7 @@ fn fetch_quic_raw(
                 crate::lan_transport::LAN_MAGIC,
                 my_pubkey,
                 0,
-                now_unix_secs(),
+                soshal_common_core::format::now_secs() as u64,
             );
             let mac = lan::beacon_mac(&key, &body);
             send.write_all(format!("{body}:{mac}\n").as_bytes())
@@ -1185,7 +1177,7 @@ pub fn fetch_quic_moq_groups(
                 crate::lan_transport::LAN_MAGIC,
                 my_pubkey,
                 0,
-                now_unix_secs(),
+                soshal_common_core::format::now_secs() as u64,
             );
             let mac = lan::beacon_mac(&key, &body);
             send.write_all(format!("{body}:{mac}\n").as_bytes())
@@ -1242,22 +1234,10 @@ pub fn fetch_quic_moq_groups(
 #[cfg(test)]
 mod stream_tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-
-    fn tmp_root() -> std::path::PathBuf {
-        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!(
-            "soshal_quic_stream_test_{}_{}",
-            std::process::id(),
-            n
-        ))
-    }
 
     #[test]
     fn quic_stream_fetch_roundtrip() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("quic");
         let store = ChunkStore::new(root.clone());
         let data: Vec<u8> = (0..512 * 1024).map(|i| (i % 251) as u8).collect();
         let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
@@ -1283,7 +1263,7 @@ mod stream_tests {
 
     #[test]
     fn quic_stream_refuses_bad_mac() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("quic");
         let server = start_quic_stream_server_with_store([7u8; 32], root.clone()).unwrap();
         // Client uses the wrong derivation key; HMAC must fail server-side.
         let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
@@ -1308,7 +1288,7 @@ mod stream_tests {
 
     #[test]
     fn quic_stream_missing_chunk_reports_not_found() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("quic");
         let server = start_quic_stream_server_with_store([7u8; 32], root).unwrap();
         let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
         let err =
@@ -1361,7 +1341,7 @@ mod stream_tests {
 
     #[test]
     fn moq_live_stream_replays_buffered_groups() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("quic");
         let server = start_quic_stream_server_with_store([7u8; 32], root).unwrap();
         let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
 
@@ -1382,7 +1362,7 @@ mod stream_tests {
 
     #[test]
     fn moq_live_stream_follows_new_groups_in_window() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("quic");
         let server = start_quic_stream_server_with_store([7u8; 32], root).unwrap();
         let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
 
@@ -1412,7 +1392,7 @@ mod stream_tests {
 
     #[test]
     fn moq_live_stream_unknown_stream_reports_not_found() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("quic");
         let server = start_quic_stream_server_with_store([7u8; 32], root).unwrap();
         let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
         let err =

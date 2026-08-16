@@ -13,22 +13,7 @@ mkdir -p "$RELEASE_DIR"
 
 PLATFORM="$(uname -m)-$(uname -s | tr '[:upper:]' '[:lower:]')"
 case "$PLATFORM" in
-    x86_64-linux)
-        RNS_VERSION="1.4.2"
-        RNS_WHEEL="rns-${RNS_VERSION}-py3-none-any.whl"
-        RNS_URL="https://github.com/markqvist/Reticulum/releases/download/${RNS_VERSION}/${RNS_WHEEL}"
-        ;;
-    aarch64-linux)
-        RNS_VERSION="1.4.2"
-        RNS_WHEEL="rns-${RNS_VERSION}-py3-none-any.whl"
-        RNS_URL="https://github.com/markqvist/Reticulum/releases/download/${RNS_VERSION}/${RNS_WHEEL}"
-        ;;
-    x86_64-darwin)
-        RNS_VERSION="1.4.2"
-        RNS_WHEEL="rns-${RNS_VERSION}-py3-none-any.whl"
-        RNS_URL="https://github.com/markqvist/Reticulum/releases/download/${RNS_VERSION}/${RNS_WHEEL}"
-        ;;
-    aarch64-darwin)
+    x86_64-linux|aarch64-linux|x86_64-darwin|aarch64-darwin)
         RNS_VERSION="1.4.2"
         RNS_WHEEL="rns-${RNS_VERSION}-py3-none-any.whl"
         RNS_URL="https://github.com/markqvist/Reticulum/releases/download/${RNS_VERSION}/${RNS_WHEEL}"

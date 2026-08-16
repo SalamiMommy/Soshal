@@ -281,12 +281,19 @@ each migration SQL records its own version
       setting, `minis_fetch` (local DB kind-31020 registry, fed by sync
       engine), `analytics_compute_stats` (SQL aggregates),
       `background_sync_task` (bounded engine pass), dating profile
-      update/report persistence, hashtag extraction + geohash encoding.
+      update/report persistence, hashtag extraction + geohash encoding,
+      dating reactions (local + outbox-relayed), events RSVP/check-in
+      (outbox-relayed, 500 m geofence), push token scoping (active
+      account), preference-aware compatibility score (dealbreakers +
+      weights), identicon avatar fallback (media-core, seeded by pubkey).
    - Still gated (needs external infra, UI honest about it): FCM delivery
       (Firebase `google-services.json`), TURN provisioning (server endpoint),
       WebRTC voice/video media transport (relay signaling kinds 20001-20004
       work), WASI wasm runtime in minis-core (simulated sort/keyword host;
       real wasmtime host is roadmap), ZK provers in sync-core zk_rollup
       (honest SHA-256 commitment), `raster_signal_impeller_frame_ready`
-      (engine-integration no-op). `protocol_handle_avatar` is private inside
+      (engine-integration no-op), real FROST in crypto-core (jury
+      moderation), eBPF kernel modes in network-core (user-space fallback
+      only), freenet seednode announce (simulated). `protocol_handle_avatar`
+      is private inside
       protocol_handler.rs (was pub, downgraded — not an FFI surface).

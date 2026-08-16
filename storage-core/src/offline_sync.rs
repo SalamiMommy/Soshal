@@ -85,10 +85,7 @@ pub fn decrypt_offline_sync_json(input: &str) -> String {
     let Some(ts) = env.ts else {
         return fail_decrypt("envelope has no timestamp");
     };
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
+    let now = soshal_common_core::format::now_secs();
     if (now - ts).abs() > MAX_TS_SKEW_SECS {
         return fail_decrypt("envelope timestamp outside acceptable window");
     }

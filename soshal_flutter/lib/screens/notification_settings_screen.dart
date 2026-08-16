@@ -1,8 +1,5 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../ffi/session.dart';
 import '../services/notifications_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
@@ -31,17 +28,15 @@ class _NotificationSettingsScreenState
 
   Future<void> _loadPushState() async {
     try {
-      final active = sessionGetActive();
-      final json = jsonDecode(active);
-      if (json is Map<String, dynamic>) {
-        final token = json['push_token'] as String?;
-        if (mounted) {
-          setState(() {
-            _token = token ?? '';
-            _pushEnabled = _token.isNotEmpty;
-            _loaded = true;
-          });
-        }
+      final json =
+          await context.read<SessionService>().getActiveAccountJson();
+      final token = json['push_token'] as String?;
+      if (mounted) {
+        setState(() {
+          _token = token ?? '';
+          _pushEnabled = _token.isNotEmpty;
+          _loaded = true;
+        });
       }
     } catch (e) {
       debugPrint('notification settings: load push state: $e');

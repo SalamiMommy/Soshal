@@ -15,7 +15,6 @@ use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 use zeroize::Zeroize;
 
 pub mod ring;
@@ -346,10 +345,7 @@ fn random_nonce() -> Result<[u8; 12], String> {
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+    soshal_common_core::format::now_secs() as u64 * 1000
 }
 
 fn checksum(data: &[u8]) -> [u8; 8] {
@@ -411,25 +407,9 @@ fn count_entries(mmap: &MmapMut, len: u64) -> usize {
 mod tests {
     use super::*;
 
-    struct TempDir(std::path::PathBuf);
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn tmp_path() -> (TempDir, std::path::PathBuf) {
-        static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("soshal-tele-test-{}-{}", std::process::id(), n));
-        std::fs::create_dir_all(&dir).unwrap();
-        (TempDir(dir.clone()), dir.join("rec.bin"))
-    }
-
     #[test]
     fn init_and_info() {
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("recorder", "rec.bin");
         let mut r = Recorder::init(&p, 5 * 1024 * 1024).unwrap();
         assert_eq!(r.info().unwrap().capacity_bytes, 5 * 1024 * 1024);
         assert!(!r.is_sealed());
@@ -438,7 +418,7 @@ mod tests {
 
     #[test]
     fn record_roundtrip() {
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("recorder", "rec.bin");
         let mut r = Recorder::init(&p, 64 * 1024).unwrap();
         r.record(RecordKind::State, "signed-in").unwrap();
         r.record(RecordKind::Network, "relay connected").unwrap();
@@ -451,7 +431,7 @@ mod tests {
 
     #[test]
     fn wrap_around() {
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("recorder", "rec.bin");
         let mut r = Recorder::init(&p, 64 * 1024).unwrap();
         let big = "x".repeat(2000);
         for _ in 0..500 {
@@ -468,7 +448,7 @@ mod tests {
 
     #[test]
     fn crash_seals_and_blocks_writes() {
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("recorder", "rec.bin");
         let mut r = Recorder::init(&p, 64 * 1024).unwrap();
         r.mark_crash("fatal: null deref").unwrap();
         assert!(r.is_sealed());
@@ -481,7 +461,7 @@ mod tests {
 
     #[test]
     fn dump_encrypt_decrypt() {
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("recorder", "rec.bin");
         let mut r = Recorder::init(&p, 64 * 1024).unwrap();
         r.record(RecordKind::Ipc, "ffi-call-42").unwrap();
         r.record(RecordKind::State, "locked").unwrap();
@@ -493,7 +473,7 @@ mod tests {
 
     #[test]
     fn corruption_resets() {
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("recorder", "rec.bin");
         {
             let mut r = Recorder::init(&p, 64 * 1024).unwrap();
             r.record(RecordKind::App, "pre-corruption").unwrap();
@@ -510,7 +490,7 @@ mod tests {
 
     #[test]
     fn clear_wipes_entries() {
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("recorder", "rec.bin");
         let mut r = Recorder::init(&p, 64 * 1024).unwrap();
         r.record(RecordKind::App, "one").unwrap();
         r.clear().unwrap();
@@ -519,7 +499,7 @@ mod tests {
 
     #[test]
     fn key_file_persists_across_reopen() {
-        let (_t, p) = tmp_path();
+        let p = soshal_test_util::tmp_path("recorder", "rec.bin");
         {
             let mut r = Recorder::init(&p, 64 * 1024).unwrap();
             r.record(RecordKind::State, "session-a").unwrap();
@@ -532,13 +512,12 @@ mod tests {
 
     #[test]
     fn wrong_key_fails_decrypt() {
-        let (_t, p) = tmp_path();
-        let (t2, p2) = tmp_path();
+        let p = soshal_test_util::tmp_path("recorder", "rec.bin");
+        let p2 = soshal_test_util::tmp_path("recorder", "rec2.bin");
         let mut r = Recorder::init(&p, 64 * 1024).unwrap();
         r.record(RecordKind::State, "secret-a").unwrap();
         let dump = r.dump_encrypted().unwrap();
         let r2 = Recorder::init(&p2, 64 * 1024).unwrap();
         assert!(r2.decrypt_dump(&dump).is_err());
-        drop(t2);
     }
 }

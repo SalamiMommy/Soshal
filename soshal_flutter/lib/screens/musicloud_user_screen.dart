@@ -87,8 +87,7 @@ class _MusicloudUserScreenState extends State<MusicloudUserScreen> {
       error: error,
       emptyIcon: Icons.music_note,
       emptyTitle: 'No tracks published',
-      emptyBody:
-          'This author has not published any Musicloud tracks yet.',
+      emptyBody: 'This author has not published any Musicloud tracks yet.',
       itemCount: tracks.length,
       itemBuilder: (context, index) {
         final track = tracks[index];

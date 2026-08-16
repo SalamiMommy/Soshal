@@ -193,7 +193,11 @@ pub fn moderation_delete_report(report_id: String) -> Result<bool, String> {
 pub fn moderation_should_filter(content: String, user_pubkey: String) -> Result<bool, String> {
     drop(user_pubkey);
     let verdict = soshal_moderation_core::check::check_text(&content);
-    Ok(verdict != content || verdict.is_empty() && !content.is_empty()).into()
+    let passed = serde_json::from_str::<serde_json::Value>(&verdict)
+        .ok()
+        .and_then(|v| v.get("passed").and_then(|p| p.as_bool()))
+        .unwrap_or(false);
+    Ok(!passed).into()
 }
 
 /// Get the active word filter list (device-global moderation settings key).

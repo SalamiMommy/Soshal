@@ -22,3 +22,5 @@ base64 = { workspace = true }
 
 [lints]
 workspace = true
+[dev-dependencies]
+soshal-test-util = { path = "../test-util" }

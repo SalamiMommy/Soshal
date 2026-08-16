@@ -201,17 +201,9 @@ async fn protocol_handle_avatar(path: &str) -> Result<Vec<u8>, String> {
         }
     }
 
-    // Fallback: minimal 1x1 transparent PNG.
-    Ok(PLACEHOLDER_PNG.to_vec())
+    // Fallback: deterministic identicon derived from the pubkey.
+    Ok(soshal_media_core::identicon::identicon_png(pubkey))
 }
-
-const PLACEHOLDER_PNG: &[u8] = &[
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
-    0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x62, 0x00, 0x01, 0x00, 0x00,
-    0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
-    0x42, 0x60, 0x82,
-];
 
 /// Fetch avatar bytes over HTTPS with a 5 MiB cap. `is_valid_media_url`
 /// rejects private/loopback hosts (SSRF guard).
@@ -245,10 +237,12 @@ async fn fetch_avatar_bytes(url: &str) -> Result<Vec<u8>, String> {
 }
 
 /// Get metadata for avatar
-fn protocol_metadata_avatar(_path: &str) -> Result<ProtocolResponse, String> {
+fn protocol_metadata_avatar(path: &str) -> Result<ProtocolResponse, String> {
+    let pubkey = path.trim_start_matches('/');
+    let length = soshal_media_core::identicon::identicon_png(pubkey).len() as u64;
     Ok(ProtocolResponse {
         content_type: "image/png".to_string(),
-        content_length: PLACEHOLDER_PNG.len() as u64,
+        content_length: length,
         cache_control: "public, max-age=3600".to_string(),
         etag: "avatar".to_string(),
     })

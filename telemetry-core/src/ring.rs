@@ -230,14 +230,6 @@ pub fn ffi_pending(addr: usize) -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-
-    fn tmp_path() -> std::path::PathBuf {
-        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!("soshal_ring_{}_{}", std::process::id(), n))
-    }
 
     fn write_entry_bytes(ring: &mut SharedRing, kind: u8, payload: &[u8]) {
         let total = (RING_ENTRY_HEADER + payload.len() + 3) & !3;
@@ -262,7 +254,8 @@ mod tests {
 
     #[test]
     fn drain_receives_entries_in_order() {
-        let mut ring = SharedRing::init(&tmp_path(), 64 * 1024).unwrap();
+        let mut ring =
+            SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 64 * 1024).unwrap();
         write_entry_bytes(&mut ring, 5, b"hello");
         write_entry_bytes(&mut ring, 3, b"world-longer");
         write_entry_bytes(&mut ring, 2, &[0u8; 100]);
@@ -282,7 +275,8 @@ mod tests {
 
     #[test]
     fn wrap_around_skips_boundary() {
-        let mut ring = SharedRing::init(&tmp_path(), 4096 * 3).unwrap();
+        let mut ring =
+            SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 4096 * 3).unwrap();
         // Fill until the writer would straddle the boundary twice.
         for i in 0..50 {
             write_entry_bytes(&mut ring, 1, &[i as u8; 500]);
@@ -294,7 +288,8 @@ mod tests {
 
     #[test]
     fn registry_advance_and_drain() {
-        let addr = register_ring(&tmp_path(), 64 * 1024).unwrap();
+        let addr =
+            register_ring(&soshal_test_util::tmp_path("ring", "ring.bin"), 64 * 1024).unwrap();
         assert!(addr > 0);
         assert!(ffi_advance_head(addr, 0).is_ok());
         let entries = ffi_drain(addr).unwrap();

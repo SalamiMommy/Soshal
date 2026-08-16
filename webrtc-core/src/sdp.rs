@@ -103,6 +103,21 @@ pub fn sanitize_sdp_json(input: &str) -> String {
     )
 }
 
+// ─── Candidate Extraction & Validation ─────────────────────────────────────
+
+/// Extract `a=candidate:` lines from an SDP.
+pub fn extract_candidates(sdp: &str) -> Vec<String> {
+    sdp.lines()
+        .filter(|line| line.starts_with("a=candidate:"))
+        .map(|line| line.to_string())
+        .collect()
+}
+
+/// Basic SDP well-formedness check: session-level v= and o= lines present.
+pub fn validate_sdp(sdp: &str) -> bool {
+    sdp.contains("v=0") && sdp.contains("o=")
+}
+
 // ─── Opus SDP Configuration ─────────────────────────────────────────────────
 
 const MAX_FFI_LEN: usize = 1024 * 1024;

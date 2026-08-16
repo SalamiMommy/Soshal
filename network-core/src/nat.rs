@@ -93,8 +93,6 @@ enum NatCommand {
 pub struct NatHandle {
     sender: std::sync::mpsc::SyncSender<NatCommand>,
     stop: Arc<AtomicBool>,
-    #[allow(dead_code)]
-    my_pubkey: String,
 }
 
 impl NatHandle {
@@ -229,11 +227,7 @@ pub fn spawn_nat_manager(my_pubkey: String) -> Result<NatHandle, String> {
             rt.block_on(run_manager(rx, thread_stop, thread_my_pubkey));
         })
         .map_err(|e| format!("nat thread: {e}"))?;
-    Ok(NatHandle {
-        sender: tx,
-        stop,
-        my_pubkey,
-    })
+    Ok(NatHandle { sender: tx, stop })
 }
 
 async fn run_manager(

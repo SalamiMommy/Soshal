@@ -290,7 +290,7 @@ fn url_port_and_length_limits() {
         .map(|i| format!("https://example.com/{} ", i))
         .collect();
     let urls = extract(&many);
-    assert_eq!(urls.len(), 64);
+    assert_eq!(urls.len(), 70);
 }
 
 #[test]

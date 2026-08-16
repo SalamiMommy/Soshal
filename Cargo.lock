@@ -4218,6 +4218,7 @@ name = "soshal-audio-core"
 version = "0.1.0"
 dependencies = [
  "audiopus",
+ "soshal-test-util",
  "symphonia",
 ]
 
@@ -4258,7 +4259,6 @@ dependencies = [
  "getrandom 0.4.3",
  "hex",
  "nostr",
- "rand_core 0.6.4",
  "ring",
  "serde",
  "serde_json",
@@ -4362,6 +4362,7 @@ dependencies = [
  "soshal-streaming-core",
  "soshal-sync-core",
  "soshal-telemetry-core",
+ "soshal-test-util",
  "soshal-webrtc-core",
  "soshal-zap-core",
  "tokio",
@@ -4504,6 +4505,7 @@ dependencies = [
  "soshal-crypto-core",
  "soshal-media-core",
  "soshal-pqc-core",
+ "soshal-test-util",
  "tokio",
  "tokio-tungstenite 0.21.0",
  "webrtc-ice",
@@ -4611,6 +4613,7 @@ dependencies = [
  "serde",
  "serde_json",
  "soshal-nostr-core",
+ "soshal-test-util",
  "tokio",
 ]
 
@@ -4631,6 +4634,7 @@ dependencies = [
  "soshal-common-core",
  "soshal-db-core",
  "soshal-network-core",
+ "soshal-test-util",
  "tokio",
  "zstd",
 ]
@@ -4643,7 +4647,16 @@ dependencies = [
  "getrandom 0.4.3",
  "memmap2",
  "sha2",
+ "soshal-common-core",
+ "soshal-test-util",
  "zeroize",
+]
+
+[[package]]
+name = "soshal-test-util"
+version = "0.1.0"
+dependencies = [
+ "soshal-db-core",
 ]
 
 [[package]]

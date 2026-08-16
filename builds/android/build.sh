@@ -83,50 +83,37 @@ declare -A OPUSHOST=( [arm64-v8a]=aarch64-linux-android [x86_64]=x86_64-linux-an
 # Build and bundle networking daemons
 # ---------------------------------------------------------------------------
 
+# Download + extract + verify a daemon binary into the cache
+ensure_download() {
+  local name="$1" url="$2" cache_file="$3" extract_dir="$4" binary="$5"
+  mkdir -p "$DAEMONS_CACHE" "$extract_dir"
+  if [[ ! -f "$cache_file" ]]; then
+    echo "  $name: downloading Android binary"
+    curl -L -f -o "$cache_file" "$url" || echo "  $name: download failed, will use stub"
+  fi
+  if [[ -f "$cache_file" ]]; then
+    unzip -q -o "$cache_file" -d "$extract_dir" 2>/dev/null || true
+    if [[ -f "$extract_dir/$binary" ]]; then
+      chmod +x "$extract_dir/$binary"
+      echo "  $name: binary prepared"
+    fi
+  fi
+}
+
 # Download and prepare I2P router (i2pd) for Android
 ensure_i2pd() {
   local version="${I2PD_VERSION:-2.50.0}"
-  local url="https://github.com/PurpleI2P/i2pd/releases/download/${version}/i2pd_${version}_android_arm64.zip"
-  local cache_file="$DAEMONS_CACHE/i2pd-arm64.zip"
-  local extract_dir="$DAEMONS_CACHE/i2pd"
-  
-  mkdir -p "$DAEMONS_CACHE" "$extract_dir"
-  
-  if [[ ! -f "$cache_file" ]]; then
-    echo "  i2pd: downloading Android ARM64 binary"
-    curl -L -f -o "$cache_file" "$url" || echo "  i2pd: download failed, will use stub"
-  fi
-  
-  if [[ -f "$cache_file" ]]; then
-    unzip -q -o "$cache_file" -d "$extract_dir" 2>/dev/null || true
-    if [[ -f "$extract_dir/i2pd" ]]; then
-      chmod +x "$extract_dir/i2pd"
-      echo "  i2pd: binary prepared"
-    fi
-  fi
+  ensure_download "i2pd" \
+    "https://github.com/PurpleI2P/i2pd/releases/download/${version}/i2pd_${version}_android_arm64.zip" \
+    "$DAEMONS_CACHE/i2pd-arm64.zip" "$DAEMONS_CACHE/i2pd" "i2pd"
 }
 
 # Download and prepare Freenet reference node for Android
 ensure_freenet() {
   local version="${FREENET_VERSION:-0.4.0}"
-  local url="https://github.com/freenet/freenet-core/releases/download/${version}/freenet-node-android.zip"
-  local cache_file="$DAEMONS_CACHE/freenet-android.zip"
-  local extract_dir="$DAEMONS_CACHE/freenet"
-  
-  mkdir -p "$DAEMONS_CACHE" "$extract_dir"
-  
-  if [[ ! -f "$cache_file" ]]; then
-    echo "  freenet: downloading Android binary"
-    curl -L -f -o "$cache_file" "$url" || echo "  freenet: download failed, will use stub"
-  fi
-  
-  if [[ -f "$cache_file" ]]; then
-    unzip -q -o "$cache_file" -d "$extract_dir" 2>/dev/null || true
-    if [[ -f "$extract_dir/freenet" ]]; then
-      chmod +x "$extract_dir/freenet"
-      echo "  freenet: binary prepared"
-    fi
-  fi
+  ensure_download "freenet" \
+    "https://github.com/freenet/freenet-core/releases/download/${version}/freenet-node-android.zip" \
+    "$DAEMONS_CACHE/freenet-android.zip" "$DAEMONS_CACHE/freenet" "freenet"
 }
 
 # Build Reticulum daemon for Android (use Python-for-Android approach)

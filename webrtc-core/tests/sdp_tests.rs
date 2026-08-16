@@ -1,8 +1,8 @@
 //! Integration tests for webrtc-core SDP sanitization and Opus configuration.
 
 use soshal_webrtc_core::sdp::{
-    configure_opus_audio_sdp, configure_opus_audio_sdp_json, extract_rtpmap_pt, sanitize_sdp,
-    sanitize_sdp_json,
+    configure_opus_audio_sdp, configure_opus_audio_sdp_json, extract_candidates, extract_rtpmap_pt,
+    sanitize_sdp, sanitize_sdp_json, validate_sdp,
 };
 
 #[test]
@@ -110,6 +110,33 @@ fn sanitize_sdp_json_roundtrip() {
 fn sanitize_sdp_json_garbage_input_empty_result() {
     let v: serde_json::Value = serde_json::from_str(&sanitize_sdp_json("nope")).unwrap();
     assert_eq!(v["sanitized_sdp"], "");
+}
+
+#[test]
+fn extract_candidates_returns_candidate_lines() {
+    let sdp = "v=0\r\na=candidate:1 1 UDP 2130706431 8.8.8.8 54321 typ srflx\r\n\
+m=audio 0 RTP/AVP 0\r\na=candidate:2 1 UDP 2130706431 66.154.114.51 54322 typ relay";
+    let out = extract_candidates(sdp);
+    assert_eq!(out.len(), 2);
+    assert!(out[0].starts_with("a=candidate:1"));
+    assert!(out[1].starts_with("a=candidate:2"));
+}
+
+#[test]
+fn extract_candidates_none_returns_empty() {
+    assert_eq!(
+        extract_candidates("v=0\nm=audio 0 RTP/AVP 0"),
+        Vec::<String>::new()
+    );
+    assert_eq!(extract_candidates(""), Vec::<String>::new());
+}
+
+#[test]
+fn validate_sdp_checks_session_lines() {
+    assert!(validate_sdp("v=0\r\no=- 0 0 IN IP4 127.0.0.1"));
+    assert!(!validate_sdp("v=0 only"));
+    assert!(!validate_sdp("o=- 0 0 IN IP4 127.0.0.1"));
+    assert!(!validate_sdp(""));
 }
 
 #[test]

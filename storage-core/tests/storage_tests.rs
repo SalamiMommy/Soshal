@@ -352,7 +352,7 @@ fn flash_wal_flush_empty_buffer_returns_zero() {
 }
 
 #[test]
-fn flash_wal_batch_tolerates_bad_statement() {
+fn flash_wal_batch_rejects_bad_statement() {
     let db = soshal_db_core::block_on(libsql::Builder::new_local(":memory:").build()).unwrap();
     let conn = db.connect().unwrap();
     let mut flusher = FlashWalFlusher::new();
@@ -360,8 +360,12 @@ fn flash_wal_batch_tolerates_bad_statement() {
     flusher.push_sql("INSERT INTO wal_t VALUES (1);");
     flusher.push_sql("NOT VALID SQL;");
     flusher.push_sql("INSERT INTO wal_t VALUES (2);");
-    assert_eq!(flusher.flush_to_db(&conn).unwrap(), 4);
-    assert_eq!(table_count(&conn, "wal_t"), 2);
+    assert!(flusher.flush_to_db(&conn).is_err());
+    assert_eq!(flusher.pending_sqls.len(), 4);
+    assert_eq!(
+        flusher.current_bytes,
+        flusher.pending_sqls.iter().map(|s| s.len()).sum::<usize>()
+    );
 }
 
 #[test]

@@ -4,10 +4,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../ffi/db.dart' as ffi_db;
-import '../models/custom_profile.dart';
-import '../models/widget.dart';
 import '../services/messaging_service.dart';
+import '../services/profile_service.dart';
 import '../services/session_service.dart';
 
 /// ProfileBuilderScreen. Drag-and-drop custom profile builder. Add, remove,
@@ -37,7 +35,9 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
       final pubkey = sessionService.activePubkey;
       if (pubkey != null) {
         // Load from database
-        final profileData = ffi_db.dbGetCustomProfileNodes(pubkey: pubkey);
+        final profileData = context
+            .read<ProfileService>()
+            .getCustomProfileNodes(pubkey: pubkey);
         if (profileData.isNotEmpty) {
           try {
             final List<dynamic> nodesList =
@@ -106,10 +106,10 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
 
       // Save to database
       final profile = CustomProfile(themeId: 'default', nodes: _nodes);
-      ffi_db.dbSaveCustomProfile(
-        pubkey: pubkey,
-        profileJson: jsonEncode(profile.toJson()),
-      );
+      context.read<ProfileService>().saveCustomProfile(
+            pubkey: pubkey,
+            profileJson: jsonEncode(profile.toJson()),
+          );
 
       // Publish to relays (Nostr event kind 30085)
       try {

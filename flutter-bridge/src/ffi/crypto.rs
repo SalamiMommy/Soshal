@@ -135,14 +135,6 @@ pub async fn crypto_frost_aggregate_signature(
     Err("frost is non-cryptographic simulation, disabled".to_string()).into()
 }
 
-/// BLAKE3 hash of raw bytes; returns 64 hex chars.
-#[frb(sync, serialize)]
-pub fn crypto_blake3(input: Vec<u8>) -> Result<String, String> {
-    let mut reader = std::io::Cursor::new(input);
-    let out = hash::blake3_hash_stream(&mut reader).map_err(|e| format!("blake3: {e}"))?;
-    Ok(hex::encode(out))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,17 +188,6 @@ mod tests {
         let a = crypto_hmac_sha256(vec![1u8; 16], b"payload".to_vec()).unwrap();
         let b = crypto_hmac_sha256(vec![2u8; 16], b"payload".to_vec()).unwrap();
         assert_ne!(a, b);
-    }
-
-    #[test]
-    fn test_blake3_empty_known_vector() {
-        let h = crypto_blake3(vec![]).unwrap();
-        assert_eq!(h.len(), 64);
-        assert_eq!(
-            h,
-            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
-        );
-        assert_ne!(crypto_blake3(b"x".to_vec()).unwrap(), h);
     }
 
     #[test]

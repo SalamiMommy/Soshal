@@ -17,8 +17,6 @@ use std::thread;
 use std::time::Duration;
 
 const DEFAULT_TCP_PORT: u16 = 4242;
-#[allow(dead_code)]
-const MAX_PACKET_SIZE: usize = 65535;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

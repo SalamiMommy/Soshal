@@ -1,0 +1,7 @@
+[package]
+name = "soshal-test-util"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+soshal-db-core = { path = "../db-core" }

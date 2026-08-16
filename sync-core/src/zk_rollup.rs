@@ -140,10 +140,7 @@ impl ZkRollupEngine {
             .await
             .map_err(|e| e.to_string())?;
 
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
+            let now = soshal_common_core::format::now_secs();
 
             conn.execute(
                 "INSERT INTO zk_state_rollups (thread_id, final_state_root, operation_count, verified_at)
@@ -152,7 +149,7 @@ impl ZkRollupEngine {
                     final_state_root = excluded.final_state_root,
                     operation_count = excluded.operation_count,
                     verified_at = excluded.verified_at",
-                params![rollup.thread_id.as_str(), rollup.final_state_root.as_str(), rollup.operation_count as i64, now as i64],
+                params![rollup.thread_id.as_str(), rollup.final_state_root.as_str(), rollup.operation_count as i64, now],
             )
             .await
             .map_err(|e| e.to_string())?;

@@ -5,7 +5,7 @@
 
 use flutter_rust_bridge::frb;
 use soshal_webrtc_core::ice::ice_config;
-use soshal_webrtc_core::sdp::sanitize_sdp;
+use soshal_webrtc_core::sdp::{extract_candidates, sanitize_sdp, validate_sdp};
 
 /// Get ICE configuration based on privacy settings.
 /// `privacy_level`: "public" (all), "friends" (relay only).
@@ -92,12 +92,7 @@ pub fn webrtc_create_peer_config(privacy_level: String) -> Result<String, String
 /// Extract candidates from SDP
 #[frb(sync, serialize)]
 pub fn webrtc_extract_candidates(sdp: String) -> Result<Vec<String>, String> {
-    let candidates: Vec<String> = sdp
-        .lines()
-        .filter(|line| line.starts_with("a=candidate:"))
-        .map(|line| line.to_string())
-        .collect();
-    Ok(candidates).into()
+    Ok(extract_candidates(&sdp)).into()
 }
 
 /// Add candidate to SDP
@@ -114,8 +109,7 @@ pub fn webrtc_add_candidate_to_sdp(sdp: String, candidate: String) -> Result<Str
 /// Validate SDP
 #[frb(sync, serialize)]
 pub fn webrtc_validate_sdp(sdp: String) -> Result<bool, String> {
-    // Basic SDP format validation
-    Ok(sdp.contains("v=0") && sdp.contains("o=")).into()
+    Ok(validate_sdp(&sdp)).into()
 }
 
 #[cfg(test)]

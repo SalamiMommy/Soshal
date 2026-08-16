@@ -97,9 +97,3 @@ mod tests {
         assert_eq!(tags.len(), 3);
     }
 }
-
-/// PCM sample count for `secs` of 48 kHz mono audio.
-#[frb(sync, serialize)]
-pub fn util_pcm_len_for_secs(secs: f64) -> Result<usize, String> {
-    Ok(soshal_audio_core::voice::pcm_len_for_secs(secs.max(0.0)))
-}

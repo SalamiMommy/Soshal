@@ -1,11 +1,12 @@
 use regex::Regex;
+use std::collections::HashSet;
 use std::sync::OnceLock;
 use url::Url;
 
 use crate::regex_util::compile_re;
 
 const MAX_URL_LENGTH: usize = 2048;
-const MAX_EXTRACT_COUNT: usize = 64;
+const MAX_EXTRACT_COUNT: usize = 1024;
 
 static RE_DIGITS_5: OnceLock<Regex> = OnceLock::new();
 static RE_HEX_HOST: OnceLock<Regex> = OnceLock::new();
@@ -78,12 +79,13 @@ fn dns_rebinding_domains() -> &'static [Regex] {
 }
 
 pub fn extract(text: &str) -> Vec<String> {
+    let mut seen: HashSet<&str> = HashSet::new();
     url_re()
         .find_iter(text)
         .map(|m| m.as_str())
         // Cap per-match length and total count so adversarial text cannot
-        // force unbounded output.
-        .filter(|m| m.len() <= MAX_URL_LENGTH)
+        // force unbounded output; duplicates skipped in first-seen order.
+        .filter(|m| m.len() <= MAX_URL_LENGTH && seen.insert(m))
         .take(MAX_EXTRACT_COUNT)
         .map(|s| s.to_string())
         .collect()

@@ -345,7 +345,6 @@ class MessagingService extends ChangeNotifier
       rethrow;
     }
   }
-
 }
 
 /// Identity Service
@@ -478,8 +477,8 @@ class IdentityService extends ChangeNotifier
   /// Publish custom profile to relays (Nostr kind 30085)
   Future<String> publishCustomProfile(String pubkey, String profileJson) async {
     try {
-      final eventId = RustLib.instance.api
-          .crateFfiIdentityIdentityPublishCustomProfile(
+      final eventId =
+          RustLib.instance.api.crateFfiIdentityIdentityPublishCustomProfile(
         pubkey: pubkey,
         profileJson: profileJson,
       );

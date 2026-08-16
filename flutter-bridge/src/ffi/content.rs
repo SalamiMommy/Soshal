@@ -16,18 +16,6 @@ pub fn content_decompress_json_dict(encoded: String) -> Result<String, String> {
     Ok(decompress_json_dict(&encoded)).into()
 }
 
-/// Parse a text blob leniently, capping nesting/depth; JSON in, JSON out.
-#[frb(sync, serialize)]
-pub fn content_safe_json_parse(text: String) -> Result<String, String> {
-    Ok(soshal_content_core::safe_json::safe_json_parse_json(&text))
-}
-
-/// Extract video URLs from an imeta-style tags JSON array (JSON out).
-#[frb(sync, serialize)]
-pub fn content_extract_imeta_video_urls(tags_json: String) -> Result<String, String> {
-    Ok(soshal_content_core::linkpreview::imeta::extract_imeta_video_urls_json(&tags_json))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

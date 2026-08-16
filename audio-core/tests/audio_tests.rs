@@ -68,8 +68,7 @@ fn waveform_silence_is_zero() {
 fn waveform_path_roundtrip() {
     let pcm = sine_pcm(0.5, 440.0);
     let stream = encode_voice_pcm(&pcm).unwrap();
-    let dir = std::env::temp_dir().join("soshal-audio-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = soshal_test_util::tmp_root("audio");
     let path = dir.join("voice.wav");
     std::fs::write(&path, &stream).unwrap();
     let peaks = extract_waveform_path(path.to_str().unwrap(), 64).unwrap();

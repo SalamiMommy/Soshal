@@ -31,7 +31,6 @@ mod ffi_tests {
 
     const NWC_PUBKEY: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
     const NWC_SECRET: &str = "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
-    const NWC_URI: &str = "nostr+walletconnect://abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789?relay=wss://relay.damus.io&secret=f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
 
     // --- zap: LNURL parsing ------------------------------------------------
 
@@ -82,7 +81,7 @@ mod ffi_tests {
     #[test]
     fn zap_ffi_connect_nwc_roundtrip() {
         let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        assert!(zap::zap_connect_nwc(NWC_URI.to_string()).unwrap());
+        assert!(zap::zap_connect_nwc(zap::NWC_URI.to_string()).unwrap());
 
         let status = zap::zap_get_nwc_status().unwrap();
         let v: serde_json::Value = serde_json::from_str(&status).unwrap();

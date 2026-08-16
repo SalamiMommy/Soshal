@@ -4,10 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import '../ffi/auth.dart';
-import '../ffi/db.dart' as ffi_db;
-import '../models/custom_profile.dart';
-import '../models/widget.dart';
+import '../services/profile_service.dart';
 import '../services/session_service.dart';
 
 /// ProfileRendererScreen. Displays custom profile widgets with optional
@@ -43,7 +40,9 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
   Future<void> _loadProfile() async {
     setState(() => _loading = true);
     try {
-      final profileData = ffi_db.dbGetCustomProfileNodes(pubkey: widget.pubkey);
+      final profileData = context
+          .read<ProfileService>()
+          .getCustomProfileNodes(pubkey: widget.pubkey);
       if (profileData.isNotEmpty) {
         try {
           final List<dynamic> nodesList =
@@ -122,10 +121,10 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
     setState(() => _saving = true);
     try {
       final profile = CustomProfile(themeId: 'default', nodes: _localNodes);
-      ffi_db.dbSaveCustomProfile(
-        pubkey: widget.pubkey,
-        profileJson: jsonEncode(profile.toJson()),
-      );
+      context.read<ProfileService>().saveCustomProfile(
+            pubkey: widget.pubkey,
+            profileJson: jsonEncode(profile.toJson()),
+          );
 
       setState(() {
         _nodes = _localNodes;
@@ -150,7 +149,9 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
   }
 
   void _showQrCode() {
-    final npub = authNpubEncode(publicKey: widget.pubkey);
+    final npub = context
+        .read<ProfileService>()
+        .npubEncode(publicKey: widget.pubkey);
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(

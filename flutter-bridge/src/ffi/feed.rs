@@ -196,28 +196,6 @@ pub async fn feed_delete_post(event_id: String) -> Result<String, String> {
     Ok(signed_json).into()
 }
 
-/// Compress event JSON for storage (zstd via content-core). Runs on the
-/// Rust async runtime so the UI thread never blocks.
-#[frb(serialize)]
-pub async fn feed_compress_event(event_json: String) -> Result<Vec<u8>, String> {
-    match soshal_content_core::compress::compress(event_json.as_bytes()) {
-        Ok(bytes) => Ok(bytes).into(),
-        Err(e) => Err(format!("compression failed: {e}")).into(),
-    }
-}
-
-/// Decompress an event stored with `feed_compress_event`.
-#[frb(serialize)]
-pub async fn feed_decompress_event(compressed: Vec<u8>) -> Result<String, String> {
-    match soshal_content_core::compress::decompress_limited(&compressed, 4 * 1024 * 1024) {
-        Ok(bytes) => match String::from_utf8(bytes) {
-            Ok(s) => Ok(s).into(),
-            Err(e) => Err(format!("not utf8: {e}")).into(),
-        },
-        Err(e) => Err(format!("decompression failed: {e}")).into(),
-    }
-}
-
 /// Fetch recent feed posts from the local DB (kind 1, newest first),
 /// optionally filtered to posts by the given author.
 #[frb(sync, serialize)]
@@ -318,23 +296,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_compress_roundtrip() {
-        let event = r#"{"id":"a","kind":1,"content":"hello world hello world"}"#;
-        let compressed = feed_compress_event(event.to_string()).await.unwrap();
-        let restored = feed_decompress_event(compressed).await.unwrap();
-        assert_eq!(restored, event);
-    }
-
-    #[tokio::test]
-    async fn test_decompress_invalid() {
-        let err = feed_decompress_event(b"not zstd".to_vec())
-            .await
-            .unwrap_err();
-        assert!(err.contains("decompression failed"), "{err}");
-    }
-
-    #[test]
-    fn test_aggregate_chat_reactions() {
+    async fn test_aggregate_chat_reactions() {
         let input = r#"{"reactions":[{"emoji":"👍","reactorPubkey":"alice"},{"emoji":"👍","reactorPubkey":"self"},{"emoji":"❤️","reactorPubkey":"bob"}],"selfPubkey":"self"}"#;
         let json = feed_aggregate_chat_reactions(input.to_string()).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
@@ -578,28 +540,6 @@ mod tests {
         assert_eq!(arr[1]["id"], "b");
         assert!(feed_compute_card_layouts("nope".to_string()).is_err());
     }
-
-    #[test]
-    fn test_freenet_ephemeral_tags() {
-        let json = feed_freenet_ephemeral_tags("contractkey".to_string()).unwrap();
-        let arr: Vec<Vec<String>> = serde_json::from_str(&json).unwrap();
-        assert!(arr.contains(&vec!["freenet".to_string(), "contractkey".to_string()]));
-        assert!(arr.contains(&vec!["ephemeral".to_string(), "true".to_string()]));
-        assert!(arr.contains(&vec!["retention".to_string(), "0".to_string()]));
-    }
-
-    #[test]
-    fn test_profile_entry_from_event() {
-        let ev =
-            r#"{"id":"e1","pubkey":"pk1","content":"hi","created_at":1234,"kind":0,"tags":[]}"#;
-        let json = feed_profile_entry_from_event(ev.to_string()).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["pubkey"], "pk1");
-        assert_eq!(v["content"], "hi");
-        assert_eq!(v["created_at"], 1234);
-        let err = feed_profile_entry_from_event("nope".to_string()).unwrap_err();
-        assert!(err.contains("invalid legacy event JSON"), "{err}");
-    }
 }
 
 /// Pre-calculated layout extents for one feed card. Request:
@@ -634,21 +574,4 @@ pub fn feed_compute_card_layouts(requests_json: String) -> Result<String, String
     serde_json::to_string(&results)
         .map_err(|e| e.to_string())
         .into()
-}
-
-/// Build freenet ephemeral tags for a post (JSON out).
-#[frb(sync, serialize)]
-pub fn feed_freenet_ephemeral_tags(freenet_key: String) -> Result<String, String> {
-    let tags = soshal_feed_core::publish::build_freenet_ephemeral_tags(&freenet_key);
-    serde_json::to_string(&tags)
-        .map_err(|e| e.to_string())
-        .into()
-}
-
-/// Extract profile entry (pubkey/content/created_at) from a nostr event JSON.
-#[frb(sync, serialize)]
-pub fn feed_profile_entry_from_event(event_json: String) -> Result<String, String> {
-    let legacy: soshal_nostr_core::models::NostrEvent =
-        serde_json::from_str(&event_json).map_err(|e| format!("invalid legacy event JSON: {e}"))?;
-    super::util::json_ok(soshal_feed_core::query::profile_entry_from_event(&legacy))
 }

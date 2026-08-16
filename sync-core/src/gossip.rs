@@ -61,12 +61,6 @@ mod tests {
         assert_eq!(node.self_peer_id, "my_pubkey");
     }
 
-    fn test_db() -> Database {
-        let db = Database::open_in_memory().unwrap();
-        db.migrate().unwrap();
-        db
-    }
-
     fn channel() -> (Sender<SyncUpdate>, tokio::sync::mpsc::Receiver<SyncUpdate>) {
         tokio::sync::mpsc::channel(16)
     }
@@ -105,7 +99,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn gossip_relays_to_eager_and_lazy_peers() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         let bridge = GossipSyncBridge::new("self");
         bridge.node.write().await.add_peer("eager_a");
         bridge.node.write().await.add_peer("eager_b");
@@ -138,7 +132,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn duplicate_gossip_prunes_sender() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         let bridge = GossipSyncBridge::new("self");
         bridge.node.write().await.add_peer("peer_a");
         bridge.node.write().await.add_peer("peer_b");
@@ -161,7 +155,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn gossip_with_invalid_payload_not_ingested() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         let bridge = GossipSyncBridge::new("self");
         bridge.node.write().await.add_peer("peer_a");
         let msg = PlumTreeMessage::Gossip {
@@ -185,7 +179,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn gossip_event_roundtrip_ingests() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         let keys = Keys::generate();
         UserRepo::new(&db)
             .ensure_exists(&keys.public_key().to_hex())

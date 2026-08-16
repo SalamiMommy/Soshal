@@ -320,5 +320,4 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
       rethrow;
     }
   }
-
-  }
+}

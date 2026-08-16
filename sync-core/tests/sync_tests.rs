@@ -42,12 +42,6 @@ fn signed_event(keys: &Keys, kind: Kind, content: &str, tags: Vec<Vec<String>>) 
     builder.finalize(keys).unwrap()
 }
 
-fn test_db() -> Database {
-    let db = Database::open_in_memory().unwrap();
-    db.migrate().unwrap();
-    db
-}
-
 fn channel() -> (mpsc::Sender<SyncUpdate>, mpsc::Receiver<SyncUpdate>) {
     mpsc::channel(16)
 }
@@ -81,7 +75,7 @@ fn post_row(id: &str, content: &str) -> PostRow {
 
 #[test]
 fn ingest_text_note_caches_post_and_emits_feed() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(&keys, Kind::TextNote, "hello mesh", vec![]);
@@ -107,7 +101,7 @@ fn ingest_text_note_caches_post_and_emits_feed() {
 
 #[test]
 fn ingest_freenet_tag_sets_native_fields() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(
@@ -129,7 +123,7 @@ fn ingest_freenet_tag_sets_native_fields() {
 
 #[test]
 fn ingest_oversized_content_skipped() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let event = signed_event(&keys, Kind::TextNote, &"x".repeat(70 * 1024), vec![]);
     let (tx, _rx) = channel();
@@ -142,7 +136,7 @@ fn ingest_oversized_content_skipped() {
 
 #[test]
 fn ingest_contact_list_sets_user_contacts() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let a = Keys::generate();
     let b = Keys::generate();
@@ -169,7 +163,7 @@ fn ingest_contact_list_sets_user_contacts() {
 
 #[test]
 fn ingest_zap_receipt_creates_zap_row() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let recipient = Keys::generate();
     let event = signed_event(
@@ -189,7 +183,7 @@ fn ingest_zap_receipt_creates_zap_row() {
 
 #[test]
 fn ingest_bookmarks_creates_bookmark_row() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(
@@ -209,7 +203,7 @@ fn ingest_bookmarks_creates_bookmark_row() {
 
 #[test]
 fn ingest_dm_addressed_to_me_emits_update() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let me = Keys::generate();
     let peer = Keys::generate();
     let event = signed_event(
@@ -239,7 +233,7 @@ fn ingest_dm_addressed_to_me_emits_update() {
 
 #[test]
 fn ingest_dm_not_addressed_to_me_skipped() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let me = Keys::generate();
     let peer = Keys::generate();
     let other = Keys::generate();
@@ -256,7 +250,7 @@ fn ingest_dm_not_addressed_to_me_skipped() {
 
 #[test]
 fn ingest_dm_authored_by_me_emits_update() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let me = Keys::generate();
     let peer = Keys::generate();
     let event = signed_event(
@@ -272,7 +266,7 @@ fn ingest_dm_authored_by_me_emits_update() {
 
 #[test]
 fn ingest_custom_kind_cached_as_post() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let event = signed_event(
         &keys,
@@ -291,7 +285,7 @@ fn ingest_custom_kind_cached_as_post() {
 
 #[test]
 fn ingest_reaction_caches_with_e_tag() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let target = Keys::generate();
     seed_user(&db, &keys.public_key().to_hex());
@@ -315,7 +309,7 @@ fn ingest_reaction_caches_with_e_tag() {
 
 #[test]
 fn ingest_reaction_without_e_tag_skipped() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let event = signed_event(&keys, Kind::Reaction, "+", vec![]);
     let (tx, mut rx) = channel();
@@ -325,7 +319,7 @@ fn ingest_reaction_without_e_tag_skipped() {
 
 #[test]
 fn ingest_metadata_upserts_user() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let event = signed_event(
         &keys,
@@ -347,7 +341,7 @@ fn ingest_metadata_upserts_user() {
 
 #[test]
 fn ingest_rejects_unverified_event() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let mut event = signed_event(&keys, Kind::TextNote, "hello", vec![]);
     event.content = "tampered".to_string();
@@ -361,7 +355,7 @@ fn ingest_rejects_unverified_event() {
 
 #[test]
 fn ingest_batch_applies_all_events() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let e1 = signed_event(&keys, Kind::TextNote, "one", vec![]);
     let e2 = signed_event(&keys, Kind::TextNote, "two", vec![]);
@@ -385,7 +379,7 @@ fn watermark_roundtrip_and_kind_mapping() {
     assert_eq!(watermark_key(Kind::EncryptedDirectMessage), None);
     assert_eq!(watermark_key(Kind::Reaction), None);
 
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     assert_eq!(watermark(&db, WM_FEED), 0);
     set_watermark(&db, WM_FEED, 1_700_000_123);
     assert_eq!(watermark(&db, WM_FEED), 1_700_000_123);
@@ -397,7 +391,7 @@ fn watermark_roundtrip_and_kind_mapping() {
 
 #[test]
 fn revert_post_tombstones_not_deletes() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     seed_user(&db, &"aa".repeat(32));
     PostRepo::new(&db)
         .upsert(&post_row("post-1", "hello"))
@@ -411,7 +405,7 @@ fn revert_post_tombstones_not_deletes() {
 
 #[test]
 fn revert_like_removes_reaction() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(
@@ -445,7 +439,7 @@ fn revert_like_removes_reaction() {
 
 #[test]
 fn revert_profile_restores_prior_fields() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let pubkey = keys.public_key().to_hex();
     UserRepo::new(&db)
@@ -481,7 +475,7 @@ fn revert_profile_restores_prior_fields() {
 
 #[test]
 fn revert_unknown_kind_and_bad_payload_are_noops() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let conn = db.conn().unwrap();
     revert(&conn, "unknown-kind", r#"{"id":"x"}"#).unwrap();
     assert!(revert(&conn, KIND_POST, "not-json").is_err());
@@ -490,7 +484,7 @@ fn revert_unknown_kind_and_bad_payload_are_noops() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn gossip_forwards_to_eager_peers_and_ingests() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(&keys, Kind::TextNote, "gossiped", vec![]);
@@ -524,7 +518,7 @@ async fn gossip_forwards_to_eager_peers_and_ingests() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn gossip_duplicate_emits_prune() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     seed_user(&db, &keys.public_key().to_hex());
     let event = signed_event(&keys, Kind::TextNote, "dup", vec![]);
@@ -549,7 +543,7 @@ async fn gossip_duplicate_emits_prune() {
 
 #[test]
 fn epoch_gc_prunes_old_tombstones_keeps_new_and_live() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let pubkey = "aa".repeat(32);
     seed_user(&db, &pubkey);
     let repo = PostRepo::new(&db);
@@ -587,7 +581,7 @@ fn epoch_gc_prunes_old_tombstones_keeps_new_and_live() {
 
 #[test]
 fn epoch_gc_increments_epoch_counter_per_run() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let mut clocks = HashMap::new();
     clocks.insert("peer1".to_string(), 100_000);
     let conn = db.conn().unwrap();
@@ -611,7 +605,7 @@ fn epoch_gc_increments_epoch_counter_per_run() {
 
 #[test]
 fn epoch_gc_is_noop_without_peer_clocks() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let summary = EpochGarbageCollector::prune_tombstones_if_consensus_reached(
         &db.conn().unwrap(),
         "posts_feed",
@@ -665,7 +659,7 @@ fn zk_rollup_valid_commitment_verifies_and_tampered_rejected() {
 
 #[test]
 fn zk_rollup_apply_writes_upserts_and_rejects_tampered() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     let conn = db.conn().unwrap();
     let genesis = "g".repeat(64);
     let final_state = "f".repeat(64);
@@ -706,7 +700,7 @@ fn zk_rollup_apply_writes_upserts_and_rejects_tampered() {
 
 #[test]
 fn tx_record_status_update_and_list() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     tx_begin(&db, "n1", "post", r#"{"id":"n1"}"#, 1).unwrap();
     tx_begin(&db, "n2", "like", r#"{"id":"n2"}"#, 2).unwrap();
     tx_link(&db, "n1", "n2").unwrap();
@@ -722,7 +716,7 @@ fn tx_record_status_update_and_list() {
 
 #[test]
 fn outbox_enqueue_pending_count_and_complete() {
-    let db = test_db();
+    let db = soshal_test_util::test_db();
     enqueue_outbox_item(&db, "o1", "post", "{}", None, 100).unwrap();
     enqueue_outbox_item(
         &db,

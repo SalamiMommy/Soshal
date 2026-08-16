@@ -6,6 +6,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
 
+pub use crate::freenet_contract::StateSummary as ContractSummary;
+use crate::freenet_contract::{RelatedContract, StateSummary};
+
 /// Freenet WebSocket client for contract operations
 pub struct FreenetWebSocketClient {
     url: String,
@@ -127,7 +130,7 @@ impl FreenetWebSocketClient {
     pub async fn subscribe_contract(
         &self,
         key: &str,
-        summary: Option<ContractSummary>,
+        summary: Option<StateSummary>,
     ) -> Result<(), String> {
         let request = FreenetRequest::Subscribe(SubscribeRequest {
             key: key.to_string(),
@@ -174,7 +177,7 @@ pub struct PutRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubscribeRequest {
     pub key: String,
-    pub summary: Option<ContractSummary>,
+    pub summary: Option<StateSummary>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -242,20 +245,9 @@ pub struct ContractContainer {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RelatedContract {
-    pub key: String,
-    pub summary: Option<ContractSummary>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ContractSummary {
-    pub data: Vec<u8>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct StateUpdate {
     pub delta: Vec<u8>,
-    pub summary: Option<ContractSummary>,
+    pub summary: Option<StateSummary>,
 }
 
 #[cfg(test)]
@@ -320,7 +312,7 @@ mod tests {
             }),
             related_contracts: vec![RelatedContract {
                 key: "r".to_string(),
-                summary: Some(ContractSummary { data: vec![4] }),
+                summary: Some(StateSummary { data: vec![4] }),
             }],
             subscribe: false,
             blocking_subscribe: true,
@@ -343,7 +335,7 @@ mod tests {
 
         let subscribe = FreenetRequest::Subscribe(SubscribeRequest {
             key: "k".to_string(),
-            summary: Some(ContractSummary { data: vec![5] }),
+            summary: Some(StateSummary { data: vec![5] }),
         });
         let decoded: FreenetRequest =
             serde_json::from_str(&serde_json::to_string(&subscribe).unwrap()).unwrap();

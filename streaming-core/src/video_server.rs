@@ -312,8 +312,7 @@ mod tests {
         use tokio::io::AsyncWriteExt;
         use tokio::net::TcpStream;
 
-        let root = std::env::temp_dir().join(format!("soshal-blob-test-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
+        let root = soshal_test_util::tmp_root("video_server");
         let hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         let payload = b"hello blob world".to_vec();
         std::fs::write(root.join(hash), &payload).unwrap();
@@ -362,9 +361,7 @@ mod tests {
         use tokio::io::AsyncWriteExt;
         use tokio::net::TcpStream;
 
-        let dir =
-            std::env::temp_dir().join(format!("soshal-video-full-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = soshal_test_util::tmp_root("video_server");
         let payload = b"full file get payload".to_vec();
         let path = dir.join("full.mp4");
         std::fs::write(&path, &payload).unwrap();
@@ -400,9 +397,7 @@ mod tests {
         use tokio::io::AsyncWriteExt;
         use tokio::net::TcpStream;
 
-        let dir =
-            std::env::temp_dir().join(format!("soshal-video-range-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = soshal_test_util::tmp_root("video_server");
         let payload = b"malformed range payload".to_vec();
         let path = dir.join("range.mp4");
         std::fs::write(&path, &payload).unwrap();
@@ -432,9 +427,7 @@ mod tests {
         use tokio::io::AsyncWriteExt;
         use tokio::net::TcpStream;
 
-        let dir =
-            std::env::temp_dir().join(format!("soshal-video-404-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = soshal_test_util::tmp_root("video_server");
         let payload = b"registered video payload".to_vec();
         let path = dir.join("known.mp4");
         std::fs::write(&path, &payload).unwrap();
@@ -464,9 +457,7 @@ mod tests {
         use tokio::io::AsyncWriteExt;
         use tokio::net::TcpStream;
 
-        let dir =
-            std::env::temp_dir().join(format!("soshal-video-sendfile-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = soshal_test_util::tmp_root("video_server");
         let payload = vec![0xABu8; 5 * 1024 * 1024];
         let path = dir.join("big.mp4");
         std::fs::write(&path, &payload).unwrap();

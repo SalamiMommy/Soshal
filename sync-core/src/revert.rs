@@ -77,12 +77,6 @@ mod tests {
     use soshal_db_core::repos::user::{UserRepo, UserRow};
     use soshal_db_core::Database;
 
-    fn test_db() -> Database {
-        let db = Database::open_in_memory().unwrap();
-        db.migrate().unwrap();
-        db
-    }
-
     fn seed_user(db: &Database, pubkey: &str) {
         UserRepo::new(db).ensure_exists(pubkey).unwrap();
     }
@@ -130,7 +124,7 @@ mod tests {
 
     #[test]
     fn revert_profile_restores_prior_state() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         let pubkey = "aa".repeat(32);
         UserRepo::new(&db)
             .upsert(&user_row(&pubkey, "new-name"))
@@ -150,7 +144,7 @@ mod tests {
 
     #[test]
     fn revert_post_tombstones_and_double_revert_is_idempotent() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         seed_user(&db, &"aa".repeat(32));
         PostRepo::new(&db).upsert(&post_row("post-1")).unwrap();
         let conn = db.conn().unwrap();
@@ -163,7 +157,7 @@ mod tests {
 
     #[test]
     fn revert_like_double_revert_is_noop() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         seed_user(&db, &"aa".repeat(32));
         ReactionRepo::new(&db)
             .upsert(&ReactionRow {
@@ -187,7 +181,7 @@ mod tests {
 
     #[test]
     fn revert_empty_or_missing_targets_is_noop() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         let conn = db.conn().unwrap();
         revert(&conn, KIND_POST, "{}").unwrap();
         revert(&conn, KIND_POST, r#"{"id":"missing"}"#).unwrap();
@@ -200,7 +194,7 @@ mod tests {
 
     #[test]
     fn revert_invalid_targets_are_noop_or_error() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         seed_user(&db, &"aa".repeat(32));
         PostRepo::new(&db).upsert(&post_row("post-1")).unwrap();
         let conn = db.conn().unwrap();

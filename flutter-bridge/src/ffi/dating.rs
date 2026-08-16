@@ -87,7 +87,8 @@ pub fn dating_fetch_profiles(user_pubkey: String, limit: i32) -> Result<String, 
     let json = super::db::db_query_raw(profile_rows_sql(
         &format!(
             "AND p.pubkey != '{}' AND p.id NOT IN \
-             (SELECT event_id FROM reactions WHERE pubkey = '{}')",
+             (SELECT event_id FROM reactions WHERE pubkey = '{}') \
+             AND p.id NOT IN (SELECT pubkey FROM dating_unmatches)",
             user_pubkey.replace('\'', "''"),
             user_pubkey.replace('\'', "''")
         ),
@@ -260,13 +261,36 @@ fn react(user_pubkey: &str, target_event_id: &str, content: &str) -> Result<bool
                 .into_iter()
                 .filter_map(|t| nostr::event::Tag::parse(t).ok()),
         );
-    let _ = super::signer::sign_builder(builder)?;
-    let _ = user_pubkey;
-    Ok(true)
+    let signed_json = super::signer::sign_builder(builder)?;
+    let signed: serde_json::Value =
+        serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
+    let event_id = signed["id"].as_str().unwrap_or_default().to_string();
+    let now = soshal_common_core::format::now_secs();
+    let row = soshal_db_core::repos::reaction::ReactionRow {
+        id: format!("reaction:{user_pubkey}:{target_event_id}"),
+        event_id: event_id.clone(),
+        pubkey: user_pubkey.to_string(),
+        content: Some(content.to_string()),
+        created_at: now,
+        kind: 7,
+    };
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::reaction::ReactionRepo::new(db).upsert(&row)?;
+        soshal_sync_core::outbox::enqueue_outbox_item(
+            db,
+            &event_id,
+            "reaction",
+            &signed_json,
+            None,
+            now,
+        )
+        .map_err(soshal_db_core::error::DbError::Migration)?;
+        Ok(true)
+    })
 }
 
-/// Like a profile (kind 7 reaction with `+`), stored locally + signed for
-/// publish. Mutual likes form a match (checked in `dating_fetch_matches`).
+/// Like a profile (kind 7 reaction with `+`), stored locally + queued for
+/// relay via outbox. Mutual likes form a match (checked in `dating_fetch_matches`).
 #[frb(sync, serialize)]
 pub fn dating_like(user_pubkey: String, profile_id: String) -> Result<bool, String> {
     react(&user_pubkey, &profile_id, "+")
@@ -387,34 +411,41 @@ pub fn dating_calculate_score(
     target_pubkey: String,
     preferences_json: String,
 ) -> Result<f32, String> {
-    drop(preferences_json);
-    let self_profile: DatingCardInfo = match dating_get_own_profile(user_pubkey) {
-        Ok(p) => serde_json::from_str(&p).map_err(|e| format!("parse self profile: {e}"))?,
-        Err(_) => return Ok(0.0).into(),
+    let prefs: serde_json::Value =
+        serde_json::from_str(&preferences_json).unwrap_or(serde_json::Value::Null);
+    let profile_rows = |pubkey: &str| {
+        super::db::db_query_raw(format!(
+            "SELECT p.id, p.pubkey, p.content FROM posts p \
+             WHERE p.kind = {KIND_PROFILE} AND p.pubkey = '{}' AND p.is_deleted = 0 \
+             ORDER BY p.created_at DESC LIMIT 1",
+            pubkey.replace('\'', "''")
+        ))
     };
-    let target_json = super::db::db_query_raw(format!(
-        "SELECT p.id, p.pubkey, p.content FROM posts p \
-         WHERE p.kind = {KIND_PROFILE} AND p.pubkey = '{}' AND p.is_deleted = 0 \
-         ORDER BY p.created_at DESC LIMIT 1",
-        target_pubkey.replace('\'', "''")
-    ))?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&target_json).unwrap_or_default();
-    let target_content = match rows.first().and_then(|r| r["content"].as_str()) {
+    let self_rows: Vec<serde_json::Value> =
+        serde_json::from_str(&profile_rows(&user_pubkey)?).unwrap_or_default();
+    let self_content_raw = match self_rows.first().and_then(|r| r["content"].as_str()) {
         Some(c) => c.to_string(),
         None => return Ok(0.0).into(),
     };
-    let self_content = serde_json::json!({
-        "pubkey": self_profile.pubkey,
-        "age": self_profile.age,
-        "bio": self_profile.bio,
-        "locationGeohash": if self_profile.location.is_empty() { serde_json::Value::Null } else { serde_json::json!(self_profile.location) },
-        "interests": self_profile.interests,
-    })
-    .to_string();
-    let json = soshal_dating_core::compute_compatibility_json(&self_content, &target_content);
+    let target_rows: Vec<serde_json::Value> =
+        serde_json::from_str(&profile_rows(&target_pubkey)?).unwrap_or_default();
+    let target_content = match target_rows.first().and_then(|r| r["content"].as_str()) {
+        Some(c) => c.to_string(),
+        None => return Ok(0.0).into(),
+    };
+    let mut self_obj: serde_json::Value =
+        serde_json::from_str(&self_content_raw).unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(w) = prefs.get("preferenceWeights") {
+        self_obj["preferenceWeights"] = w.clone();
+    }
+    if let Some(d) = prefs.get("dealbreakers") {
+        self_obj["dealbreakers"] = d.clone();
+    }
+    let json =
+        soshal_dating_core::compute_compatibility_json(&self_obj.to_string(), &target_content);
     serde_json::from_str::<serde_json::Value>(&json)
         .ok()
-        .and_then(|v| v["score"].as_f64())
+        .and_then(|v| v.as_f64().or_else(|| v["score"].as_f64()))
         .map(|s| Ok(s as f32).into())
         .unwrap_or_else(|| Ok(0.0).into())
 }
@@ -644,6 +675,34 @@ mod tests {
         assert!(cards.iter().any(|c| c.pubkey == "near"));
         assert!(!cards.iter().any(|c| c.pubkey == "far"));
         assert!(!cards.iter().any(|c| c.pubkey == "own"));
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
+    #[test]
+    fn test_calculate_score_dealbreakers() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let path = crate::ffi::db::tmp_db("dating_score", "ffi");
+        let insert = |id: &str, pubkey: &str, smoking: &str, ts: i64| {
+            super::super::db::db_execute_raw(format!(
+                "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+                 VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"u33dc0\",\"interests\":[],\"smoking\":\"{smoking}\"}}',30082,{ts},'[]','synced',0)"
+            ))
+        };
+        assert!(insert("self1", "selfpk", "never", 300).is_ok());
+        assert!(insert("tgt1", "tgtpk", "regularly", 200).is_ok());
+        let blocked = dating_calculate_score(
+            "selfpk".to_string(),
+            "tgtpk".to_string(),
+            "{\"dealbreakers\":[\"smoking\"]}".to_string(),
+        )
+        .unwrap();
+        assert_eq!(blocked, 0.0);
+        let open =
+            dating_calculate_score("selfpk".to_string(), "tgtpk".to_string(), "{}".to_string())
+                .unwrap();
+        assert!(open > 0.0);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));

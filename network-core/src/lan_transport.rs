@@ -143,10 +143,7 @@ fn handle_conn(stream: TcpStream, key: [u8; 32], store: &ChunkStore) {
     }
     let mut inner = reader.into_inner();
     // Authenticate: MAC must match the identity-derived key...
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let now_secs = soshal_common_core::format::now_secs() as u64;
     match lan::parse_beacon(&key, LAN_MAGIC, line.trim_end(), 0, now_secs) {
         Some(_) if !global_power_scheduler().mode().paused() => {
             let _ = writer.write_all(b"OK\n");
@@ -440,10 +437,7 @@ fn lan_exchange(
         .map_err(|e| format!("write timeout: {e}"))?;
 
     // Handshake: same MAC'd beacon body the server expects.
-    let ts_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let ts_secs = soshal_common_core::format::now_secs() as u64;
     let body = lan::beacon_body(LAN_MAGIC, my_pubkey, 0, ts_secs);
     let mac = lan::beacon_mac(&key, &body);
     stream
@@ -514,14 +508,6 @@ pub fn fetch_verified_chunk(
 mod tests {
     use super::*;
     use soshal_media_core::cas::ChunkStore;
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-
-    fn tmp_root() -> PathBuf {
-        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!("soshal_lan_test_{}_{}", std::process::id(), n))
-    }
 
     #[test]
     fn beacon_handshake_roundtrip() {
@@ -537,7 +523,7 @@ mod tests {
 
     #[test]
     fn fetch_from_server_roundtrip() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("lan_test");
         let store = ChunkStore::new(root.clone());
         let data: Vec<u8> = (0..512 * 1024).map(|i| (i % 251) as u8).collect();
         let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
@@ -563,7 +549,7 @@ mod tests {
 
     #[test]
     fn fetch_missing_chunk_reports_not_found() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("lan_test");
         let mut server = start_lan_server_with_store([7u8; 32], root).unwrap();
         let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
         let err =

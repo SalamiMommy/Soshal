@@ -502,8 +502,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       rethrow;
     }
   }
-
-  }
+}
 
 /// Feed post (kind 1 / reply) as stored locally.
 class FeedPost {

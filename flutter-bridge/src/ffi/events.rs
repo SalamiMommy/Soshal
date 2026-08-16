@@ -7,7 +7,7 @@
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
-use soshal_events_core::checkin::can_checkin;
+use soshal_events_core::checkin::{can_checkin, within_checkin_radius};
 
 const EVENT_KINDS: &str = "31922,31923";
 
@@ -306,7 +306,23 @@ pub fn events_rsvp(
                 .into_iter()
                 .filter_map(|t| nostr::event::Tag::parse(t).ok()),
             );
-    let _ = super::signer::sign_builder(builder)?;
+    let signed_json = super::signer::sign_builder(builder)?;
+    let signed: serde_json::Value =
+        serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
+    let signed_id = signed["id"].as_str().unwrap_or_default().to_string();
+    let now = soshal_common_core::format::now_secs();
+    super::db::with_db_result(|db| {
+        soshal_sync_core::outbox::enqueue_outbox_item(
+            db,
+            &signed_id,
+            "rsvp",
+            &signed_json,
+            None,
+            now,
+        )
+        .map_err(soshal_db_core::error::DbError::Migration)?;
+        Ok(())
+    })?;
     super::db::upsert_post_row(
         format!("rsvp:{}:{}", user_pubkey, rsvp_status),
         user_pubkey,
@@ -345,7 +361,12 @@ pub fn events_check_in(
     if !can_checkin(window.0, window.1, now, 0) {
         return Err("check-in outside the event window".to_string()).into();
     }
-    let _ = (latitude, longitude);
+    if event.latitude != 0.0
+        && event.longitude != 0.0
+        && !within_checkin_radius(event.latitude, event.longitude, latitude, longitude, 500.0)
+    {
+        return Err("check-in too far from the event location".to_string()).into();
+    }
     let content = format!("Claim attendance badge for event {event_id}");
     let mut builder =
         nostr::event::EventBuilder::new(nostr::event::Kind::BadgeAward, content.clone());
@@ -358,7 +379,23 @@ pub fn events_check_in(
             builder = builder.tag(t);
         }
     }
-    let _ = super::signer::sign_builder(builder)?;
+    let signed_json = super::signer::sign_builder(builder)?;
+    let signed: serde_json::Value =
+        serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
+    let signed_id = signed["id"].as_str().unwrap_or_default().to_string();
+    let now = soshal_common_core::format::now_secs();
+    super::db::with_db_result(|db| {
+        soshal_sync_core::outbox::enqueue_outbox_item(
+            db,
+            &signed_id,
+            "checkin",
+            &signed_json,
+            None,
+            now,
+        )
+        .map_err(soshal_db_core::error::DbError::Migration)?;
+        Ok(())
+    })?;
     super::db::upsert_post_row(
         format!("checkin:{}:{}", user_pubkey, event_id),
         user_pubkey.clone(),
@@ -509,12 +546,6 @@ pub fn events_reminder_delete(reminder_id: String) -> Result<bool, String> {
         soshal_db_core::repos::reminder::ReminderRepo::new(db).delete(&reminder_id)?;
         Ok(true)
     })
-}
-
-/// Expiry timestamp (unix secs, 0 if none) parsed from a tags JSON array.
-#[frb(sync, serialize)]
-pub fn events_expiry_from_tags(tags_json: String) -> Result<i64, String> {
-    Ok(soshal_events_core::event::expiry::get_expiry_from_tags_json(&tags_json))
 }
 
 /// Interest score between my interests and a peer's (JSON: score/common).

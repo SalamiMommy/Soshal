@@ -295,18 +295,10 @@ fn unsafe_mmap(file: &File) -> Option<memmap2::MmapMut> {
 mod tests {
     use super::*;
     use soshal_media_core::cas::ChunkStore;
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-
-    fn tmp_root() -> PathBuf {
-        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!("soshal_swarm_test_{}_{}", std::process::id(), n))
-    }
 
     #[test]
     fn mmap_sparse_rescue_on_failed_path() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("swarm_test");
         std::fs::create_dir_all(&root).unwrap();
         let store = ChunkStore::new(root.join("chunks"));
         let mut data: Vec<u8> = (0..2 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
@@ -345,7 +337,7 @@ mod tests {
 
     #[test]
     fn empty_peers_fails_cleanly() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("swarm_test");
         std::fs::create_dir_all(&root).unwrap();
         let store = ChunkStore::new(root.join("chunks"));
         let m = store

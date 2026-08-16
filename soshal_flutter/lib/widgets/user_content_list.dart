@@ -49,15 +49,12 @@ class UserContentList extends StatelessWidget {
                                 Icon(
                                   emptyIcon,
                                   size: 56,
-                                  color:
-                                      Theme.of(context).colorScheme.outline,
+                                  color: Theme.of(context).colorScheme.outline,
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
                                   emptyTitle,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleLarge,
+                                  style: Theme.of(context).textTheme.titleLarge,
                                 ),
                                 const SizedBox(height: 8),
                                 Text(

@@ -21,8 +21,7 @@ soshal-content-core = { path = "../content-core" }
 
 
 [dev-dependencies]
-nostr = { version = "0.45.1", features = ["nip44"] }
-rand_core = "0.6"
+nostr = { workspace = true }
 
 [lints]
 workspace = true

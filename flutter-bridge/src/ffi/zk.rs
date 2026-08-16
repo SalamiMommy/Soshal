@@ -17,14 +17,14 @@ pub fn zk_apply_rollup(db_path: String, rollup_json: String) -> Result<bool, Str
         Err(e) => return Err(format!("Invalid ZK rollup JSON: {}", e)),
     };
 
-    let db = soshal_db_core::block_on(libsql::Builder::new_local(&db_path).build())
-        .map_err(|e| format!("Database open failed: {}", e))?;
-    let conn = db
-        .connect()
-        .map_err(|e| format!("Database connect failed: {}", e))?;
-
-    let engine = soshal_sync_core::zk_rollup::get_global_zk_engine();
-    engine.apply_rollup_to_db(&conn, &rollup)
+    // DB handle is global (opened by `db_init` with migrations + security
+    // pragmas); `db_path` is kept for FFI signature compatibility.
+    let _ = db_path;
+    crate::ffi::db::with_db_string(|db| {
+        let conn = db.conn().map_err(|e| e.to_string())?;
+        let engine = soshal_sync_core::zk_rollup::get_global_zk_engine();
+        engine.apply_rollup_to_db(&conn, &rollup)
+    })
 }
 
 #[cfg(test)]
@@ -34,7 +34,7 @@ mod tests {
     use soshal_sync_core::zk_rollup::ZkProofType;
 
     fn tmp_db_path(label: &str) -> String {
-        db::tmp_db_path(label, "zk")
+        db::tmp_db(label, "zk")
     }
 
     fn valid_rollup(thread_id: &str, ops: u64) -> ZkCrdtRollup {
@@ -84,6 +84,7 @@ mod tests {
 
     #[test]
     fn apply_rollup_valid_tampered_and_garbage() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = tmp_db_path("apply");
         let valid_json = serde_json::to_string(&valid_rollup("a", 7)).unwrap();
         assert!(zk_apply_rollup(path.clone(), valid_json).unwrap());

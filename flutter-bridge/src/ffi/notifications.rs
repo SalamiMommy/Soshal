@@ -130,10 +130,12 @@ pub fn notifications_mark_read(notification_id: String) -> Result<bool, String> 
 /// Mark all notifications as read for a user.
 #[frb(sync, serialize)]
 pub fn notifications_mark_all_read(user_pubkey: String) -> Result<bool, String> {
-    drop(user_pubkey);
-    super::db::db_execute_raw("UPDATE notifications SET is_read = 1".to_string())
-        .map(|_| true)
-        .into()
+    super::db::db_execute_raw(format!(
+        "UPDATE notifications SET is_read = 1 WHERE pubkey = '{}'",
+        user_pubkey.replace('\'', "''")
+    ))
+    .map(|_| true)
+    .into()
 }
 
 /// Delete a notification.
@@ -205,20 +207,34 @@ pub fn notifications_fetch_follows(user_pubkey: String, limit: i32) -> Result<St
     notifications_fetch_by_type(user_pubkey, "follow".to_string(), limit)
 }
 
-/// Register the platform push token for the active account.
+fn ensure_active_account(user_pubkey: &str) -> Result<(), String> {
+    let json = super::session::session_get_active()?;
+    let active_pubkey = serde_json::from_str::<serde_json::Value>(&json)
+        .ok()
+        .and_then(|v| v["pubkey"].as_str().map(|s| s.to_string()))
+        .unwrap_or_default();
+    if active_pubkey != user_pubkey {
+        return Err("push token must be registered for the active account".to_string());
+    }
+    Ok(())
+}
+
+/// Register the platform push token for the active account. The caller's
+/// pubkey must match the active account.
 #[frb(sync, serialize)]
 pub fn notifications_register_push(user_pubkey: String, token: String) -> Result<bool, String> {
-    drop(user_pubkey);
     if token.is_empty() || token.len() > 4096 {
         return Err("invalid push token".to_string()).into();
     }
+    ensure_active_account(&user_pubkey)?;
     super::session::session_register_push_token(token)
 }
 
-/// Unregister from push notifications.
+/// Unregister from push notifications. The caller's pubkey must match the
+/// active account.
 #[frb(sync, serialize)]
 pub fn notifications_unregister_push(user_pubkey: String) -> Result<bool, String> {
-    drop(user_pubkey);
+    ensure_active_account(&user_pubkey)?;
     super::session::session_register_push_token(String::new())
 }
 
@@ -409,7 +425,7 @@ mod tests {
         );
         assert_eq!(
             notifications_get_unread_count("pk2".to_string()).unwrap(),
-            0
+            1
         );
     }
 

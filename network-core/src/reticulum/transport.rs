@@ -8,6 +8,7 @@ use super::packet::{ReticulumPacket, ReticulumPacketType};
 use super::routing::PathTable;
 use super::tcp_interface::{TcpInterfaceConfig, TcpServerInterface};
 use serde::{Deserialize, Serialize};
+use soshal_common_core::format::now_secs;
 use std::collections::HashMap;
 use std::net::{SocketAddr, UdpSocket};
 
@@ -118,10 +119,7 @@ impl ReticulumNode {
                                     rx_count.lock().unwrap_or_else(|e| e.into_inner());
                                 *rx_guard += 1;
 
-                                let now_secs = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs();
+                                let now_secs = now_secs() as u64;
 
                                 if pkt.packet_type == ReticulumPacketType::Announce {
                                     let mut path_guard =
@@ -253,10 +251,7 @@ impl ReticulumNode {
         let mut rx_guard = self.rx_count.lock().unwrap_or_else(|e| e.into_inner());
         *rx_guard += 1;
 
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now_secs = now_secs() as u64;
 
         if pkt.packet_type == ReticulumPacketType::Announce {
             let mut path_guard = self.path_table.lock().unwrap_or_else(|e| e.into_inner());

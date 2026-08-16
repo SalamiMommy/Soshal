@@ -216,8 +216,7 @@ class _LiveScreenState extends State<LiveScreen> {
     );
 
     // MoQ transport: a live stream is a real QUIC-backed broadcast (group
-    // registry on the LAN). The publisher session opens here; media capture /
-    // playback still needs a codec pipeline, so the UI says so honestly.
+    // registry on the LAN). The publisher session opens here.
     if (ok == true) {
       if (!mounted) return;
       try {

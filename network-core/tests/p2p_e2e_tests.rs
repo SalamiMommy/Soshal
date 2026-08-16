@@ -10,23 +10,9 @@ use soshal_media_core::chunking::{ChunkManifest, ChunkRef};
 use soshal_network_core::lan_transport::start_lan_server_with_store;
 use soshal_network_core::swarm::{spawn_swarm_download, SwarmConfig};
 use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-static COUNTER: AtomicU64 = AtomicU64::new(0);
 static LOCK: Mutex<()> = Mutex::new(());
-
-fn tmp_root(label: &str) -> PathBuf {
-    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let dir = std::env::temp_dir().join(format!(
-        "soshal_p2p_e2e_{label}_{}_{}",
-        std::process::id(),
-        n
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 fn lock() -> std::sync::MutexGuard<'static, ()> {
     LOCK.lock().unwrap_or_else(|e| e.into_inner())
@@ -35,7 +21,7 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
 #[test]
 fn swarm_download_roundtrip_over_loopback() {
     let _g = lock();
-    let root = tmp_root("store");
+    let root = soshal_test_util::tmp_root("store");
     let store = ChunkStore::new(root.clone());
     let data: Vec<u8> = (0..2 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
     let manifest = store.store_reader(std::io::Cursor::new(&data)).unwrap();
@@ -44,7 +30,7 @@ fn swarm_download_roundtrip_over_loopback() {
     let mut server = start_lan_server_with_store([7u8; 32], root).unwrap();
     let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
 
-    let out_dir = tmp_root("out");
+    let out_dir = soshal_test_util::tmp_root("out");
     std::fs::create_dir_all(&out_dir).unwrap();
     let out = out_dir.join("blob.bin");
     let handle = spawn_swarm_download(SwarmConfig {
@@ -84,7 +70,7 @@ fn swarm_download_fails_cleanly_without_server() {
         }],
     };
 
-    let out_dir = tmp_root("nope");
+    let out_dir = soshal_test_util::tmp_root("nope");
     std::fs::create_dir_all(&out_dir).unwrap();
     let out = out_dir.join("blob.bin");
     let handle = spawn_swarm_download(SwarmConfig {
@@ -114,7 +100,7 @@ fn swarm_download_rejects_public_peer() {
             len: 1024,
         }],
     };
-    let out_dir = tmp_root("pub");
+    let out_dir = soshal_test_util::tmp_root("pub");
     std::fs::create_dir_all(&out_dir).unwrap();
     let out = out_dir.join("blob.bin");
     let handle = spawn_swarm_download(SwarmConfig {

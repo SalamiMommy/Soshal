@@ -6,34 +6,10 @@
 //! serde_json JSON objects; no key material crosses to Dart raw.
 
 use flutter_rust_bridge::frb;
-use soshal_pqc_core::{dsa, hkdf, kem, seal};
+use soshal_pqc_core::{dsa, hkdf, seal};
 
 /// KEM domain separation string shared with the hybrid API.
 const PQC_DOMAIN: &[u8] = b"soshal-ffi-v1";
-
-/// ML-KEM-768 keypair generation.
-/// Returns JSON `{"pk": "<hex>", "sk": "<hex>"}`.
-#[frb(sync, serialize)]
-pub fn pqc_kem_keygen() -> Result<String, String> {
-    let (pk, sk) = kem::kem_keygen()?;
-    Ok(serde_json::json!({ "pk": pk, "sk": sk }).to_string()).into()
-}
-
-/// ML-KEM-768 encapsulation to a recipient public key.
-/// Returns JSON `{"ct": "<hex>", "ss": "<hex>"}`.
-#[frb(sync, serialize)]
-pub fn pqc_kem_encaps(recipient_pk_hex: String) -> Result<String, String> {
-    let (ct, ss) = kem::kem_encapsulate(&recipient_pk_hex)?;
-    Ok(serde_json::json!({ "ct": ct, "ss": ss }).to_string()).into()
-}
-
-/// ML-KEM-768 decapsulation with the secret key.
-/// Returns the 32-byte shared secret as hex.
-#[frb(sync, serialize)]
-pub fn pqc_kem_decaps(ciphertext_hex: String, sk_hex: String) -> Result<String, String> {
-    let ss = kem::kem_decapsulate(&ciphertext_hex, &sk_hex)?;
-    Ok(ss).into()
-}
 
 /// ML-DSA-65 keypair generation.
 /// Returns JSON `{"sk": "<hex>", "vk": "<hex>"}`.

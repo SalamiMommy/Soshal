@@ -55,6 +55,7 @@ mod ffi_aux_modules_tests {
 
     #[test]
     fn headless_ffi_background_sync_migrates_db() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let path = format!(
             "{}/soshal_aux_headless_{}.db",
             std::env::temp_dir().to_string_lossy(),

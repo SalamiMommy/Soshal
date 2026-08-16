@@ -213,17 +213,10 @@ pub fn tx_statuses(db: &Database) -> Result<Vec<TxNode>, String> {
 mod tests {
     use super::*;
     use soshal_db_core::query::query_first;
-    use soshal_db_core::Database;
-
-    fn mem_db() -> Database {
-        let db = Database::open_in_memory().unwrap();
-        db.migrate().unwrap();
-        db
-    }
 
     #[test]
     fn fail_post_rolls_back_dependent_like() {
-        let db = mem_db();
+        let db = soshal_test_util::test_db();
         let post_id = "post_1";
         tx_begin(&db, post_id, revert::KIND_POST, r#"{"id":"post_1"}"#, 1).unwrap();
         tx_mark_applied(&db, post_id).unwrap();
@@ -286,7 +279,7 @@ mod tests {
 
     #[test]
     fn failed_leaf_does_not_roll_back_parent() {
-        let db = mem_db();
+        let db = soshal_test_util::test_db();
         tx_begin(&db, "p", revert::KIND_POST, r#"{"id":"p"}"#, 1).unwrap();
         tx_begin(&db, "l", revert::KIND_LIKE, r#"{"id":"l"}"#, 2).unwrap();
         tx_link(&db, "p", "l").unwrap();

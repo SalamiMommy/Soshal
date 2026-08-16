@@ -148,23 +148,16 @@ mod tests {
     use super::*;
     use soshal_media_core::chunking::ChunkRef;
     use std::io::{BufRead, Read, Write};
-    use std::sync::atomic::{AtomicU32, Ordering};
 
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn lock() -> std::sync::MutexGuard<'static, ()> {
         LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn tmp_root() -> std::path::PathBuf {
-        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!("soshal_blob_grab_{}_{}", std::process::id(), n))
-    }
-
     #[test]
     fn hash_only_fetch_over_quic_then_tcp() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("blob_grab");
         let seeder = ChunkStore::new(root.clone());
         let data: Vec<u8> = (0..(3 * 1024 * 1024 + 1234))
             .map(|i| (i % 251) as u8)
@@ -177,7 +170,7 @@ mod tests {
         let tcp = crate::lan_transport::start_lan_server_with_store(key, root.clone()).unwrap();
         let quic = crate::quic::start_quic_stream_server_with_store(key, root).unwrap();
 
-        let out = tmp_root().join("blob.bin");
+        let out = soshal_test_util::tmp_root("blob_grab").join("blob.bin");
         std::fs::create_dir_all(out.parent().unwrap()).unwrap();
         let peer = LanPeer {
             ip: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
@@ -203,7 +196,7 @@ mod tests {
         );
 
         // Same result via TCP-only peer (no QUIC advertised).
-        let out2 = tmp_root().join("blob2.bin");
+        let out2 = soshal_test_util::tmp_root("blob_grab").join("blob2.bin");
         std::fs::create_dir_all(out2.parent().unwrap()).unwrap();
         let peer2 = LanPeer {
             ip: peer.ip,
@@ -223,7 +216,7 @@ mod tests {
 
     #[test]
     fn unknown_hash_reports_not_found() {
-        let root = tmp_root();
+        let root = soshal_test_util::tmp_root("blob_grab");
         let key = [9u8; 32];
         let tcp = crate::lan_transport::start_lan_server_with_store(key, root.clone()).unwrap();
         let quic = crate::quic::start_quic_stream_server_with_store(key, root).unwrap();

@@ -6,21 +6,6 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-/// ML-KEM-768 keypair generation.
-/// Returns JSON `{"pk": "<hex>", "sk": "<hex>"}`.
-String pqcKemKeygen() => RustLib.instance.api.crateFfiPqcPqcKemKeygen();
-
-/// ML-KEM-768 encapsulation to a recipient public key.
-/// Returns JSON `{"ct": "<hex>", "ss": "<hex>"}`.
-String pqcKemEncaps({required String recipientPkHex}) => RustLib.instance.api
-    .crateFfiPqcPqcKemEncaps(recipientPkHex: recipientPkHex);
-
-/// ML-KEM-768 decapsulation with the secret key.
-/// Returns the 32-byte shared secret as hex.
-String pqcKemDecaps({required String ciphertextHex, required String skHex}) =>
-    RustLib.instance.api
-        .crateFfiPqcPqcKemDecaps(ciphertextHex: ciphertextHex, skHex: skHex);
-
 /// ML-DSA-65 keypair generation.
 /// Returns JSON `{"sk": "<hex>", "vk": "<hex>"}`.
 String pqcDsaKeygen() => RustLib.instance.api.crateFfiPqcPqcDsaKeygen();

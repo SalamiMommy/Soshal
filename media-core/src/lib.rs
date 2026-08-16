@@ -9,6 +9,7 @@ pub mod envelope;
 pub mod freenet;
 pub mod freenet_media;
 pub mod freenet_post;
+pub mod identicon;
 pub mod media;
 pub mod prefetcher;
 pub mod source;

@@ -19,10 +19,7 @@ soshal-nostr-core = { path = "../nostr-core" }
 soshal-common-core = { path = "../common-core" }
 thumbhash.workspace = true
 url.workspace = true
-tokio = { version = "1", features = ["net", "rt-multi-thread"] }
-
-[dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["net", "macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

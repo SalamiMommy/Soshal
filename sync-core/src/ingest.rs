@@ -354,12 +354,6 @@ mod tests {
     use nostr::types::Timestamp;
     use soshal_db_core::query::query_first;
 
-    fn test_db() -> Database {
-        let db = Database::open_in_memory().unwrap();
-        db.migrate().unwrap();
-        db
-    }
-
     fn channel() -> (
         tokio::sync::mpsc::Sender<SyncUpdate>,
         tokio::sync::mpsc::Receiver<SyncUpdate>,
@@ -380,7 +374,7 @@ mod tests {
 
     #[test]
     fn watermark_advances_on_successful_ingest() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         let keys = Keys::generate();
         seed_user(&db, &keys.public_key().to_hex());
         let event = signed_event(&keys, Kind::TextNote, "hello", 1_700_000_100);
@@ -396,7 +390,7 @@ mod tests {
 
     #[test]
     fn failed_ingest_does_not_advance_watermark() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         let keys = Keys::generate();
         let mut event = signed_event(&keys, Kind::TextNote, "hello", 1_700_000_100);
         event.content = "tampered".to_string();
@@ -408,7 +402,7 @@ mod tests {
 
     #[test]
     fn out_of_order_events_cached_and_watermark_monotonic() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         let keys = Keys::generate();
         seed_user(&db, &keys.public_key().to_hex());
         let older = signed_event(&keys, Kind::TextNote, "older", 1_700_000_000);
@@ -440,7 +434,7 @@ mod tests {
 
     #[test]
     fn watermark_persists_in_settings() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         assert_eq!(watermark(&db, WM_FEED), 0);
         set_watermark(&db, WM_FEED, 1_700_000_123);
         assert_eq!(watermark(&db, WM_FEED), 1_700_000_123);
@@ -452,7 +446,7 @@ mod tests {
 
     #[test]
     fn duplicate_event_single_row_and_double_emit() {
-        let db = test_db();
+        let db = soshal_test_util::test_db();
         let keys = Keys::generate();
         seed_user(&db, &keys.public_key().to_hex());
         let event = signed_event(&keys, Kind::TextNote, "dup", 1_700_000_100);
