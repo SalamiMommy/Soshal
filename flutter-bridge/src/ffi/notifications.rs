@@ -7,7 +7,9 @@
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
+use soshal_db_core::error::DbError;
 use soshal_db_core::repos::notification::{NotificationRepo, NotificationRow};
+use soshal_db_core::Database;
 
 /// Notification item
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -48,27 +50,26 @@ fn row_to_item(
     }
 }
 
-fn user_names() -> std::collections::HashMap<String, (String, String)> {
-    super::db::with_db_result(|db| {
-        let conn = db.conn()?;
-        let rows = soshal_db_core::query::query(
-            &conn,
-            "SELECT pubkey, name, picture FROM users WHERE picture IS NOT NULL OR name IS NOT NULL",
-            (),
-            |r| {
-                let pk: String = r.get(0)?;
-                let name: Option<String> = r.get(1)?;
-                let pic: Option<String> = r.get(2)?;
-                Ok((pk, name.unwrap_or_default(), pic.unwrap_or_default()))
-            },
-        )?;
-        let mut map = std::collections::HashMap::new();
-        for (pk, name, pic) in rows {
-            map.insert(pk, (name, pic));
-        }
-        Ok(map)
-    })
-    .unwrap_or_default()
+fn user_names(
+    db: &Database,
+) -> Result<std::collections::HashMap<String, (String, String)>, DbError> {
+    let conn = db.conn()?;
+    let rows = soshal_db_core::query::query(
+        &conn,
+        "SELECT pubkey, name, picture FROM users WHERE picture IS NOT NULL OR name IS NOT NULL",
+        (),
+        |r| {
+            let pk: String = r.get(0)?;
+            let name: Option<String> = r.get(1)?;
+            let pic: Option<String> = r.get(2)?;
+            Ok((pk, name.unwrap_or_default(), pic.unwrap_or_default()))
+        },
+    )?;
+    let mut map = std::collections::HashMap::new();
+    for (pk, name, pic) in rows {
+        map.insert(pk, (name, pic));
+    }
+    Ok(map)
 }
 
 fn require_db_rows(
@@ -78,16 +79,12 @@ fn require_db_rows(
 ) -> Result<Vec<NotificationItem>, String> {
     super::db::with_db_result(|db| {
         let repo = NotificationRepo::new(db);
-        let users = user_names();
-        let unread = repo.get_unread(pubkey, 1000)?;
-        let rows: Vec<NotificationRow> = match type_filter {
-            Some(t) => unread
-                .into_iter()
-                .filter(|r| r.type_ == t)
-                .take(limit as usize)
-                .collect(),
-            None => unread.into_iter().take(limit as usize).collect(),
+        let users = user_names(db)?;
+        let unread = match type_filter {
+            Some(t) => repo.get_unread_filtered(pubkey, t, 1000)?,
+            None => repo.get_unread(pubkey, 1000)?,
         };
+        let rows: Vec<NotificationRow> = unread.into_iter().take(limit as usize).collect();
         Ok(rows.iter().map(|r| row_to_item(r, &users)).collect())
     })
 }

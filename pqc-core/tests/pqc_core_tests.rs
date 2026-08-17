@@ -287,11 +287,9 @@ fn freenet_keygen_shape_and_json() {
     assert_eq!(id.public_key.len(), 128);
     assert_eq!(id.address, format!("free:{}", id.public_key));
     assert!(!id.private_key.is_empty());
-    // NOTE: freenet_keygen currently swaps the ML-DSA outputs: the "public"
-    // field carries the 32-byte seed hex, the "secret" field the 1952-byte vk
-    // hex. Lengths asserted as-is; sizes will flip if the src bug is fixed.
-    assert_eq!(id.pqc_dsa_public_key.len(), 64);
-    assert_eq!(id.pqc_dsa_secret_key.len(), 1952 * 2);
+    // ML-DSA-65: public = 1952-byte verifying key, secret = 32-byte seed-derived key.
+    assert_eq!(id.pqc_dsa_public_key.len(), 1952 * 2);
+    assert_eq!(id.pqc_dsa_secret_key.len(), 64);
     assert_eq!(id.pqc_kem_public_key.len(), KEM_PK_LEN * 2);
     assert_eq!(id.pqc_kem_secret_key.len(), KEM_SEED_LEN * 2);
     let json = id.to_json();
@@ -305,6 +303,14 @@ fn freenet_keygen_shape_and_json() {
     // Seed determinism applies to the ML-DSA part.
     let id2 = freenet_keygen(Some(&[0x77u8; 32])).unwrap();
     assert_eq!(id.pqc_dsa_public_key, id2.pqc_dsa_public_key);
+    // End-to-end with fixed keys: seed-derived secret signs, vk public verifies.
+    let sig = dsa_sign(b"pqc roundtrip", &id.pqc_dsa_secret_key).unwrap();
+    assert!(dsa_verify_hex(
+        &sig,
+        b"pqc roundtrip",
+        &id.pqc_dsa_public_key
+    ));
+    assert!(!dsa_verify_hex(&sig, b"tampered", &id.pqc_dsa_public_key));
 }
 
 #[test]

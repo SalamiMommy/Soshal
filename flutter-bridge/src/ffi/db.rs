@@ -212,16 +212,19 @@ pub fn db_delete_setting(key: String) -> Result<bool, String> {
 /// (mirrors the legacy `db_get_storage_stats` command).
 #[frb(sync, serialize)]
 pub fn db_storage_stats() -> Result<String, String> {
-    let names = db_query_raw(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name".to_string(),
-    )?;
     let mut out: Vec<serde_json::Value> = Vec::new();
-    for v in serde_json::from_str::<Vec<serde_json::Value>>(&names).unwrap_or_default() {
-        let Some(name) = v.get("name").and_then(|n| n.as_str()) else {
-            continue;
-        };
-        let (name, cols, rows) = with_db(|db| {
-            let conn = db.conn().map_err(DbError::from)?;
+    with_db(|db| {
+        let conn = db.conn().map_err(DbError::from)?;
+        let names = soshal_db_core::query::query(
+            &conn,
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+            (),
+            |r| {
+                let name: String = r.get(0)?;
+                Ok(name)
+            },
+        )?;
+        for name in names {
             let cols_sql = format!(
                 "SELECT COUNT(*) FROM pragma_table_info('{}')",
                 name.replace('\'', "''")
@@ -231,7 +234,7 @@ pub fn db_storage_stats() -> Result<String, String> {
                 Ok(n)
             })?
             .unwrap_or(0);
-            let count_sql = match name {
+            let count_sql = match name.as_str() {
                 "posts" => "SELECT COUNT(*) FROM posts WHERE is_deleted=0".to_string(),
                 "messages" | "group_messages" | "notifications" => {
                     format!("SELECT COUNT(*) FROM {name}")
@@ -247,14 +250,14 @@ pub fn db_storage_stats() -> Result<String, String> {
                 })?
                 .unwrap_or(0)
             };
-            Ok::<_, DbError>((name.to_string(), cols, rows))
-        })?;
-        out.push(serde_json::json!({
-            "table_name": name,
-            "cols": cols,
-            "rows": rows,
-        }));
-    }
+            out.push(serde_json::json!({
+                "table_name": name,
+                "cols": cols,
+                "rows": rows,
+            }));
+        }
+        Ok::<_, DbError>(())
+    })?;
     let file_bytes = DB_PATH
         .lock()
         .unwrap_or_else(|e| e.into_inner())

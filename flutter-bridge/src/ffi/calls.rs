@@ -176,6 +176,7 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn send_signal_requires_unlocked_signer() {
         let _g = CALLS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
@@ -196,6 +197,7 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn send_signal_publishes_signed_event_via_network() {
         let _g = CALLS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK

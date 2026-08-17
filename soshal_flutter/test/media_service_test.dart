@@ -21,6 +21,11 @@ void main() {
     test('uploadMedia stubs FFI, parses manifest, passes filePath',
         () async {
       final media = MediaService();
+      api.stubString('crateFfiMediaMediaGetMimeType', 'video/mp4');
+      api.stubString(
+        'crateFfiMediaMediaChunkingForMime',
+        '{"min":1048576,"avg":2097152,"max":4194304}',
+      );
       api.stubString(
         'crateFfiMediaMediaUploadBlobFile',
         '{"hash":"h-abc","size":42,"chunks":["c1","c2"]}',
@@ -33,10 +38,21 @@ void main() {
       expect(manifest['hash'], 'h-abc');
       expect(manifest['size'], 42);
       expect((manifest['chunks'] as List).length, 2);
+      expect(manifest['chunking'], {
+        'min': 1048576,
+        'avg': 2097152,
+        'max': 4194304,
+      });
       expect(media.lastError, isNull);
       final inv =
           api.callsOf('crateFfiMediaMediaUploadBlobFile').single;
       expect(api.namedArg(inv, 'filePath'), file.path);
+      final mimeInv =
+          api.callsOf('crateFfiMediaMediaGetMimeType').single;
+      expect(api.namedArg(mimeInv, 'filePath'), file.path);
+      final chunkInv =
+          api.callsOf('crateFfiMediaMediaChunkingForMime').single;
+      expect(api.namedArg(chunkInv, 'mime'), 'video/mp4');
     });
 
     test('uploadMedia rejects missing file before FFI', () async {
@@ -122,6 +138,8 @@ void main() {
 
     test('FFI throw sets lastError and rethrows', () async {
       final media = MediaService();
+      api.stubString('crateFfiMediaMediaGetMimeType', 'video/mp4');
+      api.stubString('crateFfiMediaMediaChunkingForMime', '{}');
       api.stub('crateFfiMediaMediaUploadBlobFile',
           (_) => throw Exception('store full'));
       final dir = await Directory.systemTemp.createTemp('media_err');

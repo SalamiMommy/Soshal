@@ -163,7 +163,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       body: Consumer<IdentityService>(
         builder: (context, identityService, child) {
-          final feedService = context.watch<FeedService>();
+          final pinnedPosts =
+              context.select<FeedService, List<String>>((s) => s.pinnedPosts);
           final profile = identityService.profiles[pubkey];
 
           if (_isLoading || profile == null) {
@@ -358,7 +359,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const Divider(),
                         const SizedBox(height: 16),
                         _PinnedSection(
-                          pinned: feedService.pinnedPosts,
+                          pinned: pinnedPosts,
                           onOpen: (id) => context.push('/post/$id'),
                           onUnpin: _pinToggle,
                         ),
@@ -402,7 +403,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           _PostCard(
                             post: post,
                             showPinButton: isSelfProfile,
-                            pinned: feedService.isPinned(post.eventId),
+                            pinned: context
+                                .read<FeedService>()
+                                .isPinned(post.eventId),
                             onTap: () => context.push('/post/${post.eventId}'),
                             onPinToggle: () => _pinToggle(post.eventId),
                           ),

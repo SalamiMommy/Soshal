@@ -302,9 +302,9 @@ class _EventsScreenState extends State<EventsScreen> {
                     Expanded(
                       child: _viewMode == 'calendar'
                           ? _buildCalendar(api.events)
-                          : _buildList([...api.events]
-                            ..sort((a, b) => (api.scores[b.id] ?? 0)
-                                .compareTo(api.scores[a.id] ?? 0))),
+                          : _buildList([...api.events]..sort((a, b) =>
+                              (api.scores[b.id] ?? 0)
+                                  .compareTo(api.scores[a.id] ?? 0))),
                     ),
                   ],
                 );

@@ -847,11 +847,17 @@ pub fn marketplace_poll_get(poll_id: String) -> Result<String, String> {
     .ok_or_else(|| "poll not found".to_string())?;
     let options: Vec<String> =
         serde_json::from_str(&poll.options).map_err(|e| format!("invalid options JSON: {e}"))?;
-    let mut votes = Vec::with_capacity(options.len());
-    for i in 0..options.len() as i64 {
-        votes.push(super::db::with_db_result(|db| {
-            soshal_db_core::repos::poll::PollRepo::new(db).option_count(&poll_id, i)
-        })?);
+    let json = super::db::db_query_raw(format!(
+        "SELECT option_id, COUNT(*) AS c FROM poll_votes WHERE poll_id = '{}' GROUP BY option_id",
+        poll_id.replace('\'', "''")
+    ))?;
+    let mut votes = vec![0i64; options.len()];
+    for row in serde_json::from_str::<Vec<serde_json::Value>>(&json).unwrap_or_default() {
+        if let (Some(id), Some(c)) = (row["option_id"].as_i64(), row["c"].as_i64()) {
+            if let Some(slot) = votes.get_mut(id as usize) {
+                *slot = c;
+            }
+        }
     }
     super::util::json_ok(serde_json::json!({
         "id": poll.id,

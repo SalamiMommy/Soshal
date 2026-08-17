@@ -936,19 +936,21 @@ class _InboxScreenState extends State<InboxScreen> {
         body: Consumer<MessagingService>(
           builder: (context, messagingService, child) {
             final convList = messagingService.conversations.entries.toList();
-            return ListView(
-              children: [
-                _lanDiscoverySection(context),
-                _mediaToolsSection(context),
-                _ephemeralSection(context, messagingService),
-                if (convList.isEmpty)
-                  const Padding(
+            return ListView.builder(
+              itemCount: 3 + (convList.isEmpty ? 1 : convList.length),
+              itemBuilder: (context, index) {
+                if (index == 0) return _lanDiscoverySection(context);
+                if (index == 1) return _mediaToolsSection(context);
+                if (index == 2)
+                  return _ephemeralSection(context, messagingService);
+                if (convList.isEmpty) {
+                  return const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Text('No conversations yet'),
-                  )
-                else
-                  for (final entry in convList) _conversationTile(entry),
-              ],
+                  );
+                }
+                return _conversationTile(convList[index - 3]);
+              },
             );
           },
         ),

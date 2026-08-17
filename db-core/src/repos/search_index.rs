@@ -24,22 +24,25 @@ impl<'a> SearchIndexRepo<'a> {
         // with trigger inserts and surface as bare `constraint failed`.
         let neg = negative_rowid(&row.id);
         let rowid = post_rowid.unwrap_or(neg);
-        crate::query::execute(
-            &conn,
-            "DELETE FROM posts_fts WHERE rowid = ?1 OR rowid = ?2",
-            params![rowid, neg],
-        )?;
-        crate::query::execute(
-            &conn,
-            "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content) VALUES (?1, ?2, ?3, ?4)",
-            params![
-                rowid,
-                row.id.as_str(),
-                row.pubkey.as_str(),
-                row.content.as_str()
-            ],
-        )?;
-        Ok(())
+        crate::query::with_tx(&conn, |tx| async move {
+            tx.execute(
+                "DELETE FROM posts_fts WHERE rowid = ?1 OR rowid = ?2",
+                params![rowid, neg],
+            )
+            .await?;
+            tx.execute(
+                "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    rowid,
+                    row.id.as_str(),
+                    row.pubkey.as_str(),
+                    row.content.as_str()
+                ],
+            )
+            .await?;
+            tx.commit().await?;
+            Ok(())
+        })
     }
 
     pub fn search(

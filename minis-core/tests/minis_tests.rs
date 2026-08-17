@@ -7,6 +7,9 @@ use soshal_minis_core::events::{
     sort_musicloud_desc, MiniEventOut, MusicloudEventOut,
 };
 use soshal_minis_core::parse_mini_manifest;
+use soshal_minis_core::runtime::{
+    WasmComponentHost, WasmComponentPlugin, WasmComponentType, WasmFilterResult,
+};
 use soshal_nostr_core::models::{find_tag_value, NostrEvent};
 
 fn ev(id: &str, kind: u32, content: &str, tags: Vec<Vec<String>>) -> NostrEvent {
@@ -206,4 +209,192 @@ fn mini_manifest_derives() {
     assert_eq!(manifest.clone(), manifest);
     let str_repr = format!("{:?}", manifest);
     assert!(str_repr.contains("Test App"));
+}
+
+fn wasm_plugin(kind: WasmComponentType, id: &str) -> WasmComponentPlugin {
+    WasmComponentPlugin {
+        plugin_id: id.into(),
+        name: "Plugin".into(),
+        component_type: kind,
+        author_pubkey: "npub_author".into(),
+        binary_bytes: vec![0x00, 0x61, 0x73, 0x6d],
+    }
+}
+
+#[test]
+fn wasm_rank_posts_sorts_longest_first() {
+    let plugin = wasm_plugin(WasmComponentType::FeedRanker, "ranker_1");
+    let ranked =
+        WasmComponentHost::rank_posts(&plugin, vec!["a".into(), "ccc".into(), "bb".into()])
+            .unwrap();
+    assert_eq!(ranked, vec!["ccc", "bb", "a"]);
+    assert!(WasmComponentHost::rank_posts(&plugin, vec![])
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn wasm_rank_posts_rejects_wrong_type() {
+    let plugin = wasm_plugin(WasmComponentType::ContentFilter, "ranker_2");
+    let err = WasmComponentHost::rank_posts(&plugin, vec!["post".into()]).unwrap_err();
+    assert_eq!(err, "invalid plugin component type for feed ranking");
+}
+
+#[test]
+fn wasm_filter_content_flags_toxic_text() {
+    let plugin = wasm_plugin(WasmComponentType::ContentFilter, "filter_1");
+    let clean = WasmComponentHost::filter_content(&plugin, "Hello safe text").unwrap();
+    assert!(clean.allow);
+    assert_eq!(clean.score, 0.05);
+    assert_eq!(clean.reason, "Clean");
+
+    // Match is case-insensitive (lowercased before check).
+    let toxic = WasmComponentHost::filter_content(&plugin, "bad MALICIOUS_PHISHING link").unwrap();
+    assert!(!toxic.allow);
+    assert_eq!(toxic.score, 0.95);
+    assert_eq!(toxic.reason, "Toxic content flagged by Wasm component");
+}
+
+#[test]
+fn wasm_filter_content_rejects_wrong_type() {
+    let plugin = wasm_plugin(WasmComponentType::ThemeGenerator, "filter_2");
+    let err = WasmComponentHost::filter_content(&plugin, "text").unwrap_err();
+    assert_eq!(err, "invalid plugin component type for content filter");
+}
+
+#[test]
+fn wasm_plugin_serde_roundtrip() {
+    let plugin = wasm_plugin(WasmComponentType::FeedRanker, "serde_1");
+    let json = serde_json::to_string(&plugin).unwrap();
+    let back: WasmComponentPlugin = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.plugin_id, "serde_1");
+    assert_eq!(back.component_type, WasmComponentType::FeedRanker);
+    assert_eq!(back.binary_bytes, vec![0x00, 0x61, 0x73, 0x6d]);
+
+    let result = WasmFilterResult {
+        allow: true,
+        score: 0.05,
+        reason: "Clean".into(),
+    };
+    let json = serde_json::to_string(&result).unwrap();
+    let back: WasmFilterResult = serde_json::from_str(&json).unwrap();
+    assert!(back.allow);
+    assert_eq!(back.score, 0.05);
+    assert_eq!(back.reason, "Clean");
+}
+
+#[test]
+fn musicloud_duplicate_tags_first_wins() {
+    let e = ev(
+        "dup",
+        31022,
+        "",
+        vec![
+            tag("url", "first.mp3"),
+            tag("url", "second.mp3"),
+            tag("title", "First Title"),
+            tag("title", "Second Title"),
+            tag("t", "a"),
+            tag("t", "b"),
+        ],
+    );
+    let out = musicloud_from_event(&e).unwrap();
+    assert_eq!(out["audioUrl"], "first.mp3");
+    assert_eq!(out["title"], "First Title");
+    assert_eq!(out["hashtags"], serde_json::json!(["a", "b"]));
+
+    let typed = musicloud_event_out(&e).unwrap();
+    assert_eq!(typed.audio_url, "first.mp3");
+    assert_eq!(typed.title, "First Title");
+    assert_eq!(typed.hashtags, vec!["a", "b"]);
+}
+
+#[test]
+fn musicloud_hashtag_cap_enforced() {
+    // Source breaks once len exceeds 10_000, so the effective cap is 10_001.
+    let mut tags = vec![tag("url", "https://x/a.mp3")];
+    for i in 0..10_002 {
+        tags.push(tag("t", &format!("h{i}")));
+    }
+    let e = ev("cap", 31022, "", tags);
+    let out = musicloud_from_event(&e).unwrap();
+    assert_eq!(out["hashtags"].as_array().unwrap().len(), 10_001);
+    assert_eq!(musicloud_event_out(&e).unwrap().hashtags.len(), 10_001);
+}
+
+#[test]
+fn sort_by_created_desc_missing_dates_last() {
+    let mut vals = vec![
+        serde_json::json!({}),
+        serde_json::json!({"createdAt": 7}),
+        serde_json::json!({"createdAt": 2}),
+    ];
+    sort_by_created_desc(&mut vals);
+    assert_eq!(vals[0]["createdAt"], 7);
+    assert_eq!(vals[1]["createdAt"], 2);
+    assert!(vals[2].get("createdAt").is_none());
+}
+
+#[test]
+fn event_out_serde_camelcase() {
+    let mini = mini_event_out(&ev(
+        "s1",
+        31020,
+        "overlay",
+        vec![tag("url", "https://x/v.mp4")],
+    ))
+    .unwrap();
+    let json = serde_json::to_value(&mini).unwrap();
+    assert_eq!(json["videoUrl"], "https://x/v.mp4");
+    assert_eq!(json["textOverlay"], "overlay");
+    assert!(json.get("video_url").is_none());
+
+    let mus = musicloud_event_out(&ev(
+        "s2",
+        31022,
+        "",
+        vec![tag("url", "https://x/a.mp3"), tag("t", "jazz")],
+    ))
+    .unwrap();
+    let json = serde_json::to_value(&mus).unwrap();
+    assert_eq!(json["audioUrl"], "https://x/a.mp3");
+    assert_eq!(json["hashtags"], serde_json::json!(["jazz"]));
+    assert!(json.get("audio_url").is_none());
+}
+
+#[test]
+fn mini_manifest_serde_roundtrip() {
+    use soshal_minis_core::MiniManifest;
+    let manifest = MiniManifest {
+        id: "m".into(),
+        name: "N".into(),
+        description: "D".into(),
+        entry_url: "https://e".into(),
+        icon_url: None,
+        author_pubkey: "pk".into(),
+    };
+    let json = serde_json::to_string(&manifest).unwrap();
+    assert_eq!(parse_mini_manifest(&json).unwrap(), manifest);
+
+    let with_icon = MiniManifest {
+        icon_url: Some("https://i".into()),
+        ..manifest.clone()
+    };
+    let json = serde_json::to_string(&with_icon).unwrap();
+    assert_eq!(
+        parse_mini_manifest(&json).unwrap().icon_url.as_deref(),
+        Some("https://i")
+    );
+}
+
+#[test]
+fn mini_audience_preserved() {
+    let e = ev(
+        "a1",
+        31020,
+        "",
+        vec![tag("url", "https://x/v.mp4"), tag("audience", "followers")],
+    );
+    assert_eq!(mini_from_event(&e).unwrap()["audience"], "followers");
+    assert_eq!(mini_event_out(&e).unwrap().audience, "followers");
 }

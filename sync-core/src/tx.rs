@@ -10,6 +10,7 @@
 use crate::revert;
 use libsql::{params, Connection};
 use serde::{Deserialize, Serialize};
+use soshal_db_core::error::DbError;
 use soshal_db_core::{block_on, Database};
 
 pub const STATUS_PENDING: &str = "pending";
@@ -68,19 +69,24 @@ pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
     let closure = dependent_closure(&conn, id)?;
     let rolled_back = Vec::new();
     let order = reverse_topological(&conn, &closure)?;
-    for node_id in &order {
-        let (kind, payload): (String, String) = soshal_db_core::query::query_first(
-            &conn,
-            "SELECT kind, payload_json FROM tx_nodes WHERE id = ?1",
-            params![node_id.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|e| format!("tx_fail read node: {e}"))?
-        .unwrap_or_default();
-        revert::revert(&conn, &kind, &payload)?;
-        set_status(&conn, node_id, STATUS_ROLLED_BACK)?;
-    }
-    set_status(&conn, id, STATUS_FAILED)?;
+    soshal_db_core::query::with_tx(&conn, |tx| async {
+        for node_id in &order {
+            let (kind, payload): (String, String) = soshal_db_core::query::query_first_async(
+                &tx,
+                "SELECT kind, payload_json FROM tx_nodes WHERE id = ?1",
+                params![node_id.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .await?
+            .unwrap_or_default();
+            revert::revert_tx(&tx, &kind, &payload).await?;
+            set_status_tx(&tx, node_id, STATUS_ROLLED_BACK).await?;
+        }
+        set_status_tx(&tx, id, STATUS_FAILED).await?;
+        tx.commit().await?;
+        Ok(())
+    })
+    .map_err(|e| format!("tx_fail: {e}"))?;
     Ok(rolled_back_after(rolled_back, order, id))
 }
 
@@ -183,6 +189,15 @@ fn set_status(conn: &Connection, id: &str, status: &str) -> Result<(), String> {
         params![status, id],
     ))
     .map_err(|e| format!("tx status: {e}"))?;
+    Ok(())
+}
+
+async fn set_status_tx(conn: &Connection, id: &str, status: &str) -> Result<(), DbError> {
+    conn.execute(
+        "UPDATE tx_nodes SET status = ?1 WHERE id = ?2",
+        params![status, id],
+    )
+    .await?;
     Ok(())
 }
 

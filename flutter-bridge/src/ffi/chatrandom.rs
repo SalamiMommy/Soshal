@@ -131,6 +131,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_send_publishes_signed_event_via_network() {
         let _g = CHATRANDOM_TEST_LOCK
             .lock()

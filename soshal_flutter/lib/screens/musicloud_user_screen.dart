@@ -98,6 +98,7 @@ class _MusicloudUserScreenState extends State<MusicloudUserScreen> {
                   child: Image.network(
                     track.thumbnail,
                     width: 48,
+                    cacheWidth: 160,
                     height: 48,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => _trackIcon(context),

@@ -572,7 +572,7 @@ class _WidgetRenderer extends StatelessWidget {
           itemCount: props.items.length,
           itemBuilder: (context, index) {
             final item = props.items[index];
-            return Image.network(item.url, fit: BoxFit.cover);
+            return Image.network(item.url, fit: BoxFit.cover, cacheWidth: 256);
           },
         );
       case 'friend_grid':

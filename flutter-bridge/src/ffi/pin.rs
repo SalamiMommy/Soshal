@@ -247,10 +247,11 @@ mod tests {
     fn pin_corrupt_storage_detected() {
         let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let p = fresh_db();
-        super::super::db::db_query_raw(format!(
+        super::super::db::db_query_raw(
             "INSERT INTO settings (key, value) VALUES ('pin_hash', 'garbage') \
              ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-        ))
+                .to_string(),
+        )
         .unwrap();
         let _ = p;
         assert!(!pin_verify("1357".to_string()).unwrap());

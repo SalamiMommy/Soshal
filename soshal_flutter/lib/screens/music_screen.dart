@@ -213,6 +213,7 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
                                   child: Image.network(
                                     track.thumbnail,
                                     width: 48,
+                                    cacheWidth: 160,
                                     height: 48,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) =>

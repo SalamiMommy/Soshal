@@ -1,5 +1,9 @@
 //! Integration tests for webrtc-core SDP sanitization and Opus configuration.
 
+use soshal_webrtc_core::ice::{
+    ice_config, is_private_ip, is_private_ipv6, is_safe_candidate, is_safe_candidate_json,
+    redact_private_ips,
+};
 use soshal_webrtc_core::sdp::{
     configure_opus_audio_sdp, configure_opus_audio_sdp_json, extract_candidates, extract_rtpmap_pt,
     sanitize_sdp, sanitize_sdp_json, validate_sdp,
@@ -227,4 +231,189 @@ fn test_configure_opus_oversized_sdp_returns_empty_json() {
     let out = configure_opus_audio_sdp_json(&input.to_string());
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["sdp"], "");
+}
+
+// ─── ice module coverage ────────────────────────────────────────────────────
+
+#[test]
+fn is_private_ip_detects_private_ranges() {
+    assert!(is_private_ip("192.168.1.50"));
+    assert!(is_private_ip("10.0.0.1"));
+    assert!(is_private_ip("172.16.0.1"));
+    assert!(is_private_ip("127.0.0.1"));
+    assert!(is_private_ip("169.254.10.20"));
+    assert!(!is_private_ip("8.8.8.8"));
+    assert!(!is_private_ip("203.0.113.9"));
+    assert!(!is_private_ip("93.184.216.34"));
+    assert!(!is_private_ip("not-an-ip"));
+    assert!(!is_private_ip(""));
+}
+
+#[test]
+fn is_private_ipv6_detects_private_ranges() {
+    assert!(is_private_ipv6("fe80::1"));
+    assert!(is_private_ipv6("::1"));
+    assert!(is_private_ipv6("fc00::1"));
+    assert!(is_private_ipv6("ff02::1"));
+    assert!(!is_private_ipv6("2606:4700::1111"));
+    assert!(!is_private_ipv6("garbage"));
+    assert!(!is_private_ipv6(""));
+}
+
+#[test]
+fn is_safe_candidate_rejects_host_and_private_ips() {
+    assert!(!is_safe_candidate("", false));
+    assert!(!is_safe_candidate(
+        "candidate:1 1 UDP 2122260223 10.0.0.5 5000 typ host",
+        false
+    ));
+    assert!(!is_safe_candidate(
+        "candidate:2 1 UDP 1686052607 192.168.1.10 5000 typ srflx",
+        false
+    ));
+    assert!(is_safe_candidate(
+        "candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay",
+        false
+    ));
+    assert!(is_safe_candidate(
+        "candidate:4 1 UDP 1686052607 203.0.113.9 5000 typ srflx",
+        false
+    ));
+}
+
+#[test]
+fn is_safe_candidate_force_relay_drops_srflx_keeps_relay() {
+    assert!(!is_safe_candidate(
+        "candidate:1 1 UDP 1686052607 203.0.113.9 5000 typ srflx",
+        true
+    ));
+    assert!(is_safe_candidate(
+        "candidate:2 1 UDP 1694498815 8.8.8.8 5000 typ relay",
+        true
+    ));
+    assert!(!is_safe_candidate(
+        "candidate:3 1 UDP 1 8.8.8.8 5000 typ host",
+        true
+    ));
+}
+
+#[test]
+fn is_safe_candidate_non_ip_strings_pass() {
+    assert!(is_safe_candidate("garbage", false));
+    assert!(is_safe_candidate(
+        "a=candidate:1 1 UDP 2130706431 8.8.8.8 5000 typ srflx extra",
+        false
+    ));
+}
+
+#[test]
+fn redact_private_ips_replaces_private_keeps_public() {
+    let out = redact_private_ips("candidate:1 1 UDP 2122260223 192.168.1.10 5000 typ host");
+    assert!(!out.contains("192.168.1.10"));
+    assert!(out.contains("0.0.0.0"));
+
+    let out = redact_private_ips("c=IN IP4 10.0.0.5");
+    assert_eq!(out, "c=IN IP4 0.0.0.0");
+
+    let out = redact_private_ips("c=IN IP4 8.8.8.8");
+    assert_eq!(out, "c=IN IP4 8.8.8.8");
+}
+
+#[test]
+fn redact_private_ips_handles_ipv6_and_mixed_text() {
+    assert_eq!(redact_private_ips("c=IN IP6 fe80::1"), "c=IN IP6 0.0.0.0");
+    let out = redact_private_ips("peer 10.0.0.5 relays 8.8.8.8");
+    assert_eq!(out, "peer 0.0.0.0 relays 8.8.8.8");
+    assert_eq!(redact_private_ips("abc123 no ip here"), "abc123 no ip here");
+    assert_eq!(redact_private_ips(""), "");
+}
+
+#[test]
+fn ice_config_public_keeps_stun_servers() {
+    let cfg = ice_config("public", "stun:stun.l.google.com:19302");
+    assert_eq!(cfg["iceTransportPolicy"], "all");
+    assert_eq!(cfg["forceRelay"], false);
+    assert_eq!(cfg["iceServers"][0]["urls"], "stun:stun.l.google.com:19302");
+}
+
+#[test]
+fn ice_config_private_forces_relay_without_servers() {
+    let cfg = ice_config("private", "");
+    assert_eq!(cfg["iceTransportPolicy"], "relay");
+    assert_eq!(cfg["forceRelay"], true);
+    assert_eq!(cfg["iceServers"].as_array().unwrap().len(), 0);
+}
+
+// ─── error paths ────────────────────────────────────────────────────────────
+
+#[test]
+fn validate_sdp_rejects_malformed_sessions() {
+    assert!(validate_sdp("v=0\r\no=- 0 0 IN IP4 127.0.0.1"));
+    assert!(!validate_sdp("v=0\r\n"));
+    assert!(!validate_sdp("o=- 0 0 IN IP4 127.0.0.1"));
+    assert!(!validate_sdp("v=1\r\no=- 0 0 IN IP4 127.0.0.1"));
+    assert!(!validate_sdp("\r\n"));
+}
+
+#[test]
+fn sanitize_sdp_json_missing_fields_returns_empty() {
+    let out = sanitize_sdp_json(r#"{"sdp":"v=0\r\nc=IN IP4 10.0.0.9"}"#);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["sanitized_sdp"], "");
+}
+
+#[test]
+fn sanitize_sdp_json_force_relay_flag_respected() {
+    let input = serde_json::json!({
+        "sdp": "v=0\r\na=candidate:1 1 UDP 1686052607 203.0.113.9 5000 typ srflx\r\n",
+        "forceRelay": true
+    });
+    let out = sanitize_sdp_json(&input.to_string());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(!v["sanitized_sdp"].as_str().unwrap().contains("srflx"));
+}
+
+#[test]
+fn configure_opus_audio_sdp_json_missing_high_fidelity_returns_empty() {
+    let out = configure_opus_audio_sdp_json(r#"{"sdp":"m=audio 9 UDP/TLS/RTP/SAVPF 111"}"#);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["sdp"], "");
+}
+
+#[test]
+fn is_safe_candidate_json_private_candidate_reports_unsafe() {
+    let input = serde_json::json!({
+        "candidate": "candidate:1 1 UDP 2122260223 192.168.1.10 5000 typ srflx",
+        "forceRelay": false
+    });
+    let v: serde_json::Value =
+        serde_json::from_str(&is_safe_candidate_json(&input.to_string())).unwrap();
+    assert_eq!(v["safe"], false);
+}
+
+// ─── roundtrips ─────────────────────────────────────────────────────────────
+
+#[test]
+fn sanitize_then_extract_candidates_roundtrip() {
+    let sdp = "v=0\r\na=candidate:1 1 UDP 2122260223 10.0.0.5 5000 typ host\r\n\
+a=candidate:2 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
+    let sanitized = sanitize_sdp(sdp, false);
+    let candidates = extract_candidates(&sanitized);
+    assert_eq!(candidates.len(), 1);
+    assert!(candidates[0].contains("typ relay"));
+    assert!(candidates[0].contains("8.8.8.8"));
+}
+
+#[test]
+fn configure_opus_keeps_rtpmap_extractable() {
+    let sdp = "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=rtpmap:111 opus/48000/2\r\n";
+    let out = configure_opus_audio_sdp(sdp, false);
+    let mut rtpmap_lines = out
+        .lines()
+        .filter(|l| l.starts_with("a=rtpmap:"))
+        .collect::<Vec<_>>();
+    assert_eq!(rtpmap_lines.len(), 1);
+    let pt = extract_rtpmap_pt(rtpmap_lines.remove(0)).unwrap();
+    assert_eq!(pt, "111");
+    assert!(out.contains("a=fmtp:111 "));
 }

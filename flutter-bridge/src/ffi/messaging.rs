@@ -187,6 +187,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_send_dm_requires_unlocked_signer() {
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
             .lock()

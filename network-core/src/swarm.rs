@@ -11,7 +11,7 @@
 //! multi-thread tokio runtime, independent of the Flutter isolate.
 
 use crate::lan_transport::{fetch_chunk_range, LanChunkRequest};
-use crate::quic::fetch_quic_chunk;
+use crate::quic::{fetch_quic_chunk, QuicChunkPool};
 use soshal_media_core::chunking::ChunkManifest;
 use std::collections::HashSet;
 use std::fs::File;
@@ -71,7 +71,7 @@ pub fn spawn_swarm_download(cfg: SwarmConfig) -> std::thread::JoinHandle<SwarmRe
 
 async fn download(cfg: SwarmConfig) -> SwarmReport {
     let total = cfg.manifest.total_size;
-    let chunks = cfg.manifest.chunks.clone();
+    let chunks = Arc::new(cfg.manifest.chunks.clone());
     if chunks.is_empty() || cfg.peers.is_empty() {
         return SwarmReport {
             failures: chunks.len(),
@@ -123,11 +123,20 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
     let pubkey = cfg.my_pubkey.clone();
     let quic_ports = cfg.quic_ports.clone();
 
+    // Shared QUIC client: one endpoint + one connection per peer, reused
+    // across chunks (avoids a fresh socket + TLS handshake per chunk).
+    let pool = if quic_ports.iter().any(|p| p.is_some()) {
+        QuicChunkPool::new().ok().map(Arc::new)
+    } else {
+        None
+    };
+
     let mut handles = Vec::new();
     for w in 0..workers {
         let chunks = chunks.clone();
         let peers = cfg.peers.clone();
         let quic_ports = quic_ports.clone();
+        let pool = pool.clone();
         let map = map.clone();
         let done = done.clone();
         let next = next.clone();
@@ -163,15 +172,33 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                     };
 
                     // Prefer QUIC if the peer advertises a QUIC port; fall back to TCP.
+                    // Both paths normalize to Result<Result<Vec<u8>, String>, Elapsed>.
                     let fetch_result = if let Some(qp) = quic_port {
                         let quic_addr = SocketAddr::new(peer.ip(), qp);
-                        let fetch = tokio::task::spawn_blocking({
-                            let key = key;
-                            let pubkey = pubkey.clone();
-                            let req = req.clone();
-                            move || fetch_quic_chunk(quic_addr, key, &pubkey, &req)
-                        });
-                        tokio::time::timeout(CHUNK_TIMEOUT, fetch).await
+                        match &pool {
+                            Some(pool) => {
+                                let key = key;
+                                let pubkey = pubkey.clone();
+                                let req = req.clone();
+                                tokio::time::timeout(
+                                    CHUNK_TIMEOUT,
+                                    pool.fetch_chunk(quic_addr, key, &pubkey, &req),
+                                )
+                                .await
+                            }
+                            None => {
+                                let fetch = tokio::task::spawn_blocking({
+                                    let key = key;
+                                    let pubkey = pubkey.clone();
+                                    let req = req.clone();
+                                    move || fetch_quic_chunk(quic_addr, key, &pubkey, &req)
+                                });
+                                tokio::time::timeout(CHUNK_TIMEOUT, fetch).await.map(|r| {
+                                    r.map_err(|je| format!("worker panic: {je}"))
+                                        .and_then(|x| x)
+                                })
+                            }
+                        }
                     } else {
                         let fetch = tokio::task::spawn_blocking({
                             let key = key;
@@ -179,16 +206,23 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                             let req = req.clone();
                             move || fetch_chunk_range(peer, key, &pubkey, &req)
                         });
-                        tokio::time::timeout(CHUNK_TIMEOUT, fetch).await
+                        tokio::time::timeout(CHUNK_TIMEOUT, fetch).await.map(|r| {
+                            r.map_err(|je| format!("worker panic: {je}"))
+                                .and_then(|x| x)
+                        })
                     };
 
                     match fetch_result {
-                        Ok(Ok(Ok(data))) if blake3::hash(&data).to_hex().as_str() == chr.blake3 => {
+                        Ok(Ok(data))
+                            if blake3::Hash::from_hex(&chr.blake3)
+                                .is_ok_and(|h| h == blake3::hash(&data)) =>
+                        {
                             got = Some(data);
                             break;
                         }
-                        Ok(Ok(Err(e))) => eprintln!("swarm: peer {peer}: {e}"),
-                        _ => {} // timeout / panic / hash mismatch → next attempt
+                        Ok(Ok(_)) => {} // hash mismatch → next attempt
+                        Ok(Err(e)) => eprintln!("swarm: peer {peer}: {e}"),
+                        Err(_) => {} // timeout / panic → next attempt
                     }
                 }
 

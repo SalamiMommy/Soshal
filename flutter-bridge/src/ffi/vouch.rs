@@ -56,6 +56,7 @@ mod tests {
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_vouch_publish_locked_signer_rejected() {
         let _g = TEST_LOCK.lock().unwrap();
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
@@ -68,6 +69,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_vouch_publish_signs_then_missing_relay() {
         let _g = TEST_LOCK.lock().unwrap();
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
@@ -83,6 +85,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_vouch_fetch_requires_relay_client() {
         let _g = TEST_LOCK.lock().unwrap();
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK

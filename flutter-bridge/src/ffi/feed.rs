@@ -351,6 +351,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_reaction_and_delete_require_signer() {
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
             .lock()

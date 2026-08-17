@@ -49,6 +49,34 @@ impl<'a> RelayRepo<'a> {
         Ok(())
     }
 
+    pub fn upsert_batch(&self, rows: &[RelayRow]) -> Result<(), crate::error::DbError> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let conn = self.db.conn()?;
+        crate::query::with_tx(&conn, |tx| async move {
+            let sql = "INSERT INTO relays (url, pubkey, name, read_enabled, write_enabled, priority, last_connected_at, health_score) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(url) DO UPDATE SET name=excluded.name, read_enabled=excluded.read_enabled, write_enabled=excluded.write_enabled, priority=excluded.priority, last_connected_at=excluded.last_connected_at, health_score=excluded.health_score";
+            for row in rows {
+                tx.execute(
+                    sql,
+                    params![
+                        row.url.as_str(),
+                        row.pubkey.as_deref(),
+                        row.name.as_deref(),
+                        row.read_enabled,
+                        row.write_enabled,
+                        row.priority,
+                        row.last_connected_at,
+                        row.health_score,
+                    ],
+                )
+                .await?;
+            }
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+
     pub fn delete(&self, url: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
         crate::query::execute(&conn, "DELETE FROM relays WHERE url = ?1", params![url])?;

@@ -130,7 +130,9 @@ class _SoshalAppState extends State<SoshalApp> {
       // Open the shared settings DB (migrations included) before any
       // service touches it — shell/theme/settings reads fail otherwise
       // ("database not initialized").
-      context.read<SettingsService>().dbInit(dbPath: await FfiBridge.getDbPath());
+      context
+          .read<SettingsService>()
+          .dbInit(dbPath: await FfiBridge.getDbPath());
       if (!mounted) return;
       context.read<TelemetryService>().init();
       context.read<ShellService>().initialize();
@@ -162,9 +164,7 @@ class _SoshalAppState extends State<SoshalApp> {
         } else if (uri.scheme == 'nostr') {
           await _handleNostrDeepLink(route);
         } else {
-          await context
-              .read<AuthService>()
-              .handleNostrProtocolRequest(
+          await context.read<AuthService>().handleNostrProtocolRequest(
                 scheme: uri.scheme,
                 host: uri.host,
                 path: uri.path,

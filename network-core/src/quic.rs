@@ -336,6 +336,13 @@ fn tls_configs() -> Result<(ServerConfig, ClientConfig), String> {
         let _ = rustls::crypto::ring::default_provider().install_default();
     });
 
+    // The self-signed cert + configs are identity-independent; build once and
+    // reuse (rcgen cert generation per call was measurable on chunk fetches).
+    static CFG: std::sync::OnceLock<(ServerConfig, ClientConfig)> = std::sync::OnceLock::new();
+    if let Some(cfg) = CFG.get() {
+        return Ok((cfg.0.clone(), cfg.1.clone()));
+    }
+
     let cert = rcgen::generate_simple_self_signed(vec!["soshal.local".to_string()])
         .map_err(|e| format!("rcgen: {e}"))?;
     let cert_der = CertificateDer::from(cert.cert.der().to_vec());
@@ -364,10 +371,12 @@ fn tls_configs() -> Result<(ServerConfig, ClientConfig), String> {
     let mut client_config = ClientConfig::new(Arc::new(client_crypto));
     client_config.transport_config(Arc::new(transport_config()));
 
-    Ok((
+    let pair = (
         ServerConfig::with_crypto(Arc::new(server_crypto)),
         client_config,
-    ))
+    );
+    let _ = CFG.set(pair.clone());
+    Ok(pair)
 }
 
 #[cfg(test)]
@@ -417,7 +426,7 @@ const LIVE_DEFAULT_WINDOW_MS: u64 = 5000;
 /// Bounded append-only log of encoded MoQ groups for one live stream.
 #[derive(Default)]
 struct LiveStreamLog {
-    entries: std::collections::VecDeque<(u64, Vec<u8>)>,
+    entries: std::collections::VecDeque<(u64, Arc<Vec<u8>>)>,
     watermark: u64,
 }
 
@@ -455,7 +464,7 @@ impl LiveStreamRegistry {
             .map_err(|_| "live stream log poisoned".to_string())?;
         lock.watermark += 1;
         let seq = lock.watermark;
-        lock.entries.push_back((seq, encoded));
+        lock.entries.push_back((seq, Arc::new(encoded)));
         while lock.entries.len() > LIVE_STREAM_HISTORY {
             lock.entries.pop_front();
         }
@@ -749,7 +758,7 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
             Ok(l) => l,
             Err(_) => return,
         };
-        let mut replay: Vec<Vec<u8>> = Vec::new();
+        let mut replay: Vec<Arc<Vec<u8>>> = Vec::new();
         let mut replayed_bytes = 0usize;
         for (_, g) in lock.entries.iter() {
             if !replay.is_empty() && replayed_bytes + g.len() > LIVE_MAX_REPLAY_BYTES {
@@ -762,7 +771,7 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
     };
     let mut watermark = wm;
     for group in &replay {
-        if write_stream_frame(send, StreamResponseKind::Ok, group)
+        if write_stream_frame(send, StreamResponseKind::Ok, group.as_slice())
             .await
             .is_err()
         {
@@ -774,7 +783,7 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
 
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(std::time::Duration::from_millis(LIVE_POLL_INTERVAL_MS)).await;
-        let pending: Vec<(u64, Vec<u8>)> = {
+        let pending: Vec<(u64, Arc<Vec<u8>>)> = {
             let lock = match log.lock() {
                 Ok(l) => l,
                 Err(_) => return,
@@ -786,7 +795,7 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
                 .collect()
         };
         for (seq, group) in &pending {
-            if write_stream_frame(send, StreamResponseKind::Ok, group)
+            if write_stream_frame(send, StreamResponseKind::Ok, group.as_slice())
                 .await
                 .is_err()
             {
@@ -876,6 +885,84 @@ async fn write_stream_frame(
         .map_err(|e| format!("stream write: {e}"))
 }
 
+/// Shared QUIC stream exchange over an existing connection: HMAC beacon
+/// handshake, tagged chunk request, length-prefixed response read.
+async fn exchange_chunk(
+    conn: &quinn::Connection,
+    key: [u8; 32],
+    my_pubkey: &str,
+    req: &crate::lan_transport::LanChunkRequest,
+) -> Result<Vec<u8>, String> {
+    let (mut send, mut recv) = conn
+        .open_bi()
+        .await
+        .map_err(|e| format!("open stream: {e}"))?;
+
+    let body = lan::beacon_body(
+        crate::lan_transport::LAN_MAGIC,
+        my_pubkey,
+        0,
+        soshal_common_core::format::now_secs() as u64,
+    );
+    let mac = lan::beacon_mac(&key, &body);
+    send.write_all(format!("{body}:{mac}\n").as_bytes())
+        .await
+        .map_err(|e| format!("handshake write: {e}"))?;
+
+    let payload = serde_json::to_vec(&serde_json::json!({
+        "type": "chunk",
+        "hash": req.hash,
+        "offset": req.offset,
+        "length": req.length,
+        "want_manifest": req.want_manifest,
+    }))
+    .map_err(|e| format!("req serde: {e}"))?;
+    send.write_all(&(payload.len() as u32).to_le_bytes())
+        .await
+        .map_err(|e| format!("req write: {e}"))?;
+    send.write_all(&payload)
+        .await
+        .map_err(|e| format!("req write: {e}"))?;
+    send.finish().map_err(|e| format!("finish: {e}"))?;
+
+    let mut kind = [0u8; 1];
+    read_exact_async(&mut recv, &mut kind).await?;
+    let mut len_buf = [0u8; 4];
+    read_exact_async(&mut recv, &mut len_buf).await?;
+    let len = u32::from_le_bytes(len_buf) as usize;
+    if len > MAX_STREAM_FRAME {
+        return Err("oversized response".to_string());
+    }
+    let mut data = vec![0u8; len];
+    read_exact_async(&mut recv, &mut data).await?;
+
+    match kind[0] {
+        0 if req.want_manifest || len == req.length => Ok(data),
+        0 => Err("short chunk response".to_string()),
+        1 => Err("chunk not found on peer".to_string()),
+        2 => Err("peer seeding denied (power state)".to_string()),
+        _ => Err("bad response kind".to_string()),
+    }
+}
+
+/// Connect a fresh one-shot QUIC client endpoint to `addr` (endpoint kept
+/// alive for the caller's exchange).
+async fn quic_connect(addr: SocketAddr) -> Result<(Endpoint, quinn::Connection), String> {
+    let socket = UdpSocket::bind(("0.0.0.0", 0)).map_err(|e| format!("udp bind: {e}"))?;
+    socket.set_nonblocking(true).ok();
+    let runtime = Arc::new(quinn::TokioRuntime);
+    let mut endpoint = Endpoint::new(quinn::EndpointConfig::default(), None, socket, runtime)
+        .map_err(|e| format!("endpoint: {e}"))?;
+    let (_, client_config) = tls_configs()?;
+    endpoint.set_default_client_config(client_config);
+    let conn = endpoint
+        .connect(addr, "soshal")
+        .map_err(|e| format!("connect: {e}"))?
+        .await
+        .map_err(|e| format!("handshake: {e}"))?;
+    Ok((endpoint, conn))
+}
+
 /// One-shot QUIC stream fetch of a blob range from a peer. Only private
 /// addresses are dialable (SSRF guard on outbound, mirrors TCP fetch). The
 /// HMAC beacon authenticates the client; the response is verified by the
@@ -908,74 +995,92 @@ pub fn fetch_quic_chunk(
     };
     rt.block_on(async {
         tokio::time::timeout(STREAM_EXCHANGE_TIMEOUT, async {
-            let socket = UdpSocket::bind(("0.0.0.0", 0)).map_err(|e| format!("udp bind: {e}"))?;
-            socket.set_nonblocking(true).ok();
-            let runtime = Arc::new(quinn::TokioRuntime);
-            let mut endpoint =
-                Endpoint::new(quinn::EndpointConfig::default(), None, socket, runtime)
-                    .map_err(|e| format!("endpoint: {e}"))?;
-            let (_, client_config) = tls_configs()?;
-            endpoint.set_default_client_config(client_config);
-
-            let conn = endpoint
-                .connect(addr, "soshal")
-                .map_err(|e| format!("connect: {e}"))?;
-            let conn = conn.await.map_err(|e| format!("handshake: {e}"))?;
-            let (mut send, mut recv) = conn
-                .open_bi()
-                .await
-                .map_err(|e| format!("open stream: {e}"))?;
-
-            let body = lan::beacon_body(
-                crate::lan_transport::LAN_MAGIC,
-                my_pubkey,
-                0,
-                soshal_common_core::format::now_secs() as u64,
-            );
-            let mac = lan::beacon_mac(&key, &body);
-            send.write_all(format!("{body}:{mac}\n").as_bytes())
-                .await
-                .map_err(|e| format!("handshake write: {e}"))?;
-
-            // Server speaks the tagged StreamRequest enum: mark this a chunk
-            // fetch so MoQ subscriptions share the same stream dispatch.
-            let payload = serde_json::to_vec(&serde_json::json!({
-                "type": "chunk",
-                "hash": req.hash,
-                "offset": req.offset,
-                "length": req.length,
-            }))
-            .map_err(|e| format!("req serde: {e}"))?;
-            send.write_all(&(payload.len() as u32).to_le_bytes())
-                .await
-                .map_err(|e| format!("req write: {e}"))?;
-            send.write_all(&payload)
-                .await
-                .map_err(|e| format!("req write: {e}"))?;
-            send.finish().map_err(|e| format!("finish: {e}"))?;
-
-            let mut kind = [0u8; 1];
-            read_exact_async(&mut recv, &mut kind).await?;
-            let mut len_buf = [0u8; 4];
-            read_exact_async(&mut recv, &mut len_buf).await?;
-            let len = u32::from_le_bytes(len_buf) as usize;
-            if len > MAX_STREAM_FRAME {
-                return Err("oversized response".to_string());
-            }
-            let mut data = vec![0u8; len];
-            read_exact_async(&mut recv, &mut data).await?;
-
-            match kind[0] {
-                0 if req.want_manifest || len == req.length => Ok(data),
-                0 => Err("short chunk response".to_string()),
-                1 => Err("chunk not found on peer".to_string()),
-                2 => Err("peer seeding denied (power state)".to_string()),
-                _ => Err("bad response kind".to_string()),
-            }
+            let (_endpoint, conn) = quic_connect(addr).await?;
+            exchange_chunk(&conn, key, my_pubkey, req).await
         })
         .await
         .map_err(|_| "quic exchange timed out".to_string())?
     })
+}
+
+/// Reusable QUIC client for bulk chunk fetches: one endpoint and one
+/// connection per peer, reused across chunks — the swarm download path avoids
+/// a fresh socket + full TLS handshake per chunk.
+pub struct QuicChunkPool {
+    endpoint: Endpoint,
+    conns: std::sync::Mutex<std::collections::HashMap<SocketAddr, quinn::Connection>>,
+}
+
+impl QuicChunkPool {
+    pub fn new() -> Result<Self, String> {
+        let socket = UdpSocket::bind(("0.0.0.0", 0)).map_err(|e| format!("udp bind: {e}"))?;
+        socket.set_nonblocking(true).ok();
+        let runtime = Arc::new(quinn::TokioRuntime);
+        let mut endpoint = Endpoint::new(quinn::EndpointConfig::default(), None, socket, runtime)
+            .map_err(|e| format!("endpoint: {e}"))?;
+        let (_, client_config) = tls_configs()?;
+        endpoint.set_default_client_config(client_config);
+        Ok(Self {
+            endpoint,
+            conns: std::sync::Mutex::new(std::collections::HashMap::new()),
+        })
+    }
+
+    fn cached(&self, addr: SocketAddr) -> Option<quinn::Connection> {
+        self.conns
+            .lock()
+            .ok()
+            .and_then(|guard| guard.get(&addr).cloned())
+    }
+
+    fn store(&self, addr: SocketAddr, conn: &quinn::Connection) {
+        if let Ok(mut guard) = self.conns.lock() {
+            guard.insert(addr, conn.clone());
+        }
+    }
+
+    fn evict(&self, addr: SocketAddr) {
+        if let Ok(mut guard) = self.conns.lock() {
+            guard.remove(&addr);
+        }
+    }
+
+    /// Fetch one chunk over the pooled connection for `addr`; a stale
+    /// connection is evicted and retried once with a fresh handshake.
+    pub async fn fetch_chunk(
+        &self,
+        addr: SocketAddr,
+        key: [u8; 32],
+        my_pubkey: &str,
+        req: &crate::lan_transport::LanChunkRequest,
+    ) -> Result<Vec<u8>, String> {
+        if !lan::is_private_ip(addr.ip()) {
+            return Err("refusing non-private LAN peer".to_string());
+        }
+        for attempt in 0..2 {
+            let conn = match self.cached(addr) {
+                Some(c) => c,
+                None => {
+                    let conn = self
+                        .endpoint
+                        .connect(addr, "soshal")
+                        .map_err(|e| format!("connect: {e}"))?
+                        .await
+                        .map_err(|e| format!("handshake: {e}"))?;
+                    self.store(addr, &conn);
+                    conn
+                }
+            };
+            match exchange_chunk(&conn, key, my_pubkey, req).await {
+                Ok(data) => return Ok(data),
+                Err(_e) if attempt == 0 => {
+                    self.evict(addr);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err("chunk fetch failed".to_string())
+    }
 }
 
 /// QUIC stream fetch of a blob manifest (JSON) by blob hash. The crawl step
@@ -1025,68 +1130,8 @@ fn fetch_quic_raw(
     };
     rt.block_on(async {
         tokio::time::timeout(STREAM_EXCHANGE_TIMEOUT, async {
-            let socket = UdpSocket::bind(("0.0.0.0", 0)).map_err(|e| format!("udp bind: {e}"))?;
-            socket.set_nonblocking(true).ok();
-            let runtime = Arc::new(quinn::TokioRuntime);
-            let mut endpoint =
-                Endpoint::new(quinn::EndpointConfig::default(), None, socket, runtime)
-                    .map_err(|e| format!("endpoint: {e}"))?;
-            let (_, client_config) = tls_configs()?;
-            endpoint.set_default_client_config(client_config);
-
-            let conn = endpoint
-                .connect(addr, "soshal")
-                .map_err(|e| format!("connect: {e}"))?;
-            let conn = conn.await.map_err(|e| format!("handshake: {e}"))?;
-            let (mut send, mut recv) = conn
-                .open_bi()
-                .await
-                .map_err(|e| format!("open stream: {e}"))?;
-
-            let body = lan::beacon_body(
-                crate::lan_transport::LAN_MAGIC,
-                my_pubkey,
-                0,
-                soshal_common_core::format::now_secs() as u64,
-            );
-            let mac = lan::beacon_mac(&key, &body);
-            send.write_all(format!("{body}:{mac}\n").as_bytes())
-                .await
-                .map_err(|e| format!("handshake write: {e}"))?;
-
-            let payload = serde_json::to_vec(&serde_json::json!({
-                "type": "chunk",
-                "hash": req.hash,
-                "offset": req.offset,
-                "length": req.length,
-                "want_manifest": req.want_manifest,
-            }))
-            .map_err(|e| format!("req serde: {e}"))?;
-            send.write_all(&(payload.len() as u32).to_le_bytes())
-                .await
-                .map_err(|e| format!("req write: {e}"))?;
-            send.write_all(&payload)
-                .await
-                .map_err(|e| format!("req write: {e}"))?;
-            send.finish().map_err(|e| format!("finish: {e}"))?;
-
-            let mut kind = [0u8; 1];
-            read_exact_async(&mut recv, &mut kind).await?;
-            let mut len_buf = [0u8; 4];
-            read_exact_async(&mut recv, &mut len_buf).await?;
-            let len = u32::from_le_bytes(len_buf) as usize;
-            if len > MAX_STREAM_FRAME {
-                return Err("oversized response".to_string());
-            }
-            let mut data = vec![0u8; len];
-            read_exact_async(&mut recv, &mut data).await?;
-
-            match kind[0] {
-                0 => Ok(data),
-                1 => Err("chunk not found on peer".to_string()),
-                2 => Err("peer seeding denied (power state)".to_string()),
-                _ => Err("bad response kind".to_string()),
-            }
+            let (_endpoint, conn) = quic_connect(addr).await?;
+            exchange_chunk(&conn, key, my_pubkey, req).await
         })
         .await
         .map_err(|_| "quic exchange timed out".to_string())?

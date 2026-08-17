@@ -286,8 +286,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content:
-                  SelectableText('Escrow $escrowId created$escrowCount'),
+              content: SelectableText('Escrow $escrowId created$escrowCount'),
             ),
           );
         }
@@ -551,7 +550,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                             l.images.first,
                             width: 56,
                             height: 56,
-                            cacheWidth: 112,
+                            cacheWidth: 160,
                             cacheHeight: 112,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => const SizedBox(

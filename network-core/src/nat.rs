@@ -264,11 +264,13 @@ async fn run_manager(
                         match gather_session(&pubkey, &stun_urls, &my_pubkey).await {
                             Ok((agent, shared, ufrag, pwd)) => {
                                 let local = shared.local_candidates.lock().unwrap().clone();
+                                let state = shared.state.lock().unwrap().clone();
+                                let connected_addr = shared.connected_addr.lock().unwrap().clone();
                                 let status = NatSessionStatus {
                                     pubkey: pubkey.clone(),
-                                    state: shared.state.lock().unwrap().clone(),
-                                    connected_addr: shared.connected_addr.lock().unwrap().clone(),
-                                    local_candidates: local.clone(),
+                                    state,
+                                    connected_addr,
+                                    local_candidates: local,
                                     remote_candidates: Vec::new(),
                                 };
                                 sessions.insert(
@@ -368,12 +370,14 @@ async fn run_manager(
                             } else {
                                 session.shared.connected_addr.lock().unwrap().clone()
                             };
+                            let local_candidates = session.shared.local_candidates.lock().unwrap().clone();
+                            let remote_candidates = session.remote_candidates.lock().unwrap().clone();
                             out.push(NatSessionStatus {
                                 pubkey: pubkey.clone(),
                                 state,
                                 connected_addr: connected,
-                                local_candidates: session.shared.local_candidates.lock().unwrap().clone(),
-                                remote_candidates: session.remote_candidates.lock().unwrap().clone(),
+                                local_candidates,
+                                remote_candidates,
                             });
                         }
                         let _ = result.send(out);

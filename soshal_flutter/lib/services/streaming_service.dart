@@ -437,10 +437,10 @@ class StreamingService extends ChangeNotifier
     }
   }
 
-  static List<int> _hexToBytes(String hex) {
-    final out = <int>[];
-    for (var i = 0; i < hex.length; i += 2) {
-      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
+  static Uint8List _hexToBytes(String hex) {
+    final out = Uint8List(hex.length ~/ 2);
+    for (var i = 0; i < out.length; i++) {
+      out[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
     }
     return out;
   }

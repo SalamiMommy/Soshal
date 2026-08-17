@@ -40,41 +40,44 @@ fn p_tags(event: &Event) -> Vec<String> {
         .collect()
 }
 
-fn t_tags(event: &Event) -> Vec<String> {
-    event
-        .tags
-        .iter()
-        .filter(|t| t.kind() == "t")
-        .filter_map(|t| t.content().map(|c| c.to_string()))
-        .collect()
-}
-
 /// Convert a verified relay event into its cached DB row (if cacheable).
 fn post_row(event: &Event) -> Option<PostRow> {
     if event.content.len() > MAX_CACHED_CONTENT {
         return None;
     }
-    let es = e_tags(event);
+    let mut es: Vec<String> = Vec::new();
+    let mut ps: Vec<String> = Vec::new();
+    let mut ts: Vec<String> = Vec::new();
+    let mut tags_json: Vec<Vec<String>> = Vec::with_capacity(event.tags.len());
+    let mut freenet_key: Option<String> = None;
+    for tag in event.tags.iter() {
+        let vec = tag.clone().to_vec();
+        match vec.first().map(|s| s.as_str()) {
+            Some("e") => {
+                if let Some(c) = vec.get(1) {
+                    es.push(c.clone());
+                }
+            }
+            Some("p") => {
+                if let Some(c) = vec.get(1) {
+                    ps.push(c.clone());
+                }
+            }
+            Some("t") => {
+                if let Some(c) = vec.get(1) {
+                    ts.push(c.clone());
+                }
+            }
+            Some("freenet") if freenet_key.is_none() => {
+                freenet_key = vec.get(1).cloned();
+            }
+            _ => {}
+        }
+        tags_json.push(vec);
+    }
     let reply_to = es.first().cloned();
     let root_id = es.get(1).cloned().or_else(|| es.first().cloned());
     let sig = event.sig.to_string();
-
-    let tags_json = serde_json::to_string(
-        &event
-            .tags
-            .iter()
-            .map(|t| t.clone().to_vec())
-            .collect::<Vec<Vec<String>>>(),
-    )
-    .unwrap_or_default();
-    let freenet_key = event.tags.iter().find_map(|t| {
-        let slice = t.as_slice();
-        if slice.first().map(|s| s.as_str()) == Some("freenet") {
-            slice.get(1).map(|s| s.to_string())
-        } else {
-            None
-        }
-    });
 
     Some(PostRow {
         id: event.id.to_hex(),
@@ -82,12 +85,12 @@ fn post_row(event: &Event) -> Option<PostRow> {
         content: event.content.clone(),
         kind: event.kind.as_u16() as u64 as i64,
         created_at: event.created_at.as_secs() as i64,
-        tags_json,
+        tags_json: serde_json::to_string(&tags_json).unwrap_or_default(),
         sig: Some(sig),
         reply_to,
         root_id,
-        mentioned_pubkeys: p_tags(event).join(","),
-        mentioned_hashtags: t_tags(event).join(","),
+        mentioned_pubkeys: ps.join(","),
+        mentioned_hashtags: ts.join(","),
         subject: None,
         sync_status: "synced".to_string(),
         is_deleted: false,
@@ -331,8 +334,39 @@ pub fn handle_batch(
     if events.is_empty() {
         return Ok(());
     }
+    let mut rows: Vec<PostRow> = Vec::with_capacity(events.len());
     for event in events {
-        let _ = handle(db, my_pubkey, event, tx);
+        if event.verify().is_err() {
+            continue;
+        }
+        match event.kind {
+            Kind::EncryptedDirectMessage
+            | Kind::Metadata
+            | Kind::ContactList
+            | Kind::ZapReceipt
+            | Kind::RelayList
+            | Kind::Bookmarks
+            | Kind::Reaction => {
+                let _ = handle(db, my_pubkey, event, tx);
+            }
+            _ => {
+                if let Some(row) = post_row(event) {
+                    rows.push(row);
+                }
+            }
+        }
+    }
+    PostRepo::new(db).upsert_batch(&rows)?;
+    for row in &rows {
+        if row.kind == Kind::TextNote.as_u16() as i64 {
+            let _ = tx.try_send(SyncUpdate::Feed {
+                id: row.id.clone(),
+                pubkey: row.pubkey.clone(),
+                content: row.content.clone(),
+                created_at: row.created_at as u64,
+                kind: row.kind as u64,
+            });
+        }
     }
     Ok(())
 }

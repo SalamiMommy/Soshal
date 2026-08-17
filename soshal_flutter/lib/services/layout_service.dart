@@ -81,7 +81,15 @@ class LayoutService extends ChangeNotifier {
     _screenWidth = screenWidth;
     _textScale = textScale;
     _lastPosts = posts;
-    final requests = posts.map((p) => _requestFor(p)).toList();
+    final requests = posts
+        .where((p) => !_heights.containsKey(p.eventId))
+        .map((p) => _requestFor(p))
+        .toList();
+    if (requests.isEmpty) {
+      _lastPosts = posts;
+      _ready = true;
+      return; // nothing new to lay out
+    }
     try {
       final json = RustLib.instance.api.crateFfiFeedFeedComputeCardLayouts(
           requestsJson: jsonEncode(requests));
@@ -130,12 +138,20 @@ class LayoutService extends ChangeNotifier {
     _textScale = textScale;
     final posts = _lastPosts;
     if (posts == null) return;
-    for (final p in posts) {
-      final result = _computeCardLayout(p);
-      if (result != null) {
-        _heights[p.eventId] = result.$1;
-        _mediaHeights[p.eventId] = result.$2;
+    final requests = posts.map((p) => _requestFor(p)).toList();
+    try {
+      final json = RustLib.instance.api.crateFfiFeedFeedComputeCardLayouts(
+          requestsJson: jsonEncode(requests));
+      final results = jsonDecode(json) as List<dynamic>;
+      for (final r in results) {
+        final m = r as Map<String, dynamic>;
+        final id = m['id'] as String? ?? '';
+        if (id.isEmpty) continue;
+        _heights[id] = (m['height_px'] as num?)?.toDouble() ?? 0;
+        _mediaHeights[id] = (m['media_height_px'] as num?)?.toDouble() ?? 0;
       }
+    } catch (e) {
+      debugPrint('layout metrics: $e');
     }
     if (_heights.isNotEmpty) _ready = true;
     notifyListeners();

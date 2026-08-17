@@ -310,6 +310,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_fetch_invoice_validation_before_connect() {
         let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = zap_disconnect_nwc();
@@ -343,6 +344,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_send_payment_fails_when_disconnected() {
         let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = zap_disconnect_nwc();

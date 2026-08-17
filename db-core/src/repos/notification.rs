@@ -94,6 +94,33 @@ impl<'a> NotificationRepo<'a> {
             },
         )
     }
+
+    pub fn get_unread_filtered(
+        &self,
+        pubkey: &str,
+        type_: &str,
+        limit: i64,
+    ) -> Result<Vec<NotificationRow>, crate::error::DbError> {
+        let limit = crate::repos::clamp_limit(limit);
+        let conn = self.db.conn()?;
+        crate::query::query(
+            &conn,
+            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE pubkey = ?1 AND is_read = 0 AND type = ?2 ORDER BY created_at DESC LIMIT ?3",
+            params![pubkey, type_, limit],
+            |row| {
+                Ok(NotificationRow {
+                    id: row.get(0)?,
+                    pubkey: row.get(1)?,
+                    type_: row.get(2)?,
+                    event_id: row.get(3)?,
+                    from_pubkey: row.get(4)?,
+                    content: row.get(5)?,
+                    created_at: row.get(6)?,
+                    is_read: row.get(7)?,
+                })
+            },
+        )
+    }
 }
 
 pub struct NotificationRow {

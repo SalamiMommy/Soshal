@@ -334,7 +334,7 @@ mod tests {
         assert!(text.starts_with("HTTP/1.1 206 Partial Content"));
         assert!(text.ends_with("blob"));
 
-        let missing_hash = format!("{}", "f".repeat(64));
+        let missing_hash = "f".repeat(64);
         let mut sock = TcpStream::connect(&addr).await.unwrap();
         sock.write_all(
             format!(

@@ -126,7 +126,7 @@ mod tests {
         assert!(!case.cast_vote(vote1.clone()).unwrap());
         let err = case.cast_vote(vote1.clone()).unwrap_err();
         assert!(err.contains("already voted"));
-        assert!(!case.cast_vote(vote1).is_ok());
+        assert!(case.cast_vote(vote1).is_err());
         assert_eq!(case.votes_collected.len(), 1);
     }
 

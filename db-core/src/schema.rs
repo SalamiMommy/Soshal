@@ -7,11 +7,11 @@ use libsql::Connection;
 use migrations::{
     v1_create_tables, v2_create_group_messages, v3_create_social_tables, v4_create_sync_tables,
     v5_create_missing_tables, v6_purge_orphan_fts_rows, v7_rebuild_fts_triggers,
-    v8_shared_keys_escrow_confirms,
+    v8_shared_keys_escrow_confirms, v9_users_fts,
 };
 
 /// Latest schema version the migration runner produces.
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 
 pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
     block_on(conn.execute_batch("CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')));"))?;
@@ -43,6 +43,7 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
         (6, |c| v6_purge_orphan_fts_rows(c).map_err(Into::into)),
         (7, |c| v7_rebuild_fts_triggers(c).map_err(Into::into)),
         (8, |c| v8_shared_keys_escrow_confirms(c).map_err(Into::into)),
+        (9, |c| v9_users_fts(c).map_err(Into::into)),
     ];
 
     for &(version, step_fn) in steps {

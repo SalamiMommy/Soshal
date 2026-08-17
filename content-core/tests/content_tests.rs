@@ -4,30 +4,39 @@ use soshal_content_core::chunk::{chunk_array, chunk_array_json};
 use soshal_content_core::compress::{
     compress, compress_dict, compress_json, compress_json_dict, decompress, decompress_dict,
     decompress_dict_limited, decompress_json, decompress_json_dict, decompress_limited,
-    is_dict_frame, ZSTD_DICT_ID, ZSTD_DICT_MAGIC,
+    is_dict_frame, MAX_DECOMPRESS_BYTES, ZSTD_DICT_HEADER_LEN, ZSTD_DICT_ID, ZSTD_DICT_MAGIC,
 };
 use soshal_content_core::entities::{decode_ascii_entities, decode_html_entities};
 use soshal_content_core::extension::get_extension;
 use soshal_content_core::forcelayout::calculate_force_layout_json;
-use soshal_content_core::format::{format_timestamp, is_valid_hex, seconds_to_ymd, truncate};
+use soshal_content_core::format::{
+    format_duration, format_duration_json, format_timestamp, format_timestamp_json, is_valid_hex,
+    now_secs, pluralize, pluralize_json, seconds_to_ymd, truncate, truncate_json,
+    MAX_TIMESTAMP_SECS,
+};
 use soshal_content_core::hashtag::{extract as extract_hashtags, split as split_hashtags};
-use soshal_content_core::linkpreview::html::{extract_favicon, parse_link_preview_html_json};
-use soshal_content_core::linkpreview::imeta::extract_imeta_video_urls;
+use soshal_content_core::json_util::{json_in, json_in_borrow, json_out};
+use soshal_content_core::linkpreview::html::{
+    extract_favicon, parse_link_preview_html, parse_link_preview_html_json,
+};
+use soshal_content_core::linkpreview::imeta::{
+    extract_imeta_video_urls, extract_imeta_video_urls_json,
+};
 use soshal_content_core::linkpreview::urls::extract_urls_json;
 use soshal_content_core::mention::{extract_pubkeys, parse as parse_mentions};
-use soshal_content_core::mime::{detect_mime_type, sniff_mime_type};
-use soshal_content_core::regex_util::{compile_re, escape_regex};
-use soshal_content_core::safe_json::safe_json_parse;
+use soshal_content_core::mime::{detect_mime_type, sniff_mime_type, sniff_mime_type_json};
+use soshal_content_core::regex_util::{compile_re, escape_regex, is_match};
+use soshal_content_core::safe_json::{safe_json_parse, safe_json_parse_json};
 use soshal_content_core::sanitize::{
     sanitize_context, sanitize_details, sanitize_error_message, sanitize_log_message,
     sanitize_notif_content, scrub_sensitive_data,
 };
 use soshal_content_core::stories::filter_stories_json;
 use soshal_content_core::tags::{find_tag_value, find_tag_values_map, parse_audience};
-use soshal_content_core::ui_safe::{is_valid_css_color, js_string_literal, short_pk};
+use soshal_content_core::ui_safe::{is_valid_css_color, js_string_literal, short_pk, truncate_str};
 use soshal_content_core::url::{
-    domain, extract as extract_urls, is_valid, is_valid_event_relay_url, is_valid_media_url,
-    is_valid_relay_url,
+    domain, extract as extract_urls, is_private_ip_str, is_private_ipv6_str, is_valid,
+    is_valid_event_relay_url, is_valid_media_url, is_valid_relay_url, safe_href, sanitize_link_url,
 };
 
 #[test]
@@ -409,4 +418,512 @@ fn extension_edge_cases() {
     assert_eq!(get_extension("https://example.com/path/"), "");
     assert_eq!(get_extension("https://example.com/file."), "");
     assert_eq!(get_extension("https://example.com/f.abcdefghijk"), "");
+}
+
+#[test]
+fn compress_constants_and_dict_errors() {
+    assert_eq!(ZSTD_DICT_HEADER_LEN, 10);
+    assert_eq!(MAX_DECOMPRESS_BYTES, 4 * 1024 * 1024);
+    let mut bad_id = ZSTD_DICT_MAGIC.to_vec();
+    bad_id.extend_from_slice(&2u32.to_le_bytes());
+    bad_id.extend_from_slice(b"payload");
+    assert!(decompress_dict(&bad_id).is_err());
+    assert!(decompress_dict_limited(&ZSTD_DICT_MAGIC, 1024).is_err());
+    let empty = compress_dict(b"").unwrap();
+    assert_eq!(decompress_dict(&empty).unwrap(), b"");
+    assert_eq!(decompress_json_dict("!!!"), "");
+}
+
+#[test]
+fn entities_borrowed_and_more() {
+    assert_eq!(decode_html_entities("no entities here"), "no entities here");
+    assert!(matches!(
+        decode_html_entities("plain"),
+        std::borrow::Cow::Borrowed(_)
+    ));
+    assert_eq!(decode_html_entities("&#X41;"), "A");
+    assert_eq!(
+        decode_html_entities("&quot; &apos; &euro; &copy;"),
+        "\" ' \u{20ac} \u{00a9}"
+    );
+    assert_eq!(decode_ascii_entities("plain"), "plain");
+    assert_eq!(decode_ascii_entities("&#65;&#x42;"), "ab");
+}
+
+#[test]
+fn chunk_array_json_edge_cases() {
+    assert_eq!(chunk_array_json("garbage"), r#"{"chunks":[]}"#);
+    assert_eq!(
+        chunk_array_json(r#"{"arr":[1,2],"size":0}"#),
+        r#"{"chunks":[]}"#
+    );
+    assert_eq!(
+        chunk_array_json(r#"{"arr":[1,2,3],"size":10}"#),
+        r#"{"chunks":[[1,2,3]]}"#
+    );
+}
+
+#[test]
+fn force_layout_guards() {
+    let mut nodes = Vec::new();
+    for i in 0..501 {
+        nodes.push(json!({"id": format!("n{i}"), "label": "x"}));
+    }
+    let big = json!({"nodes": nodes, "edges": [], "width": 800.0, "height": 600.0}).to_string();
+    assert_eq!(calculate_force_layout_json(&big), "[]");
+    let bad_w = r#"{"nodes":[{"id":"a","label":"A"}],"edges":[],"width":0,"height":600}"#;
+    assert_eq!(calculate_force_layout_json(bad_w), "[]");
+    let long_id = json!({
+        "nodes": [
+            {"id": "a", "label": "A"},
+            {"id": "x".repeat(201), "label": "B"}
+        ],
+        "edges": [],
+        "width": 100,
+        "height": 100
+    })
+    .to_string();
+    let res = calculate_force_layout_json(&long_id);
+    assert!(res.contains("\"id\":\"a\""));
+    assert!(!res.contains("\"id\":\"x"));
+    let valid = json!({
+        "nodes": [{"id": "a", "label": "A", "radius": 5, "color": "#f00"}],
+        "edges": [],
+        "width": 100.0,
+        "height": 100.0,
+        "iterations": 2,
+        "initial_positions": [[10.0, 10.0]]
+    })
+    .to_string();
+    let out = calculate_force_layout_json(&valid);
+    assert!(out.contains("\"color\":\"#f00\""));
+    assert!(out.contains("\"radius\":5.0"));
+}
+
+#[test]
+fn format_extra_rules() {
+    assert!(now_secs() > 1_500_000_000);
+    assert_eq!(pluralize(1, "post", None), "post");
+    assert_eq!(pluralize(2, "post", None), "posts");
+    assert_eq!(pluralize(2, "box", Some("boxes")), "boxes");
+    assert_eq!(format_duration(65.0), "1:05");
+    assert_eq!(format_duration(0.0), "");
+    assert_eq!(format_duration(f64::NAN), "");
+    assert_eq!(format_timestamp(1000, 1300), "5m ago");
+    assert_eq!(format_timestamp(1000, 3700), "45m ago");
+    assert_eq!(format_timestamp(1000, 90_000), "1d ago");
+    assert_eq!(format_timestamp(0, 700_000), "Jan 1, 1970");
+    assert_eq!(format_timestamp(MAX_TIMESTAMP_SECS + 1, 0), "");
+    assert_eq!(seconds_to_ymd(86_400 * 366), (1971, "Jan", 2));
+    assert_eq!(seconds_to_ymd(MAX_TIMESTAMP_SECS), (9999, "Dec", 31));
+    assert_eq!(truncate("héllo", 2), "h…");
+    assert_eq!(truncate("", 5), "");
+    assert_eq!(truncate("abc", 0), "");
+}
+
+#[test]
+fn format_json_wrappers() {
+    assert_eq!(
+        truncate_json(r#"{"str":"hello world","maxLen":5}"#),
+        "hell…"
+    );
+    assert_eq!(truncate_json("garbage"), "");
+    assert_eq!(pluralize_json(r#"{"count":2,"singular":"post"}"#), "posts");
+    assert_eq!(pluralize_json("garbage"), "");
+    assert_eq!(
+        format_timestamp_json(r#"{"seconds":1000,"nowSec":1300}"#),
+        "5m ago"
+    );
+    assert_eq!(format_timestamp_json("garbage"), "");
+    assert_eq!(format_duration_json(r#"{"seconds":65.0}"#), "1:05");
+    assert_eq!(format_duration_json("garbage"), "");
+}
+
+#[test]
+fn hashtag_length_cap() {
+    let long = format!("#{}", "a".repeat(60));
+    assert_eq!(extract_hashtags(&long), vec!["a".repeat(50)]);
+}
+
+#[test]
+fn mention_empty_and_dupes() {
+    assert!(parse_mentions("").is_empty());
+    let pks = extract_pubkeys("npub1pu3v3pzj4j6 npub1pu3v3pzj4j6");
+    assert_eq!(pks.len(), 2);
+}
+
+#[test]
+fn ast_parser_whitespace_and_literals() {
+    let spans = parse_post_ast("hi @bob ");
+    assert_eq!(spans.len(), 2);
+    assert_eq!(spans[1].text, "@bob ");
+    assert_eq!(spans[1].target.as_deref(), Some("@bob"));
+    let lit = parse_post_ast("**bold** _em_ `code`");
+    assert!(lit.iter().all(|s| s.span_type == SpanType::Text));
+    let link = parse_post_ast("ftp://x.com");
+    assert_eq!(link[0].span_type, SpanType::Text);
+}
+
+#[test]
+fn mime_magic_bytes() {
+    let png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01];
+    assert_eq!(sniff_mime_type(&png, ""), "image/png");
+    assert_eq!(sniff_mime_type(b"GIF89a", ""), "image/gif");
+    let riff = |tag: [u8; 4]| -> Vec<u8> {
+        let mut v = vec![0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0];
+        v.extend_from_slice(&tag);
+        v
+    };
+    assert_eq!(sniff_mime_type(&riff(*b"WEBP"), ""), "image/webp");
+    assert_eq!(sniff_mime_type(&riff(*b"WAVE"), ""), "audio/wav");
+    assert_eq!(
+        sniff_mime_type(&[0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70], ""),
+        "video/mp4"
+    );
+    assert_eq!(sniff_mime_type(&[0x1a, 0x45, 0xdf, 0xa3], ""), "video/webm");
+    assert_eq!(
+        sniff_mime_type(&[0, 0, 0, 0x14, 0x6d, 0x6f, 0x6f, 0x76], ""),
+        "video/quicktime"
+    );
+    assert_eq!(sniff_mime_type(b"fLaC", ""), "audio/flac");
+    assert_eq!(sniff_mime_type(b"OggS", ""), "audio/ogg");
+    assert_eq!(sniff_mime_type(b"ID3\x04\x00\x00", ""), "audio/mpeg");
+    assert_eq!(sniff_mime_type(&[0xff, 0xfb, 0x90], ""), "audio/mpeg");
+    assert_eq!(
+        sniff_mime_type(&[], "image/png"),
+        "application/octet-stream"
+    );
+    assert_eq!(
+        sniff_mime_type(b"\x01\x02\x03", "video/x-custom"),
+        "application/octet-stream"
+    );
+    assert_eq!(
+        sniff_mime_type(b"\x01\x02\x03\x04", "audio/x-custom"),
+        "audio/x-custom"
+    );
+}
+
+#[test]
+fn mime_json_wrapper_and_detect() {
+    assert_eq!(
+        sniff_mime_type_json(r#"{"bytes":[255,216,255,224],"fallback":"image/jpeg"}"#),
+        "image/jpeg"
+    );
+    assert_eq!(sniff_mime_type_json("not json"), "application/octet-stream");
+    assert_eq!(detect_mime_type("a.svg"), "image/svg+xml");
+    assert_eq!(detect_mime_type("b.MP3"), "audio/mpeg");
+    assert_eq!(detect_mime_type("c.pdf"), "application/pdf");
+    assert_eq!(detect_mime_type("d.json"), "application/json");
+    assert_eq!(detect_mime_type("e.txt"), "text/plain");
+    assert_eq!(detect_mime_type("f.html"), "text/html");
+    assert_eq!(detect_mime_type("g.heic"), "image/heic");
+    assert_eq!(detect_mime_type("h.opus"), "audio/opus");
+    assert_eq!(detect_mime_type("i.unknown"), "");
+    assert_eq!(detect_mime_type("noext"), "");
+    assert_eq!(detect_mime_type("j."), "");
+}
+
+#[test]
+fn regex_util_is_match() {
+    assert!(is_match(r"\d+", "abc123"));
+    assert!(!is_match(r"\d+", "abc"));
+    assert!(!is_match("[invalid", "abc"));
+}
+
+#[test]
+fn safe_json_json_wrapper() {
+    assert_eq!(
+        safe_json_parse_json(r#"{"text":"{\"a\":1}"}"#),
+        r#"{"a":1}"#
+    );
+    assert_eq!(safe_json_parse_json(r#"{"text":"not json"}"#), "null");
+    assert_eq!(safe_json_parse_json("garbage"), "null");
+}
+
+#[test]
+fn json_util_direct() {
+    assert_eq!(json_in("garbage", 42i64), 42);
+    let v = vec![1, 2];
+    assert_eq!(json_out(&v, "[]"), "[1,2]");
+    let parsed = json_in_borrow::<serde_json::Value>(r#"{"a":1}"#).unwrap();
+    assert_eq!(parsed["a"], 1);
+    assert!(json_in_borrow::<serde_json::Value>("garbage").is_none());
+}
+
+#[test]
+fn sanitize_error_message_rules() {
+    let hex64 = "a".repeat(64);
+    assert_eq!(
+        sanitize_error_message(&format!("private_key={hex64}")),
+        "[REDACTED]"
+    );
+    assert!(sanitize_error_message("api_key: ABCDEFGH123").contains("[REDACTED]"));
+    assert!(sanitize_error_message("read /etc/passwd").contains("[REDACTED]"));
+    assert!(sanitize_error_message("conn mongodb://u:p@h/db").contains("[REDACTED]"));
+    assert_eq!(
+        sanitize_error_message("https://x.com?key=abc"),
+        "https://x.com[REDACTED]"
+    );
+    let long = sanitize_error_message(&"x".repeat(600));
+    assert!(long.ends_with("... [truncated]"));
+    assert_eq!(long.len(), 515);
+}
+
+#[test]
+fn sanitize_log_message_rules() {
+    let hex64 = "a".repeat(64);
+    assert_eq!(sanitize_log_message(&hex64), "[REDACTED_KEY]");
+    assert_eq!(
+        sanitize_log_message(&format!("0x{hex64}")),
+        "[REDACTED_KEY]"
+    );
+    assert_eq!(sanitize_log_message("short hex 1234"), "short hex 1234");
+}
+
+#[test]
+fn scrub_sensitive_data_rules() {
+    let hex64 = "a".repeat(64);
+    assert!(scrub_sensitive_data(&format!("privkey={hex64}")).contains("[REDACTED_KEY]"));
+    assert!(
+        scrub_sensitive_data("Authorization: Bearer abc123xyz").contains("Bearer [REDACTED_TOKEN]")
+    );
+    assert!(scrub_sensitive_data("conn from 192.168.1.1").contains("[REDACTED_IP]"));
+    assert!(scrub_sensitive_data("conn from 127.0.0.1").contains("[REDACTED_IP]"));
+    assert!(scrub_sensitive_data("conn from 10.1.2.3").contains("[REDACTED_IP]"));
+}
+
+#[test]
+fn sanitize_details_rules() {
+    assert_eq!(sanitize_details(""), "");
+    let b64 = "A".repeat(32);
+    assert_eq!(sanitize_details(&format!("token {b64}")), "token [BASE64]");
+    assert_eq!(sanitize_details("/etc/x"), "/etc/x");
+}
+
+#[test]
+fn sanitize_context_rules() {
+    assert_eq!(sanitize_context(""), None);
+    assert_eq!(sanitize_context("null"), None);
+    assert_eq!(sanitize_context("[1,2,3]"), None);
+    let ctx = sanitize_context(r#"{"apiKey":"abc","password":"x","name":"bob"}"#).unwrap();
+    assert!(ctx.contains("\"apiKey\":\"[REDACTED]\""));
+    assert!(ctx.contains("\"password\":\"[REDACTED]\""));
+    assert!(ctx.contains("\"name\":\"bob\""));
+}
+
+#[test]
+fn link_preview_direct_and_guards() {
+    let out = parse_link_preview_html("no meta", "https://example.com/x").unwrap();
+    assert_eq!(out.title, "https://example.com/x");
+    assert_eq!(out.description, "");
+    assert_eq!(out.image, None);
+    assert_eq!(out.domain, "example.com");
+    assert_eq!(
+        out.favicon.as_deref(),
+        Some("https://example.com/favicon.ico")
+    );
+    let www = parse_link_preview_html("<title>t</title>", "https://www.example.com/p").unwrap();
+    assert_eq!(www.title, "t");
+    assert_eq!(www.domain, "example.com");
+    let with_meta = parse_link_preview_html(
+        r#"<meta name="description" content="Desc"><meta property="og:image" content="javascript:alert(1)">"#,
+        "https://example.com/",
+    )
+    .unwrap();
+    assert_eq!(with_meta.description, "Desc");
+    assert_eq!(with_meta.image, None);
+    assert!(
+        parse_link_preview_html(&"a".repeat(5 * 1024 * 1024 + 1), "https://example.com").is_none()
+    );
+    assert_eq!(parse_link_preview_html_json("not json"), "null");
+}
+
+#[test]
+fn favicon_variants() {
+    let rel = r#"<link rel="icon" href="/static/f.png">"#;
+    assert_eq!(
+        extract_favicon(rel, "https://example.com/page"),
+        Some("https://example.com/static/f.png".to_string())
+    );
+    let js = r#"<link rel="icon" href="javascript:void(0)">"#;
+    assert_eq!(extract_favicon(js, "https://example.com/page"), None);
+    let data = r#"<link rel="icon" href="data:image/png;base64,xx">"#;
+    assert_eq!(extract_favicon(data, "https://example.com/page"), None);
+    assert_eq!(
+        extract_favicon("<html></html>", "https://example.com/page"),
+        Some("https://example.com/favicon.ico".to_string())
+    );
+}
+
+#[test]
+fn imeta_json_wrapper() {
+    let input = r#"{"tags":[["imeta","url=https://x/v.mp4","m=video/mp4"],["imeta","url=https://x/a.png","m=image/png"],["t","nostr"]]}"#;
+    let out = extract_imeta_video_urls_json(input);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 1);
+    let many = vec![vec![String::new()]; 100_001];
+    let big = serde_json::to_string(&json!({"tags": many})).unwrap();
+    assert_eq!(extract_imeta_video_urls_json(&big), "[]");
+}
+
+#[test]
+fn linkpreview_urls_extract_fn() {
+    let urls = soshal_content_core::linkpreview::urls::extract_urls(
+        "go https://x.com/a and https://x.com/a",
+    );
+    assert_eq!(urls, vec!["https://x.com/a"]);
+}
+
+#[test]
+fn stories_valid_processing() {
+    let input = json!({
+        "events": [
+            {"id": "expired", "pubkey": "pk", "content": "{\"text\":\"old\"}", "created_at": 50, "tags": [["expiration", "60"]]},
+            {"id": "a", "pubkey": "pk", "content": "{\"text\":\"hi\"}", "created_at": 100, "tags": []},
+            {"id": "b", "pubkey": "pk", "content": "{\"media\":[{\"url\":\"https://x/y.mp4\",\"type\":\"video/mp4\",\"duration\":3.0}]}", "created_at": 200, "tags": []}
+        ],
+        "now_sec": 100,
+        "expiry_seconds": 3600
+    });
+    let out: serde_json::Value =
+        serde_json::from_str(&filter_stories_json(&input.to_string())).unwrap();
+    let events = out.as_array().unwrap();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["id"], "a");
+    assert_eq!(events[1]["id"], "b");
+    assert_eq!(events[0]["text"], "hi");
+    assert_eq!(events[0]["expires_at_ms"], 3_700_000.0);
+    assert_eq!(events[1]["media"][0]["url"], "https://x/y.mp4");
+    assert_eq!(events[1]["media"][0]["type"], "video/mp4");
+    assert_eq!(events[1]["created_at_ms"], 200_000.0);
+}
+
+#[test]
+fn css_color_rules() {
+    assert!(is_valid_css_color("#fff"));
+    assert!(is_valid_css_color("#abcd"));
+    assert!(is_valid_css_color("#aabbcc"));
+    assert!(is_valid_css_color("#aabbccdd"));
+    assert!(is_valid_css_color("hsl(120, 50%, 50%)"));
+    assert!(is_valid_css_color("hsla(0, 0%, 0%, 0.5)"));
+    assert!(is_valid_css_color("hsl(120deg, 50%, 50%)"));
+    assert!(!is_valid_css_color("#12"));
+    assert!(!is_valid_css_color("#ggg"));
+    assert!(!is_valid_css_color("red"));
+    assert!(!is_valid_css_color("url(http://x)"));
+    assert!(!is_valid_css_color("hsl(361, 50%, 50%)"));
+    assert!(!is_valid_css_color("hsl(120, 150%, 50%)"));
+    assert!(!is_valid_css_color(""));
+    assert!(!is_valid_css_color(&"#".repeat(65)));
+}
+
+#[test]
+fn ui_safe_string_helpers() {
+    assert_eq!(short_pk("", 5), "");
+    assert_eq!(short_pk("abc", 0), "");
+    assert_eq!(short_pk("héllo", 3), "hé");
+    assert_eq!(truncate_str("hello world", 5), "hello");
+    assert_eq!(truncate_str("héllo", 3), "hé");
+    assert_eq!(truncate_str("x", 0), "");
+    assert_eq!(truncate_str("", 5), "");
+    assert_eq!(js_string_literal("a\"b\\c\nd"), "\"a\\\"b\\\\c\\nd\"");
+}
+
+#[test]
+fn url_ssrf_private_ip() {
+    assert!(is_private_ip_str("127.0.0.1"));
+    assert!(is_private_ip_str("10.1.2.3"));
+    assert!(is_private_ip_str("192.168.0.1"));
+    assert!(is_private_ip_str("172.16.0.1"));
+    assert!(is_private_ip_str("172.31.255.255"));
+    assert!(is_private_ip_str("169.254.169.254"));
+    assert!(is_private_ip_str("100.64.0.1"));
+    assert!(is_private_ip_str("0.0.0.0"));
+    assert!(is_private_ip_str("224.0.0.1"));
+    assert!(!is_private_ip_str("8.8.8.8"));
+    assert!(!is_private_ip_str("172.32.0.1"));
+    assert!(!is_private_ip_str("example.com"));
+    assert!(!is_private_ip_str(""));
+    assert!(is_private_ip_str("[::1]"));
+    assert!(is_private_ip_str("::ffff:127.0.0.1"));
+    assert!(is_private_ip_str("fc00::1"));
+    assert!(is_private_ip_str("fe80::1"));
+    assert!(is_private_ip_str("2001::1"));
+    assert!(!is_private_ip_str("2001:db8::1"));
+    assert!(is_private_ip_str("2002:7f00:1::1"));
+    assert!(!is_private_ip_str("2606:4700::1"));
+}
+
+#[test]
+fn url_is_private_ipv6() {
+    assert!(is_private_ipv6_str("::1"));
+    assert!(is_private_ipv6_str("fe80::1"));
+    assert!(is_private_ipv6_str("fc00::1"));
+    assert!(is_private_ipv6_str("ff02::1"));
+    assert!(is_private_ipv6_str("::"));
+    assert!(is_private_ipv6_str("2001::1"));
+    assert!(is_private_ipv6_str("::ffff:10.0.0.1"));
+    assert!(!is_private_ipv6_str("2001:db8::1"));
+    assert!(!is_private_ipv6_str("example.com"));
+}
+
+#[test]
+fn url_sanitize_link_and_href() {
+    assert_eq!(
+        sanitize_link_url("https://example.com/a.png"),
+        Some("https://example.com/a.png".to_string())
+    );
+    assert_eq!(sanitize_link_url("javascript:alert(1)"), None);
+    assert_eq!(sanitize_link_url("data:text/html,x"), None);
+    assert_eq!(sanitize_link_url("http://localhost/x"), None);
+    assert_eq!(sanitize_link_url("https://127.0.0.1/x"), None);
+    assert_eq!(sanitize_link_url("https://evil.nip.io/x"), None);
+    assert_eq!(
+        safe_href("https://example.com/x"),
+        Some("https://example.com/x".to_string())
+    );
+    assert_eq!(safe_href("ftp://example.com/x"), None);
+    assert_eq!(safe_href("https://10.0.0.1/x"), None);
+}
+
+#[test]
+fn url_relay_edge_cases() {
+    assert_eq!(is_valid_relay_url(""), (false, false));
+    assert_eq!(is_valid_relay_url("https://relay.com"), (false, false));
+    assert_eq!(
+        is_valid_relay_url("wss://user:pass@relay.com"),
+        (false, false)
+    );
+    assert_eq!(is_valid_relay_url("wss://relay"), (false, false));
+    assert_eq!(is_valid_relay_url("wss://1.2.3.4"), (false, false));
+    assert_eq!(is_valid_relay_url("wss://localhost"), (false, false));
+    assert_eq!(is_valid_relay_url("wss://192.168.1.1"), (false, false));
+    assert_eq!(is_valid_relay_url("wss://evil.nip.io"), (false, false));
+    assert_eq!(is_valid_relay_url("ws://relay.damus.io"), (true, false));
+    assert_eq!(is_valid_relay_url("wss://xn--relay-9db.com"), (true, true));
+    assert_eq!(is_valid_relay_url("wss://relay.example.com"), (true, false));
+    assert!(!is_valid_event_relay_url("ws://relay.damus.io"));
+}
+
+#[test]
+fn url_extract_dedupe_and_cap() {
+    let dupes = extract_urls("https://a.com https://a.com https://b.com");
+    assert_eq!(dupes, vec!["https://a.com", "https://b.com"]);
+    let many = (0..1030)
+        .map(|i| format!("https://example.com/{i}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert_eq!(extract_urls(&many).len(), 1024);
+}
+
+#[test]
+fn url_domain_and_valid() {
+    assert!(is_valid("https://example.com"));
+    assert!(is_valid("javascript:alert(1)"));
+    assert!(!is_valid("not a url"));
+    assert_eq!(domain("not a url"), None);
+    assert_eq!(
+        domain("https://example.com/path"),
+        Some("example.com".to_string())
+    );
 }

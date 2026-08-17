@@ -16,7 +16,17 @@ class FfiBridge {
   /// Idempotent under concurrent calls: all callers wait on the same
   /// initialization future, so RustLib.init() runs exactly once.
   static Future<void> init() {
-    return _initFuture ??= _doInit();
+    final existing = _initFuture;
+    if (existing != null) return existing;
+    final future = _doInit();
+    _initFuture = future;
+    future.then(
+      (_) {},
+      onError: (_) {
+        _initFuture = null;
+      },
+    );
+    return future;
   }
 
   static Future<void> _doInit() async {

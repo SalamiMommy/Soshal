@@ -90,24 +90,59 @@ impl<'a> UserRepo<'a> {
     }
 
     pub fn search(&self, query: &str, limit: i64) -> Result<Vec<UserRow>, crate::error::DbError> {
-        let conn = self.db.conn()?;
-        // Escape LIKE wildcards so user input matches literally.
-        let escaped: String = query
-            .chars()
-            .take(64)
-            .flat_map(|c| match c {
-                '%' | '_' | '\\' => vec!['\\', c],
-                c => vec![c],
-            })
-            .collect();
-        let pattern = format!("%{}%", escaped);
+        let fts = Self::fts_prefix_query(query);
+        if fts.is_empty() {
+            return Ok(Vec::new());
+        }
         let limit = crate::repos::clamp_limit(limit);
+        let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list FROM users WHERE name LIKE ?1 ESCAPE '\\' OR display_name LIKE ?1 ESCAPE '\\' OR npub LIKE ?1 ESCAPE '\\' LIMIT ?2",
-            params![pattern, limit],
+            "SELECT u.pubkey, u.npub, u.name, u.display_name, u.about, u.picture, u.banner, \
+             u.nip05, u.lud16, u.created_at, u.updated_at, u.metadata_json, u.contact_pubkeys, \
+             u.relay_list \
+             FROM users_fts f JOIN users u ON u.rowid = f.rowid \
+             WHERE users_fts MATCH ?1 ORDER BY rank LIMIT ?2",
+            params![fts, limit],
             Self::map_row,
         )
+    }
+
+    /// FTS5 MATCH expression with per-term prefix matching. Only
+    /// alphanumerics survive, so user input can never smuggle FTS5
+    /// operators (`*`, `OR`, quotes, parens) into the parser. Terms are
+    /// split on any non-alphanumeric character (mirrors unicode61
+    /// tokenization, where `_`/`-` separate tokens) and AND-joined.
+    fn fts_prefix_query(query: &str) -> String {
+        let mut out = String::with_capacity(query.len().saturating_add(16));
+        let mut first = true;
+        let mut term = String::with_capacity(16);
+        for c in query.chars() {
+            if c.is_alphanumeric() {
+                term.push(c.to_ascii_lowercase());
+                continue;
+            }
+            if !term.is_empty() {
+                if !first {
+                    out.push(' ');
+                } else {
+                    first = false;
+                }
+                out.push('"');
+                out.push_str(&term);
+                out.push_str("\"*");
+                term.clear();
+            }
+        }
+        if !term.is_empty() {
+            if !first {
+                out.push(' ');
+            }
+            out.push('"');
+            out.push_str(&term);
+            out.push_str("\"*");
+        }
+        out
     }
 
     fn map_row(row: &libsql::Row) -> libsql::Result<UserRow> {

@@ -16,6 +16,21 @@ use std::sync::Mutex;
 /// In-process key handle. `Keys` zeroizes on drop (zeroize feature).
 static SIGNER: Mutex<Option<Keys>> = Mutex::new(None);
 
+/// Derived keys cached from the unlocked secret (LAN handshake key + at-rest
+/// key). Cleared on every unlock/lock so the cache can never outlive the
+/// identity it was derived from.
+static DERIVED: Mutex<Option<([u8; 32], [u8; 32])>> = Mutex::new(None);
+
+fn clear_derived_cache() {
+    if let Ok(mut guard) = DERIVED.lock() {
+        if let Some((lan, rest)) = guard.as_mut() {
+            lan.fill(0);
+            rest.fill(0);
+        }
+        *guard = None;
+    }
+}
+
 /// The keychain entry name for the active account's secret key, matching the
 /// desktop scheme (`nsec-<pubkey>`).
 fn keychain_service() -> &'static str {
@@ -37,6 +52,7 @@ pub fn signer_unlock(secret: String) -> Result<String, String> {
         Err(e) => return Err(format!("invalid secret key: {e}")).into(),
     };
     let pk = keys.public_key().to_hex();
+    clear_derived_cache();
     SIGNER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -47,6 +63,7 @@ pub fn signer_unlock(secret: String) -> Result<String, String> {
 /// Lock the signer: drop the in-memory key (zeroized on drop).
 #[frb(sync, serialize)]
 pub fn signer_lock() -> Result<bool, String> {
+    clear_derived_cache();
     *SIGNER.lock().unwrap_or_else(|e| e.into_inner()) = None;
     soshal_crypto_core::nip44::clear_conversation_key_cache();
     Ok(true).into()
@@ -110,6 +127,7 @@ pub fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> {
     if keys.public_key().to_hex() != pubkey {
         return Err("stored key does not match pubkey".to_string()).into();
     }
+    clear_derived_cache();
     SIGNER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -134,6 +152,11 @@ pub fn signer_remove_from_keyring(pubkey: String) -> Result<bool, String> {
 /// used by the P2P module for beacon MACs and chunk handshakes. Derived inside
 /// the signer so key bytes never cross FFI.
 pub(crate) fn lan_key() -> Result<[u8; 32], String> {
+    if let Ok(cache) = DERIVED.lock() {
+        if let Some((lan, _)) = cache.as_ref() {
+            return Ok(*lan);
+        }
+    }
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
     let keys = match guard.as_ref() {
         Some(k) => k,
@@ -156,12 +179,24 @@ pub(crate) fn lan_key() -> Result<[u8; 32], String> {
     for b in derived.iter_mut() {
         *b = 0;
     }
+    if let Ok(mut cache) = DERIVED.lock() {
+        if cache.is_none() {
+            *cache = Some((out, [0u8; 32]));
+        }
+    }
     Ok(out)
 }
 
 /// Identity-derived at-rest encryption key (HKDF from the unlocked secret),
 /// used by domain modules to seal key material persisted in SQLite.
 pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
+    if let Ok(cache) = DERIVED.lock() {
+        if let Some((_, rest)) = cache.as_ref() {
+            if *rest != [0u8; 32] {
+                return Ok(*rest);
+            }
+        }
+    }
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
     let keys = match guard.as_ref() {
         Some(k) => k,
@@ -171,7 +206,14 @@ pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
     let secret = zeroize::Zeroizing::new(
         hex::decode(&*secret_hex).map_err(|e| format!("secret decode: {e}"))?,
     );
-    soshal_crypto_core::at_rest::at_rest_key(&secret)
+    let rest = soshal_crypto_core::at_rest::at_rest_key(&secret)?;
+    if let Ok(mut cache) = DERIVED.lock() {
+        match cache.as_mut() {
+            Some((_lan, slot)) => *slot = rest,
+            None => *cache = Some(([0u8; 32], rest)),
+        }
+    }
+    Ok(rest)
 }
 
 /// Sign a Schnorr message digest (32 bytes, hex) with the unlocked key.

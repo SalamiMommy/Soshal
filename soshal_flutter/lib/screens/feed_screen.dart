@@ -28,6 +28,7 @@ class FeedScreen extends StatefulWidget {
 class _FeedScreenState extends State<FeedScreen> {
   late ScrollController _scrollController;
   double? _lastScrollPixels;
+  DateTime? _lastTelemetryAt;
   FeedService? _feed;
 
   @override
@@ -91,11 +92,17 @@ class _FeedScreenState extends State<FeedScreen> {
   void _onScroll() async {
     final media = context.read<MediaService>();
     final pos = _scrollController.position;
-    media.updateScrollTelemetry(
-      velocity: pos.pixels - (_lastScrollPixels ?? pos.pixels),
-      topIndex: (pos.pixels / 400).floor().clamp(0, 1 << 30),
-      bottomIndex: (pos.pixels / 400).floor() + 2,
-    );
+    final now = DateTime.now();
+    if (_lastTelemetryAt == null ||
+        now.difference(_lastTelemetryAt!) >=
+            const Duration(milliseconds: 200)) {
+      _lastTelemetryAt = now;
+      media.updateScrollTelemetry(
+        velocity: pos.pixels - (_lastScrollPixels ?? pos.pixels),
+        topIndex: (pos.pixels / 400).floor().clamp(0, 1 << 30),
+        bottomIndex: (pos.pixels / 400).floor() + 2,
+      );
+    }
     _lastScrollPixels = pos.pixels;
     if (pos.pixels == pos.maxScrollExtent) {
       // Load more when scrolling to bottom

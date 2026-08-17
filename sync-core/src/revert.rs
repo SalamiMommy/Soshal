@@ -6,6 +6,7 @@
 
 use libsql::{params, params_from_iter, Connection};
 use soshal_db_core::block_on;
+use soshal_db_core::error::DbError;
 
 pub const KIND_POST: &str = "post";
 pub const KIND_LIKE: &str = "like";
@@ -13,24 +14,26 @@ pub const KIND_PROFILE: &str = "profile";
 
 /// Undoes the local side-effects of one action. Idempotent.
 pub fn revert(conn: &Connection, kind: &str, payload_json: &str) -> Result<(), String> {
-    let payload: serde_json::Value =
-        serde_json::from_str(payload_json).map_err(|e| format!("revert payload: {e}"))?;
+    block_on(revert_tx(conn, kind, payload_json)).map_err(|e| e.to_string())
+}
+
+pub async fn revert_tx(conn: &Connection, kind: &str, payload_json: &str) -> Result<(), DbError> {
+    let payload: serde_json::Value = serde_json::from_str(payload_json)
+        .map_err(|e| DbError::Migration(format!("revert payload: {e}")))?;
     match kind {
         KIND_POST => {
             if let Some(id) = payload.get("id").and_then(|v| v.as_str()) {
                 // Tombstone, don't hard-delete: the row must stay to propagate
                 // the deletion to peers and keep reply linkage intact.
-                block_on(
-                    conn.execute("UPDATE posts SET is_deleted = 1 WHERE id = ?1", params![id]),
-                )
-                .map_err(|e| format!("revert post: {e}"))?;
+                conn.execute("UPDATE posts SET is_deleted = 1 WHERE id = ?1", params![id])
+                    .await?;
             }
             Ok(())
         }
         KIND_LIKE => {
             if let Some(id) = payload.get("id").and_then(|v| v.as_str()) {
-                block_on(conn.execute("DELETE FROM reactions WHERE id = ?1", params![id]))
-                    .map_err(|e| format!("revert like: {e}"))?;
+                conn.execute("DELETE FROM reactions WHERE id = ?1", params![id])
+                    .await?;
             }
             Ok(())
         }
@@ -61,8 +64,8 @@ pub fn revert(conn: &Connection, kind: &str, payload_json: &str) -> Result<(), S
                 vals.len() + 1
             );
             vals.push(pubkey.to_string());
-            block_on(conn.execute(&sql, params_from_iter(vals.iter().map(String::as_str))))
-                .map_err(|e| format!("revert profile: {e}"))?;
+            conn.execute(&sql, params_from_iter(vals.iter().map(String::as_str)))
+                .await?;
             Ok(())
         }
         _ => Ok(()),

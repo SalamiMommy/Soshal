@@ -122,6 +122,30 @@ fn rsvp_for_user(rows: &[serde_json::Value], my_pk: &str) -> String {
     String::new()
 }
 
+fn attendee_counts() -> std::collections::HashMap<String, i32> {
+    let mut counts = std::collections::HashMap::new();
+    if let Ok(json) = super::db::db_query_raw(format!(
+        "SELECT pubkey, tags_json FROM posts WHERE kind = {KIND_EVENT_RSVP} \
+         AND content = 'accepted'"
+    )) {
+        if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
+            for r in rows {
+                let tags: Vec<Vec<String>> =
+                    serde_json::from_str(r["tags_json"].as_str().unwrap_or("[]"))
+                        .unwrap_or_default();
+                let event_id = tags
+                    .into_iter()
+                    .find(|t| t.first().map(|k| k == "e").unwrap_or(false))
+                    .and_then(|t| t.get(1).cloned());
+                if let Some(id) = event_id {
+                    counts.entry(id).and_modify(|c| *c += 1).or_insert(1);
+                }
+            }
+        }
+    }
+    counts
+}
+
 fn attendees_count(event_id: &str) -> i32 {
     super::db::db_query_raw(format!(
         "SELECT COUNT(DISTINCT pubkey) AS c FROM posts WHERE kind = {KIND_EVENT_RSVP} \
@@ -138,7 +162,9 @@ fn attendees_count(event_id: &str) -> i32 {
 }
 
 /// Fetch nearby events (distance filter computed client-side over the
-/// locally stored event rows; exact haversine, not a coarse box).
+/// locally stored event rows; exact haversine, not a coarse box). A SQL-side
+/// bounding-box prefilter on the location JSON keeps the fetch set small and
+/// fixes the old fetch-then-filter underfill.
 #[frb(sync, serialize)]
 pub fn events_fetch_nearby(
     latitude: f64,
@@ -147,7 +173,16 @@ pub fn events_fetch_nearby(
     limit: i32,
 ) -> Result<String, String> {
     let radius = radius_km.max(1.0).min(5000.0);
-    let json = super::db::db_query_raw(event_rows_sql("", limit))?;
+    let lat_deg = radius as f64 / 110.574;
+    let lon_deg = radius as f64 / (111.320 * latitude.to_radians().cos().abs().max(0.01));
+    let (lat1, lat2) = (latitude - lat_deg, latitude + lat_deg);
+    let (lon1, lon2) = (longitude - lon_deg, longitude + lon_deg);
+    let geo_filter = format!(
+        "AND json_type(json_extract(p.content, '$.location')) = 'object' \
+         AND json_extract(p.content, '$.location.lat') BETWEEN {lat1:.6} AND {lat2:.6} \
+         AND json_extract(p.content, '$.location.lng') BETWEEN {lon1:.6} AND {lon2:.6} "
+    );
+    let json = super::db::db_query_raw(event_rows_sql(&geo_filter, limit))?;
     let mut out: Vec<EventInfo> = events_from_json(json);
     let center = (latitude, longitude);
     out.retain(|e| {
@@ -173,10 +208,11 @@ pub fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result<Strin
         limit,
     ))?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+    let counts = attendee_counts();
     let mut out: Vec<EventInfo> = Vec::new();
     for v in rows {
         if let Some(mut e) = event_from_value(&v) {
-            e.attendees = attendees_count(&e.id);
+            e.attendees = counts.get(&e.id).copied().unwrap_or(0);
             e.rsvp_status = rsvp_for_user(&[v], &user_pubkey);
             out.push(e);
         }

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use soshal_network_core::i2p_sam::I2PSessionManager;
 use soshal_network_core::transport::{TransportMode, I2P_SOCKS_PORT};
 use std::net::SocketAddr;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 /// Shared nostr client. Holds no keys — events published through here must
 /// already be signed (`signer_sign_unsigned`).
@@ -59,6 +59,8 @@ pub struct HttpResponseDto {
     pub body: Vec<u8>,
 }
 
+static HTTP3_CLIENT: OnceLock<soshal_network_core::http3_client::Http3Client> = OnceLock::new();
+
 /// Perform a network request via the HTTP/3 & QUIC network stack.
 #[frb(serialize)]
 pub async fn network_fetch_http3(
@@ -70,10 +72,14 @@ pub async fn network_fetch_http3(
     let headers: std::collections::HashMap<String, String> =
         serde_json::from_str(&headers_json).unwrap_or_default();
 
-    let client = match i2p_socks_addr() {
-        Some(addr) => soshal_network_core::http3_client::Http3Client::with_socks_proxy(Some(addr)),
-        None => soshal_network_core::http3_client::Http3Client::new(),
-    };
+    let client = HTTP3_CLIENT
+        .get_or_init(|| match i2p_socks_addr() {
+            Some(addr) => {
+                soshal_network_core::http3_client::Http3Client::with_socks_proxy(Some(addr))
+            }
+            None => soshal_network_core::http3_client::Http3Client::new(),
+        })
+        .clone();
     let resp = client.request(&method, &url, headers, body).await?;
     Ok(HttpResponseDto {
         status: resp.status,

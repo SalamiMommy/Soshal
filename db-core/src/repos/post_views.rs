@@ -11,6 +11,9 @@ use soshal_common_core::format::now_secs;
 /// Count of placeholders used by [`PostViewsRepo::mark_seen`] batches.
 const BATCH_MAX: usize = 500;
 
+/// Max seen-history rows retained per pubkey.
+const MAX_SEEN_PER_USER: i64 = 5000;
+
 pub struct PostViewsRepo<'a> {
     db: &'a Database,
 }
@@ -38,6 +41,7 @@ impl<'a> PostViewsRepo<'a> {
                     tx.execute("INSERT OR IGNORE INTO post_views (pubkey, post_id, seen_at) VALUES (?1, ?2, ?3)", params![pubkey, id.as_str(), now]).await?;
                 }
             }
+            tx.execute("DELETE FROM post_views WHERE pubkey = ?1 AND rowid NOT IN (SELECT rowid FROM post_views WHERE pubkey = ?1 ORDER BY seen_at DESC, rowid DESC LIMIT ?2)", params![pubkey, MAX_SEEN_PER_USER]).await?;
             tx.commit().await?;
             Ok(())
         })
@@ -49,8 +53,8 @@ impl<'a> PostViewsRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT post_id FROM post_views WHERE pubkey = ?1 ORDER BY seen_at DESC",
-            params![pubkey],
+            "SELECT post_id FROM post_views WHERE pubkey = ?1 ORDER BY seen_at DESC LIMIT ?2",
+            params![pubkey, MAX_SEEN_PER_USER],
             |row| row.get(0),
         )
     }

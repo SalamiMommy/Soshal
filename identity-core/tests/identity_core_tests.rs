@@ -393,27 +393,24 @@ fn signer_schnorr_digest_allowlist() {
 }
 
 #[test]
-fn signer_nip44_encrypt_panics_on_shared_secret() {
-    // src bug: shared_secret() slices `secret_bytes()[1..]` as if it were a
-    // 33-byte encoding, but secp256k1 0.30 returns exactly 32 bytes →
-    // copy_from_slice panics (not Err). NIP-44 paths are unusable until fixed.
+fn signer_nip44_roundtrip() {
     let (alice, bob) = signer_pair();
     let bob_pk = bob.public_key().unwrap();
     let alice_pk = alice.public_key().unwrap();
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        alice.nip44_encrypt(&bob_pk, "secret message")
-    }));
-    assert!(
-        result.is_err(),
-        "nip44_encrypt must not succeed while shared_secret panics"
-    );
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        bob.nip44_decrypt(&alice_pk, "garbage")
-    }));
-    assert!(
-        result.is_err(),
-        "nip44_decrypt must not succeed while shared_secret panics"
-    );
+    let plaintext = "secret message";
+    let ciphertext = alice
+        .nip44_encrypt(&bob_pk, plaintext)
+        .expect("encrypts with shared secret");
+    assert_ne!(ciphertext, plaintext);
+    let decrypted = bob
+        .nip44_decrypt(&alice_pk, &ciphertext)
+        .expect("decrypts with same shared secret");
+    assert_eq!(decrypted, plaintext);
+    // wrong key (different ECDH point) fails to decrypt
+    let (_, mallory) = signer_pair();
+    assert!(mallory.nip44_decrypt(&alice_pk, &ciphertext).is_err());
+    // garbage payload fails
+    assert!(bob.nip44_decrypt(&alice_pk, "garbage").is_err());
 }
 
 #[test]

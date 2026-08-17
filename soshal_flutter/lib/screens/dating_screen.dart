@@ -403,94 +403,12 @@ class _DatingScreenState extends State<DatingScreen>
   }
 
   Widget _buildMatches(String pubkey) {
-    return Consumer<DatingService>(
-      builder: (context, api, _) => FutureBuilder(
-        future: api.fetchMatches(pubkey),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final matches = snapshot.data ?? [];
-          if (matches.isEmpty) {
-            return const Center(child: Text('No matches yet'));
-          }
-          return ListView.builder(
-            itemExtent: 72.0,
-            itemCount: matches.length,
-            itemBuilder: (context, index) {
-              final m = matches[index];
-              return ListTile(
-                leading: m.images.isNotEmpty
-                    ? CircleAvatar(
-                        backgroundImage: ResizeImage.resizeIfNeeded(
-                          128,
-                          128,
-                          NetworkImage(m.images.first),
-                        ),
-                      )
-                    : const CircleAvatar(child: Icon(Icons.person)),
-                title: Text(m.name.isEmpty ? firstChars(m.pubkey, 12) : m.name),
-                subtitle: Text(firstChars(m.pubkey, 12)),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FutureBuilder<double>(
-                      future: _scoreFor(api, pubkey, m.pubkey),
-                      builder: (context, snapshot) {
-                        final score = snapshot.data ?? 0;
-                        if (!snapshot.hasData || score <= 0) {
-                          return const SizedBox.shrink();
-                        }
-                        return GestureDetector(
-                          onTap: () =>
-                              _showCompatibility(api, pubkey, m, score),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${score.round()}% match',
-                              style: TextStyle(
-                                color: Colors.green.shade700,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 4),
-                    TextButton(
-                      onPressed: () => context.push('/inbox/${m.pubkey}'),
-                      child: const Text('Message'),
-                    ),
-                    PopupMenuButton<String>(
-                      padding: EdgeInsets.zero,
-                      iconSize: 20,
-                      tooltip: 'More',
-                      onSelected: (value) {
-                        if (value == 'unmatch') {
-                          _confirmUnmatch(api, pubkey, m);
-                        }
-                      },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(
-                          value: 'unmatch',
-                          child: Text('Unmatch'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                onTap: () => _showProfileDetail(api, pubkey, m),
-              );
-            },
-          );
-        },
-      ),
+    return _MatchesTab(
+      pubkey: pubkey,
+      scoreFor: _scoreFor,
+      onCompatibility: _showCompatibility,
+      onUnmatch: _confirmUnmatch,
+      onDetail: _showProfileDetail,
     );
   }
 
@@ -535,6 +453,7 @@ class _DatingScreenState extends State<DatingScreen>
                 child: Image.network(
                   profile.images.first,
                   height: 200,
+                  cacheWidth: 800,
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                     height: 200,
@@ -610,70 +529,7 @@ class _DatingScreenState extends State<DatingScreen>
   }
 
   Widget _buildLikes(String pubkey) {
-    return Consumer<DatingService>(
-      builder: (context, api, _) => FutureBuilder(
-        future: api.fetchLikes(pubkey),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final likes = snapshot.data ?? [];
-          if (likes.isEmpty) {
-            return const Center(child: Text('No likes received yet'));
-          }
-          return ListView.builder(
-            itemExtent: 72.0,
-            itemCount: likes.length,
-            itemBuilder: (context, index) {
-              final l = likes[index];
-              return ListTile(
-                leading: l.images.isNotEmpty
-                    ? CircleAvatar(
-                        backgroundImage: ResizeImage.resizeIfNeeded(
-                          128,
-                          128,
-                          NetworkImage(l.images.first),
-                        ),
-                      )
-                    : const CircleAvatar(child: Icon(Icons.person)),
-                title: Text(l.name.isEmpty ? firstChars(l.pubkey, 12) : l.name),
-                subtitle: Text('Liked you'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextButton(
-                      onPressed: () async {
-                        await api.like(pubkey, l.pubkey);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: SelectableText('It\'s a match!')),
-                          );
-                        }
-                      },
-                      child: const Text('Match back'),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.person_remove, size: 20),
-                      tooltip: 'Unlike',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () async {
-                        await api.unlike(pubkey, l.pubkey);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Removed like')),
-                          );
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
+    return _LikesTab(pubkey: pubkey);
   }
 
   Future<double> _scoreFor(DatingService api, String pubkey, String target) =>
@@ -915,6 +771,210 @@ class _DatingScreenState extends State<DatingScreen>
           ),
         ),
       ),
+    );
+  }
+}
+
+class _MatchesTab extends StatefulWidget {
+  const _MatchesTab({
+    required this.pubkey,
+    required this.scoreFor,
+    required this.onCompatibility,
+    required this.onUnmatch,
+    required this.onDetail,
+  });
+
+  final String pubkey;
+  final Future<double> Function(DatingService api, String pubkey, String target)
+      scoreFor;
+  final void Function(
+          DatingService api, String pubkey, DatingCard match, double score)
+      onCompatibility;
+  final Future<bool> Function(
+      DatingService api, String pubkey, DatingCard match) onUnmatch;
+  final Future<void> Function(
+      DatingService api, String pubkey, DatingCard match) onDetail;
+
+  @override
+  State<_MatchesTab> createState() => _MatchesTabState();
+}
+
+class _MatchesTabState extends State<_MatchesTab> {
+  late final Future<List<DatingCard>> _future =
+      context.read<DatingService>().fetchMatches(widget.pubkey);
+
+  @override
+  Widget build(BuildContext context) {
+    final api = context.watch<DatingService>();
+    final pubkey = widget.pubkey;
+    return FutureBuilder<List<DatingCard>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final matches = snapshot.data ?? [];
+        if (matches.isEmpty) {
+          return const Center(child: Text('No matches yet'));
+        }
+        return ListView.builder(
+          itemExtent: 72.0,
+          itemCount: matches.length,
+          itemBuilder: (context, index) {
+            final m = matches[index];
+            return ListTile(
+              leading: m.images.isNotEmpty
+                  ? CircleAvatar(
+                      backgroundImage: ResizeImage.resizeIfNeeded(
+                        128,
+                        128,
+                        NetworkImage(m.images.first),
+                      ),
+                    )
+                  : const CircleAvatar(child: Icon(Icons.person)),
+              title: Text(m.name.isEmpty ? firstChars(m.pubkey, 12) : m.name),
+              subtitle: Text(firstChars(m.pubkey, 12)),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FutureBuilder<double>(
+                    future: widget.scoreFor(api, pubkey, m.pubkey),
+                    builder: (context, snapshot) {
+                      final score = snapshot.data ?? 0;
+                      if (!snapshot.hasData || score <= 0) {
+                        return const SizedBox.shrink();
+                      }
+                      return GestureDetector(
+                        onTap: () =>
+                            widget.onCompatibility(api, pubkey, m, score),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${score.round()}% match',
+                            style: TextStyle(
+                              color: Colors.green.shade700,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  TextButton(
+                    onPressed: () => context.push('/inbox/${m.pubkey}'),
+                    child: const Text('Message'),
+                  ),
+                  PopupMenuButton<String>(
+                    padding: EdgeInsets.zero,
+                    iconSize: 20,
+                    tooltip: 'More',
+                    onSelected: (value) {
+                      if (value == 'unmatch') {
+                        widget.onUnmatch(api, pubkey, m);
+                      }
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: 'unmatch',
+                        child: Text('Unmatch'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              onTap: () => widget.onDetail(api, pubkey, m),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _LikesTab extends StatefulWidget {
+  const _LikesTab({required this.pubkey});
+
+  final String pubkey;
+
+  @override
+  State<_LikesTab> createState() => _LikesTabState();
+}
+
+class _LikesTabState extends State<_LikesTab> {
+  late final Future<List<DatingCard>> _future =
+      context.read<DatingService>().fetchLikes(widget.pubkey);
+
+  @override
+  Widget build(BuildContext context) {
+    final api = context.watch<DatingService>();
+    final pubkey = widget.pubkey;
+    return FutureBuilder<List<DatingCard>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final likes = snapshot.data ?? [];
+        if (likes.isEmpty) {
+          return const Center(child: Text('No likes received yet'));
+        }
+        return ListView.builder(
+          itemExtent: 72.0,
+          itemCount: likes.length,
+          itemBuilder: (context, index) {
+            final l = likes[index];
+            return ListTile(
+              leading: l.images.isNotEmpty
+                  ? CircleAvatar(
+                      backgroundImage: ResizeImage.resizeIfNeeded(
+                        128,
+                        128,
+                        NetworkImage(l.images.first),
+                      ),
+                    )
+                  : const CircleAvatar(child: Icon(Icons.person)),
+              title: Text(l.name.isEmpty ? firstChars(l.pubkey, 12) : l.name),
+              subtitle: const Text('Liked you'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: () async {
+                      await api.like(pubkey, l.pubkey);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: SelectableText('It\'s a match!')),
+                        );
+                      }
+                    },
+                    child: const Text('Match back'),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.person_remove, size: 20),
+                    tooltip: 'Unlike',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () async {
+                      await api.unlike(pubkey, l.pubkey);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Removed like')),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

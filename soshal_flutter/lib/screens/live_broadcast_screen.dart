@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
@@ -112,23 +113,27 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
     final api = context.read<StreamingService>();
     try {
       final plane = image.planes.first;
-      final frame = img.Image.fromBytes(
-        width: image.width,
-        height: image.height,
-        bytes: plane.bytes.buffer,
-        order: img.ChannelOrder.bgra,
-        rowStride: plane.bytesPerRow,
-      );
-      final jpeg = img.encodeJpg(frame, quality: 60);
+      final width = image.width;
+      final height = image.height;
+      final rowStride = plane.bytesPerRow;
+      final bytes = Uint8List.fromList(plane.bytes);
+      final jpeg = await Isolate.run(() {
+        final frame = img.Image.fromBytes(
+          width: width,
+          height: height,
+          bytes: bytes.buffer,
+          order: img.ChannelOrder.bgra,
+          rowStride: rowStride,
+        );
+        return img.encodeJpg(frame, quality: 60);
+      });
       final group = api.buildVideoGroup(
         groupSeq: api.nextMoqGroupSeq(),
         timestampMs: now.millisecondsSinceEpoch,
         jpeg: jpeg,
       );
       await api.publishLiveGroup(streamId: widget.streamId, group: group);
-      try {
-        _onWireBytes = api.encodeMoqGroup(group).length;
-      } catch (_) {}
+      _onWireBytes = jpeg.length + 64;
       _framesPublished++;
       await _publishH264(image, now, api);
     } catch (e) {

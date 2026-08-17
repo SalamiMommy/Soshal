@@ -80,6 +80,32 @@ fn cards_from_json(
         .collect()
 }
 
+fn cards_by_pubkey(
+    pubkeys: &[String],
+    limit: i32,
+) -> Result<std::collections::HashMap<String, DatingCardInfo>, String> {
+    if pubkeys.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let list: Vec<String> = pubkeys
+        .iter()
+        .take(limit as usize)
+        .map(|k| format!("'{}'", k.replace('\'', "''")))
+        .collect();
+    let json = super::db::db_query_raw(format!(
+        "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
+         FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
+         WHERE p.kind = {KIND_PROFILE} AND p.pubkey IN ({}) AND p.is_deleted = 0 \
+         ORDER BY p.created_at DESC",
+        list.join(",")
+    ))?;
+    let mut map = std::collections::HashMap::new();
+    for card in cards_from_json(json, &std::collections::HashMap::new()) {
+        map.entry(card.pubkey.clone()).or_insert(card);
+    }
+    Ok(map)
+}
+
 /// Fetch dating profiles to swipe on: excludes own profile and profiles the
 /// user already reacted to (liked/passed).
 #[frb(sync, serialize)]
@@ -341,20 +367,18 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
         user_pubkey.replace('\'', "''")
     ))?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+    let mut likers: Vec<String> = Vec::new();
+    for row in &rows {
+        let pk = row["pubkey"].as_str().unwrap_or_default();
+        if !likers.iter().any(|l| l == pk) {
+            likers.push(pk.to_string());
+        }
+    }
+    let cards = cards_by_pubkey(&likers, 200)?;
     let mut out = Vec::new();
     for row in rows {
-        let liker = row["pubkey"].as_str().unwrap_or_default();
-        let own_json = super::db::db_query_raw(format!(
-            "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
-             FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-             WHERE p.kind = {KIND_PROFILE} AND p.pubkey = '{}' AND p.is_deleted = 0 \
-             ORDER BY p.created_at DESC LIMIT 1",
-            liker.replace('\'', "''")
-        ))?;
-        let cards: Vec<DatingCardInfo> =
-            cards_from_json(own_json, &std::collections::HashMap::new());
-        if let Some(card) = cards.into_iter().next() {
-            out.push(card);
+        if let Some(card) = cards.get(row["pubkey"].as_str().unwrap_or_default()) {
+            out.push(card.clone());
         }
     }
     super::util::json_ok(out)
@@ -374,20 +398,18 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
         user_pubkey.replace('\'', "''")
     ))?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+    let mut owners: Vec<String> = Vec::new();
+    for row in &rows {
+        let pk = row["profile_owner"].as_str().unwrap_or_default();
+        if !owners.iter().any(|l| l == pk) {
+            owners.push(pk.to_string());
+        }
+    }
+    let cards = cards_by_pubkey(&owners, 100)?;
     let mut out = Vec::new();
     for row in rows {
-        let owner = row["profile_owner"].as_str().unwrap_or_default();
-        let own_json = super::db::db_query_raw(format!(
-            "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
-             FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-             WHERE p.kind = {KIND_PROFILE} AND p.pubkey = '{}' AND p.is_deleted = 0 \
-             ORDER BY p.created_at DESC LIMIT 1",
-            owner.replace('\'', "''")
-        ))?;
-        let cards: Vec<DatingCardInfo> =
-            cards_from_json(own_json, &std::collections::HashMap::new());
-        if let Some(card) = cards.into_iter().next() {
-            out.push(card);
+        if let Some(card) = cards.get(row["profile_owner"].as_str().unwrap_or_default()) {
+            out.push(card.clone());
         }
     }
     super::util::json_ok(out)

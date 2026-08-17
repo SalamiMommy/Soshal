@@ -69,7 +69,7 @@ mod tests {
         let messages = vec![
             PlumTreeMessage::Gossip {
                 message_id: "m1".to_string(),
-                payload_json: r#"{"content":"hi"}"#.to_string(),
+                payload_json: Arc::new(r#"{"content":"hi"}"#.to_string()),
                 round: 3,
             },
             PlumTreeMessage::IHave {
@@ -110,7 +110,7 @@ mod tests {
             .insert("lazy_c".to_string());
         let msg = PlumTreeMessage::Gossip {
             message_id: "m1".to_string(),
-            payload_json: "{}".to_string(),
+            payload_json: Arc::new("{}".to_string()),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -137,7 +137,7 @@ mod tests {
         bridge.node.write().await.add_peer("peer_b");
         let msg = PlumTreeMessage::Gossip {
             message_id: "m1".to_string(),
-            payload_json: "{}".to_string(),
+            payload_json: Arc::new("{}".to_string()),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -159,7 +159,7 @@ mod tests {
         bridge.node.write().await.add_peer("peer_a");
         let msg = PlumTreeMessage::Gossip {
             message_id: "bad".to_string(),
-            payload_json: "not an event".to_string(),
+            payload_json: Arc::new("not an event".to_string()),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -185,7 +185,7 @@ mod tests {
             soshal_test_util::signed_event(&keys, Kind::TextNote, "mesh roundtrip", 1_700_000_000);
         let msg = PlumTreeMessage::Gossip {
             message_id: event.id.to_hex(),
-            payload_json: serde_json::to_string(&event).unwrap(),
+            payload_json: Arc::new(serde_json::to_string(&event).unwrap()),
             round: 0,
         };
         let json = serde_json::to_string(&msg).unwrap();

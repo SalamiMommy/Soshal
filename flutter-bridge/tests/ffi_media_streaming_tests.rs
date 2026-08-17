@@ -355,6 +355,7 @@ mod ffi_media_streaming_tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn streaming_get_video_url_happy_path() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let port = streaming::streaming_start_local_server().await.unwrap();

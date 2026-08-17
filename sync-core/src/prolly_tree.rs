@@ -73,6 +73,7 @@ impl ProllyTree {
         let mut current_vals: Vec<String> = kv_pairs.iter().map(|(_, v)| v.clone()).collect();
         let mut all_nodes = Vec::new();
         let mut level = 0;
+        let mut kv_bytes = String::new();
 
         loop {
             let mut level_nodes = Vec::new();
@@ -80,7 +81,10 @@ impl ProllyTree {
             let mut chunk_vals = Vec::new();
 
             for (k, v) in current_keys.into_iter().zip(current_vals) {
-                let kv_bytes = format!("{k}:{v}");
+                kv_bytes.clear();
+                kv_bytes.push_str(&k);
+                kv_bytes.push(':');
+                kv_bytes.push_str(&v);
                 let boundary = Self::is_boundary(kv_bytes.as_bytes());
 
                 chunk_keys.push(k);

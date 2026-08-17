@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use nostr::event::{Event, EventBuilder, FinalizeUnsignedEvent, SignEvent, UnsignedEvent};
 use nostr::key::{Keys, PublicKey};
+use zeroize::Zeroize;
 
 /// Narrow signing surface shared by in-process and remote (key agent)
 /// signers. Key material is never part of this interface: implementations
@@ -65,14 +66,17 @@ impl Signer {
 }
 
 fn shared_secret(sk: &nostr::key::SecretKey, pk: &PublicKey) -> Result<[u8; 32], String> {
-    use secp256k1::{ecdh::SharedSecret, Parity, PublicKey as SecpPublicKey};
+    use secp256k1::{ecdh, Parity, PublicKey as SecpPublicKey};
     let xonly = pk.xonly().map_err(|e| format!("pubkey: {e}"))?;
     let secp_pk = SecpPublicKey::from_x_only_public_key(xonly, Parity::Even);
-    let mut ss = SharedSecret::new(&secp_pk, sk);
-    let bytes = ss.secret_bytes();
-    ss.non_secure_erase();
+    // Raw ECDH point (x ‖ y, 64 bytes); take the x-coordinate. The default
+    // SharedSecret hash is SHA-256 of the *compressed* point, which embeds the
+    // parity bit — that would make the derived key depend on each party's y
+    // parity (lost in x-only pubkeys) and break encryption ~half the time.
+    let mut xy = ecdh::shared_secret_point(&secp_pk, sk);
     let mut key = [0u8; 32];
-    key.copy_from_slice(&bytes[1..]);
+    key.copy_from_slice(&xy[..32]);
+    xy.zeroize();
     Ok(key)
 }
 

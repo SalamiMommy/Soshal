@@ -48,7 +48,6 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   bool _audioTried = false;
   bool _audioGotConfig = false;
   String? _subStatus;
-  int? _rtSeq;
 
   @override
   void initState() {
@@ -106,15 +105,6 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
               if (mounted) setState(() => _frameBytes = bytes);
             }
           }
-        }
-        if (groups.isNotEmpty) {
-          try {
-            final verified =
-                api.decodeMoqGroup(api.encodeMoqGroup(groups.last));
-            final verifiedSeq = (verified['group_sequence'] as num?)?.toInt();
-            if (!mounted) return;
-            setState(() => _rtSeq = verifiedSeq);
-          } catch (_) {}
         }
       } catch (e) {
         if (!mounted || !_running) return;
@@ -209,6 +199,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
                   _frameBytes!,
                   fit: BoxFit.contain,
                   gaplessPlayback: true,
+                  cacheWidth: 640,
                 ),
               ),
             ),
@@ -223,7 +214,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
                   '${_subStatus != null ? '\n$_subStatus' : ''}',
                   style: const TextStyle(fontWeight: FontWeight.bold)),
               Text(
-                '$_frames frames${_rtSeq != null ? ' · rt $_rtSeq' : ''}',
+                '$_frames frames',
                 style: const TextStyle(color: Colors.grey),
               ),
             ],

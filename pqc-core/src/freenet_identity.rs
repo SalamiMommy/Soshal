@@ -64,7 +64,8 @@ pub fn freenet_keygen(seed: Option<&[u8]>) -> Result<FreenetIdentity, String> {
     let public_key = hex::encode(fixed);
     let private_key = B64.encode(pkcs8.as_ref());
     let address = format!("free:{public_key}");
-    let (dsa_pk, dsa_sk) =
+    // dsa_keygen returns (secret_key_hex, verifying_key_hex).
+    let (dsa_sk, dsa_pk) =
         crate::dsa::dsa_keygen(seed).map_err(|e| format!("ml-dsa keygen: {e}"))?;
     let (kem_pk, kem_sk) = crate::kem::kem_keygen().map_err(|e| format!("ml-kem keygen: {e}"))?;
     Ok(FreenetIdentity {

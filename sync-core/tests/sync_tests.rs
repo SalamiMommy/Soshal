@@ -23,12 +23,13 @@ use soshal_sync_core::tx::{tx_begin, tx_link, tx_mark_applied, tx_statuses, STAT
 use soshal_sync_core::zk_rollup::{ZkCrdtRollup, ZkProofType, ZkRollupEngine};
 use soshal_sync_core::{SyncUpdate, WM_FEED, WM_META};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 fn gossip_msg(event: &Event) -> soshal_network_core::plumtree::PlumTreeMessage {
     soshal_network_core::plumtree::PlumTreeMessage::Gossip {
         message_id: event.id.to_hex(),
-        payload_json: serde_json::to_string(event).unwrap(),
+        payload_json: Arc::new(serde_json::to_string(event).unwrap()),
         round: 0,
     }
 }
