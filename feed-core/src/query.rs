@@ -22,15 +22,6 @@ pub fn event_with_tags_from_event(ev: &NostrEvent) -> serde_json::Value {
     v
 }
 
-/// Maps a metadata event to `{pubkey, content, created_at}`.
-pub fn profile_entry_from_event(ev: &NostrEvent) -> serde_json::Value {
-    serde_json::json!({
-        "pubkey": ev.pubkey,
-        "content": ev.content,
-        "created_at": ev.created_at as u64,
-    })
-}
-
 /// Media-JSON decode cache. Post rows are immutable, so the parse result for
 /// a given `tags_json` never goes stale; the same posts are re-fetched across
 /// feed pages/threads/refreshes, and this avoids re-parsing + re-serializing

@@ -33,3 +33,4 @@ soshal-pqc-core = { path = "../pqc-core" }
 workspace = true
 [dev-dependencies]
 soshal-test-util = { path = "../test-util" }
+tokio = { workspace = true }

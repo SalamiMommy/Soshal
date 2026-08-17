@@ -180,7 +180,8 @@ pub fn events_fetch_nearby(
     let (lat1, lat2) = (latitude - lat_deg, latitude + lat_deg);
     let (lon1, lon2) = (longitude - lon_deg, longitude + lon_deg);
     let geo_filter = format!(
-        "AND json_type(json_extract(p.content, '$.location')) = 'object' \
+        "AND json_valid(json_extract(p.content, '$.location')) \
+         AND json_type(json_extract(p.content, '$.location')) = 'object' \
          AND json_extract(p.content, '$.location.lat') BETWEEN {lat1:.6} AND {lat2:.6} \
          AND json_extract(p.content, '$.location.lng') BETWEEN {lon1:.6} AND {lon2:.6} "
     );
@@ -601,7 +602,7 @@ pub fn events_interest_score(
     peer_interests_json: String,
 ) -> Result<String, String> {
     let score = soshal_events_core::event::interest::compute_interest_score_json(&format!(
-        r#"{{"my_interests":{my_interests_json},"peer_interests":{peer_interests_json}}}"#
+        r#"{{"myInterests":{my_interests_json},"peerInterests":{peer_interests_json}}}"#
     ));
     Ok(score)
 }

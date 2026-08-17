@@ -4,6 +4,7 @@ use soshal_marketplace_core::calendar::parse_calendar_event_json;
 use soshal_marketplace_core::escrow::{can_release, EscrowStatus};
 use soshal_marketplace_core::invite::validate_invite_json;
 use soshal_marketplace_core::listing::parse_listing_json;
+use soshal_marketplace_core::listing::parse_listing_value;
 use soshal_marketplace_core::poll::parse_poll_event_json;
 use soshal_marketplace_core::swap::validate_swap_event_json;
 
@@ -126,6 +127,26 @@ fn parse_listing_plain_content_becomes_description() {
     let out = parse_listing_json(&input.to_string());
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["description"], "plain description");
+}
+
+#[test]
+fn parse_listing_value_matches_json_path() {
+    let input = listing_input();
+    let via_value = parse_listing_value(input.clone());
+    let via_json = parse_listing_json(&input.to_string());
+    assert_eq!(via_value, via_json, "value path mirrors json string path");
+    let v: serde_json::Value = serde_json::from_str(&via_value).unwrap();
+    assert_eq!(v["title"], "Blue Sofa");
+    assert_eq!(v["price"], 120.5);
+
+    assert_eq!(parse_listing_value(serde_json::Value::Null), "null");
+    assert_eq!(
+        parse_listing_value(serde_json::json!({"id": "partial"})),
+        "null"
+    );
+    let mut bad = listing_input();
+    bad["tags"] = serde_json::json!([["d", "s"], ["title", "t"], ["price", "not-a-price"]]);
+    assert_eq!(parse_listing_value(bad), "null");
 }
 
 // ---------------------------------------------------------------------------

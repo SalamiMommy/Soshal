@@ -31,6 +31,7 @@ dev_dependencies:
 
   path_provider_platform_interface: any
   plugin_platform_interface: any
+  camera_platform_interface: ^2.13.1
 flutter:
   uses-material-design: true
 

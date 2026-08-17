@@ -26,3 +26,4 @@ workspace = true
 
 [dev-dependencies]
 soshal-test-util = { path = "../test-util" }
+tokio = { version = "1", features = ["net", "macros", "rt-multi-thread"] }

@@ -127,4 +127,45 @@ mod tests {
         assert_eq!(a.len(), 64);
         assert_ne!(a, b);
     }
+
+    #[test]
+    fn test_blake3_hash_matches_hex_twin() {
+        let data = b"chunk payload";
+        assert_eq!(blake3_hash(data), *blake3::hash(data).as_bytes());
+        assert_eq!(hex::encode(blake3_hash(data)), blake3_hash_hex(data));
+    }
+
+    #[test]
+    fn test_blake3_hash_stream_matches_one_shot() {
+        let data = b"streamed payload larger than one block.........................................................";
+        let streamed = blake3_hash_stream(std::io::Cursor::new(data)).unwrap();
+        assert_eq!(streamed, blake3_hash(data));
+        assert_eq!(
+            blake3_hash_stream(std::io::empty()).unwrap(),
+            blake3_hash(b"")
+        );
+    }
+
+    #[test]
+    fn test_sha256_stream_matches_one_shot() {
+        let data =
+            b"streamed sha256 payload............................................................";
+        let streamed = sha256_stream(std::io::Cursor::new(data)).unwrap();
+        assert_eq!(streamed, sha256(data));
+        assert_eq!(sha256_stream(std::io::empty()).unwrap(), sha256(b""));
+    }
+
+    #[test]
+    fn test_hmac_sha256_slices_matches_concatenated() {
+        let key = b"test-key-material";
+        let a = b"part one";
+        let b = b"part two";
+        let joined = [a.as_slice(), b.as_slice()].concat();
+        assert_eq!(hmac_sha256_slices(key, &[a, b]), hmac_sha256(key, &joined));
+        assert_eq!(hmac_sha256_slices(key, &[b""]), hmac_sha256(key, b""));
+        assert_ne!(
+            hmac_sha256_slices(key, &[a, b]),
+            hmac_sha256_slices(key, &[b, a])
+        );
+    }
 }
