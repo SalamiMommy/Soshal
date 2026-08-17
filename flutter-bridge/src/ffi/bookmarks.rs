@@ -76,12 +76,11 @@ pub fn bookmarks_resolve_posts(ids_json: String) -> Result<String, String> {
         serde_json::from_str(&ids_json).map_err(|e| format!("invalid ids JSON: {e}"))?;
     super::db::with_db_result(|db| {
         let repo = soshal_db_core::repos::post::PostRepo::new(db);
-        let mut out = serde_json::Map::with_capacity(ids.len());
-        for id in ids {
-            if let Some(row) = repo.get_by_id(&id)? {
-                if let Ok(value) = serde_json::to_value(&row) {
-                    out.insert(id, value);
-                }
+        let rows = repo.get_by_ids(&ids)?;
+        let mut out = serde_json::Map::with_capacity(rows.len());
+        for row in rows {
+            if let Ok(value) = serde_json::to_value(&row) {
+                out.insert(row.id, value);
             }
         }
         Ok(serde_json::to_string(&out).unwrap_or_else(|_| "{}".into()))

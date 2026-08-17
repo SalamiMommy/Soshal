@@ -115,8 +115,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
         trackPubkey: trackPubkey,
         trackD: trackD,
       );
-      final comments =
-          await runOffThread(() => _parseComments(json));
+      final comments = await runOffThread(() => _parseComments(json));
       clearLastError();
       return comments;
     } catch (e, st) {

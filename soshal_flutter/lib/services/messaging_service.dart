@@ -447,10 +447,7 @@ class IdentityService extends ChangeNotifier
         query: query,
         limit: limit,
       );
-      final list = jsonDecode(json) as List<dynamic>;
-      return list
-          .map((e) => ProfileInfo.fromJson(e as Map<String, dynamic>))
-          .toList();
+      return await runOffThread(() => _parseProfiles(json));
     } catch (e) {
       setLastError(e);
       notifyDeferred();
@@ -797,4 +794,13 @@ class EphemeralMedia {
       viewedAt: (json['viewed_at'] as num?)?.toInt() ?? 0,
     );
   }
+}
+
+/// JSON → [ProfileInfo] list, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<ProfileInfo> _parseProfiles(String json) {
+  final list = jsonDecode(json) as List<dynamic>;
+  return list
+      .map((e) => ProfileInfo.fromJson(e as Map<String, dynamic>))
+      .toList();
 }

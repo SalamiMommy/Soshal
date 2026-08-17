@@ -440,16 +440,14 @@ pub fn marketplace_fetch_seller_listings(seller_pubkey: String) -> Result<String
     super::util::json_ok(db_listings(sql)?)
 }
 
-/// Get listings by category (t tag).
+/// Get listings by category (denormalized `category` column, v012).
 #[frb(sync, serialize)]
 pub fn marketplace_get_by_category(category: String, limit: i32) -> Result<String, String> {
     let sql = format!(
         "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 \
-           AND EXISTS (SELECT 1 FROM json_each(p.tags_json) \
-                        WHERE json_extract(value, '$[0]') = 't' AND json_extract(value, '$[1]') = ?1) \
+         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 AND p.category = ?1 \
          ORDER BY p.created_at DESC LIMIT {}",
         limit.clamp(1, 100)
     );
@@ -467,10 +465,9 @@ pub fn marketplace_get_trending(limit: i32) -> Result<String, String> {
         "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         LEFT JOIN (SELECT event_id, COUNT(*) AS cnt FROM reposts GROUP BY event_id) rc \
-           ON rc.event_id = p.id \
          WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 \
-         ORDER BY rc.cnt DESC, p.created_at DESC \
+         ORDER BY (SELECT COUNT(*) FROM reposts rc WHERE rc.event_id = p.id) DESC, \
+                  p.created_at DESC \
          LIMIT {}",
         limit.clamp(1, 100)
     ))?;
@@ -954,8 +951,8 @@ mod tests {
             "escrowEnabled": false,
         });
         db::db_execute_raw(format!(
-            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
-             VALUES ('{id}','{seller}','{}',{KIND_LISTING},{created_at},'[[\"d\",\"{id}\"],[\"t\",\"{category}\"]]','synced',0)",
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, category) \
+             VALUES ('{id}','{seller}','{}',{KIND_LISTING},{created_at},'[[\"d\",\"{id}\"],[\"t\",\"{category}\"]]','synced',0,'{category}')",
             content.to_string().replace('\'', "''")
         ))
         .unwrap();

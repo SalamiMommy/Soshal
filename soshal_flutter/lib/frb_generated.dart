@@ -74,7 +74,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 588088492;
+  int get rustContentHash => -379110393;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -1095,6 +1095,8 @@ abstract class RustLibApi extends BaseApi {
       required String pubkey,
       required String content,
       required PlatformInt64 kind});
+
+  bool crateFfiSearchSearchIndexPosts({required String rowsJson});
 
   bool crateFfiSearchSearchIndexProfile(
       {required String pubkey, required String name, required String about});
@@ -10280,6 +10282,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "search_index_post",
         argNames: ["eventId", "pubkey", "content", "kind"],
+      );
+
+  @override
+  bool crateFfiSearchSearchIndexPosts({required String rowsJson}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(rowsJson, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__search__search_index_posts(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiSearchSearchIndexPostsConstMeta,
+      argValues: [rowsJson],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiSearchSearchIndexPostsConstMeta =>
+      const TaskConstMeta(
+        debugName: "search_index_posts",
+        argNames: ["rowsJson"],
       );
 
   @override

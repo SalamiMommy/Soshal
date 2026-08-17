@@ -8,13 +8,38 @@ use soshal_network_core::discovery::{
 
 /// Friend suggestions from the local contact graph, delegated to
 /// network-core's mutual-friend discovery (pubkeys only, best first).
+///
+/// The underlying WoT pass scans up to 5000 contact lists; the result is
+/// cached per pubkey for 60 s so repeated opens don't redo the scan.
+const SUGGESTIONS_TTL_SECS: i64 = 60;
+
 #[frb(sync, serialize)]
 pub fn social_friend_suggestions() -> Result<Vec<String>, String> {
+    use std::sync::{Mutex, OnceLock};
+    type SuggestionsCache = Option<(String, i64, Vec<String>)>;
+    static CACHE: OnceLock<Mutex<SuggestionsCache>> = OnceLock::new();
     let me = match super::signer::signer_pubkey() {
         Ok(pk) => pk,
         // No signer → no identity to suggest for → stay honestly empty.
         Err(_) => return Ok(vec![]).into(),
     };
+    let now = soshal_common_core::format::now_secs();
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
+    {
+        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((pk, ts, cached)) = guard.as_ref() {
+            if pk == &me && now.saturating_sub(*ts) < SUGGESTIONS_TTL_SECS {
+                return Ok(cached.clone()).into();
+            }
+        }
+    }
+    let suggestions = compute_suggestions(&me)?;
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    *guard = Some((me, now, suggestions.clone()));
+    Ok(suggestions).into()
+}
+
+fn compute_suggestions(me: &str) -> Result<Vec<String>, String> {
     let users = all_contact_lists()?;
     let mut self_contacts = Vec::new();
     let mut all_users = Vec::new();
@@ -31,12 +56,12 @@ pub fn social_friend_suggestions() -> Result<Vec<String>, String> {
         }
     }
     let suggestions = suggest_mutual_friends(SuggestMutualFriendsInput {
-        self_pubkey: me,
+        self_pubkey: me.to_string(),
         self_contacts,
         all_users,
         limit: 100_000,
     });
-    Ok(suggestions.into_iter().map(|s| s.pubkey).collect()).into()
+    Ok(suggestions.into_iter().map(|s| s.pubkey).collect())
 }
 
 /// Load every stored user's pubkey + contact list (raw query; repos have no

@@ -5,14 +5,14 @@ pub mod migrations;
 use crate::block_on;
 use libsql::Connection;
 use migrations::{
-    v10_perf_indexes, v11_perf_schema, v1_create_tables, v2_create_group_messages,
+    v10_perf_indexes, v11_perf_schema, v12_perf_schema, v1_create_tables, v2_create_group_messages,
     v3_create_social_tables, v4_create_sync_tables, v5_create_missing_tables,
     v6_purge_orphan_fts_rows, v7_rebuild_fts_triggers, v8_shared_keys_escrow_confirms,
     v9_users_fts,
 };
 
 /// Latest schema version the migration runner produces.
-pub const SCHEMA_VERSION: i64 = 11;
+pub const SCHEMA_VERSION: i64 = 12;
 
 pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
     block_on(conn.execute_batch("CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')));"))?;
@@ -47,6 +47,7 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
         (9, |c| v9_users_fts(c).map_err(Into::into)),
         (10, |c| v10_perf_indexes(c).map_err(Into::into)),
         (11, |c| v11_perf_schema(c).map_err(Into::into)),
+        (12, |c| v12_perf_schema(c).map_err(Into::into)),
     ];
 
     for &(version, step_fn) in steps {

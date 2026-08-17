@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../utils/offthread.dart';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -96,22 +98,7 @@ class _SearchScreenState extends State<SearchScreen> {
       }
       final json =
           await context.read<SearchService>().remoteGlobalSearch(q, 20, relays);
-      final decoded = jsonDecode(json);
-      final items = <SearchResultItem>[];
-      if (decoded is List) {
-        for (final e in decoded) {
-          if (e is Map<String, dynamic>) {
-            items.add(SearchResultItem(
-              id: e['id'] as String? ?? '',
-              title: e['content'] as String? ?? '',
-              description: e['content'] as String? ?? '',
-              pubkey: e['pubkey'] as String?,
-              kind: 'post',
-              createdAt: (e['created_at'] as num?)?.toInt() ?? 0,
-            ));
-          }
-        }
-      }
+      final items = await runOffThread(() => _parseRemoteSearch(json));
       if (mounted) setState(() => _remoteResults = items);
     } catch (e) {
       debugPrint('remote search: $e');
@@ -393,4 +380,26 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
     );
   }
+}
+
+/// JSON → remote search results, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<SearchResultItem> _parseRemoteSearch(String json) {
+  final decoded = jsonDecode(json);
+  final items = <SearchResultItem>[];
+  if (decoded is List) {
+    for (final e in decoded) {
+      if (e is Map<String, dynamic>) {
+        items.add(SearchResultItem(
+          id: e['id'] as String? ?? '',
+          title: e['content'] as String? ?? '',
+          description: e['content'] as String? ?? '',
+          pubkey: e['pubkey'] as String?,
+          kind: 'post',
+          createdAt: (e['created_at'] as num?)?.toInt() ?? 0,
+        ));
+      }
+    }
+  }
+  return items;
 }

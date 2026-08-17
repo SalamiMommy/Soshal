@@ -167,8 +167,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
                                 ? const SizedBox(
                                     width: 20,
                                     height: 20,
-                                    child:
-                                        CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   )
                                 : const Icon(Icons.search),
                             onPressed: _searching ? null : _runSearch,
@@ -235,8 +235,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                           ? const SizedBox(
                               width: 20,
                               height: 20,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : TextButton(
                               onPressed: () => _sendRequest(pk),
@@ -259,8 +258,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                           overflow: TextOverflow.ellipsis),
                       subtitle: Text(shortPubkey(p.pubkey)),
                       trailing: p.isFollowing ||
-                              _service.contacts
-                                  .any((c) => c.pubkey == p.pubkey)
+                              _service.contacts.any((c) => c.pubkey == p.pubkey)
                           ? const Icon(Icons.check, size: 18)
                           : TextButton(
                               onPressed: () => _follow(p),

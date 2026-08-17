@@ -363,7 +363,6 @@ class SoshalEvent {
   }
 }
 
-
 /// JSON → [SoshalEvent] list, top-level so [runOffThread] can decode on a
 /// background isolate.
 List<SoshalEvent> _parseEvents(String json) {

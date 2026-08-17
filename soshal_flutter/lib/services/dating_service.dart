@@ -330,9 +330,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       rethrow;
     }
   }
-
 }
-
 
 /// A dating card as surfaced by the bridge.
 class DatingCard {
@@ -410,7 +408,6 @@ class DatingStats {
 
 /// JSON → [DatingCard] list, top-level so [runOffThread] can decode on a
 /// background isolate.
-List<DatingCard> _parseCards(String json) =>
-    (jsonDecode(json) as List<dynamic>)
-        .map((e) => DatingCard.fromJson(e as Map<String, dynamic>))
-        .toList();
+List<DatingCard> _parseCards(String json) => (jsonDecode(json) as List<dynamic>)
+    .map((e) => DatingCard.fromJson(e as Map<String, dynamic>))
+    .toList();

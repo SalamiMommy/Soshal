@@ -213,6 +213,7 @@ class _DatingScreenState extends State<DatingScreen>
                           Image.network(
                             card.images.first,
                             height: 220,
+                            cacheWidth: 660,
                             cacheHeight: 440,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => Container(
@@ -805,11 +806,11 @@ class _MatchesTabState extends State<_MatchesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final api = context.watch<DatingService>();
     final pubkey = widget.pubkey;
     return FutureBuilder<List<DatingCard>>(
       future: _future,
       builder: (context, snapshot) {
+        final api = context.read<DatingService>();
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -912,11 +913,11 @@ class _LikesTabState extends State<_LikesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final api = context.watch<DatingService>();
     final pubkey = widget.pubkey;
     return FutureBuilder<List<DatingCard>>(
       future: _future,
       builder: (context, snapshot) {
+        final api = context.read<DatingService>();
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }

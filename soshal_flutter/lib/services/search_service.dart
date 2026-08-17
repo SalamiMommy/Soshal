@@ -122,14 +122,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
       final json = RustLib.instance.api.crateFfiSearchSearchTrendingProfiles(
         limit: limit,
       );
-      final decoded = jsonDecode(json);
-      if (decoded is List) {
-        _trendingProfiles = decoded
-            .map((e) => SearchResultItem.fromJson(e as Map<String, dynamic>))
-            .toList();
-      } else {
-        _trendingProfiles = [];
-      }
+      _trendingProfiles = await runOffThread(() => _parseSearchResults(json));
       clearLastError();
       notifyListeners();
       return _trendingProfiles;
@@ -164,8 +157,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
       final json =
           RustLib.instance.api.crateFfiDbDbGetTrendingHashtags(limit: limit);
       clearLastError();
-      final list = jsonDecode(json) as List<dynamic>;
-      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      return await runOffThread(() => _parseTrendingHashtags(json));
     } catch (e, st) {
       setLastError(e, st);
       notifyListeners();
@@ -175,6 +167,14 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
 }
 
 /// JSON → [SearchResultItem] list, top-level so [compute] can run it on a
+/// JSON → hashtag row maps, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<Map<String, dynamic>> _parseTrendingHashtags(String json) {
+  final list = jsonDecode(json) as List<dynamic>;
+  return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+}
+
+/// JSON → [SearchResultItem] list, top-level so [runOffThread] can decode on a
 /// background isolate (search result decoding stays off the UI thread).
 List<SearchResultItem> _parseSearchResults(String json) {
   final decoded = jsonDecode(json);

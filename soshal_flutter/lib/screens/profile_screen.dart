@@ -161,262 +161,278 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text('Profile'),
         elevation: 0,
       ),
-      body: Consumer<IdentityService>(
-        builder: (context, identityService, child) {
-          final pinnedPosts =
-              context.select<FeedService, List<String>>((s) => s.pinnedPosts);
-          final profile = identityService.profiles[pubkey];
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Consumer<IdentityService>(
+              builder: (context, identityService, child) {
+                final pinnedPosts = context
+                    .select<FeedService, List<String>>((s) => s.pinnedPosts);
+                final profile = identityService.profiles[pubkey];
 
-          if (_isLoading || profile == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
+                if (_isLoading || profile == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                // Banner
-                Container(
-                  height: 200,
-                  color: Colors.grey[300],
-                  child: profile.banner.isNotEmpty
-                      ? Image.network(
-                          profile.banner,
-                          cacheHeight: 400,
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                ),
-                // Avatar + bio
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        height: 80,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Transform.translate(
-                              offset: const Offset(0, -40),
-                              child: CircleAvatar(
-                                radius: 48,
-                                backgroundImage: profile.picture.isNotEmpty
-                                    ? ResizeImage.resizeIfNeeded(
-                                        192, 192, NetworkImage(profile.picture))
-                                    : null,
-                                onBackgroundImageError: (_, __) {},
-                              ),
-                            ),
-                            const Spacer(),
-                            if (isSelfProfile)
-                              ElevatedButton(
-                                onPressed: () {
-                                  context.push('/settings/edit-profile');
-                                },
-                                child: const Text('Edit Profile'),
-                              )
-                            else ...[
-                              ElevatedButton(
-                                onPressed: _toggleFollow,
-                                child:
-                                    Text(_isFollowing ? 'Following' : 'Follow'),
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  _isBlocked
-                                      ? Icons.block
-                                      : Icons.block_outlined,
-                                  color: _isBlocked ? Colors.red : Colors.grey,
-                                ),
-                                tooltip: _isBlocked ? 'Unblock' : 'Block',
-                                onPressed: () async {
-                                  final session =
-                                      context.read<SessionService>();
-                                  final me = session.activePubkey;
-                                  final target = widget.pubkey;
-                                  if (me == null || target == null) return;
-                                  try {
-                                    if (_isBlocked) {
-                                      await identityService.unblockUser(
-                                          me, target);
-                                    } else {
-                                      await identityService.blockUser(
-                                          me, target);
-                                    }
-                                    setState(() => _isBlocked = !_isBlocked);
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(SnackBar(
-                                        content: SelectableText(_isBlocked
-                                            ? 'Blocked'
-                                            : 'Unblocked'),
-                                      ));
-                                    }
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(SnackBar(
-                                              content: Text('Error: $e')));
-                                    }
-                                  }
-                                },
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        profile.displayName,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (profile.nip05.isNotEmpty)
-                        Row(
-                          children: [
-                            Text(
-                              profile.nip05,
-                              style: const TextStyle(color: Colors.blue),
-                            ),
-                            if (profile.nip05Valid)
-                              const Icon(Icons.verified,
-                                  color: Colors.blue, size: 16),
-                          ],
-                        ),
-                      Text(
-                        prefixEllipsis(pubkey, 16),
-                        style:
-                            const TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                      if (!isSelfProfile)
-                        FutureBuilder<int>(
-                          future: _trustScoreFuture,
-                          builder: (context, snapshot) {
-                            final score = snapshot.data;
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Chip(
-                                avatar: const Icon(Icons.workspace_premium,
-                                    size: 16),
-                                label: Text(
-                                  score == null
-                                      ? 'Trust: …'
-                                      : 'Trust: ${score ~/ 100}.${(score % 100).toString().padLeft(2, '0')}',
-                                ),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                            );
-                          },
-                        ),
-                      const SizedBox(height: 8),
-                      Text(profile.about),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                return Column(
+                  children: [
+                    // Banner
+                    Container(
+                      height: 200,
+                      color: Colors.grey[300],
+                      child: profile.banner.isNotEmpty
+                          ? Image.network(
+                              profile.banner,
+                              cacheWidth: 1200,
+                              cacheHeight: 400,
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    // Avatar + bio
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildStat('${profile.followers}', 'Followers'),
-                          _buildStat('${profile.following}', 'Following'),
-                          _buildStat('WoT: ${profile.wotStatus}', 'Status'),
+                          SizedBox(
+                            height: 80,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Transform.translate(
+                                  offset: const Offset(0, -40),
+                                  child: CircleAvatar(
+                                    radius: 48,
+                                    backgroundImage: profile.picture.isNotEmpty
+                                        ? ResizeImage.resizeIfNeeded(192, 192,
+                                            NetworkImage(profile.picture))
+                                        : null,
+                                    onBackgroundImageError: (_, __) {},
+                                  ),
+                                ),
+                                const Spacer(),
+                                if (isSelfProfile)
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      context.push('/settings/edit-profile');
+                                    },
+                                    child: const Text('Edit Profile'),
+                                  )
+                                else ...[
+                                  ElevatedButton(
+                                    onPressed: _toggleFollow,
+                                    child: Text(
+                                        _isFollowing ? 'Following' : 'Follow'),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(
+                                      _isBlocked
+                                          ? Icons.block
+                                          : Icons.block_outlined,
+                                      color:
+                                          _isBlocked ? Colors.red : Colors.grey,
+                                    ),
+                                    tooltip: _isBlocked ? 'Unblock' : 'Block',
+                                    onPressed: () async {
+                                      final session =
+                                          context.read<SessionService>();
+                                      final me = session.activePubkey;
+                                      final target = widget.pubkey;
+                                      if (me == null || target == null) {
+                                        return;
+                                      }
+                                      try {
+                                        if (_isBlocked) {
+                                          await identityService.unblockUser(
+                                              me, target);
+                                        } else {
+                                          await identityService.blockUser(
+                                              me, target);
+                                        }
+                                        setState(
+                                            () => _isBlocked = !_isBlocked);
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(SnackBar(
+                                            content: SelectableText(_isBlocked
+                                                ? 'Blocked'
+                                                : 'Unblocked'),
+                                          ));
+                                        }
+                                      } catch (e) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(SnackBar(
+                                                  content: Text('Error: $e')));
+                                        }
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            profile.displayName,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (profile.nip05.isNotEmpty)
+                            Row(
+                              children: [
+                                Text(
+                                  profile.nip05,
+                                  style: const TextStyle(color: Colors.blue),
+                                ),
+                                if (profile.nip05Valid)
+                                  const Icon(Icons.verified,
+                                      color: Colors.blue, size: 16),
+                              ],
+                            ),
+                          Text(
+                            prefixEllipsis(pubkey, 16),
+                            style: const TextStyle(
+                                color: Colors.grey, fontSize: 12),
+                          ),
+                          if (!isSelfProfile)
+                            FutureBuilder<int>(
+                              future: _trustScoreFuture,
+                              builder: (context, snapshot) {
+                                final score = snapshot.data;
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Chip(
+                                    avatar: const Icon(Icons.workspace_premium,
+                                        size: 16),
+                                    label: Text(
+                                      score == null
+                                          ? 'Trust: …'
+                                          : 'Trust: ${score ~/ 100}.${(score % 100).toString().padLeft(2, '0')}',
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                );
+                              },
+                            ),
+                          const SizedBox(height: 8),
+                          Text(profile.about),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildStat('${profile.followers}', 'Followers'),
+                              _buildStat('${profile.following}', 'Following'),
+                              _buildStat('WoT: ${profile.wotStatus}', 'Status'),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          if (!isSelfProfile)
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                context.push('/inbox/$pubkey');
+                              },
+                              icon: const Icon(Icons.message),
+                              label: const Text('Message'),
+                            ),
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            onPressed: () => _showMetadataDialog(pubkey),
+                            icon: const Icon(Icons.info_outline),
+                            label: const Text('Fetch metadata'),
+                          ),
+                          const SizedBox(height: 16),
+                          if (isSelfProfile) ...[
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Accounts'),
+                              trailing: const Icon(Icons.arrow_forward),
+                              onTap: () => context.push('/settings/accounts'),
+                            ),
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Privacy'),
+                              trailing: const Icon(Icons.arrow_forward),
+                              onTap: () => context.push('/settings/privacy'),
+                            ),
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Privacy Level'),
+                              trailing: const Icon(Icons.arrow_forward),
+                              onTap: () => _showPrivacyDialog(),
+                            ),
+                            const Divider(),
+                            const SizedBox(height: 16),
+                            _PinnedSection(
+                              pinned: pinnedPosts,
+                              onOpen: (id) => context.push('/post/$id'),
+                              onUnpin: _pinToggle,
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          const Divider(),
+                          const SizedBox(height: 16),
+                          _WotSection(
+                            status: _wotStatus,
+                            score: _wotScore,
+                            unavailable: _wotUnavailable,
+                            isSelf: isSelfProfile,
+                          ),
+                          const Divider(),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Recent Posts',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      if (!isSelfProfile)
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            context.push('/inbox/$pubkey');
-                          },
-                          icon: const Icon(Icons.message),
-                          label: const Text('Message'),
-                        ),
-                      const SizedBox(height: 16),
-                      OutlinedButton.icon(
-                        onPressed: () => _showMetadataDialog(pubkey),
-                        icon: const Icon(Icons.info_outline),
-                        label: const Text('Fetch metadata'),
-                      ),
-                      const SizedBox(height: 16),
-                      if (isSelfProfile) ...[
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Accounts'),
-                          trailing: const Icon(Icons.arrow_forward),
-                          onTap: () => context.push('/settings/accounts'),
-                        ),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Privacy'),
-                          trailing: const Icon(Icons.arrow_forward),
-                          onTap: () => context.push('/settings/privacy'),
-                        ),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Privacy Level'),
-                          trailing: const Icon(Icons.arrow_forward),
-                          onTap: () => _showPrivacyDialog(),
-                        ),
-                        const Divider(),
-                        const SizedBox(height: 16),
-                        _PinnedSection(
-                          pinned: pinnedPosts,
-                          onOpen: (id) => context.push('/post/$id'),
-                          onUnpin: _pinToggle,
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      const Divider(),
-                      const SizedBox(height: 16),
-                      _WotSection(
-                        status: _wotStatus,
-                        score: _wotScore,
-                        unavailable: _wotUnavailable,
-                        isSelf: isSelfProfile,
-                      ),
-                      const Divider(),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Recent Posts',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      if (_postsLoading)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      else if (_ownPosts.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          child: Center(
-                            child: Text(
-                              'No posts yet',
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          ),
-                        )
-                      else
-                        for (final post in _ownPosts)
-                          _PostCard(
-                            post: post,
-                            showPinButton: isSelfProfile,
-                            pinned: context
-                                .read<FeedService>()
-                                .isPinned(post.eventId),
-                            onTap: () => context.push('/post/${post.eventId}'),
-                            onPinToggle: () => _pinToggle(post.eventId),
-                          ),
-                    ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          if (_postsLoading)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            )
+          else if (_ownPosts.isEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(
+                  child: Text(
+                    'No posts yet',
+                    style: TextStyle(color: Colors.grey),
                   ),
                 ),
-              ],
+              ),
+            )
+          else
+            SliverList.builder(
+              itemCount: _ownPosts.length,
+              itemBuilder: (context, i) {
+                final post = _ownPosts[i];
+                return _PostCard(
+                  post: post,
+                  showPinButton: isSelfProfile,
+                  pinned: context.read<FeedService>().isPinned(post.eventId),
+                  onTap: () => context.push('/post/${post.eventId}'),
+                  onPinToggle: () => _pinToggle(post.eventId),
+                );
+              },
             ),
-          );
-        },
+        ],
       ),
     );
   }

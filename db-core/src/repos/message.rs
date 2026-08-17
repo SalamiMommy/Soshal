@@ -103,6 +103,7 @@ impl<'a> MessageRepo<'a> {
         crate::query::with_tx(&conn, |tx| async move {
             let sql = "INSERT INTO messages (id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted";
             let mut stmt = tx.prepare(sql).await.map_err(crate::error::DbError::from)?;
+            let mut convs: Vec<(&str, i64)> = Vec::new();
             for msg in messages {
                 if crate::repos::limits::row_too_big(&msg.content, &msg.tags_json) {
                     continue; // relay content too large: skip, never store
@@ -121,16 +122,19 @@ impl<'a> MessageRepo<'a> {
                 .await
                 .map_err(crate::error::DbError::from)?;
                 if msg.conversation_id.starts_with("conv:") {
-                    tx.execute(
-                        "INSERT INTO conversations (conversation_id, last_message_at) VALUES (?1, ?2) \
-                         ON CONFLICT(conversation_id) DO UPDATE SET \
-                         last_message_at = MAX(last_message_at, excluded.last_message_at)",
-                        params![msg.conversation_id.as_str(), msg.created_at],
-                    )
-                    .await?;
+                    convs.push((msg.conversation_id.as_str(), msg.created_at));
                 }
             }
             drop(stmt);
+            for (conv_id, at) in convs {
+                tx.execute(
+                    "INSERT INTO conversations (conversation_id, last_message_at) VALUES (?1, ?2) \
+                     ON CONFLICT(conversation_id) DO UPDATE SET \
+                     last_message_at = MAX(last_message_at, excluded.last_message_at)",
+                    params![conv_id, at],
+                )
+                .await?;
+            }
             tx.commit().await?;
             Ok(())
         })

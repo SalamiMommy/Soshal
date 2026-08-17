@@ -2,7 +2,6 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
@@ -464,17 +463,20 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     _indexFlushScheduled = false;
     final pending = List<FeedPost>.from(_pendingIndex);
     _pendingIndex.clear();
-    for (final post in pending) {
-      try {
-        RustLib.instance.api.crateFfiSearchSearchIndexPost(
-          eventId: post.eventId,
-          pubkey: post.pubkey,
-          content: post.content,
-          kind: PlatformInt64Util.from(1),
-        );
-      } catch (_) {
-        // Indexing is best-effort; a failed upsert must not break ingest.
-      }
+    if (pending.isEmpty) return;
+    try {
+      final rowsJson = jsonEncode([
+        for (final post in pending)
+          {
+            'id': post.eventId,
+            'pubkey': post.pubkey,
+            'content': post.content,
+            'kind': 1,
+          }
+      ]);
+      RustLib.instance.api.crateFfiSearchSearchIndexPosts(rowsJson: rowsJson);
+    } catch (_) {
+      // Indexing is best-effort; a failed upsert must not break ingest.
     }
   }
 

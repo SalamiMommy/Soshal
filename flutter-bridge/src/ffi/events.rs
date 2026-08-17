@@ -122,15 +122,21 @@ fn rsvp_for_user(rows: &[serde_json::Value], my_pk: &str) -> String {
     String::new()
 }
 
-/// Attendee counts per event: grouped by the denormalized `rsvp_event_id`
-/// column (v011) — one indexed GROUP BY instead of a full RSVP scan +
-/// per-row tags_json parse.
-fn attendee_counts() -> std::collections::HashMap<String, i32> {
+/// Attendee counts per event, restricted to the given event ids so the query
+/// hits the `(kind, content, rsvp_event_id)` index instead of scanning the
+/// whole kind-31924 set. Empty slice = no events, returns an empty map.
+fn attendee_counts_for_ids(ids: &[String]) -> std::collections::HashMap<String, i32> {
     let mut counts = std::collections::HashMap::new();
-    if let Ok(json) = super::db::db_query_raw(format!(
-        "SELECT rsvp_event_id, COUNT(*) FROM posts WHERE kind = {KIND_EVENT_RSVP} \
-         AND content = 'accepted' AND rsvp_event_id IS NOT NULL GROUP BY rsvp_event_id"
-    )) {
+    if ids.is_empty() {
+        return counts;
+    }
+    let ids_json = serde_json::to_string(ids).unwrap_or_else(|_| "[]".into());
+    if let Ok(json) = super::db::db_query_params(
+        "SELECT rsvp_event_id, COUNT(*) FROM posts WHERE kind = ?1 \
+         AND content = 'accepted' AND rsvp_event_id IN (SELECT value FROM json_each(?2)) \
+         GROUP BY rsvp_event_id",
+        &[KIND_EVENT_RSVP.to_string(), ids_json],
+    ) {
         if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
             for r in rows {
                 if let Some(id) = r["rsvp_event_id"].as_str() {
@@ -143,7 +149,18 @@ fn attendee_counts() -> std::collections::HashMap<String, i32> {
 }
 
 fn attendees_count(event_id: &str) -> i32 {
-    attendee_counts().get(event_id).copied().unwrap_or(0)
+    if let Ok(json) = super::db::db_query_params(
+        "SELECT COUNT(*) FROM posts WHERE kind = ?1 AND content = 'accepted' \
+         AND rsvp_event_id = ?2",
+        &[KIND_EVENT_RSVP.to_string(), event_id.to_string()],
+    ) {
+        if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
+            if let Some(row) = rows.first() {
+                return row["COUNT(*)"].as_i64().unwrap_or(0) as i32;
+            }
+        }
+    }
+    0
 }
 
 /// Fetch nearby events (distance filter computed client-side over the
@@ -193,7 +210,11 @@ pub fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result<Strin
         limit,
     ))?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    let counts = attendee_counts();
+    let ids: Vec<String> = rows
+        .iter()
+        .filter_map(|v| v["id"].as_str().map(|s| s.to_string()))
+        .collect();
+    let counts = attendee_counts_for_ids(&ids);
     let mut out: Vec<EventInfo> = Vec::new();
     for v in rows {
         if let Some(mut e) = event_from_value(&v) {

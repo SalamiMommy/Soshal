@@ -184,18 +184,32 @@ pub async fn search_remote_global(
     super::util::json_ok(results)
 }
 
-/// Get trending hashtags from the hashtag index.
-#[frb(sync, serialize)]
-pub fn search_trending_hashtags(limit: i32) -> Result<Vec<String>, String> {
+/// Trending hashtags, cached briefly: the underlying GROUP BY aggregate scans
+/// the whole hashtags table (tag × pubkey rows), so a 60 s TTL avoids
+/// recomputing it on every search screen open.
+const HASHTAGS_TTL_SECS: i64 = 60;
+
+fn cached_trending_hashtags(limit: i64) -> Result<Vec<String>, String> {
+    use std::sync::{Mutex, OnceLock};
+    type HashtagCache = Option<(i64, Vec<String>)>;
+    static CACHE: OnceLock<Mutex<HashtagCache>> = OnceLock::new();
+    let now = soshal_common_core::format::now_secs();
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
+    {
+        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((ts, tags)) = guard.as_ref() {
+            if now.saturating_sub(*ts) < HASHTAGS_TTL_SECS && tags.len() >= limit as usize {
+                return Ok(tags[..limit as usize].to_vec());
+            }
+        }
+    }
     const TRENDING_HASHTAGS_SQL: &str =
-        "SELECT tag FROM hashtags GROUP BY tag ORDER BY SUM(count) DESC LIMIT ?1";
-    super::db::with_db_result(|db| {
+        "SELECT tag FROM hashtags GROUP BY tag ORDER BY SUM(count) DESC LIMIT 100";
+    let tags = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
             let mut stmt = conn.prepare(TRENDING_HASHTAGS_SQL).await?;
-            let mut rows = stmt
-                .query(libsql::params![limit.clamp(1, 100) as i64])
-                .await?;
+            let mut rows = stmt.query(()).await?;
             let mut out = Vec::new();
             while let Some(row) = rows.next().await? {
                 out.push(row.get::<String>(0)?);
@@ -204,14 +218,24 @@ pub fn search_trending_hashtags(limit: i32) -> Result<Vec<String>, String> {
         })
         .map_err(soshal_db_core::error::DbError::from)?;
         Ok(out)
-    })
+    })?;
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    *guard = Some((now, tags.clone()));
+    Ok(tags.into_iter().take(limit as usize).collect())
 }
 
-/// Get trending profiles (most followers in local graph).
+/// Get trending hashtags from the hashtag index (cached).
+#[frb(sync, serialize)]
+pub fn search_trending_hashtags(limit: i32) -> Result<Vec<String>, String> {
+    cached_trending_hashtags(limit.clamp(1, 100) as i64)
+}
+
+/// Get trending profiles (most followers in local graph, via the indexed
+/// `follower_count` column, v012).
 #[frb(sync, serialize)]
 pub fn search_trending_profiles(limit: i32) -> Result<String, String> {
     let json = super::db::db_query_raw(format!(
-        "SELECT pubkey, name, about FROM users ORDER BY (SELECT length(contact_pubkeys)) DESC LIMIT {}",
+        "SELECT pubkey, name, about FROM users ORDER BY follower_count DESC LIMIT {}",
         limit.clamp(1, 100)
     ))?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
@@ -249,6 +273,36 @@ pub fn search_index_post(
     };
     super::db::with_db_result(|db| {
         SearchIndexRepo::new(db).upsert(&row)?;
+        Ok(true)
+    })
+}
+
+/// Index many posts in one call. `rows_json` is a JSON array of
+/// `{"id","pubkey","content","kind"}` objects; replaces N sequential
+/// per-post index round-trips from the feed's index queue.
+#[frb(sync, serialize)]
+pub fn search_index_posts(rows_json: String) -> Result<bool, String> {
+    #[derive(serde::Deserialize)]
+    struct IndexInput {
+        id: String,
+        pubkey: String,
+        content: String,
+        kind: i64,
+    }
+    let rows: Vec<IndexInput> =
+        serde_json::from_str(&rows_json).map_err(|e| format!("invalid rows JSON: {e}"))?;
+    super::db::with_db_result(|db| {
+        let repo = SearchIndexRepo::new(db);
+        for r in rows {
+            let row = soshal_db_core::repos::search_index::SearchIndexRow {
+                id: r.id,
+                pubkey: r.pubkey,
+                content: truncate_preview(&r.content, 4096),
+                kind: r.kind,
+                created_at: soshal_common_core::format::now_secs(),
+            };
+            repo.upsert(&row)?;
+        }
         Ok(true)
     })
 }

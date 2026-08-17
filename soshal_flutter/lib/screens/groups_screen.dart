@@ -861,8 +861,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                     padding:
                                         EdgeInsets.symmetric(horizontal: 16),
                                     child: Text('No custom roles yet.',
-                                        style:
-                                            TextStyle(color: Colors.grey)),
+                                        style: TextStyle(color: Colors.grey)),
                                   )
                                 else
                                   for (final role in api.roles)
@@ -878,14 +877,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                             .titleMedium),
                                   ),
                                   const Padding(
-                                    padding: EdgeInsets.only(
-                                        left: 16, bottom: 8),
+                                    padding:
+                                        EdgeInsets.only(left: 16, bottom: 8),
                                     child: Text(
                                       'System roles have fixed permissions; '
                                       'custom roles shown below.',
                                       style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey),
+                                          fontSize: 12, color: Colors.grey),
                                     ),
                                   ),
                                   _permissionMatrix(api.roles),
@@ -899,18 +897,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 16, vertical: 8),
-                              child: Text(
-                                  'Members (${api.members.length})',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium),
+                              child: Text('Members (${api.members.length})',
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium),
                             ),
                           ),
                           if (api.members.isEmpty)
                             const SliverToBoxAdapter(
                               child: Padding(
-                                padding:
-                                    EdgeInsets.symmetric(horizontal: 16),
+                                padding: EdgeInsets.symmetric(horizontal: 16),
                                 child: Text('No members yet.',
                                     style: TextStyle(color: Colors.grey)),
                               ),
@@ -934,9 +929,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 16, vertical: 8),
                               child: Text('Chat (${api.messages.length})',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium),
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium),
                             ),
                           ),
                           if (api.messages.isEmpty)
@@ -974,7 +968,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                         ],
                       ),
                     ),
-Container(
+                    Container(
                       padding: const EdgeInsets.all(8),
                       child: Row(
                         children: [

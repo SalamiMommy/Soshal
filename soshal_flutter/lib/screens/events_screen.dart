@@ -57,6 +57,25 @@ class _EventsScreenState extends State<EventsScreen> {
 
   bool _loading = true;
   bool _mineOnly = false;
+
+  List<SoshalEvent>? _sortedCache;
+  List<SoshalEvent>? _sortedCacheKey;
+  Map<String, double>? _sortedCacheScoresKey;
+
+  /// Events sorted by score desc, memoized on the service list + scores
+  /// identity so score/feed notifies don't re-sort every rebuild.
+  List<SoshalEvent> _sortedEvents(
+      List<SoshalEvent> events, Map<String, double> scores) {
+    if (!identical(_sortedCacheKey, events) ||
+        !identical(_sortedCacheScoresKey, scores)) {
+      _sortedCache = [...events]
+        ..sort((a, b) => (scores[b.id] ?? 0).compareTo(scores[a.id] ?? 0));
+      _sortedCacheKey = events;
+      _sortedCacheScoresKey = scores;
+    }
+    return _sortedCache!;
+  }
+
   String _viewMode = 'list';
   int _monthOffset = 0;
   DateTime? _selectedDay;
@@ -302,9 +321,7 @@ class _EventsScreenState extends State<EventsScreen> {
                     Expanded(
                       child: _viewMode == 'calendar'
                           ? _buildCalendar(api.events)
-                          : _buildList([...api.events]..sort((a, b) =>
-                              (api.scores[b.id] ?? 0)
-                                  .compareTo(api.scores[a.id] ?? 0))),
+                          : _buildList(_sortedEvents(api.events, api.scores)),
                     ),
                   ],
                 );
@@ -767,6 +784,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       Image.network(
                         e.image,
                         height: 200,
+                        cacheWidth: 600,
                         cacheHeight: 400,
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => const SizedBox.shrink(),

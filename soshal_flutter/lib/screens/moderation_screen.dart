@@ -14,14 +14,21 @@ class ModerationScreen extends StatefulWidget {
 
 class _ModerationScreenState extends State<ModerationScreen> {
   String? _pubkey;
-  String _testContent = '';
+  final _testContent = TextEditingController();
   bool? _filtered;
   List<dynamic> _reports = [];
   bool _reportsLoading = false;
-  String? _checkTarget;
+  final _checkTarget = TextEditingController();
   ({bool muted, bool blocked, bool restricted})? _restrictionResult;
   String? _juryCaseJson;
   String? _juryResult;
+
+  @override
+  void dispose() {
+    _testContent.dispose();
+    _checkTarget.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -57,7 +64,7 @@ class _ModerationScreenState extends State<ModerationScreen> {
 
   Future<void> _checkRestriction() async {
     final me = _pubkey;
-    final target = _checkTarget?.trim() ?? '';
+    final target = _checkTarget.text.trim();
     if (me == null || target.isEmpty) return;
     final mod = context.read<ModerationService>();
     if (!mounted) return;
@@ -290,7 +297,7 @@ class _ModerationScreenState extends State<ModerationScreen> {
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           TextField(
-            onChanged: (v) => setState(() => _checkTarget = v),
+            controller: _checkTarget,
             decoration: const InputDecoration(
               hintText: 'Pubkey to check',
               border: OutlineInputBorder(),
@@ -387,7 +394,7 @@ class _ModerationScreenState extends State<ModerationScreen> {
           Text('Content check', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           TextField(
-            onChanged: (v) => setState(() => _testContent = v),
+            controller: _testContent,
             decoration: const InputDecoration(
               hintText: 'Paste content to test against filters',
               border: OutlineInputBorder(),
@@ -400,7 +407,8 @@ class _ModerationScreenState extends State<ModerationScreen> {
             onPressed: () async {
               final pubkey = _pubkey;
               if (pubkey == null) return;
-              final filtered = await api.shouldFilter(_testContent, pubkey);
+              final filtered =
+                  await api.shouldFilter(_testContent.text, pubkey);
               if (mounted) setState(() => _filtered = filtered);
             },
           ),
