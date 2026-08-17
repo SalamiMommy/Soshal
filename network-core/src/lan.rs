@@ -55,31 +55,39 @@ pub fn parse_beacon(
     if !text.starts_with(magic) {
         return None;
     }
-    let parts: Vec<&str> = text.split(':').collect();
-    if parts.len() < 5 {
-        return None;
+    // Split the 4 colon-delimited fields (magic, pubkey, port, ts) with
+    // slice math; the remainder is the MAC hex field. No Vec<&str> alloc nor
+    // format! body rebuild per beacon.
+    let mut fields: [&str; 4] = [""; 4];
+    let mut rest = text;
+    for field in fields.iter_mut() {
+        match rest.split_once(':') {
+            Some((head, tail)) => {
+                *field = head;
+                rest = tail;
+            }
+            None => return None,
+        }
     }
-    let body = format!("{}:{}:{}:{}", parts[0], parts[1], parts[2], parts[3]);
-    let expected = beacon_mac(key, &body);
+    let body_len = text.len().saturating_sub(rest.len() + 1);
+    let body = &text[..body_len];
+    let expected = beacon_mac(key, body);
     let expected_bytes = hex::decode(expected).ok()?;
-    let got_bytes = hex::decode(parts[4]).ok()?;
+    let got_bytes = hex::decode(rest).ok()?;
     if !ct_eq(&got_bytes, &expected_bytes) {
         return None;
     }
-    let peer_pk = parts[1].to_string();
+    let peer_pk = fields[1];
     if peer_pk.len() != 64 || !peer_pk.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    let ts: u64 = parts[3].parse().ok()?;
+    let ts: u64 = fields[3].parse().ok()?;
     let skew = now_secs.abs_diff(ts);
     if skew > BEACON_MAX_SKEW_SECS {
         return None;
     }
-    let port = parts
-        .get(2)
-        .and_then(|s| s.parse::<u16>().ok())
-        .unwrap_or(default_port);
-    Some((peer_pk, port))
+    let port = fields[2].parse::<u16>().ok().unwrap_or(default_port);
+    Some((peer_pk.to_string(), port))
 }
 
 /// Deterministic per-identity LAN sync bearer token: first 16 bytes of the

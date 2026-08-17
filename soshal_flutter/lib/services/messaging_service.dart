@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/offthread.dart';
 import 'error_log.dart';
 import 'moderation_service.dart';
 
@@ -15,13 +16,20 @@ class MessagingService extends ChangeNotifier
   final Map<String, List<DirectMessage>> _conversations = {};
   final List<EphemeralMedia> _pendingEphemeral = [];
 
+  /// Live-stream DMs awaiting a batched persist (see [insertLiveDm]).
+  final List<DirectMessage> _pendingStores = [];
+  Timer? _storeFlushTimer;
+  static const _storeFlushInterval = Duration(milliseconds: 250);
+  static const _storeFlushBatchSize = 8;
+
   Map<String, List<DirectMessage>> get conversations => _conversations;
   List<EphemeralMedia> get pendingEphemeral =>
       List.unmodifiable(_pendingEphemeral);
 
   /// Insert a DM arriving from the live sync stream (already decrypted by
-  /// the bridge). Conversation is keyed by the peer pubkey. The row is also
-  /// persisted into the local DM store (best-effort, fire-and-forget).
+  /// the bridge). Conversation is keyed by the peer pubkey. Persistence is
+  /// batched: a message burst on the stream triggers ONE batch FFI call
+  /// instead of one call per message.
   void insertLiveDm(DirectMessage message) {
     final peer = message.sender;
     if (peer.isEmpty) return;
@@ -31,8 +39,46 @@ class MessagingService extends ChangeNotifier
     if (list.length > 200) {
       list.removeAt(0);
     }
-    unawaited(storeDm(message));
+    _pendingStores.add(message);
+    _storeFlushTimer ??= Timer(_storeFlushInterval, _flushPendingStores);
+    if (_pendingStores.length >= _storeFlushBatchSize) {
+      _flushPendingStores();
+    }
     notifyDeferred();
+  }
+
+  void _flushPendingStores() {
+    _storeFlushTimer?.cancel();
+    _storeFlushTimer = null;
+    if (_pendingStores.isEmpty) return;
+    final batch = List<DirectMessage>.from(_pendingStores);
+    _pendingStores.clear();
+    unawaited(_storeDmBatch(batch));
+  }
+
+  Future<void> _storeDmBatch(List<DirectMessage> batch) async {
+    try {
+      final payload = jsonEncode([
+        for (final m in batch)
+          {
+            'id': m.id,
+            'sender': m.sender,
+            'recipient': m.recipient,
+            'content': m.content,
+            'created_at': m.createdAt,
+          },
+      ]);
+      RustLib.instance.api.crateFfiMessagingMessagingStoreDms(
+        dmsJson: payload,
+      );
+      clearLastError();
+    } catch (e, st) {
+      // Best-effort persist; drop the batch on failure rather than retry
+      // storm the store from the live path.
+      debugPrint('dm batch store: $e');
+      setLastError(e, st);
+      notifyDeferred();
+    }
   }
 
   /// Fetch DMs with a specific contact
@@ -46,10 +92,7 @@ class MessagingService extends ChangeNotifier
         withPubkey: otherPubkey,
         limit: 100,
       );
-      final list = jsonDecode(json) as List<dynamic>;
-      final messages = list
-          .map((e) => DirectMessage.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final messages = await runOffThread(() => _parseDmsJson(json));
 
       if (messages.length > 200) {
         _conversations[otherPubkey] = messages.sublist(messages.length - 200);
@@ -640,6 +683,15 @@ class DirectMessage {
       isOwn: isOwn,
     );
   }
+}
+
+/// JSON → [DirectMessage] list, top-level so [compute] can run it on a
+/// background isolate (fetchDMs decodes off the UI thread).
+List<DirectMessage> _parseDmsJson(String json) {
+  final list = jsonDecode(json) as List<dynamic>;
+  return list
+      .map((e) => DirectMessage.fromJson(e as Map<String, dynamic>))
+      .toList();
 }
 
 /// User profile info as served by the identity module.

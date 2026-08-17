@@ -4,14 +4,16 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// Types of messages in the PlumTree protocol.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PlumTreeMessage {
-    /// Eager full post/event payload push.
+    /// Eager full post/event payload push. Payload shared via `Arc` so the
+    /// fan-out to eager peers refcounts instead of cloning the full JSON.
     Gossip {
         message_id: String,
-        payload_json: String,
+        payload_json: Arc<str>,
         round: u32,
     },
     /// Lazy message announcement (hash only).
@@ -154,7 +156,7 @@ mod tests {
 
         let gossip = PlumTreeMessage::Gossip {
             message_id: "msg1".to_string(),
-            payload_json: "{\"text\":\"hello\"}".to_string(),
+            payload_json: "{\"text\":\"hello\"}".into(),
             round: 1,
         };
 
@@ -166,7 +168,7 @@ mod tests {
         // Test duplicate receipt -> Prune
         let duplicate_gossip = PlumTreeMessage::Gossip {
             message_id: "msg1".to_string(),
-            payload_json: "{\"text\":\"hello\"}".to_string(),
+            payload_json: "{\"text\":\"hello\"}".into(),
             round: 1,
         };
 

@@ -198,13 +198,15 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
               ),
             )
           : Center(
-              child: AspectRatio(
-                aspectRatio: 1,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
                 child: Image.memory(
                   _frameBytes!,
                   fit: BoxFit.contain,
                   gaplessPlayback: true,
-                  cacheWidth: 640,
+                  // Decode at a fixed small size — the JPEG track is a
+                  // codec-free ~4fps fallback; no need to decode full res.
+                  cacheWidth: 480,
                 ),
               ),
             ),

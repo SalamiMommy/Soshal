@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/offthread.dart';
 import 'error_log.dart';
 
 /// Feed Service
@@ -43,7 +44,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       });
       final json = RustLib.instance.api
           .crateFfiFeedFeedFetchEvents(optionsJson: options);
-      final newPosts = _decodePosts(json);
+      final newPosts = await _decodePosts(json);
       if (offset == 0) {
         _posts = newPosts;
         _ranked = false;
@@ -81,7 +82,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         startIndex: startIndex,
         limit: limit,
       );
-      _posts = _decodePosts(json);
+      _posts = await _decodePosts(json);
       _ranked = false;
       _rankedPosts = [];
       for (final p in _posts) {
@@ -259,7 +260,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       final json = RustLib.instance.api.crateFfiFeedFeedFetchThread(
         eventId: eventId,
       );
-      return _decodePosts(json);
+      return await _decodePosts(json);
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();
@@ -317,10 +318,24 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
+  /// True when [payload] looks like a base64-encoded compressed frame.
+  /// zstd-dict frames start with magic bytes `5A 48 01 …` → base64 `WkgB`;
+  /// plain deflate starts with `78 9C/01/DA/5E` → `eJw/eAE/eNo/eF4`. The
+  /// cheap prefix check avoids a base64 decode + decompress FFI round-trip
+  /// per post on the decode path.
+  static bool _looksCompressed(String payload) {
+    if (payload.length < 12) return false;
+    return payload.startsWith('WkgB') ||
+        payload.startsWith('eJw') ||
+        payload.startsWith('eAE') ||
+        payload.startsWith('eNo') ||
+        payload.startsWith('eF4');
+  }
+
   /// Decompress a base64 zstd-dict frame produced by [compressJson]; returns
   /// the input unchanged when it isn't a valid compressed payload.
   String decompressJson(String payload) {
-    if (payload.isEmpty) return payload;
+    if (payload.isEmpty || !_looksCompressed(payload)) return payload;
     try {
       final decoded = RustLib.instance.api
           .crateFfiContentContentDecompressJsonDict(encoded: payload);
@@ -451,20 +466,30 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  /// Decode feed rows; decompress post content that looks compressed, then
-  /// build [FeedPost]s.
-  List<FeedPost> _decodePosts(String json) {
-    final list = jsonDecode(json) as List<dynamic>;
-    return list.map((e) {
-      final m = e as Map<String, dynamic>;
+  /// Decode feed rows: JSON parsing happens on a background isolate
+  /// ([_parseFeedRows]); decompress (FFI, main-isolate only) + [FeedPost]
+  /// construction happen here.
+  Future<List<FeedPost>> _decodePosts(String json) async {
+    final rows = await runOffThread(() => _parseFeedRows(json));
+    final posts = <FeedPost>[];
+    for (final m in rows) {
       final content = m['content'] as String? ?? '';
       if (content.isNotEmpty) {
         final decoded = decompressJson(content);
         if (decoded != content) m['content'] = decoded;
       }
-      return FeedPost.fromJson(m);
-    }).toList();
+      posts.add(FeedPost.fromJson(m));
+    }
+    return posts;
   }
+
+/// JSON → raw feed rows, top-level so [compute] can run it on a background
+/// isolate (keeps the per-post [FeedPost] build + FFI decompress on main).
+List<Map<String, dynamic>> _parseFeedRows(String json) {
+  return (jsonDecode(json) as List<dynamic>)
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
+}
 
   /// Fire the post-refresh reconcile hook; sync is best-effort so failures
   /// are swallowed here.

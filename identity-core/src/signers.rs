@@ -66,6 +66,36 @@ impl Signer {
 }
 
 fn shared_secret(sk: &nostr::key::SecretKey, pk: &PublicKey) -> Result<[u8; 32], String> {
+    // Cache key must cover BOTH identities: the ECDH result depends on the
+    // local secret key as much as the peer's pubkey. Two signers talking to
+    // the same peer must not share a cache slot.
+    let my_pk_hex = Keys::new(sk.clone()).public_key().to_string();
+    let cache_key = (my_pk_hex, pk.to_string());
+    {
+        let cache = SHARED_SECRET_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(c) = cache.as_ref() {
+            if let Some(key) = c.get(&cache_key) {
+                return Ok(key);
+            }
+        }
+    }
+    let key = derive_shared_secret(sk, pk)?;
+    let mut guard = SHARED_SECRET_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let cache = guard.get_or_insert_with(|| SharedSecretCache {
+        order: std::collections::VecDeque::new(),
+        map: std::collections::HashMap::new(),
+        cap: 128,
+    });
+    cache.put(cache_key, key);
+    Ok(key)
+}
+
+/// ECDH x-coordinate derivation (parity-independent, see comment below).
+fn derive_shared_secret(sk: &nostr::key::SecretKey, pk: &PublicKey) -> Result<[u8; 32], String> {
     use secp256k1::{ecdh, Parity, PublicKey as SecpPublicKey};
     let xonly = pk.xonly().map_err(|e| format!("pubkey: {e}"))?;
     let secp_pk = SecpPublicKey::from_x_only_public_key(xonly, Parity::Even);
@@ -78,6 +108,52 @@ fn shared_secret(sk: &nostr::key::SecretKey, pk: &PublicKey) -> Result<[u8; 32],
     key.copy_from_slice(&xy[..32]);
     xy.zeroize();
     Ok(key)
+}
+
+/// FIFO-capped cache of per-peer NIP-44 shared secrets. The secp256k1 ECDH
+/// point multiplication is the dominant DM cost; peers repeat (DM threads),
+/// so cache by peer pubkey. Keys are zeroized on eviction and on
+/// [`clear_shared_secret_cache`].
+struct SharedSecretCache {
+    order: std::collections::VecDeque<(String, String)>,
+    map: std::collections::HashMap<(String, String), [u8; 32]>,
+    cap: usize,
+}
+
+impl SharedSecretCache {
+    fn get(&self, key: &(String, String)) -> Option<[u8; 32]> {
+        self.map.get(key).copied()
+    }
+
+    fn put(&mut self, key: (String, String), value: [u8; 32]) {
+        if self.map.contains_key(&key) {
+            return;
+        }
+        if self.map.len() >= self.cap {
+            if let Some(oldest) = self.order.pop_front() {
+                if let Some(mut old) = self.map.remove(&oldest) {
+                    old.zeroize();
+                }
+            }
+        }
+        self.order.push_back(key.clone());
+        self.map.insert(key, value);
+    }
+}
+
+static SHARED_SECRET_CACHE: std::sync::Mutex<Option<SharedSecretCache>> =
+    std::sync::Mutex::new(None);
+
+/// Clear and zeroize all cached per-peer shared secrets. Called on signer
+/// lock/unlock so no derived key material outlives its identity.
+pub fn clear_shared_secret_cache() {
+    if let Ok(mut guard) = SHARED_SECRET_CACHE.lock() {
+        if let Some(mut cache) = guard.take() {
+            for (_, mut key) in cache.map.drain() {
+                key.zeroize();
+            }
+        }
+    }
 }
 
 impl SigningOps for Signer {

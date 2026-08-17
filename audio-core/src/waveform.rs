@@ -96,6 +96,7 @@ fn decode_reader<R: std::io::Read + std::io::Seek + Send + Sync + 'static>(
     let sample_rate = params.sample_rate.unwrap_or(48_000);
 
     let mut samples: MonoF32 = Vec::new();
+    let mut sb: Option<SampleBuffer<f32>> = None;
     loop {
         let packet = match format.next_packet() {
             Ok(p) => p,
@@ -109,7 +110,7 @@ fn decode_reader<R: std::io::Read + std::io::Seek + Send + Sync + 'static>(
         let decoded = decoder
             .decode(&packet)
             .map_err(|e| format!("decode: {e}"))?;
-        append_mono(&mut samples, &decoded, channels, sample_rate);
+        append_mono(&mut samples, &decoded, &mut sb, channels, sample_rate);
     }
     Ok(samples)
 }
@@ -117,12 +118,19 @@ fn decode_reader<R: std::io::Read + std::io::Seek + Send + Sync + 'static>(
 fn append_mono(
     out: &mut MonoF32,
     buf: &symphonia::core::audio::AudioBufferRef<'_>,
+    sb: &mut Option<SampleBuffer<f32>>,
     channels: usize,
     sample_rate: u32,
 ) {
-    let mut sb = SampleBuffer::<f32>::new(buf.capacity() as u64, *buf.spec());
-    sb.copy_interleaved_ref(buf.clone());
-    let interleaved = sb.samples();
+    let needed = buf.capacity();
+    let buf_ref = sb.get_or_insert_with(|| SampleBuffer::<f32>::new(needed as u64, *buf.spec()));
+    if buf_ref.capacity() < needed {
+        // Decoded frame grew (larger packet than any seen so far): grow the
+        // reusable buffer once instead of allocating per packet.
+        *buf_ref = SampleBuffer::<f32>::new((needed * 2) as u64, *buf.spec());
+    }
+    buf_ref.copy_interleaved_ref(buf.clone());
+    let interleaved = buf_ref.samples();
     let ch = channels.max(1);
     if ch <= 1 {
         out.extend_from_slice(interleaved);
@@ -143,12 +151,14 @@ fn peaks(samples: &[f32], bins: usize) -> Vec<f32> {
         return vec![0.0; bins];
     }
     let mut out = Vec::with_capacity(bins);
-    let per = samples.len() as f64 / bins as f64;
+    let total = samples.len() as u64;
     let mut peak_max = 0.0f64;
     let mut acc_sum = 0.0f64;
     let mut acc_count = 0usize;
     for (i, s) in samples.iter().enumerate() {
-        let bucket = (i as f64 / per).floor() as usize;
+        // Integer bucket math (u64: safe on 32-bit targets too) instead of a
+        // per-sample f64 division.
+        let bucket = (i as u64 * bins as u64 / total) as usize;
         acc_sum += s.abs() as f64;
         acc_count += 1;
         if bucket == out.len() {

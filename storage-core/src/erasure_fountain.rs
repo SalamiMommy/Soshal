@@ -20,6 +20,11 @@ pub struct EncodedFountainPayload {
     pub packets: Vec<Vec<u8>>,
 }
 
+/// Max payload size for fountain encoding: packets materialize the payload
+/// at (1 + redundancy) × size, and the FFI surface carries them as JSON —
+/// cap so a pathological blob cannot balloon into ~130 MB of heap.
+const MAX_FOUNTAIN_LEN: usize = 64 * 1024 * 1024;
+
 /// Encodes raw binary media payload into Fountain code packets with parity redundancy.
 pub fn encode_fountain(
     data: &[u8],
@@ -27,6 +32,12 @@ pub fn encode_fountain(
 ) -> Result<EncodedFountainPayload, String> {
     if data.is_empty() {
         return Err("Cannot fountain encode empty payload".to_string());
+    }
+    if data.len() > MAX_FOUNTAIN_LEN {
+        return Err(format!(
+            "fountain payload too large: {} bytes (max {MAX_FOUNTAIN_LEN})",
+            data.len()
+        ));
     }
 
     let symbol_size = 1024u16;
@@ -43,7 +54,8 @@ pub fn encode_fountain(
     let oti_bytes = oti_arr.to_vec();
 
     let packets_ref = encoder.get_encoded_packets(repair_packets);
-    let packets: Vec<Vec<u8>> = packets_ref.into_iter().map(|p| p.serialize()).collect();
+    let mut packets: Vec<Vec<u8>> = Vec::with_capacity(packets_ref.len());
+    packets.extend(packets_ref.into_iter().map(|p| p.serialize()));
 
     let manifest = FountainManifest {
         total_len: data.len() as u64,

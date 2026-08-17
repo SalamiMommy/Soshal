@@ -52,19 +52,27 @@ fn row_to_item(
 
 fn user_names(
     db: &Database,
+    pubkeys: &[String],
 ) -> Result<std::collections::HashMap<String, (String, String)>, DbError> {
+    if pubkeys.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
     let conn = db.conn()?;
-    let rows = soshal_db_core::query::query(
-        &conn,
-        "SELECT pubkey, name, picture FROM users WHERE picture IS NOT NULL OR name IS NOT NULL",
-        (),
-        |r| {
-            let pk: String = r.get(0)?;
-            let name: Option<String> = r.get(1)?;
-            let pic: Option<String> = r.get(2)?;
-            Ok((pk, name.unwrap_or_default(), pic.unwrap_or_default()))
-        },
-    )?;
+    let mut sql = String::from("SELECT pubkey, name, picture FROM users WHERE pubkey IN (");
+    for i in 0..pubkeys.len() {
+        if i > 0 {
+            sql.push(',');
+        }
+        sql.push_str(&format!("?{}", i + 1));
+    }
+    sql.push(')');
+    let params = libsql::params_from_iter(pubkeys.iter().map(|p| p.as_str()));
+    let rows = soshal_db_core::query::query(&conn, &sql, params, |r| {
+        let pk: String = r.get(0)?;
+        let name: Option<String> = r.get(1)?;
+        let pic: Option<String> = r.get(2)?;
+        Ok((pk, name.unwrap_or_default(), pic.unwrap_or_default()))
+    })?;
     let mut map = std::collections::HashMap::new();
     for (pk, name, pic) in rows {
         map.insert(pk, (name, pic));
@@ -79,12 +87,12 @@ fn require_db_rows(
 ) -> Result<Vec<NotificationItem>, String> {
     super::db::with_db_result(|db| {
         let repo = NotificationRepo::new(db);
-        let users = user_names(db)?;
-        let unread = match type_filter {
-            Some(t) => repo.get_unread_filtered(pubkey, t, 1000)?,
-            None => repo.get_unread(pubkey, 1000)?,
+        let rows = match type_filter {
+            Some(t) => repo.get_unread_filtered(pubkey, t, limit)?,
+            None => repo.get_unread(pubkey, limit)?,
         };
-        let rows: Vec<NotificationRow> = unread.into_iter().take(limit as usize).collect();
+        let from_pks: Vec<String> = rows.iter().filter_map(|r| r.from_pubkey.clone()).collect();
+        let users = user_names(db, &from_pks)?;
         Ok(rows.iter().map(|r| row_to_item(r, &users)).collect())
     })
 }

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/ffi/p2p.dart' as moq;
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/offthread.dart';
 import 'error_log.dart';
 
 /// Streaming Service
@@ -448,10 +449,7 @@ class StreamingService extends ChangeNotifier
   Future<List<StreamRow>> _decode(String Function() call) async {
     try {
       final json = call();
-      final decoded = jsonDecode(json);
-      final parsed = (decoded as List<dynamic>)
-          .map((e) => StreamRow.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final parsed = await runOffThread(() => _parseStreamRows(json));
       clearLastError();
       notifyDeferred();
       return parsed;
@@ -461,6 +459,15 @@ class StreamingService extends ChangeNotifier
       rethrow;
     }
   }
+}
+
+/// JSON → [StreamRow] list, top-level so [compute] can run it on a
+/// background isolate.
+List<StreamRow> _parseStreamRows(String json) {
+  final decoded = jsonDecode(json);
+  return (decoded as List<dynamic>)
+      .map((e) => StreamRow.fromJson(e as Map<String, dynamic>))
+      .toList();
 }
 
 /// A live stream or story row from the posts table.

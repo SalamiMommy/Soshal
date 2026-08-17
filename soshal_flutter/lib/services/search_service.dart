@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/offthread.dart';
 import 'error_log.dart';
 
 /// Search Service
@@ -142,14 +143,8 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
   Future<List<SearchResultItem>> _run(String Function() call) async {
     try {
       final json = call();
-      final decoded = jsonDecode(json);
-      if (decoded is! List) {
-        _results = [];
-      } else {
-        _results = decoded
-            .map((e) => SearchResultItem.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
+      final results = await runOffThread(() => _parseSearchResults(json));
+      _results = results;
       clearLastError();
       notifyListeners();
       return _results;
@@ -177,6 +172,16 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
       rethrow;
     }
   }
+}
+
+/// JSON → [SearchResultItem] list, top-level so [compute] can run it on a
+/// background isolate (search result decoding stays off the UI thread).
+List<SearchResultItem> _parseSearchResults(String json) {
+  final decoded = jsonDecode(json);
+  if (decoded is! List) return const [];
+  return decoded
+      .map((e) => SearchResultItem.fromJson(e as Map<String, dynamic>))
+      .toList();
 }
 
 /// A single search hit (post/profile/mention rows as raw JSON).

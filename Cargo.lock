@@ -4571,6 +4571,7 @@ dependencies = [
 name = "soshal-social-core"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "serde",
  "serde_json",
  "soshal-common-core",
@@ -4641,6 +4642,7 @@ dependencies = [
  "soshal-crypto-core",
  "soshal-db-core",
  "soshal-network-core",
+ "soshal-nostr-core",
  "soshal-test-util",
  "tokio",
  "zstd",

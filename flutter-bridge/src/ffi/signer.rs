@@ -53,6 +53,7 @@ pub fn signer_unlock(secret: String) -> Result<String, String> {
     };
     let pk = keys.public_key().to_hex();
     clear_derived_cache();
+    soshal_identity_core::signers::clear_shared_secret_cache();
     SIGNER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -66,6 +67,7 @@ pub fn signer_lock() -> Result<bool, String> {
     clear_derived_cache();
     *SIGNER.lock().unwrap_or_else(|e| e.into_inner()) = None;
     soshal_crypto_core::nip44::clear_conversation_key_cache();
+    soshal_identity_core::signers::clear_shared_secret_cache();
     Ok(true).into()
 }
 

@@ -196,7 +196,12 @@ class _SidebarCoreState extends State<_SidebarCore> {
 
   @override
   Widget build(BuildContext context) {
-    final shell = context.watch<ShellService>();
+    // Narrow selects: the sidebar only rebuilds when the tab list or
+    // rearrange mode changes, not on every ShellService notification.
+    final items = context.select<ShellService, List<NavItem>>((s) => s.items);
+    final rearranging =
+        context.select<ShellService, bool>((s) => s.rearranging);
+    final shell = context.read<ShellService>();
     final unreadCount =
         context.select<NotificationService, int>((s) => s.unreadCount);
     final theme = Theme.of(context);
@@ -229,7 +234,7 @@ class _SidebarCoreState extends State<_SidebarCore> {
               ],
             ),
           ),
-        if (shell.rearranging)
+        if (rearranging)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -281,16 +286,16 @@ class _SidebarCoreState extends State<_SidebarCore> {
               horizontal: widget.compact ? 4 : 8,
             ),
             children: [
-              for (int i = 0; i < shell.items.length; i++)
+              for (int i = 0; i < items.length; i++)
                 _NavItemTile(
-                  item: shell.items[i],
+                  item: items[i],
                   index: i,
-                  unread: shell.items[i].id == 'inbox' ? unreadCount : 0,
+                  unread: items[i].id == 'inbox' ? unreadCount : 0,
                   selected: widget.currentPath ==
-                      (ShellService.routeForItem[shell.items[i].id] ?? ''),
+                      (ShellService.routeForItem[items[i].id] ?? ''),
                   compact: widget.compact,
                   onTap: () => _navigate(context,
-                      ShellService.routeForItem[shell.items[i].id] ?? '/feed'),
+                      ShellService.routeForItem[items[i].id] ?? '/feed'),
                 ),
             ],
           ),
@@ -319,7 +324,9 @@ class _NavItemTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shell = context.watch<ShellService>();
+    final rearranging =
+        context.select<ShellService, bool>((s) => s.rearranging);
+    final shell = context.read<ShellService>();
     final tile = ListTile(
       leading: Icon(navIconFor(item.id)),
       title: Row(
@@ -340,7 +347,7 @@ class _NavItemTile extends StatelessWidget {
                 ),
               ),
             ),
-          if (shell.rearranging) ...[
+          if (rearranging) ...[
             const SizedBox(width: 4),
             const Icon(Icons.drag_handle, size: 18),
           ],
@@ -351,11 +358,11 @@ class _NavItemTile extends StatelessWidget {
           .colorScheme
           .secondaryContainer
           .withValues(alpha: 0.4),
-      onTap: shell.rearranging ? null : onTap,
-      onLongPress: shell.rearranging ? null : shell.beginRearrange,
+      onTap: rearranging ? null : onTap,
+      onLongPress: rearranging ? null : shell.beginRearrange,
     );
 
-    if (!shell.rearranging) return tile;
+    if (!rearranging) return tile;
 
     return DragTarget<int>(
       onWillAcceptWithDetails: (details) => details.data != index,

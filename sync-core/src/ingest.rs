@@ -370,7 +370,9 @@ pub fn handle_batch(
     soshal_db_core::query::with_tx(&conn, |t| async move {
         let mut rows: Vec<PostRow> = Vec::with_capacity(events.len());
         for event in events {
-            if event.verify().is_err() {
+            // Route through the cached verifier (nostr-core LRU) — raw
+            // event.verify() re-verifies signatures for re-fetched batches.
+            if !soshal_nostr_core::models::verify_event(event) {
                 continue;
             }
             match event.kind {

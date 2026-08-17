@@ -35,20 +35,45 @@ pub fn nsec(keys: &Keys) -> String {
 }
 
 pub fn sign_event_json(keys: &Keys, event_json: &str) -> Result<String, String> {
-    let mut val: serde_json::Value =
-        serde_json::from_str(event_json).map_err(|e| format!("parse unsigned event: {}", e))?;
-    if let Some(obj) = val.as_object_mut() {
-        if obj.get("id").and_then(|v| v.as_str()) == Some(&"00".repeat(32))
-            || obj.get("id").map(|v| v.is_null()).unwrap_or(false)
-        {
-            obj.remove("id");
+    // Fast path: deserialize straight to UnsignedEvent (no serde_json::Value
+    // round trip). Fall back to the tolerant Value path when the payload
+    // carries a null id or the all-zeros placeholder id.
+    let unsigned: UnsignedEvent = match serde_json::from_str(event_json) {
+        Ok(u) => u,
+        Err(_) => {
+            let mut val: serde_json::Value = serde_json::from_str(event_json)
+                .map_err(|e| format!("parse unsigned event: {}", e))?;
+            if let Some(obj) = val.as_object_mut() {
+                if obj.get("id").and_then(|v| v.as_str()) == Some(&"00".repeat(32))
+                    || obj.get("id").map(|v| v.is_null()).unwrap_or(false)
+                {
+                    obj.remove("id");
+                }
+                obj.remove("sig");
+            }
+            serde_json::from_value(val).map_err(|e| format!("parse unsigned event: {}", e))?
         }
-        obj.remove("sig");
-    }
-    let unsigned: UnsignedEvent =
-        serde_json::from_value(val).map_err(|e| format!("parse unsigned event: {}", e))?;
-    let signed = keys
-        .sign_event(unsigned)
-        .map_err(|e| format!("signing error: {}", e))?;
+    };
+    let signed = if unsigned
+        .id
+        .as_ref()
+        .is_none_or(|id| id.as_bytes() == &[0u8; 32])
+    {
+        // Missing or placeholder id: rebuild without it so the id is derived
+        // at sign time.
+        let mut val: serde_json::Value =
+            serde_json::from_str(event_json).map_err(|e| format!("parse unsigned event: {}", e))?;
+        if let Some(obj) = val.as_object_mut() {
+            obj.remove("id");
+            obj.remove("sig");
+        }
+        let unsigned: UnsignedEvent =
+            serde_json::from_value(val).map_err(|e| format!("parse unsigned event: {}", e))?;
+        keys.sign_event(unsigned)
+            .map_err(|e| format!("signing error: {}", e))?
+    } else {
+        keys.sign_event(unsigned)
+            .map_err(|e| format!("signing error: {}", e))?
+    };
     serde_json::to_string(&signed).map_err(|e| format!("serialize: {}", e))
 }

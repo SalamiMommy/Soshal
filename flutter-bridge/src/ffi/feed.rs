@@ -206,7 +206,7 @@ pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
         let repo = PostRepo::new(db);
         let offset = opts.offset.max(0) as i64;
-        let rows = repo.get_paged(limit, offset)?;
+        let rows = repo.get_paged_meta(limit, offset)?;
         let posts: Vec<FeedPost> = rows
             .into_iter()
             .map(|row| FeedPost {

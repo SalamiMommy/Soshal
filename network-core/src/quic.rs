@@ -223,11 +223,18 @@ async fn run_channel(
     endpoint.set_default_client_config(client_config);
 
     let mut conns: HashMap<SocketAddr, Connection> = HashMap::new();
+    let mut sweep = tokio::time::interval(std::time::Duration::from_secs(30));
+    sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         if stop.load(Ordering::Relaxed) {
             break;
         }
         tokio::select! {
+            _ = sweep.tick() => {
+                // Evict dead connections (closed by peer or idle timeout) so
+                // the map cannot grow unboundedly over long sessions.
+                conns.retain(|_, c| c.close_reason().is_none());
+            }
             incoming = endpoint.accept() => {
                 let Some(incoming) = incoming else { continue; };
                 if let Ok(conn) = incoming.await {

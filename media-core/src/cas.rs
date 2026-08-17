@@ -28,6 +28,41 @@ pub struct ChunkStore {
     /// Verified (hash, size, mtime) entries; immutable chunk files skip the
     /// full re-hash on repeated reads once verified.
     verified: Arc<Mutex<VerifiedChunks>>,
+    /// Manifest LRU: peer-serving re-reads manifests/*.json per chunk request
+    /// (both TCP and QUIC bulk paths). Capped FIFO, invalidated on save/clear.
+    manifest_cache: Arc<Mutex<ManifestCache>>,
+}
+
+/// FIFO-capped cache of parsed manifests keyed by blob hash.
+#[derive(Default)]
+struct ManifestCache {
+    order: std::collections::VecDeque<String>,
+    map: HashMap<String, Arc<ChunkManifest>>,
+    cap: usize,
+}
+
+impl ManifestCache {
+    fn get(&mut self, blob_hash: &str) -> Option<Arc<ChunkManifest>> {
+        self.map.get(blob_hash).cloned()
+    }
+
+    fn put(&mut self, blob_hash: String, manifest: Arc<ChunkManifest>) {
+        if self.map.contains_key(&blob_hash) {
+            return;
+        }
+        if self.map.len() >= self.cap {
+            if let Some(oldest) = self.order.pop_front() {
+                self.map.remove(&oldest);
+            }
+        }
+        self.order.push_back(blob_hash.clone());
+        self.map.insert(blob_hash, manifest);
+    }
+
+    fn invalidate(&mut self, blob_hash: &str) {
+        self.map.remove(blob_hash);
+        self.order.retain(|h| h != blob_hash);
+    }
 }
 
 /// `chunk_hash -> blob_hash` map plus the chunk's offset inside that blob.
@@ -82,6 +117,10 @@ impl ChunkStore {
             root,
             index: Arc::new(RwLock::new(None)),
             verified: Arc::new(Mutex::new(HashMap::new())),
+            manifest_cache: Arc::new(Mutex::new(ManifestCache {
+                cap: 64,
+                ..Default::default()
+            })),
         }
     }
 
@@ -279,6 +318,10 @@ impl ChunkStore {
         if let Ok(mut cache) = self.verified.lock() {
             cache.clear();
         }
+        if let Ok(mut cache) = self.manifest_cache.lock() {
+            cache.map.clear();
+            cache.order.clear();
+        }
     }
 
     /// Default on-disk location used by peer-serving and bridge call sites.
@@ -300,6 +343,9 @@ impl ChunkStore {
         let path = self.manifest_path(&manifest.blob_hash);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("manifest dir: {e}"))?;
+        }
+        if let Ok(mut cache) = self.manifest_cache.lock() {
+            cache.invalidate(&manifest.blob_hash);
         }
         let json = serde_json::to_string(manifest).map_err(|e| format!("manifest serde: {e}"))?;
         let mut tmp = path.with_extension("tmp");
@@ -324,9 +370,17 @@ impl ChunkStore {
         if blob_hash.len() != 64 {
             return None;
         }
+        if let Ok(mut cache) = self.manifest_cache.lock() {
+            if let Some(m) = cache.get(blob_hash) {
+                return Some(m.as_ref().clone());
+            }
+        }
         let raw = fs::read_to_string(self.manifest_path(blob_hash)).ok()?;
         let m: ChunkManifest = serde_json::from_str(&raw).ok()?;
         if m.blob_hash == blob_hash && m.is_valid() {
+            if let Ok(mut cache) = self.manifest_cache.lock() {
+                cache.put(blob_hash.to_string(), Arc::new(m.clone()));
+            }
             Some(m)
         } else {
             None

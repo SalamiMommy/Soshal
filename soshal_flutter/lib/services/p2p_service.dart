@@ -361,12 +361,19 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     required bool lowPowerMode,
   }) async {
     try {
-      _power = p2PPowerUpdate(
+      final next = p2PPowerUpdate(
         charging: charging,
         batteryPercent: batteryPercent,
         cellular: cellular,
         lowPowerMode: lowPowerMode,
       );
+      // Gate: telemetry pushes (battery drain events) arrive frequently
+      // while the mode stays put; don't rebuild subscribers on no-change.
+      if (_power == next) {
+        clearLastError();
+        return next;
+      }
+      _power = next;
       clearLastError();
       notifyListeners();
       return _power!;
@@ -380,7 +387,12 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   /// Current seeding mode snapshot.
   Future<P2pPowerDto?> currentPower() async {
     try {
-      _power = p2PPowerMode();
+      final next = p2PPowerMode();
+      if (_power == next) {
+        clearLastError();
+        return next;
+      }
+      _power = next;
       notifyListeners();
       return _power;
     } catch (e, st) {

@@ -85,13 +85,27 @@ pub fn decode_voice_stream(data: &[u8]) -> Result<Vec<i16>, String> {
         .collect())
 }
 
-/// Duration in seconds of a voice-note stream, from decoded sample count.
+/// Duration in seconds of a voice-note stream. Derived from the packet count
+/// (fixed 20 ms frames) instead of a full decode.
 pub fn voice_duration_secs(data: &[u8]) -> Result<f64, String> {
     if !crate::is_opus_stream(data) {
         return Err("not a voice-note stream".to_string());
     }
-    let mono = decode_packets(&data[crate::OPUS_STREAM_MAGIC.len()..])?;
-    Ok(mono.len() as f64 / OPUS_SAMPLE_RATE as f64)
+    let mut packets = 0u64;
+    let mut pos = crate::OPUS_STREAM_MAGIC.len();
+    while pos < data.len() {
+        if data.len() - pos < 2 {
+            return Err("truncated opus length prefix".to_string());
+        }
+        let len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
+        pos += 2;
+        if len == 0 || len > MAX_PACKET_LEN || data.len() - pos < len {
+            return Err("invalid opus packet length".to_string());
+        }
+        pos += len;
+        packets += 1;
+    }
+    Ok(packets as f64 * (OPUS_FRAME_SIZE as f64 / OPUS_SAMPLE_RATE as f64))
 }
 
 /// Constants for recorders: samples needed for `secs` of audio.

@@ -6,9 +6,53 @@
 
 use nostr::nips::nip05::Nip05Address;
 use soshal_common_core::url::{is_private_ip_str, is_valid_media_url, is_valid_relay_url};
+use std::collections::{HashMap, VecDeque};
 
 /// Maximum size of the `.well-known/nostr.json` response body.
 const MAX_NIP05_BODY: usize = 256 * 1024;
+
+type Nip05ClientCache = (HashMap<String, reqwest::Client>, VecDeque<String>);
+
+/// DNS-pinned reqwest clients per domain. DNS pins are per-host (built from
+/// a fresh `lookup_host` each fetch), but the connection pool is reused for
+/// repeat lookups of the same domain — NIP-05 checks commonly batch several
+/// addresses on one domain.
+static NIP05_CLIENTS: std::sync::Mutex<Option<Nip05ClientCache>> = std::sync::Mutex::new(None);
+
+const MAX_NIP05_CLIENTS: usize = 16;
+
+fn client_for(
+    host: &str,
+    pinned_addrs: &[std::net::SocketAddr],
+) -> Result<reqwest::Client, String> {
+    let mut guard = NIP05_CLIENTS.lock().unwrap_or_else(|e| e.into_inner());
+    let (map, order) = guard.get_or_insert_with(|| {
+        (
+            std::collections::HashMap::with_capacity(8),
+            std::collections::VecDeque::new(),
+        )
+    });
+    if let Some(client) = map.get(host) {
+        return Ok(client.clone());
+    }
+    let mut client_builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none());
+    // Pin ALL resolved addresses (per-addr `.resolve()` overwrites each
+    // other, leaving a DNS-rebinding window).
+    client_builder = client_builder.resolve_to_addrs(host, pinned_addrs);
+    let client = client_builder
+        .build()
+        .map_err(|e| format!("http client error: {}", e))?;
+    while map.len() >= MAX_NIP05_CLIENTS {
+        if let Some(oldest) = order.pop_front() {
+            map.remove(&oldest);
+        }
+    }
+    order.push_back(host.to_string());
+    map.insert(host.to_string(), client.clone());
+    Ok(client)
+}
 
 #[derive(Debug, serde::Serialize)]
 pub struct Nip05Result {
@@ -46,15 +90,7 @@ async fn fetch_nostr_json(nip05_address: &str) -> Result<serde_json::Value, Stri
     if pinned_addrs.is_empty() {
         return Err("nip05 domain does not resolve".into());
     }
-    let mut client_builder = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none());
-    // Pin ALL resolved addresses (per-addr `.resolve()` overwrites each
-    // other, leaving a DNS-rebinding window).
-    client_builder = client_builder.resolve_to_addrs(&host, &pinned_addrs);
-    let client = client_builder
-        .build()
-        .map_err(|e| format!("http client error: {}", e))?;
+    let client = client_for(&host, &pinned_addrs)?;
     let resp = client
         .get(url.clone())
         .send()

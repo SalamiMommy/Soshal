@@ -18,8 +18,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// How far back (secs) the initial/restart watermark reaches, to absorb
-/// events that landed between shutdown and reconnect.
-const OVERLAP_FEED_SECS: u64 = 300;
+/// events that landed between shutdown and reconnect. Watermarks flush every
+/// `FLUSH_INTERVAL`, so a feed overlap of a few flushes is ample; DMs are
+/// sparse and slow, so keep their overlap generous.
+const OVERLAP_FEED_SECS: u64 = 120;
+const OVERLAP_DM_SECS: u64 = 300;
 const OVERLAP_META_SECS: u64 = 3600;
 
 /// Flush watermarks to SQLite at most this often.
@@ -27,6 +30,11 @@ const FLUSH_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Poll cadence while idle, so `stop` is honored promptly.
 const IDLE_POLL: Duration = Duration::from_millis(500);
+
+/// After this many consecutive idle polls, the relay stream poll backs off
+/// to `IDLE_POLL_BACKOFF` (a closed stream still pings periodically).
+const IDLE_BACKOFF_AFTER: u32 = 12;
+const IDLE_POLL_BACKOFF: Duration = Duration::from_secs(3);
 
 pub struct SyncConfig {
     pub db_path: String,
@@ -123,13 +131,8 @@ fn ingest_batch(
     }
 }
 
-async fn engine_loop(
-    cfg: SyncConfig,
-    tx: tokio::sync::mpsc::Sender<SyncUpdate>,
-    stop: Arc<AtomicBool>,
-) -> Result<(), String> {
-    let db = Database::open(&cfg.db_path).map_err(|e| format!("open db: {e}"))?;
-
+/// Build the relay client from config (validated URLs + optional SOCKS proxy).
+pub async fn build_client(cfg: &SyncConfig) -> Result<Client, String> {
     let mut relays = Vec::new();
     for url in &cfg.relays {
         let (valid, _) = soshal_common_core::url::is_valid_relay_url(url);
@@ -143,7 +146,6 @@ async fn engine_loop(
     if relays.is_empty() {
         return Err("no usable relay urls".to_string());
     }
-
     let mut builder = Client::builder();
     if let Some(proxy) = &cfg.socks_proxy {
         let addr: std::net::SocketAddr = proxy
@@ -159,6 +161,28 @@ async fn engine_loop(
             .map_err(|e| format!("add relay {target}: {e}"))?;
     }
     let _ = client.connect().await;
+    Ok(client)
+}
+
+async fn engine_loop(
+    cfg: SyncConfig,
+    tx: tokio::sync::mpsc::Sender<SyncUpdate>,
+    stop: Arc<AtomicBool>,
+) -> Result<(), String> {
+    let client = build_client(&cfg).await?;
+    engine_loop_with_client(cfg, tx, stop, client).await
+}
+
+/// The engine pass itself, against an existing relay client. Split out so
+/// short-lived callers (headless background passes) can reuse a warm client
+/// and runtime instead of paying the connect handshake each run.
+pub async fn engine_loop_with_client(
+    cfg: SyncConfig,
+    tx: tokio::sync::mpsc::Sender<SyncUpdate>,
+    stop: Arc<AtomicBool>,
+    client: Client,
+) -> Result<(), String> {
+    let db = Database::open(&cfg.db_path).map_err(|e| format!("open db: {e}"))?;
 
     // Subscribe BEFORE polling so nothing negotiated during setup is missed.
     let mut stream = client.notifications();
@@ -169,7 +193,7 @@ async fn engine_loop(
 
     if let Ok(pk) = PublicKey::from_hex(&cfg.my_pubkey) {
         let since_feed = Timestamp::from(cursors[WM_FEED].saturating_sub(OVERLAP_FEED_SECS));
-        let since_dm = Timestamp::from(cursors[WM_DM].saturating_sub(OVERLAP_FEED_SECS));
+        let since_dm = Timestamp::from(cursors[WM_DM].saturating_sub(OVERLAP_DM_SECS));
         let since_meta = Timestamp::from(cursors[WM_META].saturating_sub(OVERLAP_META_SECS));
         let filters = vec![
             Filter::new().kinds([Kind::TextNote]).since(since_feed),
@@ -210,19 +234,31 @@ async fn engine_loop(
     replay_outbox(&db, &client).await;
 
     let mut last_flush = Instant::now();
+    let mut idle_ticks: u32 = 0;
 
     let mut batch: Vec<Event> = Vec::with_capacity(64);
 
     while !stop.load(Ordering::Relaxed) {
         let mut idle = false;
-        match tokio::time::timeout(IDLE_POLL, stream.next()).await {
+        let poll = if idle_ticks >= IDLE_BACKOFF_AFTER {
+            IDLE_POLL_BACKOFF
+        } else {
+            IDLE_POLL
+        };
+        match tokio::time::timeout(poll, stream.next()).await {
             Ok(Some(ClientNotification::Event { event, .. })) => {
                 batch.push(*event);
             }
             Ok(Some(ClientNotification::Message { .. }))
             | Ok(Some(ClientNotification::Shutdown)) => {}
             Ok(None) => break,
-            Err(_) => idle = true, // idle poll timeout
+            Err(_) => {
+                idle = true;
+                idle_ticks = idle_ticks.saturating_add(1);
+            }
+        }
+        if !idle {
+            idle_ticks = 0;
         }
 
         if (idle && !batch.is_empty()) || batch.len() >= 64 {

@@ -43,9 +43,13 @@ fn discover_by_interest(input: DiscoverByInterestInput) -> Vec<DiscoverResultOut
     let lower_tags: Vec<String> = input
         .tags
         .iter()
-        .filter(|t| t.len() <= MAX_INTEREST_LEN)
+        .filter(|t| !t.is_empty() && t.len() <= MAX_INTEREST_LEN)
         .map(|t| t.to_lowercase())
         .collect();
+    // One Aho-Corasick pass per event instead of a windows() substring scan
+    // per tag (O(content x tags) worst case).
+    let matcher =
+        aho_corasick::AhoCorasick::new(&lower_tags).expect("empty patterns are pre-filtered");
     let mut results = Vec::new();
     for event in &input.events {
         if event.content.len() > 64 * 1024 {
@@ -54,24 +58,19 @@ fn discover_by_interest(input: DiscoverByInterestInput) -> Vec<DiscoverResultOut
         if event.pubkey == input.self_pubkey || self_contacts_set.contains(event.pubkey.as_str()) {
             continue;
         }
-        let matched_tags: Vec<&str> = lower_tags
-            .iter()
-            .filter(|t| {
-                let needle = t.as_bytes();
-                !needle.is_empty()
-                    && event.content.len() >= needle.len()
-                    && event
-                        .content
-                        .as_bytes()
-                        .windows(needle.len())
-                        .any(|w| w.eq_ignore_ascii_case(needle))
-            })
-            .map(|s| s.as_str())
-            .collect();
-        if !matched_tags.is_empty() {
+        let lower_content = event.content.to_lowercase();
+        let mut matched: Vec<&str> = Vec::new();
+        let mut seen: HashSet<usize> = HashSet::new();
+        for m in matcher.find_iter(&lower_content) {
+            let idx = m.pattern().as_usize();
+            if seen.insert(idx) {
+                matched.push(lower_tags[idx].as_str());
+            }
+        }
+        if !matched.is_empty() {
             results.push(DiscoverResultOut {
                 pubkey: event.pubkey.clone(),
-                reason: format!("Shared interests: {}", matched_tags.join(", ")),
+                reason: format!("Shared interests: {}", matched.join(", ")),
                 mutual_count: 0,
                 distance: 2,
             });

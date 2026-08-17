@@ -139,26 +139,33 @@ fn spec_derive_keys(
 }
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 struct CkCache {
     map: HashMap<[u8; KEY_LEN], [u8; KEY_LEN]>,
     queue: VecDeque<[u8; KEY_LEN]>,
 }
 
-static CK_CACHE: Mutex<Option<CkCache>> = Mutex::new(None);
+static CK_CACHE: RwLock<Option<CkCache>> = RwLock::new(None);
 
 /// Derives and caches the NIP-44 v2 conversation key `ck = HMAC-SHA256("nip44-v2", key)`.
 pub fn derive_conversation_key(key: &[u8; KEY_LEN]) -> [u8; KEY_LEN] {
-    let mut guard = CK_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = CK_CACHE.read().unwrap_or_else(|e| e.into_inner());
+    if let Some(cache) = guard.as_ref() {
+        if let Some(&ck) = cache.map.get(key) {
+            return ck;
+        }
+    }
+    drop(guard);
+    let ck = hash::hmac_sha256(NIP44_INFO, key);
+    let mut guard = CK_CACHE.write().unwrap_or_else(|e| e.into_inner());
     let cache = guard.get_or_insert_with(|| CkCache {
         map: HashMap::with_capacity(64),
         queue: VecDeque::with_capacity(64),
     });
-    if let Some(&ck) = cache.map.get(key) {
+    if cache.map.contains_key(key) {
         return ck;
     }
-    let ck = hash::hmac_sha256(NIP44_INFO, key);
     if cache.map.len() >= 128 {
         if let Some(oldest) = cache.queue.pop_front() {
             cache.map.remove(&oldest);
@@ -171,7 +178,7 @@ pub fn derive_conversation_key(key: &[u8; KEY_LEN]) -> [u8; KEY_LEN] {
 
 /// Clear and zeroize all cached NIP-44 v2 conversation keys.
 pub fn clear_conversation_key_cache() {
-    let mut guard = CK_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = CK_CACHE.write().unwrap_or_else(|e| e.into_inner());
     if let Some(mut cache) = guard.take() {
         for (mut k, mut v) in cache.map.drain() {
             k.zeroize();

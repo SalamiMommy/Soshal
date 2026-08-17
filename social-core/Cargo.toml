@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 soshal-common-core = { path = "../common-core" }
 serde = { workspace = true }
+aho-corasick = "1"
 serde_json = { workspace = true }
 soshal-nostr-core = { path = "../nostr-core" }
 

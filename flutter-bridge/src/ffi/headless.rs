@@ -2,15 +2,29 @@
 //!
 //! Executes directly from the background task runner without spinning up
 //! the Flutter Engine or Dart VM.
+//!
+//! WorkManager may fire repeated passes in the same process; each pass
+//! reuses the previous pass's tokio runtime and relay client (when the relay
+//! list is unchanged), so the dominant per-pass cost — runtime spawn +
+//! WebSocket connect handshake — is paid once, not per pass.
 
-use soshal_sync_core::engine::{spawn_engine, SyncConfig};
+use soshal_sync_core::engine::{build_client, engine_loop_with_client, SyncConfig};
 use soshal_sync_core::SyncUpdate;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// How long (secs) a headless sync pass keeps the relay engine alive.
 const SYNC_PASS_SECS: u64 = 20;
+
+struct HeadlessCtx {
+    rt: tokio::runtime::Runtime,
+    /// Joined relay list this client was built for; a changed list invalidates.
+    relays_key: String,
+    client: nostr_sdk::client::Client,
+}
+
+static HEADLESS_CTX: Mutex<Option<HeadlessCtx>> = Mutex::new(None);
 
 #[flutter_rust_bridge::frb(sync, serialize)]
 pub fn background_sync_task(db_path: String) -> Result<i32, String> {
@@ -52,22 +66,53 @@ pub fn background_sync_task(db_path: String) -> Result<i32, String> {
         return Ok(0); // no configured account/relays: nothing to sync
     }
 
-    // Bounded one-shot pass: run the engine, then stop after SYNC_PASS_SECS.
-    // Events are ingested + outbox items replayed by engine_loop.
+    let relays_key = relays.join(",");
+    let mut guard = HEADLESS_CTX.lock().unwrap_or_else(|e| e.into_inner());
+    let stale = match guard.as_ref() {
+        Some(ctx) => ctx.relays_key != relays_key,
+        None => true,
+    };
+    if stale {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name("soshal-headless")
+            .build()
+            .map_err(|e| format!("Failed to build headless runtime: {e}"))?;
+        let cfg = SyncConfig {
+            db_path: db_path.clone(),
+            my_pubkey: pubkey.clone(),
+            relays: relays.clone(),
+            socks_proxy: None,
+        };
+        let client = rt
+            .block_on(build_client(&cfg))
+            .map_err(|e| format!("Failed to build relay client: {e}"))?;
+        *guard = Some(HeadlessCtx {
+            rt,
+            relays_key,
+            client,
+        });
+    }
+    let ctx = guard.as_ref().expect("ctx initialized above");
+
+    // Bounded one-shot pass against the warm client: run the engine, then
+    // stop after SYNC_PASS_SECS. Events are ingested + outbox items replayed
+    // by the engine loop.
     let (tx, _rx) = tokio::sync::mpsc::channel::<SyncUpdate>(16);
     let stop = Arc::new(AtomicBool::new(false));
-    let handle = spawn_engine(
-        SyncConfig {
-            db_path,
-            my_pubkey: pubkey,
-            relays,
-            socks_proxy: None,
-        },
-        tx,
-        stop.clone(),
-    );
-    std::thread::sleep(std::time::Duration::from_secs(SYNC_PASS_SECS));
-    stop.store(true, Ordering::Relaxed);
-    let _ = handle.join();
+    let client = ctx.client.clone();
+    let cfg = SyncConfig {
+        db_path,
+        my_pubkey: pubkey,
+        relays,
+        socks_proxy: None,
+    };
+    ctx.rt.block_on(async {
+        let _ = client.connect().await; // no-op when already connected
+        let handle = tokio::spawn(engine_loop_with_client(cfg, tx, stop.clone(), client));
+        tokio::time::sleep(std::time::Duration::from_secs(SYNC_PASS_SECS)).await;
+        stop.store(true, Ordering::Relaxed);
+        let _ = handle.await;
+    });
     Ok(1)
 }

@@ -8,7 +8,7 @@ use flutter_rust_bridge::frb;
 use nostr_sdk::client::Client;
 use nostr_sdk::prelude::{Filter, Kind};
 use serde::{Deserialize, Serialize};
-use soshal_db_core::repos::search_index::{build_fts_query, SearchIndexRepo};
+use soshal_db_core::repos::search_index::SearchIndexRepo;
 use soshal_search_core::fts5::format_fts5_query;
 
 /// Search result item
@@ -33,7 +33,11 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
     }
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
-        let fts_match = build_fts_query(&fts_query);
+        // `format_fts5_query` already produces a safe, prefix-matching AND
+        // expression ("term* AND term*"). Feeding that through
+        // `build_fts_query` again would re-split on whitespace, destroying
+        // the AND/prefix semantics (and injecting a literal `AND` term).
+        let fts_match = fts_query;
         let out = soshal_db_core::block_on(async {
             let mut stmt = conn
                 .prepare(
@@ -478,6 +482,23 @@ mod tests {
         );
         assert!(search_remove_indexed("p1".to_string()).unwrap());
         assert!(parse_arr(&search_posts("indexed".to_string(), 10).unwrap()).is_empty());
+    }
+
+    #[test]
+    fn test_search_multi_term_keeps_and_and_prefix() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("multi");
+        insert_post("p1", "pk1", "caveman world order", 1, 1000);
+        insert_post("p2", "pk1", "caveman philosophy", 1, 2000);
+        insert_post("p3", "pk1", "world wide web", 1, 3000);
+        let arr = parse_arr(&search_posts("caveman world".to_string(), 10).unwrap());
+        assert_eq!(arr.len(), 1, "json: {arr:?}");
+        assert_eq!(arr[0]["id"], "p1", "both terms ANDed, prefix-matched");
+        let arr = parse_arr(&search_posts("cave wor".to_string(), 10).unwrap());
+        assert_eq!(arr.len(), 1, "json: {arr:?}");
+        assert_eq!(arr[0]["id"], "p1", "prefix terms still ANDed");
     }
 
     #[test]

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
@@ -30,7 +31,7 @@ class _FeedScreenState extends State<FeedScreen> {
   double? _lastScrollPixels;
   DateTime? _lastTelemetryAt;
   FeedService? _feed;
-  Map<String, int> _totals = {};
+  final Map<String, int> _totals = {};
 
   @override
   void initState() {
@@ -77,29 +78,53 @@ class _FeedScreenState extends State<FeedScreen> {
   Future<void> _loadTotals() async {
     final feed = _feed;
     if (!mounted || feed == null) return;
-    final ids = feed.displayPosts.map((p) => p.eventId).toList();
-    if (ids.isEmpty) return;
+    // Fetch only ids we haven't seen yet — refetching the whole page on
+    // every refresh/loadMore re-queries the DB for already-known totals.
+    final missing = feed.displayPosts
+        .where((p) => !_totals.containsKey(p.eventId))
+        .toList();
+    if (missing.isEmpty) return;
+    final ids = missing.map((p) => p.eventId).toList();
     try {
       final totals = await context.read<ZapService>().fetchTotals(ids);
       if (!mounted) return;
-      setState(() => _totals = totals);
+      setState(() => _totals.addAll(totals));
     } catch (e) {
       debugPrint('feed totals: $e');
     }
   }
 
+  Timer? _layoutDebounce;
+
+  /// Feed changed → recompute card extents. Structural changes (new post
+  /// ids) refresh immediately — the next render needs the extents or
+  /// [LayoutService.extentFor] hits null — while bursts of live updates
+  /// (reactions on already-laid-out posts) are debounced.
   void _onFeedChanged() {
     if (!mounted || !context.mounted) return;
-    final size = MediaQuery.sizeOf(context);
-    context.read<LayoutService>().refresh(
-          context.read<FeedService>().posts,
-          screenWidth: size.width.round(),
-          textScale: MediaQuery.textScalerOf(context).scale(14),
-        );
+    final layout = context.read<LayoutService>();
+    final posts = context.read<FeedService>().posts;
+    void doRefresh() {
+      if (!mounted || !context.mounted) return;
+      final size = MediaQuery.sizeOf(context);
+      layout.refresh(
+        posts,
+        screenWidth: size.width.round(),
+        textScale: MediaQuery.textScalerOf(context).scale(14),
+      );
+    }
+
+    _layoutDebounce?.cancel();
+    if (layout.needsLayout(posts)) {
+      doRefresh();
+      return;
+    }
+    _layoutDebounce = Timer(const Duration(milliseconds: 120), doRefresh);
   }
 
   @override
   void dispose() {
+    _layoutDebounce?.cancel();
     _feed?.removeListener(_onFeedChanged);
     _scrollController.dispose();
     super.dispose();

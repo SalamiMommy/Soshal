@@ -100,17 +100,24 @@ pub fn process_freenet_cache_command(
             let app_dir = std::env::temp_dir().join("soshal_media_cache");
             let cached_path = app_dir.join(format!("{}.bin", hash));
             if cached_path.exists() {
-                if let Ok(bytes) = std::fs::read(&cached_path) {
-                    if *chunk_offset < bytes.len() {
-                        let end = (chunk_offset + chunk_length).min(bytes.len());
-                        let slice = &bytes[*chunk_offset..end];
-                        let data_b64 = soshal_crypto_core::base64::base64_encode_bytes(slice);
-                        return Some(FreenetP2PCommand::MediaBlobResponse {
-                            hash: hash.clone(),
-                            offset: *chunk_offset,
-                            total_size: bytes.len(),
-                            data_b64,
-                        });
+                if let Ok(file) = std::fs::File::open(&cached_path) {
+                    let total = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+                    if *chunk_offset < total {
+                        let end = (chunk_offset + chunk_length).min(total);
+                        use std::io::{Read, Seek, SeekFrom};
+                        let mut file = file;
+                        let mut slice = vec![0u8; end.saturating_sub(*chunk_offset)];
+                        if file.seek(SeekFrom::Start(*chunk_offset as u64)).is_ok()
+                            && file.read_exact(&mut slice).is_ok()
+                        {
+                            let data_b64 = soshal_crypto_core::base64::base64_encode_bytes(&slice);
+                            return Some(FreenetP2PCommand::MediaBlobResponse {
+                                hash: hash.clone(),
+                                offset: *chunk_offset,
+                                total_size: total,
+                                data_b64,
+                            });
+                        }
                     }
                 }
             }

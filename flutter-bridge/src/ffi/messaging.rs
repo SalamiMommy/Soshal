@@ -57,21 +57,37 @@ pub(crate) fn conv_id(my_pubkey: &str, other_pubkey: &str) -> String {
 /// writes.
 pub(crate) fn seal_dm_content(content: String) -> Result<String, String> {
     let key = super::signer::signer_at_rest_key()?;
-    let sealed = soshal_crypto_core::at_rest::seal_at_rest(&key, content.as_bytes())?;
+    seal_dm_content_with_key(content, &key)
+}
+
+/// `seal_dm_content` with an already-fetched at-rest key (batch callers).
+fn seal_dm_content_with_key(content: String, key: &[u8; 32]) -> Result<String, String> {
+    let sealed = soshal_crypto_core::at_rest::seal_at_rest(key, content.as_bytes())?;
     Ok(format!("seal1:{sealed}"))
 }
 
-/// Unseal DM content stored via `seal_dm_content`; legacy plaintext rows
-/// (pre-seal) pass through unchanged.
-pub(crate) fn unseal_dm_content(stored: String) -> Result<String, String> {
-    match stored.strip_prefix("seal1:") {
-        Some(sealed) => {
-            let key = super::signer::signer_at_rest_key()?;
-            let plain = soshal_crypto_core::at_rest::open_at_rest(&key, sealed)?;
-            String::from_utf8(plain).map_err(|e| format!("unseal utf8: {e}"))
+/// Unseal DM content with an already-fetched at-rest key (callers should
+/// fetch the key once per batch, not per row). Legacy plaintext rows
+/// (pre-seal) pass through unchanged. The `seal1:` prefix is stripped
+/// repeatedly (bounded): rows written by the old sync path were sealed
+/// twice (`seal1:seal1:…`) and heal on first fetch.
+fn unseal_dm_content_with_key(stored: String, key: &[u8; 32]) -> Result<String, String> {
+    let mut current = stored;
+    for _ in 0..3 {
+        let Some(sealed) = current.strip_prefix("seal1:") else {
+            return Ok(current);
+        };
+        match soshal_crypto_core::at_rest::open_at_rest(key, sealed) {
+            Ok(plain) => match String::from_utf8(plain) {
+                Ok(text) => current = text,
+                Err(_) => return Ok(current),
+            },
+            // Not valid seal payload — either legacy plaintext that happens
+            // to start with the prefix or a corrupt row; pass through.
+            Err(_) => return Ok(current),
         }
-        None => Ok(stored),
     }
+    Ok(current)
 }
 
 /// Fetch the most recent DMs with a peer from the local DB (both directions,
@@ -84,6 +100,7 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
         Err(_) => return Err("signer locked".to_string()).into(),
     };
     let cid = conv_id(&my_pk, &with_pubkey);
+    let key = super::signer::signer_at_rest_key()?;
     super::db::with_db_result(|db| {
         let repo = MessageRepo::new(db);
         let rows = repo.get_conversation(&cid, limit, None)?;
@@ -94,7 +111,7 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
                 Ok(DirectMessage {
                     id: row.id,
                     sender: row.pubkey,
-                    content: unseal_dm_content(row.content)?,
+                    content: unseal_dm_content_with_key(row.content, &key)?,
                     created_at: row.created_at.max(0) as u64,
                     decrypted: false,
                     is_own,
@@ -159,6 +176,47 @@ pub fn messaging_store_dm(
     };
     super::db::with_db_result(|db| {
         MessageRepo::new(db).upsert(&row)?;
+        Ok(true)
+    })
+}
+
+/// Store a batch of received DM rows (live-stream bursts). One FFI crossing
+/// + one transaction-ish upsert loop instead of one call per message.
+#[frb(sync, serialize)]
+pub fn messaging_store_dms(dms_json: String) -> Result<bool, String> {
+    #[derive(serde::Deserialize)]
+    struct DmIn {
+        id: String,
+        sender: String,
+        recipient: String,
+        content: String,
+        created_at: u64,
+    }
+    let dms: Vec<DmIn> =
+        serde_json::from_str(&dms_json).map_err(|e| format!("invalid DMs JSON: {e}"))?;
+    if dms.is_empty() {
+        return Ok(true).into();
+    }
+    let key = super::signer::signer_at_rest_key()?;
+    super::db::with_db_result(|db| {
+        let repo = MessageRepo::new(db);
+        for dm in &dms {
+            let sealed = seal_dm_content_with_key(dm.content.clone(), &key)
+                .map_err(soshal_db_core::error::DbError::Migration)?;
+            let cid = conv_id(&dm.sender, &dm.recipient);
+            let row = soshal_db_core::repos::message::MessageRow {
+                id: dm.id.clone(),
+                conversation_id: cid,
+                pubkey: dm.sender.clone(),
+                content: sealed,
+                created_at: dm.created_at as i64,
+                tags_json: "[]".to_string(),
+                reply_to: None,
+                sync_status: "synced".to_string(),
+                is_deleted: false,
+            };
+            repo.upsert(&row)?;
+        }
         Ok(true)
     })
 }

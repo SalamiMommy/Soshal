@@ -41,7 +41,7 @@ impl GossipSyncBridge {
         };
 
         if let PlumTreeMessage::Gossip { payload_json, .. } = msg {
-            if let Ok(event) = serde_json::from_str::<nostr::event::Event>(&payload_json) {
+            if let Ok(event) = serde_json::from_str::<nostr::event::Event>(payload_json.as_ref()) {
                 let key = event.id.to_hex();
                 let fresh = {
                     let mut seen = SEEN_GOSSIP.lock().unwrap();
@@ -92,7 +92,7 @@ mod tests {
         let messages = vec![
             PlumTreeMessage::Gossip {
                 message_id: "m1".to_string(),
-                payload_json: r#"{"content":"hi"}"#.to_string(),
+                payload_json: r#"{"content":"hi"}"#.into(),
                 round: 3,
             },
             PlumTreeMessage::IHave {
@@ -133,7 +133,7 @@ mod tests {
             .insert("lazy_c".to_string());
         let msg = PlumTreeMessage::Gossip {
             message_id: "m1".to_string(),
-            payload_json: "{}".to_string(),
+            payload_json: "{}".into(),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -160,7 +160,7 @@ mod tests {
         bridge.node.write().await.add_peer("peer_b");
         let msg = PlumTreeMessage::Gossip {
             message_id: "m1".to_string(),
-            payload_json: "{}".to_string(),
+            payload_json: "{}".into(),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -182,7 +182,7 @@ mod tests {
         bridge.node.write().await.add_peer("peer_a");
         let msg = PlumTreeMessage::Gossip {
             message_id: "bad".to_string(),
-            payload_json: "not an event".to_string(),
+            payload_json: "not an event".into(),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -208,7 +208,7 @@ mod tests {
             soshal_test_util::signed_event(&keys, Kind::TextNote, "mesh roundtrip", 1_700_000_000);
         let msg = PlumTreeMessage::Gossip {
             message_id: event.id.to_hex(),
-            payload_json: serde_json::to_string(&event).unwrap(),
+            payload_json: serde_json::to_string(&event).unwrap().into(),
             round: 0,
         };
         let json = serde_json::to_string(&msg).unwrap();

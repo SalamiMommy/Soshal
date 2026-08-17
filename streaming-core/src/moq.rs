@@ -21,7 +21,8 @@ const MAX_GROUP_BYTES: usize = 64 * 1024 * 1024;
 /// Encodes a group into the on-stream binary framing above. The payload is
 /// copied; callers wanting zero-copy can slice `bytes[offset..]` per object.
 pub fn encode_group_stream(group: &MoqGroup) -> Result<Vec<u8>, String> {
-    let mut out = Vec::new();
+    let total_payload: usize = group.objects.iter().map(|o| o.payload.len()).sum();
+    let mut out = Vec::with_capacity(8 + 4 + group.objects.len() * 40 + total_payload);
     encode_group_stream_to_writer(group, &mut out)?;
     Ok(out)
 }

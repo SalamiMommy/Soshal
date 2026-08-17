@@ -429,6 +429,7 @@ pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
         }
     }
     let signed = super::signer::sign_builder(builder)?;
+    soshal_identity_core::wot::invalidate_wot_peers_cache();
     publish_event(signed.clone())?;
     Ok(signed)
 }
@@ -482,6 +483,7 @@ pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
         }
     }
     let signed = super::signer::sign_builder(builder)?;
+    soshal_identity_core::wot::invalidate_wot_peers_cache();
     publish_event(signed)?;
     Ok(true)
 }

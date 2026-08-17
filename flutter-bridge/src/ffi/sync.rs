@@ -62,15 +62,15 @@ fn update_json(update: SyncUpdate) -> Option<String> {
                 Ok(pk) => pk,
                 Err(_) => return None,
             };
-            let sealed = match super::messaging::seal_dm_content(plain.clone()) {
-                Ok(s) => s,
-                Err(_) => return None,
-            };
+            // Plaintext goes to `messaging_store_dm`, which is the single
+            // sealing point (it AES-GCM-seals at rest). Sealing here too
+            // would double-seal (`seal1:seal1:…`), leaving garbage after the
+            // single unseal on fetch.
             if super::messaging::messaging_store_dm(
                 id.clone(),
                 sender.clone(),
                 recipient,
-                sealed,
+                plain.clone(),
                 created_at,
                 "[]".to_string(),
             )
@@ -170,14 +170,20 @@ pub fn sync_running() -> Result<bool, String> {
     Ok(guard.is_some()).into()
 }
 
+/// Lightweight `"id":"<hex>"` extraction — avoids a full JSON parse just to
+/// name the outbox row (the event is parsed once more by the relay send path).
+fn event_id_of(event_json: &str) -> Option<String> {
+    let marker = "\"id\":\"";
+    let start = event_json.find(marker)? + marker.len();
+    let end = event_json[start..].find('"')? + start;
+    Some(event_json[start..end].to_string())
+}
+
 /// Publish a freshly-signed event, or queue it in the persistent outbox when
 /// the relay client is unavailable (offline mode). Returns Ok on success or
 /// successful enqueue; the outbox is drained by the sync engine.
 pub(crate) async fn publish_or_enqueue(action_type: &str, event_json: &str) -> Result<(), String> {
-    let event_id = serde_json::from_str::<serde_json::Value>(event_json)
-        .ok()
-        .and_then(|v| v["id"].as_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| "unknown".to_string());
+    let event_id = event_id_of(event_json).unwrap_or_else(|| "unknown".to_string());
     match super::network::network_publish_event(event_json.to_string()).await {
         Ok(_) => Ok(()),
         Err(pub_err) => {

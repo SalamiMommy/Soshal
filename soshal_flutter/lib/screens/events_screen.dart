@@ -515,7 +515,9 @@ class _EventsScreenState extends State<EventsScreen> {
           dense: true,
           contentPadding: EdgeInsets.zero,
           leading: e.image.isNotEmpty
-              ? CircleAvatar(backgroundImage: NetworkImage(e.image))
+              ? CircleAvatar(
+                  backgroundImage:
+                      ResizeImage.resizeIfNeeded(64, 64, NetworkImage(e.image)))
               : const CircleAvatar(child: Icon(Icons.event, size: 18)),
           title: Text(e.title),
           subtitle: Text(_timeRange(e)),

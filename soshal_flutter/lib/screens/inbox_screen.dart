@@ -820,9 +820,11 @@ class _InboxScreenState extends State<InboxScreen> {
                   else
                     SizedBox(
                       height: 180,
-                      child: ListView(
+                      child: ListView.builder(
                         shrinkWrap: true,
-                        children: partners.map((pk) {
+                        itemCount: partners.length,
+                        itemBuilder: (context, i) {
+                          final pk = partners[i];
                           return CheckboxListTile(
                             dense: true,
                             value: selected.contains(pk),
@@ -837,7 +839,7 @@ class _InboxScreenState extends State<InboxScreen> {
                               });
                             },
                           );
-                        }).toList(),
+                        },
                       ),
                     ),
                   const SizedBox(height: 12),

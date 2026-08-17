@@ -29,7 +29,7 @@ use tokio::sync::mpsc;
 fn gossip_msg(event: &Event) -> soshal_network_core::plumtree::PlumTreeMessage {
     soshal_network_core::plumtree::PlumTreeMessage::Gossip {
         message_id: event.id.to_hex(),
-        payload_json: serde_json::to_string(event).unwrap(),
+        payload_json: serde_json::to_string(event).unwrap().into(),
         round: 0,
     }
 }

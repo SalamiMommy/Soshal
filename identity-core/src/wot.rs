@@ -2,8 +2,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Mutex, OnceLock};
 
 type WotPeersCache = HashMap<(String, u32), HashMap<u32, Vec<String>>>;
+type WotCacheOrder = VecDeque<(String, u32)>;
 
-static WOT_PEERS_CACHE: OnceLock<Mutex<WotPeersCache>> = OnceLock::new();
+static WOT_PEERS_CACHE: OnceLock<Mutex<(WotPeersCache, WotCacheOrder)>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TrustScore {
@@ -194,19 +195,37 @@ pub fn get_wot_peers_by_distance(
     max_distance: u32,
 ) -> HashMap<u32, Vec<String>> {
     if users.len() > 64 {
-        let cache = WOT_PEERS_CACHE.get_or_init(|| Mutex::new(HashMap::with_capacity(16)));
+        let cache = WOT_PEERS_CACHE
+            .get_or_init(|| Mutex::new((HashMap::with_capacity(16), VecDeque::new())));
         let mut guard = cache.lock().unwrap();
-        if let Some(cached) = guard.get(&(self_pubkey.to_string(), max_distance)) {
+        if let Some(cached) = guard.0.get(&(self_pubkey.to_string(), max_distance)) {
             return cached.clone();
         }
         let result = partition_wot_peers(self_pubkey, users, max_distance);
-        if guard.len() >= 16 {
-            guard.clear();
+        let key = (self_pubkey.to_string(), max_distance);
+        // FIFO eviction of the oldest entry instead of clearing the whole
+        // cache on overflow (the old clear thrashed on 17th entry).
+        while guard.0.len() >= 16 {
+            if let Some(oldest) = guard.1.pop_front() {
+                guard.0.remove(&oldest);
+            }
         }
-        guard.insert((self_pubkey.to_string(), max_distance), result.clone());
+        guard.1.push_back(key.clone());
+        guard.0.insert(key, result.clone());
         return result;
     }
     partition_wot_peers(self_pubkey, users, max_distance)
+}
+
+/// Drop all cached WoT partitions. Call whenever the contact graph mutates
+/// (follow/unfollow) so stale distance partitions are never served.
+pub fn invalidate_wot_peers_cache() {
+    if let Some(cache) = WOT_PEERS_CACHE.get() {
+        if let Ok(mut guard) = cache.lock() {
+            guard.0.clear();
+            guard.1.clear();
+        }
+    }
 }
 
 fn partition_wot_peers(

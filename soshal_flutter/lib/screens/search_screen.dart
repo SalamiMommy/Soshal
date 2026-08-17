@@ -193,27 +193,32 @@ class _SearchScreenState extends State<SearchScreen> {
             );
           }
           if (api.results.isEmpty && q.isEmpty && _mode == 'global') {
-            return ListView(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text('Trending hashtags',
-                      style: Theme.of(context).textTheme.titleMedium),
+            return CustomScrollView(
+              slivers: [
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('Trending hashtags',
+                        style: TextStyle(fontSize: 16)),
+                  ),
                 ),
                 FutureBuilder<List<Map<String, dynamic>>>(
                   future: _trendingHashtagsFuture,
                   builder: (context, snapshot) {
                     final tags = snapshot.data ?? [];
                     if (tags.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('Nothing trending yet'),
+                      return const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('Nothing trending yet'),
+                        ),
                       );
                     }
-                    return Column(
-                      children: [
-                        for (final tag in tags)
-                          ListTile(
+                    return SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final tag = tags[index];
+                          return ListTile(
                             leading: const Icon(Icons.trending_up),
                             title: Text('#${tag['tag']}'),
                             onTap: () {
@@ -223,34 +228,41 @@ class _SearchScreenState extends State<SearchScreen> {
                               _mode = 'posts';
                               _runSearch();
                             },
-                          ),
-                      ],
+                          );
+                        },
+                        childCount: tags.length,
+                      ),
                     );
                   },
                 ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text('Trending profiles',
-                      style: Theme.of(context).textTheme.titleMedium),
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('Trending profiles',
+                        style: TextStyle(fontSize: 16)),
+                  ),
                 ),
                 FutureBuilder<List<SearchResultItem>>(
                   future: _trendingProfilesFuture,
                   builder: (context, snapshot) {
                     final profiles = snapshot.data ?? [];
                     if (profiles.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('Nothing yet'),
+                      return const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('Nothing yet'),
+                        ),
                       );
                     }
-                    return Column(
-                      children: [
-                        for (final p in profiles)
-                          ListTile(
+                    return SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final p = profiles[index];
+                          return ListTile(
                             leading: const Icon(Icons.person),
                             title: Text(p.title,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
                             subtitle: Text(p.description,
                                 maxLines: 2, overflow: TextOverflow.ellipsis),
                             onTap: () {
@@ -259,8 +271,10 @@ class _SearchScreenState extends State<SearchScreen> {
                                 context.push('/profile/$key');
                               }
                             },
-                          ),
-                      ],
+                          );
+                        },
+                        childCount: profiles.length,
+                      ),
                     );
                   },
                 ),

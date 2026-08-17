@@ -8,6 +8,11 @@ const POST_SELECT_BY_ID: &str = "SELECT id, pubkey, content, kind, created_at, t
 const POST_SELECT_BY_PUBKEY: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3";
 const POST_SELECT_REPLIES: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 ORDER BY created_at ASC";
 const POST_SELECT_PAGED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2";
+/// Slim feed variant: only the columns the feed surface consumes. Feed pages
+/// are the hottest read path; the 17-column row mapping wastes decode work
+/// on sig/mention/freenet/scheduling columns the UI never sees.
+const POST_SELECT_PAGED_META: &str =
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_SCHEDULED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC";
 
 pub struct PostRepo<'a> {
@@ -238,6 +243,32 @@ impl<'a> PostRepo<'a> {
         )
     }
 
+    /// Slim paged fetch for feed rendering: id, pubkey, content, created_at,
+    /// tags_json only (see `POST_SELECT_PAGED_META`).
+    pub fn get_paged_meta(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<PostMetaRow>, crate::error::DbError> {
+        let limit = crate::repos::clamp_limit(limit);
+        let offset = offset.max(0);
+        let conn = self.db.conn()?;
+        crate::query::query(
+            &conn,
+            POST_SELECT_PAGED_META,
+            params![limit, offset],
+            |row| {
+                Ok(PostMetaRow {
+                    id: row.get(0)?,
+                    pubkey: row.get(1)?,
+                    content: row.get(2)?,
+                    created_at: row.get(3)?,
+                    tags_json: row.get(4)?,
+                })
+            },
+        )
+    }
+
     pub fn get_scheduled(&self, pubkey: &str) -> Result<Vec<PostRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
         crate::query::query(&conn, POST_SELECT_SCHEDULED, params![pubkey], Self::map_row)
@@ -285,4 +316,13 @@ pub struct PostRow {
     pub scheduled_at: Option<i64>,
     pub freenet_key: Option<String>,
     pub is_freenet_native: bool,
+}
+
+/// Slim feed row: the five columns the feed FFI surface consumes.
+pub struct PostMetaRow {
+    pub id: String,
+    pub pubkey: String,
+    pub content: String,
+    pub created_at: i64,
+    pub tags_json: String,
 }

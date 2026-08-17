@@ -36,15 +36,15 @@ impl WasmComponentHost {
     /// Execute a FeedRanker Wasm component to dynamically sort a list of post JSONs.
     pub fn rank_posts(
         plugin: &WasmComponentPlugin,
-        mut posts_json: Vec<String>,
+        _posts_json: Vec<String>,
     ) -> Result<Vec<String>, String> {
         if plugin.component_type != WasmComponentType::FeedRanker {
             return Err("invalid plugin component type for feed ranking".to_string());
         }
 
-        // WASI 0.2 component sandbox simulation / execution
-        posts_json.sort_by_key(|p| std::cmp::Reverse(p.len()));
-        Ok(posts_json)
+        // Honest gate: wasmtime host is on the roadmap; no simulated ranking
+        // is performed (previously a pointless len-key sort pretending to rank).
+        Err("wasm feed ranking unavailable (roadmap)".to_string())
     }
 
     /// Execute a ContentFilter Wasm component to evaluate text.
@@ -93,7 +93,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rank_posts_sorts_longest_first() {
+    fn test_rank_posts_wasm_host_unavailable() {
         let plugin = WasmComponentPlugin {
             plugin_id: "ranker_01".to_string(),
             name: "Feed Ranker Wasm".to_string(),
@@ -102,15 +102,14 @@ mod tests {
             binary_bytes: vec![0x00, 0x61, 0x73, 0x6d],
         };
 
-        let ranked = WasmComponentHost::rank_posts(
+        let err = WasmComponentHost::rank_posts(
             &plugin,
             vec!["a".to_string(), "ccc".to_string(), "bb".to_string()],
         )
-        .unwrap();
-        assert_eq!(
-            ranked,
-            vec!["ccc".to_string(), "bb".to_string(), "a".to_string()]
-        );
+        .unwrap_err();
+        assert!(err.contains("unavailable"), "err: {err}");
+        let err = WasmComponentHost::rank_posts(&plugin, vec![]).unwrap_err();
+        assert!(err.contains("unavailable"), "err: {err}");
     }
 
     #[test]
@@ -125,19 +124,5 @@ mod tests {
 
         let err = WasmComponentHost::rank_posts(&plugin, vec!["post".to_string()]).unwrap_err();
         assert_eq!(err, "invalid plugin component type for feed ranking");
-    }
-
-    #[test]
-    fn test_rank_posts_empty_ok() {
-        let plugin = WasmComponentPlugin {
-            plugin_id: "ranker_03".to_string(),
-            name: "Feed Ranker Wasm".to_string(),
-            component_type: WasmComponentType::FeedRanker,
-            author_pubkey: "npub_author".to_string(),
-            binary_bytes: vec![0x00, 0x61, 0x73, 0x6d],
-        };
-
-        let ranked = WasmComponentHost::rank_posts(&plugin, vec![]).unwrap();
-        assert!(ranked.is_empty());
     }
 }

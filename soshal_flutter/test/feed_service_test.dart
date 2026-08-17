@@ -31,6 +31,10 @@ void main() {
 
       expect(feed.isLoading, false);
       final result = await feed.fetchFeed();
+      // One microtask tick: decode now yields to the event loop (background
+      // isolate in prod, main-thread fallback under test), so the deferred
+      // notify lands after the awaited call.
+      await Future<void>.delayed(Duration.zero);
       expect(feed.isLoading, false);
       expect(result.length, 1);
       expect(feed.posts.length, 1);

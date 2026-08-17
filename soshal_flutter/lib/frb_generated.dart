@@ -74,7 +74,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -117506027;
+  int get rustContentHash => -1092888805;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -721,6 +721,8 @@ abstract class RustLibApi extends BaseApi {
       required String content,
       required BigInt createdAt,
       required String tagsJson});
+
+  bool crateFfiMessagingMessagingStoreDms({required String dmsJson});
 
   List<String> crateFfiMinisMinisFetch();
 
@@ -6945,6 +6947,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "createdAt",
           "tagsJson"
         ],
+      );
+
+  @override
+  bool crateFfiMessagingMessagingStoreDms({required String dmsJson}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(dmsJson, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__messaging__messaging_store_dms(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMessagingMessagingStoreDmsConstMeta,
+      argValues: [dmsJson],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMessagingMessagingStoreDmsConstMeta =>
+      const TaskConstMeta(
+        debugName: "messaging_store_dms",
+        argNames: ["dmsJson"],
       );
 
   @override

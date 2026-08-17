@@ -13,6 +13,7 @@ soshal-common-core = { path = "../common-core" }
 soshal-crypto-core = { path = "../crypto-core" }
 soshal-db-core = { path = "../db-core" }
 soshal-network-core = { path = "../network-core" }
+soshal-nostr-core = { path = "../nostr-core" }
 libsql = { workspace = true }
 rustls = { version = "0.23", features = ["ring"] }
 sha2 = { workspace = true }

@@ -64,9 +64,16 @@ class ChatrandomService extends ChangeNotifier with LastErrorMixin {
         limit: BigInt.from(limit),
       );
       final decoded = jsonDecode(json);
-      _peers = (decoded as List<dynamic>)
+      final peers = (decoded as List<dynamic>)
           .map((e) => ChatrandomPeer.fromJson(e as Map<String, dynamic>))
           .toList();
+      // Delta gate: the chatrandom screen polls every 5 s; don't rebuild
+      // subscribers while the matched-peer set is unchanged.
+      if (_samePeers(peers)) {
+        clearLastError();
+        return _peers;
+      }
+      _peers = peers;
       clearLastError();
       notifyListeners();
       return _peers;
@@ -75,6 +82,18 @@ class ChatrandomService extends ChangeNotifier with LastErrorMixin {
       notifyListeners();
       rethrow;
     }
+  }
+/// Content equality gate for the poll loop (id + pubkey + content per row).
+  bool _samePeers(List<ChatrandomPeer> next) {
+    if (next.length != _peers.length) return false;
+    for (var i = 0; i < next.length; i++) {
+      if (next[i].id != _peers[i].id ||
+          next[i].pubkey != _peers[i].pubkey ||
+          next[i].content != _peers[i].content) {
+        return false;
+      }
+    }
+    return true;
   }
 }
 

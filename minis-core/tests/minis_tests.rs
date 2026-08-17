@@ -222,15 +222,13 @@ fn wasm_plugin(kind: WasmComponentType, id: &str) -> WasmComponentPlugin {
 }
 
 #[test]
-fn wasm_rank_posts_sorts_longest_first() {
+fn wasm_rank_posts_wasm_host_unavailable() {
     let plugin = wasm_plugin(WasmComponentType::FeedRanker, "ranker_1");
-    let ranked =
-        WasmComponentHost::rank_posts(&plugin, vec!["a".into(), "ccc".into(), "bb".into()])
-            .unwrap();
-    assert_eq!(ranked, vec!["ccc", "bb", "a"]);
-    assert!(WasmComponentHost::rank_posts(&plugin, vec![])
-        .unwrap()
-        .is_empty());
+    let err = WasmComponentHost::rank_posts(&plugin, vec!["a".into(), "ccc".into(), "bb".into()])
+        .unwrap_err();
+    assert!(err.contains("unavailable"), "err: {err}");
+    let err = WasmComponentHost::rank_posts(&plugin, vec![]).unwrap_err();
+    assert!(err.contains("unavailable"), "err: {err}");
 }
 
 #[test]

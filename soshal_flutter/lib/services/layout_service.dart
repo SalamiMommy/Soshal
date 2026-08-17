@@ -126,6 +126,11 @@ class LayoutService extends ChangeNotifier {
     return null;
   }
 
+  /// True when any [posts] card lacks a cached extent — a structural change
+  /// (new ids) that needs a [refresh] before the next render.
+  bool needsLayout(List<FeedPost> posts) =>
+      posts.any((p) => !_heights.containsKey(p.eventId));
+
   /// For ListView.itemExtentBuilder — index beyond posts maps to null
   /// (loading footer sizes naturally).
   double? extentFor(int index, List<FeedPost> posts) {
