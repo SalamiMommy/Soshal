@@ -51,11 +51,14 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     final api = context.read<BookmarksService>();
     final rows = api.bookmarks;
     setState(() => _loadingPosts = rows.isNotEmpty);
-    for (final b in rows) {
-      _posts[b.eventId] = await api.resolvePost(b.eventId);
-      if (mounted) setState(() {});
+    final resolved =
+        await api.resolvePosts(rows.map((b) => b.eventId).toList());
+    if (mounted) {
+      setState(() {
+        _posts.addAll(resolved);
+        _loadingPosts = false;
+      });
     }
-    if (mounted) setState(() => _loadingPosts = false);
   }
 
   Future<void> _delete(BookmarkRow b) async {

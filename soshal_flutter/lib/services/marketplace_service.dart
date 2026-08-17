@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/offthread.dart';
 import 'error_log.dart';
 
 /// Marketplace Service
@@ -506,10 +507,7 @@ class MarketplaceService extends ChangeNotifier
   Future<List<ListingInfo>> _decode(String Function() call) async {
     try {
       final json = call();
-      final decoded = jsonDecode(json);
-      final parsed = (decoded as List<dynamic>)
-          .map((e) => ListingInfo.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final parsed = await runOffThread(() => _parseListings(json));
       _listings = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
       clearLastError();
       notifyDeferred();
@@ -524,10 +522,7 @@ class MarketplaceService extends ChangeNotifier
   Future<List<OrderInfo>> _decodeOrders(String Function() call) async {
     try {
       final json = call();
-      final decoded = jsonDecode(json);
-      _orders = (decoded as List<dynamic>)
-          .map((e) => OrderInfo.fromJson(e as Map<String, dynamic>))
-          .toList();
+      _orders = await runOffThread(() => _parseOrders(json));
       clearLastError();
       notifyDeferred();
       return _orders;
@@ -544,10 +539,7 @@ class MarketplaceService extends ChangeNotifier
       final json = RustLib.instance.api
           .crateFfiDbDbGetEscrowsByParticipant(pubkey: pubkey);
       clearLastError();
-      final decoded = jsonDecode(json);
-      return (decoded as List<dynamic>)
-          .map((e) => EscrowInfo.fromJson(e as Map<String, dynamic>))
-          .toList();
+      return await runOffThread(() => _parseEscrows(json));
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();
@@ -689,4 +681,31 @@ class EscrowInfo {
   }
 
   bool get isTerminal => status == 'completed' || status == 'refunded';
+}
+
+/// JSON → [ListingInfo] list, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<ListingInfo> _parseListings(String json) {
+  final decoded = jsonDecode(json);
+  return (decoded as List<dynamic>)
+      .map((e) => ListingInfo.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+/// JSON → [OrderInfo] list, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<OrderInfo> _parseOrders(String json) {
+  final decoded = jsonDecode(json);
+  return (decoded as List<dynamic>)
+      .map((e) => OrderInfo.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+/// JSON → [EscrowInfo] list, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<EscrowInfo> _parseEscrows(String json) {
+  final decoded = jsonDecode(json);
+  return (decoded as List<dynamic>)
+      .map((e) => EscrowInfo.fromJson(e as Map<String, dynamic>))
+      .toList();
 }

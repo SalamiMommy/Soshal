@@ -393,6 +393,7 @@ pub(crate) fn upsert_post_row(
         scheduled_at: None,
         freenet_key: None,
         is_freenet_native: false,
+        rsvp_event_id: None,
     };
     with_db_result(|db| {
         soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;

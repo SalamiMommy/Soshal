@@ -46,8 +46,8 @@ impl<'a> ReminderRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "INSERT OR REPLACE INTO reminders (id, event_id, title, start_time, minutes_before, created_at)
-             VALUES (?1,?2,?3,?4,?5,?6)",
+            "INSERT OR REPLACE INTO reminders (id, event_id, title, start_time, minutes_before, created_at, trigger_at)
+             VALUES (?1,?2,?3,?4,?5,?6, ?4 - ?5 * 60)",
             params![r.id.as_str(), r.event_id.as_str(), r.title.as_str(), r.start_time, r.minutes_before, r.created_at],
         )?;
         Ok(())
@@ -73,9 +73,9 @@ impl<'a> ReminderRepo<'a> {
             &conn,
             "SELECT id, event_id, title, start_time, minutes_before, created_at
              FROM reminders
-             WHERE (start_time - minutes_before * 60) >= ?1
-               AND (start_time - minutes_before * 60) <= ?2
-             ORDER BY start_time ASC",
+             WHERE trigger_at >= ?1
+               AND trigger_at <= ?2
+             ORDER BY trigger_at ASC",
             params![window_start, window_end],
             |row| {
                 Ok(ReminderRow {

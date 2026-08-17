@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/offthread.dart';
 import 'error_log.dart';
 
 /// Events Service
@@ -219,10 +220,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   Future<List<SoshalEvent>> _decode(String Function() call) async {
     try {
       final json = call();
-      final decoded = jsonDecode(json);
-      final parsed = (decoded as List<dynamic>)
-          .map((e) => SoshalEvent.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final parsed = await runOffThread(() => _parseEvents(json));
       _events = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
       clearLastError();
       notifyDeferred();
@@ -256,26 +254,24 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   /// Score loaded events against my interests via their hashtags.
   Future<void> scoreEvents(List<String> myInterests) async {
     final out = <String, double>{};
-    for (var i = 0; i < _events.length; i += 4) {
-      final batch = _events.skip(i).take(4);
-      final results = await Future.wait(batch.map((e) async {
-        try {
-          final tags = RustLib.instance.api.crateFfiUtilUtilExtractHashtags(
-            text: '${e.title} ${e.description}',
-          );
-          if (tags.isEmpty) return (e.id, 0.0);
-          final res = await interestScore(
-            myInterestsJson: jsonEncode(myInterests),
-            peerInterestsJson: jsonEncode(tags),
-          );
-          return (e.id, (res['score'] as num?)?.toDouble() ?? 0.0);
-        } catch (_) {
-          return (e.id, 0.0);
-        }
-      }));
-      for (final (id, score) in results) {
-        out[id] = score;
+    final payload = _events
+        .map((e) => {
+              'id': e.id,
+              'title': e.title,
+              'description': e.description,
+            })
+        .toList();
+    try {
+      final json = RustLib.instance.api.crateFfiEventsEventsScoreEvents(
+        eventsJson: jsonEncode(payload),
+        myInterestsJson: jsonEncode(myInterests),
+      );
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        out[entry.key] = (entry.value as num?)?.toDouble() ?? 0.0;
       }
+    } catch (e, st) {
+      setLastError(e, st);
     }
     _scores = out;
     notifyDeferred();
@@ -365,4 +361,14 @@ class SoshalEvent {
       createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
     );
   }
+}
+
+
+/// JSON → [SoshalEvent] list, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<SoshalEvent> _parseEvents(String json) {
+  final decoded = jsonDecode(json);
+  return (decoded as List<dynamic>)
+      .map((e) => SoshalEvent.fromJson(e as Map<String, dynamic>))
+      .toList();
 }

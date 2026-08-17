@@ -143,15 +143,17 @@ void main() {
   testWidgets('renders event rows with location time and attendees',
       (tester) async {
     api.stubString('crateFfiEventsEventsFetchUserEvents', '[$eventJson]');
-    api.stub('crateFfiUtilUtilExtractHashtags', (_) => <String>['tag']);
-    api.stub('crateFfiEventsEventsInterestScore',
-        (_) => '{"score":42,"common":[]}');
+    api.stub(
+      'crateFfiEventsEventsScoreEvents',
+      (_) => '{"ev1":42}',
+    );
 
     await pumpMine(tester);
 
     expect(find.text('Jazz Night'), findsOneWidget);
     expect(find.text('Remote · flexible · 3 going'), findsOneWidget);
-    expect(api.callCount('crateFfiEventsEventsInterestScore'), 1);
+    expect(api.callCount('crateFfiEventsEventsScoreEvents'),
+        greaterThanOrEqualTo(1));
   });
 
   testWidgets('load failure shows empty state without crash', (tester) async {

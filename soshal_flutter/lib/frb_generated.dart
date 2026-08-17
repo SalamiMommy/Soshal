@@ -74,7 +74,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1092888805;
+  int get rustContentHash => 588088492;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -122,6 +122,8 @@ abstract class RustLibApi extends BaseApi {
       required PlatformInt64 offset});
 
   String crateFfiBookmarksBookmarksResolvePost({required String eventId});
+
+  String crateFfiBookmarksBookmarksResolvePosts({required String idsJson});
 
   String crateFfiBookmarksBookmarksSave(
       {required String pubkey, required String eventId});
@@ -386,6 +388,9 @@ abstract class RustLibApi extends BaseApi {
       {required String eventId,
       required String userPubkey,
       required String rsvpStatus});
+
+  String crateFfiEventsEventsScoreEvents(
+      {required String eventsJson, required String myInterestsJson});
 
   String crateFfiFeedFeedAggregateChatReactions({required String input});
 
@@ -1728,6 +1733,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "bookmarks_resolve_post",
         argNames: ["eventId"],
+      );
+
+  @override
+  String crateFfiBookmarksBookmarksResolvePosts({required String idsJson}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(idsJson, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__bookmarks__bookmarks_resolve_posts(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiBookmarksBookmarksResolvePostsConstMeta,
+      argValues: [idsJson],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiBookmarksBookmarksResolvePostsConstMeta =>
+      const TaskConstMeta(
+        debugName: "bookmarks_resolve_posts",
+        argNames: ["idsJson"],
       );
 
   @override
@@ -4059,6 +4090,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiEventsEventsRsvpConstMeta => const TaskConstMeta(
         debugName: "events_rsvp",
         argNames: ["eventId", "userPubkey", "rsvpStatus"],
+      );
+
+  @override
+  String crateFfiEventsEventsScoreEvents(
+      {required String eventsJson, required String myInterestsJson}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(eventsJson, serializer);
+        sse_encode_String(myInterestsJson, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__events__events_score_events(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiEventsEventsScoreEventsConstMeta,
+      argValues: [eventsJson, myInterestsJson],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiEventsEventsScoreEventsConstMeta =>
+      const TaskConstMeta(
+        debugName: "events_score_events",
+        argNames: ["eventsJson", "myInterestsJson"],
       );
 
   @override

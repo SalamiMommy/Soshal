@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/offthread.dart';
 import 'error_log.dart';
 
 /// Dating Service
@@ -319,7 +320,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   Future<List<DatingCard>> _decode(String Function() call) async {
     try {
       final json = call();
-      _cards = _parseCards(json);
+      _cards = await runOffThread(() => _parseCards(json));
       clearLastError();
       notifyDeferred();
       return _cards;
@@ -330,11 +331,8 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  static List<DatingCard> _parseCards(String json) =>
-      (jsonDecode(json) as List<dynamic>)
-          .map((e) => DatingCard.fromJson(e as Map<String, dynamic>))
-          .toList();
 }
+
 
 /// A dating card as surfaced by the bridge.
 class DatingCard {
@@ -409,3 +407,10 @@ class DatingStats {
     );
   }
 }
+
+/// JSON → [DatingCard] list, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<DatingCard> _parseCards(String json) =>
+    (jsonDecode(json) as List<dynamic>)
+        .map((e) => DatingCard.fromJson(e as Map<String, dynamic>))
+        .toList();

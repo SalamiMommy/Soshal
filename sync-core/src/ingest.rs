@@ -8,6 +8,7 @@ use crate::{SyncUpdate, WM_DM, WM_FEED, WM_META};
 use nostr::event::{Event, Kind};
 use nostr::key::PublicKey;
 use nostr::nips::nip19::ToBech32;
+use soshal_common_core::consts::KIND_EVENT_RSVP;
 use soshal_db_core::error::DbError;
 use soshal_db_core::repos::bookmark::{BookmarkRepo, BookmarkRow};
 use soshal_db_core::repos::post::{PostRepo, PostRow};
@@ -97,6 +98,11 @@ fn post_row(event: &Event) -> Option<PostRow> {
         scheduled_at: None,
         freenet_key: freenet_key.clone(),
         is_freenet_native: freenet_key.is_some(),
+        rsvp_event_id: if event.kind.as_u16() == KIND_EVENT_RSVP {
+            es.first().cloned()
+        } else {
+            None
+        },
     })
 }
 

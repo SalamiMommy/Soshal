@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/offthread.dart';
 import 'error_log.dart';
 
 /// Groups Service
@@ -124,10 +125,8 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         limit: limit,
         offset: offset,
       );
-      final decoded = jsonDecode(json);
-      final parsed = (decoded as List<dynamic>)
-          .map((e) => GroupMessage.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final parsed =
+          await runOffThread(() => _parseGroupMessages(json));
       _messages = parsed.length > 200 ? parsed.sublist(0, 200) : parsed;
       clearLastError();
       notifyDeferred();
@@ -486,4 +485,13 @@ String groupRoleColor(String color) {
   final trimmed = color.trim();
   final hex = RegExp(r'^#([0-9a-fA-F]{6})$');
   return hex.hasMatch(trimmed) ? trimmed : '#6b7280';
+}
+
+/// JSON → [GroupMessage] list, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<GroupMessage> _parseGroupMessages(String json) {
+  final decoded = jsonDecode(json);
+  return (decoded as List<dynamic>)
+      .map((e) => GroupMessage.fromJson(e as Map<String, dynamic>))
+      .toList();
 }

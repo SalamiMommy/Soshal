@@ -125,15 +125,16 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
 }
 
 /// Fetch all conversation partner pubkeys for the active account, most
-/// recent first.
+/// recent first. Reads the maintained `conversations` table (v011) instead
+/// of scanning + grouping every message row.
 #[frb(sync, serialize)]
 pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, String> {
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let cids: Vec<String> = soshal_db_core::query::query(
             &conn,
-            "SELECT conversation_id FROM messages WHERE conversation_id LIKE 'conv:%' \
-             GROUP BY conversation_id ORDER BY MAX(created_at) DESC",
+            "SELECT conversation_id FROM conversations WHERE conversation_id LIKE 'conv:%' \
+             ORDER BY last_message_at DESC LIMIT 100",
             (),
             |r| r.get(0),
         )?;
@@ -200,23 +201,27 @@ pub fn messaging_store_dms(dms_json: String) -> Result<bool, String> {
     let key = super::signer::signer_at_rest_key()?;
     super::db::with_db_result(|db| {
         let repo = MessageRepo::new(db);
-        for dm in &dms {
-            let sealed = seal_dm_content_with_key(dm.content.clone(), &key)
-                .map_err(soshal_db_core::error::DbError::Migration)?;
-            let cid = conv_id(&dm.sender, &dm.recipient);
-            let row = soshal_db_core::repos::message::MessageRow {
-                id: dm.id.clone(),
-                conversation_id: cid,
-                pubkey: dm.sender.clone(),
-                content: sealed,
-                created_at: dm.created_at as i64,
-                tags_json: "[]".to_string(),
-                reply_to: None,
-                sync_status: "synced".to_string(),
-                is_deleted: false,
-            };
-            repo.upsert(&row)?;
-        }
+        let rows: Vec<soshal_db_core::repos::message::MessageRow> = dms
+            .iter()
+            .map(|dm| {
+                let sealed = seal_dm_content_with_key(dm.content.clone(), &key)
+                    .map_err(soshal_db_core::error::DbError::Migration)?;
+                let cid = conv_id(&dm.sender, &dm.recipient);
+                Ok(soshal_db_core::repos::message::MessageRow {
+                    id: dm.id.clone(),
+                    conversation_id: cid,
+                    pubkey: dm.sender.clone(),
+                    content: sealed,
+                    created_at: dm.created_at as i64,
+                    tags_json: "[]".to_string(),
+                    reply_to: None,
+                    sync_status: "synced".to_string(),
+                    is_deleted: false,
+                })
+            })
+            .collect::<Result<Vec<_>, soshal_db_core::error::DbError>>()?;
+        // One transaction for the whole burst instead of N autocommits.
+        repo.upsert_batch(&rows)?;
         Ok(true)
     })
 }

@@ -143,33 +143,40 @@ pub fn mark_outbox_item_failed(
 
 pub fn get_outbox_summary(db: &Database) -> Result<OutboxSummary, String> {
     let conn = db.conn().map_err(|e| e.to_string())?;
-    let pending: i64 = query_first(
+    let row = query_first(
         &conn,
-        "SELECT COUNT(*) FROM outbox_queue WHERE status = 'pending'",
+        "SELECT COUNT(*), COALESCE(SUM(status = 'pending'), 0), COALESCE(SUM(status = 'failed'), 0) FROM outbox_queue",
         (),
-        |r| r.get(0),
+        |r| Ok((r.get(1)?, r.get(2)?, r.get(0)?)),
     )
-    .unwrap_or(None)
-    .unwrap_or(0);
-
-    let failed: i64 = query_first(
-        &conn,
-        "SELECT COUNT(*) FROM outbox_queue WHERE status = 'failed'",
-        (),
-        |r| r.get(0),
-    )
-    .unwrap_or(None)
-    .unwrap_or(0);
-
-    let total: i64 = query_first(&conn, "SELECT COUNT(*) FROM outbox_queue", (), |r| r.get(0))
-        .unwrap_or(None)
-        .unwrap_or(0);
+    .map_err(|e| e.to_string())?;
+    let (pending, failed, total) = row.unwrap_or((0, 0, 0));
 
     Ok(OutboxSummary {
-        pending_count: pending as u32,
-        failed_count: failed as u32,
+        pending_count: pending.max(0) as u32,
+        failed_count: failed.max(0) as u32,
         total_count: total as u32,
     })
+}
+
+/// Mark many outbox items completed in a single transaction (one round-trip
+/// per item but a single BEGIN/COMMIT instead of N autocommits).
+pub fn mark_outbox_items_completed(db: &Database, ids: &[String]) -> Result<(), String> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let conn = db.conn().map_err(|e| e.to_string())?;
+    soshal_db_core::query::with_tx(&conn, |tx| async move {
+        for id in ids {
+            tx.execute(
+                "UPDATE outbox_queue SET status = 'completed' WHERE id = ?1",
+                params![id.as_str()],
+            )
+            .await?;
+        }
+        Ok(())
+    })
+    .map_err(|e| format!("batch outbox complete: {e}"))
 }
 
 #[cfg(test)]

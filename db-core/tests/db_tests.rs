@@ -259,6 +259,7 @@ fn insert_and_read_post() {
         scheduled_at: None,
         freenet_key: None,
         is_freenet_native: true,
+        rsvp_event_id: None,
     };
     repo.upsert(&post).unwrap();
     let found = repo.get_by_id("test1").unwrap().unwrap();
@@ -400,6 +401,7 @@ fn test_upsert_batch() {
             scheduled_at: None,
             freenet_key: None,
             is_freenet_native: true,
+            rsvp_event_id: None,
         },
         PostRow {
             id: "p2".into(),
@@ -419,6 +421,7 @@ fn test_upsert_batch() {
             scheduled_at: None,
             freenet_key: None,
             is_freenet_native: true,
+            rsvp_event_id: None,
         },
     ];
     repo.upsert_batch(&posts).unwrap();
@@ -731,6 +734,7 @@ fn test_search_index_crud() {
         scheduled_at: None,
         freenet_key: None,
         is_freenet_native: true,
+        rsvp_event_id: None,
     };
     post_repo.upsert(&post).unwrap();
 
@@ -765,6 +769,7 @@ fn test_search_index_no_fts_rowid_collision() {
         scheduled_at: None,
         freenet_key: None,
         is_freenet_native: true,
+        rsvp_event_id: None,
     };
 
     post_repo.upsert(&post("pa", "first post")).unwrap();

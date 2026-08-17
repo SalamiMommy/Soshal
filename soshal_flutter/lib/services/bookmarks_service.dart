@@ -89,6 +89,31 @@ class BookmarksService extends ChangeNotifier
       return null;
     }
   }
+
+  /// Resolve many bookmarked events in one FFI call. Returns a map of
+  /// eventId → post for the rows cached locally.
+  Future<Map<String, FeedPost>> resolvePosts(List<String> eventIds) async {
+    final out = <String, FeedPost>{};
+    if (eventIds.isEmpty) return out;
+    try {
+      final json = RustLib.instance.api.crateFfiBookmarksBookmarksResolvePosts(
+        idsJson: jsonEncode(eventIds),
+      );
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        final value = entry.value;
+        if (value is Map) {
+          out[entry.key] = FeedPost.fromJson(Map<String, dynamic>.from(value));
+        }
+      }
+      clearLastError();
+      return out;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      return out;
+    }
+  }
 }
 
 /// A saved bookmark row.

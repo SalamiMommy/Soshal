@@ -105,6 +105,7 @@ pub fn post_row_content(id: &str, content: &str) -> PostRow {
         scheduled_at: None,
         freenet_key: None,
         is_freenet_native: false,
+        rsvp_event_id: None,
     }
 }
 

@@ -122,23 +122,19 @@ fn rsvp_for_user(rows: &[serde_json::Value], my_pk: &str) -> String {
     String::new()
 }
 
+/// Attendee counts per event: grouped by the denormalized `rsvp_event_id`
+/// column (v011) — one indexed GROUP BY instead of a full RSVP scan +
+/// per-row tags_json parse.
 fn attendee_counts() -> std::collections::HashMap<String, i32> {
     let mut counts = std::collections::HashMap::new();
     if let Ok(json) = super::db::db_query_raw(format!(
-        "SELECT pubkey, tags_json FROM posts WHERE kind = {KIND_EVENT_RSVP} \
-         AND content = 'accepted'"
+        "SELECT rsvp_event_id, COUNT(*) FROM posts WHERE kind = {KIND_EVENT_RSVP} \
+         AND content = 'accepted' AND rsvp_event_id IS NOT NULL GROUP BY rsvp_event_id"
     )) {
         if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
             for r in rows {
-                let tags: Vec<Vec<String>> =
-                    serde_json::from_str(r["tags_json"].as_str().unwrap_or("[]"))
-                        .unwrap_or_default();
-                let event_id = tags
-                    .into_iter()
-                    .find(|t| t.first().map(|k| k == "e").unwrap_or(false))
-                    .and_then(|t| t.get(1).cloned());
-                if let Some(id) = event_id {
-                    counts.entry(id).and_modify(|c| *c += 1).or_insert(1);
+                if let Some(id) = r["rsvp_event_id"].as_str() {
+                    counts.insert(id.to_string(), r["COUNT(*)"].as_i64().unwrap_or(0) as i32);
                 }
             }
         }
@@ -191,8 +187,8 @@ pub fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result<Strin
     let json = super::db::db_query_raw(event_rows_sql(
         &format!(
             "AND (p.pubkey = '{pk}' OR EXISTS (SELECT 1 FROM posts r WHERE r.pubkey = '{pk}' \
-             AND (r.tags_json LIKE '%\"e\",\"' || p.id || '\"%' \
-                  OR r.id = 'checkin:' || '{pk}' || ':' || p.id)))"
+            AND (r.rsvp_event_id = p.id \
+                 OR r.id = 'checkin:' || '{pk}' || ':' || p.id)))"
         ),
         limit,
     ))?;
@@ -455,11 +451,13 @@ pub fn events_get_event(event_id: String) -> Result<String, String> {
 }
 
 /// Attendees = distinct pubkeys with an `accepted` RSVP (kind 31924).
+/// Uses the denormalized `rsvp_event_id` column (v011) — indexed lookup,
+/// no tags_json LIKE scan.
 #[frb(sync, serialize)]
 pub fn events_get_attendees(event_id: String) -> Result<Vec<String>, String> {
     let json = super::db::db_query_raw(format!(
         "SELECT DISTINCT pubkey FROM posts WHERE kind = {KIND_EVENT_RSVP} AND content = 'accepted' \
-         AND tags_json LIKE '%\"{eid}\"%' ORDER BY created_at DESC LIMIT 200",
+         AND rsvp_event_id = '{eid}' ORDER BY created_at DESC LIMIT 200",
         eid = event_id.replace('\'', "''")
     ))?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
@@ -585,4 +583,45 @@ pub fn events_interest_score(
         r#"{{"my_interests":{my_interests_json},"peer_interests":{peer_interests_json}}}"#
     ));
     Ok(score)
+}
+
+/// Batch interest scoring: extract hashtags from each event's title+summary
+/// and score them against my interests in ONE FFI call, returning
+/// `{"<event_id>": score}`. Replaces 2×N per-event FFI round-trips in the
+/// events screen.
+#[frb(sync, serialize)]
+pub fn events_score_events(
+    events_json: String,
+    my_interests_json: String,
+) -> Result<String, String> {
+    #[derive(serde::Deserialize)]
+    struct EventText {
+        id: String,
+        title: String,
+        description: String,
+    }
+    let events: Vec<EventText> =
+        serde_json::from_str(&events_json).map_err(|e| format!("invalid events JSON: {e}"))?;
+    let _my_interests: Vec<String> = serde_json::from_str(&my_interests_json)
+        .map_err(|e| format!("invalid interests JSON: {e}"))?;
+    let mut out = serde_json::Map::with_capacity(events.len());
+    for ev in events {
+        let tags =
+            soshal_content_core::hashtag::extract(&format!("{} {}", ev.title, ev.description));
+        let score = if tags.is_empty() {
+            0.0
+        } else {
+            let json = soshal_events_core::event::interest::compute_interest_score_json(&format!(
+                r#"{{"my_interests":{},"peer_interests":{}}}"#,
+                my_interests_json,
+                serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into()),
+            ));
+            serde_json::from_str::<serde_json::Value>(&json)
+                .ok()
+                .and_then(|v| v["score"].as_f64())
+                .unwrap_or(0.0)
+        };
+        out.insert(ev.id, serde_json::json!(score));
+    }
+    Ok(serde_json::to_string(&out).unwrap_or_else(|_| "{}".into()))
 }

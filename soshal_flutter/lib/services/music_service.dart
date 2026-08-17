@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/offthread.dart';
 import 'error_log.dart';
 import 'social_entry.dart';
 
@@ -20,10 +21,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
         limit: BigInt.from(limit),
         author: author,
       );
-      final decoded = jsonDecode(json) as List<dynamic>;
-      _tracks = decoded
-          .map((e) => MusicTrack.fromJson(e as Map<String, dynamic>))
-          .toList();
+      _tracks = await runOffThread(() => _parseTracks(json));
       clearLastError();
       notifyListeners();
       return _tracks;
@@ -117,10 +115,8 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
         trackPubkey: trackPubkey,
         trackD: trackD,
       );
-      final decoded = jsonDecode(json) as List<dynamic>;
-      final comments = decoded
-          .map((e) => TrackComment.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final comments =
+          await runOffThread(() => _parseComments(json));
       clearLastError();
       return comments;
     } catch (e, st) {
@@ -187,3 +183,17 @@ class TrackComment extends SocialEntry {
         createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
       );
 }
+
+/// JSON → [MusicTrack] list, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<MusicTrack> _parseTracks(String json) =>
+    (jsonDecode(json) as List<dynamic>)
+        .map((e) => MusicTrack.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+/// JSON → [TrackComment] list, top-level so [runOffThread] can decode on a
+/// background isolate.
+List<TrackComment> _parseComments(String json) =>
+    (jsonDecode(json) as List<dynamic>)
+        .map((e) => TrackComment.fromJson(e as Map<String, dynamic>))
+        .toList();

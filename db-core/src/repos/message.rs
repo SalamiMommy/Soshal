@@ -69,6 +69,29 @@ impl<'a> MessageRepo<'a> {
                 msg.is_deleted,
             ],
         )?;
+        self.touch_conversation(&conn, &msg.conversation_id, msg.created_at)?;
+        Ok(())
+    }
+
+    /// Keep the inbox `conversations` table fresh: bump the conversation's
+    /// last-message timestamp. Only 'conv:'-prefixed ids are listed by the
+    /// inbox query; group-DM chats are excluded here.
+    fn touch_conversation(
+        &self,
+        conn: &libsql::Connection,
+        conversation_id: &str,
+        created_at: i64,
+    ) -> Result<(), crate::error::DbError> {
+        if !conversation_id.starts_with("conv:") {
+            return Ok(());
+        }
+        crate::query::execute(
+            conn,
+            "INSERT INTO conversations (conversation_id, last_message_at) VALUES (?1, ?2) \
+             ON CONFLICT(conversation_id) DO UPDATE SET \
+             last_message_at = MAX(last_message_at, excluded.last_message_at)",
+            params![conversation_id, created_at],
+        )?;
         Ok(())
     }
 
@@ -79,26 +102,35 @@ impl<'a> MessageRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
             let sql = "INSERT INTO messages (id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted";
+            let mut stmt = tx.prepare(sql).await.map_err(crate::error::DbError::from)?;
             for msg in messages {
                 if crate::repos::limits::row_too_big(&msg.content, &msg.tags_json) {
                     continue; // relay content too large: skip, never store
                 }
-                tx.execute(
-                    sql,
-                    params![
-                        msg.id.as_str(),
-                        msg.conversation_id.as_str(),
-                        msg.pubkey.as_str(),
-                        msg.content.as_str(),
-                        msg.created_at,
-                        msg.tags_json.as_str(),
-                        msg.reply_to.as_deref(),
-                        msg.sync_status.as_str(),
-                        msg.is_deleted,
-                    ],
-                )
-                .await?;
+                stmt.execute(params![
+                    msg.id.as_str(),
+                    msg.conversation_id.as_str(),
+                    msg.pubkey.as_str(),
+                    msg.content.as_str(),
+                    msg.created_at,
+                    msg.tags_json.as_str(),
+                    msg.reply_to.as_deref(),
+                    msg.sync_status.as_str(),
+                    msg.is_deleted,
+                ])
+                .await
+                .map_err(crate::error::DbError::from)?;
+                if msg.conversation_id.starts_with("conv:") {
+                    tx.execute(
+                        "INSERT INTO conversations (conversation_id, last_message_at) VALUES (?1, ?2) \
+                         ON CONFLICT(conversation_id) DO UPDATE SET \
+                         last_message_at = MAX(last_message_at, excluded.last_message_at)",
+                        params![msg.conversation_id.as_str(), msg.created_at],
+                    )
+                    .await?;
+                }
             }
+            drop(stmt);
             tx.commit().await?;
             Ok(())
         })

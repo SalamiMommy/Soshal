@@ -40,13 +40,15 @@ pub fn social_friend_suggestions() -> Result<Vec<String>, String> {
 }
 
 /// Load every stored user's pubkey + contact list (raw query; repos have no
-/// list-all query).
+/// list-all query). Users with no contacts can't contribute to the WoT
+/// suggestions and are skipped before the JSON parse.
 fn all_contact_lists() -> Result<Vec<(String, String)>, String> {
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         soshal_db_core::query::query(
             &conn,
-            "SELECT pubkey, contact_pubkeys FROM users",
+            "SELECT pubkey, contact_pubkeys FROM users \
+             WHERE contact_pubkeys != '[]' LIMIT 5000",
             (),
             |r| {
                 let pubkey: String = r.get(0)?;

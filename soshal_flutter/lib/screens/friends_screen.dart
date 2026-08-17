@@ -123,142 +123,176 @@ class _FriendsScreenState extends State<FriendsScreen> {
       body: ListenableBuilder(
         listenable: _service,
         builder: (context, _) {
-          return ListView(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            children: [
-              _sectionTitle(theme, 'People you may know'),
-              if (_service.lastError != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: ErrorStateText(_service.lastError!),
-                )
-              else if (_service.suggestions.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    'No suggestions yet — friend discovery arrives with the backend.',
-                  ),
-                )
-              else
-                for (final pk in _service.suggestions)
-                  ListTile(
-                    leading: const Icon(Icons.person_outline),
-                    title: Text(shortPubkey(pk)),
-                    trailing: _sending.contains(pk)
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : TextButton(
-                            onPressed: () => _sendRequest(pk),
-                            child: const Text('Send request'),
-                          ),
-                  ),
-              const Divider(height: 32),
-              _sectionTitle(theme, 'Add friend'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
+          return CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
+                    _sectionTitle(theme, 'People you may know'),
+                    if (_service.lastError != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: ErrorStateText(_service.lastError!),
+                      )
+                    else if (_service.suggestions.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text(
+                          'No suggestions yet — friend discovery arrives with '
+                          'the backend.',
+                        ),
+                      ),
+                    const Divider(height: 32),
+                    _sectionTitle(theme, 'Add friend'),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _addQuery,
+                              decoration: const InputDecoration(
+                                hintText: 'npub or hex pubkey…',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              textInputAction: TextInputAction.search,
+                              onSubmitted: (_) => _runSearch(),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: _searching
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child:
+                                        CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.search),
+                            onPressed: _searching ? null : _runSearch,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 32),
+                    _sectionTitle(
+                        theme, 'My contacts (${_service.contacts.length})'),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: TextField(
-                        controller: _addQuery,
+                        controller: _contactFilter,
                         decoration: const InputDecoration(
-                          hintText: 'npub or hex pubkey…',
+                          hintText: 'Search contacts…',
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
-                        textInputAction: TextInputAction.search,
-                        onSubmitted: (_) => _runSearch(),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: _searching
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          TextButton.icon(
+                            onPressed:
+                                _refreshingFollows ? null : _refreshFromRelays,
+                            icon: _refreshingFollows
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.sync),
+                            label: const Text('Refresh from relays'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_followsInfo != null)
+                      ListTile(
+                        dense: true,
+                        title: Text(_followsInfo!),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.close),
+                          tooltip: 'Clear',
+                          onPressed: () => setState(() => _followsInfo = null),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (_service.suggestions.isNotEmpty)
+                SliverList.separated(
+                  itemCount: _service.suggestions.length,
+                  itemBuilder: (context, i) {
+                    final pk = _service.suggestions[i];
+                    return ListTile(
+                      leading: const Icon(Icons.person_outline),
+                      title: Text(shortPubkey(pk)),
+                      trailing: _sending.contains(pk)
                           ? const SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.search),
-                      onPressed: _searching ? null : _runSearch,
-                    ),
-                  ],
+                          : TextButton(
+                              onPressed: () => _sendRequest(pk),
+                              child: const Text('Send request'),
+                            ),
+                    );
+                  },
+                  separatorBuilder: (context, i) => const Divider(height: 1),
                 ),
-              ),
               if (_searchResults.isNotEmpty)
-                for (final p in _searchResults)
-                  ListTile(
-                    leading: const Icon(Icons.person),
-                    title: Text(
-                        p.displayName.isNotEmpty ? p.displayName : p.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    subtitle: Text(shortPubkey(p.pubkey)),
-                    trailing: p.isFollowing ||
-                            _service.contacts.any((c) => c.pubkey == p.pubkey)
-                        ? const Icon(Icons.check, size: 18)
-                        : TextButton(
-                            onPressed: () => _follow(p),
-                            child: const Text('Follow'),
-                          ),
-                  ),
-              const Divider(height: 32),
-              _sectionTitle(theme, 'My contacts (${_service.contacts.length})'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: TextField(
-                  controller: _contactFilter,
-                  decoration: const InputDecoration(
-                    hintText: 'Search contacts…',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: _refreshingFollows ? null : _refreshFromRelays,
-                      icon: _refreshingFollows
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.sync),
-                      label: const Text('Refresh from relays'),
-                    ),
-                  ],
-                ),
-              ),
-              if (_followsInfo != null)
-                ListTile(
-                  dense: true,
-                  title: Text(_followsInfo!),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: 'Clear',
-                    onPressed: () => setState(() => _followsInfo = null),
-                  ),
+                SliverList.separated(
+                  itemCount: _searchResults.length,
+                  itemBuilder: (context, i) {
+                    final p = _searchResults[i];
+                    return ListTile(
+                      leading: const Icon(Icons.person),
+                      title: Text(
+                          p.displayName.isNotEmpty ? p.displayName : p.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      subtitle: Text(shortPubkey(p.pubkey)),
+                      trailing: p.isFollowing ||
+                              _service.contacts
+                                  .any((c) => c.pubkey == p.pubkey)
+                          ? const Icon(Icons.check, size: 18)
+                          : TextButton(
+                              onPressed: () => _follow(p),
+                              child: const Text('Follow'),
+                            ),
+                    );
+                  },
+                  separatorBuilder: (context, i) => const Divider(height: 1),
                 ),
               if (_service.contacts.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    'No contacts yet — follow someone from Add friend above. '
-                    'Contacts live in memory only for now.',
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'No contacts yet — follow someone from Add friend above. '
+                      'Contacts live in memory only for now.',
+                    ),
                   ),
                 )
               else
-                for (final c in _service.contacts)
-                  if (c.pubkey.contains(_contactFilter.text.trim()) ||
-                      c.name.contains(_contactFilter.text.trim()) ||
-                      c.displayName.contains(_contactFilter.text.trim()))
-                    ListTile(
+                SliverList.separated(
+                  itemCount: _service.contacts.length,
+                  itemBuilder: (context, i) {
+                    final c = _service.contacts[i];
+                    final filter = _contactFilter.text.trim();
+                    if (filter.isNotEmpty &&
+                        !c.pubkey.contains(filter) &&
+                        !c.name.contains(filter) &&
+                        !c.displayName.contains(filter)) {
+                      return const SizedBox.shrink();
+                    }
+                    return ListTile(
                       leading: const Icon(Icons.person_outline),
                       title: Text(
                         c.displayName.isNotEmpty ? c.displayName : c.name,
@@ -271,7 +305,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
                         tooltip: 'Remove contact',
                         onPressed: () => _service.removeContact(c.pubkey),
                       ),
-                    ),
+                    );
+                  },
+                  separatorBuilder: (context, i) => const Divider(height: 1),
+                ),
             ],
           );
         },

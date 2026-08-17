@@ -31,12 +31,45 @@ pub fn profile_entry_from_event(ev: &NostrEvent) -> serde_json::Value {
     })
 }
 
+/// Media-JSON decode cache. Post rows are immutable, so the parse result for
+/// a given `tags_json` never goes stale; the same posts are re-fetched across
+/// feed pages/threads/refreshes, and this avoids re-parsing + re-serializing
+/// per row per fetch.
+static MEDIA_JSON_CACHE: std::sync::OnceLock<
+    std::sync::RwLock<std::collections::HashMap<String, Option<String>>>,
+> = std::sync::OnceLock::new();
+
+const MEDIA_JSON_CACHE_CAP: usize = 1024;
+
+fn cached_media_json(tags_json: &str) -> Option<Option<String>> {
+    let cache = MEDIA_JSON_CACHE.get_or_init(Default::default);
+    cache.read().ok()?.get(tags_json).cloned()
+}
+
+fn store_media_json(tags_json: &str, parsed: &Option<String>) {
+    if let Ok(mut cache) = MEDIA_JSON_CACHE.get_or_init(Default::default).write() {
+        if cache.len() >= MEDIA_JSON_CACHE_CAP {
+            cache.clear();
+        }
+        cache.insert(tags_json.to_string(), parsed.clone());
+    }
+}
+
 /// Extracts a `["media", type, url, blob_hash, size]` tag from a post's
 /// `tags_json` and renders it as `{"type","url","blob_hash","size"}`.
 /// The media tag is the LAN blob-sharing wire format: `url` is a
 /// `blob://<hash>` placeholder (peers crawl by hash), `blob_hash` is the
 /// BLAKE3 manifest hash. Malformed tags yield `None` (hostile-input safe).
 pub fn media_json_from_tags(tags_json: &str) -> Option<String> {
+    if let Some(cached) = cached_media_json(tags_json) {
+        return cached;
+    }
+    let parsed = parse_media_json(tags_json);
+    store_media_json(tags_json, &parsed);
+    parsed
+}
+
+fn parse_media_json(tags_json: &str) -> Option<String> {
     let tags: Vec<Vec<String>> = serde_json::from_str(tags_json).ok()?;
     for tag in tags {
         if tag.first().map(|s| s.as_str()) != Some("media") {

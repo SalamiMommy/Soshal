@@ -85,15 +85,14 @@ async fn replay_outbox(db: &Database, client: &Client) {
             return;
         }
     };
+    let mut completed: Vec<String> = Vec::new();
     for item in items {
         if item.media_path.is_some() {
             continue; // media uploads are handled by the dedicated uploader
         }
         match serde_json::from_str::<Event>(&item.payload_json) {
             Ok(event) => match client.send_event(&event).await {
-                Ok(_) => {
-                    let _ = crate::outbox::mark_outbox_item_completed(db, &item.id);
-                }
+                Ok(_) => completed.push(item.id.clone()),
                 Err(e) => {
                     eprintln!("sync engine: outbox send {}: {e}", item.id);
                     let _ =
@@ -105,6 +104,9 @@ async fn replay_outbox(db: &Database, client: &Client) {
                 let _ = crate::outbox::mark_outbox_item_failed(db, &item.id, item.retry_count, now);
             }
         }
+    }
+    if !completed.is_empty() {
+        let _ = crate::outbox::mark_outbox_items_completed(db, &completed);
     }
 }
 

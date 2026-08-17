@@ -83,7 +83,8 @@ class ChatrandomService extends ChangeNotifier with LastErrorMixin {
       rethrow;
     }
   }
-/// Content equality gate for the poll loop (id + pubkey + content per row).
+
+  /// Content equality gate for the poll loop (id + pubkey + content per row).
   bool _samePeers(List<ChatrandomPeer> next) {
     if (next.length != _peers.length) return false;
     for (var i = 0; i < next.length; i++) {

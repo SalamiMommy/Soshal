@@ -261,8 +261,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           return ListTile(
                             leading: const Icon(Icons.person),
                             title: Text(p.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis),
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
                             subtitle: Text(p.description,
                                 maxLines: 2, overflow: TextOverflow.ellipsis),
                             onTap: () {

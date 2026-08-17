@@ -46,6 +46,7 @@ pub fn scheduled_create(
         scheduled_at: Some(scheduled_at),
         freenet_key: None,
         is_freenet_native: false,
+        rsvp_event_id: None,
     };
     super::db::with_db_result(|db| {
         PostRepo::new(db).upsert(&row)?;

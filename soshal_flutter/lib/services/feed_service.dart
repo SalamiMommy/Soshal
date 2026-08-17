@@ -19,6 +19,10 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   static const String _pinnedKey = 'pinned_posts';
   final Set<String> _pinned = {};
   bool _pinnedLoaded = false;
+  // Cached unmodifiable view: the getter must return the SAME instance
+  // between mutations, otherwise `context.select((s) => s.pinnedPosts)` sees
+  // a fresh identity every call and rebuilds on every FeedService notify.
+  List<String> _pinnedView = const [];
   final List<FeedPost> _pendingIndex = [];
   bool _indexFlushScheduled = false;
 
@@ -30,7 +34,12 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<FeedPost> get displayPosts => _ranked ? _rankedPosts : _posts;
   bool get isRanked => _ranked;
   bool get isLoading => _isLoading;
-  List<String> get pinnedPosts => List.unmodifiable(_pinned.toList());
+  List<String> get pinnedPosts => _pinnedView;
+
+  /// Rebuild the cached pinned view after [Set] mutation.
+  void _rebuildPinnedView() {
+    _pinnedView = List.unmodifiable(_pinned.toList());
+  }
 
   /// Fetch feed events with pagination
   Future<List<FeedPost>> fetchFeed({int limit = 20, int offset = 0}) async {
@@ -137,8 +146,10 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     try {
       final raw = RustLib.instance.api.crateFfiDbDbGetSetting(key: _pinnedKey);
       _pinned.clear();
+      _rebuildPinnedView();
       if (raw != null && raw.isNotEmpty) {
         _pinned.addAll((jsonDecode(raw) as List<dynamic>).whereType<String>());
+        _rebuildPinnedView();
       }
       _pinnedLoaded = true;
       clearLastError();
@@ -165,6 +176,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       } else {
         _pinned.add(eventId);
       }
+      _rebuildPinnedView();
       RustLib.instance.api.crateFfiDbDbSetSetting(
         key: _pinnedKey,
         value: jsonEncode(_pinned.toList()),
@@ -483,13 +495,13 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     return posts;
   }
 
-/// JSON → raw feed rows, top-level so [compute] can run it on a background
-/// isolate (keeps the per-post [FeedPost] build + FFI decompress on main).
-List<Map<String, dynamic>> _parseFeedRows(String json) {
-  return (jsonDecode(json) as List<dynamic>)
-      .map((e) => Map<String, dynamic>.from(e as Map))
-      .toList();
-}
+  /// JSON → raw feed rows, top-level so [compute] can run it on a background
+  /// isolate (keeps the per-post [FeedPost] build + FFI decompress on main).
+  List<Map<String, dynamic>> _parseFeedRows(String json) {
+    return (jsonDecode(json) as List<dynamic>)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
 
   /// Fire the post-refresh reconcile hook; sync is best-effort so failures
   /// are swallowed here.

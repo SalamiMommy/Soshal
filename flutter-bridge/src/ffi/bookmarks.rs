@@ -67,6 +67,27 @@ pub fn bookmarks_resolve_post(event_id: String) -> Result<String, String> {
     })
 }
 
+/// Resolve many bookmarked events in one call. `ids_json` is a JSON array of
+/// event ids; returns a JSON map `{"<id>": PostRow, ...}` (missing rows are
+/// absent). Replaces N sequential per-bookmark FFI round-trips.
+#[frb(sync, serialize)]
+pub fn bookmarks_resolve_posts(ids_json: String) -> Result<String, String> {
+    let ids: Vec<String> =
+        serde_json::from_str(&ids_json).map_err(|e| format!("invalid ids JSON: {e}"))?;
+    super::db::with_db_result(|db| {
+        let repo = soshal_db_core::repos::post::PostRepo::new(db);
+        let mut out = serde_json::Map::with_capacity(ids.len());
+        for id in ids {
+            if let Some(row) = repo.get_by_id(&id)? {
+                if let Ok(value) = serde_json::to_value(&row) {
+                    out.insert(id, value);
+                }
+            }
+        }
+        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "{}".into()))
+    })
+}
+
 /// Best-effort publish of the user's bookmark list (NIP-51 kind 10003) with
 /// one `e` tag per saved bookmark. Signer-locked or unreachable relays leave
 /// bookmarks local-only (DB write already succeeded).
