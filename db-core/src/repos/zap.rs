@@ -10,23 +10,35 @@ impl<'a> ZapRepo<'a> {
         Self { db }
     }
 
-    pub fn upsert(&self, z: &ZapRow) -> Result<(), crate::error::DbError> {
-        let conn = self.db.conn()?;
-        crate::query::execute(
-            &conn,
+    pub async fn upsert_in(
+        &self,
+        tx: &libsql::Transaction,
+        row: &ZapRow,
+    ) -> Result<(), crate::error::DbError> {
+        tx.execute(
             "INSERT INTO zaps (id, pubkey, recipient_pubkey, event_id, amount, amount_msat, content, created_at, zap_type) VALUES (?1,?2,?3,?4,?5,?5 * 1000,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, recipient_pubkey=excluded.recipient_pubkey",
             params![
-                z.id.as_str(),
-                z.pubkey.as_str(),
-                z.recipient_pubkey.as_str(),
-                z.event_id.as_deref(),
-                z.amount,
-                z.content.as_deref(),
-                z.created_at,
-                z.zap_type.as_str(),
+                row.id.as_str(),
+                row.pubkey.as_str(),
+                row.recipient_pubkey.as_str(),
+                row.event_id.as_deref(),
+                row.amount,
+                row.content.as_deref(),
+                row.created_at,
+                row.zap_type.as_str(),
             ],
-        )?;
+        )
+        .await?;
         Ok(())
+    }
+
+    pub fn upsert(&self, row: &ZapRow) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::with_tx(&conn, |tx| async move {
+            self.upsert_in(&tx, row).await?;
+            tx.commit().await?;
+            Ok(())
+        })
     }
 
     pub fn sum_by_event(&self, event_id: &str) -> Result<i64, crate::error::DbError> {

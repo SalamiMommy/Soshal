@@ -17,14 +17,14 @@ void main() {
   });
 
   group('AudioService', () {
-    test('peaksFor parses RMS envelope and passes path', () {
+    test('peaksFor parses RMS envelope and passes path', () async {
       final audio = AudioService();
       api.stub(
         'crateFfiStorageStorageGetAudioPeaks',
-        (_) => Float32List.fromList([0.1, 0.5, 0.9]),
+        (_) async => Float32List.fromList([0.1, 0.5, 0.9]),
       );
 
-      final peaks = audio.peaksFor('/voice/a.m4a');
+      final peaks = await audio.peaksFor('/voice/a.m4a');
       expect(peaks.length, 3, reason: 'bucket count');
       expect(peaks[0], closeTo(0.1, 1e-6));
       expect(peaks[2], closeTo(0.9, 1e-6));
@@ -33,15 +33,15 @@ void main() {
       expect(api.namedArg(inv, 'path'), '/voice/a.m4a');
     });
 
-    test('peaksFor swallow errors and return empty', () {
+    test('peaksFor swallow errors and return empty', () async {
       final audio = AudioService();
       api.stub('crateFfiStorageStorageGetAudioPeaks',
           (_) => throw Exception('read failed'));
 
-      expect(audio.peaksFor('/voice/bad.m4a'), isEmpty);
+      expect(await audio.peaksFor('/voice/bad.m4a'), isEmpty);
     });
 
-    test('encodeVoice passes pcm payload through FFI', () {
+    test('encodeVoice passes pcm payload through FFI', () async {
       final audio = AudioService();
       api.stub(
         'crateFfiStorageStorageEncodeVoicePcm',
@@ -49,7 +49,7 @@ void main() {
       );
       final pcm = [100, 200, -100, 0];
 
-      final encoded = audio.encodeVoice(pcm);
+      final encoded = await audio.encodeVoice(pcm);
       expect(encoded, [0x01, 0x02, 0x03]);
       final inv =
           api.callsOf('crateFfiStorageStorageEncodeVoicePcm').single;

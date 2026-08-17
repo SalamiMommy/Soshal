@@ -38,11 +38,23 @@ impl<'a> BookmarkRepo<'a> {
 
     pub fn upsert(&self, row: &BookmarkRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(
-            &conn,
+        crate::query::with_tx(&conn, |tx| async move {
+            self.upsert_in(&tx, row).await?;
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+
+    pub async fn upsert_in(
+        &self,
+        tx: &libsql::Transaction,
+        row: &BookmarkRow,
+    ) -> Result<(), crate::error::DbError> {
+        tx.execute(
             "INSERT INTO bookmarks (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET event_id=excluded.event_id",
             params![row.id.as_str(), row.pubkey.as_str(), row.event_id.as_str(), row.created_at],
-        )?;
+        )
+        .await?;
         Ok(())
     }
 

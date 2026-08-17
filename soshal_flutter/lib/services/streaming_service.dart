@@ -418,7 +418,7 @@ class StreamingService extends ChangeNotifier
     required int windowMs,
   }) async {
     try {
-      final json = moq.p2PMoqSubscribeFetch(
+      final json = await moq.p2PMoqSubscribeFetch(
         addr: addr,
         streamId: streamId,
         windowMs: BigInt.from(windowMs),

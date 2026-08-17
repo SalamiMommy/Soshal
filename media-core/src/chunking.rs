@@ -189,6 +189,44 @@ pub fn chunk_bytes(data: &[u8]) -> Result<ChunkManifest, String> {
     chunk_reader(std::io::Cursor::new(data))
 }
 
+/// Streams chunks from a reader to `write_chunk` one at a time, retaining only
+/// the manifest (chunk byte payloads are dropped as soon as they are written).
+pub fn store_reader_with_data<R, W>(reader: R, mut write_chunk: W) -> Result<ChunkManifest, String>
+where
+    R: std::io::Read,
+    W: FnMut(&ChunkRef, &[u8]) -> Result<(), String>,
+{
+    let chunker = StreamCDC::new(reader, MIN_CHUNK as u32, AVG_CHUNK as u32, MAX_CHUNK as u32);
+
+    let mut manifest_chunks: Vec<ChunkRef> = Vec::with_capacity(32);
+    let mut blob_hasher = blake3::Hasher::new();
+    for item in chunker {
+        let chunk = item.map_err(|e| format!("FastCDC chunking failed: {e}"))?;
+        let mut chunk_hasher = blake3::Hasher::new();
+        for block in chunk.data.chunks(16384) {
+            blob_hasher.update(block);
+            chunk_hasher.update(block);
+        }
+        let cref = ChunkRef {
+            blake3: chunk_hasher.finalize().to_hex().to_string(),
+            offset: chunk.offset,
+            len: chunk.data.len(),
+        };
+        write_chunk(&cref, &chunk.data)?;
+        manifest_chunks.push(cref);
+    }
+
+    let total_size = manifest_chunks
+        .last()
+        .map(|c| c.offset + c.len as u64)
+        .unwrap_or(0);
+    Ok(ChunkManifest {
+        blob_hash: blob_hasher.finalize().to_hex().to_string(),
+        total_size,
+        chunks: manifest_chunks,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,5 +276,19 @@ mod tests {
         let m1 = chunk_bytes(&vec![3u8; 1024 * 1024]).unwrap();
         let m2 = chunk_bytes(&vec![3u8; 1024 * 1024]).unwrap();
         assert_eq!(m1, m2);
+    }
+
+    #[test]
+    fn store_reader_matches_chunk_reader_with_data() {
+        let data: Vec<u8> = (0..2 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
+        let (manifest, chunks) = chunk_reader_with_data(std::io::Cursor::new(&data)).unwrap();
+        let mut stored: Vec<(ChunkRef, Vec<u8>)> = Vec::new();
+        let manifest2 = store_reader_with_data(std::io::Cursor::new(&data), |cref, bytes| {
+            stored.push((cref.clone(), bytes.to_vec()));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(manifest, manifest2);
+        assert_eq!(chunks, stored);
     }
 }

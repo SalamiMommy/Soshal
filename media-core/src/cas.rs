@@ -12,9 +12,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::SystemTime;
 
-use crate::chunking::{chunk_reader_with_data, ChunkManifest, ChunkRef};
+use crate::chunking::{store_reader_with_data, ChunkManifest, ChunkRef};
 
 /// Chunk files are plaintext cache content. At-rest encryption of the app DB
 /// is untouched; the CAS lives in cache space and is evictable.
@@ -24,6 +25,9 @@ pub struct ChunkStore {
     /// Lazy chunk-hash → owning manifest cache. Resolves peer "do you have
     /// chunk X" requests without re-reading every manifests/*.json.
     index: Arc<RwLock<Option<Arc<ChunkIndex>>>>,
+    /// Verified (hash, size, mtime) entries; immutable chunk files skip the
+    /// full re-hash on repeated reads once verified.
+    verified: Arc<Mutex<VerifiedChunks>>,
 }
 
 /// `chunk_hash -> blob_hash` map plus the chunk's offset inside that blob.
@@ -69,12 +73,15 @@ impl ChunkIndex {
     }
 }
 
+type VerifiedChunks = HashMap<(String, u64, Option<SystemTime>), ()>;
+
 impl ChunkStore {
     /// `root` should point at the cache dir (e.g. `<cache>/chunks`).
     pub fn new(root: PathBuf) -> Self {
         Self {
             root,
             index: Arc::new(RwLock::new(None)),
+            verified: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -135,14 +142,33 @@ impl ChunkStore {
         }
         let path = self.chunk_path(hash);
         let file = fs::File::open(&path).ok()?;
+        let md = file.metadata().ok()?;
+        let key = (hash.to_string(), md.len(), md.modified().ok());
         // Safety: read-only mapping of a file we opened read-only; the Mmap is
         // the sole handle to the region and unmap happens on drop.
         #[allow(unsafe_code)]
         let map = unsafe { memmap2::Mmap::map(&file).ok()? };
-        if blake3::hash(map.as_ref()).to_hex().as_str() != hash {
+        if !self.verified_contains(&key) && blake3::hash(map.as_ref()).to_hex().as_str() != hash {
             return None;
         }
+        self.mark_verified(key);
         Some(map)
+    }
+
+    fn verified_contains(&self, key: &(String, u64, Option<SystemTime>)) -> bool {
+        self.verified
+            .lock()
+            .map(|c| c.contains_key(key))
+            .unwrap_or(false)
+    }
+
+    fn mark_verified(&self, key: (String, u64, Option<SystemTime>)) {
+        if let Ok(mut cache) = self.verified.lock() {
+            if cache.len() >= 64 {
+                cache.clear();
+            }
+            cache.insert(key, ());
+        }
     }
 
     /// Stores a chunk. Returns `true` if newly written, `false` if it already
@@ -182,6 +208,9 @@ impl ChunkStore {
         if let Ok(mut slot) = self.index.write() {
             *slot = None;
         }
+        if let Ok(mut cache) = self.verified.lock() {
+            cache.clear();
+        }
         true
     }
 
@@ -201,12 +230,13 @@ impl ChunkStore {
     }
 
     /// Chunks any reader and stores the chunks, deduplicating as it goes.
+    /// Chunks are written and dropped one at a time — the whole blob is never
+    /// held in RAM.
     pub fn store_reader<R: Read>(&self, reader: R) -> Result<ChunkManifest, String> {
-        let (manifest, chunks) = chunk_reader_with_data(reader)?;
-        for (c, data) in chunks {
-            self.put_trusted(&c.blake3, &data);
-        }
-        Ok(manifest)
+        store_reader_with_data(reader, |chr, data| {
+            self.put_trusted(&chr.blake3, data);
+            Ok(())
+        })
     }
 
     /// Streams a chunk's bytes to a writer (e.g. a socket or base64 encoder).
@@ -245,6 +275,9 @@ impl ChunkStore {
         let _ = fs::remove_dir_all(&self.root);
         if let Ok(mut slot) = self.index.write() {
             *slot = None;
+        }
+        if let Ok(mut cache) = self.verified.lock() {
+            cache.clear();
         }
     }
 

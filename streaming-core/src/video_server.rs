@@ -4,11 +4,11 @@
 
 use soshal_common_core::format::is_valid_hex;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 #[derive(Clone, Default)]
@@ -182,7 +182,7 @@ async fn serve_video_file(
     file_path: &str,
     range_header: Option<&str>,
 ) {
-    let mut file = match File::open(file_path) {
+    let mut file = match File::open(file_path).await {
         Ok(f) => f,
         Err(_) => {
             let resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
@@ -191,7 +191,7 @@ async fn serve_video_file(
         }
     };
 
-    let total_size = match file.metadata() {
+    let total_size = match file.metadata().await {
         Ok(m) => m.len(),
         Err(_) => 0,
     };
@@ -225,7 +225,7 @@ async fn serve_video_file(
         0
     };
 
-    if file.seek(SeekFrom::Start(start)).is_err() {
+    if file.seek(SeekFrom::Start(start)).await.is_err() {
         let resp = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
         let _ = socket.write_all(resp.as_bytes()).await;
         return;
@@ -254,7 +254,7 @@ async fn serve_video_file(
     let mut buffer = [0u8; 65536];
     while remaining > 0 {
         let to_read = (remaining as usize).min(buffer.len());
-        let bytes_read = match file.read(&mut buffer[..to_read]) {
+        let bytes_read = match file.read(&mut buffer[..to_read]).await {
             Ok(0) => break,
             Ok(n) => n,
             Err(_) => break,

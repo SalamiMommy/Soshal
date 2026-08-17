@@ -42,18 +42,17 @@ pub fn social_friend_suggestions() -> Result<Vec<String>, String> {
 /// Load every stored user's pubkey + contact list (raw query; repos have no
 /// list-all query).
 fn all_contact_lists() -> Result<Vec<(String, String)>, String> {
-    let json = super::db::db_query_raw("SELECT pubkey, contact_pubkeys FROM users".to_string())?;
-    let rows: Vec<serde_json::Value> =
-        serde_json::from_str(&json).map_err(|e| format!("parse users: {e}"))?;
-    let mut out = Vec::new();
-    for r in rows {
-        let get = |k: &str| -> Option<String> {
-            r.get(k).and_then(|v| v.as_str()).map(|s| s.to_string())
-        };
-        if let Some(pubkey) = get("pubkey") {
-            let contacts = get("contact_pubkeys").unwrap_or_else(|| "[]".to_string());
-            out.push((pubkey, contacts));
-        }
-    }
-    Ok(out)
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        soshal_db_core::query::query(
+            &conn,
+            "SELECT pubkey, contact_pubkeys FROM users",
+            (),
+            |r| {
+                let pubkey: String = r.get(0)?;
+                let contacts: String = r.get(1)?;
+                Ok((pubkey, contacts))
+            },
+        )
+    })
 }

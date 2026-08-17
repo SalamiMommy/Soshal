@@ -58,7 +58,7 @@ class SignerService extends ChangeNotifier {
 
   /// Restore the nsec from the OS keychain into the in-process signer.
   Future<bool> unlockFromKeyring(String pubkey) async {
-    final ok = _api.crateFfiSignerSignerUnlockFromKeyring(pubkey: pubkey);
+    final ok = await _api.crateFfiSignerSignerUnlockFromKeyring(pubkey: pubkey);
     await refresh();
     return ok;
   }

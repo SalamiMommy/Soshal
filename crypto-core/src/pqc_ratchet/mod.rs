@@ -21,8 +21,8 @@
 use zeroize::Zeroize;
 
 use self::ratchet_crypto::{
-    compress_json, decompress_json, derive_chain, derive_msg_key, derive_root_step, init_root,
-    RATCHET_DOMAIN,
+    compress_json, decompress_json, derive_chain, derive_msg_key, derive_msg_key_bytes,
+    derive_root_step, init_root, RATCHET_DOMAIN,
 };
 use crate::nip44::{decrypt as nip44_decrypt, encrypt as nip44_encrypt};
 use soshal_pqc_core::hybrid::{
@@ -41,8 +41,8 @@ pub const RATCHET_VERSION: u8 = 3;
 /// memory and decapsulation work (availability limiter).
 pub const MAX_RATCHET_WINDOW: i64 = 1024;
 
-/// Upper bound for a ratchet ciphertext payload (b64 "z:" compressed NIP-44
-/// output). Real messages are a few KiB; the cap keeps forged oversized
+/// Upper bound for a ratchet ciphertext payload (raw-deflate NIP-44 output).
+/// Real messages are a few KiB; the cap keeps forged oversized
 /// payloads from forcing large allocations inside the decrypt path.
 pub const MAX_RATCHET_CIPHERTEXT: usize = 64 * 1024;
 
@@ -185,56 +185,92 @@ pub fn encrypt_ratchet(
     if state.peer_pk.is_empty() {
         return Err("no peer public key");
     }
-    let mut out = state.clone();
-
     let need_new_epoch =
-        out.sending_chain_key.is_empty() || out.peer_pk != out.sending_epoch_peer_pk;
-    if need_new_epoch {
+        state.sending_chain_key.is_empty() || state.peer_pk != state.sending_epoch_peer_pk;
+    let (
+        root_key,
+        mut sending_chain_key,
+        chain_counter,
+        seq,
+        sending_epoch_peer_pk,
+        sending_ct,
+        current_sk,
+        current_pk,
+    ) = if need_new_epoch {
         let (ct_hex, ss_hex) =
-            hybrid_encapsulate(&out.peer_pk, RATCHET_DOMAIN).map_err(|_| "bad peer pk hex")?;
+            hybrid_encapsulate(&state.peer_pk, RATCHET_DOMAIN).map_err(|_| "bad peer pk hex")?;
         let mut ss = hex_decode(&ss_hex).map_err(|_| "bad ss hex")?;
-        if out.root_key.is_empty() {
+        let (root_hex, chain_hex) = if state.root_key.is_empty() {
             // Session init: root = HKDF(ss, v3-init salt, context).
-            let root = init_root(&ss, &out.context)?;
+            let root = init_root(&ss, &state.context)?;
             ss.zeroize();
-            out.root_key = hex_encode(&root);
-            let chain = derive_chain(&out.root_key, &out.context)?;
-            out.sending_chain_key = hex_encode(&chain);
+            let root_hex = hex_encode(&root);
+            let chain = derive_chain(&root_hex, &state.context)?;
+            (root_hex, hex_encode(&chain))
         } else {
-            let (new_root, new_chain) = derive_root_step(&ss, &out.root_key, &out.context)?;
+            let (new_root, new_chain) = derive_root_step(&ss, &state.root_key, &state.context)?;
             ss.zeroize();
-            out.root_key = hex_encode(&new_root);
-            out.sending_chain_key = hex_encode(&new_chain);
-        }
-        out.chain_counter += 1;
-        out.sending_chain_counter = 0;
-        out.sending_epoch_peer_pk = out.peer_pk.clone();
-        out.sending_ct = ct_hex;
-        // Rotate own keypair: the fresh pk travels in the header and the sk
-        // decrypts the peer's replies until the next root step.
+            (hex_encode(&new_root), hex_encode(&new_chain))
+        };
+        // Rotate own keypair: the fresh pk travels in the header and the
+        // sk decrypts the peer's replies until the next root step.
         let (pk, sk) = hybrid_keygen().map_err(|_| "rng failed")?;
-        out.current_sk = sk;
-        out.current_pk = pk;
-    }
+        (
+            root_hex,
+            chain_hex,
+            state.chain_counter + 1,
+            0i64,
+            state.peer_pk.clone(),
+            ct_hex,
+            sk,
+            pk,
+        )
+    } else {
+        (
+            state.root_key.clone(),
+            state.sending_chain_key.clone(),
+            state.chain_counter,
+            state.sending_chain_counter,
+            state.sending_epoch_peer_pk.clone(),
+            state.sending_ct.clone(),
+            state.current_sk.clone(),
+            state.current_pk.clone(),
+        )
+    };
 
-    let (msg_key, next_chain) = derive_msg_key(&out.sending_chain_key, &out.context)?;
-    out.sending_chain_key = hex_encode(&next_chain);
-    let seq = out.sending_chain_counter;
-    out.sending_chain_counter += 1;
+    let (msg_key, next_chain) = derive_msg_key(&sending_chain_key, &state.context)?;
+    sending_chain_key = hex_encode(&next_chain);
 
     let compressed = compress_json(plaintext)?;
     let mut mk_arr = [0u8; 32];
     mk_arr.copy_from_slice(&msg_key);
-    let ciphertext = nip44_encrypt(compressed.as_bytes(), &mk_arr)?;
+    let ciphertext = nip44_encrypt(&compressed, &mk_arr)?;
     let mut msg_key_hex = hex_encode(&msg_key);
     msg_key_hex.zeroize();
 
     let header = HeaderOutput {
         version: RATCHET_VERSION,
-        pk: out.current_pk.clone(),
-        ct: out.sending_ct.clone(),
+        pk: current_pk.clone(),
+        ct: sending_ct.clone(),
         seq,
-        chain_counter: out.chain_counter,
+        chain_counter,
+    };
+
+    let out = RatchetOutput {
+        version: RATCHET_VERSION,
+        root_key,
+        current_sk,
+        current_pk,
+        peer_pk: state.peer_pk.clone(),
+        context: state.context.clone(),
+        chain_counter,
+        sending_chain_key,
+        sending_chain_counter: seq + 1,
+        sending_epoch_peer_pk,
+        sending_ct,
+        receiving_chain_key: state.receiving_chain_key.clone(),
+        receiving_chain_counter: state.receiving_chain_counter,
+        skipped: state.skipped.clone(),
     };
     Ok((out, header, ciphertext))
 }
@@ -329,7 +365,7 @@ pub fn decrypt_ratchet(
             return Err("message too far ahead of ratchet (lost messages; re-sync required)");
         }
         for i in 0..gap {
-            let (skipped_key, next) = derive_msg_key(&hex_encode(&recv_chain), &state.context)?;
+            let (skipped_key, next) = derive_msg_key_bytes(&recv_chain, &state.context)?;
             recv_chain = next;
             out.skipped.push(SkippedKey {
                 seq: prev_counter + i,
@@ -339,7 +375,7 @@ pub fn decrypt_ratchet(
                 out.skipped.remove(0);
             }
         }
-        let (mk, next) = derive_msg_key(&hex_encode(&recv_chain), &state.context)?;
+        let (mk, next) = derive_msg_key_bytes(&recv_chain, &state.context)?;
         recv_chain = next;
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&mk);
@@ -349,8 +385,7 @@ pub fn decrypt_ratchet(
     }
 
     let compressed_bytes = nip44_decrypt(ciphertext, &msg_key)?;
-    let compressed_str = std::str::from_utf8(&compressed_bytes).map_err(|_| "bad utf8")?;
-    let inflated = decompress_json(compressed_str)?;
+    let inflated = decompress_json(&compressed_bytes)?;
     let plaintext_value: serde_json::Value =
         serde_json::from_slice(&inflated).map_err(|_| "bad json")?;
     let final_plaintext = match plaintext_value {

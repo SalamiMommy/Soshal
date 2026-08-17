@@ -1,7 +1,7 @@
 //! Cryptographic EigenTrust Peer Reputation Engine.
 //! Computes global trust scores from local peer transaction feedback matrices.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Pre-trusted peers vector alpha weight (damping factor).
 pub const EIGENTRUST_ALPHA: f64 = 0.15;
@@ -80,30 +80,41 @@ impl EigenTrustEngine {
             .map(|(i, p)| (p.as_str(), i))
             .collect();
 
+        let local_idx: HashMap<(usize, usize), f64> = self
+            .local_matrix
+            .iter()
+            .filter_map(|((src, dst), audit)| {
+                let si = *peer_to_idx.get(src.as_str())?;
+                let di = *peer_to_idx.get(dst.as_str())?;
+                Some(((si, di), audit.subjective_trust()))
+            })
+            .collect();
+        let pre_trusted_set: HashSet<&str> =
+            self.pre_trusted_peers.iter().map(|s| s.as_str()).collect();
+
         // 1. Build normalized local trust matrix C (n x n)
         let mut c = vec![vec![0.0; n]; n];
 
-        for i in 0..n {
+        for (i, row) in c.iter_mut().enumerate() {
             let mut sum_s_ij = 0.0;
-            for j in 0..n {
+            for (j, cell) in row.iter_mut().enumerate() {
                 if i == j {
                     continue;
                 }
-                if let Some(audit) = self.local_matrix.get(&(peers[i].clone(), peers[j].clone())) {
-                    let trust = audit.subjective_trust();
-                    c[i][j] = trust;
+                if let Some(&trust) = local_idx.get(&(i, j)) {
+                    *cell = trust;
                     sum_s_ij += trust;
                 }
             }
             if sum_s_ij > 0.0 {
-                for v in c[i].iter_mut() {
+                for v in row.iter_mut() {
                     *v /= sum_s_ij;
                 }
             } else {
                 // If peer i has no local trust ratings, fallback to pre-trusted distribution
-                for j in 0..n {
-                    if self.pre_trusted_peers.contains(&peers[j]) {
-                        c[i][j] = 1.0 / (self.pre_trusted_peers.len() as f64).max(1.0);
+                for (j, cell) in row.iter_mut().enumerate() {
+                    if pre_trusted_set.contains(peers[j].as_str()) {
+                        *cell = 1.0 / (self.pre_trusted_peers.len() as f64).max(1.0);
                     }
                 }
             }

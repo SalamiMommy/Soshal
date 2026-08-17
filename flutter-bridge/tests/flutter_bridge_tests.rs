@@ -261,8 +261,8 @@ mod integration_tests {
         (pk, secret)
     }
 
-    #[test]
-    fn test_signer_locked_error_paths() {
+    #[tokio::test]
+    async fn test_signer_locked_error_paths() {
         let _t = soshal_test_util::test_lock();
         let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         signer::signer_lock().unwrap();
@@ -293,6 +293,7 @@ mod integration_tests {
                 .contains("signer locked")
         );
         assert!(signer::signer_save_to_keyring("aa".repeat(32))
+            .await
             .unwrap_err()
             .contains("signer locked"));
         // invalid secret never replaces the (empty) signer state
@@ -385,27 +386,33 @@ mod integration_tests {
         signer::signer_lock().unwrap();
     }
 
-    #[test]
-    fn test_signer_keyring_save_unlock_remove() {
+    #[tokio::test]
+    async fn test_signer_keyring_save_unlock_remove() {
         let _t = soshal_test_util::test_lock();
         let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (pk, _) = unlock_fresh_signer();
         // mismatched pubkey is rejected before any keychain access
-        let e = signer::signer_save_to_keyring("bb".repeat(32)).unwrap_err();
+        let e = signer::signer_save_to_keyring("bb".repeat(32))
+            .await
+            .unwrap_err();
         assert!(e.contains("pubkey does not match"), "got {e}");
         // unknown account: nothing stored -> Err (keychain missing or entry absent)
-        assert!(signer::signer_unlock_from_keyring("cc".repeat(32)).is_err());
+        assert!(signer::signer_unlock_from_keyring("cc".repeat(32))
+            .await
+            .is_err());
         // save/unlock/remove roundtrip; keychain may be unavailable on
         // headless CI, so a non-empty Err is tolerated there
-        match signer::signer_save_to_keyring(pk.clone()) {
+        match signer::signer_save_to_keyring(pk.clone()).await {
             Ok(true) => {
                 signer::signer_lock().unwrap();
                 assert!(signer::signer_is_locked().unwrap());
-                assert!(signer::signer_unlock_from_keyring(pk.clone()).unwrap());
+                assert!(signer::signer_unlock_from_keyring(pk.clone())
+                    .await
+                    .unwrap());
                 assert!(!signer::signer_is_locked().unwrap());
                 assert_eq!(signer::signer_pubkey().unwrap(), pk);
                 match signer::signer_remove_from_keyring(pk.clone()) {
-                    Ok(true) => assert!(signer::signer_unlock_from_keyring(pk).is_err()),
+                    Ok(true) => assert!(signer::signer_unlock_from_keyring(pk).await.is_err()),
                     Ok(false) => {}
                     Err(e) => assert!(!e.is_empty()),
                 }

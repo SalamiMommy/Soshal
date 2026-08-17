@@ -42,7 +42,7 @@ version = "0.1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bytes = { version = "1", features = ["serde"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "sync", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "sync", "io-util", "fs"] }
 nostr = { version = "0.45.1", features = ["os-rng", "nip04", "nip47", "nip44"] }
 nostr-sdk = { version = "0.45.1" }
 hex = "0.4"

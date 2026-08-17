@@ -27,8 +27,8 @@ fn with_repo<T>(
 }
 
 /// Set (or reset) the lock PIN. Must be 4-12 digits.
-#[frb(sync, serialize)]
-pub fn pin_set(pin: String) -> Result<bool, String> {
+#[frb(serialize)]
+pub async fn pin_set(pin: String) -> Result<bool, String> {
     if !pin.chars().all(|c| c.is_ascii_digit()) || !(4..=12).contains(&pin.len()) {
         return Err("PIN must be 4-12 digits".to_string());
     }
@@ -113,8 +113,8 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
 
 /// Verify the PIN with full lockout enforcement. Returns Ok(true) on a
 /// correct PIN, Ok(false) on wrong PIN / lockout / error.
-#[frb(sync, serialize)]
-pub fn pin_verify(pin: String) -> Result<bool, String> {
+#[frb(serialize)]
+pub async fn pin_verify(pin: String) -> Result<bool, String> {
     Ok(check_pin_with_lockout(&pin).is_ok())
 }
 
@@ -173,34 +173,34 @@ mod tests {
         serde_json::from_str(&pin_lockout_state().unwrap()).unwrap()
     }
 
-    #[test]
-    fn pin_set_rejects_invalid_pins() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn pin_set_rejects_invalid_pins() {
         let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
         for bad in ["123", "1234567890123", "12a4", "", " 12 "] {
-            let e = pin_set(bad.to_string()).unwrap_err();
+            let e = pin_set(bad.to_string()).await.unwrap_err();
             assert!(e.contains("4-12 digits"), "pin {bad:?} -> {e}");
         }
     }
 
-    #[test]
-    fn pin_set_has_verify_roundtrip() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn pin_set_has_verify_roundtrip() {
         let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
         assert!(!pin_has().unwrap());
-        assert!(pin_set("2468".to_string()).unwrap());
+        assert!(pin_set("2468".to_string()).await.unwrap());
         assert!(pin_has().unwrap());
-        assert!(pin_verify("2468".to_string()).unwrap());
-        assert!(!pin_verify("0000".to_string()).unwrap());
+        assert!(pin_verify("2468".to_string()).await.unwrap());
+        assert!(!pin_verify("0000".to_string()).await.unwrap());
     }
 
-    #[test]
-    fn pin_lockout_after_three_failures() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn pin_lockout_after_three_failures() {
         let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
-        assert!(pin_set("1357".to_string()).unwrap());
+        assert!(pin_set("1357".to_string()).await.unwrap());
         for _ in 0..3 {
-            assert!(!pin_verify("0000".to_string()).unwrap());
+            assert!(!pin_verify("0000".to_string()).await.unwrap());
         }
         let s = state_json();
         assert_eq!(s["attemptCount"], 3);
@@ -209,42 +209,42 @@ mod tests {
         assert!(until > now, "lockoutUntil {until} should be in the future");
         assert_eq!(s["permanentLocked"], false);
         assert!(
-            !pin_verify("1357".to_string()).unwrap(),
+            !pin_verify("1357".to_string()).await.unwrap(),
             "correct PIN blocked during lockout"
         );
     }
 
-    #[test]
-    fn pin_permanent_lock_after_hard_limit() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn pin_permanent_lock_after_hard_limit() {
         let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
-        assert!(pin_set("1357".to_string()).unwrap());
+        assert!(pin_set("1357".to_string()).await.unwrap());
         for _ in 0..PIN_HARD_LIMIT {
-            assert!(!pin_verify("0000".to_string()).unwrap());
+            assert!(!pin_verify("0000".to_string()).await.unwrap());
         }
         let s = state_json();
         assert_eq!(s["attemptCount"], PIN_HARD_LIMIT);
         assert_eq!(s["permanentLocked"], true);
         assert!(
-            !pin_verify("1357".to_string()).unwrap(),
+            !pin_verify("1357".to_string()).await.unwrap(),
             "correct PIN rejected after permanent lock"
         );
     }
 
-    #[test]
-    fn pin_clear_requires_current_pin() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn pin_clear_requires_current_pin() {
         let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
-        assert!(pin_set("97531".to_string()).unwrap());
+        assert!(pin_set("97531".to_string()).await.unwrap());
         assert!(pin_clear("0000".to_string()).is_err(), "wrong PIN rejected");
         assert!(pin_has().unwrap());
         assert!(pin_clear("97531".to_string()).unwrap());
         assert!(!pin_has().unwrap());
-        assert!(!pin_verify("97531".to_string()).unwrap());
+        assert!(!pin_verify("97531".to_string()).await.unwrap());
     }
 
-    #[test]
-    fn pin_corrupt_storage_detected() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn pin_corrupt_storage_detected() {
         let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let p = fresh_db();
         super::super::db::db_query_raw(
@@ -254,6 +254,6 @@ mod tests {
         )
         .unwrap();
         let _ = p;
-        assert!(!pin_verify("1357".to_string()).unwrap());
+        assert!(!pin_verify("1357".to_string()).await.unwrap());
     }
 }

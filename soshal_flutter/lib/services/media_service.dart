@@ -16,6 +16,10 @@ import 'error_log.dart';
 /// manifest, then parallel-verified chunk pulls.
 class MediaService extends ChangeNotifier with LastErrorMixin {
   int? _localServerPort;
+  Future<int>? _localServerStart;
+  static const int _blobCacheCap = 64;
+  final Map<String, String> _blobCache = {};
+  final Map<String, Future<String>> _blobInFlight = {};
 
   int? get localServerPort => _localServerPort;
 
@@ -34,7 +38,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
     Object? last;
     for (final peer in peers) {
       try {
-        final json = p2PFetchBlobFromPeer(
+        final json = await p2PFetchBlobFromPeer(
           blobHash: blobHash,
           ip: peer.ip,
           tcpPort: peer.port,
@@ -87,7 +91,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
       final window = await chunkingForMime(mime);
 
       final manifestJson =
-          RustLib.instance.api.crateFfiMediaMediaUploadBlobFile(
+          await RustLib.instance.api.crateFfiMediaMediaUploadBlobFile(
         filePath: filePath,
       );
 
@@ -108,7 +112,30 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
 
   /// Fetch a blob by hash from the chunk store (local or swarm).
   /// Returns the local file path after download.
-  Future<String> fetchBlob(String blobHash, {String? outPath}) async {
+  Future<String> fetchBlob(String blobHash, {String? outPath}) {
+    if (outPath == null) {
+      final cached = _blobCache[blobHash];
+      if (cached != null) return Future.value(cached);
+      final inFlight = _blobInFlight[blobHash];
+      if (inFlight != null) return inFlight;
+    }
+    final future = _fetchBlob(blobHash, outPath);
+    if (outPath == null) {
+      _blobInFlight[blobHash] = future;
+      future.then((path) {
+        _blobInFlight.remove(blobHash);
+        _blobCache[blobHash] = path;
+        if (_blobCache.length > _blobCacheCap) {
+          _blobCache.remove(_blobCache.keys.first);
+        }
+      }, onError: (_) {
+        _blobInFlight.remove(blobHash);
+      });
+    }
+    return future;
+  }
+
+  Future<String> _fetchBlob(String blobHash, String? outPath) async {
     try {
       if (outPath == null) {
         // Use default temp location if not specified
@@ -141,7 +168,21 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
 
   /// Start a local HTTP range server for media playback (sendfile zero-copy).
   /// Returns the bound port.
-  Future<int> startLocalServer() async {
+  Future<int> startLocalServer() {
+    if (_localServerPort != null) return Future.value(_localServerPort!);
+    final inFlight = _localServerStart;
+    if (inFlight != null) return inFlight;
+    final future = _startLocalServer();
+    _localServerStart = future;
+    future.then((_) {
+      _localServerStart = null;
+    }, onError: (_) {
+      _localServerStart = null;
+    });
+    return future;
+  }
+
+  Future<int> _startLocalServer() async {
     try {
       _localServerPort =
           RustLib.instance.api.crateFfiMediaMediaStartLocalServer().toInt();
@@ -195,6 +236,8 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
     try {
       final cachePath = await getCachePath();
       RustLib.instance.api.crateFfiMediaMediaClearCache(cacheDir: cachePath);
+      _blobCache.clear();
+      _blobInFlight.clear();
       clearLastError();
       notifyListeners();
     } catch (e, st) {

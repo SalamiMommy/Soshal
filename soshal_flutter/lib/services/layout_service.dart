@@ -163,12 +163,12 @@ class LayoutService extends ChangeNotifier {
         height: height,
       );
 
-  Uint8List renderMeshFrame({
+  Future<Uint8List> renderMeshFrame({
     required int sessionId,
     required String nodesJson,
     required double deltaTime,
-  }) =>
-      RustLib.instance.api.crateFfiRenderRenderComputeMeshFrame(
+  }) async =>
+      await RustLib.instance.api.crateFfiRenderRenderComputeMeshFrame(
         sessionId: PlatformInt64Util.from(sessionId),
         nodesJson: nodesJson,
         deltaTime: deltaTime,

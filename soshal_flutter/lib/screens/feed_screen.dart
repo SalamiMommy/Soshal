@@ -30,6 +30,7 @@ class _FeedScreenState extends State<FeedScreen> {
   double? _lastScrollPixels;
   DateTime? _lastTelemetryAt;
   FeedService? _feed;
+  Map<String, int> _totals = {};
 
   @override
   void initState() {
@@ -44,6 +45,7 @@ class _FeedScreenState extends State<FeedScreen> {
       if (feed == null) return;
       try {
         await feed.fetchFeed();
+        await _loadTotals();
       } catch (e) {
         debugPrint('feed load: $e');
         if (!mounted) return;
@@ -70,6 +72,20 @@ class _FeedScreenState extends State<FeedScreen> {
       textScale: MediaQuery.textScalerOf(context).scale(14),
     );
     feed.addListener(_onFeedChanged);
+  }
+
+  Future<void> _loadTotals() async {
+    final feed = _feed;
+    if (!mounted || feed == null) return;
+    final ids = feed.displayPosts.map((p) => p.eventId).toList();
+    if (ids.isEmpty) return;
+    try {
+      final totals = await context.read<ZapService>().fetchTotals(ids);
+      if (!mounted) return;
+      setState(() => _totals = totals);
+    } catch (e) {
+      debugPrint('feed totals: $e');
+    }
   }
 
   void _onFeedChanged() {
@@ -108,6 +124,7 @@ class _FeedScreenState extends State<FeedScreen> {
       // Load more when scrolling to bottom
       try {
         await context.read<FeedService>().loadMore();
+        await _loadTotals();
       } catch (e) {
         debugPrint('feed loadMore: $e');
         if (!mounted) return;
@@ -167,6 +184,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     onPressed: () async {
                       try {
                         await feedService.fetchFeed();
+                        await _loadTotals();
                       } catch (e) {
                         debugPrint('feed load: $e');
                         if (!context.mounted) return;
@@ -199,7 +217,11 @@ class _FeedScreenState extends State<FeedScreen> {
               }
 
               final post = feedService.displayPosts[index];
-              return FeedPostCard(post: post);
+              return FeedPostCard(
+                post: post,
+                totals: _totals,
+                isFirst: index == 0,
+              );
             },
           );
         },
@@ -246,8 +268,15 @@ class _FeedScreenState extends State<FeedScreen> {
 /// Feed Post Card
 class FeedPostCard extends StatefulWidget {
   final FeedPost post;
+  final Map<String, int>? totals;
+  final bool isFirst;
 
-  const FeedPostCard({super.key, required this.post});
+  const FeedPostCard({
+    super.key,
+    required this.post,
+    this.totals,
+    this.isFirst = false,
+  });
 
   @override
   State<FeedPostCard> createState() => _FeedPostCardState();
@@ -270,6 +299,11 @@ class _FeedPostCardState extends State<FeedPostCard> {
   }
 
   Future<void> _loadTotal() async {
+    final totals = widget.totals;
+    if (totals != null) {
+      _totalMsat = totals[widget.post.eventId] ?? 0;
+      return;
+    }
     try {
       _totalMsat =
           await context.read<ZapService>().fetchTotalMsat(widget.post.eventId);
@@ -833,9 +867,11 @@ class _FeedPostCardState extends State<FeedPostCard> {
   Widget _buildMediaCard() {
     final media = widget.post.media!;
     if (media.type == 'image') {
-      return _BlobImage(url: media.url, blobHash: media.blobHash);
+      return _BlobImage(
+          url: media.url, blobHash: media.blobHash, eager: widget.isFirst);
     } else if (media.type == 'video') {
-      return _VideoPlayerWidget(url: media.url, blobHash: media.blobHash);
+      return _VideoPlayerWidget(
+          url: media.url, blobHash: media.blobHash, eager: widget.isFirst);
     }
     return const SizedBox.shrink();
   }
@@ -848,8 +884,9 @@ class _FeedPostCardState extends State<FeedPostCard> {
 class _BlobImage extends StatefulWidget {
   final String url;
   final String? blobHash;
+  final bool eager;
 
-  const _BlobImage({required this.url, this.blobHash});
+  const _BlobImage({required this.url, this.blobHash, this.eager = false});
 
   @override
   State<_BlobImage> createState() => _BlobImageState();
@@ -858,10 +895,17 @@ class _BlobImage extends StatefulWidget {
 class _BlobImageState extends State<_BlobImage> {
   String? _resolved;
   String? _error;
+  bool _started = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.eager) _start();
+  }
+
+  void _start() {
+    if (_started) return;
+    _started = true;
     _prepare();
   }
 
@@ -892,6 +936,11 @@ class _BlobImageState extends State<_BlobImage> {
     }
     final url = _resolved;
     if (url == null) {
+      if (!_started) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _start();
+        });
+      }
       return Container(
         height: 200,
         color: Colors.grey[300],
@@ -949,8 +998,10 @@ Future<String> _resolveBlobUrl(
 class _VideoPlayerWidget extends StatefulWidget {
   final String url;
   final String? blobHash;
+  final bool eager;
 
-  const _VideoPlayerWidget({required this.url, this.blobHash});
+  const _VideoPlayerWidget(
+      {required this.url, this.blobHash, this.eager = false});
 
   @override
   State<_VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
@@ -960,10 +1011,17 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
   VideoPlayerController? _controller;
   bool _isInitialized = false;
   String? _error;
+  bool _started = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.eager) _start();
+  }
+
+  void _start() {
+    if (_started) return;
+    _started = true;
     _prepare();
   }
 
@@ -1005,6 +1063,11 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       );
     }
     if (!_isInitialized || _controller == null) {
+      if (!_started) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _start();
+        });
+      }
       return Container(
         height: 200,
         color: Colors.grey[300],

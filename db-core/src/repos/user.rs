@@ -12,36 +12,60 @@ impl<'a> UserRepo<'a> {
 
     pub fn get_by_pubkey(&self, pubkey: &str) -> Result<Option<UserRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::query_first(
-            &conn,
-            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list FROM users WHERE pubkey = ?1",
-            params![pubkey],
-            Self::map_row,
-        )
+        crate::query::with_tx(&conn, |tx| async move {
+            self.get_by_pubkey_in(&tx, pubkey).await
+        })
+    }
+
+    pub async fn get_by_pubkey_in(
+        &self,
+        tx: &libsql::Transaction,
+        pubkey: &str,
+    ) -> Result<Option<UserRow>, crate::error::DbError> {
+        let mut stmt = tx
+            .prepare("SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list FROM users WHERE pubkey = ?1")
+            .await?;
+        let mut rows = stmt.query(params![pubkey]).await?;
+        match rows.next().await? {
+            Some(row) => Ok(Some(Self::map_row(&row)?)),
+            None => Ok(None),
+        }
     }
 
     pub fn upsert(&self, user: &UserRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(
-            &conn,
+        crate::query::with_tx(&conn, |tx| async move {
+            self.upsert_in(&tx, user).await?;
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+
+    pub async fn upsert_in(
+        &self,
+        tx: &libsql::Transaction,
+        row: &UserRow,
+    ) -> Result<(), crate::error::DbError> {
+        tx.execute(
             "INSERT INTO users (pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) ON CONFLICT(pubkey) DO UPDATE SET name=excluded.name, display_name=excluded.display_name, about=excluded.about, picture=excluded.picture, banner=excluded.banner, nip05=excluded.nip05, lud16=excluded.lud16, updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, contact_pubkeys=excluded.contact_pubkeys, relay_list=excluded.relay_list",
             params![
-                user.pubkey.as_str(),
-                user.npub.as_str(),
-                user.name.as_deref(),
-                user.display_name.as_deref(),
-                user.about.as_deref(),
-                user.picture.as_deref(),
-                user.banner.as_deref(),
-                user.nip05.as_deref(),
-                user.lud16.as_deref(),
-                user.created_at,
-                user.updated_at,
-                user.metadata_json.as_deref(),
-                user.contact_pubkeys.as_str(),
-                user.relay_list.as_str(),
+                row.pubkey.as_str(),
+                row.npub.as_str(),
+                row.name.as_deref(),
+                row.display_name.as_deref(),
+                row.about.as_deref(),
+                row.picture.as_deref(),
+                row.banner.as_deref(),
+                row.nip05.as_deref(),
+                row.lud16.as_deref(),
+                row.created_at,
+                row.updated_at,
+                row.metadata_json.as_deref(),
+                row.contact_pubkeys.as_str(),
+                row.relay_list.as_str(),
             ],
-        )?;
+        )
+        .await?;
         Ok(())
     }
 

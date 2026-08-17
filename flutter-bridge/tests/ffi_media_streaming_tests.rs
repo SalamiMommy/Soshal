@@ -154,26 +154,28 @@ mod ffi_media_streaming_tests {
         let _ = std::fs::remove_file(&out2);
     }
 
-    #[test]
-    fn media_upload_blob_file_roundtrip() {
+    #[tokio::test]
+    async fn media_upload_blob_file_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
         let data = unique_bytes();
         let src = temp_path("blob_src");
         std::fs::write(&src, &data).unwrap();
-        let json = media::media_upload_blob_file(src.clone()).unwrap();
+        let json = media::media_upload_blob_file(src.clone()).await.unwrap();
         let manifest: serde_json::Value = serde_json::from_str(&json).unwrap();
         let hash = manifest["blob_hash"].as_str().unwrap().to_string();
         assert_eq!(manifest["total_size"].as_u64().unwrap(), data.len() as u64);
         let out = temp_path("blob_file_out");
         media::media_fetch_blob(hash, out.clone()).unwrap();
         assert_eq!(std::fs::read(&out).unwrap(), data);
-        assert!(media::media_upload_blob_file(temp_path("no_such_file")).is_err());
+        assert!(media::media_upload_blob_file(temp_path("no_such_file"))
+            .await
+            .is_err());
         let _ = std::fs::remove_file(&src);
         let _ = std::fs::remove_file(&out);
     }
 
-    #[test]
-    fn media_upload_blob_file_rejects_ssrf_urls() {
+    #[tokio::test]
+    async fn media_upload_blob_file_rejects_ssrf_urls() {
         let _g = TEST_LOCK.lock().unwrap();
         for url in [
             "http://localhost:8080/a.jpg",
@@ -181,7 +183,9 @@ mod ffi_media_streaming_tests {
             "http://192.168.1.10/a.jpg",
             "http://foo.localtest.me/a.jpg",
         ] {
-            let err = media::media_upload_blob_file(url.to_string()).unwrap_err();
+            let err = media::media_upload_blob_file(url.to_string())
+                .await
+                .unwrap_err();
             assert!(
                 err.contains("not allowed") || err.contains("internal address"),
                 "{url}: {err}"

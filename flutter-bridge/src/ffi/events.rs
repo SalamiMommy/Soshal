@@ -147,18 +147,7 @@ fn attendee_counts() -> std::collections::HashMap<String, i32> {
 }
 
 fn attendees_count(event_id: &str) -> i32 {
-    super::db::db_query_raw(format!(
-        "SELECT COUNT(DISTINCT pubkey) AS c FROM posts WHERE kind = {KIND_EVENT_RSVP} \
-         AND content = 'accepted' AND tags_json LIKE '%\"{eid}\"%'",
-        eid = event_id.replace('\'', "''")
-    ))
-    .ok()
-    .and_then(|json| {
-        serde_json::from_str::<Vec<serde_json::Value>>(&json)
-            .ok()
-            .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
-    })
-    .unwrap_or(0) as i32
+    attendee_counts().get(event_id).copied().unwrap_or(0)
 }
 
 /// Fetch nearby events (distance filter computed client-side over the

@@ -1,5 +1,3 @@
 #!/system/bin/sh
-# Reticulum daemon stub for Android
-# Full implementation requires Python-for-Android packaging
 echo "Reticulum daemon requires Python runtime - not bundled in APK"
 exit 1

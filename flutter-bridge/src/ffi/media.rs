@@ -152,12 +152,11 @@ pub fn media_upload_blob(data: Vec<u8>) -> Result<String, String> {
 
 /// Upload a local media file (or remote URL, SSRF-guarded) directly to the
 /// chunk store (zero Dart heap memory overhead for the file path case).
-#[frb(sync, serialize)]
-pub fn media_upload_blob_file(file_path: String) -> Result<String, String> {
+#[frb(serialize)]
+pub async fn media_upload_blob_file(file_path: String) -> Result<String, String> {
     let manifest = if soshal_media_core::source::is_url_source(&file_path) {
-        // URL sources require an async fetch; run it on a scoped runtime.
-        let (data, _) =
-            soshal_db_core::block_on(soshal_media_core::source::fetch_source_bytes(&file_path))?;
+        // URL sources require an async fetch.
+        let (data, _) = soshal_media_core::source::fetch_source_bytes(&file_path).await?;
         let store = ChunkStore::new(ChunkStore::default_root());
         let manifest = store.store_reader(Cursor::new(data))?;
         store.save_manifest(&manifest)?;

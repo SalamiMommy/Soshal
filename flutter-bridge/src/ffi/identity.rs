@@ -177,16 +177,9 @@ pub fn identity_update_profile(
 }
 
 /// Verify a NIP-05 identifier against the published `.well-known` document.
-#[frb(sync, serialize)]
-pub fn identity_verify_nip05(nip05: String) -> Result<bool, String> {
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(e) => return Err(format!("runtime: {e}")).into(),
-    };
-    match runtime.block_on(verify_nip05_fut(&nip05)) {
+#[frb(serialize)]
+pub async fn identity_verify_nip05(nip05: String) -> Result<bool, String> {
+    match verify_nip05_fut(&nip05).await {
         Ok((valid, _)) => Ok(valid).into(),
         Err(e) => Err(e).into(),
     }

@@ -54,11 +54,11 @@ class _ComposerScreenState extends State<ComposerScreen> {
           ? bytes.sublist(44)
           : bytes;
       if (pcm.isEmpty) throw Exception('No audio samples in $path');
-      final payload = audio.encodeVoice(pcm);
+      final payload = await audio.encodeVoice(pcm);
       final decoded = audio.decodeVoice(payload);
       if (decoded.isEmpty) throw Exception('Voice encode produced no samples');
       final duration = audio.durationSecs(payload);
-      final peaks = audio.peaksFor(path);
+      final peaks = await audio.peaksFor(path);
       final tmp = File(
           '${Directory.systemTemp.path}/voice_${DateTime.now().millisecondsSinceEpoch}.vo');
       await tmp.writeAsBytes(payload);
@@ -88,24 +88,28 @@ class _ComposerScreenState extends State<ComposerScreen> {
     _tagDebounce?.cancel();
     _tagDebounce = Timer(const Duration(milliseconds: 300), () async {
       final text = _contentController.text;
-      final detected = context.read<FeedService>().utilExtractHashtags(text);
-      if (!mounted) return;
-      setState(() => _detectedTags = detected);
-
       final match = _mentionRe.firstMatch(text);
+      final query = match?.group(1) ?? '';
+      final resultsFuture = match == null
+          ? Future.value(<SearchResultItem>[])
+          : context
+              .read<SearchService>()
+              .mentions(query, limit: 8)
+              .catchError((e) => <SearchResultItem>[]);
+      final detected = context.read<FeedService>().utilExtractHashtags(text);
+      final extracted = await Future.wait<Object?>([
+        Future.value(detected),
+        resultsFuture,
+      ]);
+      if (!mounted) return;
+      setState(() => _detectedTags = extracted[0] as List<String>);
       if (match == null) {
         if (_mentionResults.isNotEmpty) {
           setState(() => _mentionResults = []);
         }
         return;
       }
-      final query = match.group(1) ?? '';
-      final results = await context
-          .read<SearchService>()
-          .mentions(query, limit: 8)
-          .catchError((e) => <SearchResultItem>[]);
-      if (!mounted) return;
-      setState(() => _mentionResults = results);
+      setState(() => _mentionResults = extracted[1] as List<SearchResultItem>);
     });
   }
 

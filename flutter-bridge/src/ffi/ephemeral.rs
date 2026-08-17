@@ -82,10 +82,8 @@ pub fn ephemeral_list_pending(pubkey: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn ephemeral_view(id: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
-        let repo = EphemeralMediaRepo::new(db);
-        repo.increment_view_count(&id)?;
-        let row = repo
-            .get(&id)?
+        let row = EphemeralMediaRepo::new(db)
+            .increment_view_count(&id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
         Ok(row_json(&row))
     })

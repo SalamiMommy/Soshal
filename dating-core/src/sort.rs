@@ -3,7 +3,7 @@
 use crate::scoring::compute_mutual_score;
 #[doc(hidden)]
 pub use crate::MAX_PROFILES;
-use crate::{DatingProfile, SortProfilesInput, SortedProfileOut};
+use crate::{SortProfilesInput, SortedProfileOut};
 use soshal_spatial_core::distance::haversine_distance;
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -14,28 +14,6 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
     }
     let self_contacts_set: HashSet<&str> = input.self_contacts.iter().map(|s| s.as_str()).collect();
     let self_geohash = input.self_profile.location_geohash.clone();
-    let self_dp = DatingProfile {
-        age: input.self_profile.age,
-        gender: input.self_profile.gender.clone(),
-        seeking: input.self_profile.seeking.clone(),
-        height: input.self_profile.height,
-        body_type: input.self_profile.body_type.clone(),
-        smoking: input.self_profile.smoking.clone(),
-        drinking: input.self_profile.drinking.clone(),
-        bio: None,
-        relationship_intent: input.self_profile.relationship_intent.clone(),
-        location_geohash: input.self_profile.location_geohash.clone(),
-        max_distance_km: input.self_profile.max_distance_km,
-        verified_mutual_friends: None,
-        interests: input.self_profile.interests.clone(),
-        images: None,
-        politics: input.self_profile.politics.clone(),
-        ethnicity: input.self_profile.ethnicity.clone(),
-        education: input.self_profile.education.clone(),
-        language: input.self_profile.language.clone(),
-        preference_weights: input.self_profile.preference_weights.clone(),
-        dealbreakers: input.self_profile.dealbreakers.clone(),
-    };
 
     // (result, age, height, distance_km)
     let mut results: Vec<(SortedProfileOut, Option<f64>, Option<f64>, f64)> = Vec::new();
@@ -50,29 +28,7 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
             .cloned()
             .collect();
 
-        let other_dp = DatingProfile {
-            age: profile.age,
-            gender: profile.gender.clone(),
-            seeking: profile.seeking.clone(),
-            height: profile.height,
-            body_type: profile.body_type.clone(),
-            smoking: profile.smoking.clone(),
-            drinking: profile.drinking.clone(),
-            bio: None,
-            relationship_intent: profile.relationship_intent.clone(),
-            location_geohash: profile.location_geohash.clone(),
-            max_distance_km: profile.max_distance_km,
-            verified_mutual_friends: None,
-            interests: profile.interests.clone(),
-            images: None,
-            politics: profile.politics.clone(),
-            ethnicity: profile.ethnicity.clone(),
-            education: profile.education.clone(),
-            language: profile.language.clone(),
-            preference_weights: profile.preference_weights.clone(),
-            dealbreakers: profile.dealbreakers.clone(),
-        };
-        let score = compute_mutual_score(&self_dp, &other_dp);
+        let score = compute_mutual_score(&input.self_profile, profile);
         let distance_km = match (&self_geohash, &profile.location_geohash) {
             (Some(g1), Some(g2)) => haversine_distance(g1, g2),
             _ => f64::from(if is_contact { 1 } else { 2 }),

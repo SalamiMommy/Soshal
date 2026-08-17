@@ -138,7 +138,7 @@ pub async fn network_add_relay(url: String) -> Result<bool, String> {
     };
     let client = match client_guard().as_ref() {
         Some(c) => c.clone(),
-        None => return Err("relay client not initialized".to_string()).into(),
+        None => return Err("relay client not initialized".to_string()),
     };
     Ok(client.add_relay(target).await.is_ok()).into()
 }
@@ -152,49 +152,46 @@ pub async fn network_remove_relay(url: String) -> Result<bool, String> {
     };
     let client = match client_guard().as_ref() {
         Some(c) => c.clone(),
-        None => return Err("relay client not initialized".to_string()).into(),
+        None => return Err("relay client not initialized".to_string()),
     };
     Ok(client.remove_relay(target).await.is_ok()).into()
+}
+
+async fn relay_status_snapshot() -> Result<Vec<RelayInfo>, String> {
+    let client = match client_guard().as_ref() {
+        Some(c) => c.clone(),
+        None => return Err("relay client not initialized".to_string()),
+    };
+    let relays = client.relays().await;
+    let mut out: Vec<RelayInfo> = relays
+        .into_iter()
+        .map(|(url, relay)| RelayInfo {
+            url: url.to_string(),
+            connected: relay.status().is_connected(),
+            latency_ms: relay
+                .stats()
+                .latency()
+                .map(|l| l.as_millis().min(u64::MAX as u128) as u32)
+                .unwrap_or(0),
+            last_event_at: relay.stats().connected_at().as_secs(),
+        })
+        .collect();
+    out.sort_by(|a, b| a.url.cmp(&b.url));
+    Ok(out)
 }
 
 /// Snapshot of relay connection state (url, connected, latency, last event).
 #[frb(serialize)]
 pub async fn network_get_relay_status() -> Result<String, String> {
-    let client = match client_guard().as_ref() {
-        Some(c) => c.clone(),
-        None => return Err("relay client not initialized".to_string()).into(),
-    };
-    {
-        let relays = client.relays().await;
-        let mut out: Vec<RelayInfo> = relays
-            .into_iter()
-            .map(|(url, relay)| RelayInfo {
-                url: url.to_string(),
-                connected: relay.status().is_connected(),
-                latency_ms: relay
-                    .stats()
-                    .latency()
-                    .map(|l| l.as_millis().min(u64::MAX as u128) as u32)
-                    .unwrap_or(0),
-                last_event_at: relay.stats().connected_at().as_secs(),
-            })
-            .collect();
-        out.sort_by(|a, b| a.url.cmp(&b.url));
-        super::util::json_ok(out)
-    }
+    super::util::json_ok(relay_status_snapshot().await?)
 }
 
 /// Summary of relay connectivity: `{connected, total}` — drives the app-wide
 /// offline banner. One relay connected means we are online.
 #[frb(serialize)]
 pub async fn network_relay_connection_status() -> Result<String, String> {
-    let raw = network_get_relay_status().await?;
-    let relays: Vec<serde_json::Value> =
-        serde_json::from_str(&raw).map_err(|e| format!("parse relay status: {e}"))?;
-    let connected = relays
-        .iter()
-        .filter(|r| r["connected"].as_bool().unwrap_or(false))
-        .count();
+    let relays = relay_status_snapshot().await?;
+    let connected = relays.iter().filter(|r| r.connected).count();
     super::util::json_ok(serde_json::json!({
         "connected": connected,
         "total": relays.len(),
@@ -211,7 +208,7 @@ pub async fn network_subscribe(filter_json: String) -> Result<String, String> {
     };
     let client = match client_guard().as_ref() {
         Some(c) => c.clone(),
-        None => return Err("relay client not initialized".to_string()).into(),
+        None => return Err("relay client not initialized".to_string()),
     };
     let sub_id = SubscriptionId::generate();
     match client.subscribe(vec![filter]).with_id(sub_id.clone()).await {
@@ -226,7 +223,7 @@ pub async fn network_unsubscribe(subscription_id: String) -> Result<bool, String
     let sub_id = SubscriptionId::new(subscription_id);
     let client = match client_guard().as_ref() {
         Some(c) => c.clone(),
-        None => return Err("relay client not initialized".to_string()).into(),
+        None => return Err("relay client not initialized".to_string()),
     };
     match client.unsubscribe(&sub_id).await {
         Ok(_) => Ok(true).into(),
@@ -244,7 +241,7 @@ pub async fn network_publish_event(event_json: String) -> Result<i32, String> {
     };
     let client = match client_guard().as_ref() {
         Some(c) => c.clone(),
-        None => return Err("relay client not initialized".to_string()).into(),
+        None => return Err("relay client not initialized".to_string()),
     };
     match client.send_event(&event).await {
         Ok(out) => Ok(out.success.len() as i32).into(),
@@ -262,7 +259,7 @@ pub async fn network_query_events(filter_json: String) -> Result<String, String>
     };
     let client = match client_guard().as_ref() {
         Some(c) => c.clone(),
-        None => return Err("relay client not initialized".to_string()).into(),
+        None => return Err("relay client not initialized".to_string()),
     };
     {
         match client.fetch_events(vec![filter]).await {

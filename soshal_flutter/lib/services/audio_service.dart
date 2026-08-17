@@ -8,10 +8,10 @@ import 'package:soshal_flutter/frb_generated.dart';
 /// (storage-core); this service is a thin FFI wrapper for the composer UI.
 class AudioService {
   /// RMS peak envelope (0..1) for a voice file — waveform rendering.
-  List<double> peaksFor(String path, {int buckets = 64}) {
+  Future<List<double>> peaksFor(String path, {int buckets = 64}) async {
     try {
-      return RustLib.instance.api
-          .crateFfiStorageStorageGetAudioPeaks(path: path)
+      return (await RustLib.instance.api
+              .crateFfiStorageStorageGetAudioPeaks(path: path))
           .toList();
     } catch (e) {
       debugPrint('audio peaks: $e');
@@ -20,9 +20,9 @@ class AudioService {
   }
 
   /// Compress PCM (i16) into the wire codec (voice memos).
-  Uint8List encodeVoice(List<int> pcm) {
+  Future<Uint8List> encodeVoice(List<int> pcm) async {
     try {
-      return RustLib.instance.api
+      return await RustLib.instance.api
           .crateFfiStorageStorageEncodeVoicePcm(pcm: pcm);
     } catch (e) {
       debugPrint('voice encode: $e');

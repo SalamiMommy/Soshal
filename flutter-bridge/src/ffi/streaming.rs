@@ -130,11 +130,6 @@ pub fn streaming_fetch_live(limit: i32) -> Result<String, String> {
 /// Fetch live streams from followed users (contact graph join).
 #[frb(sync, serialize)]
 pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, String> {
-    let escaped = user_pubkey
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_");
-    let pattern = format!("%\"{escaped}\"%");
     let json = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
@@ -143,12 +138,12 @@ pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, Stri
                     "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
                      JOIN users u ON u.pubkey = p.pubkey \
                      WHERE p.kind = ?1 AND p.is_deleted = 0 \
-                     AND u.contact_pubkeys LIKE ?2 ESCAPE '\\' \
+                     AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(u.contact_pubkeys) THEN u.contact_pubkeys ELSE '[]' END) j WHERE j.value = ?2) \
                      ORDER BY p.created_at DESC LIMIT 100",
                 )
                 .await?;
             let mut rows = stmt
-                .query(libsql::params![KIND_LIVE as i64, pattern.as_str()])
+                .query(libsql::params![KIND_LIVE as i64, user_pubkey.as_str()])
                 .await?;
             let names: Vec<String> = stmt
                 .columns()

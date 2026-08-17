@@ -4,19 +4,6 @@ use soshal_common_core::json_util::{json_in, json_out};
 use soshal_nostr_core::models::find_tag_values_map;
 
 #[derive(Deserialize)]
-struct SwapEvent {
-    #[serde(default)]
-    tags: Vec<Vec<String>>,
-    content: String,
-    #[serde(default)]
-    id: String,
-    #[serde(default)]
-    pubkey: String,
-    #[serde(default)]
-    sig: String,
-}
-
-#[derive(Deserialize)]
 struct InnerSwapEvent {
     id: String,
     pubkey: String,
@@ -40,16 +27,14 @@ struct ValidateSwapOut {
     inner_pubkey: Option<String>,
 }
 
-/// Verifies the Schnorr signature of a serialized Nostr event. Returns false
-/// for malformed JSON, missing signature fields or failed verification.
-fn event_signature_valid(event_json: &str) -> bool {
-    serde_json::from_str::<nostr::event::Event>(event_json)
-        .map(|ev| ev.verify().is_ok())
-        .unwrap_or(false)
+/// Verifies the Schnorr signature of a parsed Nostr event. Returns false for
+/// failed verification.
+fn event_signature_valid(event: &nostr::event::Event) -> bool {
+    event.verify().is_ok()
 }
 
 fn validate_swap_event(input: &ValidateSwapInput) -> ValidateSwapOut {
-    let event: SwapEvent = match serde_json::from_str(&input.event_json) {
+    let event = match serde_json::from_str::<nostr::event::Event>(&input.event_json) {
         Ok(e) => e,
         Err(_) => {
             return ValidateSwapOut {
@@ -60,33 +45,25 @@ fn validate_swap_event(input: &ValidateSwapInput) -> ValidateSwapOut {
         }
     };
     // The outer event must be a properly signed Nostr event; unsigned or
-    // forged payloads are rejected outright.
-    if event.id.is_empty() || event.pubkey.is_empty() || event.sig.is_empty() {
+    // forged payloads are rejected outright. A successful parse guarantees
+    // well-formed hex id/pubkey/sig fields.
+    if event.pubkey.to_hex() != input.self_pubkey {
         return ValidateSwapOut {
             valid: false,
             d_tag: None,
             inner_pubkey: None,
         };
     }
-    // The signer of the outer event must be the party whose role is being
-    // asserted. Without this, an attacker could sign a swap declaring any
-    // third party as buyer/seller with their own key.
-    if event.pubkey != input.self_pubkey {
+    if !event_signature_valid(&event) {
         return ValidateSwapOut {
             valid: false,
             d_tag: None,
             inner_pubkey: None,
         };
     }
-    if !event_signature_valid(&input.event_json) {
-        return ValidateSwapOut {
-            valid: false,
-            d_tag: None,
-            inner_pubkey: None,
-        };
-    }
+    let tags: Vec<Vec<String>> = event.tags.iter().map(|t| t.clone().to_vec()).collect();
     let [d_tag_val, p_tag, role_tag, type_tag] =
-        find_tag_values_map(&event.tags, ["d", "p", "role", "type"]);
+        find_tag_values_map(&tags, ["d", "p", "role", "type"]);
     let d_tag = d_tag_val.map(|s| s.to_string());
     let d_present = d_tag.is_some();
     let p_ok = p_tag == Some(input.self_pubkey.as_str());

@@ -45,19 +45,19 @@ pub struct CalendarEventOut {
     pub created_at: f64,
 }
 
-use soshal_nostr_core::models::find_tag_value;
+use soshal_nostr_core::models::find_tag_values_map;
 
 fn parse_calendar_event(ev: &CalendarEventInput) -> Option<CalendarEventOut> {
     if ev.tags.len() > MAX_TAGS_ENTRIES {
         return None;
     }
-    let d_tag = find_tag_value(&ev.tags, "d")
+    let [d_val, title_val, start_val, end_val, location_val] =
+        find_tag_values_map(&ev.tags, ["d", "title", "start", "end", "location"]);
+    let d_tag = d_val
         .map(|s| s.to_string())
         .unwrap_or_else(|| ev.id.chars().take(12).collect::<String>());
-    let title = find_tag_value(&ev.tags, "title")
-        .unwrap_or("Untitled Event")
-        .to_string();
-    let start_str = find_tag_value(&ev.tags, "start")?;
+    let title = title_val.unwrap_or("Untitled Event").to_string();
+    let start_str = start_val?;
     if start_str.len() > 32 {
         return None;
     }
@@ -65,7 +65,7 @@ fn parse_calendar_event(ev: &CalendarEventInput) -> Option<CalendarEventOut> {
         Ok(t) if t.is_finite() => t,
         _ => return None,
     };
-    let end_time = find_tag_value(&ev.tags, "end")
+    let end_time = end_val
         .and_then(|s| {
             if s.len() > 32 {
                 None
@@ -74,7 +74,7 @@ fn parse_calendar_event(ev: &CalendarEventInput) -> Option<CalendarEventOut> {
             }
         })
         .filter(|t| t.is_finite());
-    let location = find_tag_value(&ev.tags, "location").map(|s| s.to_string());
+    let location = location_val.map(|s| s.to_string());
     let mut description: Option<String> = None;
     let mut image: Option<String> = None;
     let mut videos: Vec<String> = Vec::new();

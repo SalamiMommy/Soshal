@@ -6,14 +6,14 @@ use soshal_audio_core::extract_waveform_path;
 use soshal_audio_core::voice::{decode_voice_stream, encode_voice_pcm, voice_duration_secs};
 
 /// Waveform peaks (normalized 0..1) for an audio file or voice-note stream.
-#[frb(sync, serialize)]
-pub fn storage_get_audio_peaks(path: String) -> Result<Vec<f32>, String> {
+#[frb(serialize)]
+pub async fn storage_get_audio_peaks(path: String) -> Result<Vec<f32>, String> {
     extract_waveform_path(&path, 64).into()
 }
 
 /// Encode mono i16 PCM (48 kHz) into a framed Opus voice-note stream.
-#[frb(sync, serialize)]
-pub fn storage_encode_voice_pcm(pcm: Vec<i16>) -> Result<Vec<u8>, String> {
+#[frb(serialize)]
+pub async fn storage_encode_voice_pcm(pcm: Vec<i16>) -> Result<Vec<u8>, String> {
     encode_voice_pcm(&pcm).into()
 }
 
@@ -50,10 +50,10 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn test_voice_pcm_roundtrip() {
+    #[tokio::test]
+    async fn test_voice_pcm_roundtrip() {
         let pcm = sine_pcm(1.0, 440.0);
-        let stream = storage_encode_voice_pcm(pcm.clone()).unwrap();
+        let stream = storage_encode_voice_pcm(pcm.clone()).await.unwrap();
         assert!(soshal_audio_core::is_opus_stream(&stream));
         assert!(stream.len() < pcm.len(), "opus should beat raw pcm");
         let restored = storage_decode_voice_stream(stream.clone()).unwrap();
@@ -62,14 +62,14 @@ mod tests {
         assert!((dur - 1.0).abs() < 0.05, "duration {dur}");
     }
 
-    #[test]
-    fn test_voice_stream_rejects_garbage() {
+    #[tokio::test]
+    async fn test_voice_stream_rejects_garbage() {
         assert!(storage_decode_voice_stream(b"not a voice note".to_vec()).is_err());
         assert!(storage_voice_duration_secs(b"not a voice note".to_vec()).is_err());
     }
 
-    #[test]
-    fn test_voice_stream_rejects_corrupt_framing() {
+    #[tokio::test]
+    async fn test_voice_stream_rejects_corrupt_framing() {
         let mut bad = soshal_audio_core::OPUS_STREAM_MAGIC.to_vec();
         bad.push(0x01);
         assert!(storage_decode_voice_stream(bad).is_err());
@@ -78,9 +78,9 @@ mod tests {
         assert!(storage_decode_voice_stream(oversized).is_err());
     }
 
-    #[test]
-    fn test_voice_pcm_empty_encodes_magic_only() {
-        let stream = storage_encode_voice_pcm(vec![]).unwrap();
+    #[tokio::test]
+    async fn test_voice_pcm_empty_encodes_magic_only() {
+        let stream = storage_encode_voice_pcm(vec![]).await.unwrap();
         assert_eq!(stream, soshal_audio_core::OPUS_STREAM_MAGIC.to_vec());
     }
 
@@ -93,14 +93,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_audio_peaks_missing_file_errors() {
+    #[tokio::test]
+    async fn test_audio_peaks_missing_file_errors() {
         let path = soshal_test_util::tmp_path("storage", "no-such-file.wav");
-        assert!(storage_get_audio_peaks(path.to_string_lossy().to_string()).is_err());
+        assert!(storage_get_audio_peaks(path.to_string_lossy().to_string())
+            .await
+            .is_err());
     }
 
-    #[test]
-    fn test_audio_peaks_wav_fixture() {
+    #[tokio::test]
+    async fn test_audio_peaks_wav_fixture() {
         let pcm = sine_pcm(2.0, 220.0);
         let data_len = (pcm.len() * 2) as u32;
         let mut wav = Vec::new();
@@ -122,7 +124,9 @@ mod tests {
         }
         let path = soshal_test_util::tmp_path("storage", "fixture.wav");
         std::fs::write(&path, &wav).unwrap();
-        let peaks = storage_get_audio_peaks(path.to_string_lossy().to_string()).unwrap();
+        let peaks = storage_get_audio_peaks(path.to_string_lossy().to_string())
+            .await
+            .unwrap();
         let _ = std::fs::remove_file(&path);
         assert_eq!(peaks.len(), 64);
         for p in &peaks {

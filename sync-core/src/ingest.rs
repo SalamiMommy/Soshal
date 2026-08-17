@@ -4,7 +4,7 @@
 //! at the local pubkey (or authorship by it) — mirroring the
 //! `commands::util::verified_events` rule set from the hardening audit.
 
-use crate::{SyncUpdate, WM_FEED, WM_META};
+use crate::{SyncUpdate, WM_DM, WM_FEED, WM_META};
 use nostr::event::{Event, Kind};
 use nostr::key::PublicKey;
 use nostr::nips::nip19::ToBech32;
@@ -171,9 +171,27 @@ pub fn handle(
     event: &Event,
     tx: &tokio::sync::mpsc::Sender<SyncUpdate>,
 ) -> Result<(), DbError> {
-    event
-        .verify()
-        .map_err(|e| DbError::Migration(format!("event verification failed: {e}")))?;
+    let conn = db.conn()?;
+    soshal_db_core::query::with_tx(&conn, |t| async move {
+        handle_impl(db, my_pubkey, event, tx, false, &t).await?;
+        t.commit().await?;
+        Ok(())
+    })
+}
+
+async fn handle_impl(
+    db: &Database,
+    my_pubkey: &str,
+    event: &Event,
+    tx: &tokio::sync::mpsc::Sender<SyncUpdate>,
+    already_verified: bool,
+    t: &libsql::Transaction,
+) -> Result<(), DbError> {
+    if !already_verified {
+        event
+            .verify()
+            .map_err(|e| DbError::Migration(format!("event verification failed: {e}")))?;
+    }
 
     // DM kind: only keep payloads addressed to us (p-tag mine) or authored by
     // us; content stays encrypted here — never persisted unverified.
@@ -194,34 +212,37 @@ pub fn handle(
     match event.kind {
         Kind::Metadata => {
             if let Some(row) = user_row(event) {
-                UserRepo::new(db).upsert(&row)?;
+                UserRepo::new(db).upsert_in(t, &row).await?;
                 let _ = tx.try_send(SyncUpdate::Profile { pubkey: row.pubkey });
             }
         }
         Kind::ContactList => {
             let pubkey = event.pubkey.to_hex();
             let repo = UserRepo::new(db);
-            let mut row = repo.get_by_pubkey(&pubkey)?.unwrap_or_else(|| UserRow {
-                pubkey: pubkey.clone(),
-                npub: PublicKey::from_hex(&pubkey)
-                    .ok()
-                    .map(|p| p.to_bech32().unwrap_or_default())
-                    .unwrap_or_default(),
-                name: None,
-                display_name: None,
-                about: None,
-                picture: None,
-                banner: None,
-                nip05: None,
-                lud16: None,
-                created_at: event.created_at.as_secs() as i64,
-                updated_at: event.created_at.as_secs() as i64,
-                metadata_json: None,
-                contact_pubkeys: String::new(),
-                relay_list: String::new(),
-            });
+            let mut row = repo
+                .get_by_pubkey_in(t, &pubkey)
+                .await?
+                .unwrap_or_else(|| UserRow {
+                    pubkey: pubkey.clone(),
+                    npub: PublicKey::from_hex(&pubkey)
+                        .ok()
+                        .map(|p| p.to_bech32().unwrap_or_default())
+                        .unwrap_or_default(),
+                    name: None,
+                    display_name: None,
+                    about: None,
+                    picture: None,
+                    banner: None,
+                    nip05: None,
+                    lud16: None,
+                    created_at: event.created_at.as_secs() as i64,
+                    updated_at: event.created_at.as_secs() as i64,
+                    metadata_json: None,
+                    contact_pubkeys: String::new(),
+                    relay_list: String::new(),
+                });
             row.contact_pubkeys = p_tags(event).join(",");
-            repo.upsert(&row)?;
+            repo.upsert_in(t, &row).await?;
         }
         Kind::ZapReceipt => {
             let Some(recipient) = p_tags(event).first().cloned() else {
@@ -244,40 +265,51 @@ pub fn handle(
                 created_at: event.created_at.as_secs() as i64,
                 zap_type: "public".to_string(),
             };
-            ZapRepo::new(db).upsert(&row)?;
+            ZapRepo::new(db).upsert_in(t, &row).await?;
         }
         Kind::RelayList => {
             let relay_repo = RelayRepo::new(db);
             let owner = Some(event.pubkey.to_hex());
-            for t in event.tags.iter().filter(|t| t.kind() == "r") {
-                let Some(url) = t.content() else { continue };
-                let (read_enabled, write_enabled) = match t.as_slice().get(2).map(|s| s.as_str()) {
+            for tag in event.tags.iter().filter(|t| t.kind() == "r") {
+                let Some(url) = tag.content() else { continue };
+                let (read_enabled, write_enabled) = match tag.as_slice().get(2).map(|s| s.as_str())
+                {
                     Some("read") => (true, false),
                     Some("write") => (false, true),
                     _ => (true, true),
                 };
-                relay_repo.upsert(&RelayRow {
-                    url: url.to_string(),
-                    pubkey: owner.clone(),
-                    name: None,
-                    read_enabled,
-                    write_enabled,
-                    priority: 0,
-                    last_connected_at: None,
-                    health_score: 1.0,
-                })?;
+                relay_repo
+                    .upsert_in(
+                        t,
+                        &RelayRow {
+                            url: url.to_string(),
+                            pubkey: owner.clone(),
+                            name: None,
+                            read_enabled,
+                            write_enabled,
+                            priority: 0,
+                            last_connected_at: None,
+                            health_score: 1.0,
+                        },
+                    )
+                    .await?;
             }
         }
         Kind::Bookmarks => {
             let Some(event_id) = e_tags(event).first().cloned() else {
                 return Ok(());
             };
-            BookmarkRepo::new(db).upsert(&BookmarkRow {
-                id: event.id.to_hex(),
-                pubkey: event.pubkey.to_hex(),
-                event_id,
-                created_at: event.created_at.as_secs() as i64,
-            })?;
+            BookmarkRepo::new(db)
+                .upsert_in(
+                    t,
+                    &BookmarkRow {
+                        id: event.id.to_hex(),
+                        pubkey: event.pubkey.to_hex(),
+                        event_id,
+                        created_at: event.created_at.as_secs() as i64,
+                    },
+                )
+                .await?;
         }
         Kind::Reaction => {
             let es = e_tags(event);
@@ -292,7 +324,7 @@ pub fn handle(
                 content: Some(event.content.clone()),
                 created_at: event.created_at.as_secs() as i64,
             };
-            ReactionRepo::new(db).upsert(&row)?;
+            ReactionRepo::new(db).upsert_in(t, &row).await?;
             let _ = tx.try_send(SyncUpdate::Reaction {
                 id: row.id,
                 event_id: row.event_id,
@@ -305,7 +337,7 @@ pub fn handle(
         // cached feed stays complete; only kinds with a surface model emit.
         Kind::TextNote => {
             if let Some(row) = post_row(event) {
-                PostRepo::new(db).upsert(&row)?;
+                PostRepo::new(db).upsert_in(t, &row).await?;
                 let _ = tx.try_send(SyncUpdate::Feed {
                     id: row.id,
                     pubkey: row.pubkey,
@@ -317,7 +349,7 @@ pub fn handle(
         }
         _ => {
             if let Some(row) = post_row(event) {
-                PostRepo::new(db).upsert(&row)?;
+                PostRepo::new(db).upsert_in(t, &row).await?;
             }
         }
     }
@@ -334,49 +366,59 @@ pub fn handle_batch(
     if events.is_empty() {
         return Ok(());
     }
-    let mut rows: Vec<PostRow> = Vec::with_capacity(events.len());
-    for event in events {
-        if event.verify().is_err() {
-            continue;
-        }
-        match event.kind {
-            Kind::EncryptedDirectMessage
-            | Kind::Metadata
-            | Kind::ContactList
-            | Kind::ZapReceipt
-            | Kind::RelayList
-            | Kind::Bookmarks
-            | Kind::Reaction => {
-                let _ = handle(db, my_pubkey, event, tx);
+    let conn = db.conn()?;
+    soshal_db_core::query::with_tx(&conn, |t| async move {
+        let mut rows: Vec<PostRow> = Vec::with_capacity(events.len());
+        for event in events {
+            if event.verify().is_err() {
+                continue;
             }
-            _ => {
-                if let Some(row) = post_row(event) {
-                    rows.push(row);
+            match event.kind {
+                Kind::EncryptedDirectMessage
+                | Kind::Metadata
+                | Kind::ContactList
+                | Kind::ZapReceipt
+                | Kind::RelayList
+                | Kind::Bookmarks
+                | Kind::Reaction => {
+                    let _ = handle_impl(db, my_pubkey, event, tx, true, &t).await;
+                }
+                _ => {
+                    if let Some(row) = post_row(event) {
+                        rows.push(row);
+                    }
                 }
             }
         }
-    }
-    PostRepo::new(db).upsert_batch(&rows)?;
-    for row in &rows {
-        if row.kind == Kind::TextNote.as_u16() as i64 {
-            let _ = tx.try_send(SyncUpdate::Feed {
-                id: row.id.clone(),
-                pubkey: row.pubkey.clone(),
-                content: row.content.clone(),
-                created_at: row.created_at as u64,
-                kind: row.kind as u64,
-            });
+        PostRepo::new(db).upsert_batch_in(&t, &rows).await?;
+        t.commit().await?;
+        for row in &rows {
+            if row.kind == Kind::TextNote.as_u16() as i64 {
+                let _ = tx.try_send(SyncUpdate::Feed {
+                    id: row.id.clone(),
+                    pubkey: row.pubkey.clone(),
+                    content: row.content.clone(),
+                    created_at: row.created_at as u64,
+                    kind: row.kind as u64,
+                });
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
-/// Which settings key tracks watermark for `kind` (None = not tracked).
+/// Which settings key tracks watermark for `kind` (unmapped kinds default to feed).
 pub fn watermark_key(kind: Kind) -> Option<&'static str> {
+    if kind == Kind::from(soshal_common_core::consts::KIND_MINIS) {
+        return Some(WM_META);
+    }
     match kind {
         Kind::TextNote => Some(WM_FEED),
+        Kind::EncryptedDirectMessage => Some(WM_DM),
         Kind::Metadata => Some(WM_META),
-        _ => None,
+        Kind::ContactList | Kind::RelayList | Kind::Bookmarks | Kind::ZapReceipt => Some(WM_META),
+        Kind::Reaction => Some(WM_FEED),
+        _ => Some(WM_FEED),
     }
 }
 

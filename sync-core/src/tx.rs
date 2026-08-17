@@ -8,7 +8,7 @@
 //! so the UI can simply re-render whatever Rust dictates.
 
 use crate::revert;
-use libsql::{params, Connection};
+use libsql::{params, params_from_iter, Connection};
 use serde::{Deserialize, Serialize};
 use soshal_db_core::error::DbError;
 use soshal_db_core::{block_on, Database};
@@ -66,19 +66,29 @@ pub fn tx_mark_applied(db: &Database, id: &str) -> Result<(), String> {
 /// Returns the ids rolled back (including `id` itself), newest-first.
 pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
     let conn = db.conn().map_err(|e| e.to_string())?;
-    let closure = dependent_closure(&conn, id)?;
+    let adj = load_edges(&conn)?;
+    let closure = dependent_closure(&adj, id)?;
     let rolled_back = Vec::new();
-    let order = reverse_topological(&conn, &closure)?;
+    let order = reverse_topological(&adj, &closure)?;
     soshal_db_core::query::with_tx(&conn, |tx| async {
+        let mut nodes = std::collections::HashMap::new();
+        let placeholders: Vec<String> = (1..=order.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "SELECT id, kind, payload_json FROM tx_nodes WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut stmt = tx.prepare(&sql).await?;
+        let mut rows = stmt
+            .query(params_from_iter(order.iter().map(String::as_str)))
+            .await?;
+        while let Some(row) = rows.next().await? {
+            nodes.insert(
+                row.get::<String>(0)?,
+                (row.get::<String>(1)?, row.get::<String>(2)?),
+            );
+        }
         for node_id in &order {
-            let (kind, payload): (String, String) = soshal_db_core::query::query_first_async(
-                &tx,
-                "SELECT kind, payload_json FROM tx_nodes WHERE id = ?1",
-                params![node_id.as_str()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .await?
-            .unwrap_or_default();
+            let (kind, payload) = nodes.get(node_id).cloned().unwrap_or_default();
             revert::revert_tx(&tx, &kind, &payload).await?;
             set_status_tx(&tx, node_id, STATUS_ROLLED_BACK).await?;
         }
@@ -90,40 +100,42 @@ pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
     Ok(rolled_back_after(rolled_back, order, id))
 }
 
+fn load_edges(conn: &Connection) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    block_on(async {
+        let mut stmt = conn
+            .prepare("SELECT parent_id, child_id FROM tx_edges")
+            .await
+            .map_err(|e| format!("edges prepare: {e}"))?;
+        let mut rows = stmt
+            .query(())
+            .await
+            .map_err(|e| format!("edges query: {e}"))?;
+        let mut adj: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        while let Some(row) = rows.next().await.map_err(|e| format!("edges rows: {e}"))? {
+            adj.entry(row.get::<String>(0).map_err(|e| e.to_string())?)
+                .or_default()
+                .push(row.get::<String>(1).map_err(|e| e.to_string())?);
+        }
+        Ok(adj)
+    })
+}
+
 /// All node ids reachable from `root` following child edges (root included).
 fn dependent_closure(
-    conn: &Connection,
+    adj: &std::collections::HashMap<String, Vec<String>>,
     root: &str,
 ) -> Result<std::collections::HashSet<String>, String> {
-    let children_of = |parent: &str| -> Result<Vec<String>, String> {
-        block_on(async {
-            let mut stmt = conn
-                .prepare("SELECT child_id FROM tx_edges WHERE parent_id = ?1")
-                .await
-                .map_err(|e| format!("closure prepare: {e}"))?;
-            let mut rows = stmt
-                .query(params![parent])
-                .await
-                .map_err(|e| format!("closure query: {e}"))?;
-            let mut out = Vec::new();
-            while let Some(row) = rows
-                .next()
-                .await
-                .map_err(|e| format!("closure rows: {e}"))?
-            {
-                out.push(row.get::<String>(0).map_err(|e| e.to_string())?);
-            }
-            Ok(out)
-        })
-    };
     let mut closure = std::collections::HashSet::new();
     let mut stack = vec![root.to_string()];
     while let Some(cur) = stack.pop() {
         if !closure.insert(cur.clone()) {
             continue;
         }
-        for c in children_of(&cur)? {
-            stack.push(c);
+        if let Some(children) = adj.get(&cur) {
+            for c in children {
+                stack.push(c.clone());
+            }
         }
     }
     Ok(closure)
@@ -132,26 +144,9 @@ fn dependent_closure(
 /// Orders the closure so every node comes after all of its descendants
 /// (children reverted before parents).
 fn reverse_topological(
-    conn: &Connection,
+    adj: &std::collections::HashMap<String, Vec<String>>,
     closure: &std::collections::HashSet<String>,
 ) -> Result<Vec<String>, String> {
-    let children_of = |parent: &str| -> Result<Vec<String>, String> {
-        block_on(async {
-            let mut stmt = conn
-                .prepare("SELECT child_id FROM tx_edges WHERE parent_id = ?1")
-                .await
-                .map_err(|e| format!("topo prepare: {e}"))?;
-            let mut rows = stmt
-                .query(params![parent])
-                .await
-                .map_err(|e| format!("topo query: {e}"))?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next().await.map_err(|e| format!("topo rows: {e}"))? {
-                out.push(row.get::<String>(0).map_err(|e| e.to_string())?);
-            }
-            Ok(out)
-        })
-    };
     let mut order = Vec::new();
     let mut visited = std::collections::HashSet::new();
     let mut stack: Vec<(String, bool)> = closure.iter().map(|n| (n.clone(), false)).collect();
@@ -166,9 +161,11 @@ fn reverse_topological(
             continue;
         }
         stack.push((node.clone(), true));
-        for c in children_of(&node)? {
-            if closure.contains(&c) {
-                stack.push((c, false));
+        if let Some(children) = adj.get(&node) {
+            for c in children {
+                if closure.contains(c) {
+                    stack.push((c.clone(), false));
+                }
             }
         }
     }

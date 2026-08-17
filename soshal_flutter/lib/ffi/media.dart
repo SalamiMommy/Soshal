@@ -46,7 +46,7 @@ String mediaUploadBlob({required List<int> data}) =>
 
 /// Upload a local media file (or remote URL, SSRF-guarded) directly to the
 /// chunk store (zero Dart heap memory overhead for the file path case).
-String mediaUploadBlobFile({required String filePath}) =>
+Future<String> mediaUploadBlobFile({required String filePath}) =>
     RustLib.instance.api.crateFfiMediaMediaUploadBlobFile(filePath: filePath);
 
 /// Fetch a blob by hash from the chunk store (local or swarm).

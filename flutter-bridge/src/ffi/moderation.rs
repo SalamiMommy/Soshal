@@ -26,6 +26,11 @@ fn parse_pubkey_list(json: &str) -> Vec<String> {
     serde_json::from_str(json).unwrap_or_default()
 }
 
+#[derive(serde::Deserialize)]
+struct CheckTextVerdict {
+    passed: bool,
+}
+
 /// Mute a user (per-account settings list; never yourself).
 #[frb(sync, serialize)]
 pub fn moderation_mute_user(muter_pubkey: String, target_pubkey: String) -> Result<bool, String> {
@@ -193,9 +198,8 @@ pub fn moderation_delete_report(report_id: String) -> Result<bool, String> {
 pub fn moderation_should_filter(content: String, user_pubkey: String) -> Result<bool, String> {
     drop(user_pubkey);
     let verdict = soshal_moderation_core::check::check_text(&content);
-    let passed = serde_json::from_str::<serde_json::Value>(&verdict)
-        .ok()
-        .and_then(|v| v.get("passed").and_then(|p| p.as_bool()))
+    let passed = serde_json::from_str::<CheckTextVerdict>(&verdict)
+        .map(|v| v.passed)
         .unwrap_or(false);
     Ok(!passed).into()
 }

@@ -152,3 +152,13 @@ pub fn parse_listing_json(input: &str) -> String {
     };
     json_out(&parse_listing(&ev), "null")
 }
+
+pub fn parse_listing_value(ev: serde_json::Value) -> String {
+    let Some(ev) = serde_json::from_value::<Option<ListingEvent>>(ev)
+        .ok()
+        .flatten()
+    else {
+        return "null".to_string();
+    };
+    json_out(&parse_listing(&ev), "null")
+}

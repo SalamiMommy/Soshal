@@ -34,7 +34,7 @@ pub fn decode_to_rgba(
     };
 
     let (width, height) = resized_img.dimensions();
-    let rgba_img = resized_img.to_rgba8();
+    let rgba_img = resized_img.into_rgba8();
     let pixels = rgba_img.into_raw();
 
     Ok(DecodedRgbaFrame {

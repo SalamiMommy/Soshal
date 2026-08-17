@@ -7,6 +7,7 @@
 //! the whole blob hash, and finally absorbs the blob into the local CAS so
 //! the local media server and the seeding path can serve it.
 
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 
 use soshal_media_core::cas::ChunkStore;
@@ -18,6 +19,9 @@ use crate::quic;
 /// Upper bound on a single blob fetch (in-memory assembly). Media clips and
 /// images fit; the relay stream path streams instead.
 pub const MAX_BLOB_FETCH_BYTES: u64 = 512 * 1024 * 1024;
+
+const QUIC_MAX_CHUNK: usize = 1024 * 1024;
+const QUIC_EXCHANGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// A LAN peer that can serve chunks: TCP port always known, QUIC port only
 /// when the peer advertises it.
@@ -81,21 +85,84 @@ pub fn fetch_blob_from_peer(
     }
 
     // 2) Chunk bodies: QUIC preferred, TCP fallback, each BLAKE3-verified.
-    let mut blob = Vec::with_capacity(manifest.total_size as usize);
+    // Pool is created lazily inside a runtime context (quinn needs a reactor);
+    // leaked to 'static since it is process-global and reused across chunks.
+    static QUIC_POOL: std::sync::OnceLock<std::sync::Mutex<Option<&'static quic::QuicChunkPool>>> =
+        std::sync::OnceLock::new();
+    let quic_addr = peer.quic_addr();
+    static SHARED_RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+    let rt = match tokio::runtime::Handle::try_current() {
+        Ok(h) => h,
+        Err(_) => SHARED_RT
+            .get_or_init(|| {
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .worker_threads(2)
+                    .build()
+                    .expect("quic chunk runtime")
+            })
+            .handle()
+            .clone(),
+    };
     let absorbed = ChunkStore::new(ChunkStore::default_root());
-    for chr in &manifest.chunks {
-        let bytes = match peer.quic_addr() {
-            Some(qa) => quic::fetch_quic_verified_chunk(
-                qa,
-                key,
-                my_pubkey,
-                &chr.blake3,
-                chr.offset as usize,
-                chr.len,
-            )
-            .map_err(|e| format!("quic: {e}"))
-            .or_else(|e| {
-                lan_transport::fetch_verified_chunk(
+    let result = (|| -> Result<u64, String> {
+        let mut file =
+            std::fs::File::create(out_path).map_err(|e| format!("write {out_path}: {e}"))?;
+        let mut hasher = blake3::Hasher::new();
+        let mut written: u64 = 0;
+        for chr in &manifest.chunks {
+            let bytes = match &quic_addr {
+                Some(qa) => {
+                    let qres = if chr.len == 0 || chr.len > QUIC_MAX_CHUNK {
+                        Err("bad chunk request".to_string())
+                    } else {
+                        let req = crate::lan_transport::LanChunkRequest {
+                            hash: chr.blake3.clone(),
+                            offset: chr.offset as usize,
+                            length: chr.len,
+                            want_manifest: false,
+                        };
+                        let fetched = rt.block_on(async move {
+                            let fut = {
+                                let guard = QUIC_POOL.get_or_init(|| std::sync::Mutex::new(None));
+                                let mut guard =
+                                    guard.lock().map_err(|_| "quic pool lock".to_string())?;
+                                if guard.is_none() {
+                                    let pool = quic::QuicChunkPool::new()
+                                        .map_err(|e| format!("quic pool: {e}"))?;
+                                    *guard = Some(Box::leak(Box::new(pool)));
+                                }
+                                guard
+                                    .as_ref()
+                                    .expect("quic pool")
+                                    .fetch_chunk(*qa, key, my_pubkey, &req)
+                            };
+                            tokio::time::timeout(QUIC_EXCHANGE_TIMEOUT, fut)
+                                .await
+                                .map_err(|_| "quic exchange timed out".to_string())
+                                .and_then(|r| r)
+                        });
+                        match fetched {
+                            Ok(data) if blake3::hash(&data).to_hex().as_str() == chr.blake3 => {
+                                Ok(data)
+                            }
+                            Ok(_) => Err("chunk hash mismatch after transfer".to_string()),
+                            Err(e) => Err(e),
+                        }
+                    };
+                    qres.map_err(|e| format!("quic: {e}")).or_else(|e| {
+                        lan_transport::fetch_verified_chunk(
+                            peer.tcp_addr(),
+                            key,
+                            my_pubkey,
+                            &chr.blake3,
+                            chr.offset as usize,
+                            chr.len,
+                        )
+                        .map_err(|te| format!("{e}; tcp: {te}"))
+                    })
+                }
+                None => lan_transport::fetch_verified_chunk(
                     peer.tcp_addr(),
                     key,
                     my_pubkey,
@@ -103,44 +170,40 @@ pub fn fetch_blob_from_peer(
                     chr.offset as usize,
                     chr.len,
                 )
-                .map_err(|te| format!("{e}; tcp: {te}"))
-            }),
-            None => lan_transport::fetch_verified_chunk(
-                peer.tcp_addr(),
-                key,
-                my_pubkey,
-                &chr.blake3,
-                chr.offset as usize,
-                chr.len,
-            )
-            .map_err(|e| format!("tcp: {e}")),
-        }?;
-        if bytes.len() != chr.len {
-            return Err(format!(
-                "chunk {} short ({} != {})",
-                chr.blake3,
-                bytes.len(),
-                chr.len
-            ));
+                .map_err(|e| format!("tcp: {e}")),
+            }?;
+            if bytes.len() != chr.len {
+                return Err(format!(
+                    "chunk {} short ({} != {})",
+                    chr.blake3,
+                    bytes.len(),
+                    chr.len
+                ));
+            }
+            // Dedupe is normal (same clip via two peers / earlier run): only the
+            // first writer stores; the whole-blob BLAKE3 check still guards us.
+            if !absorbed.put_trusted(&chr.blake3, &bytes) && !absorbed.contains(&chr.blake3) {
+                return Err(format!("chunk {} store failed", chr.blake3));
+            }
+            file.write_all(&bytes)
+                .map_err(|e| format!("write {out_path}: {e}"))?;
+            hasher.update(&bytes);
+            written += bytes.len() as u64;
         }
-        // Dedupe is normal (same clip via two peers / earlier run): only the
-        // first writer stores; the whole-blob BLAKE3 check still guards us.
-        if !absorbed.put_verified(&chr.blake3, &bytes) && !absorbed.contains(&chr.blake3) {
-            return Err(format!("chunk {} failed verification", chr.blake3));
-        }
-        blob.extend_from_slice(&bytes);
-    }
 
-    // 3) Whole-blob verification + CAS absorb + file write.
-    if blake3::hash(&blob).to_hex().as_str() != blob_hash {
-        return Err("blob hash mismatch after transfer".to_string());
+        // 3) Whole-blob verification + CAS absorb + file write.
+        if hasher.finalize().to_hex().as_str() != blob_hash {
+            return Err("blob hash mismatch after transfer".to_string());
+        }
+        absorbed
+            .save_manifest(&manifest)
+            .map_err(|e| format!("manifest persist: {e}"))?;
+        Ok(written)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(out_path);
     }
-    absorbed
-        .save_manifest(&manifest)
-        .map_err(|e| format!("manifest persist: {e}"))?;
-    let written = blob.len() as u64;
-    std::fs::write(out_path, blob).map_err(|e| format!("write {out_path}: {e}"))?;
-    Ok(written)
+    result
 }
 
 #[cfg(test)]

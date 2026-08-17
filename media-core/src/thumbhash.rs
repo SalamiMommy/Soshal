@@ -17,16 +17,12 @@ pub fn encode_thumbhash_from_bytes(bytes: &[u8]) -> Result<Vec<u8>, String> {
         image::load_from_memory(bytes).map_err(|e| format!("thumbhash decode source: {e}"))?;
     let (w, h) = img.dimensions();
     let scaled = if w > HASH_MAX_SIZE || h > HASH_MAX_SIZE {
-        img.resize(
-            HASH_MAX_SIZE,
-            HASH_MAX_SIZE,
-            image::imageops::FilterType::Triangle,
-        )
+        img.thumbnail(HASH_MAX_SIZE, HASH_MAX_SIZE)
     } else {
         img
     };
     let (sw, sh) = scaled.dimensions();
-    let rgba = scaled.to_rgba8().into_raw();
+    let rgba = scaled.into_rgba8().into_raw();
     Ok(thumbhash::rgba_to_thumb_hash(
         sw as usize,
         sh as usize,

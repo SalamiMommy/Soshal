@@ -100,6 +100,29 @@ async fn replay_outbox(db: &Database, client: &Client) {
     }
 }
 
+fn ingest_batch(
+    db: &Database,
+    my_pubkey: &str,
+    batch: &[Event],
+    tx: &tokio::sync::mpsc::Sender<SyncUpdate>,
+    cursors: &mut HashMap<&'static str, u64>,
+) {
+    match ingest::handle_batch(db, my_pubkey, batch, tx) {
+        Ok(()) => {
+            for event in batch {
+                if let Some(key) = watermark_key(event.kind) {
+                    let cur = cursors.entry(key).or_insert(0);
+                    let created = event.created_at.as_secs();
+                    if created > *cur {
+                        *cur = created;
+                    }
+                }
+            }
+        }
+        Err(e) => eprintln!("sync engine: ingest: {e}"),
+    }
+}
+
 async fn engine_loop(
     cfg: SyncConfig,
     tx: tokio::sync::mpsc::Sender<SyncUpdate>,
@@ -169,8 +192,11 @@ async fn engine_loop(
                 .kinds([Kind::from(soshal_common_core::consts::KIND_MINIS)])
                 .since(since_meta),
             // Self-sync: re-import our own reaction/post events + caches.
-            Filter::new().kinds([Kind::Reaction]).authors([pk]),
-            Filter::new().authors([pk]),
+            Filter::new()
+                .kinds([Kind::Reaction])
+                .authors([pk])
+                .since(since_feed),
+            Filter::new().authors([pk]).since(since_feed),
         ];
         client
             .subscribe(filters)
@@ -185,26 +211,23 @@ async fn engine_loop(
 
     let mut last_flush = Instant::now();
 
+    let mut batch: Vec<Event> = Vec::with_capacity(64);
+
     while !stop.load(Ordering::Relaxed) {
+        let mut idle = false;
         match tokio::time::timeout(IDLE_POLL, stream.next()).await {
             Ok(Some(ClientNotification::Event { event, .. })) => {
-                let created = event.created_at.as_secs();
-                match ingest::handle(&db, &cfg.my_pubkey, &event, &tx) {
-                    Ok(()) => {
-                        if let Some(key) = watermark_key(event.kind) {
-                            let cur = cursors.entry(key).or_insert(0);
-                            if created > *cur {
-                                *cur = created;
-                            }
-                        }
-                    }
-                    Err(e) => eprintln!("sync engine: ingest: {e}"),
-                }
+                batch.push(*event);
             }
             Ok(Some(ClientNotification::Message { .. }))
             | Ok(Some(ClientNotification::Shutdown)) => {}
             Ok(None) => break,
-            Err(_) => {} // idle poll timeout
+            Err(_) => idle = true, // idle poll timeout
+        }
+
+        if (idle && !batch.is_empty()) || batch.len() >= 64 {
+            ingest_batch(&db, &cfg.my_pubkey, &batch, &tx, &mut cursors);
+            batch.clear();
         }
 
         if last_flush.elapsed() >= FLUSH_INTERVAL {
@@ -216,6 +239,9 @@ async fn engine_loop(
         }
     }
 
+    if !batch.is_empty() {
+        ingest_batch(&db, &cfg.my_pubkey, &batch, &tx, &mut cursors);
+    }
     for (key, ts) in &cursors {
         ingest::set_watermark(&db, key, *ts);
     }

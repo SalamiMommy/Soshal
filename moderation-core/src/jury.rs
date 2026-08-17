@@ -1,6 +1,8 @@
 //! Decentralized Moderation Jury Engine powered by FROST threshold signatures.
 //! Manages jury assignments, voting rounds, and threshold moderation action generation.
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 use soshal_crypto_core::frost::{
     FrostSessionManager, FrostSignatureShare, FrostThresholdSignature,
@@ -20,6 +22,8 @@ pub struct ModerationJuryCase {
     pub total_jurors: u32,
     pub group_pubkey: String,
     pub votes_collected: Vec<FrostSignatureShare>,
+    #[serde(default)]
+    voted_participants: HashSet<u32>,
 }
 
 impl ModerationJuryCase {
@@ -41,6 +45,7 @@ impl ModerationJuryCase {
             total_jurors,
             group_pubkey,
             votes_collected: Vec::new(),
+            voted_participants: HashSet::new(),
         }
     }
 
@@ -49,13 +54,17 @@ impl ModerationJuryCase {
         if self.votes_collected.len() >= MAX_VOTES_COLLECTED {
             return Err("vote cap reached".to_string());
         }
-        if self
-            .votes_collected
-            .iter()
-            .any(|v| v.participant_id == vote_share.participant_id)
-        {
+        if self.voted_participants.len() != self.votes_collected.len() {
+            self.voted_participants = self
+                .votes_collected
+                .iter()
+                .map(|v| v.participant_id)
+                .collect();
+        }
+        if self.voted_participants.contains(&vote_share.participant_id) {
             return Err("juror has already voted".to_string());
         }
+        self.voted_participants.insert(vote_share.participant_id);
         self.votes_collected.push(vote_share);
         Ok(self.votes_collected.len() >= self.threshold as usize)
     }

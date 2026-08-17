@@ -21,7 +21,7 @@ use soshal_sync_core::outbox::{
 use soshal_sync_core::revert::{revert, KIND_LIKE, KIND_POST, KIND_PROFILE};
 use soshal_sync_core::tx::{tx_begin, tx_link, tx_mark_applied, tx_statuses, STATUS_APPLIED};
 use soshal_sync_core::zk_rollup::{ZkCrdtRollup, ZkProofType, ZkRollupEngine};
-use soshal_sync_core::{SyncUpdate, WM_FEED, WM_META};
+use soshal_sync_core::{SyncUpdate, WM_DM, WM_FEED, WM_META};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -29,7 +29,7 @@ use tokio::sync::mpsc;
 fn gossip_msg(event: &Event) -> soshal_network_core::plumtree::PlumTreeMessage {
     soshal_network_core::plumtree::PlumTreeMessage::Gossip {
         message_id: event.id.to_hex(),
-        payload_json: Arc::new(serde_json::to_string(event).unwrap()),
+        payload_json: serde_json::to_string(event).unwrap(),
         round: 0,
     }
 }
@@ -349,8 +349,8 @@ fn ingest_batch_applies_all_events() {
 fn watermark_roundtrip_and_kind_mapping() {
     assert_eq!(watermark_key(Kind::TextNote), Some(WM_FEED));
     assert_eq!(watermark_key(Kind::Metadata), Some(WM_META));
-    assert_eq!(watermark_key(Kind::EncryptedDirectMessage), None);
-    assert_eq!(watermark_key(Kind::Reaction), None);
+    assert_eq!(watermark_key(Kind::EncryptedDirectMessage), Some(WM_DM));
+    assert_eq!(watermark_key(Kind::Reaction), Some(WM_FEED));
 
     let db = soshal_test_util::test_db();
     assert_eq!(watermark(&db, WM_FEED), 0);

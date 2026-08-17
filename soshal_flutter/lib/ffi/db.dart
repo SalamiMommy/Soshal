@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `upsert_post_row`, `with_db_result`, `with_db_string`, `with_db`
+// These functions are ignored because they are not marked as `pub`: `rows_json`, `upsert_post_row`, `with_db_result`, `with_db_string`, `with_db`
 
 /// Initialize (or re-initialize) the database at `db_path`, applying all
 /// schema migrations. Safe to call once per app start.
@@ -20,6 +20,12 @@ String dbPath() => RustLib.instance.api.crateFfiDbDbPath();
 /// (column names as keys). Parameter binding is supported with `?1..?N`.
 String dbQueryRaw({required String sql}) =>
     RustLib.instance.api.crateFfiDbDbQueryRaw(sql: sql);
+
+/// Internal helper: raw SELECT with bound ?N parameters (Vec<String>),
+/// rows as a JSON array of objects. Not an FFI surface.
+Future<String> dbQueryParams(
+        {required String sql, required List<String> params}) =>
+    RustLib.instance.api.crateFfiDbDbQueryParams(sql: sql, params: params);
 
 /// Execute a raw INSERT/UPDATE/DELETE (no parameters case); returns rows
 /// affected.

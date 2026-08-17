@@ -27,6 +27,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   Timer? _callTimer;
   Timer? _lockoutTimer;
+  int? _lastLockoutNotified;
 
   @override
   void initState() {
@@ -41,10 +42,13 @@ class _AppShellState extends State<AppShell> {
       }
     });
     // Keep the PIN lock countdown honest while the lock screen is up.
-    _lockoutTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       if (!mounted) return;
       final shell = context.read<ShellService>();
-      if (shell.locked) {
+      if (!shell.locked) return;
+      await shell.refreshLockout(notify: false);
+      if (shell.lockoutRemaining != _lastLockoutNotified) {
+        _lastLockoutNotified = shell.lockoutRemaining;
         shell.refreshLockout();
       }
     });

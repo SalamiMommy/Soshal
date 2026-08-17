@@ -313,12 +313,15 @@ fn serve_range_zero_copy(
         return false;
     };
     // Verify the chunk bytes before serving them (hostile chunk = refused).
-    if store.get_mmap(&chunk.blake3).is_none() {
-        return false;
-    }
     let Ok(file) = std::fs::File::open(store.chunk_path(&chunk.blake3)) else {
         return false;
     };
+    let mut verified = Vec::new();
+    if (&file).read_to_end(&mut verified).is_err()
+        || blake3::hash(&verified).to_hex().as_str() != chunk.blake3
+    {
+        return false;
+    }
     // Header first: [kind=ok][u32 len = req.length]; body bytes follow via
     // sendfile. The length prefix must match what sendfile then pipes out.
     let len_bytes = (req.length as u32).to_le_bytes();
@@ -427,6 +430,32 @@ fn lan_exchange(
     if !lan::is_private_ip(addr.ip()) {
         return Err("refusing non-private LAN peer".to_string());
     }
+    let pooled = lan_chunk_pool().take(addr);
+    let was_pooled = pooled.is_some();
+    let mut stream = match pooled {
+        Some(s) => s,
+        None => connect_handshake(addr, key, my_pubkey)?,
+    };
+    match exchange_frames(&mut stream, req) {
+        Ok(r) => {
+            lan_chunk_pool().put(addr, stream);
+            Ok(r)
+        }
+        Err(_) if was_pooled => {
+            let mut fresh = connect_handshake(addr, key, my_pubkey)?;
+            let r = exchange_frames(&mut fresh, req)?;
+            lan_chunk_pool().put(addr, fresh);
+            Ok(r)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn connect_handshake(
+    addr: SocketAddr,
+    key: [u8; 32],
+    my_pubkey: &str,
+) -> Result<TcpStream, String> {
     let mut stream =
         TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).map_err(|e| format!("connect: {e}"))?;
     stream
@@ -448,7 +477,10 @@ fn lan_exchange(
     if stream.read_exact(&mut resp).is_err() || &resp != b"OK\n" {
         return Err("handshake rejected".to_string());
     }
+    Ok(stream)
+}
 
+fn exchange_frames(stream: &mut TcpStream, req: &LanChunkRequest) -> Result<(u8, Vec<u8>), String> {
     let payload = serde_json::to_vec(req).map_err(|e| format!("req serde: {e}"))?;
     stream
         .write_all(&(payload.len() as u32).to_le_bytes())
@@ -473,6 +505,60 @@ fn lan_exchange(
         .map_err(|e| format!("resp body: {e}"))?;
 
     Ok((kind[0], data))
+}
+
+const MAX_POOLED_LAN_CONNS: usize = 16;
+const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(5);
+
+struct PooledLanConn {
+    stream: TcpStream,
+    last_used: std::time::Instant,
+}
+
+struct LanChunkPool {
+    conns: std::sync::Mutex<std::collections::HashMap<SocketAddr, PooledLanConn>>,
+}
+
+static LAN_CHUNK_POOL: std::sync::OnceLock<LanChunkPool> = std::sync::OnceLock::new();
+
+fn lan_chunk_pool() -> &'static LanChunkPool {
+    LAN_CHUNK_POOL.get_or_init(|| LanChunkPool {
+        conns: std::sync::Mutex::new(std::collections::HashMap::new()),
+    })
+}
+
+impl LanChunkPool {
+    fn take(&self, addr: SocketAddr) -> Option<TcpStream> {
+        let mut guard = self.conns.lock().ok()?;
+        let conn = guard.remove(&addr)?;
+        if conn.last_used.elapsed() > POOL_IDLE_TIMEOUT {
+            return None;
+        }
+        Some(conn.stream)
+    }
+
+    fn put(&self, addr: SocketAddr, stream: TcpStream) {
+        if let Ok(mut guard) = self.conns.lock() {
+            let now = std::time::Instant::now();
+            guard.retain(|_, c| now.duration_since(c.last_used) <= POOL_IDLE_TIMEOUT);
+            if guard.len() >= MAX_POOLED_LAN_CONNS && !guard.contains_key(&addr) {
+                if let Some(oldest) = guard
+                    .iter()
+                    .min_by_key(|(_, c)| c.last_used)
+                    .map(|(k, _)| *k)
+                {
+                    guard.remove(&oldest);
+                }
+            }
+            guard.insert(
+                addr,
+                PooledLanConn {
+                    stream,
+                    last_used: now,
+                },
+            );
+        }
+    }
 }
 
 /// Reads a single chunk from a LAN peer and verifies its BLAKE3 hash.

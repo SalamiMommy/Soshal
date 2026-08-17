@@ -10,21 +10,33 @@ impl<'a> ReactionRepo<'a> {
         Self { db }
     }
 
-    pub fn upsert(&self, r: &ReactionRow) -> Result<(), crate::error::DbError> {
-        let conn = self.db.conn()?;
-        crate::query::execute(
-            &conn,
+    pub async fn upsert_in(
+        &self,
+        tx: &libsql::Transaction,
+        row: &ReactionRow,
+    ) -> Result<(), crate::error::DbError> {
+        tx.execute(
             "INSERT INTO reactions (id, pubkey, event_id, kind, content, created_at) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET content=excluded.content",
             params![
-                r.id.as_str(),
-                r.pubkey.as_str(),
-                r.event_id.as_str(),
-                r.kind,
-                r.content.as_deref(),
-                r.created_at,
+                row.id.as_str(),
+                row.pubkey.as_str(),
+                row.event_id.as_str(),
+                row.kind,
+                row.content.as_deref(),
+                row.created_at,
             ],
-        )?;
+        )
+        .await?;
         Ok(())
+    }
+
+    pub fn upsert(&self, row: &ReactionRow) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::with_tx(&conn, |tx| async move {
+            self.upsert_in(&tx, row).await?;
+            tx.commit().await?;
+            Ok(())
+        })
     }
 
     pub fn get_by_event(&self, event_id: &str) -> Result<Vec<ReactionRow>, crate::error::DbError> {

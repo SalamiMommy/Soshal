@@ -331,6 +331,58 @@ class FakeApi extends RustLibApi {
   Future<String> crateFfiZapZapSendPayment({required String bolt11}) =>
       _asyncCall<String>('crateFfiZapZapSendPayment', [], {#bolt11: bolt11});
 
+  @override
+  Future<String> crateFfiAnalyticsAnalyticsSlmGenerateEmbedding({required String text}) =>
+      _asyncCall<String>('crateFfiAnalyticsAnalyticsSlmGenerateEmbedding', [], {#text: text});
+
+  @override
+  Future<String> crateFfiAnalyticsAnalyticsSlmClassifyPost({required String text}) =>
+      _asyncCall<String>('crateFfiAnalyticsAnalyticsSlmClassifyPost', [], {#text: text});
+
+  @override
+  Future<String> crateFfiMediaMediaUploadBlobFile({required String filePath}) =>
+      _asyncCall<String>('crateFfiMediaMediaUploadBlobFile', [], {#filePath: filePath});
+
+  @override
+  Future<bool> crateFfiPinPinSet({required String pin}) =>
+      _asyncCall<bool>('crateFfiPinPinSet', [], {#pin: pin});
+
+  @override
+  Future<bool> crateFfiPinPinVerify({required String pin}) =>
+      _asyncCall<bool>('crateFfiPinPinVerify', [], {#pin: pin});
+
+  @override
+  Future<Float32List> crateFfiStorageStorageGetAudioPeaks({required String path}) =>
+      _asyncCall<Float32List>('crateFfiStorageStorageGetAudioPeaks', [], {#path: path});
+
+  @override
+  Future<Uint8List> crateFfiStorageStorageEncodeVoicePcm({required List<int> pcm}) =>
+      _asyncCall<Uint8List>('crateFfiStorageStorageEncodeVoicePcm', [], {#pcm: pcm}).then((v) => Uint8List.fromList(v));
+
+  @override
+  Future<Uint8List> crateFfiRenderRenderComputeMeshFrame({required int sessionId, required String nodesJson, required double deltaTime}) =>
+      _asyncCall<Uint8List>('crateFfiRenderRenderComputeMeshFrame', [], {#sessionId: sessionId, #nodesJson: nodesJson, #deltaTime: deltaTime}).then((v) => Uint8List.fromList(v));
+
+  @override
+  Future<bool> crateFfiSignerSignerSaveToKeyring({required String pubkey}) =>
+      _asyncCall<bool>('crateFfiSignerSignerSaveToKeyring', [], {#pubkey: pubkey});
+
+  @override
+  Future<bool> crateFfiSignerSignerUnlockFromKeyring({required String pubkey}) =>
+      _asyncCall<bool>('crateFfiSignerSignerUnlockFromKeyring', [], {#pubkey: pubkey});
+
+  @override
+  Future<Uint8List> crateFfiP2PP2PQuicFetchChunk({required String addr, required String hash, required BigInt offset, required BigInt length}) =>
+      _asyncCall<Uint8List>('crateFfiP2PP2PQuicFetchChunk', [], {#addr: addr, #hash: hash, #offset: offset, #length: length}).then((v) => Uint8List.fromList(v));
+
+  @override
+  Future<String> crateFfiP2PP2PFetchBlobFromPeer({required String blobHash, required String ip, required int tcpPort, int? quicPort, required String outPath}) =>
+      _asyncCall<String>('crateFfiP2PP2PFetchBlobFromPeer', [], {#blobHash: blobHash, #ip: ip, #tcpPort: tcpPort, #quicPort: quicPort, #outPath: outPath});
+
+  @override
+  Future<String> crateFfiP2PP2PMoqSubscribeFetch({required String addr, required String streamId, required BigInt windowMs}) =>
+      _asyncCall<String>('crateFfiP2PP2PMoqSubscribeFetch', [], {#addr: addr, #streamId: streamId, #windowMs: windowMs});
+
   /// Typed async bridge call: records the [Invocation], dispatches to the
   /// registered stub and coerces the result to [T]. Deliberately NOT async:
   /// synchronous throws from stubs must propagate synchronously through the

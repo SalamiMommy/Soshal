@@ -40,14 +40,22 @@ pub struct ProllySyncSession {
     pub local_tree: ProllyTree,
     pub peer_root_hash: Option<String>,
     pub missing_keys: Vec<String>,
+    node_index: std::collections::HashMap<String, usize>,
 }
 
 impl ProllySyncSession {
     pub fn new(local_tree: ProllyTree) -> Self {
+        let node_index = local_tree
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(idx, n)| (n.node_hash.clone(), idx))
+            .collect();
         Self {
             local_tree,
             peer_root_hash: None,
             missing_keys: Vec::new(),
+            node_index,
         }
     }
 
@@ -68,14 +76,12 @@ impl ProllySyncSession {
             }
             ProllySyncMessage::Match => None,
             ProllySyncMessage::RequestBranch { node_hash, .. } => self
-                .local_tree
-                .nodes
-                .iter()
-                .find(|n| n.node_hash == node_hash)
-                .map(|node| ProllySyncMessage::ResponseBranch {
+                .node_index
+                .get(&node_hash)
+                .map(|&idx| ProllySyncMessage::ResponseBranch {
                     node_hash,
-                    keys: node.keys.clone(),
-                    child_hashes: node.values_or_child_hashes.clone(),
+                    keys: self.local_tree.nodes[idx].keys.clone(),
+                    child_hashes: self.local_tree.nodes[idx].values_or_child_hashes.clone(),
                 }),
             ProllySyncMessage::ResponseBranch { keys, .. } => {
                 // Determine missing keys compared to local tree keys

@@ -2,8 +2,13 @@ use crate::repos::limits;
 use crate::Database;
 use libsql::params;
 
-const POST_SELECT: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts";
-const POST_INSERT_COLUMNS: &str = "id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native";
+const POST_UPSERT_SQL: &str = "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, is_deleted=excluded.is_deleted, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native";
+const POST_FEED_SQL: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE pubkey IN (SELECT value FROM json_each(?1)) AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3";
+const POST_SELECT_BY_ID: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE id = ?1";
+const POST_SELECT_BY_PUBKEY: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3";
+const POST_SELECT_REPLIES: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 ORDER BY created_at ASC";
+const POST_SELECT_PAGED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2";
+const POST_SELECT_SCHEDULED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC";
 
 pub struct PostRepo<'a> {
     db: &'a Database,
@@ -16,12 +21,7 @@ impl<'a> PostRepo<'a> {
 
     pub fn get_by_id(&self, id: &str) -> Result<Option<PostRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::query_first(
-            &conn,
-            &format!("{} WHERE id = ?1", POST_SELECT),
-            params![id],
-            Self::map_row,
-        )
+        crate::query::query_first(&conn, POST_SELECT_BY_ID, params![id], Self::map_row)
     }
 
     pub fn get_user_posts(
@@ -34,10 +34,7 @@ impl<'a> PostRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_capacity(
             &conn,
-            &format!(
-                "{} WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
-                POST_SELECT
-            ),
+            POST_SELECT_BY_PUBKEY,
             params![pubkey, limit, offset],
             limit as usize,
             Self::map_row,
@@ -49,15 +46,7 @@ impl<'a> PostRepo<'a> {
         root_id: &str,
     ) -> Result<Vec<PostRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::query(
-            &conn,
-            &format!(
-                "{} WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 ORDER BY created_at ASC",
-                POST_SELECT
-            ),
-            params![root_id],
-            Self::map_row,
-        )
+        crate::query::query(&conn, POST_SELECT_REPLIES, params![root_id], Self::map_row)
     }
 
     pub fn upsert(&self, post: &PostRow) -> Result<(), crate::error::DbError> {
@@ -72,10 +61,7 @@ impl<'a> PostRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            &format!(
-                "INSERT INTO posts ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, is_deleted=excluded.is_deleted, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native",
-                POST_INSERT_COLUMNS,
-            ),
+            POST_UPSERT_SQL,
             params![
                 post.id.as_str(),
                 post.pubkey.as_str(),
@@ -105,38 +91,80 @@ impl<'a> PostRepo<'a> {
         }
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
-            let sql = format!("INSERT INTO posts ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, is_deleted=excluded.is_deleted, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native", POST_INSERT_COLUMNS);
-            for post in posts {
-                if limits::row_too_big(&post.content, &post.tags_json) {
-                    continue; // relay content too large: skip, never store
-                }
-                tx.execute(
-                    &sql,
-                    params![
-                        post.id.as_str(),
-                        post.pubkey.as_str(),
-                        post.content.as_str(),
-                        post.kind,
-                        post.created_at,
-                        post.tags_json.as_str(),
-                        post.sig.as_deref(),
-                        post.reply_to.as_deref(),
-                        post.root_id.as_deref(),
-                        post.mentioned_pubkeys.as_str(),
-                        post.mentioned_hashtags.as_str(),
-                        post.subject.as_deref(),
-                        post.sync_status.as_str(),
-                        post.is_deleted,
-                        post.scheduled_at,
-                        post.freenet_key.as_deref(),
-                        post.is_freenet_native,
-                    ],
-                )
-                .await?;
-            }
+            self.upsert_batch_in(&tx, posts).await?;
             tx.commit().await?;
             Ok(())
         })
+    }
+
+    pub async fn upsert_in(
+        &self,
+        tx: &libsql::Transaction,
+        post: &PostRow,
+    ) -> Result<(), crate::error::DbError> {
+        if limits::row_too_big(&post.content, &post.tags_json) {
+            return Ok(());
+        }
+        tx.execute(
+            POST_UPSERT_SQL,
+            params![
+                post.id.as_str(),
+                post.pubkey.as_str(),
+                post.content.as_str(),
+                post.kind,
+                post.created_at,
+                post.tags_json.as_str(),
+                post.sig.as_deref(),
+                post.reply_to.as_deref(),
+                post.root_id.as_deref(),
+                post.mentioned_pubkeys.as_str(),
+                post.mentioned_hashtags.as_str(),
+                post.subject.as_deref(),
+                post.sync_status.as_str(),
+                post.is_deleted,
+                post.scheduled_at,
+                post.freenet_key.as_deref(),
+                post.is_freenet_native,
+            ],
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn upsert_batch_in(
+        &self,
+        tx: &libsql::Transaction,
+        posts: &[PostRow],
+    ) -> Result<(), crate::error::DbError> {
+        for post in posts {
+            if limits::row_too_big(&post.content, &post.tags_json) {
+                continue; // relay content too large: skip, never store
+            }
+            tx.execute(
+                POST_UPSERT_SQL,
+                params![
+                    post.id.as_str(),
+                    post.pubkey.as_str(),
+                    post.content.as_str(),
+                    post.kind,
+                    post.created_at,
+                    post.tags_json.as_str(),
+                    post.sig.as_deref(),
+                    post.reply_to.as_deref(),
+                    post.root_id.as_deref(),
+                    post.mentioned_pubkeys.as_str(),
+                    post.mentioned_hashtags.as_str(),
+                    post.subject.as_deref(),
+                    post.sync_status.as_str(),
+                    post.is_deleted,
+                    post.scheduled_at,
+                    post.freenet_key.as_deref(),
+                    post.is_freenet_native,
+                ],
+            )
+            .await?;
+        }
+        Ok(())
     }
 
     pub fn delete(&self, id: &str) -> Result<(), crate::error::DbError> {
@@ -184,10 +212,7 @@ impl<'a> PostRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            &format!(
-                "{} WHERE pubkey IN (SELECT value FROM json_each(?1)) AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
-                POST_SELECT,
-            ),
+            POST_FEED_SQL,
             params![pubkeys_json, limit, offset],
             Self::map_row,
         )
@@ -207,10 +232,7 @@ impl<'a> PostRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            &format!(
-                "{} WHERE is_deleted = 0 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
-                POST_SELECT
-            ),
+            POST_SELECT_PAGED,
             params![limit, offset],
             Self::map_row,
         )
@@ -218,15 +240,7 @@ impl<'a> PostRepo<'a> {
 
     pub fn get_scheduled(&self, pubkey: &str) -> Result<Vec<PostRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::query(
-            &conn,
-            &format!(
-                "{} WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC",
-                POST_SELECT
-            ),
-            params![pubkey],
-            Self::map_row,
-        )
+        crate::query::query(&conn, POST_SELECT_SCHEDULED, params![pubkey], Self::map_row)
     }
 
     fn map_row(row: &libsql::Row) -> libsql::Result<PostRow> {

@@ -4,6 +4,7 @@
 //! SDP sanitization, and peer connection helpers.
 
 use flutter_rust_bridge::frb;
+use soshal_db_core::repos::settings::SettingsRepo;
 use soshal_webrtc_core::ice::ice_config;
 use soshal_webrtc_core::sdp::{extract_candidates, sanitize_sdp, validate_sdp};
 
@@ -31,10 +32,12 @@ pub fn webrtc_get_stun_servers() -> Result<Vec<String>, String> {
 /// server-side TURN provisioning is backend-gated (roadmap).
 #[frb(sync, serialize)]
 pub fn webrtc_get_turn_servers(_auth_token: Option<String>) -> Result<String, String> {
-    let endpoint = super::db::db_get_setting("turn_endpoint".to_string())?;
-    let endpoint = match endpoint {
-        Some(e) if !e.trim().is_empty() => e,
-        _ => {
+    let settings = super::db::with_db_result(|db| {
+        SettingsRepo::new(db).get_many(&["turn_endpoint", "turn_username", "turn_credential"])
+    })?;
+    let endpoint = match settings.get("turn_endpoint").filter(|s| !s.trim().is_empty()) {
+        Some(e) => e,
+        None => {
             return Err(
                 "turn provisioning unavailable: no turn_endpoint configured (server endpoint on roadmap)"
                     .to_string(),
@@ -42,8 +45,8 @@ pub fn webrtc_get_turn_servers(_auth_token: Option<String>) -> Result<String, St
             .into()
         }
     };
-    let username = super::db::db_get_setting("turn_username".to_string())?;
-    let credential = super::db::db_get_setting("turn_credential".to_string())?;
+    let username = settings.get("turn_username").filter(|s| !s.is_empty());
+    let credential = settings.get("turn_credential").filter(|s| !s.is_empty());
     let mut server = serde_json::json!({
         "urls": [endpoint],
     });

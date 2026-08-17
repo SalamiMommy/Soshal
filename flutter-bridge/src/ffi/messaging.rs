@@ -111,24 +111,26 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
 /// recent first.
 #[frb(sync, serialize)]
 pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, String> {
-    let json = super::db::db_query_raw(
-        "SELECT conversation_id FROM messages WHERE conversation_id LIKE 'conv:%' GROUP BY conversation_id ORDER BY MAX(created_at) DESC".to_string(),
-    )?;
-    let rows: Vec<serde_json::Value> = match serde_json::from_str(&json) {
-        Ok(r) => r,
-        Err(e) => return Err(format!("parse conversations: {e}")).into(),
-    };
-    let mut peers: Vec<String> = Vec::new();
-    for row in rows {
-        let cid = row["conversation_id"].as_str().unwrap_or("");
-        let parts: Vec<&str> = cid.trim_start_matches("conv:").split(':').collect();
-        for p in parts {
-            if p != pubkey && !peers.iter().any(|x| x == p) {
-                peers.push(p.to_string());
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let cids: Vec<String> = soshal_db_core::query::query(
+            &conn,
+            "SELECT conversation_id FROM messages WHERE conversation_id LIKE 'conv:%' \
+             GROUP BY conversation_id ORDER BY MAX(created_at) DESC",
+            (),
+            |r| r.get(0),
+        )?;
+        let mut seen = std::collections::HashSet::new();
+        let mut peers: Vec<String> = Vec::new();
+        for cid in cids {
+            for p in cid.trim_start_matches("conv:").split(':') {
+                if p != pubkey && seen.insert(p.to_string()) {
+                    peers.push(p.to_string());
+                }
             }
         }
-    }
-    Ok(peers).into()
+        Ok(peers)
+    })
 }
 
 /// Store a received DM row locally (called by the sync loop after

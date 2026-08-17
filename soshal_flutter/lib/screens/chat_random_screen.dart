@@ -154,13 +154,100 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
 
   String _short(String pubkey) => prefixEllipsis(pubkey, 16);
 
+  final Map<String, Map<String, dynamic>> _peerContentCache = {};
+
   Map<String, dynamic> _peerContent(ChatrandomPeer peer) {
-    try {
-      final decoded = jsonDecode(peer.content);
-      return decoded is Map<String, dynamic> ? decoded : const {};
-    } catch (_) {
-      return const {};
-    }
+    return _peerContentCache.putIfAbsent(peer.content, () {
+      try {
+        final decoded = jsonDecode(peer.content);
+        return decoded is Map<String, dynamic> ? decoded : const {};
+      } catch (_) {
+        return const {};
+      }
+    });
+  }
+
+  List<Widget> _headerChildren(ChatrandomService service) {
+    return [
+      Text('Your Status', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _interestsController,
+        decoration: const InputDecoration(
+          labelText: 'Interests (comma-separated)',
+          hintText: 'music, tech, gaming',
+          border: OutlineInputBorder(),
+        ),
+        onChanged: (_) => _refreshAvailability(),
+      ),
+      const SizedBox(height: 8),
+      if (_interests().isNotEmpty)
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: _interests()
+              .map((i) => Chip(
+                    label: Text(i),
+                    visualDensity: VisualDensity.compact,
+                  ))
+              .toList(),
+        ),
+      const SizedBox(height: 12),
+      Text('Media type', style: Theme.of(context).textTheme.labelLarge),
+      const SizedBox(height: 4),
+      SegmentedButton<String>(
+        segments: const [
+          ButtonSegment(value: 'voice', label: Text('Voice')),
+          ButtonSegment(value: 'video', label: Text('Video')),
+          ButtonSegment(value: 'text', label: Text('Text')),
+        ],
+        selected: {_mediaType},
+        onSelectionChanged: (s) {
+          setState(() => _mediaType = s.first);
+          _refreshAvailability();
+        },
+      ),
+      const SizedBox(height: 12),
+      Text('Mode', style: Theme.of(context).textTheme.labelLarge),
+      const SizedBox(height: 4),
+      SegmentedButton<String>(
+        segments: const [
+          ButtonSegment(value: 'public', label: Text('Public')),
+          ButtonSegment(value: 'private', label: Text('Private')),
+        ],
+        selected: {_mode},
+        onSelectionChanged: (s) {
+          setState(() => _mode = s.first);
+          _refreshAvailability();
+        },
+      ),
+      const SizedBox(height: 12),
+      if (_availabilityJson.isNotEmpty)
+        Text(
+          'Availability: $_availabilityJson',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                color: Theme.of(context).colorScheme.outline,
+              ),
+        ),
+      const SizedBox(height: 12),
+      if (_searching) const LinearProgressIndicator(),
+      const SizedBox(height: 12),
+      FilledButton.icon(
+        onPressed: _searching ? null : _findPeer,
+        icon: const Icon(Icons.people_outline),
+        label: const Text('Find a peer'),
+      ),
+      const SizedBox(height: 24),
+      Text('Peers (${service.peers.length})',
+          style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 4),
+      if (service.peers.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Text('No peers yet. Find a peer above.'),
+        ),
+    ];
   }
 
   @override
@@ -171,126 +258,41 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
           ? const Center(child: Text('Sign in required'))
           : Consumer<ChatrandomService>(
               builder: (context, service, _) {
+                final headers = _headerChildren(service);
                 return RefreshIndicator(
                   onRefresh: _fetchOnce,
-                  child: ListView(
+                  child: ListView.builder(
                     padding: const EdgeInsets.all(16),
-                    children: [
-                      Text('Your Status',
-                          style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _interestsController,
-                        decoration: const InputDecoration(
-                          labelText: 'Interests (comma-separated)',
-                          hintText: 'music, tech, gaming',
-                          border: OutlineInputBorder(),
+                    itemCount: headers.length + service.peers.length,
+                    itemBuilder: (context, index) {
+                      if (index < headers.length) return headers[index];
+                      final peer = service.peers[index - headers.length];
+                      final content = _peerContent(peer);
+                      final interests =
+                          (content['interests'] as List?) ?? const [];
+                      final mediaType =
+                          (content['media_type'] as String?) ?? '';
+                      final mode = (content['mode'] as String?) ?? '';
+                      final detail = [
+                        if (interests.isNotEmpty) interests.join(', '),
+                        if (mediaType.isNotEmpty) mediaType,
+                        if (mode.isNotEmpty) mode,
+                      ].join(' · ');
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: ListTile(
+                          title: Text(_short(peer.pubkey)),
+                          subtitle: detail.isEmpty
+                              ? null
+                              : Text(detail,
+                                  maxLines: 2, overflow: TextOverflow.ellipsis),
+                          trailing: FilledButton.tonal(
+                            onPressed: () => _accept(peer),
+                            child: const Text('Accept'),
+                          ),
                         ),
-                        onChanged: (_) => _refreshAvailability(),
-                      ),
-                      const SizedBox(height: 8),
-                      if (_interests().isNotEmpty)
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: _interests()
-                              .map((i) => Chip(
-                                    label: Text(i),
-                                    visualDensity: VisualDensity.compact,
-                                  ))
-                              .toList(),
-                        ),
-                      const SizedBox(height: 12),
-                      Text('Media type',
-                          style: Theme.of(context).textTheme.labelLarge),
-                      const SizedBox(height: 4),
-                      SegmentedButton<String>(
-                        segments: const [
-                          ButtonSegment(value: 'voice', label: Text('Voice')),
-                          ButtonSegment(value: 'video', label: Text('Video')),
-                          ButtonSegment(value: 'text', label: Text('Text')),
-                        ],
-                        selected: {_mediaType},
-                        onSelectionChanged: (s) {
-                          setState(() => _mediaType = s.first);
-                          _refreshAvailability();
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      Text('Mode',
-                          style: Theme.of(context).textTheme.labelLarge),
-                      const SizedBox(height: 4),
-                      SegmentedButton<String>(
-                        segments: const [
-                          ButtonSegment(value: 'public', label: Text('Public')),
-                          ButtonSegment(
-                              value: 'private', label: Text('Private')),
-                        ],
-                        selected: {_mode},
-                        onSelectionChanged: (s) {
-                          setState(() => _mode = s.first);
-                          _refreshAvailability();
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      if (_availabilityJson.isNotEmpty)
-                        Text(
-                          'Availability: $_availabilityJson',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(
-                                fontFamily: 'monospace',
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                        ),
-                      const SizedBox(height: 12),
-                      if (_searching) const LinearProgressIndicator(),
-                      const SizedBox(height: 12),
-                      FilledButton.icon(
-                        onPressed: _searching ? null : _findPeer,
-                        icon: const Icon(Icons.people_outline),
-                        label: const Text('Find a peer'),
-                      ),
-                      const SizedBox(height: 24),
-                      Text('Peers (${service.peers.length})',
-                          style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 4),
-                      if (service.peers.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Text('No peers yet. Find a peer above.'),
-                        )
-                      else
-                        ...service.peers.map((peer) {
-                          final content = _peerContent(peer);
-                          final interests =
-                              (content['interests'] as List?) ?? const [];
-                          final mediaType =
-                              (content['media_type'] as String?) ?? '';
-                          final mode = (content['mode'] as String?) ?? '';
-                          final detail = [
-                            if (interests.isNotEmpty) interests.join(', '),
-                            if (mediaType.isNotEmpty) mediaType,
-                            if (mode.isNotEmpty) mode,
-                          ].join(' · ');
-                          return Card(
-                            margin: const EdgeInsets.symmetric(vertical: 4),
-                            child: ListTile(
-                              title: Text(_short(peer.pubkey)),
-                              subtitle: detail.isEmpty
-                                  ? null
-                                  : Text(detail,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis),
-                              trailing: FilledButton.tonal(
-                                onPressed: () => _accept(peer),
-                                child: const Text('Accept'),
-                              ),
-                            ),
-                          );
-                        }),
-                    ],
+                      );
+                    },
                   ),
                 );
               },

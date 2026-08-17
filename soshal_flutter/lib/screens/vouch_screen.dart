@@ -73,111 +73,112 @@ class _VouchScreenState extends State<VouchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Vouch')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          TextField(
-            controller: _targetController,
-            decoration: const InputDecoration(
-              labelText: 'Target pubkey',
-              hintText: 'hex or npub',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (_) => setState(() => _status = ''),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _contentController,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Endorsement',
-              hintText: 'What do you vouch for?',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              FilledButton.icon(
-                onPressed: _publish,
-                icon: const Icon(Icons.verified_outlined),
-                label: const Text('Publish Vouch'),
+      body: Consumer<VouchService>(
+        builder: (context, service, _) {
+          final head = <Widget>[
+            TextField(
+              controller: _targetController,
+              decoration: const InputDecoration(
+                labelText: 'Target pubkey',
+                hintText: 'hex or npub',
+                border: OutlineInputBorder(),
               ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Refresh'),
+              onChanged: (_) => setState(() => _status = ''),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _contentController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Endorsement',
+                hintText: 'What do you vouch for?',
+                border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                FilledButton.icon(
+                  onPressed: _publish,
+                  icon: const Icon(Icons.verified_outlined),
+                  label: const Text('Publish Vouch'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                ),
+              ],
+            ),
+            if (_status.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(_status,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.outline)),
             ],
-          ),
-          if (_status.isNotEmpty) ...[
+            const Divider(height: 32),
+            Text(
+                'Vouches for ${prefixEllipsis(_targetController.text.trim(), 16, ellipsis: '...')}',
+                style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            Text(_status,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Theme.of(context).colorScheme.outline)),
-          ],
-          const Divider(height: 32),
-          Text(
-              'Vouches for ${prefixEllipsis(_targetController.text.trim(), 16, ellipsis: '...')}',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          if (_loading)
-            const Center(
-                child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ))
-          else
-            Consumer<VouchService>(
-              builder: (context, service, _) {
-                if (service.vouches.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                        'No vouches yet. Enter a target pubkey and publish one.'),
-                  );
-                }
-                return Column(
-                  children: service.vouches.map((v) {
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(prefixEllipsis(v.pubkey, 16, ellipsis: '...'),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 13)),
-                            if (v.content.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              SelectableText(v.content),
-                            ],
-                            if (v.createdAt > 0) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                formatTimestamp(v.createdAt),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .outline),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
+          ];
+          final vouchesCount =
+              _loading || service.vouches.isEmpty ? 1 : service.vouches.length;
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: head.length + vouchesCount,
+            itemBuilder: (context, index) {
+              if (index < head.length) return head[index];
+              if (_loading) {
+                return const Center(
+                    child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                ));
+              }
+              if (service.vouches.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                      'No vouches yet. Enter a target pubkey and publish one.'),
                 );
-              },
-            ),
-        ],
+              }
+              final v = service.vouches[index - head.length];
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(prefixEllipsis(v.pubkey, 16, ellipsis: '...'),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13)),
+                      if (v.content.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        SelectableText(v.content),
+                      ],
+                      if (v.createdAt > 0) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          formatTimestamp(v.createdAt),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                  color: Theme.of(context).colorScheme.outline),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }

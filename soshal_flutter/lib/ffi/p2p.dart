@@ -61,7 +61,7 @@ bool p2PQuicServerStop() => RustLib.instance.api.crateFfiP2PP2PQuicServerStop();
 /// Fetch one chunk range from a peer over a QUIC stream (blob-hash or
 /// chunk-hash mode, same semantics as the TCP LAN fetch) and verify its
 /// BLAKE3 hash before returning. `addr` must be a private IP.
-Uint8List p2PQuicFetchChunk(
+Future<Uint8List> p2PQuicFetchChunk(
         {required String addr,
         required String hash,
         required BigInt offset,
@@ -89,7 +89,7 @@ String p2PMoqPublishGroup(
 /// Subscribe to a live MoQ stream over QUIC for `window_ms`. Returns JSON
 /// `{"groups":[<hex-encoded group frames>...]}` — one entry per group frame
 /// sent by the peer (buffered replay, then live follow until idle/window end).
-String p2PMoqSubscribeFetch(
+Future<String> p2PMoqSubscribeFetch(
         {required String addr,
         required String streamId,
         required BigInt windowMs}) =>
@@ -102,7 +102,7 @@ String p2PMoqSubscribeFetch(
 /// file. Returns JSON `{"success":true,"path","bytes"}`.
 /// `ip` is a private-address string; `tcp_port` the LAN server port, and
 /// `quic_port` the peer's QUIC stream port when advertised (else empty/None).
-String p2PFetchBlobFromPeer(
+Future<String> p2PFetchBlobFromPeer(
         {required String blobHash,
         required String ip,
         required int tcpPort,

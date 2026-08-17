@@ -91,6 +91,22 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// Total msats zapped to many events, keyed by event id.
+  Future<Map<String, int>> fetchTotals(List<String> eventIds) async {
+    try {
+      final json = RustLib.instance.api.crateFfiZapZapFetchTotals(
+        eventIds: eventIds,
+      );
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      clearLastError();
+      return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return {};
+    }
+  }
+
   /// Recent zap receipts for an event.
   Future<List<ZapReceipt>> fetchReceipts(String eventId,
       {int limit = 20}) async {

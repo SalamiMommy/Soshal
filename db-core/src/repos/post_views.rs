@@ -36,12 +36,18 @@ impl<'a> PostViewsRepo<'a> {
         let now = now_secs();
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT OR IGNORE INTO post_views (pubkey, post_id, seen_at) VALUES (?1, ?2, ?3)",
+                )
+                .await?;
             for chunk in post_ids.chunks(BATCH_MAX) {
                 for id in chunk {
-                    tx.execute("INSERT OR IGNORE INTO post_views (pubkey, post_id, seen_at) VALUES (?1, ?2, ?3)", params![pubkey, id.as_str(), now]).await?;
+                    stmt.run(params![pubkey, id.as_str(), now]).await?;
+                    stmt.reset();
                 }
             }
-            tx.execute("DELETE FROM post_views WHERE pubkey = ?1 AND rowid NOT IN (SELECT rowid FROM post_views WHERE pubkey = ?1 ORDER BY seen_at DESC, rowid DESC LIMIT ?2)", params![pubkey, MAX_SEEN_PER_USER]).await?;
+            tx.execute("DELETE FROM post_views WHERE pubkey = ?1 AND rowid IN (SELECT rowid FROM post_views WHERE pubkey = ?1 ORDER BY seen_at DESC, rowid DESC LIMIT -1 OFFSET ?2)", params![pubkey, MAX_SEEN_PER_USER]).await?;
             tx.commit().await?;
             Ok(())
         })

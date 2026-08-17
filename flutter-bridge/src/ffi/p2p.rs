@@ -271,8 +271,8 @@ pub fn p2p_quic_server_stop() -> Result<bool, String> {
 /// Fetch one chunk range from a peer over a QUIC stream (blob-hash or
 /// chunk-hash mode, same semantics as the TCP LAN fetch) and verify its
 /// BLAKE3 hash before returning. `addr` must be a private IP.
-#[frb(sync, serialize)]
-pub fn p2p_quic_fetch_chunk(
+#[frb(serialize)]
+pub async fn p2p_quic_fetch_chunk(
     addr: String,
     hash: String,
     offset: usize,
@@ -324,8 +324,8 @@ pub fn p2p_moq_publish_group(stream_id: String, encoded: Vec<u8>) -> Result<Stri
 /// Subscribe to a live MoQ stream over QUIC for `window_ms`. Returns JSON
 /// `{"groups":[<hex-encoded group frames>...]}` — one entry per group frame
 /// sent by the peer (buffered replay, then live follow until idle/window end).
-#[frb(sync, serialize)]
-pub fn p2p_moq_subscribe_fetch(
+#[frb(serialize)]
+pub async fn p2p_moq_subscribe_fetch(
     addr: String,
     stream_id: String,
     window_ms: u64,
@@ -351,8 +351,8 @@ pub fn p2p_moq_subscribe_fetch(
 /// file. Returns JSON `{"success":true,"path","bytes"}`.
 /// `ip` is a private-address string; `tcp_port` the LAN server port, and
 /// `quic_port` the peer's QUIC stream port when advertised (else empty/None).
-#[frb(sync, serialize)]
-pub fn p2p_fetch_blob_from_peer(
+#[frb(serialize)]
+pub async fn p2p_fetch_blob_from_peer(
     blob_hash: String,
     ip: String,
     tcp_port: u16,
@@ -692,17 +692,22 @@ mod tests {
         assert!(e.contains("refusing non-private peer"), "got {e}");
     }
 
-    #[test]
-    fn test_fetch_addr_validation_rejects_non_private() {
-        let e = super::p2p_quic_fetch_chunk("nope".to_string(), "h".to_string(), 0, 0).unwrap_err();
+    #[tokio::test]
+    async fn test_fetch_addr_validation_rejects_non_private() {
+        let e = super::p2p_quic_fetch_chunk("nope".to_string(), "h".to_string(), 0, 0)
+            .await
+            .unwrap_err();
         assert!(e.contains("bad addr"), "got {e}");
         let e = super::p2p_quic_fetch_chunk("8.8.8.8:443".to_string(), "h".to_string(), 0, 0)
+            .await
             .unwrap_err();
         assert!(e.contains("refusing non-private peer"), "got {e}");
-        let e =
-            super::p2p_moq_subscribe_fetch("nope".to_string(), "s".to_string(), 100).unwrap_err();
+        let e = super::p2p_moq_subscribe_fetch("nope".to_string(), "s".to_string(), 100)
+            .await
+            .unwrap_err();
         assert!(e.contains("bad addr"), "got {e}");
         let e = super::p2p_moq_subscribe_fetch("8.8.8.8:443".to_string(), "s".to_string(), 100)
+            .await
             .unwrap_err();
         assert!(e.contains("refusing non-private peer"), "got {e}");
         let e = super::p2p_fetch_blob_from_peer(
@@ -712,6 +717,7 @@ mod tests {
             None,
             String::new(),
         )
+        .await
         .unwrap_err();
         assert!(e.contains("bad peer ip"), "got {e}");
     }

@@ -195,6 +195,34 @@ pub fn zap_get_total_msat(event_id: String) -> Result<u64, String> {
     })
 }
 
+/// Batch zap totals for many event ids: one query, one FFI roundtrip.
+#[frb(sync, serialize)]
+pub fn zap_fetch_totals(event_ids: Vec<String>) -> Result<String, String> {
+    let ids_json = serde_json::to_string(&event_ids).map_err(|e| format!("serialize: {e}"))?;
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let out = soshal_db_core::block_on(async {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT event_id, SUM(amount) FROM zaps WHERE event_id IN (SELECT value FROM json_each(?1)) GROUP BY event_id",
+                )
+                .await?;
+            let mut rows = stmt.query(libsql::params![ids_json.as_str()]).await?;
+            let mut map = serde_json::Map::new();
+            for id in &event_ids {
+                map.insert(id.clone(), serde_json::json!(0));
+            }
+            while let Some(row) = rows.next().await? {
+                map.insert(row.get::<String>(0)?, serde_json::json!(row.get::<i64>(1)?));
+            }
+            Ok::<_, libsql::Error>(map)
+        })
+        .map_err(soshal_db_core::error::DbError::from)?;
+        Ok(serde_json::to_string(&serde_json::Value::Object(out))
+            .unwrap_or_else(|_| "{}".to_string()))
+    })
+}
+
 /// Fetch stored zap receipt rows for an event as raw JSON.
 #[frb(serialize)]
 pub fn zap_fetch_receipts(event_id: String, limit: i32) -> Result<String, String> {
@@ -205,31 +233,30 @@ pub fn zap_fetch_receipts(event_id: String, limit: i32) -> Result<String, String
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
             let mut stmt = conn
-                .prepare("SELECT * FROM zaps WHERE event_id = ?1 ORDER BY created_at DESC LIMIT ?2")
+                .prepare(
+                    "SELECT id, event_id, recipient_pubkey, sender_pubkey, amount_msat, bolt11, preimage, comment, created_at, pubkey, amount, content, zap_type FROM zaps WHERE event_id = ?1 ORDER BY created_at DESC LIMIT ?2",
+                )
                 .await?;
             let mut rows = stmt
                 .query(libsql::params![event_id.as_str(), limit as i64])
                 .await?;
-            let names: Vec<String> = stmt
-                .columns()
-                .iter()
-                .map(|c| c.name().to_string())
-                .collect();
             let mut out = Vec::new();
             while let Some(row) = rows.next().await? {
-                let mut obj = serde_json::Map::new();
-                for (i, name) in names.iter().enumerate() {
-                    let val = match row.get_value(i as i32) {
-                        Ok(libsql::Value::Null) => serde_json::Value::Null,
-                        Ok(libsql::Value::Integer(n)) => serde_json::json!(n),
-                        Ok(libsql::Value::Real(r)) => serde_json::json!(r),
-                        Ok(libsql::Value::Text(t)) => serde_json::json!(t),
-                        Ok(libsql::Value::Blob(b)) => serde_json::json!(hex::encode(b)),
-                        Err(_) => serde_json::Value::Null,
-                    };
-                    obj.insert(name.clone(), val);
-                }
-                out.push(serde_json::Value::Object(obj));
+                out.push(serde_json::json!({
+                    "id": row.get::<String>(0)?,
+                    "event_id": row.get::<Option<String>>(1)?,
+                    "recipient_pubkey": row.get::<String>(2)?,
+                    "sender_pubkey": row.get::<Option<String>>(3)?,
+                    "amount_msat": row.get::<i64>(4)?,
+                    "bolt11": row.get::<Option<String>>(5)?,
+                    "preimage": row.get::<Option<String>>(6)?,
+                    "comment": row.get::<Option<String>>(7)?,
+                    "created_at": row.get::<i64>(8)?,
+                    "pubkey": row.get::<Option<String>>(9)?,
+                    "amount": row.get::<i64>(10)?,
+                    "content": row.get::<Option<String>>(11)?,
+                    "zap_type": row.get::<String>(12)?,
+                }));
             }
             Ok::<_, libsql::Error>(out)
         })
@@ -242,6 +269,7 @@ pub fn zap_fetch_receipts(event_id: String, limit: i32) -> Result<String, String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ffi::db;
 
     static NWC_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -351,5 +379,29 @@ mod tests {
         let r = zap_send_payment("lnbc1fake".to_string()).await;
         let e = r.err().unwrap();
         assert!(e.contains("NWC not connected"));
+    }
+
+    #[test]
+    fn test_fetch_totals_batch_db() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("totals", "zap");
+        db::db_execute_raw(
+            "INSERT INTO zaps (id, event_id, recipient_pubkey, amount, amount_msat, created_at, zap_type) \
+             VALUES ('z1','ev1','pk',5,5000,1000,'public'),('z2','ev1','pk',7,7000,2000,'public'),('z3','ev2','pk',3,3000,1500,'public')"
+                .to_string(),
+        )
+        .unwrap();
+        let json = zap_fetch_totals(vec![
+            "ev1".to_string(),
+            "ev2".to_string(),
+            "ev3".to_string(),
+        ])
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["ev1"], 12);
+        assert_eq!(v["ev2"], 3);
+        assert_eq!(v["ev3"], 0);
     }
 }

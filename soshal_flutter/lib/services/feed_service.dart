@@ -18,6 +18,8 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   static const String _pinnedKey = 'pinned_posts';
   final Set<String> _pinned = {};
   bool _pinnedLoaded = false;
+  final List<FeedPost> _pendingIndex = [];
+  bool _indexFlushScheduled = false;
 
   /// Best-effort hook invoked after a full feed refresh (offset 0). Set by
   /// [SyncService.attach] to trigger peer reconciliation; failures are silent.
@@ -422,18 +424,30 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  /// Index a stored post into the FTS search table (idempotent upsert).
+  /// Queue a stored post for FTS indexing; flush runs off the load path.
   void _indexPost(FeedPost post) {
     if (post.eventId.isEmpty) return;
-    try {
-      RustLib.instance.api.crateFfiSearchSearchIndexPost(
-        eventId: post.eventId,
-        pubkey: post.pubkey,
-        content: post.content,
-        kind: PlatformInt64Util.from(1),
-      );
-    } catch (_) {
-      // Indexing is best-effort; a failed upsert must not break ingest.
+    _pendingIndex.add(post);
+    if (_indexFlushScheduled) return;
+    _indexFlushScheduled = true;
+    Future.microtask(_flushIndexQueue);
+  }
+
+  void _flushIndexQueue() {
+    _indexFlushScheduled = false;
+    final pending = List<FeedPost>.from(_pendingIndex);
+    _pendingIndex.clear();
+    for (final post in pending) {
+      try {
+        RustLib.instance.api.crateFfiSearchSearchIndexPost(
+          eventId: post.eventId,
+          pubkey: post.pubkey,
+          content: post.content,
+          kind: PlatformInt64Util.from(1),
+        );
+      } catch (_) {
+        // Indexing is best-effort; a failed upsert must not break ingest.
+      }
     }
   }
 

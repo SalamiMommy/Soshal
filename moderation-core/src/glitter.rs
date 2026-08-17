@@ -19,20 +19,26 @@ fn contains_entity_for(s: &str, c: char) -> bool {
             return true;
         }
     }
-    let dec = format!("&#{};", c as u32);
-    if s.contains(&dec) {
-        return true;
-    }
-    let hex_lower = format!("&#x{:x};", c as u32);
-    if s.contains(&hex_lower) {
-        return true;
-    }
-    let hex_upper = format!("&#X{:X};", c as u32);
-    if s.contains(&hex_upper) {
-        return true;
-    }
     let _ = (lower, upper);
-    false
+    match c {
+        '<' => s.contains("&#60;") || s.contains("&#x3c;") || s.contains("&#X3C;"),
+        '>' => s.contains("&#62;") || s.contains("&#x3e;") || s.contains("&#X3E;"),
+        '"' => s.contains("&#34;") || s.contains("&#x22;") || s.contains("&#X22;"),
+        '\'' => s.contains("&#39;") || s.contains("&#x27;") || s.contains("&#X27;"),
+        '/' => s.contains("&#47;") || s.contains("&#x2f;") || s.contains("&#X2F;"),
+        _ => {
+            let dec = format!("&#{};", c as u32);
+            if s.contains(&dec) {
+                return true;
+            }
+            let hex_lower = format!("&#x{:x};", c as u32);
+            if s.contains(&hex_lower) {
+                return true;
+            }
+            let hex_upper = format!("&#X{:X};", c as u32);
+            s.contains(&hex_upper)
+        }
+    }
 }
 
 struct GlitterRegexes {
@@ -103,16 +109,16 @@ pub fn sanitize_glitter_content(content: &str) -> String {
         return String::new();
     }
     let s = strip_control_chars(content);
-    let mut s = decode_ascii_entities(&s).into_owned();
+    let s = decode_ascii_entities(&s);
     let re = get_glitter_regexes();
 
-    s = re.script.replace_all(&s, "").into_owned();
-    s = re.style.replace_all(&s, "").into_owned();
-    s = re.danger_tags.replace_all(&s, "").into_owned();
-    s = re.on_handler.replace_all(&s, "").into_owned();
-    s = re.css_uri.replace_all(&s, "url(").into_owned();
-    s = re.dangerous_uri.replace_all(&s, "").into_owned();
-    s = re.entity_scheme.replace_all(&s, "").into_owned();
+    let s = re.script.replace_all(&s, "");
+    let s = re.style.replace_all(&s, "");
+    let s = re.danger_tags.replace_all(&s, "");
+    let s = re.on_handler.replace_all(&s, "");
+    let s = re.css_uri.replace_all(&s, "url(");
+    let s = re.dangerous_uri.replace_all(&s, "");
+    let s = re.entity_scheme.replace_all(&s, "");
 
     let mut result = String::with_capacity(s.len());
     let mut last = 0;

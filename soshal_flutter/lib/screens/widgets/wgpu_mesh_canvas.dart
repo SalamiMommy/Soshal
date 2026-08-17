@@ -59,6 +59,7 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
   int? _sessionId;
   ui.Image? _renderedImage;
   Timer? _renderTimer;
+  List<WgpuMeshNodeItem>? _lastRenderedNodes;
   bool _loading = true;
   String? _error;
 
@@ -102,10 +103,11 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
     _renderTimer?.cancel();
     _renderTimer = Timer.periodic(const Duration(milliseconds: 33), (_) async {
       if (_sessionId == null || !mounted) return;
+      final nodes = widget.nodes;
+      if (identical(nodes, _lastRenderedNodes)) return;
       try {
-        final nodesJson =
-            jsonEncode(widget.nodes.map((n) => n.toJson()).toList());
-        final frameBytes = _layout.renderMeshFrame(
+        final nodesJson = jsonEncode(nodes.map((n) => n.toJson()).toList());
+        final frameBytes = await _layout.renderMeshFrame(
           sessionId: _sessionId!,
           nodesJson: nodesJson,
           deltaTime: 0.033,
@@ -138,6 +140,7 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
               _renderedImage = img;
             });
             oldImg?.dispose();
+            _lastRenderedNodes = nodes;
             if (bufferPtr != null) {
               try {
                 await _layout.signalRasterFrameReady(

@@ -62,30 +62,79 @@ impl WgpuMeshEngineSession {
         }
 
         // Repulsion force calculation between node pairs
-        let mut forces = Vec::with_capacity(len);
-        forces.resize(len, (0.0f32, 0.0f32, 0.0f32));
+        let forces = {
+            let mut forces = vec![(0.0f32, 0.0f32, 0.0f32); len];
+            let thread_count = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+                .min(len);
+            if thread_count <= 1 {
+                for i in 0..len {
+                    for j in (i + 1)..len {
+                        let dx = nodes[i].x - nodes[j].x;
+                        let dy = nodes[i].y - nodes[j].y;
+                        let dz = nodes[i].z - nodes[j].z;
+                        let dist_sq = (dx * dx + dy * dy + dz * dz).max(0.01);
+                        let force = 50.0 / dist_sq;
 
-        for i in 0..len {
-            for j in (i + 1)..len {
-                let dx = nodes[i].x - nodes[j].x;
-                let dy = nodes[i].y - nodes[j].y;
-                let dz = nodes[i].z - nodes[j].z;
-                let dist_sq = (dx * dx + dy * dy + dz * dz).max(0.01);
-                let force = 50.0 / dist_sq;
+                        let fx = (dx / dist_sq.sqrt()) * force;
+                        let fy = (dy / dist_sq.sqrt()) * force;
+                        let fz = (dz / dist_sq.sqrt()) * force;
 
-                let fx = (dx / dist_sq.sqrt()) * force;
-                let fy = (dy / dist_sq.sqrt()) * force;
-                let fz = (dz / dist_sq.sqrt()) * force;
+                        forces[i].0 += fx;
+                        forces[i].1 += fy;
+                        forces[i].2 += fz;
 
-                forces[i].0 += fx;
-                forces[i].1 += fy;
-                forces[i].2 += fz;
+                        forces[j].0 -= fx;
+                        forces[j].1 -= fy;
+                        forces[j].2 -= fz;
+                    }
+                }
+            } else {
+                let chunk_size = len.div_ceil(thread_count);
+                std::thread::scope(|s| {
+                    let nodes_ref = &*nodes;
+                    let mut handles = Vec::with_capacity(thread_count);
+                    for start in (0..len).step_by(chunk_size) {
+                        let end = (start + chunk_size).min(len);
+                        handles.push(s.spawn(move || {
+                            let mut local = vec![(0.0f32, 0.0f32, 0.0f32); len];
+                            for i in start..end {
+                                for j in (i + 1)..len {
+                                    let dx = nodes_ref[i].x - nodes_ref[j].x;
+                                    let dy = nodes_ref[i].y - nodes_ref[j].y;
+                                    let dz = nodes_ref[i].z - nodes_ref[j].z;
+                                    let dist_sq = (dx * dx + dy * dy + dz * dz).max(0.01);
+                                    let force = 50.0 / dist_sq;
 
-                forces[j].0 -= fx;
-                forces[j].1 -= fy;
-                forces[j].2 -= fz;
+                                    let fx = (dx / dist_sq.sqrt()) * force;
+                                    let fy = (dy / dist_sq.sqrt()) * force;
+                                    let fz = (dz / dist_sq.sqrt()) * force;
+
+                                    local[i].0 += fx;
+                                    local[i].1 += fy;
+                                    local[i].2 += fz;
+
+                                    local[j].0 -= fx;
+                                    local[j].1 -= fy;
+                                    local[j].2 -= fz;
+                                }
+                            }
+                            local
+                        }));
+                    }
+                    for handle in handles {
+                        let partial = handle.join().unwrap();
+                        for (f, p) in forces.iter_mut().zip(partial.iter()) {
+                            f.0 += p.0;
+                            f.1 += p.1;
+                            f.2 += p.2;
+                        }
+                    }
+                });
             }
-        }
+            forces
+        };
 
         // Apply forces & integrate positions
         for (i, node) in nodes.iter_mut().enumerate() {

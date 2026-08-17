@@ -12,37 +12,17 @@ impl<'a> SearchIndexRepo<'a> {
 
     pub fn upsert(&self, row: &SearchIndexRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        let post_rowid: Option<i64> = crate::query::query_first(
-            &conn,
-            "SELECT rowid FROM posts WHERE id = ?1",
-            params![row.id.as_str()],
-            |r| r.get(0),
-        )?;
         // FTS5 rows must carry an explicit rowid: posts-backed rows map to
         // the posts rowid (matching the posts_ai trigger), everything else
         // gets a deterministic negative rowid. Auto-assigned rowids collide
         // with trigger inserts and surface as bare `constraint failed`.
         let neg = negative_rowid(&row.id);
-        let rowid = post_rowid.unwrap_or(neg);
-        crate::query::with_tx(&conn, |tx| async move {
-            tx.execute(
-                "DELETE FROM posts_fts WHERE rowid = ?1 OR rowid = ?2",
-                params![rowid, neg],
-            )
-            .await?;
-            tx.execute(
-                "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content) VALUES (?1, ?2, ?3, ?4)",
-                params![
-                    rowid,
-                    row.id.as_str(),
-                    row.pubkey.as_str(),
-                    row.content.as_str()
-                ],
-            )
-            .await?;
-            tx.commit().await?;
-            Ok(())
-        })
+        crate::query::execute(
+            &conn,
+            "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content) SELECT COALESCE((SELECT rowid FROM posts WHERE id = ?1), ?2), ?1, ?3, ?4",
+            params![row.id.as_str(), neg, row.pubkey.as_str(), row.content.as_str()],
+        )?;
+        Ok(())
     }
 
     pub fn search(

@@ -30,15 +30,45 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
+fn embedding_norm(v: &[f32]) -> f32 {
+    v.iter().map(|x| x * x).sum()
+}
+
+fn cosine_similarity_with_norm(a: &[f32], norm_a: f32, b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+
+    let mut dot = 0.0f32;
+    let mut norm_b = 0.0f32;
+
+    for (x, y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        norm_b += y * y;
+    }
+
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a.sqrt() * norm_b.sqrt())
+    }
+}
+
 pub fn rank_vector_documents(
     query_embedding: &[f32],
     docs: &[VectorDocument],
     top_k: usize,
 ) -> Vec<(String, f32)> {
+    let query_norm = embedding_norm(query_embedding);
     let mut scored: Vec<(usize, f32)> = docs
         .iter()
         .enumerate()
-        .map(|(idx, doc)| (idx, cosine_similarity(query_embedding, &doc.embedding)))
+        .map(|(idx, doc)| {
+            (
+                idx,
+                cosine_similarity_with_norm(query_embedding, query_norm, &doc.embedding),
+            )
+        })
         .collect();
 
     if top_k < scored.len() {

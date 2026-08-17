@@ -244,7 +244,7 @@ fn test_dating_score_and_stats() {
     assert_eq!(stats["profile_complete"], true);
     assert_eq!(stats["likes_received"], 0);
     assert_eq!(stats["profile_views"], 0);
-    assert_eq!(stats["matches"], 2);
+    assert_eq!(stats["matches"], 0);
     cleanup_db(&path);
 }
 

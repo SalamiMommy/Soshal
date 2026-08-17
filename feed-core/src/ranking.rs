@@ -47,31 +47,21 @@ pub fn score_post_with_set(
     let recency_factor = 1.0 / (hours_ago + 1.0).log2();
 
     let hashtag_score = if !post_hashtags.is_empty() && !user_hashtags_set.is_empty() {
-        let match_count = post_hashtags
+        let folded_tags: Vec<String> = post_hashtags
             .iter()
-            .filter(|t| {
-                if user_hashtags_set.contains(t.as_str()) {
-                    true
-                } else if t.is_ascii() {
-                    if t.len() <= 64 {
-                        let mut buf = [0u8; 64];
-                        let b = &mut buf[..t.len()];
-                        b.copy_from_slice(t.as_bytes());
-                        b.make_ascii_lowercase();
-                        if let Ok(s) = std::str::from_utf8(b) {
-                            user_hashtags_set.contains(s)
-                        } else {
-                            user_hashtags_set.contains(&t.to_ascii_lowercase())
-                        }
-                    } else {
-                        user_hashtags_set.contains(&t.to_ascii_lowercase())
-                    }
+            .map(|t| {
+                if t.is_ascii() {
+                    t.to_ascii_lowercase()
                 } else {
-                    user_hashtags_set.contains(&t.to_lowercase())
+                    t.to_lowercase()
                 }
             })
+            .collect();
+        let match_count = folded_tags
+            .iter()
+            .filter(|t| user_hashtags_set.contains(t.as_str()))
             .count();
-        match_count as f64 / post_hashtags.len() as f64
+        match_count as f64 / folded_tags.len() as f64
     } else {
         0.0
     };

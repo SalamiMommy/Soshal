@@ -419,14 +419,14 @@ const LIVE_STREAM_HISTORY: usize = 128;
 const LIVE_MAX_REPLAY_BYTES: usize = 8 * 1024 * 1024;
 const MAX_MOQ_FETCH_BYTES: usize = 64 * 1024 * 1024;
 const LIVE_MAX_GROUP_BYTES: usize = 64 * 1024 * 1024;
-const LIVE_POLL_INTERVAL_MS: u64 = 50;
+const LIVE_WAKE_TIMEOUT_MS: u64 = 500;
 const LIVE_IDLE_FINISH_MS: u64 = 2000;
 const LIVE_DEFAULT_WINDOW_MS: u64 = 5000;
 
 /// Bounded append-only log of encoded MoQ groups for one live stream.
 #[derive(Default)]
 struct LiveStreamLog {
-    entries: std::collections::VecDeque<(u64, Arc<Vec<u8>>)>,
+    entries: std::collections::BTreeMap<u64, Arc<Vec<u8>>>,
     watermark: u64,
 }
 
@@ -435,6 +435,7 @@ struct LiveStreamLog {
 #[derive(Default)]
 pub struct LiveStreamRegistry {
     streams: Mutex<HashMap<String, Arc<Mutex<LiveStreamLog>>>>,
+    notify: tokio::sync::Notify,
 }
 
 impl LiveStreamRegistry {
@@ -464,11 +465,13 @@ impl LiveStreamRegistry {
             .map_err(|_| "live stream log poisoned".to_string())?;
         lock.watermark += 1;
         let seq = lock.watermark;
-        lock.entries.push_back((seq, Arc::new(encoded)));
+        lock.entries.insert(seq, Arc::new(encoded));
         while lock.entries.len() > LIVE_STREAM_HISTORY {
-            lock.entries.pop_front();
+            lock.entries.pop_first();
         }
-        Ok(lock.watermark)
+        drop(lock);
+        self.notify.notify_waiters();
+        Ok(seq)
     }
 }
 
@@ -782,18 +785,28 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
     let mut last_seen = std::time::Instant::now();
 
     while std::time::Instant::now() < deadline {
-        tokio::time::sleep(std::time::Duration::from_millis(LIVE_POLL_INTERVAL_MS)).await;
-        let pending: Vec<(u64, Arc<Vec<u8>>)> = {
+        let (pending, notified) = {
             let lock = match log.lock() {
                 Ok(l) => l,
                 Err(_) => return,
             };
-            lock.entries
-                .iter()
-                .filter(|(seq, _)| *seq > watermark)
+            let notified = live_registry().notify.notified();
+            let pending: Vec<(u64, Arc<Vec<u8>>)> = lock
+                .entries
+                .range((
+                    std::ops::Bound::Excluded(watermark),
+                    std::ops::Bound::Unbounded,
+                ))
                 .map(|(seq, g)| (*seq, g.clone()))
-                .collect()
+                .collect();
+            (pending, notified)
         };
+        if pending.is_empty() {
+            tokio::select! {
+                _ = notified => {}
+                _ = tokio::time::sleep(std::time::Duration::from_millis(LIVE_WAKE_TIMEOUT_MS)) => {}
+            }
+        }
         for (seq, group) in &pending {
             if write_stream_frame(send, StreamResponseKind::Ok, group.as_slice())
                 .await

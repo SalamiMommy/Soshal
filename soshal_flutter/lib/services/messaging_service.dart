@@ -495,7 +495,7 @@ class IdentityService extends ChangeNotifier
   /// Verify NIP-05 identifier
   Future<bool> verifyNip05(String nip05) async {
     try {
-      return RustLib.instance.api
+      return await RustLib.instance.api
           .crateFfiIdentityIdentityVerifyNip05(nip05: nip05);
     } catch (e) {
       setLastError(e);

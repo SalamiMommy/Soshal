@@ -1,5 +1,6 @@
 use crate::Database;
 use libsql::params;
+use libsql::params_from_iter;
 
 pub struct GroupRepo<'a> {
     db: &'a Database,
@@ -121,6 +122,29 @@ impl<'a> GroupRepo<'a> {
             params![group_id, key_hex, soshal_common_core::format::now_secs()],
         )?;
         Ok(())
+    }
+
+    pub fn member_count_many(
+        &self,
+        ids: &[String],
+    ) -> Result<std::collections::HashMap<String, i64>, crate::error::DbError> {
+        if ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let conn = self.db.conn()?;
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "SELECT group_id, COUNT(*) AS c FROM group_members \
+             WHERE group_id IN ({}) GROUP BY group_id",
+            placeholders.join(",")
+        );
+        crate::query::query(
+            &conn,
+            &sql,
+            params_from_iter(ids.iter().map(|s| s.as_str())),
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map(|rows| rows.into_iter().collect())
     }
 
     fn map_row(row: &libsql::Row) -> libsql::Result<GroupRow> {

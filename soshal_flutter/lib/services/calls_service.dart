@@ -209,7 +209,11 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     _mediaType = mediaType;
     _startedAt = DateTime.now();
     _timer?.cancel();
+    var lastTick = DateTime.now();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final now = DateTime.now();
+      if (now.second == lastTick.second) return;
+      lastTick = now;
       notifyListeners();
     });
     clearLastError();

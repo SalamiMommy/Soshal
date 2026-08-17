@@ -90,6 +90,108 @@ pub struct DatingProfileInput {
     pub liker_total_likes: Option<u32>,
 }
 
+/// Scoring-relevant profile fields, shared by `DatingProfile` and `DatingProfileInput`.
+#[doc(hidden)]
+pub trait ProfileScoringFields {
+    fn age(&self) -> Option<f64>;
+    fn height(&self) -> Option<f64>;
+    fn body_type(&self) -> Option<&str>;
+    fn interests(&self) -> Option<&[String]>;
+    fn smoking(&self) -> Option<&str>;
+    fn drinking(&self) -> Option<&str>;
+    fn politics(&self) -> Option<&str>;
+    fn ethnicity(&self) -> Option<&str>;
+    fn education(&self) -> Option<&str>;
+    fn language(&self) -> Option<&[String]>;
+    fn relationship_intent(&self) -> Option<&str>;
+    fn preference_weights(&self) -> Option<&PreferenceWeights>;
+    fn dealbreakers(&self) -> Option<&[String]>;
+}
+
+impl ProfileScoringFields for DatingProfile {
+    fn age(&self) -> Option<f64> {
+        self.age
+    }
+    fn height(&self) -> Option<f64> {
+        self.height
+    }
+    fn body_type(&self) -> Option<&str> {
+        self.body_type.as_deref()
+    }
+    fn interests(&self) -> Option<&[String]> {
+        self.interests.as_deref()
+    }
+    fn smoking(&self) -> Option<&str> {
+        self.smoking.as_deref()
+    }
+    fn drinking(&self) -> Option<&str> {
+        self.drinking.as_deref()
+    }
+    fn politics(&self) -> Option<&str> {
+        self.politics.as_deref()
+    }
+    fn ethnicity(&self) -> Option<&str> {
+        self.ethnicity.as_deref()
+    }
+    fn education(&self) -> Option<&str> {
+        self.education.as_deref()
+    }
+    fn language(&self) -> Option<&[String]> {
+        self.language.as_deref()
+    }
+    fn relationship_intent(&self) -> Option<&str> {
+        self.relationship_intent.as_deref()
+    }
+    fn preference_weights(&self) -> Option<&PreferenceWeights> {
+        self.preference_weights.as_ref()
+    }
+    fn dealbreakers(&self) -> Option<&[String]> {
+        self.dealbreakers.as_deref()
+    }
+}
+
+impl ProfileScoringFields for DatingProfileInput {
+    fn age(&self) -> Option<f64> {
+        self.age
+    }
+    fn height(&self) -> Option<f64> {
+        self.height
+    }
+    fn body_type(&self) -> Option<&str> {
+        self.body_type.as_deref()
+    }
+    fn interests(&self) -> Option<&[String]> {
+        self.interests.as_deref()
+    }
+    fn smoking(&self) -> Option<&str> {
+        self.smoking.as_deref()
+    }
+    fn drinking(&self) -> Option<&str> {
+        self.drinking.as_deref()
+    }
+    fn politics(&self) -> Option<&str> {
+        self.politics.as_deref()
+    }
+    fn ethnicity(&self) -> Option<&str> {
+        self.ethnicity.as_deref()
+    }
+    fn education(&self) -> Option<&str> {
+        self.education.as_deref()
+    }
+    fn language(&self) -> Option<&[String]> {
+        self.language.as_deref()
+    }
+    fn relationship_intent(&self) -> Option<&str> {
+        self.relationship_intent.as_deref()
+    }
+    fn preference_weights(&self) -> Option<&PreferenceWeights> {
+        self.preference_weights.as_ref()
+    }
+    fn dealbreakers(&self) -> Option<&[String]> {
+        self.dealbreakers.as_deref()
+    }
+}
+
 /// A single sorted profile result with compatibility score.
 #[derive(Serialize, Deserialize)]
 pub struct SortedProfileOut {

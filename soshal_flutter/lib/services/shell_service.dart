@@ -279,7 +279,7 @@ class ShellService extends ChangeNotifier {
     _unlockError = null;
     notifyListeners();
     try {
-      final ok = RustLib.instance.api.crateFfiPinPinVerify(pin: pin);
+      final ok = await RustLib.instance.api.crateFfiPinPinVerify(pin: pin);
       if (ok) {
         _locked = false;
         _lockAttempts = 0;

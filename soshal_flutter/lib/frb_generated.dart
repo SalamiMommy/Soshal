@@ -74,7 +74,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 2077262301;
+  int get rustContentHash => -117506027;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -88,9 +88,11 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 abstract class RustLibApi extends BaseApi {
   String crateFfiAnalyticsAnalyticsComputeStats();
 
-  String crateFfiAnalyticsAnalyticsSlmClassifyPost({required String text});
+  Future<String> crateFfiAnalyticsAnalyticsSlmClassifyPost(
+      {required String text});
 
-  String crateFfiAnalyticsAnalyticsSlmGenerateEmbedding({required String text});
+  Future<String> crateFfiAnalyticsAnalyticsSlmGenerateEmbedding(
+      {required String text});
 
   String crateFfiAuditAuditList(
       {required PlatformInt64 limit, String? actorPubkey});
@@ -287,6 +289,9 @@ abstract class RustLibApi extends BaseApi {
 
   BigInt crateFfiDbDbPurgeStaleGeohashPeers(
       {required PlatformInt64 cutoffSecsAgo});
+
+  Future<String> crateFfiDbDbQueryParams(
+      {required String sql, required List<String> params});
 
   String crateFfiDbDbQueryRaw({required String sql});
 
@@ -551,7 +556,7 @@ abstract class RustLibApi extends BaseApi {
       required String about,
       required String nip05});
 
-  bool crateFfiIdentityIdentityVerifyNip05({required String nip05});
+  Future<bool> crateFfiIdentityIdentityVerifyNip05({required String nip05});
 
   String crateFfiMarketplaceMarketplaceCreateEscrow(
       {required String orderId,
@@ -693,7 +698,7 @@ abstract class RustLibApi extends BaseApi {
 
   String crateFfiMediaMediaUploadBlob({required List<int> data});
 
-  String crateFfiMediaMediaUploadBlobFile({required String filePath});
+  Future<String> crateFfiMediaMediaUploadBlobFile({required String filePath});
 
   List<String> crateFfiMessagingMessagingFetchConversations(
       {required String pubkey});
@@ -927,7 +932,7 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiP2PP2PEncodeFountainPayload(
       {required List<int> data, required double redundancyRatio});
 
-  String crateFfiP2PP2PFetchBlobFromPeer(
+  Future<String> crateFfiP2PP2PFetchBlobFromPeer(
       {required String blobHash,
       required String ip,
       required int tcpPort,
@@ -958,7 +963,7 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiP2PP2PMoqPublishGroup(
       {required String streamId, required List<int> encoded});
 
-  String crateFfiP2PP2PMoqSubscribeFetch(
+  Future<String> crateFfiP2PP2PMoqSubscribeFetch(
       {required String addr,
       required String streamId,
       required BigInt windowMs});
@@ -971,7 +976,7 @@ abstract class RustLibApi extends BaseApi {
       required bool cellular,
       required bool lowPowerMode});
 
-  Uint8List crateFfiP2PP2PQuicFetchChunk(
+  Future<Uint8List> crateFfiP2PP2PQuicFetchChunk(
       {required String addr,
       required String hash,
       required BigInt offset,
@@ -1004,9 +1009,9 @@ abstract class RustLibApi extends BaseApi {
 
   String crateFfiPinPinLockoutState();
 
-  bool crateFfiPinPinSet({required String pin});
+  Future<bool> crateFfiPinPinSet({required String pin});
 
-  bool crateFfiPinPinVerify({required String pin});
+  Future<bool> crateFfiPinPinVerify({required String pin});
 
   Future<String> crateFfiProtocolHandlerProtocolGetMetadata(
       {required String scheme, required String host, required String path});
@@ -1022,7 +1027,7 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiRelationsRelationsSendFriendRequest({required String pubkey});
 
-  Uint8List crateFfiRenderRenderComputeMeshFrame(
+  Future<Uint8List> crateFfiRenderRenderComputeMeshFrame(
       {required PlatformInt64 sessionId,
       required String nodesJson,
       required double deltaTime});
@@ -1138,7 +1143,7 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiSignerSignerRemoveFromKeyring({required String pubkey});
 
-  bool crateFfiSignerSignerSaveToKeyring({required String pubkey});
+  Future<bool> crateFfiSignerSignerSaveToKeyring({required String pubkey});
 
   String crateFfiSignerSignerSchnorrSign({required String messageHex});
 
@@ -1148,7 +1153,7 @@ abstract class RustLibApi extends BaseApi {
 
   String crateFfiSignerSignerUnlock({required String secret});
 
-  bool crateFfiSignerSignerUnlockFromKeyring({required String pubkey});
+  Future<bool> crateFfiSignerSignerUnlockFromKeyring({required String pubkey});
 
   List<String> crateFfiSocialSocialFriendSuggestions();
 
@@ -1158,9 +1163,11 @@ abstract class RustLibApi extends BaseApi {
   Int16List crateFfiStorageStorageDecodeVoiceStream(
       {required List<int> payload});
 
-  Uint8List crateFfiStorageStorageEncodeVoicePcm({required List<int> pcm});
+  Future<Uint8List> crateFfiStorageStorageEncodeVoicePcm(
+      {required List<int> pcm});
 
-  Float32List crateFfiStorageStorageGetAudioPeaks({required String path});
+  Future<Float32List> crateFfiStorageStorageGetAudioPeaks(
+      {required String path});
 
   String crateFfiStorageStorageGetIoEngineMode();
 
@@ -1299,6 +1306,8 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateFfiZapZapFetchReceipts(
       {required String eventId, required int limit});
 
+  String crateFfiZapZapFetchTotals({required List<String> eventIds});
+
   Future<String> crateFfiZapZapGetNwcPubkey();
 
   Future<String> crateFfiZapZapGetNwcStatus();
@@ -1349,14 +1358,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiAnalyticsAnalyticsSlmClassifyPost({required String text}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<String> crateFfiAnalyticsAnalyticsSlmClassifyPost(
+      {required String text}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(text, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__analytics__analytics_slm_classify_post(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -1375,16 +1385,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiAnalyticsAnalyticsSlmGenerateEmbedding(
+  Future<String> crateFfiAnalyticsAnalyticsSlmGenerateEmbedding(
       {required String text}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(text, serializer);
         final raw_ = serializer.intoRaw();
         return wire
             .wire__crate__ffi__analytics__analytics_slm_generate_embedding(
-                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+                port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -3195,6 +3205,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "db_purge_stale_geohash_peers",
         argNames: ["cutoffSecsAgo"],
+      );
+
+  @override
+  Future<String> crateFfiDbDbQueryParams(
+      {required String sql, required List<String> params}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        var arg0 = cst_encode_String(sql);
+        var arg1 = cst_encode_list_String(params);
+        return wire.wire__crate__ffi__db__db_query_params(port_, arg0, arg1);
+      },
+      codec: DcoCodec(
+        decodeSuccessData: dco_decode_String,
+        decodeErrorData: dco_decode_String,
+      ),
+      constMeta: kCrateFfiDbDbQueryParamsConstMeta,
+      argValues: [sql, params],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDbDbQueryParamsConstMeta => const TaskConstMeta(
+        debugName: "db_query_params",
+        argNames: ["sql", "params"],
       );
 
   @override
@@ -5509,14 +5543,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateFfiIdentityIdentityVerifyNip05({required String nip05}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<bool> crateFfiIdentityIdentityVerifyNip05({required String nip05}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(nip05, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__identity__identity_verify_nip05(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_bool,
@@ -6730,14 +6764,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiMediaMediaUploadBlobFile({required String filePath}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<String> crateFfiMediaMediaUploadBlobFile({required String filePath}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(filePath, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__media__media_upload_blob_file(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -8753,14 +8787,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiP2PP2PFetchBlobFromPeer(
+  Future<String> crateFfiP2PP2PFetchBlobFromPeer(
       {required String blobHash,
       required String ip,
       required int tcpPort,
       int? quicPort,
       required String outPath}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(blobHash, serializer);
         sse_encode_String(ip, serializer);
@@ -8769,7 +8803,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(outPath, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__p2p__p2p_fetch_blob_from_peer(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -9073,19 +9107,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiP2PP2PMoqSubscribeFetch(
+  Future<String> crateFfiP2PP2PMoqSubscribeFetch(
       {required String addr,
       required String streamId,
       required BigInt windowMs}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(addr, serializer);
         sse_encode_String(streamId, serializer);
         sse_encode_u_64(windowMs, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__p2p__p2p_moq_subscribe_fetch(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -9160,13 +9194,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Uint8List crateFfiP2PP2PQuicFetchChunk(
+  Future<Uint8List> crateFfiP2PP2PQuicFetchChunk(
       {required String addr,
       required String hash,
       required BigInt offset,
       required BigInt length}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(addr, serializer);
         sse_encode_String(hash, serializer);
@@ -9174,7 +9208,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_usize(length, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__p2p__p2p_quic_fetch_chunk(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -9480,14 +9514,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateFfiPinPinSet({required String pin}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<bool> crateFfiPinPinSet({required String pin}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(pin, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__pin__pin_set(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_bool,
@@ -9505,14 +9539,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateFfiPinPinVerify({required String pin}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<bool> crateFfiPinPinVerify({required String pin}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(pin, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__pin__pin_verify(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_bool,
@@ -9671,19 +9705,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Uint8List crateFfiRenderRenderComputeMeshFrame(
+  Future<Uint8List> crateFfiRenderRenderComputeMeshFrame(
       {required PlatformInt64 sessionId,
       required String nodesJson,
       required double deltaTime}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_i_64(sessionId, serializer);
         sse_encode_String(nodesJson, serializer);
         sse_encode_f_32(deltaTime, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__render__render_compute_mesh_frame(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -10723,14 +10757,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateFfiSignerSignerSaveToKeyring({required String pubkey}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<bool> crateFfiSignerSignerSaveToKeyring({required String pubkey}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(pubkey, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__signer__signer_save_to_keyring(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_bool,
@@ -10852,14 +10886,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateFfiSignerSignerUnlockFromKeyring({required String pubkey}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<bool> crateFfiSignerSignerUnlockFromKeyring({required String pubkey}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(pubkey, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__signer__signer_unlock_from_keyring(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_bool,
@@ -10958,14 +10992,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Uint8List crateFfiStorageStorageEncodeVoicePcm({required List<int> pcm}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<Uint8List> crateFfiStorageStorageEncodeVoicePcm(
+      {required List<int> pcm}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_list_prim_i_16_loose(pcm, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__storage__storage_encode_voice_pcm(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -10984,14 +11019,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Float32List crateFfiStorageStorageGetAudioPeaks({required String path}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<Float32List> crateFfiStorageStorageGetAudioPeaks(
+      {required String path}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(path, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__storage__storage_get_audio_peaks(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_prim_f_32_strict,
@@ -12360,6 +12396,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "zap_fetch_receipts",
         argNames: ["eventId", "limit"],
+      );
+
+  @override
+  String crateFfiZapZapFetchTotals({required List<String> eventIds}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_list_String(eventIds, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__zap__zap_fetch_totals(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiZapZapFetchTotalsConstMeta,
+      argValues: [eventIds],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiZapZapFetchTotalsConstMeta => const TaskConstMeta(
+        debugName: "zap_fetch_totals",
+        argNames: ["eventIds"],
       );
 
   @override

@@ -208,8 +208,6 @@ pub fn dating_update_profile(
     images_json: String,
     interests_json: String,
 ) -> Result<bool, String> {
-    let own = dating_get_own_profile(user_pubkey.clone())?;
-    let _ = own;
     let images: Vec<String> =
         serde_json::from_str(&images_json).map_err(|e| format!("invalid images JSON: {e}"))?;
     let interests: Vec<String> = serde_json::from_str::<Vec<String>>(&interests_json)
@@ -592,9 +590,19 @@ pub fn dating_get_stats(user_pubkey: String) -> Result<String, String> {
         .ok()
         .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
         .unwrap_or(0);
-    let matches = dating_fetch_matches(user_pubkey.clone())
-        .unwrap_or_default()
-        .len();
+    let matches_json = super::db::db_query_raw(format!(
+        "SELECT COUNT(*) AS c FROM reactions r \
+         JOIN posts p ON p.id = r.event_id \
+         WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND r.pubkey = '{}' \
+         AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND r2.pubkey = p.pubkey \
+                     AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}'))",
+        user_pubkey.replace('\'', "''"),
+        user_pubkey.replace('\'', "''")
+    ))?;
+    let matches: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&matches_json)
+        .ok()
+        .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
+        .unwrap_or(0);
     let stats = serde_json::json!({
         "profile_views": views,
         "likes_received": likes,

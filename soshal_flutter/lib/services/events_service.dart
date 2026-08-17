@@ -256,19 +256,25 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   /// Score loaded events against my interests via their hashtags.
   Future<void> scoreEvents(List<String> myInterests) async {
     final out = <String, double>{};
-    for (final e in _events) {
-      try {
-        final tags = RustLib.instance.api.crateFfiUtilUtilExtractHashtags(
-          text: '${e.title} ${e.description}',
-        );
-        if (tags.isEmpty) continue;
-        final res = await interestScore(
-          myInterestsJson: jsonEncode(myInterests),
-          peerInterestsJson: jsonEncode(tags),
-        );
-        out[e.id] = (res['score'] as num?)?.toDouble() ?? 0;
-      } catch (_) {
-        out[e.id] = 0;
+    for (var i = 0; i < _events.length; i += 4) {
+      final batch = _events.skip(i).take(4);
+      final results = await Future.wait(batch.map((e) async {
+        try {
+          final tags = RustLib.instance.api.crateFfiUtilUtilExtractHashtags(
+            text: '${e.title} ${e.description}',
+          );
+          if (tags.isEmpty) return (e.id, 0.0);
+          final res = await interestScore(
+            myInterestsJson: jsonEncode(myInterests),
+            peerInterestsJson: jsonEncode(tags),
+          );
+          return (e.id, (res['score'] as num?)?.toDouble() ?? 0.0);
+        } catch (_) {
+          return (e.id, 0.0);
+        }
+      }));
+      for (final (id, score) in results) {
+        out[id] = score;
       }
     }
     _scores = out;

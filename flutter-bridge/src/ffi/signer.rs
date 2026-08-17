@@ -88,8 +88,8 @@ pub fn signer_pubkey() -> Result<String, String> {
 
 /// Persist the unlocked secret key to the OS keychain (desktop keyring).
 /// Only called explicitly after the user opts into "remember this device".
-#[frb(sync, serialize)]
-pub fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
+#[frb(serialize)]
+pub async fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
     let keys = match guard.as_ref() {
         Some(k) => k,
@@ -110,8 +110,8 @@ pub fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
 }
 
 /// Unlock the signer from the OS keychain for the given pubkey.
-#[frb(sync, serialize)]
-pub fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> {
+#[frb(serialize)]
+pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> {
     let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&pubkey)) {
         Ok(e) => e,
         Err(e) => return Err(format!("keychain unavailable: {e}")).into(),
@@ -393,8 +393,8 @@ mod tests {
         signer_lock().unwrap();
     }
 
-    #[test]
-    fn test_keyring_save_unlock_roundtrip() {
+    #[tokio::test]
+    async fn test_keyring_save_unlock_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
             .lock()
@@ -405,10 +405,10 @@ mod tests {
 
         signer_unlock(secret).unwrap();
         assert_eq!(signer_pubkey().unwrap(), pk_hex);
-        match signer_save_to_keyring(pk_hex.clone()) {
+        match signer_save_to_keyring(pk_hex.clone()).await {
             Ok(_) => {
                 signer_lock().unwrap();
-                assert!(signer_unlock_from_keyring(pk_hex.clone()).unwrap());
+                assert!(signer_unlock_from_keyring(pk_hex.clone()).await.unwrap());
                 assert!(!signer_is_locked().unwrap());
                 let sig = signer_sign_text("keyring roundtrip".to_string()).unwrap();
                 assert_eq!(sig.len(), 128);
@@ -419,8 +419,8 @@ mod tests {
         let _ = signer_remove_from_keyring(pk_hex);
     }
 
-    #[test]
-    fn test_keyring_remove() {
+    #[tokio::test]
+    async fn test_keyring_remove() {
         let _g = TEST_LOCK.lock().unwrap();
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
             .lock()
@@ -430,12 +430,12 @@ mod tests {
         let pk_hex = keys.public_key().to_hex();
 
         signer_unlock(secret).unwrap();
-        let _ = signer_save_to_keyring(pk_hex.clone());
+        let _ = signer_save_to_keyring(pk_hex.clone()).await;
         match signer_remove_from_keyring(pk_hex.clone()) {
             Ok(_) => {}
             Err(e) => assert!(!e.is_empty()),
         }
-        assert!(signer_unlock_from_keyring(pk_hex).is_err());
+        assert!(signer_unlock_from_keyring(pk_hex).await.is_err());
         signer_lock().unwrap();
     }
 }

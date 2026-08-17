@@ -99,18 +99,49 @@ pub fn notifications_fetch_unread(user_pubkey: String, limit: i32) -> Result<Str
     )?)
 }
 
-/// Fetch all notifications with pagination (raw query over the last
+/// Fetch all notifications with pagination (typed query over the last
 /// `limit` rows).
 #[frb(sync, serialize)]
 pub fn notifications_fetch(user_pubkey: String, limit: i32, offset: i32) -> Result<String, String> {
     let limit = limit.clamp(1, 500);
     let offset = offset.max(0);
-    super::db::db_query_raw(format!(
-        "SELECT * FROM notifications WHERE pubkey = '{}' ORDER BY created_at DESC LIMIT {} OFFSET {}",
-        user_pubkey.replace('\'', "''"),
-        limit,
-        offset
-    ))
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let rows: Vec<NotificationRow> = soshal_db_core::query::query(
+            &conn,
+            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read \
+             FROM notifications WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
+            libsql::params![user_pubkey.as_str(), limit as i64, offset as i64],
+            |r| {
+                Ok(NotificationRow {
+                    id: r.get(0)?,
+                    pubkey: r.get(1)?,
+                    type_: r.get(2)?,
+                    event_id: r.get(3)?,
+                    from_pubkey: r.get(4)?,
+                    content: r.get(5)?,
+                    created_at: r.get(6)?,
+                    is_read: r.get(7)?,
+                })
+            },
+        )?;
+        let out: Vec<serde_json::Value> = rows
+            .into_iter()
+            .map(|row| {
+                serde_json::json!({
+                    "id": row.id,
+                    "pubkey": row.pubkey,
+                    "type": row.type_,
+                    "event_id": row.event_id,
+                    "from_pubkey": row.from_pubkey,
+                    "content": row.content,
+                    "created_at": row.created_at,
+                    "is_read": if row.is_read { 1 } else { 0 },
+                })
+            })
+            .collect();
+        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+    })
 }
 
 /// Mark notification as read.

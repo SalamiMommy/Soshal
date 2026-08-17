@@ -101,21 +101,23 @@ impl<'a> EphemeralMediaRepo<'a> {
 
     /// Increments the view counter and stamps `viewed_at`; flips state to
     /// `expired` in the same UPDATE once `current_views` reaches `max_views`.
-    pub fn increment_view_count(&self, id: &str) -> Result<(), crate::error::DbError> {
+    /// Returns the fresh row, or `None` when the id doesn't exist.
+    pub fn increment_view_count(
+        &self,
+        id: &str,
+    ) -> Result<Option<EphemeralMediaRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
-        let changed = crate::query::execute(
+        crate::query::query_first(
             &conn,
             "UPDATE ephemeral_media
              SET current_views = current_views + 1,
                  viewed_at = ?2,
                  state = CASE WHEN current_views + 1 >= max_views THEN 'expired' ELSE state END
-             WHERE id=?1",
+             WHERE id=?1
+             RETURNING id, message_id, conversation_id, conversation_type, media_url, media_type, sender_pubkey, recipient_pubkey, max_views, current_views, state, expires_at, created_at, viewed_at",
             params![id, soshal_common_core::format::now_secs()],
-        )?;
-        if changed == 0 {
-            return Err(crate::error::DbError::NotFound);
-        }
-        Ok(())
+            row_to_ephemeral_media,
+        )
     }
 
     pub fn mark_state(&self, id: &str, state: &str) -> Result<(), crate::error::DbError> {

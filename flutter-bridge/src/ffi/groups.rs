@@ -57,12 +57,15 @@ fn member_count(group_id: &str) -> i32 {
 #[frb(sync, serialize)]
 pub fn groups_fetch_groups(user_pubkey: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
-        let rows = GroupRepo::new(db).get_user_groups(&user_pubkey)?;
+        let repo = GroupRepo::new(db);
+        let rows = repo.get_user_groups(&user_pubkey)?;
+        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+        let counts = repo.member_count_many(&ids)?;
         let groups: Vec<GroupInfo> = rows
             .iter()
             .map(|r| {
                 let mut g = row_to_group(r, Some(&user_pubkey));
-                g.members = member_count(&r.id);
+                g.members = counts.get(&r.id).copied().unwrap_or(0) as i32;
                 g
             })
             .collect();
@@ -224,9 +227,13 @@ pub fn groups_set_member_role(
     role: String,
     admin_pubkey: String,
 ) -> Result<bool, String> {
-    let info: GroupInfo = serde_json::from_str(&groups_get_group_info(group_id.clone())?)
-        .map_err(|e| format!("parse group info: {e}"))?;
-    if info.owner != admin_pubkey {
+    let owner = super::db::with_db_result(|db| {
+        GroupRepo::new(db)
+            .get_by_id(&group_id)?
+            .map(|r| r.pubkey)
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)
+    })?;
+    if owner != admin_pubkey {
         return Err("only the group owner can change roles".to_string()).into();
     }
     super::db::with_db_result(|db| {
@@ -247,9 +254,13 @@ pub fn groups_remove_member(
     member_pubkey: String,
     admin_pubkey: String,
 ) -> Result<bool, String> {
-    let info: GroupInfo = serde_json::from_str(&groups_get_group_info(group_id.clone())?)
-        .map_err(|e| format!("parse group info: {e}"))?;
-    if info.owner != admin_pubkey {
+    let owner = super::db::with_db_result(|db| {
+        GroupRepo::new(db)
+            .get_by_id(&group_id)?
+            .map(|r| r.pubkey)
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)
+    })?;
+    if owner != admin_pubkey {
         return Err("only the group owner can remove members".to_string()).into();
     }
     super::db::with_db_result(|db| {

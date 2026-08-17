@@ -1,4 +1,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::{Mutex, OnceLock};
+
+type WotPeersCache = HashMap<(String, u32), HashMap<u32, Vec<String>>>;
+
+static WOT_PEERS_CACHE: OnceLock<Mutex<WotPeersCache>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TrustScore {
@@ -184,6 +189,27 @@ pub fn recalculate_wot(self_pubkey: &str, users: &[WotUser]) -> Vec<WotUpdate> {
 /// Partitions all known Web of Trust peers by distance relative to `self_pubkey`.
 /// Distance 1 = Direct Friends, Distance 2 = Friends of Friends.
 pub fn get_wot_peers_by_distance(
+    self_pubkey: &str,
+    users: &[WotUser],
+    max_distance: u32,
+) -> HashMap<u32, Vec<String>> {
+    if users.len() > 64 {
+        let cache = WOT_PEERS_CACHE.get_or_init(|| Mutex::new(HashMap::with_capacity(16)));
+        let mut guard = cache.lock().unwrap();
+        if let Some(cached) = guard.get(&(self_pubkey.to_string(), max_distance)) {
+            return cached.clone();
+        }
+        let result = partition_wot_peers(self_pubkey, users, max_distance);
+        if guard.len() >= 16 {
+            guard.clear();
+        }
+        guard.insert((self_pubkey.to_string(), max_distance), result.clone());
+        return result;
+    }
+    partition_wot_peers(self_pubkey, users, max_distance)
+}
+
+fn partition_wot_peers(
     self_pubkey: &str,
     users: &[WotUser],
     max_distance: u32,

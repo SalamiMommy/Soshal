@@ -1,6 +1,7 @@
 use crate::error::DbError;
 use crate::Database;
 use libsql::params;
+use std::collections::HashMap;
 
 pub struct SettingsRepo<'a> {
     db: &'a Database,
@@ -39,6 +40,22 @@ impl<'a> SettingsRepo<'a> {
             (),
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
+    }
+
+    pub fn get_many(&self, keys: &[&str]) -> Result<HashMap<String, String>, DbError> {
+        if keys.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let conn = self.db.conn()?;
+        let placeholders = vec!["?"; keys.len()].join(", ");
+        let sql = format!("SELECT key, value FROM settings WHERE key IN ({placeholders})");
+        let rows = crate::query::query(
+            &conn,
+            &sql,
+            libsql::params_from_iter(keys.iter().copied()),
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        Ok(rows.into_iter().collect())
     }
 
     pub fn delete(&self, key: &str) -> Result<(), DbError> {

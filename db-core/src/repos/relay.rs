@@ -32,8 +32,19 @@ impl<'a> RelayRepo<'a> {
 
     pub fn upsert(&self, row: &RelayRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(
-            &conn,
+        crate::query::with_tx(&conn, |tx| async move {
+            self.upsert_in(&tx, row).await?;
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+
+    pub async fn upsert_in(
+        &self,
+        tx: &libsql::Transaction,
+        row: &RelayRow,
+    ) -> Result<(), crate::error::DbError> {
+        tx.execute(
             "INSERT INTO relays (url, pubkey, name, read_enabled, write_enabled, priority, last_connected_at, health_score) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(url) DO UPDATE SET name=excluded.name, read_enabled=excluded.read_enabled, write_enabled=excluded.write_enabled, priority=excluded.priority, last_connected_at=excluded.last_connected_at, health_score=excluded.health_score",
             params![
                 row.url.as_str(),
@@ -45,7 +56,8 @@ impl<'a> RelayRepo<'a> {
                 row.last_connected_at,
                 row.health_score,
             ],
-        )?;
+        )
+        .await?;
         Ok(())
     }
 

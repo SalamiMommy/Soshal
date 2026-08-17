@@ -6,6 +6,7 @@
 //! for the sparse Dart service layer; domain logic lives in the Rust cores.
 
 use flutter_rust_bridge::frb;
+use libsql::params_from_iter;
 use libsql::Value;
 use soshal_db_core::block_on;
 use soshal_db_core::error::DbError;
@@ -120,36 +121,51 @@ pub fn db_path() -> Result<String, String> {
 /// (column names as keys). Parameter binding is supported with `?1..?N`.
 #[frb(sync, serialize)]
 pub fn db_query_raw(sql: String) -> Result<String, String> {
+    db_query_params(&sql, &[])
+}
+
+/// Internal helper: raw SELECT with bound ?N parameters (Vec<String>),
+/// rows as a JSON array of objects. Not an FFI surface.
+pub fn db_query_params(sql: &str, params: &[String]) -> Result<String, String> {
     with_db(|db| {
-        let conn = db.conn().map_err(DbError::from)?;
+        let conn = db.conn()?;
         let out = block_on(async {
-            let mut stmt = conn.prepare(&sql).await?;
-            let mut rows = stmt.query(()).await?;
-            let names: Vec<String> = stmt
-                .columns()
-                .iter()
-                .map(|c| c.name().to_string())
-                .collect();
-            let mut out = Vec::new();
-            while let Some(row) = rows.next().await? {
-                let mut obj = serde_json::Map::new();
-                for (i, name) in names.iter().enumerate() {
-                    let val = match row.get_value(i as i32) {
-                        Ok(Value::Null) => serde_json::Value::Null,
-                        Ok(Value::Integer(n)) => serde_json::json!(n),
-                        Ok(Value::Real(r)) => serde_json::json!(r),
-                        Ok(Value::Text(t)) => serde_json::json!(t),
-                        Ok(Value::Blob(b)) => serde_json::json!(hex::encode(b)),
-                        Err(_) => serde_json::Value::Null,
-                    };
-                    obj.insert(name.clone(), val);
-                }
-                out.push(serde_json::Value::Object(obj));
-            }
-            Ok::<_, libsql::Error>(out)
+            let mut stmt = conn.prepare(sql).await?;
+            let mut rows = stmt
+                .query(params_from_iter(params.iter().map(|p| p.as_str())))
+                .await?;
+            rows_json(&stmt, &mut rows).await
         })?;
         Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
     })
+}
+
+async fn rows_json(
+    stmt: &libsql::Statement,
+    rows: &mut libsql::Rows,
+) -> Result<Vec<serde_json::Value>, libsql::Error> {
+    let names: Vec<String> = stmt
+        .columns()
+        .iter()
+        .map(|c| c.name().to_string())
+        .collect();
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let mut obj = serde_json::Map::new();
+        for (i, name) in names.iter().enumerate() {
+            let val = match row.get_value(i as i32) {
+                Ok(Value::Null) => serde_json::Value::Null,
+                Ok(Value::Integer(n)) => serde_json::json!(n),
+                Ok(Value::Real(r)) => serde_json::json!(r),
+                Ok(Value::Text(t)) => serde_json::json!(t),
+                Ok(Value::Blob(b)) => serde_json::json!(hex::encode(b)),
+                Err(_) => serde_json::Value::Null,
+            };
+            obj.insert(name.clone(), val);
+        }
+        out.push(serde_json::Value::Object(obj));
+    }
+    Ok(out)
 }
 
 /// Execute a raw INSERT/UPDATE/DELETE (no parameters case); returns rows
@@ -157,7 +173,7 @@ pub fn db_query_raw(sql: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn db_execute_raw(sql: String) -> Result<usize, String> {
     with_db(|db| {
-        let conn = db.conn().map_err(DbError::from)?;
+        let conn = db.conn()?;
         Ok(block_on(async { conn.execute(&sql, ()).await })? as usize)
     })
 }
@@ -169,7 +185,7 @@ pub fn db_count(table: String) -> Result<i64, String> {
         return Err(format!("db: unknown table: {table}"));
     }
     with_db(|db| {
-        let conn = db.conn().map_err(DbError::from)?;
+        let conn = db.conn()?;
         let sql = format!("SELECT COUNT(*) AS c FROM {table}");
         let count = soshal_db_core::query::query_first(&conn, &sql, (), |r| {
             let n: i64 = r.get(0)?;
@@ -214,7 +230,7 @@ pub fn db_delete_setting(key: String) -> Result<bool, String> {
 pub fn db_storage_stats() -> Result<String, String> {
     let mut out: Vec<serde_json::Value> = Vec::new();
     with_db(|db| {
-        let conn = db.conn().map_err(DbError::from)?;
+        let conn = db.conn()?;
         let names = soshal_db_core::query::query(
             &conn,
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
@@ -224,16 +240,27 @@ pub fn db_storage_stats() -> Result<String, String> {
                 Ok(name)
             },
         )?;
-        for name in names {
-            let cols_sql = format!(
-                "SELECT COUNT(*) FROM pragma_table_info('{}')",
-                name.replace('\'', "''")
-            );
-            let cols = soshal_db_core::query::query_first(&conn, &cols_sql, (), |r| {
-                let n: i64 = r.get(0)?;
-                Ok(n)
+        let table_cols: Vec<(String, i64)> = if names.is_empty() {
+            Vec::new()
+        } else {
+            let cols_sql = names
+                .iter()
+                .map(|n| {
+                    format!(
+                        "SELECT '{}' AS t, COUNT(*) AS c FROM pragma_table_info('{}')",
+                        n.replace('\'', "''"),
+                        n.replace('\'', "''")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" UNION ALL ");
+            soshal_db_core::query::query(&conn, &cols_sql, (), |r| {
+                let name: String = r.get(0)?;
+                let cols: i64 = r.get(1)?;
+                Ok((name, cols))
             })?
-            .unwrap_or(0);
+        };
+        for (name, cols) in table_cols {
             let count_sql = match name.as_str() {
                 "posts" => "SELECT COUNT(*) FROM posts WHERE is_deleted=0".to_string(),
                 "messages" | "group_messages" | "notifications" => {
@@ -279,7 +306,7 @@ pub fn db_storage_stats() -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn db_backup(backup_path: String) -> Result<String, String> {
     with_db(|db| {
-        let conn = db.conn().map_err(DbError::from)?;
+        let conn = db.conn()?;
         let _ = block_on(conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);"));
         let src = DB_PATH
             .lock()
@@ -377,7 +404,7 @@ pub(crate) fn upsert_post_row(
 #[frb(sync, serialize)]
 pub fn db_get_custom_profile_nodes(pubkey: String) -> Result<String, String> {
     with_db(|db| {
-        let conn = db.conn().map_err(DbError::from)?;
+        let conn = db.conn()?;
         let sql = "SELECT data FROM custom_profiles WHERE pubkey = ?";
         let pubkey_str = pubkey.as_str();
         let data = soshal_db_core::query::query_first(&conn, sql, [pubkey_str], |r| {
@@ -392,12 +419,19 @@ pub fn db_get_custom_profile_nodes(pubkey: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn db_save_custom_profile(pubkey: String, profile_json: String) -> Result<bool, String> {
     with_db(|db| {
-        let conn = db.conn().map_err(DbError::from)?;
+        let conn = db.conn()?;
         let sql = "INSERT INTO custom_profiles (pubkey, data) VALUES (?, ?)
                    ON CONFLICT(pubkey) DO UPDATE SET data = ?";
         block_on(async {
-            conn.execute(sql, [pubkey.as_str(), profile_json.as_str()])
-                .await
+            conn.execute(
+                sql,
+                [
+                    pubkey.as_str(),
+                    profile_json.as_str(),
+                    profile_json.as_str(),
+                ],
+            )
+            .await
         })
         .map_err(DbError::from)?;
         Ok(true)

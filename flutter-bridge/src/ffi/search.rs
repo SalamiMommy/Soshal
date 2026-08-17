@@ -8,7 +8,7 @@ use flutter_rust_bridge::frb;
 use nostr_sdk::client::Client;
 use nostr_sdk::prelude::{Filter, Kind};
 use serde::{Deserialize, Serialize};
-use soshal_db_core::repos::search_index::SearchIndexRepo;
+use soshal_db_core::repos::search_index::{build_fts_query, SearchIndexRepo};
 use soshal_search_core::fts5::format_fts5_query;
 
 /// Search result item
@@ -32,25 +32,39 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
         return Ok(Vec::new());
     }
     super::db::with_db_result(|db| {
-        let repo = SearchIndexRepo::new(db);
-        let rows = repo.search(&fts_query, limit, 0)?;
-        let mut out: Vec<SearchResult> = rows
-            .into_iter()
-            .filter(|r| kind.map(|k| r.kind == k).unwrap_or(true))
-            .map(|r| SearchResult {
-                id: r.id.clone(),
-                result_type: match r.kind {
-                    0 => "profile".to_string(),
-                    _ => "post".to_string(),
-                },
-                title: truncate_preview(&r.content, 80),
-                description: truncate_preview(&r.content, 160),
-                pubkey: Some(r.pubkey),
-                score: 1.0,
-                created_at: r.created_at.max(0) as u64,
-            })
-            .take(limit as usize)
-            .collect();
+        let conn = db.conn()?;
+        let fts_match = build_fts_query(&fts_query);
+        let out = soshal_db_core::block_on(async {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at FROM posts_fts f \
+                     JOIN posts p ON f.rowid = p.rowid \
+                     WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
+                     ORDER BY rank LIMIT ?3",
+                )
+                .await?;
+            let mut rows = stmt
+                .query(libsql::params![fts_match.as_str(), kind, limit])
+                .await?;
+            let mut out = Vec::new();
+            while let Some(row) = rows.next().await? {
+                out.push(SearchResult {
+                    id: row.get(0)?,
+                    result_type: match row.get::<i64>(3)? {
+                        0 => "profile".to_string(),
+                        _ => "post".to_string(),
+                    },
+                    title: truncate_preview(&row.get::<String>(2)?, 80),
+                    description: truncate_preview(&row.get::<String>(2)?, 160),
+                    pubkey: Some(row.get(1)?),
+                    score: 1.0,
+                    created_at: row.get::<i64>(4)?.max(0) as u64,
+                });
+            }
+            Ok::<_, libsql::Error>(out)
+        })
+        .map_err(soshal_db_core::error::DbError::from)?;
+        let mut out = out;
         out.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         Ok(out)
     })
@@ -169,16 +183,24 @@ pub async fn search_remote_global(
 /// Get trending hashtags from the hashtag index.
 #[frb(sync, serialize)]
 pub fn search_trending_hashtags(limit: i32) -> Result<Vec<String>, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT tag FROM hashtags GROUP BY tag ORDER BY SUM(count) DESC LIMIT {}",
-        limit.clamp(1, 100)
-    ))?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    Ok(rows
-        .into_iter()
-        .filter_map(|r| r["tag"].as_str().map(|s| s.to_string()))
-        .collect())
-    .into()
+    const TRENDING_HASHTAGS_SQL: &str =
+        "SELECT tag FROM hashtags GROUP BY tag ORDER BY SUM(count) DESC LIMIT ?1";
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let out = soshal_db_core::block_on(async {
+            let mut stmt = conn.prepare(TRENDING_HASHTAGS_SQL).await?;
+            let mut rows = stmt
+                .query(libsql::params![limit.clamp(1, 100) as i64])
+                .await?;
+            let mut out = Vec::new();
+            while let Some(row) = rows.next().await? {
+                out.push(row.get::<String>(0)?);
+            }
+            Ok::<_, libsql::Error>(out)
+        })
+        .map_err(soshal_db_core::error::DbError::from)?;
+        Ok(out)
+    })
 }
 
 /// Get trending profiles (most followers in local graph).

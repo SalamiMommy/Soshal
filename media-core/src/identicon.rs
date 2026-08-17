@@ -3,7 +3,9 @@
 //! Renders a 5x5 mirrored grid (classic identicon style) as a PNG using only
 //! std FNV-1a hashing and the `image` crate — no randomness, no extra deps.
 
+use std::collections::VecDeque;
 use std::io::Cursor;
+use std::sync::{Mutex, OnceLock};
 
 /// Minimal 1x1 transparent PNG, returned if PNG encoding ever fails.
 const FALLBACK_PNG: &[u8] = &[
@@ -22,6 +24,12 @@ const SIZE: u32 = 200;
 const CELL: u32 = 40;
 /// Border thickness inside each cell, in pixels.
 const BORDER: u32 = 4;
+
+const CACHE_CAP: usize = 128;
+
+type AvatarCache = VecDeque<(String, Vec<u8>)>;
+
+static AVATAR_CACHE: OnceLock<Mutex<AvatarCache>> = OnceLock::new();
 
 /// FNV-1a 64-bit hash over seed bytes (std only).
 fn fnv1a(seed: &str) -> u64 {
@@ -43,6 +51,16 @@ fn colors(hash: u64) -> ([u8; 3], [u8; 3]) {
 
 /// Deterministic avatar PNG bytes for a seed (pubkey). Same seed → same bytes.
 pub fn identicon_png(seed: &str) -> Vec<u8> {
+    let cache = AVATAR_CACHE.get_or_init(|| Mutex::new(VecDeque::new()));
+    {
+        let mut guard = cache.lock().unwrap();
+        if let Some(pos) = guard.iter().position(|(k, _)| k == seed) {
+            let entry = guard.remove(pos).expect("position from iter");
+            let png = entry.1.clone();
+            guard.push_back(entry);
+            return png;
+        }
+    }
     let hash = fnv1a(seed);
     let (fg, bg) = colors(hash);
     let mut img = image::RgbaImage::new(SIZE, SIZE);
@@ -62,10 +80,19 @@ pub fn identicon_png(seed: &str) -> Vec<u8> {
         }
     }
     let mut cursor = Cursor::new(Vec::new());
-    match image::DynamicImage::ImageRgba8(img).write_to(&mut cursor, image::ImageFormat::Png) {
-        Ok(()) => cursor.into_inner(),
-        Err(_) => FALLBACK_PNG.to_vec(),
+    let png =
+        match image::DynamicImage::ImageRgba8(img).write_to(&mut cursor, image::ImageFormat::Png) {
+            Ok(()) => cursor.into_inner(),
+            Err(_) => FALLBACK_PNG.to_vec(),
+        };
+    {
+        let mut guard = cache.lock().unwrap();
+        if guard.len() >= CACHE_CAP {
+            guard.pop_front();
+        }
+        guard.push_back((seed.to_string(), png.clone()));
     }
+    png
 }
 
 #[cfg(test)]

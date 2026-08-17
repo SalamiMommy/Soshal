@@ -10,6 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 /// Safety caps for untrusted mesh input (hostile peer guard).
@@ -20,6 +21,15 @@ const MAX_GROUP_BYTES: usize = 64 * 1024 * 1024;
 /// Encodes a group into the on-stream binary framing above. The payload is
 /// copied; callers wanting zero-copy can slice `bytes[offset..]` per object.
 pub fn encode_group_stream(group: &MoqGroup) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    encode_group_stream_to_writer(group, &mut out)?;
+    Ok(out)
+}
+
+pub fn encode_group_stream_to_writer<W: Write>(
+    group: &MoqGroup,
+    out: &mut W,
+) -> Result<(), String> {
     if group.objects.len() > MAX_GROUP_OBJECTS {
         return Err("moq group too many objects".to_string());
     }
@@ -27,19 +37,20 @@ pub fn encode_group_stream(group: &MoqGroup) -> Result<Vec<u8>, String> {
     if total_payload > MAX_GROUP_BYTES {
         return Err("moq group oversized".to_string());
     }
-    let mut out = Vec::with_capacity(16 + total_payload + group.objects.len() * 33);
-    push_u64(&mut out, group.group_sequence);
-    push_u32(&mut out, group.objects.len() as u32);
+    push_u64(out, group.group_sequence)?;
+    push_u32(out, group.objects.len() as u32)?;
     for obj in &group.objects {
-        push_u32(&mut out, obj.header.track_id);
-        push_u64(&mut out, obj.header.group_sequence);
-        push_u64(&mut out, obj.header.object_sequence);
-        out.push(obj.header.track_type as u8);
-        push_u64(&mut out, obj.header.timestamp_ms);
-        push_u32(&mut out, obj.payload.len() as u32);
-        out.extend_from_slice(&obj.payload);
+        push_u32(out, obj.header.track_id)?;
+        push_u64(out, obj.header.group_sequence)?;
+        push_u64(out, obj.header.object_sequence)?;
+        out.write_all(&[obj.header.track_type as u8])
+            .map_err(|e| format!("moq write failed: {e}"))?;
+        push_u64(out, obj.header.timestamp_ms)?;
+        push_u32(out, obj.payload.len() as u32)?;
+        out.write_all(&obj.payload)
+            .map_err(|e| format!("moq write failed: {e}"))?;
     }
-    Ok(out)
+    Ok(())
 }
 
 /// Decodes a group from the on-stream framing using zero-copy slicing.
@@ -104,12 +115,14 @@ pub fn decode_group_stream(bytes: &[u8]) -> Result<MoqGroup, String> {
     decode_group_stream_bytes(Bytes::copy_from_slice(bytes))
 }
 
-fn push_u32(out: &mut Vec<u8>, v: u32) {
-    out.extend_from_slice(&v.to_le_bytes());
+fn push_u32<W: Write>(out: &mut W, v: u32) -> Result<(), String> {
+    out.write_all(&v.to_le_bytes())
+        .map_err(|e| format!("moq write failed: {e}"))
 }
 
-fn push_u64(out: &mut Vec<u8>, v: u64) {
-    out.extend_from_slice(&v.to_le_bytes());
+fn push_u64<W: Write>(out: &mut W, v: u64) -> Result<(), String> {
+    out.write_all(&v.to_le_bytes())
+        .map_err(|e| format!("moq write failed: {e}"))
 }
 
 fn read_u8(bytes: &[u8], pos: &mut usize) -> Result<u8, String> {

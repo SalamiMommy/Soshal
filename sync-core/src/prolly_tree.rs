@@ -111,11 +111,10 @@ impl ProllyTree {
                 });
             }
 
-            all_nodes.extend(level_nodes.clone());
-
             if level_nodes.len() == 1 {
                 // Root reached!
                 let root_hash = level_nodes[0].node_hash.clone();
+                all_nodes.extend(std::mem::take(&mut level_nodes));
                 return Self {
                     root_hash,
                     nodes: all_nodes,
@@ -128,6 +127,7 @@ impl ProllyTree {
                 .map(|n| n.keys.first().unwrap_or(&n.node_hash).clone())
                 .collect();
             current_vals = level_nodes.iter().map(|n| n.node_hash.clone()).collect();
+            all_nodes.extend(std::mem::take(&mut level_nodes));
             level += 1;
         }
     }

@@ -129,7 +129,7 @@ fn listing_event_from_row(v: &serde_json::Value) -> Option<serde_json::Value> {
 
 fn listing_from_value(v: &serde_json::Value) -> Option<ListingInfo> {
     let ev = listing_event_from_row(v)?;
-    let parsed = soshal_marketplace_core::listing::parse_listing_json(&ev.to_string());
+    let parsed = soshal_marketplace_core::listing::parse_listing_value(ev);
     if parsed == "null" {
         return None;
     }
@@ -228,16 +228,15 @@ pub fn marketplace_search(query: String, limit: i32) -> Result<String, String> {
     if query.trim().is_empty() {
         return Ok("[]".to_string()).into();
     }
-    let escaped = query.replace('\'', "''");
     let sql = format!(
         "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 AND p.content LIKE '%{escaped}%' \
+         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 AND p.content LIKE '%' || ?1 || '%' \
          ORDER BY p.created_at DESC LIMIT {}",
         limit.clamp(1, 100)
     );
-    super::util::json_ok(db_listings(sql)?)
+    super::util::json_ok(parse_listings(super::db::db_query_params(&sql, &[query])?))
 }
 
 /// Get listing by id.
@@ -443,16 +442,20 @@ pub fn marketplace_fetch_seller_listings(seller_pubkey: String) -> Result<String
 /// Get listings by category (t tag).
 #[frb(sync, serialize)]
 pub fn marketplace_get_by_category(category: String, limit: i32) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
+    let sql = format!(
         "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 AND p.tags_json LIKE '%\"{}\"%' \
+         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 \
+           AND EXISTS (SELECT 1 FROM json_each(p.tags_json) \
+                        WHERE json_extract(value, '$[0]') = 't' AND json_extract(value, '$[1]') = ?1) \
          ORDER BY p.created_at DESC LIMIT {}",
-        category.replace('\'', "''"),
         limit.clamp(1, 100)
-    ))?;
-    super::util::json_ok(parse_listings(json))
+    );
+    super::util::json_ok(parse_listings(super::db::db_query_params(
+        &sql,
+        &[category],
+    )?))
 }
 
 /// Trending listings: most reposts/reactions in the local DB, newest first
@@ -463,8 +466,10 @@ pub fn marketplace_get_trending(limit: i32) -> Result<String, String> {
         "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
+         LEFT JOIN (SELECT event_id, COUNT(*) AS cnt FROM reposts GROUP BY event_id) rc \
+           ON rc.event_id = p.id \
          WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 \
-         ORDER BY (SELECT COUNT(*) FROM reposts r WHERE r.event_id = p.id) DESC, p.created_at DESC \
+         ORDER BY rc.cnt DESC, p.created_at DESC \
          LIMIT {}",
         limit.clamp(1, 100)
     ))?;
@@ -526,12 +531,14 @@ pub fn marketplace_get_order(order_id: String) -> Result<String, String> {
 /// Fetch buyer's orders (posts where the order row's pubkey is the buyer).
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
-         WHERE p.kind = {KIND_ORDER} AND p.pubkey = '{}' AND p.is_deleted = 0 \
-         ORDER BY p.created_at DESC LIMIT 200",
-        buyer_pubkey.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
+             WHERE p.kind = {KIND_ORDER} AND p.pubkey = ?1 AND p.is_deleted = 0 \
+             ORDER BY p.created_at DESC LIMIT 200"
+        ),
+        &[buyer_pubkey],
+    )?;
     let orders: Vec<OrderInfo> = serde_json::from_str::<Vec<serde_json::Value>>(&json)
         .unwrap_or_default()
         .into_iter()
@@ -544,12 +551,15 @@ pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, St
 /// content `seller` field matches).
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_seller_orders(seller_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
-         WHERE p.kind = {KIND_ORDER} AND p.is_deleted = 0 AND p.content LIKE '%\"seller\":\"{}\"%' \
-         ORDER BY p.created_at DESC LIMIT 200",
-        seller_pubkey.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
+             WHERE p.kind = {KIND_ORDER} AND p.is_deleted = 0 \
+               AND p.content LIKE '%\"seller\":\"' || ?1 || '\"%' \
+             ORDER BY p.created_at DESC LIMIT 200"
+        ),
+        &[seller_pubkey],
+    )?;
     let orders: Vec<OrderInfo> = serde_json::from_str::<Vec<serde_json::Value>>(&json)
         .unwrap_or_default()
         .into_iter()

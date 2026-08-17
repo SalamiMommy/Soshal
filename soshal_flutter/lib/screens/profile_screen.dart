@@ -205,6 +205,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ? ResizeImage.resizeIfNeeded(
                                         192, 192, NetworkImage(profile.picture))
                                     : null,
+                                onBackgroundImageError: (_, __) {},
                               ),
                             ),
                             const Spacer(),

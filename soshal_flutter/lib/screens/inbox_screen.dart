@@ -62,9 +62,9 @@ class _InboxScreenState extends State<InboxScreen> {
       if (activePubkey == null) return;
 
       final partners = await messagingService.fetchConversations(activePubkey);
-      for (final partner in partners) {
-        await messagingService.fetchDMs(partner);
-      }
+      await Future.wait(
+        partners.map((partner) => messagingService.fetchDMs(partner)),
+      );
     } catch (e) {
       debugPrint('load conversations: $e');
     }
@@ -941,8 +941,9 @@ class _InboxScreenState extends State<InboxScreen> {
               itemBuilder: (context, index) {
                 if (index == 0) return _lanDiscoverySection(context);
                 if (index == 1) return _mediaToolsSection(context);
-                if (index == 2)
+                if (index == 2) {
                   return _ephemeralSection(context, messagingService);
+                }
                 if (convList.isEmpty) {
                   return const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),

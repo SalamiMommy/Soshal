@@ -1,7 +1,8 @@
 //! Cryptographic helpers for the PQC Double Ratchet v3.
 //!
-//! Compression (deflate + base64), decompression (base64 + inflate), and
-//! HKDF key derivation for the root chain, chain ratchets and message keys.
+//! Compression (deflate), decompression (inflate, legacy base64 fallback),
+//! and HKDF key derivation for the root chain, chain ratchets and message
+//! keys.
 //! All derivation is domain-separated with the v3 ratchet domain.
 
 use base64::{engine::general_purpose, Engine as _};
@@ -17,26 +18,30 @@ pub const CHAIN_INFO: &[u8] = b"soshal-ratchet-v3:chain";
 pub const MSG_INFO: &[u8] = b"soshal-ratchet-v3:msg";
 pub const MAX_INPUT_LEN: usize = 64 * 1024;
 
-/// Deflate + base64 + "z:" prefix (compatible with TS compressJson).
-pub fn compress_json(text: &str) -> Result<String, &'static str> {
+/// Raw deflate of the serialized JSON — no base64, no "z:" prefix.
+pub fn compress_json(text: &str) -> Result<Vec<u8>, &'static str> {
     if text.len() > MAX_INPUT_LEN {
         return Err("input too large");
     }
     let serialized = serde_json::to_string(text).map_err(|_| "json ser err")?;
-    let compressed = soshal_content_core::compress::compress(serialized.as_bytes())
-        .map_err(|_| "deflate err")?;
-    let b64 = general_purpose::STANDARD.encode(&compressed);
-    Ok(format!("z:{}", b64))
+    soshal_content_core::compress::compress(serialized.as_bytes()).map_err(|_| "deflate err")
 }
 
-/// Strip "z:" prefix, base64 decode, inflate. Output is capped at 4 MiB to
+/// Inflate raw deflate bytes; a "z:" prefix routes to the legacy
+/// base64-wrapped path written by older builds. Output is capped at 4 MiB to
 /// prevent zip-bomb expansion (delegates the streaming cap to content-core).
-pub fn decompress_json(compressed: &str) -> Result<Vec<u8>, &'static str> {
-    let src = compressed.strip_prefix("z:").unwrap_or(compressed);
-    let bytes = general_purpose::STANDARD
-        .decode(src)
-        .map_err(|_| "bad b64")?;
-    soshal_content_core::compress::decompress_limited(&bytes, MAX_OUTPUT).map_err(|_| "inflate err")
+/// Integrity is provided by the NIP-44 HMAC at the ratchet layer, not here.
+pub fn decompress_json(compressed: &[u8]) -> Result<Vec<u8>, &'static str> {
+    if compressed.starts_with(b"z:") {
+        let src = std::str::from_utf8(&compressed[2..]).map_err(|_| "bad utf8")?;
+        let bytes = general_purpose::STANDARD
+            .decode(src)
+            .map_err(|_| "bad b64")?;
+        return soshal_content_core::compress::decompress_limited(&bytes, MAX_OUTPUT)
+            .map_err(|_| "inflate err");
+    }
+    soshal_content_core::compress::decompress_limited(compressed, MAX_OUTPUT)
+        .map_err(|_| "inflate err")
 }
 
 const MAX_OUTPUT: usize = 4 * 1024 * 1024;
@@ -83,28 +88,30 @@ pub fn derive_chain(root_key_hex: &str, context: &str) -> Result<[u8; 32], &'sta
     Ok(chain)
 }
 
-pub fn derive_msg_key(
-    chain_key_hex: &str,
+pub fn derive_msg_key_bytes(
+    chain_key: &[u8],
     context: &str,
 ) -> Result<([u8; 32], Vec<u8>), &'static str> {
-    let chain_key = super::hex_decode(chain_key_hex)?;
-
     let mut info = Vec::with_capacity(16 + context.len());
     info.extend_from_slice(b"pqc-ratchet-msg-v3:");
     info.extend_from_slice(context.as_bytes());
 
-    let out = soshal_pqc_core::hkdf::hkdf_sha256(
-        &chain_key,
-        b"soshal-pqc-ratchet-msg-salt-v3",
-        &info,
-        64,
-    )
-    .map_err(|_| "hkdf failed")?;
+    let out =
+        soshal_pqc_core::hkdf::hkdf_sha256(chain_key, b"soshal-pqc-ratchet-msg-salt-v3", &info, 64)
+            .map_err(|_| "hkdf failed")?;
 
     let mut msg_key = [0u8; 32];
     msg_key.copy_from_slice(&out[..32]);
     let next_chain = out[32..64].to_vec();
     Ok((msg_key, next_chain))
+}
+
+pub fn derive_msg_key(
+    chain_key_hex: &str,
+    context: &str,
+) -> Result<([u8; 32], Vec<u8>), &'static str> {
+    let chain_key = super::hex_decode(chain_key_hex)?;
+    derive_msg_key_bytes(&chain_key, context)
 }
 
 #[cfg(test)]
@@ -202,19 +209,31 @@ mod tests {
     fn test_compress_decompress_roundtrip_and_tamper() {
         let original = "hello ratchet, compressed with deflate";
         let compressed = compress_json(original).unwrap();
-        assert!(compressed.starts_with("z:"));
         assert_eq!(
             decompress_json(&compressed).unwrap(),
             serde_json::to_vec(original).unwrap()
         );
 
-        let mut tampered = compressed.clone();
-        let last = tampered.len() - 1;
-        tampered.replace_range(last..last + 1, "!");
-        assert!(decompress_json(&tampered).is_err());
+        // Raw deflate has no integrity layer — tamper detection lives in the
+        // NIP-44 HMAC at the ratchet level (covered by
+        // test_wrong_ratchet_state_fails_decryption). Here assert the
+        // decompressor rejects non-deflate input.
+        assert!(decompress_json(b"\xff\xff\xff\xff\xff").is_err());
 
-        assert!(decompress_json("z:!!!not-base64").is_err());
-        assert!(decompress_json("plain text without z prefix").is_err());
+        let legacy = format!(
+            "z:{}",
+            general_purpose::STANDARD.encode(
+                soshal_content_core::compress::compress(&serde_json::to_vec(original).unwrap())
+                    .unwrap()
+            )
+        );
+        assert_eq!(
+            decompress_json(legacy.as_bytes()).unwrap(),
+            serde_json::to_vec(original).unwrap()
+        );
+
+        assert!(decompress_json(b"z:!!!not-base64").is_err());
+        assert!(decompress_json(b"plain text without z prefix").is_err());
 
         let big = "x".repeat(MAX_INPUT_LEN + 1);
         assert!(compress_json(&big).is_err());

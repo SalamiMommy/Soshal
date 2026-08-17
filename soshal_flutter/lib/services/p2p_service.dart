@@ -217,7 +217,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     required BigInt length,
   }) async {
     try {
-      final bytes = p2PQuicFetchChunk(
+      final bytes = await p2PQuicFetchChunk(
         addr: addr,
         hash: hash,
         offset: offset,
@@ -238,11 +238,13 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     try {
       final found = p2PMdnsBrowseDrain();
       final capped = found.length > 50 ? found.sublist(0, 50) : found;
-      _peers
-        ..clear()
-        ..addAll(capped);
+      if (!listEquals(_peers, capped)) {
+        _peers
+          ..clear()
+          ..addAll(capped);
+        notifyListeners();
+      }
       clearLastError();
-      notifyListeners();
       return found;
     } catch (e, st) {
       setLastError(e, st);
@@ -321,11 +323,15 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   Future<P2pSwarmStatusDto?> swarmStatus(String id) async {
     try {
       final status = p2PSwarmPoll(id: id);
-      _downloads[id] = status;
-      if (status.state == 'done') {
-        _downloads.remove(id);
+      final prev = _downloads[id];
+      if (prev == null || prev != status) {
+        if (status.state == 'done') {
+          _downloads.remove(id);
+        } else {
+          _downloads[id] = status;
+        }
+        notifyListeners();
       }
-      notifyListeners();
       return status;
     } catch (e, st) {
       setLastError(e, st);

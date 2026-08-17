@@ -36,9 +36,11 @@ class _SplashScreenState extends State<SplashScreen> {
       final sessionService = context.read<SessionService>();
       final signer = context.read<SignerService>();
       final shell = context.read<ShellService>();
-      await sessionService.loadSession();
-      await shell.initialize();
-      await signer.refresh();
+      await Future.wait([
+        sessionService.loadSession(),
+        shell.initialize(),
+        signer.refresh(),
+      ]);
 
       // Check if user is logged in
       if (sessionService.hasActiveSession()) {

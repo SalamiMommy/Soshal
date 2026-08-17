@@ -81,9 +81,11 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
           streamId: widget.streamId,
           windowMs: 3000,
         );
+        var gotNewGroup = false;
         for (final group in groups) {
           final seq = (group['group_sequence'] as num?)?.toInt();
           if (seq == null || (_lastSeq != null && seq <= _lastSeq!)) continue;
+          gotNewGroup = true;
           final objects = (group['objects'] as List<dynamic>? ?? const []);
           for (final obj in objects) {
             final map = obj as Map<String, dynamic>?;
@@ -105,6 +107,9 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
               if (mounted) setState(() => _frameBytes = bytes);
             }
           }
+        }
+        if (!gotNewGroup) {
+          await Future<void>.delayed(const Duration(milliseconds: 200));
         }
       } catch (e) {
         if (!mounted || !_running) return;

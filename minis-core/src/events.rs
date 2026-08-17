@@ -1,7 +1,7 @@
 //! Mini-App / Musicloud / Custom Profile event mapping and content shaping.
 
 use serde::{Deserialize, Serialize};
-use soshal_nostr_core::models::{find_tag_value, NostrEvent};
+use soshal_nostr_core::models::{find_tag_values_map, NostrEvent};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,12 +32,13 @@ pub struct MusicloudEventOut {
 /// Maps a kind-31020 mini event to its typed struct. Returns `None` when the
 /// `url` tag is missing.
 pub fn mini_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
-    let url = find_tag_value(&ev.tags, "url").unwrap_or("");
+    let [url, thumb, audience] = find_tag_values_map(&ev.tags, ["url", "image", "audience"]);
+    let url = url.unwrap_or("");
     if url.is_empty() {
         return None;
     }
-    let thumb = find_tag_value(&ev.tags, "image").unwrap_or("");
-    let audience = find_tag_value(&ev.tags, "audience").unwrap_or("");
+    let thumb = thumb.unwrap_or("");
+    let audience = audience.unwrap_or("");
     let audience = if audience.is_empty() {
         "public"
     } else {
@@ -56,12 +57,13 @@ pub fn mini_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
 
 /// Maps a kind-31020 mini event to a strongly typed `MiniEventOut` struct.
 pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
-    let url = find_tag_value(&ev.tags, "url").unwrap_or("");
+    let [url, thumb, audience] = find_tag_values_map(&ev.tags, ["url", "image", "audience"]);
+    let url = url.unwrap_or("");
     if url.is_empty() {
         return None;
     }
-    let thumb = find_tag_value(&ev.tags, "image").unwrap_or("");
-    let audience = find_tag_value(&ev.tags, "audience").unwrap_or("");
+    let thumb = thumb.unwrap_or("");
+    let audience = audience.unwrap_or("");
     let audience = if audience.is_empty() {
         "public"
     } else {

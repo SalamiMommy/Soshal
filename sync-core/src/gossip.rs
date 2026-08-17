@@ -4,9 +4,15 @@
 use crate::SyncUpdate;
 use soshal_db_core::Database;
 use soshal_network_core::plumtree::{PlumTreeMessage, PlumTreeNode};
-use std::sync::Arc;
+use std::collections::{HashSet, VecDeque};
+use std::sync::{Arc, LazyLock, Mutex};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
+
+static SEEN_GOSSIP: LazyLock<Mutex<(VecDeque<String>, HashSet<String>)>> =
+    LazyLock::new(|| Mutex::new((VecDeque::new(), HashSet::new())));
+
+const SEEN_GOSSIP_CAP: usize = 10_000;
 
 /// Binds PlumTree gossip protocol with DB event store.
 #[derive(Clone)]
@@ -36,8 +42,25 @@ impl GossipSyncBridge {
 
         if let PlumTreeMessage::Gossip { payload_json, .. } = msg {
             if let Ok(event) = serde_json::from_str::<nostr::event::Event>(&payload_json) {
-                // Ingest into SQLite database
-                let _ = crate::ingest::handle(db, "", &event, tx);
+                let key = event.id.to_hex();
+                let fresh = {
+                    let mut seen = SEEN_GOSSIP.lock().unwrap();
+                    if seen.1.insert(key.clone()) {
+                        seen.0.push_back(key);
+                        if seen.0.len() > SEEN_GOSSIP_CAP {
+                            if let Some(oldest) = seen.0.pop_front() {
+                                seen.1.remove(&oldest);
+                            }
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if fresh {
+                    // Ingest into SQLite database
+                    let _ = crate::ingest::handle(db, "", &event, tx);
+                }
             }
         }
 
@@ -69,7 +92,7 @@ mod tests {
         let messages = vec![
             PlumTreeMessage::Gossip {
                 message_id: "m1".to_string(),
-                payload_json: Arc::new(r#"{"content":"hi"}"#.to_string()),
+                payload_json: r#"{"content":"hi"}"#.to_string(),
                 round: 3,
             },
             PlumTreeMessage::IHave {
@@ -110,7 +133,7 @@ mod tests {
             .insert("lazy_c".to_string());
         let msg = PlumTreeMessage::Gossip {
             message_id: "m1".to_string(),
-            payload_json: Arc::new("{}".to_string()),
+            payload_json: "{}".to_string(),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -137,7 +160,7 @@ mod tests {
         bridge.node.write().await.add_peer("peer_b");
         let msg = PlumTreeMessage::Gossip {
             message_id: "m1".to_string(),
-            payload_json: Arc::new("{}".to_string()),
+            payload_json: "{}".to_string(),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -159,7 +182,7 @@ mod tests {
         bridge.node.write().await.add_peer("peer_a");
         let msg = PlumTreeMessage::Gossip {
             message_id: "bad".to_string(),
-            payload_json: Arc::new("not an event".to_string()),
+            payload_json: "not an event".to_string(),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -185,7 +208,7 @@ mod tests {
             soshal_test_util::signed_event(&keys, Kind::TextNote, "mesh roundtrip", 1_700_000_000);
         let msg = PlumTreeMessage::Gossip {
             message_id: event.id.to_hex(),
-            payload_json: Arc::new(serde_json::to_string(&event).unwrap()),
+            payload_json: serde_json::to_string(&event).unwrap(),
             round: 0,
         };
         let json = serde_json::to_string(&msg).unwrap();

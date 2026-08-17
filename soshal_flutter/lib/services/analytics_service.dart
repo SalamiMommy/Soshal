@@ -23,8 +23,8 @@ class AnalyticsService extends ChangeNotifier with LastErrorMixin {
   /// Generate a dense vector embedding for text. Throws on empty input.
   Future<String> generateEmbedding(String text) async {
     try {
-      final out =
-          RustLib.instance.api.crateFfiAnalyticsAnalyticsSlmGenerateEmbedding(
+      final out = await RustLib.instance.api
+          .crateFfiAnalyticsAnalyticsSlmGenerateEmbedding(
         text: text,
       );
       clearLastError();
@@ -41,7 +41,7 @@ class AnalyticsService extends ChangeNotifier with LastErrorMixin {
   Future<String> classifyPost(String text) async {
     try {
       final out =
-          RustLib.instance.api.crateFfiAnalyticsAnalyticsSlmClassifyPost(
+          await RustLib.instance.api.crateFfiAnalyticsAnalyticsSlmClassifyPost(
         text: text,
       );
       clearLastError();
