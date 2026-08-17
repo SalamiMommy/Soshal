@@ -1,0 +1,290 @@
+//! FFI gap tests (round 2): search index, ephemeral media, notifications,
+//! outbox queue, events reminders/interest scoring.
+
+#[cfg(test)]
+mod ffi_more_gap_tests {
+    use soshal_flutter_bridge::*;
+    use std::sync::Mutex;
+
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    fn init_db(name: &str) -> String {
+        let path = format!(
+            "{}/soshal_more_{}_{name}.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        assert!(db::db_init(path.clone()).is_ok());
+        path
+    }
+
+    fn gen_keys() -> (String, String) {
+        let keys = soshal_nostr_core::keys::generate_keys();
+        (
+            keys.public_key().to_hex(),
+            keys.secret_key().to_secret_hex(),
+        )
+    }
+
+    #[test]
+    fn search_index_query_trending_and_remove() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let db = init_db("search");
+        let (pk, _) = gen_keys();
+
+        let rows = format!(
+            r#"[{{"id":"p1","pubkey":"{pk}","content":"hello nostr world","kind":1,"created_at":1700000000,"tags_json":"[]"}}]"#
+        );
+        assert!(search::search_index_posts(rows).unwrap());
+
+        let pk2 = "c".repeat(64);
+        db::db_execute_raw(format!(
+            "INSERT INTO users (pubkey, npub, relay_list) VALUES ('{pk}', '', '[]'), ('{pk2}', '', '[]')"
+        ))
+        .unwrap();
+        db::db_execute_raw(format!(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES ('p1', '{pk}', 'hello nostr world', 1, 1700000000), ('p2', '{pk2}', 'Alice Smith bio', 0, 1700000001)"
+        ))
+        .unwrap();
+
+        let posts = search::search_posts("nostr".into(), 10).unwrap();
+        assert!(posts.contains("hello nostr world"), "{posts}");
+        let none = search::search_posts("zzz".into(), 10).unwrap();
+        assert_eq!(none, "[]");
+
+        assert!(
+            search::search_index_profile(pk.clone(), "Alice Smith".into(), "bio".into()).unwrap()
+        );
+        let profiles = search::search_profiles("alice".into(), 10).unwrap();
+        assert!(profiles.contains("Alice Smith"), "{profiles}");
+
+        let global = search::search_global("nostr".into(), 10).unwrap();
+        assert!(global.contains("hello nostr world"), "{global}");
+        let mentions = search::search_mentions("ali".into(), 10).unwrap();
+        assert!(mentions.contains("Alice Smith"), "{mentions}");
+
+        let tags = search::search_hashtags("nostr".into(), 10).unwrap();
+        assert_eq!(tags, Vec::<String>::new(), "no hashtag rows yet");
+        let trending = search::search_trending_hashtags(10).unwrap();
+        assert_eq!(trending, Vec::<String>::new());
+        let empty_tags = search::search_hashtags("   ".into(), 10).unwrap();
+        assert_eq!(empty_tags, Vec::<String>::new());
+
+        assert!(search::search_remove_indexed("p1".into()).unwrap());
+        let _ = db;
+    }
+
+    #[test]
+    fn ephemeral_media_lifecycle() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let db = init_db("ephemeral");
+        let (sender, _) = gen_keys();
+        let (recipient, _) = gen_keys();
+
+        let err = ephemeral::ephemeral_save(
+            "m1".into(),
+            "c1".into(),
+            "dm".into(),
+            "https://example.com/v.mp4".into(),
+            "video".into(),
+            sender.clone(),
+            recipient.clone(),
+            0,
+            1700000000,
+        )
+        .unwrap_err();
+        assert!(err.contains("max_views"), "{err}");
+
+        let id = ephemeral::ephemeral_save(
+            "m1".into(),
+            "c1".into(),
+            "dm".into(),
+            "https://example.com/v.mp4".into(),
+            "video".into(),
+            sender.clone(),
+            recipient.clone(),
+            3,
+            1700000000,
+        )
+        .unwrap();
+        let got = ephemeral::ephemeral_get(id.clone()).unwrap();
+        assert!(got.contains("\"state\":\"pending\""), "{got}");
+
+        let pending = ephemeral::ephemeral_list_pending(recipient.clone()).unwrap();
+        assert!(pending.contains(&id), "{pending}");
+
+        let viewed = ephemeral::ephemeral_view(id.clone()).unwrap();
+        assert!(viewed.contains("\"current_views\":1"), "{viewed}");
+        let missing = ephemeral::ephemeral_get("nope".into()).unwrap_err();
+        assert!(missing.contains("not found"), "{missing}");
+
+        assert!(ephemeral::ephemeral_delete(id.clone()).unwrap());
+        let gone = ephemeral::ephemeral_get(id).unwrap_err();
+        assert!(gone.contains("not found"), "{gone}");
+        let cleaned = ephemeral::ephemeral_clean_expired().unwrap();
+        assert!(cleaned.is_empty());
+        let _ = db;
+    }
+
+    #[test]
+    fn notifications_crud_and_push_scoping() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let db = init_db("notify");
+        let (me, _) = gen_keys();
+        let (other, _) = gen_keys();
+
+        assert_eq!(
+            notifications::notifications_get_unread_count(me.clone()).unwrap(),
+            0
+        );
+        let fetch = notifications::notifications_fetch(me.clone(), 10, 0).unwrap();
+        assert_eq!(fetch, "[]");
+        let unread = notifications::notifications_fetch_unread(me.clone(), 10).unwrap();
+        assert_eq!(unread, "[]");
+
+        let insert = |id: &str, typ: &str, read: i64| {
+            db::db_execute_raw(format!(
+                "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) \
+                 VALUES ('{id}', '{me}', '{typ}', 'e{id}', '{other}', 'hi', 1700000000, {read})"
+            ))
+            .unwrap();
+        };
+        insert("n1", "mention", 0);
+        insert("n2", "like", 0);
+        insert("n3", "follow", 0);
+
+        assert_eq!(
+            notifications::notifications_get_unread_count(me.clone()).unwrap(),
+            3
+        );
+        let all = notifications::notifications_fetch(me.clone(), 10, 0).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&all)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        let unread = notifications::notifications_fetch_unread(me.clone(), 10).unwrap();
+        let ua: serde_json::Value = serde_json::from_str(&unread).unwrap();
+        assert_eq!(ua.as_array().unwrap().len(), 3);
+
+        let by_type =
+            notifications::notifications_fetch_by_type(me.clone(), "mention".into(), 10).unwrap();
+        assert!(by_type.contains("n1"), "{by_type}");
+        let mentions = notifications::notifications_fetch_mentions(me.clone(), 10).unwrap();
+        assert!(mentions.contains("n1"), "{mentions}");
+        let reactions = notifications::notifications_fetch_reactions(me.clone(), 10).unwrap();
+        assert!(reactions.contains("n2"), "{reactions}");
+        let replies = notifications::notifications_fetch_replies(me.clone(), 10).unwrap();
+        assert_eq!(replies, "[]");
+        let messages = notifications::notifications_fetch_messages(me.clone(), 10).unwrap();
+        assert_eq!(messages, "[]");
+        let follows = notifications::notifications_fetch_follows(me.clone(), 10).unwrap();
+        assert!(follows.contains("n3"), "{follows}");
+
+        assert!(notifications::notifications_mark_read("n1".into()).unwrap());
+        assert_eq!(
+            notifications::notifications_get_unread_count(me.clone()).unwrap(),
+            2
+        );
+        assert!(notifications::notifications_mark_all_read(me.clone()).unwrap());
+        assert_eq!(
+            notifications::notifications_get_unread_count(me.clone()).unwrap(),
+            0
+        );
+        assert!(notifications::notifications_delete("n2".into()).unwrap());
+        let after = notifications::notifications_fetch(me.clone(), 10, 0).unwrap();
+        assert!(!after.contains("n2"), "{after}");
+
+        let unloaded =
+            notifications::notifications_register_push(me.clone(), "tok".into()).unwrap_err();
+        assert!(unloaded.contains("Session not loaded"), "{unloaded}");
+        let _ = db;
+    }
+
+    #[test]
+    fn outbox_enqueue_and_summary() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let db = init_db("outbox");
+        let id =
+            sync::sync_enqueue_outbox("post".into(), r#"{"content":"hi"}"#.into(), None).unwrap();
+        let id2 = sync::sync_enqueue_outbox(
+            "media".into(),
+            r#"{"content":"v"}"#.into(),
+            Some("/tmp/x.mp4".into()),
+        )
+        .unwrap();
+        let summary = sync::sync_get_outbox_summary().unwrap();
+        let v: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert_eq!(v["pending_count"], 2, "{summary}");
+        assert_ne!(id, id2);
+        assert_eq!(sync::sync_running().unwrap(), false);
+        let _ = sync::sync_running().unwrap();
+        let _ = db;
+    }
+
+    #[test]
+    fn events_reminders_and_interest_scoring() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let db = init_db("events");
+
+        let err =
+            events::events_reminder_upsert(String::new(), "e1".into(), "R".into(), 1700000000, -1)
+                .unwrap_err();
+        assert!(err.contains("minutes_before"), "{err}");
+
+        let rid = events::events_reminder_upsert(
+            String::new(),
+            "e1".into(),
+            "Launch".into(),
+            1700000000,
+            15,
+        )
+        .unwrap();
+        assert!(rid.starts_with("rem_"), "{rid}");
+        let again = events::events_reminder_upsert(
+            rid.clone(),
+            "e1".into(),
+            "Launch 2".into(),
+            1700000000,
+            15,
+        )
+        .unwrap();
+        assert_eq!(again, rid, "upsert same id");
+        let list = events::events_reminders_list().unwrap();
+        assert!(list.contains("Launch 2"), "{list}");
+        assert!(events::events_reminder_delete(rid).unwrap());
+
+        let score =
+            events::events_interest_score(r#"["music"]"#.into(), r#"["music","art"]"#.into())
+                .unwrap();
+        assert!(score.starts_with('{'), "{score}");
+
+        let scored = events::events_score_events(
+            r#"[{"id":"ev1","title":"Jazz night","description":"live music"}]"#.into(),
+            r#"["music"]"#.into(),
+        )
+        .unwrap();
+        let sv: serde_json::Value = serde_json::from_str(&scored).unwrap();
+        assert!(sv.get("ev1").is_some(), "{scored}");
+        let bad = events::events_score_events("junk".into(), "[]".into()).unwrap_err();
+        assert!(bad.contains("invalid events JSON"), "{bad}");
+
+        let nearby = events::events_fetch_nearby(37.0, -122.0, 5.0, 10).unwrap();
+        assert_eq!(nearby, "[]");
+        let user_events = events::events_fetch_user_events("a".repeat(64), 10).unwrap();
+        assert_eq!(user_events, "[]");
+        let single = events::events_get_event("nope".into()).unwrap_err();
+        assert!(single.contains("not found"), "{single}");
+        assert_eq!(
+            events::events_get_attendees("nope".into()).unwrap(),
+            Vec::<String>::new()
+        );
+        let _ = db;
+    }
+}

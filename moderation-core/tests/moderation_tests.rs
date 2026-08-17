@@ -119,6 +119,103 @@ fn glitter_strips_control_characters() {
 }
 
 #[test]
+fn glitter_strips_bidi_and_c1_controls() {
+    let input = "a\u{202e}b\u{202d}c\u{0085}d\u{009f}e";
+    let cleaned = sanitize_glitter_content(input);
+    assert_eq!(cleaned, "a\u{202e}b\u{202d}cde");
+    assert!(!cleaned.contains('\u{0085}'));
+    assert!(!cleaned.contains('\u{009f}'));
+}
+
+#[test]
+fn glitter_keeps_whitespace_controls() {
+    let input = "a\tb\nc\rd";
+    assert_eq!(sanitize_glitter_content(input), input);
+}
+
+#[test]
+fn glitter_strips_obfuscated_schemes() {
+    let cases = [
+        "<a href='data:text/html,<script>alert(1)</script>'>y</a>",
+        "<form action=javascript:alert(1)>z</form>",
+        "<a href=javascript:alert(1)>w</a>",
+        "<div style=\"background:url(javascript:alert(1))\">x</div>",
+        "<div style=\"background:url(data:text/html,x)\">y</div>",
+    ];
+    for input in cases {
+        let cleaned = sanitize_glitter_content(input);
+        assert!(
+            !cleaned.to_ascii_lowercase().contains("javascript")
+                && !cleaned.to_ascii_lowercase().contains("data:"),
+            "input {input:?} leaked: {cleaned:?}"
+        );
+    }
+}
+
+#[test]
+fn glitter_drops_entities_in_suspicious_attrs() {
+    let cleaned = sanitize_glitter_content("<img src=\"x&quot; onerror=1\">");
+    assert!(!cleaned.contains("onerror"), "{cleaned}");
+}
+
+#[test]
+fn glitter_keeps_safe_attrs_and_css() {
+    let input = "<a href=\"https://example.com\" class=\"btn\">ok</a><img src=\"x.jpg\" width=10>";
+    assert_eq!(sanitize_glitter_content(input), input);
+}
+
+#[test]
+fn glitter_strips_dangerous_tags() {
+    let cases = [
+        "<iframe src=x></iframe>",
+        "<object data=x></object>",
+        "<embed src=x>",
+        "<meta http-equiv=refresh>",
+        "<link rel=stylesheet href=x>",
+        "<base href=x>",
+    ];
+    for input in cases {
+        let cleaned = sanitize_glitter_content(input);
+        assert!(!cleaned.contains("iframe"), "{input}");
+        assert!(!cleaned.contains("object"), "{input}");
+        assert!(!cleaned.contains("embed"), "{input}");
+        assert!(!cleaned.contains("meta"), "{input}");
+        assert!(!cleaned.contains("link"), "{input}");
+        assert!(!cleaned.contains("base"), "{input}");
+    }
+}
+
+#[test]
+fn glitter_css_uri_schemes_stripped() {
+    let cases = [
+        "<div style=\"background:url(javascript:alert(1))\">x</div>",
+        "<div style=\"background:url(data:text/html,x)\">y</div>",
+        "<div style=\"background:url(blob:xyz)\">z</div>",
+    ];
+    for input in cases {
+        let cleaned = sanitize_glitter_content(input);
+        assert!(!cleaned.contains("javascript"), "{input}: {cleaned}");
+        assert!(!cleaned.contains("data:"), "{input}: {cleaned}");
+        assert!(!cleaned.contains("blob:"), "{input}: {cleaned}");
+    }
+}
+
+#[test]
+fn glitter_handles_malformed_attrs() {
+    let input = "<a href= onclick=alert(1)>x</a>";
+    let cleaned = sanitize_glitter_content(input);
+    assert!(!cleaned.contains("onclick"), "{cleaned}");
+}
+
+#[test]
+fn glitter_keeps_plain_url_and_entities_in_text() {
+    let input = "use &amp; more https://example.com/a?b=1&amp;c=2";
+    let cleaned = sanitize_glitter_content(input);
+    assert!(cleaned.contains("https://example.com/a?b=1"), "{cleaned}");
+    assert!(!cleaned.contains("onerror"), "{cleaned}");
+}
+
+#[test]
 fn check_text_adversarial_cases() {
     assert!(!passed(&check_text("you faggot")));
     assert_eq!(

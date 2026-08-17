@@ -71,11 +71,156 @@ pub fn fetch_feed_window(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soshal_db_core::repos::post::{PostRepo, PostRow};
+    use soshal_db_core::repos::user::{UserRepo, UserRow};
+
+    fn insert_test_user(db: &Database, pubkey: &str) {
+        let user = UserRow {
+            pubkey: pubkey.into(),
+            npub: format!("npub_{pubkey}"),
+            name: Some("Alice".into()),
+            display_name: None,
+            about: None,
+            picture: Some("pic.png".into()),
+            banner: None,
+            nip05: None,
+            lud16: None,
+            created_at: 1000,
+            updated_at: 1000,
+            metadata_json: None,
+            contact_pubkeys: "[]".into(),
+            relay_list: "[]".into(),
+        };
+        UserRepo::new(db).upsert(&user).unwrap();
+    }
+
+    fn insert_test_post(db: &Database, id: &str, pubkey: &str, content: &str, created_at: i64) {
+        let post = PostRow {
+            id: id.into(),
+            pubkey: pubkey.into(),
+            content: content.into(),
+            kind: 1,
+            created_at,
+            tags_json: "[]".into(),
+            sig: None,
+            reply_to: None,
+            root_id: None,
+            mentioned_pubkeys: "[]".into(),
+            mentioned_hashtags: "[]".into(),
+            subject: None,
+            sync_status: "synced".into(),
+            is_deleted: false,
+            scheduled_at: None,
+            freenet_key: None,
+            is_freenet_native: false,
+            rsvp_event_id: None,
+        };
+        PostRepo::new(db).upsert(&post).unwrap();
+    }
 
     #[test]
     fn test_feed_window_query() {
         let db = soshal_test_util::test_db();
         let posts = fetch_feed_window(&db, 0, 10).unwrap();
         assert_eq!(posts.len(), 0);
+    }
+
+    #[test]
+    fn feed_window_orders_desc_and_joins_profile() {
+        let db = soshal_test_util::test_db();
+        insert_test_user(&db, "pk-alice");
+        insert_test_post(&db, "old", "pk-alice", "first", 100);
+        insert_test_post(&db, "new", "pk-alice", "second", 200);
+
+        let posts = fetch_feed_window(&db, 0, 10).unwrap();
+        assert_eq!(posts.len(), 2);
+        assert_eq!(posts[0].event_id, "new");
+        assert_eq!(posts[1].event_id, "old");
+        assert_eq!(posts[0].profile_name.as_deref(), Some("Alice"));
+        assert_eq!(posts[0].profile_picture.as_deref(), Some("pic.png"));
+    }
+
+    #[test]
+    fn feed_window_honors_offset_and_limit() {
+        let db = soshal_test_util::test_db();
+        for i in 0..5 {
+            insert_test_post(&db, &format!("p{i}"), "pk-a", &format!("c{i}"), i as i64);
+        }
+        let page = fetch_feed_window(&db, 2, 2).unwrap();
+        assert_eq!(page.len(), 2);
+        assert_eq!(page[0].event_id, "p2");
+        assert_eq!(page[1].event_id, "p1");
+        let past_end = fetch_feed_window(&db, 100, 10).unwrap();
+        assert!(past_end.is_empty());
+    }
+
+    #[test]
+    fn feed_window_excludes_deleted_and_non_kind1() {
+        let db = soshal_test_util::test_db();
+        insert_test_post(&db, "live", "pk-a", "visible", 300);
+        let deleted = PostRow {
+            id: "gone".into(),
+            pubkey: "pk-a".into(),
+            content: "hidden".into(),
+            kind: 1,
+            created_at: 400,
+            tags_json: "[]".into(),
+            sig: None,
+            reply_to: None,
+            root_id: None,
+            mentioned_pubkeys: "[]".into(),
+            mentioned_hashtags: "[]".into(),
+            subject: None,
+            sync_status: "synced".into(),
+            is_deleted: true,
+            scheduled_at: None,
+            freenet_key: None,
+            is_freenet_native: false,
+            rsvp_event_id: None,
+        };
+        PostRepo::new(&db).upsert(&deleted).unwrap();
+        let repost = PostRow {
+            id: "repost".into(),
+            pubkey: "pk-a".into(),
+            content: "re".into(),
+            kind: 6,
+            created_at: 500,
+            tags_json: "[]".into(),
+            sig: None,
+            reply_to: None,
+            root_id: None,
+            mentioned_pubkeys: "[]".into(),
+            mentioned_hashtags: "[]".into(),
+            subject: None,
+            sync_status: "synced".into(),
+            is_deleted: false,
+            scheduled_at: None,
+            freenet_key: None,
+            is_freenet_native: false,
+            rsvp_event_id: None,
+        };
+        PostRepo::new(&db).upsert(&repost).unwrap();
+
+        let posts = fetch_feed_window(&db, 0, 10).unwrap();
+        assert_eq!(posts.len(), 1);
+        assert_eq!(posts[0].event_id, "live");
+    }
+
+    #[test]
+    fn feed_window_item_roundtrips_serde() {
+        let item = FeedPostItem {
+            event_id: "e1".into(),
+            pubkey: "pk".into(),
+            content: "hi".into(),
+            created_at: 42,
+            reactions: 1,
+            replies: 2,
+            reposts: 3,
+            liked: true,
+            profile_name: Some("n".into()),
+            profile_picture: None,
+        };
+        let json = serde_json::to_string(&item).unwrap();
+        assert_eq!(serde_json::from_str::<FeedPostItem>(&json).unwrap(), item);
     }
 }

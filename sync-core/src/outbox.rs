@@ -174,6 +174,7 @@ pub fn mark_outbox_items_completed(db: &Database, ids: &[String]) -> Result<(), 
             )
             .await?;
         }
+        tx.commit().await?;
         Ok(())
     })
     .map_err(|e| format!("batch outbox complete: {e}"))

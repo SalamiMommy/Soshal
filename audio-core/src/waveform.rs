@@ -35,7 +35,17 @@ fn decode_all(data: &[u8], hint_ext: Option<&str>) -> Result<MonoF32, String> {
 }
 
 fn temp_file_path() -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("soshal-waveform-{}.bin", std::process::id()))
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "soshal-waveform-{}-{}-{seq}.bin",
+        std::process::id(),
+        std::thread::current()
+            .name()
+            .unwrap_or("t")
+            .replace(['/', '\\'], "_")
+    ))
 }
 
 fn decode_reader<R: std::io::Read + std::io::Seek + Send + Sync + 'static>(

@@ -595,5 +595,31 @@ mod tests {
         assert_eq!(u.port, 3478);
 
         assert!(parse_ice_url("").is_err());
+        assert!(parse_ice_url("stun:").is_err());
+        assert!(parse_ice_url("stun://:9999").is_err());
+        assert!(parse_ice_url("stun:host:notaport").is_err());
+        assert!(parse_ice_url("stun:turn.example.com:70000").is_err());
+    }
+
+    #[test]
+    fn nat_handle_error_paths_without_sessions() {
+        let handle = spawn_nat_manager("alice".repeat(2)).unwrap();
+        assert!(handle.status().is_empty());
+        assert!(handle.creds("bob".repeat(2).as_str()).is_err());
+        assert!(
+            handle
+                .gather("bob".repeat(2).as_str(), &["stun:192.0.2.1:9".to_string()])
+                .is_ok(),
+            "host candidates still gather"
+        );
+        assert!(
+            handle
+                .add_remote("bob".repeat(2).as_str(), "u", "p", &[])
+                .is_ok(),
+            "no-op on missing session"
+        );
+        handle.remove("bob".repeat(2).as_str());
+        handle.stop();
+        assert!(handle.status().is_empty());
     }
 }

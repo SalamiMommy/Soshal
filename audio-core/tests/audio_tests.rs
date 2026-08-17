@@ -1,7 +1,7 @@
 use soshal_audio_core::voice::{decode_voice_stream, encode_voice_pcm, voice_duration_secs};
 use soshal_audio_core::{
-    extract_waveform_bytes, extract_waveform_path, is_opus_stream, OPUS_FRAME_SIZE,
-    OPUS_SAMPLE_RATE,
+    extract_waveform, extract_waveform_bytes, extract_waveform_path, is_opus_stream,
+    OPUS_FRAME_SIZE, OPUS_SAMPLE_RATE,
 };
 
 fn sine_pcm(secs: f64, freq: f64) -> Vec<i16> {
@@ -12,6 +12,26 @@ fn sine_pcm(secs: f64, freq: f64) -> Vec<i16> {
             (12000.0 * (2.0 * std::f64::consts::PI * freq * t).sin()) as i16
         })
         .collect()
+}
+
+fn wav_bytes(pcm: &[i16]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36u32 + (pcm.len() as u32) * 2).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&OPUS_SAMPLE_RATE.to_le_bytes());
+    out.extend_from_slice(&(OPUS_SAMPLE_RATE * 2).to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(pcm.len() * 2).to_le_bytes());
+    for s in pcm {
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+    out
 }
 
 #[test]
@@ -74,4 +94,40 @@ fn waveform_path_roundtrip() {
     let peaks = extract_waveform_path(path.to_str().unwrap(), 64).unwrap();
     assert_eq!(peaks.len(), 64);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn waveform_from_wav_container() {
+    let pcm = sine_pcm(0.5, 330.0);
+    let wav = wav_bytes(&pcm);
+    let peaks = extract_waveform_bytes(&wav, 32).unwrap();
+    assert_eq!(peaks.len(), 32);
+    assert!(peaks.iter().any(|p| *p > 0.05), "sine energy via symphonia");
+}
+
+#[test]
+fn waveform_wav_path_with_extension_hint() {
+    let pcm = sine_pcm(0.25, 220.0);
+    let dir = soshal_test_util::tmp_root("audio-wav");
+    let path = dir.join("note.wav");
+    std::fs::write(&path, wav_bytes(&pcm)).unwrap();
+    let peaks = extract_waveform(path.to_str().unwrap(), 32).unwrap();
+    assert_eq!(peaks.len(), 32);
+    assert!(peaks.iter().any(|p| *p > 0.05));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn waveform_rejects_garbage_bytes() {
+    assert!(extract_waveform_bytes(b"not audio at all", 32).is_err());
+    assert!(extract_waveform_path("/nonexistent/soshal.wav", 32).is_err());
+}
+
+#[test]
+fn waveform_silent_wav_is_zero() {
+    let silence = vec![0i16; OPUS_SAMPLE_RATE as usize / 2];
+    let wav = wav_bytes(&silence);
+    let peaks = extract_waveform_bytes(&wav, 32).unwrap();
+    assert_eq!(peaks.len(), 32);
+    assert!(peaks.iter().all(|p| *p == 0.0), "silence floors to 0");
 }

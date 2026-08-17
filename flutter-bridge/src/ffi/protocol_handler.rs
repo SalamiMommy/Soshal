@@ -284,7 +284,7 @@ async fn protocol_handle_cache(path: &str) -> Result<Vec<u8>, String> {
         return Err("Path traversal detected".to_string());
     }
 
-    protocol_load_from_cache(path)
+    protocol_load_from_cache(path.trim_start_matches('/'))
 }
 
 /// Infer MIME type from file path
