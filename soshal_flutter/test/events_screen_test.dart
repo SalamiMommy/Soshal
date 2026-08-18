@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/events_screen.dart';
@@ -7,9 +9,33 @@ import 'package:soshal_flutter/services/dating_service.dart';
 import 'package:soshal_flutter/services/events_service.dart';
 import 'package:soshal_flutter/services/friends_service.dart';
 import 'package:soshal_flutter/services/media_service.dart';
+import 'package:soshal_flutter/services/permissions_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 
 import 'helpers/test_env.dart';
+
+class _MockGeolocator extends GeolocatorPlatform {
+  final Position position;
+
+  _MockGeolocator(this.position);
+
+  @override
+  Future<LocationPermission> checkPermission() async =>
+      LocationPermission.whileInUse;
+
+  @override
+  Future<LocationPermission> requestPermission() async =>
+      LocationPermission.whileInUse;
+
+  @override
+  Future<bool> isLocationServiceEnabled() async => true;
+
+  @override
+  Future<Position> getCurrentPosition({
+    LocationSettings? locationSettings,
+  }) async =>
+      position;
+}
 
 late FakeApi api;
 
@@ -364,6 +390,20 @@ void main() {
 
   testWidgets('check in calls bridge and shows confirmation', (tester) async {
     api.stubBool('crateFfiEventsEventsCheckIn', true);
+    PermissionsService.debugPlatformIsAndroid = true;
+    addTearDown(() => PermissionsService.debugPlatformIsAndroid = null);
+    GeolocatorPlatform.instance = _MockGeolocator(Position(
+      latitude: 52.52,
+      longitude: 13.40,
+      timestamp: DateTime.fromMillisecondsSinceEpoch(0),
+      accuracy: 10.0,
+      altitude: 0.0,
+      altitudeAccuracy: 0.0,
+      heading: 0.0,
+      headingAccuracy: 0.0,
+      speed: 0.0,
+      speedAccuracy: 0.0,
+    ));
 
     await pumpDetail(tester);
 
@@ -374,8 +414,8 @@ void main() {
     final inv = api.callsOf('crateFfiEventsEventsCheckIn').single;
     expect(api.namedArg(inv, 'eventId'), 'ev1');
     expect(api.namedArg(inv, 'userPubkey'), 'pk123');
-    expect(api.namedArg(inv, 'latitude'), 0.0);
-    expect(api.namedArg(inv, 'longitude'), 0.0);
+    expect(api.namedArg(inv, 'latitude'), closeTo(52.52, 1e-9));
+    expect(api.namedArg(inv, 'longitude'), closeTo(13.40, 1e-9));
     expect(find.text('Checked in!'), findsOneWidget);
     await tester.pump(const Duration(seconds: 5));
   });

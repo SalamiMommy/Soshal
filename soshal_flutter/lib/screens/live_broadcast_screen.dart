@@ -8,6 +8,7 @@ import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 import '../services/audio_codec.dart';
 import '../services/h264_codec.dart';
+import '../services/permissions_service.dart';
 import '../services/session_service.dart';
 import '../services/streaming_service.dart';
 import '../utils/format.dart';
@@ -58,6 +59,8 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   int _audioGroupsSent = 0;
   bool _recording = false;
   int? _onWireBytes;
+  String? _micDeniedReason;
+  bool _cameraDenied = false;
 
   /// ~4 fps JPEG fallback track.
   static const Duration _frameInterval = Duration(milliseconds: 250);
@@ -75,6 +78,21 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
 
   Future<void> _initCamera() async {
     try {
+      final cam = await PermissionsService.ensureCamera();
+      if (!cam.granted) {
+        if (mounted) {
+          setState(() {
+            _error = cam.reason;
+            _cameraDenied = true;
+            _initializing = false;
+          });
+        }
+        return;
+      }
+      final mic = await PermissionsService.ensureMic();
+      if (!mic.granted && mounted) {
+        _micDeniedReason = mic.reason;
+      }
       final cameras = await availableCameras();
       final camera = cameras.isEmpty
           ? null
@@ -256,6 +274,11 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   /// first (re-sent every ~100 groups so late joiners can start decoding),
   /// then audio frames.
   Future<void> _toggleMic(StreamingService api) async {
+    final deniedReason = _micDeniedReason;
+    if (deniedReason != null) {
+      _toast(deniedReason);
+      return;
+    }
     if (!_audioTried) {
       _audioTried = true;
       _audioReady =
@@ -343,7 +366,21 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
               ? Center(
                   child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: ErrorStateText('Camera unavailable: $_error'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ErrorStateText('Camera unavailable: $_error'),
+                      if (_cameraDenied) ...[
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: () =>
+                              PermissionsService.openSettings(),
+                          icon: const Icon(Icons.settings),
+                          label: const Text('Open app settings'),
+                        ),
+                      ],
+                    ],
+                  ),
                 ))
               : Column(
                   children: [

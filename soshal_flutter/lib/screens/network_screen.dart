@@ -7,6 +7,7 @@ import '../services/mesh_service.dart';
 import '../services/events_service.dart';
 import '../services/network_service.dart';
 import '../services/p2p_service.dart';
+import '../services/permissions_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
@@ -602,6 +603,28 @@ class _NetworkScreenState extends State<NetworkScreen> {
           content: Text(bytes == null
               ? 'Decode failed (supply a real manifest + base64 packets)'
               : 'Decoded ${bytes.length} bytes')));
+    }
+  }
+
+  Future<void> _useMyLocation() async {
+    try {
+      final location = await PermissionsService.currentPosition();
+      if (!location.ok) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Location unavailable: ${location.error}')));
+        }
+        return;
+      }
+      if (!mounted) return;
+      _geohashLat.text = location.latitude!.toStringAsFixed(6);
+      _geohashLng.text = location.longitude!.toStringAsFixed(6);
+      await _encodeGeohash();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Location failed: $e')));
+      }
     }
   }
 
@@ -1384,6 +1407,12 @@ class _NetworkScreenState extends State<NetworkScreen> {
                     isDense: true,
                   ),
                 ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.gps_fixed),
+                tooltip: 'Use my location',
+                onPressed: _useMyLocation,
               ),
               const SizedBox(width: 8),
               IconButton(

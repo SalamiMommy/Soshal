@@ -16,6 +16,9 @@ Soshal/
 │   │                          #   (auth, feed, session, messaging+identity, notifications,
 │   │                          #    search, dating, events, groups, marketplace, zap,
 │   │                          #    streaming, moderation, network, signer, ffi_bridge)
+│   │                          #   + permissions_service.dart (static class: Android
+│   │                          #     permission_handler camera/mic + geolocator GPS;
+│   │                          #     Linux XDG portal location via com.soshal/portal)
 │   ├── lib/screens/           # ~24 screens: splash, auth, feed, composer, thread, inbox,
 │   │                          #   profile, search, dating(+profile), events(+detail),
 │   │                          #   groups(+detail), marketplace, live, stories, settings

@@ -9,6 +9,7 @@ import '../services/dating_service.dart';
 import '../services/events_service.dart';
 import '../services/friends_service.dart';
 import '../services/media_service.dart';
+import '../services/permissions_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 
@@ -959,7 +960,17 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       final session = context.read<SessionService>();
       final pubkey = session.activePubkey;
       if (pubkey == null) throw Exception('Sign in to check in');
-      await context.read<EventsService>().checkIn(widget.eventId, pubkey, 0, 0);
+      final location = await PermissionsService.currentPosition();
+      if (!location.ok) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: SelectableText(
+                  'Check-in needs location: ${location.error}')));
+        }
+        return;
+      }
+      await context.read<EventsService>().checkIn(
+          widget.eventId, pubkey, location.latitude!, location.longitude!);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: SelectableText('Checked in!')),
