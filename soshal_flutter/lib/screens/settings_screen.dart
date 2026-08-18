@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import '../services/session_service.dart';
+import '../services/settings_service.dart';
 import '../services/network_service.dart';
 import '../services/zap_service.dart';
 import '../utils/format.dart';
@@ -19,6 +20,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late List<String> _relays;
+  bool _autologinEnabled = true;
 
   @override
   void initState() {
@@ -34,6 +36,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } else {
       _relays = [];
     }
+    final settings = context.read<SettingsService>();
+    _autologinEnabled =
+        settings.getSetting('autologin_enabled') != 'false';
   }
 
   @override
@@ -81,6 +86,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('Session Security'),
                 trailing: const Icon(Icons.arrow_forward),
                 onTap: () => context.push('/settings/security'),
+              ),
+              SwitchListTile(
+                title: const Text('Autologin'),
+                subtitle: const Text(
+                    'Sign in to the last account used automatically on launch'),
+                value: _autologinEnabled,
+                onChanged: (value) async {
+                  final settings = context.read<SettingsService>();
+                  await settings.setSetting(
+                      'autologin_enabled', value.toString());
+                  setState(() => _autologinEnabled = value);
+                },
               ),
             ]),
             // Relay section

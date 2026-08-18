@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/ffi_bridge.dart';
 import '../services/session_service.dart';
+import '../services/settings_service.dart';
 import '../services/shell_service.dart';
 import '../services/signer_service.dart';
 import '../services/sync_service.dart';
@@ -36,6 +37,9 @@ class _SplashScreenState extends State<SplashScreen> {
       final sessionService = context.read<SessionService>();
       final signer = context.read<SignerService>();
       final shell = context.read<ShellService>();
+      final autologinEnabled =
+          context.read<SettingsService>().getSetting('autologin_enabled') !=
+              'false';
       await Future.wait([
         sessionService.loadSession(),
         shell.initialize(),
@@ -44,6 +48,14 @@ class _SplashScreenState extends State<SplashScreen> {
 
       // Check if user is logged in
       if (sessionService.hasActiveSession()) {
+        // Autologin setting: when off, require explicit login even if a
+        // session exists.
+        if (!autologinEnabled) {
+          if (mounted) {
+            context.go('/auth');
+          }
+          return;
+        }
         // Persistence: a session with no loaded keys auto-unlocks from the
         // OS keychain when no PIN is configured. PIN users get the lock
         // screen first; the signer unlocks after PIN verification. Recovery

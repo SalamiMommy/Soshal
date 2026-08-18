@@ -21,6 +21,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
   String? _pubkey;
   bool? _locked;
   bool _keychainUnlockEnabled = false;
+  bool _autologinEnabled = true;
 
   @override
   void initState() {
@@ -34,6 +35,8 @@ class _SecurityScreenState extends State<SecurityScreen> {
     final value = settings.getSetting('keychain_unlock_enabled');
     setState(() {
       _keychainUnlockEnabled = value == 'true';
+      _autologinEnabled =
+          settings.getSetting('autologin_enabled') != 'false';
     });
   }
 
@@ -179,6 +182,21 @@ class _SecurityScreenState extends State<SecurityScreen> {
                   'keychain_unlock_enabled', value.toString());
               setState(() {
                 _keychainUnlockEnabled = value;
+              });
+            },
+          ),
+          SwitchListTile(
+            dense: true,
+            title: const Text('Autologin'),
+            subtitle: const Text(
+                'Sign in to the last account used automatically on launch'),
+            value: _autologinEnabled,
+            onChanged: (value) async {
+              final settings = context.read<SettingsService>();
+              await settings.setSetting(
+                  'autologin_enabled', value.toString());
+              setState(() {
+                _autologinEnabled = value;
               });
             },
           ),
