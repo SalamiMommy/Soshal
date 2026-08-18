@@ -260,8 +260,11 @@ mod tests {
         );
         assert!(!node.pending_grafts.contains_key("fresh_msg"));
         assert!(node.received_messages.contains("fresh_msg"));
-        // sender was promoted to eager, so no eager echo to itself
-        assert!(out.is_empty());
+        // sender was promoted to eager; only the remaining eager peer
+        // (peer_eager) gets the forward, no IHave to lazy peers
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0, "peer_eager");
+        assert!(matches!(&out[0].1, PlumTreeMessage::Gossip { round: 2, .. }));
 
         // Prune demotes eager -> lazy
         let out = node.handle_incoming(

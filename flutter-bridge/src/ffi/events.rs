@@ -165,8 +165,8 @@ fn attendees_count(event_id: &str) -> i32 {
 
 /// Fetch nearby events (distance filter computed client-side over the
 /// locally stored event rows; exact haversine, not a coarse box). A SQL-side
-/// bounding-box prefilter on the location JSON keeps the fetch set small and
-/// fixes the old fetch-then-filter underfill.
+/// bounding-box prefilter on the denormalized event_lat/event_lng columns
+/// keeps the fetch set small and fixes the old fetch-then-filter underfill.
 #[frb(sync, serialize)]
 pub fn events_fetch_nearby(
     latitude: f64,
@@ -180,10 +180,8 @@ pub fn events_fetch_nearby(
     let (lat1, lat2) = (latitude - lat_deg, latitude + lat_deg);
     let (lon1, lon2) = (longitude - lon_deg, longitude + lon_deg);
     let geo_filter = format!(
-        "AND json_valid(json_extract(p.content, '$.location')) \
-         AND json_type(json_extract(p.content, '$.location')) = 'object' \
-         AND json_extract(p.content, '$.location.lat') BETWEEN {lat1:.6} AND {lat2:.6} \
-         AND json_extract(p.content, '$.location.lng') BETWEEN {lon1:.6} AND {lon2:.6} "
+        "AND p.event_lat BETWEEN {lat1:.6} AND {lat2:.6} \
+         AND p.event_lng BETWEEN {lon1:.6} AND {lon2:.6} "
     );
     let json = super::db::db_query_raw(event_rows_sql(&geo_filter, limit))?;
     let mut out: Vec<EventInfo> = events_from_json(json);
@@ -294,24 +292,28 @@ pub fn events_create(
     Ok(signed_json).into()
 }
 
-fn d_tag_of(event_id: &str) -> String {
+/// Single-row fetch of the event host pubkey + d-tag (avoids the
+/// events_get_event + tags_json double query).
+fn event_host_and_d_tag(event_id: &str) -> Option<(String, String)> {
     let json = super::db::db_query_raw(format!(
-        "SELECT tags_json FROM posts WHERE id = '{}'",
+        "SELECT pubkey, tags_json FROM posts WHERE kind IN ({EVENT_KINDS}) AND id = '{}'",
         event_id.replace('\'', "''")
     ))
-    .unwrap_or_else(|_| "[]".to_string());
-    let tags_json: Option<String> = serde_json::from_str::<Vec<serde_json::Value>>(&json)
-        .ok()
-        .and_then(|r| r.first().cloned())
-        .and_then(|v| v["tags_json"].as_str().map(|s| s.to_string()));
-    serde_json::from_str::<Vec<Vec<String>>>(&tags_json.unwrap_or_default())
-        .ok()
-        .and_then(|t| {
-            t.into_iter()
-                .find(|t| t.first().map(|k| k == "d").unwrap_or(false))
-                .and_then(|t| t.get(1).cloned())
-        })
-        .unwrap_or_default()
+    .ok()?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).ok()?;
+    let row = rows.first()?;
+    let host = row["pubkey"].as_str().unwrap_or("").to_string();
+    let d_tag = serde_json::from_str::<Vec<Vec<String>>>(
+        row["tags_json"].as_str().unwrap_or_default(),
+    )
+    .ok()
+    .and_then(|t| {
+        t.into_iter()
+            .find(|t| t.first().map(|k| k == "d").unwrap_or(false))
+            .and_then(|t| t.get(1).cloned())
+    })
+    .unwrap_or_default();
+    Some((host, d_tag))
 }
 
 fn valid_rsvp(status: &str) -> bool {
@@ -328,15 +330,10 @@ pub fn events_rsvp(
     if !valid_rsvp(&rsvp_status) {
         return Err("rsvp_status must be accepted/declined/pending".to_string()).into();
     }
-    let host = match events_get_event(event_id.clone()) {
-        Ok(e) => {
-            serde_json::from_str::<EventInfo>(&e)
-                .map_err(|e| format!("parse event: {e}"))?
-                .creator_pubkey
-        }
-        Err(_) => return Err("event not found locally (sync relays first)".to_string()).into(),
+    let (host, event_d) = match event_host_and_d_tag(&event_id) {
+        Some(v) => v,
+        None => return Err("event not found locally (sync relays first)".to_string()).into(),
     };
-    let event_d = d_tag_of(&event_id);
     let d_tag = if event_d.is_empty() {
         format!("{}-{}", host.get(..12).unwrap_or(""), 0)
     } else {

@@ -66,3 +66,31 @@ pub static GLOBAL_PREFETCHER: std::sync::OnceLock<Arc<Prefetcher>> = std::sync::
 pub fn global_prefetcher() -> &'static Arc<Prefetcher> {
     GLOBAL_PREFETCHER.get_or_init(|| Arc::new(Prefetcher::new()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fast_scroll_boundary_is_strict() {
+        let p = Prefetcher::new();
+        p.update_scroll_telemetry(1500.0, 0, 0);
+        assert!(p.should_prefetch_media(0));
+        p.update_scroll_telemetry(1500.1, 0, 0);
+        assert!(!p.should_prefetch_media(0));
+    }
+
+    #[test]
+    fn test_global_prefetcher_returns_same_instance() {
+        assert!(Arc::ptr_eq(global_prefetcher(), global_prefetcher()));
+    }
+
+    #[test]
+    fn test_should_prefetch_media_default_state() {
+        let p = Prefetcher::new();
+        for idx in 0..=5 {
+            assert!(p.should_prefetch_media(idx));
+        }
+        assert!(!p.should_prefetch_media(6));
+    }
+}

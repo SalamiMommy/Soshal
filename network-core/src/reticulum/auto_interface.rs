@@ -272,11 +272,11 @@ mod tests {
         let beacon = AutoInterface::create_beacon(&dest);
         let magic_len = BEACON_MAGIC.len();
         assert_eq!(
-            &beacon[magic_len..magic_len + 4],
+            &beacon[magic_len + 16..magic_len + 20],
             BEACON_VERSION.to_le_bytes()
         );
         assert_eq!(
-            &beacon[magic_len + 4..magic_len + 8],
+            &beacon[magic_len + 20..magic_len + 24],
             (BEACON_INTERVAL_MS as u32 / 1000).to_le_bytes()
         );
     }

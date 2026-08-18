@@ -5,6 +5,10 @@
 mod ffi_tests {
     use soshal_flutter_bridge::*;
 
+    // Test-only NWC URI fixture (fake pubkey/secret) — mirror of the lib's
+    // cfg(test) NWC_URI, which is not compiled into integration tests.
+    const NWC_URI: &str = "nostr+walletconnect://abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789?relay=wss://relay.damus.io&secret=f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
+
     // Serializes tests that touch the shared in-process NWC state or the
     // shared DB handle (statics are process-global across parallel tests).
     static ZAP_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -348,7 +352,7 @@ mod ffi_tests {
         assert_eq!(v["connected"], false);
         assert!(zap::zap_get_nwc_pubkey().is_err());
 
-        assert!(zap::zap_connect_nwc(zap::NWC_URI.to_string()).unwrap());
+        assert!(zap::zap_connect_nwc(NWC_URI.to_string()).unwrap());
         let status = zap::zap_get_nwc_status().unwrap();
         let v: serde_json::Value = serde_json::from_str(&status).unwrap();
         assert_eq!(v["connected"], true);

@@ -58,7 +58,7 @@ pub fn spawn_swarm_download(cfg: SwarmConfig) -> std::thread::JoinHandle<SwarmRe
         {
             Ok(rt) => rt,
             Err(e) => {
-                eprintln!("swarm: runtime init failed: {e}");
+                log::warn!("swarm: runtime init failed: {e}");
                 return SwarmReport {
                     failures: cfg.manifest.chunks.len(),
                     ..SwarmReport::default()
@@ -89,7 +89,7 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
     {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("swarm: open {}: {e}", cfg.out_path.display());
+            log::warn!("swarm: open {}: {e}", cfg.out_path.display());
             return SwarmReport {
                 failures: chunks.len(),
                 failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
@@ -98,7 +98,7 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
         }
     };
     if let Err(e) = file.set_len(total) {
-        eprintln!("swarm: sparse set_len: {e}");
+        log::warn!("swarm: sparse set_len: {e}");
         return SwarmReport {
             failures: chunks.len(),
             failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
@@ -160,7 +160,7 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                     let offset = match usize::try_from(chr.offset) {
                         Ok(o) => o,
                         Err(_) => {
-                            eprintln!("swarm: chunk {}: offset too large for usize", chr.blake3);
+                            log::debug!("swarm: chunk {}: offset too large for usize", chr.blake3);
                             continue;
                         }
                     };
@@ -221,7 +221,7 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                             break;
                         }
                         Ok(Ok(_)) => {} // hash mismatch → next attempt
-                        Ok(Err(e)) => eprintln!("swarm: peer {peer}: {e}"),
+                        Ok(Err(e)) => log::debug!("swarm: peer {peer}: {e}"),
                         Err(_) => {} // timeout / panic → next attempt
                     }
                 }
@@ -234,21 +234,24 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                         let end = match chr.offset.checked_add(data.len() as u64) {
                             Some(e) => e,
                             None => {
-                                eprintln!("swarm: chunk {}: offset overflow", chr.blake3);
+                                log::debug!("swarm: chunk {}: offset overflow", chr.blake3);
                                 continue;
                             }
                         };
                         if end > total {
-                            eprintln!(
+                            log::debug!(
                                 "swarm: chunk {}: range {}-{} exceeds blob size {}",
-                                chr.blake3, chr.offset, end, total
+                                chr.blake3,
+                                chr.offset,
+                                end,
+                                total
                             );
                             continue;
                         }
                         let off = match usize::try_from(chr.offset) {
                             Ok(o) => o,
                             Err(_) => {
-                                eprintln!(
+                                log::debug!(
                                     "swarm: chunk {}: offset too large for usize",
                                     chr.blake3
                                 );
@@ -258,14 +261,14 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                         let copy_end = match off.checked_add(data.len()) {
                             Some(e) => e,
                             None => {
-                                eprintln!("swarm: chunk {}: copy range overflow", chr.blake3);
+                                log::debug!("swarm: chunk {}: copy range overflow", chr.blake3);
                                 continue;
                             }
                         };
                         {
                             let mut map = map.lock().unwrap();
                             if copy_end > map.len() {
-                                eprintln!(
+                                log::debug!(
                                     "swarm: chunk {}: range {}-{} exceeds mmap len {}",
                                     chr.blake3,
                                     off,
@@ -279,7 +282,7 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                         done.lock().unwrap().insert(idx);
                     }
                     None => {
-                        eprintln!("swarm: chunk {} failed on all peers", chr.blake3);
+                        log::debug!("swarm: chunk {} failed on all peers", chr.blake3);
                     }
                 }
             }
@@ -311,23 +314,40 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
     }
     drop(map);
 
-    eprintln!(
+    log::debug!(
         "swarm: {} verified chunks, {} bytes ({} failures)",
-        report.verified_chunks, report.bytes_downloaded, report.failures
+        report.verified_chunks,
+        report.bytes_downloaded,
+        report.failures
     );
     report
 }
 
-/// memmap2's API is safe; this wrapper keeps the single unsafe sight-line
-/// (mmap construction) isolated and auditable.
+/// memmap2's API is safe to *call* (no unsafe wrapper), but constructing a
+/// `MmapMut` from a file is `unsafe` because:
+///   1. Any out-of-process truncation of the underlying file can shrink the
+///      mapped region, making the Rust `&mut [u8]` slice dangle — UB.
+///   2. Any other mapping of the same file produces aliased mutable references
+///      if both sides write — also UB.
+///
+/// # Safety
+/// This call is sound because:
+/// - The file is created exclusively by this process and held open for the
+///   full lifetime of the mmap (no POSIX `close` until `drop(map)`).  No
+///   other process can truncate or unlink it while we hold the fd.
+/// - `MmapMut` is wrapped in `Arc<Mutex<…>>` so no two tasks ever hold
+///   overlapping `&mut [u8]` references simultaneously.
 #[allow(unsafe_code)]
 fn unsafe_mmap(file: &File) -> Option<memmap2::MmapMut> {
+    // SAFETY: see module-level comment above.
     unsafe { memmap2::MmapMut::map_mut(file).ok() }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lan_transport::start_lan_server_with_store;
+    use crate::lan_transport::tests::start_hostile_lan_server;
     use soshal_media_core::cas::ChunkStore;
     use soshal_media_core::chunking::{ChunkManifest, ChunkRef};
 
@@ -475,5 +495,100 @@ mod tests {
         });
         let report = handle.join().unwrap();
         assert_eq!(report.failures, m.chunks.len());
+    }
+
+    #[test]
+    fn swarm_rotates_off_corrupt_peer_and_recovers() {
+        let root = soshal_test_util::tmp_root("swarm_test");
+        let store = ChunkStore::new(root.join("chunks"));
+        let data: Vec<u8> = (0..300 * 1024).map(|i| (i % 251) as u8).collect();
+        let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
+        store.save_manifest(&m).unwrap();
+
+        // Peer 0 hostile (garbage bytes, never verifies); peer 1 honest.
+        // Attempt 1 rotates from 0 to 1 and the download recovers.
+        let mut hostile = start_hostile_lan_server();
+        let mut server = start_lan_server_with_store([7u8; 32], root.join("chunks")).unwrap();
+        let peers = vec![
+            SocketAddr::from(([127, 0, 0, 1], hostile.port)),
+            SocketAddr::from(([127, 0, 0, 1], server.port)),
+        ];
+        let out = root.join("out.bin");
+        let handle = spawn_swarm_download(SwarmConfig {
+            manifest: m.clone(),
+            out_path: out.clone(),
+            peers,
+            quic_ports: vec![None, None],
+            key: [7u8; 32],
+            my_pubkey: "ab".repeat(32),
+            max_parallel: 1,
+        });
+        let report = handle.join().unwrap();
+        assert_eq!(report.verified_chunks, m.chunks.len());
+        assert_eq!(report.failures, 0);
+        assert!(report.failed_hashes.is_empty());
+        assert_eq!(std::fs::read(&out).unwrap(), data);
+        server.stop();
+        hostile.stop();
+    }
+
+    #[test]
+    fn swarm_hash_mismatch_fails_and_hostile_ranges_are_guarded() {
+        let root = soshal_test_util::tmp_root("swarm_test");
+        let store = ChunkStore::new(root.join("chunks"));
+        let data: Vec<u8> = (0..100 * 1024).map(|i| (i % 251) as u8).collect();
+        let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
+        store.save_manifest(&m).unwrap();
+
+        // Single hostile peer: both attempts mismatch → failure report.
+        let mut hostile = start_hostile_lan_server();
+        let addr = SocketAddr::from(([127, 0, 0, 1], hostile.port));
+        let handle = spawn_swarm_download(SwarmConfig {
+            manifest: m.clone(),
+            out_path: root.join("out1.bin"),
+            peers: vec![addr],
+            quic_ports: vec![None],
+            key: [7u8; 32],
+            my_pubkey: "ab".repeat(32),
+            max_parallel: 1,
+        });
+        let report = handle.join().unwrap();
+        assert_eq!(report.verified_chunks, 0);
+        assert_eq!(report.failures, m.chunks.len());
+        assert_eq!(
+            report.failed_hashes,
+            m.chunks
+                .iter()
+                .map(|c| c.blake3.clone())
+                .collect::<Vec<_>>()
+        );
+        hostile.stop();
+
+        // Honest peer, hostile manifest: verified chunk ends past total_size
+        // → the end > total guard skips instead of panicking.
+        let mut server = start_lan_server_with_store([7u8; 32], root.join("chunks")).unwrap();
+        let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
+        let mut hostile_manifest = m.clone();
+        hostile_manifest.total_size = 1;
+        let handle = spawn_swarm_download(SwarmConfig {
+            manifest: hostile_manifest,
+            out_path: root.join("out2.bin"),
+            peers: vec![addr],
+            quic_ports: vec![None],
+            key: [7u8; 32],
+            my_pubkey: "ab".repeat(32),
+            max_parallel: 1,
+        });
+        let report = handle.join().unwrap();
+        assert_eq!(report.verified_chunks, 0);
+        assert_eq!(report.failures, m.chunks.len());
+        assert_eq!(
+            report.failed_hashes,
+            m.chunks
+                .iter()
+                .map(|c| c.blake3.clone())
+                .collect::<Vec<_>>()
+        );
+        server.stop();
     }
 }

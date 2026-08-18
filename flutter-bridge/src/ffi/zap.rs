@@ -64,17 +64,45 @@ impl From<soshal_zap_core::NwcConnectionInfo> for NwcConnectionInfo {
     }
 }
 
-static NWC: Mutex<Option<NwcConnectionInfo>> = Mutex::new(None);
-static NWC_URI_STATE: Mutex<Option<String>> = Mutex::new(None);
+/// A `String` that zeroizes its heap buffer on drop, preventing the NWC
+/// wallet secret from lingering in freed memory.
+struct ZeroizingString(String);
 
-/// Shared NWC URI fixture used by unit and integration tests.
+impl ZeroizingString {
+    fn new(s: String) -> Self {
+        Self(s)
+    }
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Drop for ZeroizingString {
+    fn drop(&mut self) {
+        // Overwrite the string's heap buffer before deallocation. The String
+        // is owned exclusively (only via this struct) and is being dropped.
+        let mut bytes = std::mem::take(&mut self.0).into_bytes();
+        zeroize::Zeroize::zeroize(&mut bytes[..]);
+    }
+}
+
+static NWC: Mutex<Option<NwcConnectionInfo>> = Mutex::new(None);
+static NWC_URI_STATE: Mutex<Option<ZeroizingString>> = Mutex::new(None);
+
+/// Shared NWC URI fixture used by unit and integration tests only.
+/// Not included in release builds to avoid shipping a wallet secret in
+/// the production binary.
+#[cfg(test)]
 pub const NWC_URI: &str = "nostr+walletconnect://abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789?relay=wss://relay.damus.io&secret=f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
 
-/// Clone the stored NWC URI. It contains the wallet secret — used only to
-/// drive the in-process request/response exchange, never returned to Dart.
+/// Return the stored NWC URI for in-process use.  The URI contains the wallet
+/// secret and must never be returned to Dart.
 fn nwc_uri() -> Result<String, String> {
     let guard = NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner());
-    guard.clone().ok_or_else(|| "NWC not connected".to_string())
+    match guard.as_ref() {
+        Some(z) => Ok(z.as_str().to_owned()),
+        None => Err("NWC not connected".to_string()),
+    }
 }
 
 /// LNURL (lud16) parse result.
@@ -107,7 +135,8 @@ pub fn zap_connect_nwc(nwc_uri: String) -> Result<bool, String> {
     let info = soshal_zap_core::nwc::parse_nwc_uri(&nwc_uri)
         .map_err(|e| format!("invalid NWC URI: {e}"))?;
     *NWC.lock().unwrap_or_else(|e| e.into_inner()) = Some(info.into());
-    *NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(nwc_uri);
+    *NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some(ZeroizingString::new(nwc_uri));
     Ok(true).into()
 }
 

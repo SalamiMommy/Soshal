@@ -239,6 +239,24 @@ fn v12_adds_post_category_and_follower_count() {
 }
 
 #[test]
+fn v13_adds_perf_schema_round2() {
+    let (_db, conn) = bare_db();
+    migrations::v1_create_tables(&conn).unwrap();
+    migrations::v5_create_missing_tables(&conn).unwrap();
+    migrations::v11_perf_schema(&conn).unwrap();
+    migrations::v12_perf_schema(&conn).unwrap();
+    migrations::v13_perf_schema(&conn).unwrap();
+    assert!(column_exists(&conn, "posts", "reposts_count"));
+    assert!(column_exists(&conn, "posts", "event_lat"));
+    assert!(column_exists(&conn, "posts", "event_lng"));
+    assert!(index_exists(&conn, "idx_post_views_post_id"));
+    assert!(index_exists(&conn, "idx_posts_event_lat_lng"));
+    assert!(trigger_exists(&conn, "reposts_ai"));
+    assert!(trigger_exists(&conn, "reposts_ad"));
+    assert_eq!(max_version(&conn), 13);
+}
+
+#[test]
 fn full_chain_reaches_schema_version() {
     let (_db, conn) = bare_db();
     migrations::v1_create_tables(&conn).unwrap();
@@ -253,5 +271,6 @@ fn full_chain_reaches_schema_version() {
     migrations::v10_perf_indexes(&conn).unwrap();
     migrations::v11_perf_schema(&conn).unwrap();
     migrations::v12_perf_schema(&conn).unwrap();
+    migrations::v13_perf_schema(&conn).unwrap();
     assert_eq!(max_version(&conn), SCHEMA_VERSION);
 }

@@ -296,4 +296,80 @@ mod tests {
         assert!(entries.is_empty());
         assert!(ffi_pending(addr).unwrap() == 0);
     }
+
+    #[test]
+    fn drain_skips_corrupt_len_word_and_empties_oversize_payload() {
+        let mut ring =
+            SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 64 * 1024).unwrap();
+        write_entry_bytes(&mut ring, 1, b"ok");
+
+        // Foreign/corrupt len word: out of range → skipped via tail += 4.
+        let idx = (ring.head() % ring.capacity() as u64) as usize;
+        ring.map[RING_HEADER_LEN + idx..RING_HEADER_LEN + idx + 4]
+            .copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+        ring.advance_head(ring.head() + 4).unwrap();
+
+        // Valid entry with payload_len > MAX → drained with empty payload.
+        let idx = (ring.head() % ring.capacity() as u64) as usize;
+        let base = RING_HEADER_LEN + idx;
+        let total = RING_ENTRY_HEADER + 8;
+        ring.map[base..base + 4].copy_from_slice(&(total as u32).to_le_bytes());
+        ring.map[base + 4] = 2;
+        ring.map[base + 5..base + 13].copy_from_slice(&0u64.to_le_bytes());
+        ring.map[base + 13..base + 17]
+            .copy_from_slice(&(RING_ENTRY_MAX_PAYLOAD as u32 + 1).to_le_bytes());
+        ring.advance_head(ring.head() + total as u64).unwrap();
+
+        write_entry_bytes(&mut ring, 3, b"three");
+
+        let mut kinds = Vec::new();
+        let mut payloads = Vec::new();
+        ring.drain(|k, p| {
+            kinds.push(k);
+            payloads.push(p.to_vec());
+        });
+        assert_eq!(kinds, vec![1, 2, 3]);
+        assert_eq!(payloads[0], b"ok");
+        assert!(payloads[1].is_empty());
+        assert_eq!(payloads[2], b"three");
+        assert_eq!(ring.pending(), 0);
+    }
+
+    #[test]
+    fn init_rounds_cap_advance_head_boundary_and_size_extremes() {
+        // Non-4096 cap: 70_000 → ceil(70_000 / 4096) * 4096 = 73_728.
+        let ring =
+            SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 70_000).unwrap();
+        assert_eq!(ring.capacity(), 73_728);
+        // Below the 64 KiB floor.
+        let ring = SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 1000).unwrap();
+        assert_eq!(ring.capacity(), 64 * 1024);
+
+        // Exact +capacity boundary advances are allowed; beyond → Err.
+        let mut ring =
+            SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 64 * 1024).unwrap();
+        assert!(ring.advance_head(0).is_ok());
+        assert!(ring.advance_head(64 * 1024).is_ok());
+        assert!(ring.advance_head(128 * 1024).is_ok());
+        assert!(ring.advance_head(128 * 1024 - 1).is_err()); // rewind
+        let mut fresh =
+            SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 64 * 1024).unwrap();
+        assert!(fresh.advance_head(64 * 1024 + 1).is_err()); // diff > capacity
+
+        // Size extremes: max-size and minimal (empty) payloads read back equal.
+        let max_payload: Vec<u8> = (0..RING_ENTRY_MAX_PAYLOAD as u32)
+            .map(|i| (i % 251) as u8)
+            .collect();
+        write_entry_bytes(&mut ring, 7, &max_payload);
+        write_entry_bytes(&mut ring, 9, b"");
+        let mut kinds = Vec::new();
+        let mut payloads = Vec::new();
+        ring.drain(|k, p| {
+            kinds.push(k);
+            payloads.push(p.to_vec());
+        });
+        assert_eq!(kinds, vec![7, 9]);
+        assert_eq!(payloads[0], max_payload);
+        assert!(payloads[1].is_empty());
+    }
 }

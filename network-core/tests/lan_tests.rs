@@ -91,8 +91,8 @@ fn parse_beacon_accepts_timestamp_skew() {
     let mac = beacon_mac(&key, &body);
     let beacon = format!("{}:{}", body, mac);
 
-    assert!(parse_beacon(&key, magic, &beacon, 9000, 1120).is_some());
-    assert!(parse_beacon(&key, magic, &beacon, 9000, 880).is_some());
+    assert!(parse_beacon(&key, magic, &beacon, 9000, 1020).is_some());
+    assert!(parse_beacon(&key, magic, &beacon, 9000, 980).is_some());
 }
 
 #[test]

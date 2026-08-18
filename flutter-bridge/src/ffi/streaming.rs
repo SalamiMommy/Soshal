@@ -114,12 +114,30 @@ fn story_from_value(v: &serde_json::Value) -> Option<StoryInfo> {
 /// Fetch live streams (all locally known + optionally filter to `live`).
 #[frb(sync, serialize)]
 pub fn streaming_fetch_live(limit: i32) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT id, pubkey, content, created_at, tags_json FROM posts \
-         WHERE kind = {KIND_LIVE} AND is_deleted = 0 ORDER BY created_at DESC LIMIT {}",
-        limit.clamp(1, 100)
-    ))?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+    let limit_clamped = limit.clamp(1, 100) as i64;
+    let rows = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        soshal_db_core::query::query(
+            &conn,
+            "SELECT id, pubkey, content, created_at, tags_json FROM posts \
+             WHERE kind = ?1 AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?2",
+            [KIND_LIVE as i64, limit_clamped],
+            |r| {
+                let id: String = r.get(0)?;
+                let pubkey: String = r.get(1)?;
+                let content: String = r.get(2)?;
+                let created_at: i64 = r.get(3)?;
+                let tags_json: String = r.get(4)?;
+                Ok(serde_json::json!({
+                    "id": id,
+                    "pubkey": pubkey,
+                    "content": content,
+                    "created_at": created_at,
+                    "tags_json": tags_json,
+                }))
+            },
+        )
+    })?;
     super::util::json_ok(
         rows.into_iter()
             .filter_map(|v| stream_from_value(&v))

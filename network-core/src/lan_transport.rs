@@ -591,7 +591,7 @@ pub fn fetch_verified_chunk(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use soshal_media_core::cas::ChunkStore;
 
@@ -660,5 +660,186 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("non-private"));
+    }
+
+    /// Test-only raw LAN server: answers every chunk request with garbage
+    /// bytes (right length, wrong content) — a corrupt/hostile peer whose
+    /// served data fails BLAKE3 verification.
+    pub struct HostileLanServer {
+        pub port: u16,
+        stop: Arc<AtomicBool>,
+        thread: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl HostileLanServer {
+        pub fn stop(&mut self) {
+            self.stop.store(true, Ordering::Relaxed);
+            let _ = self.thread.take();
+        }
+    }
+
+    pub fn start_hostile_lan_server() -> HostileLanServer {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+        let thread = std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                if stop_clone.load(Ordering::Relaxed) {
+                    break;
+                }
+                let Ok(stream) = stream else {
+                    continue;
+                };
+                let _ = std::thread::spawn(move || {
+                    let Ok(peer) = stream.try_clone() else {
+                        return;
+                    };
+                    let mut reader = BufReader::new(peer);
+                    let mut writer = stream;
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                        return;
+                    }
+                    let _ = writer.write_all(b"OK\n");
+                    let mut inner = reader.into_inner();
+                    loop {
+                        match read_frame(&mut inner) {
+                            Ok(Frame::Request(req)) => {
+                                if req.want_manifest {
+                                    let _ = write_frame(&mut writer, ResponseKind::NotFound, &[]);
+                                    continue;
+                                }
+                                let garbage = vec![0xAAu8; req.length];
+                                let _ = write_frame(&mut writer, ResponseKind::Ok, &garbage);
+                            }
+                            _ => return,
+                        }
+                    }
+                });
+            }
+        });
+        HostileLanServer {
+            port,
+            stop,
+            thread: Some(thread),
+        }
+    }
+
+    #[test]
+    fn client_validation_precedes_connect() {
+        let key = [7u8; 32];
+        let pubkey = "ab".repeat(32);
+        // 127.0.0.1:1 refuses connects; reaching it would mean validation
+        // didn't fire first.
+        let dead = SocketAddr::from(([127, 0, 0, 1], 1));
+        let base = LanChunkRequest {
+            hash: "cd".repeat(32),
+            offset: 0,
+            length: 16,
+            want_manifest: false,
+        };
+        for req in [
+            LanChunkRequest {
+                hash: "abc".to_string(),
+                ..base.clone()
+            },
+            LanChunkRequest {
+                length: 0,
+                ..base.clone()
+            },
+            LanChunkRequest {
+                length: MAX_FRAME_BYTES + 1,
+                ..base.clone()
+            },
+        ] {
+            assert_eq!(
+                fetch_chunk_range(dead, key, &pubkey, &req).unwrap_err(),
+                "bad chunk request"
+            );
+        }
+        assert_eq!(
+            fetch_manifest(dead, key, &pubkey, "abc").unwrap_err(),
+            "invalid blob hash"
+        );
+        assert_eq!(
+            fetch_verified_chunk(dead, key, &pubkey, "abc", 0, 16).unwrap_err(),
+            "invalid chunk hash"
+        );
+    }
+
+    #[test]
+    fn read_frame_guards_eof_oversize_bad_json() {
+        let mut eof = &[0u8, 0, 0, 0][..];
+        assert!(matches!(read_frame(&mut eof), Ok(Frame::Eof)));
+
+        let len_bytes = (MAX_FRAME_BYTES as u32 + 1).to_le_bytes();
+        let mut over = &len_bytes[..];
+        match read_frame(&mut over) {
+            Err(e) => assert!(e.contains("frame too large"), "got {e}"),
+            Ok(_) => panic!("expected error"),
+        }
+
+        let mut bad = &[4u8, 0, 0, 0, b'g', b'a', b'r', b'b'][..];
+        match read_frame(&mut bad) {
+            Err(e) => assert!(e.contains("bad frame json"), "got {e}"),
+            Ok(_) => panic!("expected error"),
+        }
+
+        let mut trunc = &[5u8, 0, 0, 0, 1u8, 2u8][..];
+        match read_frame(&mut trunc) {
+            Err(e) => assert!(e.contains("eof"), "got {e}"),
+            Ok(_) => panic!("expected error"),
+        }
+    }
+
+    #[test]
+    fn verified_fetch_rejects_garbage_and_copy_fallback_serves_cross_chunk() {
+        let root = soshal_test_util::tmp_root("lan_test");
+        let store = ChunkStore::new(root.clone());
+        let data: Vec<u8> = (0..300 * 1024).map(|i| (i % 251) as u8).collect();
+        let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
+        store.save_manifest(&m).unwrap();
+
+        // Hostile peer: right length, wrong bytes → post-transfer guard.
+        let mut hostile = start_hostile_lan_server();
+        let haddr = SocketAddr::from(([127, 0, 0, 1], hostile.port));
+        let chunk = &m.chunks[0];
+        assert_eq!(
+            fetch_verified_chunk(
+                haddr,
+                [7u8; 32],
+                &"ab".repeat(32),
+                &chunk.blake3,
+                0,
+                chunk.len
+            )
+            .unwrap_err(),
+            "chunk hash mismatch after transfer"
+        );
+        hostile.stop();
+
+        // Honest server: cross-chunk range skips zero-copy, uses blob_slice.
+        let mut server = start_lan_server_with_store([7u8; 32], root).unwrap();
+        let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
+        if m.chunks.len() >= 2 {
+            let c0 = &m.chunks[0];
+            let off = c0.len - 100;
+            let len = 200;
+            let got = fetch_chunk_range(
+                addr,
+                [7u8; 32],
+                &"ab".repeat(32),
+                &LanChunkRequest {
+                    hash: m.blob_hash.clone(),
+                    offset: off,
+                    length: len,
+                    want_manifest: false,
+                },
+            )
+            .unwrap();
+            assert_eq!(got, data[off..off + len]);
+        }
+        server.stop();
     }
 }

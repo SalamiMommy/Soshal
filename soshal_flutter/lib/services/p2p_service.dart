@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:soshal_flutter/ffi/p2p.dart'
     show
         P2pPeerDto,
@@ -62,14 +63,48 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   final _connectivity = Connectivity();
   Timer? _powerTimer;
   StreamSubscription<List<ConnectivityResult>>? _connSub;
+  AppLifecycleListener? _lifecycle;
+  bool _appActive = true;
+  Duration _powerInterval = const Duration(seconds: 30);
+  ({
+    bool charging,
+    int batteryPercent,
+    bool cellular,
+    bool lowPowerMode,
+  })?
+  _lastPowerSample;
 
   P2pService() {
-    _powerTimer =
-        Timer.periodic(const Duration(seconds: 30), (_) => _pollPower());
+    _lifecycle = AppLifecycleListener(
+      onHide: _pausePowerTimer,
+      onPause: _pausePowerTimer,
+      onResume: _resumePowerTimer,
+    );
+    _startPowerTimer();
     _connSub = _connectivity.onConnectivityChanged.listen(
       (_) => _pollPower(),
       onError: (Object _) {},
     );
+    _pollPower();
+  }
+
+  /// (Re)start the power poller at the current interval; no-op while the
+  /// app is backgrounded so battery/connectivity FFI stays quiescent.
+  void _startPowerTimer() {
+    if (!_appActive) return;
+    _powerTimer?.cancel();
+    _powerTimer = Timer.periodic(_powerInterval, (_) => _pollPower());
+  }
+
+  void _pausePowerTimer() {
+    _appActive = false;
+    _powerTimer?.cancel();
+    _powerTimer = null;
+  }
+
+  void _resumePowerTimer() {
+    _appActive = true;
+    _startPowerTimer();
     _pollPower();
   }
 
@@ -259,6 +294,8 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
 
   /// Sample battery + connectivity and push into the Rust seeding scheduler.
   /// Errors are swallowed: power state simply stays at its last good value.
+  /// Idle unchanged state backs off 30s → 60s → 120s; state change, active
+  /// peers, or in-flight downloads reset to 30s.
   Future<void> _pollPower() async {
     try {
       final batteryLevel = await _battery.batteryLevel;
@@ -268,13 +305,30 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
       final cellular = connections.any(
         (c) => c == ConnectivityResult.mobile,
       );
-      await updatePower(
+      final sample = (
         charging: batteryState == BatteryState.charging ||
             batteryState == BatteryState.full,
         batteryPercent: batteryLevel < 0 ? 100 : batteryLevel,
         cellular: cellular,
         lowPowerMode: isSaving,
       );
+      await updatePower(
+        charging: sample.charging,
+        batteryPercent: sample.batteryPercent,
+        cellular: sample.cellular,
+        lowPowerMode: sample.lowPowerMode,
+      );
+      if (_downloads.isNotEmpty || _peers.isNotEmpty) {
+        _powerInterval = const Duration(seconds: 30);
+      } else if (_lastPowerSample == sample) {
+        _powerInterval = _powerInterval.inSeconds >= 60
+            ? const Duration(seconds: 120)
+            : const Duration(seconds: 60);
+      } else {
+        _powerInterval = const Duration(seconds: 30);
+      }
+      _lastPowerSample = sample;
+      _startPowerTimer();
     } catch (_) {
       // Plugins can throw on emulators / desktop; keep last known state.
     }
@@ -482,6 +536,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     _pollTimer?.cancel();
     _powerTimer?.cancel();
     _connSub?.cancel();
+    _lifecycle?.dispose();
     super.dispose();
   }
 }

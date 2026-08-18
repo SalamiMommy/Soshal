@@ -4493,6 +4493,7 @@ dependencies = [
  "futures-util",
  "hex",
  "if-addrs",
+ "log",
  "mdns-sd",
  "memmap2",
  "nix 0.29.0",

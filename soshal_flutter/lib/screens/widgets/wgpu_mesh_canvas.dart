@@ -60,6 +60,7 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
   ui.Image? _renderedImage;
   Timer? _renderTimer;
   List<WgpuMeshNodeItem>? _lastRenderedNodes;
+  int _idleTicks = 0;
   bool _loading = true;
   String? _error;
 
@@ -68,6 +69,15 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
     super.initState();
     _layout = context.read<LayoutService>();
     _initWgpuSession();
+  }
+
+  @override
+  void didUpdateWidget(covariant WgpuMeshCanvasWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.nodes, widget.nodes)) {
+      _idleTicks = 0;
+      _startRenderLoop();
+    }
   }
 
   Future<void> _initWgpuSession() async {
@@ -101,63 +111,77 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
 
   void _startRenderLoop() {
     _renderTimer?.cancel();
-    _renderTimer = Timer.periodic(const Duration(milliseconds: 33), (_) async {
-      if (_sessionId == null || !mounted) return;
-      final nodes = widget.nodes;
-      if (identical(nodes, _lastRenderedNodes)) return;
-      try {
-        final nodesJson = jsonEncode(nodes.map((n) => n.toJson()).toList());
-        final frameBytes = await _layout.renderMeshFrame(
-          sessionId: _sessionId!,
-          nodesJson: nodesJson,
-          deltaTime: 0.033,
-        );
+    _renderTimer = Timer(const Duration(milliseconds: 33), _renderTick);
+  }
 
-        if (frameBytes.isNotEmpty) {
-          // Allocate a shared frame buffer on the Rust raster side before
-          // painting (Android-only path; failures are silent).
-          BigInt? bufferPtr;
-          try {
-            final fb = await _layout.allocateRasterFrameBuffer(
-              width: widget.width.toInt(),
-              height: widget.height.toInt(),
-            );
-            bufferPtr = fb.bufferPtrAddr;
-          } catch (_) {}
+  Future<void> _renderTick() async {
+    _renderTimer?.cancel();
+    if (_sessionId == null || !mounted) return;
+    final nodes = widget.nodes;
+    if (identical(nodes, _lastRenderedNodes)) {
+      // No state change: idle backoff, then stop the loop entirely.
+      _idleTicks++;
+      if (_idleTicks >= 8) return;
+      _renderTimer = Timer(const Duration(milliseconds: 250), _renderTick);
+      return;
+    }
+    _idleTicks = 0;
+    try {
+      final nodesJson = jsonEncode(nodes.map((n) => n.toJson()).toList());
+      final frameBytes = await _layout.renderMeshFrame(
+        sessionId: _sessionId!,
+        nodesJson: nodesJson,
+        deltaTime: 0.033,
+      );
 
-          final completer = Completer<ui.Image>();
-          ui.decodeImageFromPixels(
-            frameBytes,
-            widget.width.toInt(),
-            widget.height.toInt(),
-            ui.PixelFormat.rgba8888,
-            completer.complete,
+      if (frameBytes.isNotEmpty) {
+        // Allocate a shared frame buffer on the Rust raster side before
+        // painting (Android-only path; failures are silent).
+        BigInt? bufferPtr;
+        try {
+          final fb = await _layout.allocateRasterFrameBuffer(
+            width: widget.width.toInt(),
+            height: widget.height.toInt(),
           );
-          final img = await completer.future;
-          if (mounted) {
-            final oldImg = _renderedImage;
-            setState(() {
-              _renderedImage = img;
-            });
-            oldImg?.dispose();
-            _lastRenderedNodes = nodes;
-            if (bufferPtr != null) {
-              try {
-                await _layout.signalRasterFrameReady(
-                  textureId: bufferPtr.toInt(),
-                  frameTimestampNs:
-                      BigInt.from(DateTime.now().microsecondsSinceEpoch * 1000),
-                );
-              } catch (_) {}
-            }
-          } else {
-            img.dispose();
+          bufferPtr = fb.bufferPtrAddr;
+        } catch (_) {}
+
+        final completer = Completer<ui.Image>();
+        ui.decodeImageFromPixels(
+          frameBytes,
+          widget.width.toInt(),
+          widget.height.toInt(),
+          ui.PixelFormat.rgba8888,
+          completer.complete,
+        );
+        final img = await completer.future;
+        if (mounted) {
+          final oldImg = _renderedImage;
+          setState(() {
+            _renderedImage = img;
+          });
+          oldImg?.dispose();
+          _lastRenderedNodes = nodes;
+          if (bufferPtr != null) {
+            try {
+              await _layout.signalRasterFrameReady(
+                textureId: bufferPtr.toInt(),
+                frameTimestampNs:
+                    BigInt.from(DateTime.now().microsecondsSinceEpoch * 1000),
+              );
+            } catch (_) {}
           }
+        } else {
+          img.dispose();
         }
-      } catch (e) {
-        // Suppress frame loop transient errors gracefully
       }
-    });
+    } catch (e) {
+      // Suppress frame loop transient errors gracefully
+    } finally {
+      if (mounted) {
+        _renderTimer ??= Timer(const Duration(milliseconds: 33), _renderTick);
+      }
+    }
   }
 
   @override

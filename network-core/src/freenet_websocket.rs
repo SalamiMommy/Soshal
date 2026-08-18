@@ -2,6 +2,7 @@
 
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use soshal_common_core::url::is_valid_media_url;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
@@ -30,6 +31,16 @@ impl FreenetWebSocketClient {
 
     /// Connects to the Freenet node
     pub async fn connect(&self) -> Result<(), String> {
+        // SSRF guard: reject private IPs, loopback, link-local, and
+        // DNS-rebinding candidates before opening any socket.
+        // Strip query string for the URL check, then reconnect with auth.
+        let base_for_check = self.url.split('?').next().unwrap_or(&self.url);
+        if !is_valid_media_url(base_for_check) {
+            return Err(format!(
+                "Freenet WebSocket blocked: URL does not pass SSRF policy: {}",
+                self.url
+            ));
+        }
         let url_with_auth = if self.auth_token.is_empty() {
             self.url.clone()
         } else {

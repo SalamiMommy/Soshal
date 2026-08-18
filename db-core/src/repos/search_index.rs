@@ -12,16 +12,44 @@ impl<'a> SearchIndexRepo<'a> {
 
     pub fn upsert(&self, row: &SearchIndexRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        crate::query::with_tx(&conn, |tx| async move {
+            self.upsert_batch_in(&tx, std::slice::from_ref(row)).await?;
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+
+    /// Upsert many rows in one IMMEDIATE transaction (N sequential
+    /// per-row autocommit writes become one commit).
+    pub fn upsert_batch(&self, rows: &[SearchIndexRow]) -> Result<(), crate::error::DbError> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let conn = self.db.conn()?;
+        crate::query::with_tx(&conn, |tx| async move {
+            self.upsert_batch_in(&tx, rows).await?;
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+
+    pub async fn upsert_batch_in(
+        &self,
+        tx: &libsql::Transaction,
+        rows: &[SearchIndexRow],
+    ) -> Result<(), crate::error::DbError> {
         // FTS5 rows must carry an explicit rowid: posts-backed rows map to
         // the posts rowid (matching the posts_ai trigger), everything else
         // gets a deterministic negative rowid. Auto-assigned rowids collide
         // with trigger inserts and surface as bare `constraint failed`.
-        let neg = negative_rowid(&row.id);
-        crate::query::execute(
-            &conn,
-            "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content) SELECT COALESCE((SELECT rowid FROM posts WHERE id = ?1), ?2), ?1, ?3, ?4",
-            params![row.id.as_str(), neg, row.pubkey.as_str(), row.content.as_str()],
-        )?;
+        for row in rows {
+            let neg = negative_rowid(&row.id);
+            tx.execute(
+                "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content) SELECT COALESCE((SELECT rowid FROM posts WHERE id = ?1), ?2), ?1, ?3, ?4",
+                params![row.id.as_str(), neg, row.pubkey.as_str(), row.content.as_str()],
+            )
+            .await?;
+        }
         Ok(())
     }
 

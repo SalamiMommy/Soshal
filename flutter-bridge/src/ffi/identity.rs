@@ -276,22 +276,16 @@ pub fn identity_get_trust_score(
     source_pubkey: String,
     target_pubkey: String,
 ) -> Result<f32, String> {
-    let users = all_users()?;
+    let users = wot_graph_users()?;
     let mut self_contacts = Vec::new();
     let mut target_contacts = Vec::new();
-    let mut wot_users = Vec::new();
     for u in &users {
-        let contacts: Vec<String> = serde_json::from_str(&u.contact_pubkeys).unwrap_or_default();
         if u.pubkey == source_pubkey {
-            self_contacts = contacts.clone();
+            self_contacts = u.contacts.clone();
         }
         if u.pubkey == target_pubkey {
-            target_contacts = contacts.clone();
+            target_contacts = u.contacts.clone();
         }
-        wot_users.push(wot::WotUser {
-            pubkey: u.pubkey.clone(),
-            contacts: contacts.clone(),
-        });
     }
     let score = wot::compute_trust_score(
         &source_pubkey,
@@ -303,39 +297,62 @@ pub fn identity_get_trust_score(
     Ok(score as f32).into()
 }
 
-/// Load every stored user row (raw query, since repos have no list-all).
-fn all_users() -> Result<Vec<UserRow>, String> {
-    let json = super::db::db_query_raw(
-        "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list FROM users"
-            .to_string(),
-    )?;
+/// WoT contact-graph snapshot, cached per DB path for `WOT_GRAPH_TTL` so
+/// repeated trust/WoT calls skip rebuilding the whole graph.
+static WOT_GRAPH_CACHE: std::sync::Mutex<Option<WotGraphSnapshot>> =
+    std::sync::Mutex::new(None);
+const WOT_GRAPH_TTL: std::time::Duration = std::time::Duration::from_secs(45);
+
+struct WotGraphSnapshot {
+    db_path: String,
+    fetched_at: std::time::Instant,
+    users: Vec<wot::WotUser>,
+}
+
+/// Load the WoT contact graph — only `pubkey` + `contact_pubkeys` columns
+/// (repos have no list-all; light raw query mirrors db.rs helpers).
+fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
+    let current_db = super::db::db_path()?;
+    let mut guard = WOT_GRAPH_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(snap) = guard.as_ref() {
+        if snap.db_path == current_db && snap.fetched_at.elapsed() < WOT_GRAPH_TTL {
+            return Ok(snap.users.clone());
+        }
+    }
+    let json = super::db::db_query_params("SELECT pubkey, contact_pubkeys FROM users", &[])?;
     let rows: Vec<serde_json::Value> = match serde_json::from_str(&json) {
         Ok(r) => r,
         Err(e) => return Err(format!("parse users: {e}")),
     };
-    let mut out = Vec::new();
-    for r in rows {
-        let get = |k: &str| -> Option<String> {
-            r.get(k).and_then(|v| v.as_str()).map(|s| s.to_string())
-        };
-        out.push(UserRow {
-            pubkey: get("pubkey").unwrap_or_default(),
-            npub: get("npub").unwrap_or_default(),
-            name: get("name"),
-            display_name: get("display_name"),
-            about: get("about"),
-            picture: get("picture"),
-            banner: get("banner"),
-            nip05: get("nip05"),
-            lud16: get("lud16"),
-            created_at: r.get("created_at").and_then(|v| v.as_i64()).unwrap_or(0),
-            updated_at: r.get("updated_at").and_then(|v| v.as_i64()).unwrap_or(0),
-            metadata_json: get("metadata_json"),
-            contact_pubkeys: get("contact_pubkeys").unwrap_or_else(|| "[]".to_string()),
-            relay_list: get("relay_list").unwrap_or_else(|| "[]".to_string()),
-        });
+    let users: Vec<wot::WotUser> = rows
+        .iter()
+        .map(|r| wot::WotUser {
+            pubkey: r
+                .get("pubkey")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            contacts: r
+                .get("contact_pubkeys")
+                .and_then(|v| v.as_str())
+                .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+                .unwrap_or_default(),
+        })
+        .collect();
+    *guard = Some(WotGraphSnapshot {
+        db_path: current_db,
+        fetched_at: std::time::Instant::now(),
+        users: users.clone(),
+    });
+    Ok(users)
+}
+
+/// Drop the cached WoT graph; call when the contact graph mutates
+/// (follow/unfollow) so the next call re-reads the DB.
+fn wot_graph_invalidate() {
+    if let Ok(mut guard) = WOT_GRAPH_CACHE.lock() {
+        *guard = None;
     }
-    Ok(out)
 }
 
 /// Classify the target as trusted / warning / unknown relative to the
@@ -347,14 +364,7 @@ pub fn identity_get_wot_status(
     target_pubkey: String,
     viewer_pubkey: String,
 ) -> Result<String, String> {
-    let users = all_users()?;
-    let wot_users: Vec<wot::WotUser> = users
-        .iter()
-        .map(|u| wot::WotUser {
-            pubkey: u.pubkey.clone(),
-            contacts: serde_json::from_str(&u.contact_pubkeys).unwrap_or_default(),
-        })
-        .collect();
+    let wot_users = wot_graph_users()?;
     let by_distance = wot::get_wot_peers_by_distance(&viewer_pubkey, &wot_users, 2);
     let status = if by_distance
         .get(&1)
@@ -441,6 +451,7 @@ pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
     }
     let signed = super::signer::sign_builder(builder)?;
     soshal_identity_core::wot::invalidate_wot_peers_cache();
+    wot_graph_invalidate();
     publish_event(signed.clone())?;
     Ok(signed)
 }
@@ -495,6 +506,7 @@ pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
     }
     let signed = super::signer::sign_builder(builder)?;
     soshal_identity_core::wot::invalidate_wot_peers_cache();
+    wot_graph_invalidate();
     publish_event(signed)?;
     Ok(true)
 }
@@ -814,11 +826,11 @@ mod tests {
     }
 
     #[test]
-    fn test_all_users_ok_path() {
+    fn test_wot_graph_users_light_load() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        let _p = crate::ffi::db::tmp_db("identity-all-users", "identity");
+        let _p = crate::ffi::db::tmp_db("identity-wot-graph", "identity");
         let p1 = "a1".repeat(32);
         let p2 = "b2".repeat(32);
         identity_store_profile(format!(
@@ -829,13 +841,10 @@ mod tests {
             r#"{{"pubkey":"{p2}","content":"{{\"name\":\"Bob\"}}"}}"#
         ))
         .unwrap();
-        let users = all_users().unwrap();
+        let users = wot_graph_users().unwrap();
         assert_eq!(users.len(), 2);
-        let mut names: Vec<String> = users
-            .iter()
-            .map(|u| u.name.clone().unwrap_or_default())
-            .collect();
-        names.sort();
-        assert_eq!(names, vec!["Ann".to_string(), "Bob".to_string()]);
+        let mut pubkeys: Vec<String> = users.iter().map(|u| u.pubkey.clone()).collect();
+        pubkeys.sort();
+        assert_eq!(pubkeys, vec![p1, p2]);
     }
 }

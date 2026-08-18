@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../ffi/p2p.dart' show P2pPeerDto;
+import '../ffi/p2p.dart' show P2pPeerDto, P2pPowerDto;
 import '../services/media_service.dart';
 import '../services/messaging_service.dart';
 import '../services/p2p_service.dart';
@@ -283,146 +283,159 @@ class _InboxScreenState extends State<InboxScreen> {
   /// servers, power mode snapshot, and a QUIC chunk probe against a
   /// discovered peer.
   Widget _lanDiscoverySection(BuildContext context) {
-    final p2p = context.watch<P2pService>();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text(
-            'LAN discovery',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (p2p.lanPort == null)
-                ActionChip(
-                  avatar: const Icon(Icons.lan_outlined, size: 18),
-                  label: const Text('LAN server'),
-                  onPressed: () async {
-                    await p2p.start();
-                    if (mounted) setState(() {});
-                  },
-                )
-              else ...[
-                Chip(label: Text('LAN :${p2p.lanPort}')),
-                ActionChip(
-                  label: const Text('Stop LAN'),
-                  onPressed: () async {
-                    await p2p.stopLanServer();
-                    if (mounted) setState(() {});
-                  },
-                ),
-              ],
-              if (p2p.quicPort == null)
-                ActionChip(
-                  avatar: const Icon(Icons.bolt_outlined, size: 18),
-                  label: const Text('QUIC server'),
-                  onPressed: () async {
-                    await p2p.startQuicServer();
-                    if (mounted) setState(() {});
-                  },
-                )
-              else ...[
-                Chip(label: Text('QUIC :${p2p.quicPort}')),
-                ActionChip(
-                  label: const Text('Stop QUIC'),
-                  onPressed: () async {
-                    await p2p.stopQuicServer();
-                    if (mounted) setState(() {});
-                  },
-                ),
-              ],
-              if (p2p.advertising)
-                ActionChip(
-                  avatar: const Icon(Icons.campaign, size: 18),
-                  label: const Text('Advertise: on'),
-                  onPressed: () async {
-                    await p2p.stopAdvertising();
-                    if (mounted) setState(() {});
-                  },
-                )
-              else
-                ActionChip(
-                  avatar: const Icon(Icons.campaign_outlined, size: 18),
-                  label: const Text('Advertise'),
-                  onPressed: () async {
-                    await p2p.startAdvertising();
-                    if (mounted) setState(() {});
-                  },
-                ),
-              if (p2p.browsing)
-                ActionChip(
-                  avatar: const Icon(Icons.wifi_tethering, size: 18),
-                  label: const Text('Browsing…'),
-                  onPressed: () async {
-                    await p2p.stopBrowsing();
-                    if (mounted) setState(() {});
-                  },
-                )
-              else
-                ActionChip(
-                  avatar: const Icon(Icons.wifi_tethering_outlined, size: 18),
-                  label: const Text('Browse LAN'),
-                  onPressed: () async {
-                    await p2p.startBrowsing();
-                    if (mounted) setState(() {});
-                  },
-                ),
-              ActionChip(
-                avatar: const Icon(Icons.refresh, size: 18),
-                label: const Text('Drain peers'),
-                onPressed: () async {
-                  await p2p.drainPeers();
-                  if (mounted) setState(() {});
-                },
+    return Builder(
+      builder: (context) {
+        final p2p = context.read<P2pService>();
+        final lanPort = context.select<P2pService, int?>((p) => p.lanPort);
+        final quicPort = context.select<P2pService, int?>((p) => p.quicPort);
+        final advertising =
+            context.select<P2pService, bool>((p) => p.advertising);
+        final browsing = context.select<P2pService, bool>((p) => p.browsing);
+        final power =
+            context.select<P2pService, P2pPowerDto?>((p) => p.power);
+        final peers =
+            context.select<P2pService, List<P2pPeerDto>>((p) => p.peers);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Text(
+                'LAN discovery',
+                style: Theme.of(context).textTheme.titleSmall,
               ),
-              ActionChip(
-                avatar: Icon(
-                  p2p.power?.paused == true
-                      ? Icons.pause_circle_outline
-                      : Icons.battery_charging_full,
-                  size: 18,
-                ),
-                label: Text(p2p.power?.mode ?? 'Power'),
-                onPressed: () async {
-                  await p2p.currentPower();
-                  if (mounted) setState(() {});
-                },
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _chunkHashController,
-                  decoration: const InputDecoration(
-                    labelText: 'Blob hash (QUIC chunk probe)',
-                    isDense: true,
-                    border: OutlineInputBorder(),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (lanPort == null)
+                    ActionChip(
+                      avatar: const Icon(Icons.lan_outlined, size: 18),
+                      label: const Text('LAN server'),
+                      onPressed: () async {
+                        await p2p.start();
+                        if (mounted) setState(() {});
+                      },
+                    )
+                  else ...[
+                    Chip(label: Text('LAN :$lanPort')),
+                    ActionChip(
+                      label: const Text('Stop LAN'),
+                      onPressed: () async {
+                        await p2p.stopLanServer();
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ],
+                  if (quicPort == null)
+                    ActionChip(
+                      avatar: const Icon(Icons.bolt_outlined, size: 18),
+                      label: const Text('QUIC server'),
+                      onPressed: () async {
+                        await p2p.startQuicServer();
+                        if (mounted) setState(() {});
+                      },
+                    )
+                  else ...[
+                    Chip(label: Text('QUIC :$quicPort')),
+                    ActionChip(
+                      label: const Text('Stop QUIC'),
+                      onPressed: () async {
+                        await p2p.stopQuicServer();
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ],
+                  if (advertising)
+                    ActionChip(
+                      avatar: const Icon(Icons.campaign, size: 18),
+                      label: const Text('Advertise: on'),
+                      onPressed: () async {
+                        await p2p.stopAdvertising();
+                        if (mounted) setState(() {});
+                      },
+                    )
+                  else
+                    ActionChip(
+                      avatar: const Icon(Icons.campaign_outlined, size: 18),
+                      label: const Text('Advertise'),
+                      onPressed: () async {
+                        await p2p.startAdvertising();
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  if (browsing)
+                    ActionChip(
+                      avatar: const Icon(Icons.wifi_tethering, size: 18),
+                      label: const Text('Browsing…'),
+                      onPressed: () async {
+                        await p2p.stopBrowsing();
+                        if (mounted) setState(() {});
+                      },
+                    )
+                  else
+                    ActionChip(
+                      avatar: const Icon(Icons.wifi_tethering_outlined, size: 18),
+                      label: const Text('Browse LAN'),
+                      onPressed: () async {
+                        await p2p.startBrowsing();
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ActionChip(
+                    avatar: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Drain peers'),
+                    onPressed: () async {
+                      await p2p.drainPeers();
+                      if (mounted) setState(() {});
+                    },
                   ),
-                ),
+                  ActionChip(
+                    avatar: Icon(
+                      power?.paused == true
+                          ? Icons.pause_circle_outline
+                          : Icons.battery_charging_full,
+                      size: 18,
+                    ),
+                    label: Text(power?.mode ?? 'Power'),
+                    onPressed: () async {
+                      await p2p.currentPower();
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ],
               ),
-              IconButton(
-                tooltip: 'Fetch 64 B @ 0 from first QUIC peer',
-                icon: const Icon(Icons.download),
-                onPressed: () => _quicChunkProbe(context, p2p),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _chunkHashController,
+                      decoration: const InputDecoration(
+                        labelText: 'Blob hash (QUIC chunk probe)',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Fetch 64 B @ 0 from first QUIC peer',
+                    icon: const Icon(Icons.download),
+                    onPressed: () => _quicChunkProbe(context, p2p),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-        for (final peer in p2p.peers) _peerTile(context, p2p, peer),
-        const Divider(height: 16),
-      ],
+            ),
+            for (final peer in peers) _peerTile(context, p2p, peer),
+            const Divider(height: 16),
+          ],
+        );
+      },
     );
   }
 
@@ -490,7 +503,7 @@ class _InboxScreenState extends State<InboxScreen> {
   /// Media tools: chunk-store round trip (text → blob → fetch → verify),
   /// URL caching, and Blossom upload.
   Widget _mediaToolsSection(BuildContext context) {
-    final media = context.watch<MediaService>();
+    final media = context.read<MediaService>();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

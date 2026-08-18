@@ -17,6 +17,14 @@ import '../services/zap_service.dart';
 import '../services/layout_service.dart';
 import '../widgets/error_state_text.dart';
 
+/// Narrow view of [FeedService] — rebuilds only when list identity or
+/// loading flag change, not on every reaction/like notify.
+typedef _FeedView = ({
+  List<FeedPost> posts,
+  List<FeedPost> display,
+  bool loading,
+});
+
 /// Feed Page
 /// Paginated posts, infinite scroll
 class FeedScreen extends StatefulWidget {
@@ -130,6 +138,20 @@ class _FeedScreenState extends State<FeedScreen> {
     super.dispose();
   }
 
+  /// Approx visible window from scroll offset + viewport height; used to
+  /// gate blob/video preparation to cards near the viewport (cacheExtent).
+  static const double _avgCardHeight = 400;
+
+  bool _isIndexVisible(int index) {
+    final pos = _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final h = _scrollController.hasClients
+        ? _scrollController.position.viewportDimension
+        : _avgCardHeight;
+    final first = (pos / _avgCardHeight).floor() - 1;
+    final last = ((pos + h) / _avgCardHeight).ceil() + 1;
+    return index >= first && index <= last;
+  }
+
   void _onScroll() async {
     final media = context.read<MediaService>();
     final pos = _scrollController.position;
@@ -161,6 +183,63 @@ class _FeedScreenState extends State<FeedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final feedView = context.select<FeedService, _FeedView>(
+        (f) => (posts: f.posts, display: f.displayPosts, loading: f.isLoading));
+    final Widget body;
+    if (feedView.loading && feedView.posts.isEmpty) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (feedView.posts.isEmpty) {
+      body = Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('No posts yet'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () async {
+                try {
+                  await context.read<FeedService>().fetchFeed();
+                  await _loadTotals();
+                } catch (e) {
+                  debugPrint('feed load: $e');
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: SelectableText('Feed load error: $e')));
+                }
+              },
+              child: const Text('Refresh'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      body = ListView.builder(
+        controller: _scrollController,
+        itemCount: feedView.display.length + 1,
+        itemExtentBuilder: (index, _) => context
+            .read<LayoutService>()
+            .extentFor(index, feedView.display),
+        itemBuilder: (context, index) {
+          if (index == feedView.display.length) {
+            if (feedView.loading) {
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return const SizedBox.shrink();
+          }
+
+          final post = feedView.display[index];
+          return FeedPostCard(
+            post: post,
+            totals: _totals,
+            isFirst: index == 0,
+            visible: _isIndexVisible(index),
+          );
+        },
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Soshal'),
@@ -192,65 +271,7 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
         ],
       ),
-      body: Consumer<FeedService>(
-        builder: (context, feedService, child) {
-          if (feedService.isLoading && feedService.posts.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (feedService.posts.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('No posts yet'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () async {
-                      try {
-                        await feedService.fetchFeed();
-                        await _loadTotals();
-                      } catch (e) {
-                        debugPrint('feed load: $e');
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: SelectableText('Feed load error: $e')));
-                      }
-                    },
-                    child: const Text('Refresh'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
-            controller: _scrollController,
-            itemCount: feedService.displayPosts.length + 1,
-            itemExtentBuilder: (index, _) => context
-                .read<LayoutService>()
-                .extentFor(index, feedService.displayPosts),
-            itemBuilder: (context, index) {
-              if (index == feedService.displayPosts.length) {
-                if (feedService.isLoading) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                return const SizedBox.shrink();
-              }
-
-              final post = feedService.displayPosts[index];
-              return FeedPostCard(
-                post: post,
-                totals: _totals,
-                isFirst: index == 0,
-              );
-            },
-          );
-        },
-      ),
+      body: body,
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           showModalBottomSheet(
@@ -295,12 +316,14 @@ class FeedPostCard extends StatefulWidget {
   final FeedPost post;
   final Map<String, int>? totals;
   final bool isFirst;
+  final bool visible;
 
   const FeedPostCard({
     super.key,
     required this.post,
     this.totals,
     this.isFirst = false,
+    this.visible = true,
   });
 
   @override
@@ -893,14 +916,26 @@ class _FeedPostCardState extends State<FeedPostCard> {
     final media = widget.post.media!;
     if (media.type == 'image') {
       return _BlobImage(
-          url: media.url, blobHash: media.blobHash, eager: widget.isFirst);
+          url: media.url,
+          blobHash: media.blobHash,
+          eager: widget.isFirst,
+          postId: widget.post.eventId,
+          visible: widget.visible);
     } else if (media.type == 'video') {
       return _VideoPlayerWidget(
-          url: media.url, blobHash: media.blobHash, eager: widget.isFirst);
+          url: media.url,
+          blobHash: media.blobHash,
+          eager: widget.isFirst,
+          postId: widget.post.eventId,
+          visible: widget.visible);
     }
     return const SizedBox.shrink();
   }
 }
+
+/// Memoized blob-resolved URLs per post id — re-scrolls reuse the LAN/local
+/// result instead of refetching.
+final Map<String, String> _resolvedUrlCache = <String, String>{};
 
 /// Image with the same blob + LAN-crawl fallback as `_VideoPlayerWidget`:
 /// when the URL isn't this device's own server and the post carries a CAS
@@ -910,8 +945,15 @@ class _BlobImage extends StatefulWidget {
   final String url;
   final String? blobHash;
   final bool eager;
+  final String postId;
+  final bool visible;
 
-  const _BlobImage({required this.url, this.blobHash, this.eager = false});
+  const _BlobImage(
+      {required this.url,
+      this.blobHash,
+      this.eager = false,
+      required this.postId,
+      this.visible = false});
 
   @override
   State<_BlobImage> createState() => _BlobImageState();
@@ -925,7 +967,13 @@ class _BlobImageState extends State<_BlobImage> {
   @override
   void initState() {
     super.initState();
-    if (widget.eager) _start();
+    if (widget.eager || widget.visible) _start();
+  }
+
+  @override
+  void didUpdateWidget(covariant _BlobImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_started && widget.visible) _start();
   }
 
   void _start() {
@@ -935,6 +983,11 @@ class _BlobImageState extends State<_BlobImage> {
   }
 
   Future<void> _prepare() async {
+    final cached = _resolvedUrlCache[widget.postId];
+    if (cached != null) {
+      if (mounted) setState(() => _resolved = cached);
+      return;
+    }
     final String url;
     try {
       url = await _resolveBlobUrl(context, widget.url, widget.blobHash);
@@ -942,6 +995,7 @@ class _BlobImageState extends State<_BlobImage> {
       if (mounted) setState(() => _error = '$e');
       return;
     }
+    _resolvedUrlCache[widget.postId] = url;
     if (mounted) setState(() => _resolved = url);
   }
 
@@ -961,15 +1015,15 @@ class _BlobImageState extends State<_BlobImage> {
     }
     final url = _resolved;
     if (url == null) {
-      if (!_started) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _start();
-        });
-      }
+      if (!_started && widget.visible) _start();
       return Container(
         height: 200,
         color: Colors.grey[300],
-        child: const Center(child: CircularProgressIndicator()),
+        child: Center(
+          child: _started
+              ? const CircularProgressIndicator()
+              : const Icon(Icons.image_outlined, color: Colors.grey),
+        ),
       );
     }
     return ClipRRect(
@@ -1024,9 +1078,15 @@ class _VideoPlayerWidget extends StatefulWidget {
   final String url;
   final String? blobHash;
   final bool eager;
+  final String postId;
+  final bool visible;
 
   const _VideoPlayerWidget(
-      {required this.url, this.blobHash, this.eager = false});
+      {required this.url,
+      this.blobHash,
+      this.eager = false,
+      required this.postId,
+      this.visible = false});
 
   @override
   State<_VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
@@ -1041,7 +1101,20 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
   @override
   void initState() {
     super.initState();
-    if (widget.eager) _start();
+    if (widget.eager || widget.visible) _start();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoPlayerWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_started && widget.visible) {
+      _start();
+    } else if (_isInitialized &&
+        !widget.visible &&
+        oldWidget.visible &&
+        _controller != null) {
+      _controller!.pause();
+    }
   }
 
   void _start() {
@@ -1055,11 +1128,15 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
   /// first, then a LAN crawl of discovered peers) and play from the local
   /// range server. Honest failure: no peers / no local copy = error UI.
   Future<void> _prepare() async {
-    var url = widget.url;
-    try {
-      url = await _resolveBlobUrl(context, widget.url, widget.blobHash);
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+    final cached = _resolvedUrlCache[widget.postId];
+    var url = cached ?? widget.url;
+    if (cached == null) {
+      try {
+        url = await _resolveBlobUrl(context, widget.url, widget.blobHash);
+      } catch (e) {
+        if (mounted) setState(() => _error = '$e');
+      }
+      _resolvedUrlCache[widget.postId] = url;
     }
     final controller = VideoPlayerController.networkUrl(Uri.parse(url));
     _controller = controller;
@@ -1088,16 +1165,14 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       );
     }
     if (!_isInitialized || _controller == null) {
-      if (!_started) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _start();
-        });
-      }
+      if (!_started && widget.visible) _start();
       return Container(
         height: 200,
         color: Colors.grey[300],
-        child: const Center(
-          child: CircularProgressIndicator(),
+        child: Center(
+          child: _started
+              ? const CircularProgressIndicator()
+              : const Icon(Icons.movie_outlined, color: Colors.grey),
         ),
       );
     }

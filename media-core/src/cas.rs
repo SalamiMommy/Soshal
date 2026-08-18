@@ -30,24 +30,37 @@ pub struct ChunkStore {
     verified: Arc<Mutex<VerifiedChunks>>,
     /// Manifest LRU: peer-serving re-reads manifests/*.json per chunk request
     /// (both TCP and QUIC bulk paths). Capped FIFO, invalidated on save/clear.
-    manifest_cache: Arc<Mutex<ManifestCache>>,
+    manifest_cache: Arc<Mutex<FifoCache<ChunkManifest>>>,
+    /// Open-chunk LRU: `blob_slice` maps each chunk on demand; caching the
+    /// maps (page-cache backed) avoids a File::open + mmap syscall pair per
+    /// chunk on every range read. Capped FIFO like the manifest cache.
+    mmap_cache: Arc<Mutex<FifoCache<memmap2::Mmap>>>,
 }
 
-/// FIFO-capped cache of parsed manifests keyed by blob hash.
-#[derive(Default)]
-struct ManifestCache {
+/// FIFO-capped cache of Arc'd values keyed by hash string.
+struct FifoCache<T> {
     order: std::collections::VecDeque<String>,
-    map: HashMap<String, Arc<ChunkManifest>>,
+    map: HashMap<String, Arc<T>>,
     cap: usize,
 }
 
-impl ManifestCache {
-    fn get(&mut self, blob_hash: &str) -> Option<Arc<ChunkManifest>> {
-        self.map.get(blob_hash).cloned()
+impl<T> Default for FifoCache<T> {
+    fn default() -> Self {
+        Self {
+            order: std::collections::VecDeque::new(),
+            map: HashMap::new(),
+            cap: 0,
+        }
+    }
+}
+
+impl<T> FifoCache<T> {
+    fn get(&self, key: &str) -> Option<Arc<T>> {
+        self.map.get(key).cloned()
     }
 
-    fn put(&mut self, blob_hash: String, manifest: Arc<ChunkManifest>) {
-        if self.map.contains_key(&blob_hash) {
+    fn put(&mut self, key: String, value: Arc<T>) {
+        if self.map.contains_key(&key) {
             return;
         }
         if self.map.len() >= self.cap {
@@ -55,8 +68,8 @@ impl ManifestCache {
                 self.map.remove(&oldest);
             }
         }
-        self.order.push_back(blob_hash.clone());
-        self.map.insert(blob_hash, manifest);
+        self.order.push_back(key.clone());
+        self.map.insert(key, value);
     }
 
     fn invalidate(&mut self, blob_hash: &str) {
@@ -108,7 +121,7 @@ impl ChunkIndex {
     }
 }
 
-type VerifiedChunks = HashMap<(String, u64, Option<SystemTime>), ()>;
+type VerifiedChunks = HashMap<String, (u64, Option<SystemTime>)>;
 
 impl ChunkStore {
     /// `root` should point at the cache dir (e.g. `<cache>/chunks`).
@@ -117,7 +130,11 @@ impl ChunkStore {
             root,
             index: Arc::new(RwLock::new(None)),
             verified: Arc::new(Mutex::new(HashMap::new())),
-            manifest_cache: Arc::new(Mutex::new(ManifestCache {
+            manifest_cache: Arc::new(Mutex::new(FifoCache {
+                cap: 64,
+                ..Default::default()
+            })),
+            mmap_cache: Arc::new(Mutex::new(FifoCache {
                 cap: 64,
                 ..Default::default()
             })),
@@ -159,7 +176,7 @@ impl ChunkStore {
     /// a single directory holding thousands of files.
     pub fn chunk_path(&self, hash: &str) -> PathBuf {
         let (a, b) = hash.split_at(2);
-        self.root.join(a).join(format!("{b}.chunk"))
+        self.root.join(a).join(b).with_extension("chunk")
     }
 
     pub fn contains(&self, hash: &str) -> bool {
@@ -182,31 +199,54 @@ impl ChunkStore {
         let path = self.chunk_path(hash);
         let file = fs::File::open(&path).ok()?;
         let md = file.metadata().ok()?;
-        let key = (hash.to_string(), md.len(), md.modified().ok());
+        let size = md.len();
+        let mtime = md.modified().ok();
         // Safety: read-only mapping of a file we opened read-only; the Mmap is
         // the sole handle to the region and unmap happens on drop.
         #[allow(unsafe_code)]
         let map = unsafe { memmap2::Mmap::map(&file).ok()? };
-        if !self.verified_contains(&key) && blake3::hash(map.as_ref()).to_hex().as_str() != hash {
+        if self.verified_contains(hash, size, mtime) {
+            return Some(map);
+        }
+        if blake3::hash(map.as_ref()).to_hex().as_str() != hash {
             return None;
         }
-        self.mark_verified(key);
+        self.mark_verified(hash.to_string(), size, mtime);
         Some(map)
     }
 
-    fn verified_contains(&self, key: &(String, u64, Option<SystemTime>)) -> bool {
+    /// `get_mmap` through a capped FIFO cache: `blob_slice` maps every chunk
+    /// of a range, so open+mmap per chunk would syscall-spam; sequential
+    /// chunks hit the cache.
+    pub fn get_mmap_cached(&self, hash: &str) -> Option<Arc<memmap2::Mmap>> {
+        if hash.len() != 64 {
+            return None;
+        }
+        if let Ok(cache) = self.mmap_cache.lock() {
+            if let Some(m) = cache.get(hash) {
+                return Some(m);
+            }
+        }
+        let m = Arc::new(self.get_mmap(hash)?);
+        if let Ok(mut cache) = self.mmap_cache.lock() {
+            cache.put(hash.to_string(), m.clone());
+        }
+        Some(m)
+    }
+
+    fn verified_contains(&self, hash: &str, size: u64, mtime: Option<SystemTime>) -> bool {
         self.verified
             .lock()
-            .map(|c| c.contains_key(key))
+            .map(|c| c.get(hash).map_or(false, |(s, m)| *s == size && *m == mtime))
             .unwrap_or(false)
     }
 
-    fn mark_verified(&self, key: (String, u64, Option<SystemTime>)) {
+    fn mark_verified(&self, hash: String, size: u64, mtime: Option<SystemTime>) {
         if let Ok(mut cache) = self.verified.lock() {
             if cache.len() >= 64 {
                 cache.clear();
             }
-            cache.insert(key, ());
+            cache.insert(hash, (size, mtime));
         }
     }
 
@@ -433,7 +473,7 @@ impl ChunkStore {
             if c_start >= end {
                 break;
             }
-            let mmap = self.get_mmap(&c.blake3)?;
+            let mmap = self.get_mmap_cached(&c.blake3)?;
             let chunk = mmap.as_ref();
             let from = offset.saturating_sub(c_start);
             let to = (end - c_start).min(chunk.len());
@@ -622,5 +662,188 @@ mod tests {
         assert!(store
             .find_manifest_containing_chunk(&m.chunks[0].blake3)
             .is_some());
+    }
+
+    #[test]
+    fn mmap_bad_len_and_verified_cache_hit() {
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
+        assert!(store.get_mmap("abc").is_none());
+
+        let data: Vec<u8> = (0..512).map(|i| (i % 251) as u8).collect();
+        store.put(&data);
+        let hash = blake3::hash(&data).to_hex().to_string();
+        let first = store.get_mmap(&hash).expect("first read");
+        assert_eq!(first.as_ref(), data.as_slice());
+        // Second read must skip the re-hash via the verified cache.
+        let second = store.get_mmap(&hash).expect("verified-cache hit");
+        assert_eq!(second.as_ref(), data.as_slice());
+    }
+
+    #[test]
+    fn verified_cache_clears_when_full() {
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
+        let hashes: Vec<String> = (0..65)
+            .map(|i| {
+                store.put(&[i as u8]);
+                blake3::hash(&[i as u8]).to_hex().to_string()
+            })
+            .collect();
+        for h in &hashes {
+            assert!(store.get_mmap(h).is_some());
+        }
+        // Cap is 64; the 65th insert clears the whole cache (not FIFO).
+        assert_eq!(store.verified.lock().unwrap().len(), 1);
+        // Evicted entry re-reads fine via the re-hash path.
+        assert!(store.get_mmap(&hashes[0]).is_some());
+    }
+
+    #[test]
+    fn manifest_save_tmp_collision_and_load_edge_cases() {
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
+
+        // blob_hash len != 64 -> None.
+        assert!(store.load_manifest("abc").is_none());
+
+        // Valid JSON whose blob_hash mismatches the key -> None.
+        let x = "aa".repeat(32);
+        let y = "bb".repeat(32);
+        let px = store.manifest_path(&x);
+        fs::create_dir_all(px.parent().unwrap()).unwrap();
+        fs::write(
+            &px,
+            format!(r#"{{"blob_hash":"{y}","total_size":0,"chunks":[]}}"#),
+        )
+        .unwrap();
+        assert!(store.load_manifest(&x).is_none());
+
+        // Pre-existing .tmp forces the retry loop; original untouched.
+        let data: Vec<u8> = (0..70 * 1024).map(|i| (i % 251) as u8).collect();
+        let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
+        let p = store.manifest_path(&m.blob_hash);
+        let collision = p.with_extension("tmp");
+        fs::create_dir_all(collision.parent().unwrap()).unwrap();
+        fs::write(&collision, "stale").unwrap();
+        store.save_manifest(&m).unwrap();
+        assert!(p.is_file());
+        assert_eq!(fs::read_to_string(&collision).unwrap(), "stale");
+        assert_eq!(store.load_manifest(&m.blob_hash).unwrap(), m);
+
+        // Cache-hit fast path: manifest file deleted, load still succeeds.
+        fs::remove_file(&p).unwrap();
+        assert_eq!(store.load_manifest(&m.blob_hash).unwrap(), m);
+    }
+
+    #[test]
+    fn manifest_cache_fifo_and_index_build_skip_invalid() {
+        // FifoCache FIFO cap-64 eviction.
+        let mut cache = FifoCache::<ChunkManifest> {
+            cap: 64,
+            ..Default::default()
+        };
+        let mk = |i: usize| ChunkManifest {
+            blob_hash: format!("{i:02}") + &"ab".repeat(31),
+            total_size: 0,
+            chunks: vec![],
+        };
+        for i in 0..65 {
+            cache.put(format!("k{i}"), Arc::new(mk(i)));
+        }
+        assert_eq!(cache.map.len(), 64);
+        assert!(cache.get("k0").is_none());
+        assert!(cache.get("k1").is_some());
+        assert!(cache.get("k64").is_some());
+
+        // ChunkIndex::build skips garbage and structurally invalid manifests.
+        let root = soshal_test_util::tmp_root("cas");
+        let md = root.join("manifests");
+        fs::create_dir_all(&md).unwrap();
+        fs::write(md.join("garbage.json"), "not json").unwrap();
+        fs::write(
+            md.join("bad.json"),
+            format!(
+                r#"{{"blob_hash":"{}","total_size":10,"chunks":[]}}"#,
+                "aa".repeat(32)
+            ),
+        )
+        .unwrap();
+        let good = ChunkManifest {
+            blob_hash: "cd".repeat(32),
+            total_size: 5,
+            chunks: vec![ChunkRef {
+                blake3: "ab".repeat(32),
+                offset: 0,
+                len: 5,
+            }],
+        };
+        fs::write(md.join("good.json"), serde_json::to_string(&good).unwrap()).unwrap();
+        let idx = ChunkIndex::build(&root);
+        assert_eq!(idx.by_chunk.len(), 1);
+        assert_eq!(
+            idx.by_chunk.get(&"ab".repeat(32)),
+            Some(&vec![("cd".repeat(32), 0)])
+        );
+    }
+
+    #[test]
+    fn blob_slice_overflow_and_store_edges() {
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas"));
+
+        // Offset overflow -> None.
+        let empty = ChunkManifest {
+            blob_hash: "aa".repeat(32),
+            total_size: 0,
+            chunks: vec![],
+        };
+        assert!(store.blob_slice(&empty, usize::MAX, 1).is_none());
+        assert!(store.blob_slice(&empty, usize::MAX, 0).is_none());
+
+        // Missing/corrupt chunk -> None (short-circuits via get_mmap). The
+        // pos < end branch is unreachable for valid manifests: every chunk
+        // file that passes hash verification matches its key, so it covers
+        // exactly c.len bytes; a shorter file fails the hash first.
+        let data: Vec<u8> = (0..70 * 1024).map(|i| (i % 251) as u8).collect();
+        let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
+        store.save_manifest(&m).unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(store.chunk_path(&m.chunks[0].blake3))
+            .unwrap()
+            .set_len(10)
+            .unwrap();
+        assert!(store.blob_slice(&m, 0, data.len()).is_none());
+
+        // total_bytes counts root-level plain files plus chunk subdirs.
+        let root2 = soshal_test_util::tmp_root("cas");
+        let store2 = ChunkStore::new(root2.clone());
+        fs::write(root2.join("plain.bin"), vec![7u8; 100]).unwrap();
+        store2.put(&vec![9u8; 200]);
+        assert_eq!(store2.total_bytes(), 300);
+
+        // find_manifest_containing_chunk: bad len -> None; deleted stale
+        // candidate file -> loop continues to the surviving manifest.
+        assert!(store.find_manifest_containing_chunk("abc").is_none());
+        let root3 = soshal_test_util::tmp_root("cas");
+        let store3 = ChunkStore::new(root3.clone());
+        let m3 = store3.store_reader(std::io::Cursor::new(&data)).unwrap();
+        store3.save_manifest(&m3).unwrap();
+        let mut m4 = m3.clone();
+        m4.blob_hash = "ef".repeat(32);
+        let p4 = store3.manifest_path(&m4.blob_hash);
+        fs::create_dir_all(p4.parent().unwrap()).unwrap();
+        fs::write(&p4, serde_json::to_string(&m4).unwrap()).unwrap();
+        store3.refresh_index();
+        fs::remove_file(store3.manifest_path(&m3.blob_hash)).unwrap();
+        let owner = store3
+            .find_manifest_containing_chunk(&m3.chunks[0].blake3)
+            .unwrap();
+        assert_eq!(owner.blob_hash, m4.blob_hash);
+
+        // store_reader over an empty reader -> zero-chunk valid manifest.
+        let m5 = store
+            .store_reader(std::io::Cursor::new(Vec::<u8>::new()))
+            .unwrap();
+        assert!(m5.chunks.is_empty());
+        assert_eq!(m5.total_size, 0);
+        assert!(m5.is_valid());
     }
 }

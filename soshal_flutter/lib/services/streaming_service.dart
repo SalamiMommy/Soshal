@@ -344,6 +344,24 @@ class StreamingService extends ChangeNotifier
     }
   }
 
+  /// Like `publishLiveGroup` but never notifies consumers — per-frame
+  /// broadcast publishing (video/audio groups) must not rebuild service
+  /// listeners at 15–25 Hz. Errors still logged via `setLastError`.
+  Future<Map<String, dynamic>> publishLiveGroupSilent({
+    required String streamId,
+    required Map<String, dynamic> group,
+  }) async {
+    try {
+      final encoded = encodeMoqGroup(group);
+      final json = moq.p2PMoqPublishGroup(streamId: streamId, encoded: encoded);
+      clearLastError();
+      return jsonDecode(json) as Map<String, dynamic>;
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
+
   /// Open a MoQ broadcast for `streamId`: publishes a bootstrap control
   /// group (metadata object, track 0) so LAN peers see the stream as live in
   /// the registry, then marks this service as broadcasting. Media groups

@@ -39,9 +39,14 @@ pub fn decompress(data: &[u8]) -> Result<Vec<u8>, String> {
 pub fn decompress_limited(data: &[u8], max_bytes: usize) -> Result<Vec<u8>, String> {
     let mut decoder = flate2::write::DeflateDecoder::new(Vec::new());
     for chunk in data.chunks(64 * 1024) {
-        decoder
-            .write_all(chunk)
-            .map_err(|e| format!("decompress: {}", e))?;
+        match decoder.write_all(chunk) {
+            Err(e) if e.kind() == std::io::ErrorKind::WriteZero => {
+                // Stream ended; trailing bytes are a concatenated member — stop.
+                break;
+            }
+            Err(e) => return Err(format!("decompress: {}", e)),
+            Ok(()) => {}
+        }
         if decoder.total_out() as usize > max_bytes {
             return Err(format!("decompressed payload exceeds {max_bytes} bytes"));
         }
@@ -106,6 +111,9 @@ pub fn decompress_dict_limited(data: &[u8], max_bytes: usize) -> Result<Vec<u8>,
     if !is_dict_frame(data) {
         return Err("not a zstd-dict frame".to_string());
     }
+    if data.len() < ZSTD_DICT_MAGIC.len() + 4 {
+        return Err("truncated dict id".to_string());
+    }
     let id_bytes: [u8; 4] = data[ZSTD_DICT_MAGIC.len()..ZSTD_DICT_MAGIC.len() + 4]
         .try_into()
         .map_err(|_| "truncated dict id".to_string())?;
@@ -147,5 +155,75 @@ pub fn decompress_json_dict(encoded: &str) -> String {
         }
     } else {
         decompress_json(encoded)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{engine::general_purpose, Engine as _};
+
+    /// Deterministic LCG stream; incompressible enough to defeat deflate.
+    fn incompressible(len: usize) -> Vec<u8> {
+        let mut state: u32 = 0x1234_5678;
+        (0..len)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (state >> 24) as u8
+            })
+            .collect()
+    }
+
+    #[test]
+    fn decompress_limited_roundtrips_big_stream_and_aborts_at_cap() {
+        let payload = incompressible(1_000_000);
+        let compressed = compress(&payload).unwrap();
+        assert!(compressed.len() > 64 * 1024, "expected multi-chunk input");
+
+        let out = decompress_limited(&compressed, MAX_DECOMPRESS_BYTES).unwrap();
+        assert_eq!(out.len(), 1_000_000);
+        assert_eq!(out, payload);
+
+        // Mid-loop abort: first 64 KiB chunk already exceeds the small cap.
+        let err = decompress_limited(&compressed, 64 * 1024).unwrap_err();
+        assert_eq!(err, "decompressed payload exceeds 65536 bytes");
+    }
+
+    #[test]
+    fn decompress_dict_limited_rejects_truncated_id_and_corrupt_body() {
+        for extra in 1..=3 {
+            let mut truncated = ZSTD_DICT_MAGIC.to_vec();
+            truncated.extend(std::iter::repeat(0xAB).take(extra));
+            let err = decompress_dict_limited(&truncated, MAX_DECOMPRESS_BYTES).unwrap_err();
+            assert_eq!(err, "truncated dict id");
+        }
+
+        let mut corrupt = ZSTD_DICT_MAGIC.to_vec();
+        corrupt.extend_from_slice(&ZSTD_DICT_ID.to_le_bytes());
+        corrupt.extend_from_slice(b"this is not a zstd frame");
+        assert!(decompress_dict_limited(&corrupt, MAX_DECOMPRESS_BYTES).is_err());
+    }
+
+    #[test]
+    fn decompress_json_empty_on_invalid_utf8_is_dict_frame_and_concatenated() {
+        // Valid deflate whose output is invalid UTF-8 → empty string, no panic.
+        let raw = compress(&[0xff, 0xfe, 0x80, 0x00]).unwrap();
+        let encoded = general_purpose::STANDARD.encode(&raw);
+        assert_eq!(decompress_json(&encoded), "");
+
+        // Magic-only (exactly 6 bytes) is not a dict frame: needs id bytes.
+        assert!(!is_dict_frame(&ZSTD_DICT_MAGIC));
+        let mut seven = ZSTD_DICT_MAGIC.to_vec();
+        seven.push(0);
+        assert!(is_dict_frame(&seven));
+        assert!(!is_dict_frame(b""));
+
+        // Concatenated deflate streams: decoder stops at the first member.
+        let first = compress(b"first member").unwrap();
+        let second = compress(b"second member").unwrap();
+        let mut joined = first.clone();
+        joined.extend_from_slice(&second);
+        assert_eq!(decompress(&joined).unwrap(), decompress(&first).unwrap());
+        assert_eq!(decompress(&joined).unwrap(), b"first member");
     }
 }

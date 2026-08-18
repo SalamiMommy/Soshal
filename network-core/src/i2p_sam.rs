@@ -136,14 +136,21 @@ impl I2PSamClient {
         let response = self.send_command(&command)?;
 
         if response.starts_with("SESSION STATUS RESULT=OK") {
-            self.session_id = Some(session_id.to_string());
-
             // Extract destination from response if transient
             if destination.is_none() {
-                if let Some(dest) = response.split("DESTINATION=").nth(1) {
-                    self.destination = Some(dest.to_string());
+                match response.split("DESTINATION=").nth(1) {
+                    Some(dest) if !dest.is_empty() => {
+                        self.session_id = Some(session_id.to_string());
+                        self.destination = Some(dest.to_string());
+                    }
+                    _ => {
+                        return Err(
+                            "Session created without DESTINATION= in response".to_string()
+                        );
+                    }
                 }
             } else {
+                self.session_id = Some(session_id.to_string());
                 self.destination = destination.map(|d| d.to_string());
             }
 
@@ -382,6 +389,65 @@ impl Default for I2PSessionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
+    use std::thread;
+
+    struct MockBridge {
+        listener: TcpListener,
+        conn_replies: Vec<Vec<String>>,
+    }
+
+    impl MockBridge {
+        fn bind(conn_replies: Vec<Vec<String>>) -> (Self, u16) {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock bridge");
+            let port = listener.local_addr().expect("local addr").port();
+            (
+                Self {
+                    listener,
+                    conn_replies,
+                },
+                port,
+            )
+        }
+
+        fn serve(self) -> thread::JoinHandle<()> {
+            thread::spawn(move || {
+                eprintln!("[mock] serving on {}", self.listener.local_addr().unwrap());
+                for replies in self.conn_replies {
+                    eprintln!("[mock] waiting accept");
+                    let Ok((mut stream, _)) = self.listener.accept() else {
+                        eprintln!("[mock] accept failed");
+                        break;
+                    };
+                    eprintln!("[mock] accepted");
+                    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+                    let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+                    for reply in replies {
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                            break;
+                        }
+                        let _ = stream.write_all(reply.as_bytes());
+                        let _ = stream.write_all(b"\n");
+                        let _ = stream.flush();
+                    }
+                }
+            })
+        }
+    }
+
+    fn mock_client(replies: &[&str]) -> (I2PSamClient, thread::JoinHandle<()>) {
+        let list = replies.iter().map(|s| s.to_string()).collect();
+        let (bridge, port) = MockBridge::bind(vec![list]);
+        let handle = bridge.serve();
+        let mut client = I2PSamClient::new("127.0.0.1".to_string(), port);
+        client.connect().expect("connect");
+        client.handshake().expect("handshake");
+        client
+            .create_session("test-session", Some("dest-x"))
+            .expect("session");
+        (client, handle)
+    }
 
     #[test]
     fn test_client_creation() {
@@ -404,5 +470,114 @@ mod tests {
         let command = "HELLO VERSION=3.1 MIN=3.0 MAX=3.3";
         assert!(command.contains("HELLO"));
         assert!(command.contains("VERSION=3.1"));
+    }
+
+    #[test]
+    fn stream_port_parse_failures() {
+        let (mut client, handle) = mock_client(&[
+            "HELLO REPLY VERSION=3.1",
+            "SESSION STATUS RESULT=OK",
+            "STREAM STATUS RESULT=OK PORT=notaport",
+        ]);
+        let err = client.connect_to_destination("remote-dest").unwrap_err();
+        assert!(
+            err.contains("Port parse failed"),
+            "expected parse failure, got: {err}"
+        );
+        handle.join().expect("bridge thread");
+
+        let (mut client, handle) = mock_client(&[
+            "HELLO REPLY VERSION=3.1",
+            "SESSION STATUS RESULT=OK",
+            "STREAM STATUS RESULT=OK",
+        ]);
+        let err = client.connect_to_destination("remote-dest").unwrap_err();
+        assert_eq!(err, "Failed to parse stream port");
+        handle.join().expect("bridge thread");
+
+        let (mut client, handle) = mock_client(&[
+            "HELLO REPLY VERSION=3.1",
+            "SESSION STATUS RESULT=OK",
+            "STREAM STATUS RESULT=OK PORT=alsobad",
+        ]);
+        let err = client.accept_connection().unwrap_err();
+        assert!(
+            err.contains("Port parse failed"),
+            "expected parse failure, got: {err}"
+        );
+        handle.join().expect("bridge thread");
+
+        let (mut client, handle) = mock_client(&[
+            "HELLO REPLY VERSION=3.1",
+            "SESSION STATUS RESULT=OK",
+            "STREAM STATUS RESULT=OK",
+        ]);
+        let err = client.accept_connection().unwrap_err();
+        assert_eq!(err, "Failed to parse stream port");
+        handle.join().expect("bridge thread");
+    }
+
+    #[test]
+    fn create_session_transient_missing_destination_errors() {
+        let list = vec![
+            "HELLO REPLY VERSION=3.1".to_string(),
+            "SESSION STATUS RESULT=OK".to_string(),
+        ];
+        let (bridge, port) = MockBridge::bind(vec![list]);
+        let handle = bridge.serve();
+        let mut client = I2PSamClient::new("127.0.0.1".to_string(), port);
+        client.connect().expect("connect");
+        client.handshake().expect("handshake");
+        let result = client.create_session("test-session", None);
+        assert!(
+            result.is_err(),
+            "transient session without DESTINATION= should error, got Ok"
+        );
+        handle.join().expect("bridge thread");
+    }
+
+    #[test]
+    fn managers_start_and_restart() {
+        let (bridge, port) = MockBridge::bind(vec![vec![
+            "HELLO REPLY VERSION=3.1".to_string(),
+            "SESSION STATUS RESULT=OK".to_string(),
+        ]]);
+        let handle = bridge.serve();
+        let mut tunnel = I2PTunnelManager::new(I2PTunnelConfig {
+            sam_host: "127.0.0.1".to_string(),
+            sam_port: port,
+            destination: Some("persistent-dest".to_string()),
+            ..I2PTunnelConfig::default()
+        });
+        assert_eq!(tunnel.start().expect("tunnel start"), "persistent-dest");
+        assert_eq!(tunnel.client().get_session_id().as_deref(), Some("soshal"));
+        handle.join().expect("bridge thread");
+
+        // I2PSessionManager::start builds its own config with the default
+        // SAM port, so the mock must bind 127.0.0.1:SAM_DEFAULT_PORT.
+        let listener = TcpListener::bind(("127.0.0.1", SAM_DEFAULT_PORT)).expect("bind default sam port");
+        let (bridge, _port) = (MockBridge { listener, conn_replies: vec![
+            vec![
+                "HELLO REPLY VERSION=3.1".to_string(),
+                "DEST REPLY DEST=gen-1".to_string(),
+                "SESSION STATUS RESULT=OK DESTINATION=trans-1".to_string(),
+            ],
+            vec![
+                "HELLO REPLY VERSION=3.1".to_string(),
+                "DEST REPLY DEST=gen-2".to_string(),
+                "SESSION STATUS RESULT=OK DESTINATION=trans-2".to_string(),
+            ],
+        ] }, 0);
+        let handle = bridge.serve();
+        let manager = I2PSessionManager::new();
+        assert_eq!(manager.start(None).expect("first start"), "gen-1");
+        assert_eq!(manager.start(None).expect("restart"), "gen-2");
+        assert!(manager.is_running());
+        assert_eq!(
+            manager.destination().as_deref(),
+            Some("trans-2"),
+            "running tunnel arm should return current transient destination"
+        );
+        handle.join().expect("bridge thread");
     }
 }

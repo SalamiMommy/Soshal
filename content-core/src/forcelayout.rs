@@ -7,6 +7,9 @@ const MAX_EDGES: usize = 1_000_000;
 const MAX_ITERATIONS: usize = 300;
 const MAX_NODE_ID_LEN: usize = 200;
 const MAX_NODE_LABEL_LEN: usize = 200;
+const LARGE_GRAPH_NODE_COUNT: usize = 200;
+const LARGE_GRAPH_ITERATIONS: usize = 60;
+const CONVERGENCE_EPSILON: f64 = 0.1;
 
 #[derive(Deserialize)]
 struct ForceLayoutNodeInput {
@@ -91,6 +94,11 @@ fn calculate_force_layout(input: ForceLayoutInput) -> Vec<ForceLayoutNodeOut> {
         });
     }
     let node_count = nodes.len();
+    let iterations = iterations.min(if node_count > LARGE_GRAPH_NODE_COUNT {
+        LARGE_GRAPH_ITERATIONS
+    } else {
+        MAX_ITERATIONS
+    });
     let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); node_count];
     let mut id_to_index: HashMap<&str, usize> = HashMap::with_capacity(node_count);
     for (i, n) in nodes.iter().enumerate() {
@@ -106,12 +114,16 @@ fn calculate_force_layout(input: ForceLayoutInput) -> Vec<ForceLayoutNodeOut> {
         }
     }
     let mut forces = vec![(0.0f64, 0.0f64); node_count];
+    let mut still_streak: usize = 0;
     for _iter in 0..iterations {
         forces.fill((0.0, 0.0));
         for i in 0..node_count {
             for j in (i + 1)..node_count {
                 let dx = nodes[i].x - nodes[j].x;
                 let dy = nodes[i].y - nodes[j].y;
+                if dx == 0.0 && dy == 0.0 {
+                    continue;
+                }
                 let dist = (dx * dx + dy * dy).sqrt().max(1.0);
                 let force = 3000.0 / (dist * dist);
                 let fx = (dx / dist) * force;
@@ -122,6 +134,7 @@ fn calculate_force_layout(input: ForceLayoutInput) -> Vec<ForceLayoutNodeOut> {
                 forces[j].1 -= fy;
             }
         }
+        let mut total_movement = 0.0f64;
         for i in 0..node_count {
             let mut fx = forces[i].0;
             let mut fy = forces[i].1;
@@ -133,6 +146,7 @@ fn calculate_force_layout(input: ForceLayoutInput) -> Vec<ForceLayoutNodeOut> {
             fy += (center_y - nodes[i].y) * 0.01;
             nodes[i].vx = (nodes[i].vx + fx) * 0.9;
             nodes[i].vy = (nodes[i].vy + fy) * 0.9;
+            total_movement += nodes[i].vx.abs() + nodes[i].vy.abs();
             nodes[i].x += nodes[i].vx;
             nodes[i].y += nodes[i].vy;
             if !nodes[i].x.is_finite() {
@@ -144,6 +158,14 @@ fn calculate_force_layout(input: ForceLayoutInput) -> Vec<ForceLayoutNodeOut> {
             let margin = 40.0;
             nodes[i].x = nodes[i].x.max(margin).min(input.width - margin);
             nodes[i].y = nodes[i].y.max(margin).min(input.height - margin);
+        }
+        if total_movement < CONVERGENCE_EPSILON * node_count as f64 {
+            still_streak += 1;
+            if still_streak >= 2 {
+                break;
+            }
+        } else {
+            still_streak = 0;
         }
     }
     nodes

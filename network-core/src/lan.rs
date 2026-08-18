@@ -40,7 +40,9 @@ fn ct_eq(a: &[u8], b: &[u8]) -> bool {
 
 /// Maximum accepted age skew (seconds) between a beacon's timestamp and the
 /// receiver's clock, both past and future directions.
-pub const BEACON_MAX_SKEW_SECS: u64 = 120;
+/// 30 seconds is sufficient for normal clock drift on a LAN while keeping the
+/// replay window tight enough to prevent captured-beacon reuse.
+pub const BEACON_MAX_SKEW_SECS: u64 = 30;
 
 /// Verifies a received beacon against the derived key. Returns the claimed
 /// pubkey + port on success. Rejects malformed bodies, unknown magics, bad
@@ -90,8 +92,12 @@ pub fn parse_beacon(
     Some((peer_pk.to_string(), port))
 }
 
-/// Deterministic per-identity LAN sync bearer token: first 16 bytes of the
-/// at-rest key. Two devices of the same identity derive the same token.
+/// Deterministic per-identity LAN sync bearer token derived via HKDF-SHA256
+/// from the at-rest key.  Deriving via HKDF (rather than truncating the raw
+/// key) ensures the token does not expose any bytes of the source key.
 pub fn sync_token(at_rest_key: &[u8; 32]) -> String {
-    hex::encode(&at_rest_key[..16])
+    let okm =
+        soshal_crypto_core::hash::hkdf_sha256(at_rest_key, b"soshal-lan-sync", b"bearer-token", 32)
+            .expect("HKDF with fixed-length output cannot fail");
+    hex::encode(&okm[..16])
 }

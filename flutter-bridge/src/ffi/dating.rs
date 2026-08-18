@@ -813,7 +813,10 @@ mod tests {
             "SELECT content FROM posts WHERE id = '{event_id}'"
         ))
         .unwrap();
-        assert!(rows.contains("\"locationGeohash\":null"), "{rows}");
+        let rows_v: Vec<serde_json::Value> = serde_json::from_str(&rows).unwrap();
+        let content_v: serde_json::Value =
+            serde_json::from_str(rows_v[0]["content"].as_str().unwrap()).unwrap();
+        assert!(content_v["locationGeohash"].is_null(), "{rows}");
 
         let card: DatingCardInfo =
             serde_json::from_str(&dating_get_profile(event_id.clone()).unwrap()).unwrap();
@@ -885,7 +888,7 @@ mod tests {
         assert!(dating_superlike(pk.clone(), id64.clone()).unwrap());
 
         let reactions = super::super::db::db_query_raw(format!(
-            "SELECT content FROM reactions WHERE event_id = '{id64}'"
+            "SELECT content FROM reactions WHERE id = 'reaction:{pk}:{id64}'"
         ))
         .unwrap();
         let rv: Vec<serde_json::Value> = serde_json::from_str(&reactions).unwrap();
@@ -900,11 +903,14 @@ mod tests {
         assert_eq!(ov.len(), 3);
         let payloads: Vec<String> = ov
             .iter()
-            .map(|r| r["payload_json"].as_str().unwrap_or("").to_string())
+            .filter_map(|r| r["payload_json"].as_str())
+            .map(soshal_sync_core::outbox::decompress_payload)
+            .filter_map(|p| serde_json::from_str::<serde_json::Value>(&p).ok())
+            .filter_map(|v| v["content"].as_str().map(|s| s.to_string()))
             .collect();
-        assert!(payloads.iter().any(|p| p.contains("\"content\":\"+\"")));
-        assert!(payloads.iter().any(|p| p.contains("\"content\":\"-\"")));
-        assert!(payloads.iter().any(|p| p.contains("\"content\":\"super\"")));
+        assert!(payloads.iter().any(|p| p == "+"), "got {payloads:?}");
+        assert!(payloads.iter().any(|p| p == "-"), "got {payloads:?}");
+        assert!(payloads.iter().any(|p| p == "super"), "got {payloads:?}");
 
         let err = dating_pass(pk.clone(), "short".to_string()).unwrap_err();
         assert_eq!(err, "invalid profile event id");
@@ -1123,8 +1129,10 @@ mod tests {
         .unwrap();
         let rv: Vec<serde_json::Value> = serde_json::from_str(&reports).unwrap();
         assert_eq!(rv.len(), 1);
-        assert_eq!(rv[0]["reason"].as_str().unwrap().len(), 512);
-        assert_eq!(rv[0]["tags"], "[\"dating\"]");
+        assert_eq!(rv[0]["reason"].as_str().unwrap().chars().count(), 512);
+        let tags_v: serde_json::Value =
+            serde_json::from_str(rv[0]["tags"].as_str().unwrap()).unwrap();
+        assert_eq!(tags_v, serde_json::json!(["dating"]));
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));

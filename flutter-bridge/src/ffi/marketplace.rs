@@ -466,8 +466,7 @@ pub fn marketplace_get_trending(limit: i32) -> Result<String, String> {
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
          WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 \
-         ORDER BY (SELECT COUNT(*) FROM reposts rc WHERE rc.event_id = p.id) DESC, \
-                  p.created_at DESC \
+         ORDER BY p.reposts_count DESC, p.created_at DESC \
          LIMIT {}",
         limit.clamp(1, 100)
     ))?;
@@ -1376,5 +1375,359 @@ mod tests {
         assert!(marketplace_poll_get("nope".to_string())
             .unwrap_err()
             .contains("poll not found"));
+    }
+
+    #[test]
+    fn test_parse_branches() {
+        // Garbage content row -> filtered out (no price tag, no parseable content).
+        let garbage = serde_json::json!({
+            "id": "g1",
+            "seller_pubkey": "pk1",
+            "seller_name": "alice",
+            "content": "not json at all",
+            "tags_json": "[]",
+            "created_at": 100,
+            "is_deleted": false,
+        });
+        assert!(listing_from_value(&garbage).is_none());
+
+        // tags_json as array value (object form, not string).
+        let arr_tags = serde_json::json!({
+            "id": "a1",
+            "seller_pubkey": "pk1",
+            "content": serde_json::json!({"title": "x", "price": 5.0}).to_string(),
+            "tags_json": [["d", "1"], ["t", "books"]],
+            "created_at": 100,
+        });
+        let info = listing_from_value(&arr_tags).unwrap();
+        assert_eq!(info.title, "x");
+        assert_eq!(info.category, "books");
+
+        // content as JSON object (non-string) branch.
+        let obj_content = serde_json::json!({
+            "id": "a2",
+            "seller_pubkey": "pk1",
+            "content": serde_json::json!({
+                "title": "y",
+                "price": 7.0,
+                "currency": "sats",
+                "condition": "new",
+                "images": [],
+                "escrowEnabled": false,
+            }),
+            "tags_json": "[[\"d\",\"2\"]]",
+            "created_at": 100,
+        });
+        let info = listing_from_value(&obj_content).unwrap();
+        assert_eq!(info.title, "y");
+        assert_eq!(info.price, 7);
+        assert_eq!(info.currency, "sats");
+
+        // order_from_value: malformed content -> fallback fields, not None.
+        let bad_order = serde_json::json!({
+            "id": "o1",
+            "content": "garbage",
+            "pubkey": "buyer1",
+            "created_at": 100,
+        });
+        let order = order_from_value(&bad_order).unwrap();
+        assert_eq!(order.status, "created");
+        assert_eq!(order.listing_id, "");
+        assert_eq!(order.amount, 0);
+
+        // order_from_value: missing id -> None.
+        assert!(order_from_value(&serde_json::json!({"content": "{}"})).is_none());
+    }
+
+    #[test]
+    fn test_crud_edge_cases() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("mkt_edges", "mk");
+        insert_listing("l1", "seller1", "rust book", 5000, "books", 2000);
+        insert_listing("l2", "seller2", "chess set", 3000, "games", 1000);
+
+        assert!(marketplace_update_listing(
+            "nope".to_string(),
+            "seller1".to_string(),
+            "x".to_string(),
+            "x".to_string(),
+            1,
+        )
+        .unwrap_err()
+        .contains("Listing not found"));
+
+        assert!(
+            marketplace_delete_listing("l1".to_string(), "intruder".to_string())
+                .unwrap_err()
+                .contains("only the seller can delete")
+        );
+        assert!(
+            marketplace_delete_listing("nope".to_string(), "seller1".to_string())
+                .unwrap_err()
+                .contains("Listing not found")
+        );
+
+        assert!(marketplace_create_order(
+            "nope".to_string(),
+            "buyer1".to_string(),
+            "seller1".to_string(),
+        )
+        .unwrap_err()
+        .contains("Listing not found"));
+
+        // get_order with malformed content: row still resolves with fallback fields.
+        db::db_execute_raw(format!(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, category) \
+             VALUES ('o1','buyer1','garbage',{KIND_ORDER},100,'[]','synced',0,'')"
+        ))
+        .unwrap();
+        let order = marketplace_get_order("o1".to_string()).unwrap();
+        assert!(order.contains("\"status\":\"created\""), "{order}");
+        assert!(order.contains("\"listing_id\":\"\""), "{order}");
+
+        // get_content: non-string content storage (BLOB -> hex) hits to_string fallback path.
+        db::db_execute_raw(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, category) \
+             VALUES ('blob1','s',x'deadbeef',30402,100,'[]','synced',0,'')"
+                .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            marketplace_get_content("blob1".to_string()).unwrap(),
+            "deadbeef"
+        );
+
+        // Negative offset clamps to 0 (returns all rows).
+        let json = marketplace_fetch_listings(10, -5).unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["id"], "l1");
+    }
+
+    #[test]
+    fn test_escrow_edge_cases() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("mkt_esc", "mk");
+        insert_listing("l1", "seller1", "widget", 5000, "tools", 2000);
+        insert_escrow("escA", "l1", "created");
+
+        assert!(marketplace_create_escrow(
+            "nope".to_string(),
+            "buyer1".to_string(),
+            "seller1".to_string(),
+            5000,
+        )
+        .unwrap_err()
+        .contains("Order not found"));
+        assert!(
+            marketplace_release_escrow("nope".to_string(), "seller1".to_string())
+                .unwrap_err()
+                .contains("not found")
+        );
+        assert!(marketplace_dispute_escrow(
+            "nope".to_string(),
+            "buyer1".to_string(),
+            "x".to_string()
+        )
+        .unwrap_err()
+        .contains("not found"));
+        assert!(marketplace_resolve_escrow(
+            "nope".to_string(),
+            "mediator".to_string(),
+            "buyer1".to_string(),
+        )
+        .unwrap_err()
+        .contains("not found"));
+
+        // Long dispute reason truncated to 512 chars (trailing ellipsis).
+        let long = "a".repeat(600);
+        assert!(
+            marketplace_dispute_escrow("escA".to_string(), "buyer1".to_string(), long.clone())
+                .unwrap()
+        );
+        let escrow = marketplace_get_escrow("escA".to_string()).unwrap();
+        let rows: serde_json::Value = serde_json::from_str(&escrow).unwrap();
+        let note = rows[0]["escrow_note"].as_str().unwrap();
+        assert_eq!(note.chars().count(), 512);
+        assert!(note.ends_with('…'));
+        assert!(note.starts_with(&long[..100]));
+    }
+
+    #[test]
+    fn test_polls_clamps_trending() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("mkt_poll", "mk");
+
+        // Negative expires_in_hours -> expires_at in the past.
+        let created = marketplace_poll_create(
+            "pk1".to_string(),
+            "q?".to_string(),
+            "[\"a\",\"b\"]".to_string(),
+            -24,
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&created).unwrap();
+        let pid = v["id"].as_str().unwrap().to_string();
+        let rows =
+            db::db_query_raw(format!("SELECT expires_at FROM polls WHERE id='{pid}'")).unwrap();
+        let expires: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&rows).unwrap()[0]
+            ["expires_at"]
+            .as_i64()
+            .unwrap();
+        assert!(expires < soshal_common_core::format::now_secs());
+
+        // Out-of-range option vote skipped in counts.
+        assert!(marketplace_poll_vote(pid.clone(), "v1".to_string(), 5).unwrap());
+        let poll = marketplace_poll_get(pid).unwrap();
+        assert!(poll.contains("\"votes\":[0,0]"), "{poll}");
+
+        assert!(
+            marketplace_poll_close("nope".to_string(), "pk1".to_string())
+                .unwrap_err()
+                .contains("poll not found")
+        );
+
+        // Corrupt options_json -> Err from poll_get.
+        db::db_execute_raw(
+            "INSERT INTO polls (id, pubkey, question, options, expires_at, closed, created_at) \
+             VALUES ('pcorr','pk1','q','garbage',999999999,0,100)"
+                .to_string(),
+        )
+        .unwrap();
+        assert!(marketplace_poll_get("pcorr".to_string())
+            .unwrap_err()
+            .contains("invalid options JSON"));
+
+        // Search limit clamps: 0 -> 1, 200 -> 100 (101 matching rows seeded).
+        for i in 0..101 {
+            insert_listing(
+                &format!("bk{i}"),
+                "seller1",
+                "rust book",
+                100,
+                "books",
+                3000 + i,
+            );
+        }
+        let json = marketplace_search("rust book".to_string(), 0).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Vec<serde_json::Value>>(&json)
+                .unwrap()
+                .len(),
+            1
+        );
+        let json = marketplace_search("rust book".to_string(), 200).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Vec<serde_json::Value>>(&json)
+                .unwrap()
+                .len(),
+            100
+        );
+
+        // Trending: repost count first, created_at tiebreak.
+        insert_listing("t1", "s1", "alpha", 100, "cat", 1000);
+        insert_listing("t2", "s2", "beta", 100, "cat", 2000);
+        db::db_execute_raw(
+            "INSERT INTO reposts (id, pubkey, event_id, created_at) VALUES \
+             ('rp1','u1','t1',100),('rp2','u1','t2',101),('rp3','u2','t2',102)"
+                .to_string(),
+        )
+        .unwrap();
+        let json = marketplace_get_trending(10).unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(arr[0]["id"], "t2", "{json}");
+        assert_eq!(arr[1]["id"], "t1", "{json}");
+    }
+
+    #[test]
+    fn test_create_listing_validation_and_signer_lock() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("mkt_sign", "mk");
+
+        // Locked signer -> Err, asserted BEFORE unlock.
+        signer::signer_lock().unwrap();
+        let err = marketplace_create_listing(
+            "pkA".to_string(),
+            "widget".to_string(),
+            "d".to_string(),
+            1000,
+            "sats".to_string(),
+            "tools".to_string(),
+            "new".to_string(),
+            "[]".to_string(),
+            true,
+        )
+        .unwrap_err();
+        assert!(err.contains("signer locked"), "{err}");
+
+        let keys = soshal_nostr_core::keys::generate_keys();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+
+        let long_title = "x".repeat(501);
+        assert!(marketplace_create_listing(
+            "pkA".to_string(),
+            long_title,
+            "d".to_string(),
+            1000,
+            "sats".to_string(),
+            "tools".to_string(),
+            "new".to_string(),
+            "[]".to_string(),
+            false,
+        )
+        .unwrap_err()
+        .contains("title must be between 1 and 500 chars"));
+
+        // Empty currency -> "sats"; shipping=false -> null geohash.
+        let signed = marketplace_create_listing(
+            "pkA".to_string(),
+            "widget".to_string(),
+            "d".to_string(),
+            1000,
+            String::new(),
+            "tools".to_string(),
+            "new".to_string(),
+            "[]".to_string(),
+            false,
+        )
+        .unwrap();
+        let ev: serde_json::Value = serde_json::from_str(&signed).unwrap();
+        let ev_content: serde_json::Value =
+            serde_json::from_str(ev["content"].as_str().unwrap()).unwrap();
+        assert_eq!(ev_content["currency"], "sats");
+        assert_eq!(ev_content["locationGeohash"], serde_json::Value::Null);
+        let event_id = ev["id"].as_str().unwrap();
+        let info: serde_json::Value =
+            serde_json::from_str(&marketplace_get_listing(event_id.to_string()).unwrap()).unwrap();
+        assert!(
+            info.is_object(),
+            "info is not an object: {info:?}"
+        );
+        assert!(
+            info.get("content").is_none() || !info["content"].is_string(),
+            "content is a string, keys: {:?}",
+            info.as_object().map(|m| m.keys().collect::<Vec<_>>())
+        );
+        eprintln!("INFO KEYS: {:?} content={:?}", info.as_object().map(|m| m.keys().collect::<Vec<_>>()), info.get("content"));
+        let info_content: serde_json::Value =
+            serde_json::from_str(info["content"].as_str().unwrap()).unwrap();
+        assert!(
+            info_content["shipping_available"] == serde_json::Value::Bool(false)
+                && info_content["currency"] == "sats",
+            "got {info:?}"
+        );
+
+        signer::signer_lock().unwrap();
     }
 }

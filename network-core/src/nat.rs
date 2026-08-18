@@ -551,12 +551,16 @@ mod tests {
         )
         .unwrap();
 
-        // Poll until both connected (loopback checks are fast).
+        // Poll until both connected (loopback checks are fast). Producer
+        // (manager thread) can't signal the test, so back off the poll
+        // interval 10ms -> 50ms -> 200ms to cut idle wakeups; the 8s
+        // deadline and timeout semantics are unchanged.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
         let mut a_state = String::new();
         let mut b_state = String::new();
+        let mut poll_ms = 10u64;
         while std::time::Instant::now() < deadline {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            std::thread::sleep(std::time::Duration::from_millis(poll_ms));
             let status = a.status();
             a_state = status
                 .iter()
@@ -572,6 +576,10 @@ mod tests {
             if a_state == "connected" && b_state == "connected" {
                 break;
             }
+            poll_ms = match poll_ms {
+                10 => 50,
+                _ => 200,
+            };
         }
 
         a.stop();

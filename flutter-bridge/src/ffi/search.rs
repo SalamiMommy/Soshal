@@ -94,23 +94,41 @@ pub fn search_profiles(query: String, limit: i32) -> Result<String, String> {
     super::util::json_ok(run_search(&query, limit.clamp(1, 100) as i64, Some(0))?)
 }
 
-/// Search hashtags (trending list fallback if no hash-index rows yet).
+/// Search hashtags (trending list fallback if no hash-index rows yet). The
+/// prefix query is an uncached GROUP BY aggregate over the whole hashtags
+/// table, so results are cached per query with a 60 s TTL.
 #[frb(sync, serialize)]
 pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String> {
     if query.trim().is_empty() {
         return search_trending_hashtags(limit);
     }
+    let limit = limit.clamp(1, 100) as usize;
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    type HashtagCache = HashMap<String, (i64, Vec<String>)>;
+    static CACHE: OnceLock<Mutex<HashtagCache>> = OnceLock::new();
+    let now = soshal_common_core::format::now_secs();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    {
+        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((ts, tags)) = guard.get(&query) {
+            if now.saturating_sub(*ts) < HASHTAGS_TTL_SECS {
+                return Ok(tags.iter().take(limit).cloned().collect());
+            }
+        }
+    }
     let json = super::db::db_query_raw(format!(
-        "SELECT tag FROM hashtags WHERE tag LIKE '{}%' GROUP BY tag ORDER BY SUM(count) DESC LIMIT {}",
-        query.replace('\'', "''"),
-        limit.clamp(1, 100)
+        "SELECT tag FROM hashtags WHERE tag LIKE '{}%' GROUP BY tag ORDER BY SUM(count) DESC LIMIT 100",
+        query.replace('\'', "''")
     ))?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    Ok(rows
+    let tags: Vec<String> = rows
         .into_iter()
         .filter_map(|r| r["tag"].as_str().map(|s| s.to_string()))
-        .collect())
-    .into()
+        .collect();
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    guard.insert(query.clone(), (now, tags.clone()));
+    Ok(tags.into_iter().take(limit).collect())
 }
 
 /// Search mentions (profiles matching the query prefix).
@@ -292,17 +310,17 @@ pub fn search_index_posts(rows_json: String) -> Result<bool, String> {
     let rows: Vec<IndexInput> =
         serde_json::from_str(&rows_json).map_err(|e| format!("invalid rows JSON: {e}"))?;
     super::db::with_db_result(|db| {
-        let repo = SearchIndexRepo::new(db);
-        for r in rows {
-            let row = soshal_db_core::repos::search_index::SearchIndexRow {
+        let rows: Vec<soshal_db_core::repos::search_index::SearchIndexRow> = rows
+            .into_iter()
+            .map(|r| soshal_db_core::repos::search_index::SearchIndexRow {
                 id: r.id,
                 pubkey: r.pubkey,
                 content: truncate_preview(&r.content, 4096),
                 kind: r.kind,
                 created_at: soshal_common_core::format::now_secs(),
-            };
-            repo.upsert(&row)?;
-        }
+            })
+            .collect();
+        SearchIndexRepo::new(db).upsert_batch(&rows)?;
         Ok(true)
     })
 }

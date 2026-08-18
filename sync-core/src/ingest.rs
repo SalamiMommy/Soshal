@@ -41,6 +41,14 @@ fn p_tags(event: &Event) -> Vec<String> {
         .collect()
 }
 
+fn has_p_tag(event: &Event, pubkey: &str) -> bool {
+    event
+        .tags
+        .iter()
+        .filter(|t| t.kind() == "p")
+        .any(|t| t.content().is_some_and(|c| c == pubkey))
+}
+
 /// Convert a verified relay event into its cached DB row (if cacheable).
 fn post_row(event: &Event) -> Option<PostRow> {
     if event.content.len() > MAX_CACHED_CONTENT {
@@ -49,10 +57,10 @@ fn post_row(event: &Event) -> Option<PostRow> {
     let mut es: Vec<String> = Vec::new();
     let mut ps: Vec<String> = Vec::new();
     let mut ts: Vec<String> = Vec::new();
-    let mut tags_json: Vec<Vec<String>> = Vec::with_capacity(event.tags.len());
+    let mut tags_json: Vec<&[String]> = Vec::with_capacity(event.tags.len());
     let mut freenet_key: Option<String> = None;
     for tag in event.tags.iter() {
-        let vec = tag.clone().to_vec();
+        let vec = tag.as_slice();
         match vec.first().map(|s| s.as_str()) {
             Some("e") => {
                 if let Some(c) = vec.get(1) {
@@ -202,7 +210,7 @@ async fn handle_impl(
     // DM kind: only keep payloads addressed to us (p-tag mine) or authored by
     // us; content stays encrypted here — never persisted unverified.
     if event.kind == Kind::EncryptedDirectMessage {
-        let addresses_me = p_tags(event).iter().any(|p| p == my_pubkey);
+        let addresses_me = has_p_tag(event, my_pubkey);
         let authored_by_me = event.pubkey.to_hex() == my_pubkey;
         if addresses_me || authored_by_me {
             let _ = tx.try_send(SyncUpdate::Dm {
@@ -433,6 +441,7 @@ pub fn watermark_key(kind: Kind) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nostr::event::{EventBuilder, FinalizeEvent, Tag};
     use nostr::key::Keys;
     use soshal_db_core::query::query_first;
 
@@ -441,6 +450,19 @@ mod tests {
         tokio::sync::mpsc::Receiver<SyncUpdate>,
     ) {
         tokio::sync::mpsc::channel(16)
+    }
+
+    fn signed_event_with_tags(
+        keys: &Keys,
+        kind: Kind,
+        content: &str,
+        tags: Vec<Vec<String>>,
+    ) -> Event {
+        let mut builder = EventBuilder::new(kind, content);
+        for t in tags {
+            builder = builder.tag(Tag::parse(t).unwrap());
+        }
+        builder.finalize(keys).unwrap()
     }
 
     #[test]
@@ -539,5 +561,294 @@ mod tests {
         assert!(matches!(rx.try_recv().unwrap(), SyncUpdate::Feed { .. }));
         assert!(matches!(rx.try_recv().unwrap(), SyncUpdate::Feed { .. }));
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn watermark_key_maps_all_kind_arms() {
+        assert_eq!(watermark_key(Kind::from(31020)), Some(WM_META)); // KIND_MINIS arm
+        assert_eq!(watermark_key(Kind::ContactList), Some(WM_META));
+        assert_eq!(watermark_key(Kind::RelayList), Some(WM_META));
+        assert_eq!(watermark_key(Kind::Bookmarks), Some(WM_META));
+        assert_eq!(watermark_key(Kind::ZapReceipt), Some(WM_META));
+        assert_eq!(watermark_key(Kind::Metadata), Some(WM_META));
+        assert_eq!(watermark_key(Kind::EncryptedDirectMessage), Some(WM_DM));
+        assert_eq!(watermark_key(Kind::TextNote), Some(WM_FEED));
+        assert_eq!(watermark_key(Kind::Reaction), Some(WM_FEED));
+        // Custom kinds fall to the default WM_FEED arm (RSVP + arbitrary custom).
+        assert_eq!(watermark_key(Kind::Custom(KIND_EVENT_RSVP)), Some(WM_FEED));
+        assert_eq!(watermark_key(Kind::Custom(30000)), Some(WM_FEED));
+    }
+
+    #[test]
+    fn user_row_skips_bad_json_and_post_row_extracts_tags() {
+        let keys = Keys::generate();
+
+        // user_row: invalid JSON content → None (skip).
+        let bad = soshal_test_util::signed_event(&keys, Kind::Metadata, "not-json{", 100);
+        assert!(user_row(&bad).is_none());
+
+        // Valid metadata JSON → fields extracted.
+        let good = soshal_test_util::signed_event(
+            &keys,
+            Kind::Metadata,
+            r#"{"name":"alice","about":"hi","nip05":"a@x.com"}"#,
+            100,
+        );
+        let row = user_row(&good).unwrap();
+        assert_eq!(row.name.as_deref(), Some("alice"));
+        assert_eq!(row.about.as_deref(), Some("hi"));
+        assert_eq!(row.nip05.as_deref(), Some("a@x.com"));
+        assert_eq!(row.pubkey, keys.public_key().to_hex());
+
+        // post_row: reply/root/hashtag/mentioned-pubkey extraction.
+        let reply = "e1";
+        let root = "e0";
+        let post = signed_event_with_tags(
+            &keys,
+            Kind::TextNote,
+            "hi",
+            vec![
+                vec!["e".to_string(), reply.to_string()],
+                vec!["e".to_string(), root.to_string()],
+                vec!["p".to_string(), "pk-target".to_string()],
+                vec!["t".to_string(), "mesh".to_string()],
+            ],
+        );
+        let prow = post_row(&post).unwrap();
+        assert_eq!(prow.reply_to.as_deref(), Some(reply));
+        assert_eq!(prow.root_id.as_deref(), Some(root));
+        assert_eq!(prow.mentioned_pubkeys, "pk-target");
+        assert_eq!(prow.mentioned_hashtags, "mesh");
+        assert!(prow.rsvp_event_id.is_none());
+
+        // RSVP kind → rsvp_event_id set from first e-tag.
+        let rsvp = signed_event_with_tags(
+            &keys,
+            Kind::Custom(KIND_EVENT_RSVP),
+            "yes",
+            vec![vec!["e".to_string(), "evt".to_string()]],
+        );
+        let rrow = post_row(&rsvp).unwrap();
+        assert_eq!(rrow.rsvp_event_id.as_deref(), Some("evt"));
+    }
+
+    #[test]
+    fn zap_relay_bookmarks_branch_behaviors() {
+        let db = soshal_test_util::test_db();
+        let keys = Keys::generate();
+        let pk = keys.public_key().to_hex();
+        soshal_test_util::seed_user(&db, &pk); // bookmarks FK
+        let (tx, _rx) = channel();
+
+        // ZapReceipt missing p-tag: early return, nothing persisted.
+        let zap_no_p = signed_event_with_tags(&keys, Kind::ZapReceipt, "zap", vec![]);
+        handle(&db, "", &zap_no_p, &tx).unwrap();
+        let count: i64 = query_first(&db.conn().unwrap(), "SELECT COUNT(*) FROM zaps", (), |r| {
+            r.get(0)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(count, 0);
+
+        // Missing amount tag → 0; unparseable amount → 0.
+        let target = "aa".repeat(32);
+        let zap_no_amount = signed_event_with_tags(
+            &keys,
+            Kind::ZapReceipt,
+            "zap",
+            vec![vec!["p".to_string(), target.clone()]],
+        );
+        handle(&db, "", &zap_no_amount, &tx).unwrap();
+        let zap_bad_amount = signed_event_with_tags(
+            &keys,
+            Kind::ZapReceipt,
+            "zap",
+            vec![
+                vec!["p".to_string(), target.clone()],
+                vec!["amount".to_string(), "not-a-number".to_string()],
+            ],
+        );
+        handle(&db, "", &zap_bad_amount, &tx).unwrap();
+        for z in [&zap_no_amount, &zap_bad_amount] {
+            let amount: i64 = query_first(
+                &db.conn().unwrap(),
+                "SELECT amount FROM zaps WHERE id = ?1",
+                libsql::params![z.id.to_hex().as_str()],
+                |r| r.get(0),
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(amount, 0);
+        }
+        let recipient: String = query_first(
+            &db.conn().unwrap(),
+            "SELECT recipient_pubkey FROM zaps WHERE id = ?1",
+            libsql::params![zap_bad_amount.id.to_hex().as_str()],
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(recipient, target);
+
+        // Valid amount parses.
+        let zap_good = signed_event_with_tags(
+            &keys,
+            Kind::ZapReceipt,
+            "zap",
+            vec![
+                vec!["p".to_string(), target],
+                vec!["amount".to_string(), "999".to_string()],
+            ],
+        );
+        handle(&db, "", &zap_good, &tx).unwrap();
+        let amount: i64 = query_first(
+            &db.conn().unwrap(),
+            "SELECT amount FROM zaps WHERE id = ?1",
+            libsql::params![zap_good.id.to_hex().as_str()],
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(amount, 999);
+
+        // RelayList: read/write/other branches set flags.
+        let relays = signed_event_with_tags(
+            &keys,
+            Kind::RelayList,
+            "",
+            vec![
+                vec![
+                    "r".to_string(),
+                    "wss://read.only".to_string(),
+                    "read".to_string(),
+                ],
+                vec![
+                    "r".to_string(),
+                    "wss://write.only".to_string(),
+                    "write".to_string(),
+                ],
+                vec!["r".to_string(), "wss://both".to_string()],
+            ],
+        );
+        handle(&db, "", &relays, &tx).unwrap();
+        let rr = RelayRepo::new(&db)
+            .get_by_url("wss://read.only")
+            .unwrap()
+            .unwrap();
+        assert!(rr.read_enabled && !rr.write_enabled);
+        let wr = RelayRepo::new(&db)
+            .get_by_url("wss://write.only")
+            .unwrap()
+            .unwrap();
+        assert!(!wr.read_enabled && wr.write_enabled);
+        let br = RelayRepo::new(&db)
+            .get_by_url("wss://both")
+            .unwrap()
+            .unwrap();
+        assert!(br.read_enabled && br.write_enabled);
+
+        // Bookmarks missing e-tag: early return, no row.
+        let bm_no_e = signed_event_with_tags(&keys, Kind::Bookmarks, "", vec![]);
+        handle(&db, "", &bm_no_e, &tx).unwrap();
+        assert!(BookmarkRepo::new(&db)
+            .get_by_id(&bm_no_e.id.to_hex())
+            .unwrap()
+            .is_none());
+
+        // Bookmarks with e-tag: row persisted.
+        let bm = signed_event_with_tags(
+            &keys,
+            Kind::Bookmarks,
+            "",
+            vec![vec!["e".to_string(), "evt-9".to_string()]],
+        );
+        handle(&db, "", &bm, &tx).unwrap();
+        let row = BookmarkRepo::new(&db)
+            .get_by_id(&bm.id.to_hex())
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.event_id, "evt-9");
+    }
+
+    #[test]
+    fn contact_list_merges_into_existing_user() {
+        let db = soshal_test_util::test_db();
+        let keys = Keys::generate();
+        let pk = keys.public_key().to_hex();
+        let (tx, _rx) = channel();
+
+        // Metadata first: user row with a name.
+        let meta =
+            soshal_test_util::signed_event(&keys, Kind::Metadata, r#"{"name":"alice"}"#, 100);
+        handle(&db, "", &meta, &tx).unwrap();
+
+        // First contact list: two follows.
+        let cl1 = signed_event_with_tags(
+            &keys,
+            Kind::ContactList,
+            "",
+            vec![
+                vec!["p".to_string(), "a".repeat(64)],
+                vec!["p".to_string(), "b".repeat(64)],
+            ],
+        );
+        handle(&db, "", &cl1, &tx).unwrap();
+        let row = UserRepo::new(&db).get_by_pubkey(&pk).unwrap().unwrap();
+        assert_eq!(
+            row.contact_pubkeys,
+            format!("{},{}", "a".repeat(64), "b".repeat(64))
+        );
+        assert_eq!(row.name.as_deref(), Some("alice"));
+
+        // Re-ingest second contact list for same user: merge replaces follows.
+        let cl2 = signed_event_with_tags(
+            &keys,
+            Kind::ContactList,
+            "",
+            vec![vec!["p".to_string(), "c".repeat(64)]],
+        );
+        handle(&db, "", &cl2, &tx).unwrap();
+        let row = UserRepo::new(&db).get_by_pubkey(&pk).unwrap().unwrap();
+        assert_eq!(row.contact_pubkeys, "c".repeat(64));
+        assert_eq!(row.name.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn batch_empty_unverified_and_routing() {
+        let db = soshal_test_util::test_db();
+        let keys = Keys::generate();
+        let my = keys.public_key().to_hex();
+        let (tx, mut rx) = channel();
+
+        // Empty batch: Ok, nothing written.
+        handle_batch(&db, &my, &[], &tx).unwrap();
+
+        // Unverified (tampered) event: skipped, no row.
+        let mut tampered = soshal_test_util::signed_event(&keys, Kind::TextNote, "orig", 100);
+        tampered.content = "tampered".to_string();
+        handle_batch(&db, &my, &[tampered.clone()], &tx).unwrap();
+        assert!(PostRepo::new(&db)
+            .get_by_id(&tampered.id.to_hex())
+            .unwrap()
+            .is_none());
+
+        // DM addressed to us: routed into handle_impl → Dm update.
+        let dm = signed_event_with_tags(
+            &keys,
+            Kind::EncryptedDirectMessage,
+            "enc",
+            vec![vec!["p".to_string(), my.clone()]],
+        );
+        handle_batch(&db, &my, &[dm], &tx).unwrap();
+        match rx.try_recv().unwrap() {
+            SyncUpdate::Dm { content, .. } => assert_eq!(content, "enc"),
+            other => panic!("unexpected update: {other:?}"),
+        }
+
+        // Metadata in batch: routed → user row created.
+        let meta = soshal_test_util::signed_event(&keys, Kind::Metadata, r#"{"name":"bob"}"#, 200);
+        handle_batch(&db, &my, &[meta], &tx).unwrap();
+        let row = UserRepo::new(&db).get_by_pubkey(&my).unwrap().unwrap();
+        assert_eq!(row.name.as_deref(), Some("bob"));
     }
 }

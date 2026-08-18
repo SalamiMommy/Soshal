@@ -12,9 +12,12 @@ impl<'a> UserRepo<'a> {
 
     pub fn get_by_pubkey(&self, pubkey: &str) -> Result<Option<UserRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::with_tx(&conn, |tx| async move {
-            self.get_by_pubkey_in(&tx, pubkey).await
-        })
+        crate::query::query_first(
+            &conn,
+            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list FROM users WHERE pubkey = ?1",
+            params![pubkey],
+            Self::map_row,
+        )
     }
 
     pub async fn get_by_pubkey_in(

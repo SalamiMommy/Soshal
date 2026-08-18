@@ -168,8 +168,7 @@ async fn rows_json(
     Ok(out)
 }
 
-/// Execute a raw INSERT/UPDATE/DELETE (no parameters case); returns rows
-/// affected.
+/// Execute a raw INSERT/UPDATE/DELETE (no parameters); returns rows affected.
 #[frb(sync, serialize)]
 pub fn db_execute_raw(sql: String) -> Result<usize, String> {
     with_db(|db| {
@@ -243,22 +242,43 @@ pub fn db_storage_stats() -> Result<String, String> {
         let table_cols: Vec<(String, i64)> = if names.is_empty() {
             Vec::new()
         } else {
-            let cols_sql = names
+            // Validate every table name before interpolating into SQL.
+            // Names come from sqlite_master; a malicious restore file could
+            // introduce names with SQL meta-characters.  Only allow
+            // identifiers matching [A-Za-z_][A-Za-z0-9_]* .
+            let valid_names: Vec<&String> = names
                 .iter()
-                .map(|n| {
-                    format!(
-                        "SELECT '{}' AS t, COUNT(*) AS c FROM pragma_table_info('{}')",
-                        n.replace('\'', "''"),
-                        n.replace('\'', "''")
-                    )
+                .filter(|n| {
+                    let mut chars = n.chars();
+                    match chars.next() {
+                        Some(c) if c.is_ascii_alphabetic() || c == '_' => {
+                            chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+                        }
+                        _ => false,
+                    }
                 })
-                .collect::<Vec<_>>()
-                .join(" UNION ALL ");
-            soshal_db_core::query::query(&conn, &cols_sql, (), |r| {
-                let name: String = r.get(0)?;
-                let cols: i64 = r.get(1)?;
-                Ok((name, cols))
-            })?
+                .collect();
+            if valid_names.is_empty() {
+                Vec::new()
+            } else {
+                let cols_sql = valid_names
+                    .iter()
+                    .map(|n| {
+                        // n is already validated — no quoting needed, but we
+                        // quote defensively for pragma_table_info arg.
+                        format!(
+                            "SELECT '{}' AS t, COUNT(*) AS c FROM pragma_table_info('{}')",
+                            n, n
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" UNION ALL ");
+                soshal_db_core::query::query(&conn, &cols_sql, (), |r| {
+                    let name: String = r.get(0)?;
+                    let cols: i64 = r.get(1)?;
+                    Ok((name, cols))
+                })?
+            }
         };
         for (name, cols) in table_cols {
             let count_sql = match name.as_str() {
@@ -303,49 +323,98 @@ pub fn db_storage_stats() -> Result<String, String> {
 
 /// Checkpoint the WAL and copy the database file to `backup_path` (a full
 /// file snapshot — the only state SQLite needs for a consistent restore).
+///
+/// `backup_path` must resolve to the same directory as the current database
+/// file; paths outside that directory are rejected to prevent path traversal.
 #[frb(sync, serialize)]
 pub fn db_backup(backup_path: String) -> Result<String, String> {
+    // Path-traversal guard: resolve both paths and compare parent dirs.
+    let src_path = {
+        let guard = DB_PATH.lock().unwrap_or_else(|e| e.into_inner());
+        guard
+            .clone()
+            .ok_or_else(|| "database not initialized".to_string())?
+    };
+    let db_dir = std::path::Path::new(&src_path)
+        .parent()
+        .ok_or("cannot determine db directory")?;
+    let dest = std::path::Path::new(&backup_path);
+    let dest_dir = dest.parent().ok_or("backup path has no parent directory")?;
+    // Use canonicalize on the dir (destination file need not exist yet).
+    let db_dir_canon =
+        std::fs::canonicalize(db_dir).map_err(|e| format!("db dir canonicalize: {e}"))?;
+    // dest_dir must already exist for canonicalize to work.
+    let dest_dir_canon =
+        std::fs::canonicalize(dest_dir).map_err(|e| format!("backup dir canonicalize: {e}"))?;
+    if db_dir_canon != dest_dir_canon {
+        return Err("backup path must be in the same directory as the database".to_string());
+    }
     with_db(|db| {
         let conn = db.conn()?;
         let _ = block_on(conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);"));
-        let src = DB_PATH
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
-            .ok_or_else(|| DbError::NotFound)?;
-        std::fs::copy(&src, &backup_path)
+        std::fs::copy(&src_path, &backup_path)
             .map_err(|e| DbError::Migration(format!("copy failed: {e}")))?;
-        Ok(backup_path)
+        Ok(backup_path.clone())
     })
 }
 
 /// Restore: close the current handle, replace the file, and reopen with
 /// migrations. Any in-flight connection is dropped.
+///
+/// `backup_path` must resolve to the same directory as the current database
+/// file; paths outside that directory are rejected to prevent path traversal
+/// and malicious DB injection.
 #[frb(sync, serialize)]
 pub fn db_restore(backup_path: String) -> Result<String, String> {
-    *DB.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    // Path-traversal guard.
     let dst = {
         let guard = DB_PATH.lock().unwrap_or_else(|e| e.into_inner());
         guard
             .clone()
             .ok_or_else(|| "database not initialized".to_string())?
     };
+    let db_dir = std::path::Path::new(&dst)
+        .parent()
+        .ok_or("cannot determine db directory")?;
+    let src_dir = std::path::Path::new(&backup_path)
+        .parent()
+        .ok_or("backup path has no parent directory")?;
+    let db_dir_canon =
+        std::fs::canonicalize(db_dir).map_err(|e| format!("db dir canonicalize: {e}"))?;
+    let src_dir_canon =
+        std::fs::canonicalize(src_dir).map_err(|e| format!("backup dir canonicalize: {e}"))?;
+    if db_dir_canon != src_dir_canon {
+        return Err("restore path must be in the same directory as the database".to_string());
+    }
+    // Validate SQLite magic bytes before replacing the live DB.
+    const SQLITE_MAGIC: &[u8] = b"SQLite format 3\x00";
+    let mut header = [0u8; 16];
+    let mut f =
+        std::fs::File::open(&backup_path).map_err(|e| format!("cannot open backup file: {e}"))?;
+    use std::io::Read;
+    f.read_exact(&mut header)
+        .map_err(|_| "backup file too small to be a valid SQLite database".to_string())?;
+    if header != SQLITE_MAGIC {
+        return Err("backup file is not a valid SQLite 3 database".to_string());
+    }
+    drop(f);
+    *DB.lock().unwrap_or_else(|e| e.into_inner()) = None;
     if let Err(e) = std::fs::copy(&backup_path, &dst) {
         // re-open the original db so the app stays usable
         if let Ok(db) = Database::open(&dst) {
             *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
         }
-        return Err(format!("restore copy failed: {e}")).into();
+        return Err(format!("restore copy failed: {e}"));
     }
     match Database::open(&dst) {
         Ok(db) => {
             if let Err(e) = db.migrate() {
-                return Err(format!("restore migrate failed: {e}")).into();
+                return Err(format!("restore migrate failed: {e}"));
             }
             *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
-            Ok(dst).into()
+            Ok(dst)
         }
-        Err(e) => Err(format!("restore open failed: {e}")).into(),
+        Err(e) => Err(format!("restore open failed: {e}")),
     }
 }
 

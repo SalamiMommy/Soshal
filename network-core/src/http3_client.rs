@@ -3,6 +3,7 @@
 //! connection pooling, multiplexing, and resilient transport fallback on patchy networks.
 
 use reqwest::{Client, Method};
+use soshal_common_core::url::is_valid_media_url;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -53,6 +54,13 @@ impl Http3Client {
         headers_map: HashMap<String, String>,
         body: Option<Vec<u8>>,
     ) -> Result<HttpResponseData, String> {
+        // SSRF guard: reject private IPs, loopback, link-local, and
+        // DNS-rebinding candidates. Same policy applied to relay URLs.
+        if !is_valid_media_url(url) {
+            return Err(format!(
+                "HTTP request blocked: URL does not pass SSRF policy: {url}"
+            ));
+        }
         let method = Method::from_bytes(method_str.as_bytes())
             .map_err(|e| format!("Invalid HTTP method: {e}"))?;
 

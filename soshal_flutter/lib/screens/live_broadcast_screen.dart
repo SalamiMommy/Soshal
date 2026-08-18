@@ -132,7 +132,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
         timestampMs: now.millisecondsSinceEpoch,
         jpeg: jpeg,
       );
-      await api.publishLiveGroup(streamId: widget.streamId, group: group);
+      await api.publishLiveGroupSilent(streamId: widget.streamId, group: group);
       _onWireBytes = jpeg.length + 64;
       _framesPublished++;
       await _publishH264(image, now, api);
@@ -167,7 +167,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
       if (blob.length < 2) continue;
       final keyframe = blob[0] == 1;
       final nal = Uint8List.sublistView(blob, 1);
-      await api.publishLiveGroup(
+      await api.publishLiveGroupSilent(
         streamId: widget.streamId,
         group: api.buildH264Group(
           groupSeq: api.nextMoqGroupSeq(),
@@ -279,7 +279,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
             if (blob.length < 2) continue;
             final config = blob[0] == 2;
             if (config) _aacConfig = blob;
-            await api.publishLiveGroup(
+            await api.publishLiveGroupSilent(
               streamId: widget.streamId,
               group: api.buildAudioGroup(
                 groupSeq: api.nextMoqGroupSeq(),
@@ -290,7 +290,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
             );
             _audioGroupsSent++;
             if (!config && _audioGroupsSent % 100 == 0 && _aacConfig != null) {
-              await api.publishLiveGroup(
+              await api.publishLiveGroupSilent(
                 streamId: widget.streamId,
                 group: api.buildAudioGroup(
                   groupSeq: api.nextMoqGroupSeq(),

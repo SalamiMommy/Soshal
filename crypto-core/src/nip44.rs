@@ -13,7 +13,6 @@
 use aead::{Aead, KeyInit, Payload};
 use base64::{engine::general_purpose, Engine as _};
 use chacha20poly1305::{ChaCha20Poly1305, Key as P1305Key, Nonce as P1305Nonce};
-use zeroize::Zeroize;
 
 use crate::hash;
 
@@ -140,39 +139,51 @@ fn spec_derive_keys(
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::RwLock;
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
+/// A 32-byte key that is always scrubbed on drop.  Used as both the HashMap
+/// lookup key and the stored conversation key so that eviction automatically
+/// zeroes the bytes — no manual zeroize call is required at eviction sites.
+#[derive(Clone, Zeroize, ZeroizeOnDrop, PartialEq, Eq, Hash)]
+struct ZeroizeKey([u8; KEY_LEN]);
 
 struct CkCache {
-    map: HashMap<[u8; KEY_LEN], [u8; KEY_LEN]>,
-    queue: VecDeque<[u8; KEY_LEN]>,
+    map: HashMap<ZeroizeKey, ZeroizeKey>,
+    queue: VecDeque<ZeroizeKey>,
 }
 
 static CK_CACHE: RwLock<Option<CkCache>> = RwLock::new(None);
 
 /// Derives and caches the NIP-44 v2 conversation key `ck = HMAC-SHA256("nip44-v2", key)`.
 pub fn derive_conversation_key(key: &[u8; KEY_LEN]) -> [u8; KEY_LEN] {
-    let guard = CK_CACHE.read().unwrap_or_else(|e| e.into_inner());
-    if let Some(cache) = guard.as_ref() {
-        if let Some(&ck) = cache.map.get(key) {
-            return ck;
+    let lookup = ZeroizeKey(*key);
+    {
+        let guard = CK_CACHE.read().unwrap_or_else(|e| e.into_inner());
+        if let Some(cache) = guard.as_ref() {
+            if let Some(ck) = cache.map.get(&lookup) {
+                return ck.0;
+            }
         }
     }
-    drop(guard);
     let ck = hash::hmac_sha256(NIP44_INFO, key);
     let mut guard = CK_CACHE.write().unwrap_or_else(|e| e.into_inner());
     let cache = guard.get_or_insert_with(|| CkCache {
         map: HashMap::with_capacity(64),
         queue: VecDeque::with_capacity(64),
     });
-    if cache.map.contains_key(key) {
+    if cache.map.contains_key(&lookup) {
         return ck;
     }
     if cache.map.len() >= 128 {
         if let Some(oldest) = cache.queue.pop_front() {
+            // ZeroizeOnDrop scrubs both oldest (key) and the removed value
+            // automatically when they go out of scope — no explicit zeroize
+            // call is needed here.
             cache.map.remove(&oldest);
         }
     }
-    cache.map.insert(*key, ck);
-    cache.queue.push_back(*key);
+    cache.map.insert(ZeroizeKey(*key), ZeroizeKey(ck));
+    cache.queue.push_back(ZeroizeKey(*key));
     ck
 }
 
@@ -232,8 +243,15 @@ pub fn encrypt(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<String, &'static
     Ok(general_purpose::STANDARD.encode(&payload))
 }
 
-/// NIP-44 v2 spec decryption. Falls back to the legacy (pre-v2) format for
-/// ciphertexts written by older versions of this crate.
+/// NIP-44 v2 spec decryption.
+///
+/// If the version byte is `2` (NIP-44 v2), only `decrypt_spec` is attempted.
+/// A v2-tagged payload that fails AEAD verification returns `Err` immediately
+/// — it is **never** re-interpreted through the legacy path.  Mixing the two
+/// would create an authentication oracle (chosen-ciphertext bypass).
+///
+/// The legacy path is reserved for payloads whose first byte is **not** 2
+/// (ciphertexts written by pre-v2 versions of this crate).
 pub fn decrypt(payload: &str, key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static str> {
     let decoded = general_purpose::STANDARD
         .decode(payload)
@@ -242,14 +260,10 @@ pub fn decrypt(payload: &str, key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static s
         return Err("empty payload");
     }
     if decoded[0] == VERSION_PADDED {
-        if let Ok(pt) = decrypt_spec(&decoded, key) {
-            return Ok(pt);
-        }
+        // v2 payload: succeed or fail — never fall through to the legacy path.
+        return decrypt_spec(&decoded, key);
     }
-    if let Ok(pt) = decrypt_legacy(&decoded, key) {
-        return Ok(pt);
-    }
-    Err("decrypt failed")
+    decrypt_legacy(&decoded, key)
 }
 
 fn decrypt_spec(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static str> {

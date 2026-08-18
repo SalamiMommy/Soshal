@@ -311,4 +311,109 @@ mod tests {
         .unwrap();
         assert_eq!(status_p, STATUS_APPLIED);
     }
+
+    #[test]
+    fn rebegin_resets_status_and_duplicate_link_idempotent() {
+        let db = soshal_test_util::test_db();
+
+        tx_begin(&db, "t1", revert::KIND_POST, r#"{"id":"t1"}"#, 1).unwrap();
+        tx_mark_applied(&db, "t1").unwrap();
+        // Re-begin same id: INSERT OR REPLACE resets to pending with new payload.
+        tx_begin(
+            &db,
+            "t1",
+            revert::KIND_LIKE,
+            r#"{"id":"t1","event_id":"x"}"#,
+            2,
+        )
+        .unwrap();
+        let node = tx_statuses(&db)
+            .unwrap()
+            .into_iter()
+            .find(|n| n.id == "t1")
+            .unwrap();
+        assert_eq!(node.status, STATUS_PENDING);
+        assert_eq!(node.kind, revert::KIND_LIKE);
+        assert_eq!(node.payload_json, r#"{"id":"t1","event_id":"x"}"#);
+
+        // Duplicate edge: INSERT OR IGNORE keeps a single row.
+        tx_link(&db, "p", "c").unwrap();
+        tx_link(&db, "p", "c").unwrap();
+        tx_link(&db, "p", "c").unwrap();
+        let edges: i64 = query_first(
+            &db.conn().unwrap(),
+            "SELECT COUNT(*) FROM tx_edges WHERE parent_id='p' AND child_id='c'",
+            (),
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(edges, 1);
+
+        // Unknown id for mark_applied: Ok no-op.
+        assert!(tx_mark_applied(&db, "missing").is_ok());
+
+        // Single-node tx (no links): tx_fail works, marks failed.
+        let rolled = tx_fail(&db, "t1").unwrap();
+        assert_eq!(rolled, vec!["t1".to_string()]);
+        let status: String = query_first(
+            &db.conn().unwrap(),
+            "SELECT status FROM tx_nodes WHERE id='t1'",
+            (),
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(status, STATUS_FAILED);
+    }
+
+    #[test]
+    fn fail_safety_cycle_guard_diamond_and_status_limit() {
+        let db = soshal_test_util::test_db();
+
+        // Nonexistent id: no panic; empty payload fails JSON parse → Err.
+        assert!(tx_fail(&db, "nope").is_err());
+
+        // Unknown-kind node: revert is a no-op, rollback completes.
+        tx_begin(&db, "u", "unknown-kind", r#"{"id":"u"}"#, 1).unwrap();
+        tx_mark_applied(&db, "u").unwrap();
+        assert!(tx_fail(&db, "u").is_ok());
+        let status: String = query_first(
+            &db.conn().unwrap(),
+            "SELECT status FROM tx_nodes WHERE id='u'",
+            (),
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(status, STATUS_FAILED);
+
+        // Cyclic edges: closure terminates, no infinite loop.
+        tx_begin(&db, "a", "unknown-kind", "{}", 1).unwrap();
+        tx_begin(&db, "b", "unknown-kind", "{}", 2).unwrap();
+        tx_link(&db, "a", "b").unwrap();
+        tx_link(&db, "b", "a").unwrap();
+        let adj = load_edges(&db.conn().unwrap()).unwrap();
+        let closure = dependent_closure(&adj, "a").unwrap();
+        assert_eq!(closure.len(), 2);
+        assert!(closure.contains("a") && closure.contains("b"));
+        assert_eq!(reverse_topological(&adj, &closure).unwrap().len(), 2);
+
+        // Diamond: shared child appears exactly once, reverted before parents.
+        tx_begin(&db, "p1", "unknown-kind", "{}", 1).unwrap();
+        tx_begin(&db, "p2", "unknown-kind", "{}", 2).unwrap();
+        tx_begin(&db, "c", "unknown-kind", "{}", 3).unwrap();
+        tx_link(&db, "p1", "c").unwrap();
+        tx_link(&db, "p2", "c").unwrap();
+        tx_mark_applied(&db, "p1").unwrap();
+        let rolled = tx_fail(&db, "p1").unwrap();
+        assert_eq!(rolled, vec!["c".to_string(), "p1".to_string()]);
+        assert_eq!(rolled.iter().filter(|id| *id == "c").count(), 1);
+
+        // tx_statuses caps at LIMIT 200.
+        for i in 0..250 {
+            tx_begin(&db, &format!("s{i}"), "unknown-kind", "{}", 1000 + i).unwrap();
+        }
+        assert_eq!(tx_statuses(&db).unwrap().len(), 200);
+    }
 }

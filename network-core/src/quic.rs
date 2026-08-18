@@ -507,11 +507,13 @@ const AUTH_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 pub struct QuicStreamServerHandle {
     pub port: u16,
     stop: Arc<AtomicBool>,
+    stop_notify: Arc<tokio::sync::Notify>,
 }
 
 impl QuicStreamServerHandle {
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
+        self.stop_notify.notify_one();
     }
 }
 
@@ -526,8 +528,10 @@ pub fn start_quic_stream_server_with_store(
     store_root: std::path::PathBuf,
 ) -> Result<QuicStreamServerHandle, String> {
     let stop = Arc::new(AtomicBool::new(false));
+    let stop_notify = Arc::new(tokio::sync::Notify::new());
     let (port_tx, port_rx) = std::sync::mpsc::channel::<u16>();
     let thread_stop = stop.clone();
+    let thread_notify = stop_notify.clone();
     std::thread::Builder::new()
         .name("soshal-quic-srv".to_string())
         .spawn(move || {
@@ -541,13 +545,23 @@ pub fn start_quic_stream_server_with_store(
                     return;
                 }
             };
-            rt.block_on(run_stream_server(key, store_root, port_tx, thread_stop));
+            rt.block_on(run_stream_server(
+                key,
+                store_root,
+                port_tx,
+                thread_stop,
+                thread_notify,
+            ));
         })
         .map_err(|e| format!("quic stream thread: {e}"))?;
     let port = port_rx
         .recv_timeout(STREAM_CONNECT_TIMEOUT)
         .map_err(|e| format!("quic stream bind: {e}"))?;
-    Ok(QuicStreamServerHandle { port, stop })
+    Ok(QuicStreamServerHandle {
+        port,
+        stop,
+        stop_notify,
+    })
 }
 
 async fn run_stream_server(
@@ -555,6 +569,7 @@ async fn run_stream_server(
     store_root: std::path::PathBuf,
     port_tx: std::sync::mpsc::Sender<u16>,
     stop: Arc<AtomicBool>,
+    stop_notify: Arc<tokio::sync::Notify>,
 ) {
     let (server_config, _client_config) = match tls_configs() {
         Ok(c) => c,
@@ -590,10 +605,9 @@ async fn run_stream_server(
     let _ = port_tx.send(bound_port);
 
     let store = ChunkStore::new(store_root);
-    let mut tick = tokio::time::interval(StdDuration::from_millis(200));
     loop {
         tokio::select! {
-            _ = tick.tick() => {
+            _ = stop_notify.notified() => {
                 if stop.load(Ordering::Relaxed) {
                     break;
                 }

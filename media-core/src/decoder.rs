@@ -58,4 +58,39 @@ mod tests {
         let res = decode_to_rgba(&[], None, None);
         assert!(res.is_err());
     }
+
+    fn test_png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let mut img = image::RgbImage::new(width, height);
+        for p in img.pixels_mut() {
+            *p = image::Rgb([200u8, 30, 30]);
+        }
+        let mut buf = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .unwrap();
+        buf
+    }
+
+    #[test]
+    fn test_decode_to_rgba_downscales_when_orig_exceeds_max() {
+        let buf = test_png_bytes(200, 100);
+        let frame = decode_to_rgba(&buf, Some(100), Some(50)).unwrap();
+        assert_eq!((frame.width, frame.height), (100, 50));
+        assert_eq!(frame.pixels.len(), 100 * 50 * 4);
+    }
+
+    #[test]
+    fn test_decode_to_rgba_zero_max_falls_back_to_original() {
+        let buf = test_png_bytes(200, 100);
+        for (mw, mh) in [
+            (Some(0), None),
+            (None, Some(0)),
+            (Some(0), Some(0)),
+            (Some(0), Some(10)),
+        ] {
+            let frame = decode_to_rgba(&buf, mw, mh).unwrap();
+            assert_eq!((frame.width, frame.height), (200, 100));
+            assert_eq!(frame.pixels.len(), 200 * 100 * 4);
+        }
+    }
 }

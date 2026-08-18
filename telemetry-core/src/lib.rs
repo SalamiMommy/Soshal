@@ -519,4 +519,120 @@ mod tests {
         let r2 = Recorder::init(&p2, 64 * 1024).unwrap();
         assert!(r2.decrypt_dump(&dump).is_err());
     }
+
+    #[test]
+    fn read_all_stops_at_corrupt_entry() {
+        // Corrupt total field: scan breaks, valid prefix survives.
+        let p = soshal_test_util::tmp_path("recorder", "corrupt-total.bin");
+        {
+            let mut r = Recorder::init(&p, 64 * 1024).unwrap();
+            r.record(RecordKind::State, "before").unwrap();
+            r.record(RecordKind::App, "corrupted").unwrap();
+            r.record(RecordKind::App, "after").unwrap();
+        }
+        let mut f = OpenOptions::new().write(true).open(&p).unwrap();
+        // entry1 total = (17+6+3)&!3 = 24 → entry2 total field at +24.
+        f.seek(SeekFrom::Start(HEADER_LEN as u64 + 24)).unwrap();
+        f.write_all(&[0xFF; 4]).unwrap();
+        drop(f);
+        let r = Recorder::init(&p, 64 * 1024).unwrap();
+        let entries = r.read_all().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].2, b"before");
+
+        // Corrupt plen field: same break behavior.
+        let p2 = soshal_test_util::tmp_path("recorder", "corrupt-plen.bin");
+        {
+            let mut r = Recorder::init(&p2, 64 * 1024).unwrap();
+            r.record(RecordKind::State, "before").unwrap();
+            r.record(RecordKind::App, "corrupted").unwrap();
+        }
+        let mut f = OpenOptions::new().write(true).open(&p2).unwrap();
+        // entry2 plen field at entry2 (+24) + 13.
+        f.seek(SeekFrom::Start(HEADER_LEN as u64 + 24 + 13))
+            .unwrap();
+        f.write_all(&[0xFF; 4]).unwrap();
+        drop(f);
+        let r = Recorder::init(&p2, 64 * 1024).unwrap();
+        let entries = r.read_all().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].2, b"before");
+    }
+
+    #[test]
+    fn read_all_skips_unknown_kind() {
+        let p = soshal_test_util::tmp_path("recorder", "unknown-kind.bin");
+        {
+            let mut r = Recorder::init(&p, 64 * 1024).unwrap();
+            r.record(RecordKind::State, "one").unwrap();
+            r.record(RecordKind::Ipc, "two").unwrap();
+            r.record(RecordKind::App, "three").unwrap();
+        }
+        let mut f = OpenOptions::new().write(true).open(&p).unwrap();
+        // entry1 total = (17+3+3)&!3 = 20 → entry2 kind byte at +20+4.
+        f.seek(SeekFrom::Start(HEADER_LEN as u64 + 20 + 4)).unwrap();
+        f.write_all(&[7u8]).unwrap();
+        drop(f);
+        let r = Recorder::init(&p, 64 * 1024).unwrap();
+        let entries = r.read_all().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, RecordKind::State);
+        assert_eq!(entries[0].2, b"one");
+        assert_eq!(entries[1].0, RecordKind::App);
+        assert_eq!(entries[1].2, b"three");
+    }
+
+    #[test]
+    fn decrypt_dump_rejects_bad_envelope() {
+        let p = soshal_test_util::tmp_path("recorder", "decrypt-env.bin");
+        let r = Recorder::init(&p, 64 * 1024).unwrap();
+        assert_eq!(r.decrypt_dump(b"garbage").unwrap_err(), "bad dump envelope");
+        assert_eq!(r.decrypt_dump(&[0u8; 19]).unwrap_err(), "bad dump envelope");
+        assert_eq!(r.decrypt_dump(&[0u8; 20]).unwrap_err(), "bad dump envelope");
+    }
+
+    #[test]
+    fn init_edge_cases() {
+        // Truncated key file (16 bytes) → regenerated 32-byte key.
+        let p = soshal_test_util::tmp_path("recorder", "trunc-key.bin");
+        let dump = {
+            let mut r = Recorder::init(&p, 64 * 1024).unwrap();
+            r.record(RecordKind::State, "pre-trunc").unwrap();
+            r.dump_encrypted().unwrap()
+        };
+        let kp = key_sidecar_path(&p);
+        {
+            let mut kf = OpenOptions::new().write(true).open(&kp).unwrap();
+            kf.set_len(16).unwrap();
+        }
+        let mut r = Recorder::init(&p, 64 * 1024).unwrap();
+        assert_eq!(std::fs::metadata(&kp).unwrap().len(), 32);
+        assert!(r.decrypt_dump(&dump).is_err()); // key changed
+        r.record(RecordKind::App, "post-trunc").unwrap();
+        let entries = r.read_all().unwrap();
+        assert_eq!(entries.len(), 2); // old ring data survives
+        assert_eq!(entries[1].2, b"post-trunc");
+
+        // Double seal: second mark_crash errors, no extra crash record.
+        let p2 = soshal_test_util::tmp_path("recorder", "double-seal.bin");
+        let mut r2 = Recorder::init(&p2, 64 * 1024).unwrap();
+        r2.mark_crash("boom").unwrap();
+        assert_eq!(r2.mark_crash("boom again").unwrap_err(), "recorder sealed");
+        assert!(r2.is_sealed());
+        let entries = r2.read_all().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, RecordKind::Crash);
+        assert_eq!(entries[0].2, b"boom");
+
+        // Pre-existing odd-length file → resized to header + capacity.
+        let p3 = soshal_test_util::tmp_path("recorder", "odd-size.bin");
+        std::fs::write(&p3, vec![0xABu8; 5001]).unwrap();
+        let mut r3 = Recorder::init(&p3, 64 * 1024).unwrap();
+        assert_eq!(
+            std::fs::metadata(&p3).unwrap().len() as usize,
+            HEADER_LEN + 64 * 1024
+        );
+        r3.record(RecordKind::App, "post-resize").unwrap();
+        assert_eq!(r3.read_all().unwrap().len(), 1);
+    }
 }

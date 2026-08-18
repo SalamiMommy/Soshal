@@ -927,3 +927,90 @@ fn url_domain_and_valid() {
         Some("example.com".to_string())
     );
 }
+
+#[test]
+fn decode_html_entities_remaining_named_and_invalid() {
+    let named =
+        "&ndash;&lsquo;&hellip;&trade;&pound;&yen;&cent;&sect;&deg;&plusmn;&frac12;&divide;";
+    assert_eq!(
+        decode_html_entities(named),
+        "\u{2013}\u{2018}\u{2026}\u{2122}\u{00a3}\u{00a5}\u{00a2}\u{00a7}\u{00b0}\u{00b1}\u{00bd}\u{00f7}"
+    );
+    assert_eq!(decode_html_entities("&#xGG;"), "&#xGG;");
+    assert_eq!(decode_html_entities("&#xD800;"), "&#xD800;");
+    assert_eq!(decode_html_entities("&#x110000;"), "&#x110000;");
+    assert_eq!(decode_html_entities("&#4294967296;"), "&#4294967296;");
+}
+
+#[test]
+fn decode_html_entities_window_and_multibyte() {
+    assert_eq!(decode_html_entities("héllo ✓"), "héllo ✓");
+    let beyond = format!("&{};", "a".repeat(25));
+    assert_eq!(decode_html_entities(&beyond), beyond);
+    let numeric_beyond = format!("&#{};", "1".repeat(23));
+    assert_eq!(decode_html_entities(&numeric_beyond), numeric_beyond);
+}
+
+#[test]
+fn decode_ascii_entities_rules() {
+    assert_eq!(decode_ascii_entities("&#X41;"), "a");
+    assert_eq!(
+        decode_ascii_entities("&#12345678901234567890;"),
+        "&#1234567890123456;"
+    );
+    assert_eq!(decode_ascii_entities("&#65"), "a");
+    assert_eq!(decode_ascii_entities("&#128;"), "&#128;");
+    assert_eq!(decode_ascii_entities("&#"), "&#;");
+    assert_eq!(decode_ascii_entities("&#z;"), "&#z;");
+}
+
+#[test]
+fn sanitize_log_message_nsec_redaction() {
+    let nsec = "nsec1qwqsvf30y2pqf30y2pqf30y2pqf30y2pqf30y2pqf30y2pveerx";
+    assert_eq!(sanitize_log_message(nsec), "[REDACTED_KEY]");
+    let short = format!("nsec1{}", "a".repeat(39));
+    assert_eq!(sanitize_log_message(&short), short);
+}
+
+#[test]
+fn sanitize_notif_content_multibyte_cut() {
+    assert_eq!(sanitize_notif_content("héllo", 2), "h");
+    assert_eq!(sanitize_notif_content("éééé", 5), "éé");
+    assert_eq!(
+        sanitize_notif_content("<b>héllo</b> wörld", 100),
+        "héllo wörld"
+    );
+}
+
+#[test]
+fn sanitize_edge_rules() {
+    assert_eq!(sanitize_details(&format!("/{}", "a".repeat(100))), "/[HEX]");
+    assert_eq!(
+        sanitize_details(&format!("/{}", "a".repeat(63))),
+        "/[BASE64]"
+    );
+    let a31 = "A".repeat(31);
+    assert_eq!(sanitize_details(&a31), a31);
+    assert_eq!(
+        sanitize_details(&format!("{}==", "A".repeat(32))),
+        "[BASE64]"
+    );
+    let hex64 = "a".repeat(64);
+    assert_eq!(sanitize_error_message(&format!("sk={hex64}")), "[REDACTED]");
+    assert_eq!(
+        sanitize_error_message(&format!("seckey={hex64}")),
+        "[REDACTED]"
+    );
+    assert_eq!(
+        sanitize_error_message(&format!("secret_key={hex64}")),
+        "[REDACTED]"
+    );
+    assert_eq!(sanitize_context("\"str\""), None);
+    assert_eq!(sanitize_context("42"), None);
+    assert_eq!(
+        sanitize_context(r#"{"key":123}"#).unwrap(),
+        r#"{"key":"[REDACTED]"}"#
+    );
+    assert_eq!(scrub_sensitive_data("10.999.1.1"), "[REDACTED_IP]");
+    assert_eq!(scrub_sensitive_data("10.9999.1.1"), "10.9999.1.1");
+}

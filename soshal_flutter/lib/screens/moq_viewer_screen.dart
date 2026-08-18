@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -40,7 +41,9 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   String? _error;
   int _frames = 0;
   int? _lastSeq;
-  Uint8List? _frameBytes;
+  ui.Image? _frameImage;
+  int _frameOrd = 0;
+  int _appliedOrd = -1;
   bool _h264DecodeReady = false;
   bool _h264Tried = false;
   bool _h264GotKeyframe = false;
@@ -103,8 +106,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
               await _feedAac(seq, bytes);
             } else if (header?['track_type'] == 'VideoKeyframe') {
               _lastSeq = seq;
-              _frames++;
-              if (mounted) setState(() => _frameBytes = bytes);
+              _showFrame(bytes);
             }
           }
         }
@@ -120,7 +122,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   }
 
   /// Decode one H.264 NAL blob through the native decoder; every drained
-  /// frame surfaces as a JPEG in `_frameBytes`. Deltas arriving before the
+  /// frame surfaces as a JPEG handed to `_showFrame`. Deltas arriving before the
   /// first keyframe are skipped (decoder cannot start mid-GOP).
   Future<void> _decodeH264(int seq, Uint8List nal, bool isKeyframe) async {
     if (!_h264GotKeyframe) {
@@ -136,9 +138,28 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
     final jpegs = await H264Codec.feedDecode(nal);
     for (final jpeg in jpegs) {
       _lastSeq = seq;
-      _frames++;
-      if (mounted) setState(() => _frameBytes = jpeg);
+      _showFrame(jpeg);
     }
+  }
+
+  /// Decode one JPEG at 480 px, swap it in. Decodes complete async and may
+  /// arrive out of order — an ordinal discards stale frames; the previous
+  /// `ui.Image` is disposed on swap to bound memory.
+  Future<void> _showFrame(Uint8List jpeg) async {
+    final ord = ++_frameOrd;
+    final codec = await ui.instantiateImageCodec(jpeg, targetWidth: 480);
+    final frame = await codec.getNextFrame();
+    codec.dispose();
+    if (!mounted || ord <= _appliedOrd) {
+      frame.image.dispose();
+      return;
+    }
+    _appliedOrd = ord;
+    _frames++;
+    setState(() {
+      _frameImage?.dispose();
+      _frameImage = frame.image;
+    });
   }
 
   /// Feed one AAC blob to the native decoder. Payloads carry the native tag
@@ -168,6 +189,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   @override
   void dispose() {
     _running = false;
+    _frameImage?.dispose();
     H264Codec.release();
     super.dispose();
   }
@@ -184,7 +206,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
           ),
         ],
       ),
-      body: _frameBytes == null
+      body: _frameImage == null
           ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -200,13 +222,9 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
           : Center(
               child: Padding(
                 padding: const EdgeInsets.all(8),
-                child: Image.memory(
-                  _frameBytes!,
+                child: RawImage(
+                  image: _frameImage,
                   fit: BoxFit.contain,
-                  gaplessPlayback: true,
-                  // Decode at a fixed small size — the JPEG track is a
-                  // codec-free ~4fps fallback; no need to decode full res.
-                  cacheWidth: 480,
                 ),
               ),
             ),
