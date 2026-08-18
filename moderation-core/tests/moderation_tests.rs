@@ -234,3 +234,98 @@ fn check_text_adversarial_cases() {
     assert!(passed(&check_text("   ")));
     assert!(passed(&check_text("\t\n ")));
 }
+
+#[test]
+fn glitter_entity_schemes_and_encoded_handlers() {
+    // Entity-encoded scheme: decode_ascii_entities expands &#x73; → s, so
+    // the plain-scheme regex must still fire.
+    let cleaned = sanitize_glitter_content("<a href=\"java&#x73;cript:alert(1)\">y</a>");
+    assert!(
+        !cleaned.to_ascii_lowercase().contains("javascript"),
+        "{cleaned}"
+    );
+    let cleaned = sanitize_glitter_content("<a href=&#106;avascript:alert(1)>y</a>");
+    assert!(
+        !cleaned.to_ascii_lowercase().contains("javascript"),
+        "{cleaned}"
+    );
+    // Case-insensitive handler stripping, quoted and bare.
+    let cleaned = sanitize_glitter_content("<img src=x OnError=alert(1)>");
+    assert!(!cleaned.contains("onerror"), "{cleaned}");
+    let cleaned = sanitize_glitter_content("<img src=x onerror='alert(1)'>");
+    assert!(!cleaned.contains("onerror"), "{cleaned}");
+    let cleaned = sanitize_glitter_content("<img src=x onerror=\"alert(1)\">");
+    assert!(!cleaned.contains("onerror"), "{cleaned}");
+}
+
+#[test]
+fn glitter_attr_value_entity_handling() {
+    // Numeric entities are decoded to plain `<`/`>` inside attribute
+    // values; with no scheme they are inert text and the attr survives.
+    for form in ["&#60;", "&#x3c;", "&#X3C;"] {
+        let input = format!("<a href=\"{form}x\">z</a>");
+        let cleaned = sanitize_glitter_content(&input);
+        assert!(cleaned.contains("href"), "form {form}: {cleaned}");
+    }
+    // A value carrying BOTH a named entity and a live numeric entity
+    // (unparseable by the decoder, e.g. non-hex digits) trips the
+    // entity guard and the whole suspicious attr is dropped.
+    let input = "<a href=\"&lt;&#xZZ;script\">x</a>";
+    let cleaned = sanitize_glitter_content(input);
+    assert!(!cleaned.contains("href"), "{cleaned}");
+    let input = "<img src=\"&quot;&#xZZ;x\">";
+    let cleaned = sanitize_glitter_content(input);
+    assert!(!cleaned.contains("src"), "{cleaned}");
+    // Attribute-breaking quote entities let a handler spill out; the
+    // handler regex still removes it.
+    let input = "<a href=\"x&quot; onmouseover=alert(1)\">z</a>";
+    let cleaned = sanitize_glitter_content(input);
+    assert!(!cleaned.contains("onmouseover"), "{cleaned}");
+    // Non-suspicious attributes keep entity text.
+    let input = "<div data-note=\"&lt;note&gt;\">x</div>";
+    let cleaned = sanitize_glitter_content(input);
+    assert!(cleaned.contains("data-note"), "{cleaned}");
+    // Decoded slashes/quotes in values are inert once the attr survives.
+    let input = "<img src=\"a&#47;b\">";
+    let cleaned = sanitize_glitter_content(input);
+    assert!(cleaned.contains("src"), "{cleaned}");
+}
+
+#[test]
+fn glitter_strips_remaining_control_and_format_chars() {
+    let input = "a\u{0080}b\u{009f}c\u{00ad}d\u{feff}e\u{2060}f";
+    let cleaned = sanitize_glitter_content(input);
+    assert_eq!(cleaned, "abcdef", "{cleaned:?}");
+    // C1 block fully removed, bidi marks kept as-is (already covered).
+    let input = "\u{009c}\u{009d}";
+    assert_eq!(sanitize_glitter_content(input), "");
+    // NULL bytes and other C0 (non-whitespace) removed.
+    assert_eq!(sanitize_glitter_content("a\u{0000}b\u{0001}c"), "abc");
+    // Whitespace controls survive.
+    assert_eq!(sanitize_glitter_content("x\ty\r\nz"), "x\ty\r\nz");
+}
+
+#[test]
+fn glitter_drops_css_uri_and_scheme_in_all_attr_names() {
+    for attr in [
+        "action",
+        "formaction",
+        "xlink:href",
+        "background",
+        "poster",
+        "cite",
+        "icon",
+    ] {
+        let input = format!("<a {attr}=javascript:alert(1)>x</a>");
+        let cleaned = sanitize_glitter_content(&input);
+        assert!(
+            !cleaned.to_ascii_lowercase().contains("javascript"),
+            "attr {attr}: {cleaned}"
+        );
+    }
+    // css_uri: url(...) wrapper collapsed, scheme removed.
+    let cleaned = sanitize_glitter_content("<div style=\"background:url(blob:xyz)\">y</div>");
+    assert!(!cleaned.contains("blob:"), "{cleaned}");
+    let cleaned = sanitize_glitter_content("<div style=\"background:url(filesystem:x)\">y</div>");
+    assert!(!cleaned.contains("filesystem:"), "{cleaned}");
+}

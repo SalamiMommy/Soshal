@@ -198,4 +198,68 @@ mod tests {
         assert_eq!(summary.pending_count, 0);
         assert_eq!(summary.total_count, 1);
     }
+
+    #[test]
+    fn test_outbox_fetch_ordering_limit_and_retry_gate() {
+        let db = soshal_test_util::test_db();
+        // Older items surface first (created_at ASC).
+        enqueue_outbox_item(&db, "old", "post", "{}", None, 100).unwrap();
+        enqueue_outbox_item(&db, "new", "post", "{}", None, 200).unwrap();
+        let pending = fetch_pending_outbox_items(&db, 100, 10).unwrap();
+        assert_eq!(pending.len(), 2);
+        assert_eq!(pending[0].id, "old");
+        // next_retry_at in the future excludes the item.
+        mark_outbox_item_failed(&db, "old", 0, 100).unwrap();
+        let pending = fetch_pending_outbox_items(&db, 100, 10).unwrap();
+        assert_eq!(pending.len(), 1, "retry-gated item excluded");
+        assert_eq!(pending[0].id, "new");
+        // Limit respected.
+        let pending = fetch_pending_outbox_items(&db, 10_000, 1).unwrap();
+        assert_eq!(pending.len(), 1);
+        // Retry backoff: exponential, capped at 300 s; status flips to
+        // failed after 10 attempts.
+        mark_outbox_item_failed(&db, "old", 0, 10_000).unwrap();
+        mark_outbox_item_failed(&db, "old", 8, 10_300).unwrap();
+        let items = fetch_pending_outbox_items(&db, 10_600, 10).unwrap();
+        let old = items.iter().find(|i| i.id == "old").unwrap();
+        assert_eq!(old.retry_count, 9);
+        assert_eq!(
+            old.next_retry_at,
+            10_300 + 256,
+            "backoff capped at 256s (2^8) by design"
+        );
+        mark_outbox_item_failed(&db, "old", 9, 10_600).unwrap();
+        let summary = get_outbox_summary(&db).unwrap();
+        assert_eq!(summary.failed_count, 1, "retry cap reached");
+        // Batch completion flips the rest.
+        mark_outbox_items_completed(&db, &["new".to_string()]).unwrap();
+        let summary = get_outbox_summary(&db).unwrap();
+        assert_eq!(summary.pending_count, 0);
+        assert_eq!(summary.failed_count, 1);
+        assert_eq!(summary.total_count, 2);
+        // Empty batch is a no-op.
+        mark_outbox_items_completed(&db, &[]).unwrap();
+    }
+
+    #[test]
+    fn test_payload_compress_roundtrip_and_garbage() {
+        // Small payloads are stored verbatim.
+        assert_eq!(compress_payload("short"), "short");
+        assert_eq!(decompress_payload("not-compressed"), "not-compressed");
+        // Large payloads roundtrip through zstd.
+        let big = "x".repeat(10_000);
+        let stored = compress_payload(&big);
+        assert!(
+            stored.starts_with("__zstd__:"),
+            "stored: {}..",
+            &stored[..24]
+        );
+        assert_eq!(decompress_payload(&stored), big);
+        // Garbage prefixed payloads degrade to the raw string.
+        assert_eq!(decompress_payload("__zstd__:zz"), "__zstd__:zz");
+        assert_eq!(decompress_payload("__zstd__:"), "__zstd__:");
+        // Empty-queue fetch returns empty.
+        let fresh = soshal_test_util::test_db();
+        assert!(fetch_pending_outbox_items(&fresh, 0, 0).unwrap().is_empty());
+    }
 }

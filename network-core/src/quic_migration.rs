@@ -54,4 +54,16 @@ mod tests {
         let addr: SocketAddr = "192.168.1.50:8080".parse().unwrap();
         assert!(mgr.handle_interface_change(addr).is_ok());
     }
+
+    #[test]
+    fn test_default_and_shared_transport_config() {
+        let m = QuicMigrationManager::default();
+        let m2 = QuicMigrationManager::new();
+        // Default and new() both yield a usable shared config; each manager
+        // holds its own Arc (migration enabled by default in quinn).
+        let cfg: Arc<TransportConfig> = m.transport_config();
+        let cfg2: Arc<TransportConfig> = m.transport_config();
+        assert!(Arc::ptr_eq(&cfg, &cfg2), "config arc is shared per manager");
+        assert!(!Arc::ptr_eq(&cfg, &m2.transport_config()));
+    }
 }

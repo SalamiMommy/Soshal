@@ -113,3 +113,80 @@ fn publish_bookmark_list(pubkey: &str) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp_db(label: &str) -> String {
+        crate::ffi::db::tmp_db(label, "bmk")
+    }
+
+    fn insert_post(id: &str, pubkey: &str, content: &str) {
+        crate::ffi::db::db_execute_raw(format!(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES ('{id}', '{pubkey}', '{content}', 1, 1700000000)"
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn test_save_list_delete_roundtrip() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("crud");
+        let pk = "a".repeat(64);
+        let id = bookmarks_save(pk.clone(), "evt1".into()).unwrap();
+        assert_eq!(id, "bm:evt1");
+        bookmarks_save(pk.clone(), "evt2".into()).unwrap();
+        // Newest-first ordering + offset pagination.
+        let list = bookmarks_list(pk.clone(), 10, 0).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&list).unwrap();
+        let arr = v.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        // Both bookmarks present (same-second created_at makes order a tie).
+        assert!(list.contains("evt1") && list.contains("evt2"));
+        let paged = bookmarks_list(pk.clone(), 1, 1).unwrap();
+        let pv: serde_json::Value = serde_json::from_str(&paged).unwrap();
+        assert_eq!(pv.as_array().unwrap().len(), 1);
+        // Delete returns true once, and stays idempotent for a missing id.
+        assert!(bookmarks_delete("bm:evt1".into()).unwrap());
+        assert!(bookmarks_delete("bm:missing".into()).unwrap());
+        let list = bookmarks_list(pk, 10, 0).unwrap();
+        assert!(!list.contains("evt1"));
+    }
+
+    #[test]
+    fn test_resolve_post_found_and_missing() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("resolve");
+        insert_post("p1", "pk1", "hello");
+        let json = bookmarks_resolve_post("p1".into()).unwrap();
+        assert!(json.contains("hello"), "json: {json}");
+        assert!(json.contains("\"pubkey\":\"pk1\""));
+        assert_eq!(bookmarks_resolve_post("nope".into()).unwrap(), "");
+    }
+
+    #[test]
+    fn test_resolve_posts_batch() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("resolve-batch");
+        insert_post("p1", "pk1", "one");
+        insert_post("p2", "pk2", "two");
+        let out = bookmarks_resolve_posts(r#"["p1","p2","missing"]"#.to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let map = v.as_object().unwrap();
+        assert_eq!(map.len(), 2, "out: {out}");
+        assert_eq!(map["p1"]["content"], "one");
+        assert_eq!(map["p2"]["content"], "two");
+        // Empty id list → empty map.
+        let out = bookmarks_resolve_posts("[]".to_string()).unwrap();
+        assert_eq!(out, "{}");
+        // Malformed ids JSON → error.
+        assert!(bookmarks_resolve_posts("not-json".to_string()).is_err());
+    }
+}

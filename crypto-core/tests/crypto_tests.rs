@@ -409,3 +409,42 @@ fn base64url_padding_tests() {
 
     assert_eq!(from_base64url("abcde"), "abcde");
 }
+
+#[test]
+fn pqc_error_paths_and_seed_determinism() {
+    use soshal_crypto_core::pqc::{dsa, hybrid, kem};
+    // Malformed keys/ciphertexts must fail, not panic.
+    let bad_pk = [0u8; hybrid::PUBLIC_KEY_LEN];
+    assert!(hybrid::encapsulate(&bad_pk, b"domain").is_err());
+    let (pk, sk) = hybrid::keypair().unwrap();
+    let bad_ct = [0u8; hybrid::CIPHERTEXT_LEN];
+    assert!(hybrid::decapsulate(&sk, &bad_ct, b"domain").is_err());
+    let (ct, _ss) = hybrid::encapsulate(&pk, b"domain").unwrap();
+    assert!(
+        hybrid::decapsulate(&sk, &ct, b"other").is_ok(),
+        "domain is unverified"
+    );
+
+    let bad_kem_pk = [0u8; kem::PUBLIC_KEY_LEN];
+    // ML-KEM does not validate public-key math, so encapsulate still
+    // succeeds on a zeroed key; decapsulate roundtrip below still works.
+    let _ = kem::encapsulate(&bad_kem_pk);
+    let (kem_pk, kem_sk) = kem::keypair().unwrap();
+    let (kem_ct, kss1) = kem::encapsulate(&kem_pk).unwrap();
+    let kss2 = kem::decapsulate(&kem_sk, &kem_ct).unwrap();
+    assert_eq!(kss1, kss2);
+
+    // Seeded DSA keygen is deterministic; sign/verify roundtrip.
+    let seed = [42u8; dsa::SEED_LEN];
+    let (pk_a, sk_a) = dsa::keypair_from_seed(&seed).unwrap();
+    let (pk_b, sk_b) = dsa::keypair_from_seed(&seed).unwrap();
+    assert_eq!(pk_a, pk_b);
+    assert_eq!(sk_a, sk_b);
+    let sig = dsa::sign(&sk_a.clone().try_into().unwrap(), b"msg").unwrap();
+    assert_eq!(sig.len(), dsa::SIGNATURE_LEN);
+    dsa::verify(&pk_a, b"msg", &sig).unwrap();
+    assert!(dsa::verify(&pk_a, b"other", &sig).is_err());
+    // Truncated public key fails cleanly.
+    assert!(dsa::verify(&pk_a[..pk_a.len() - 1], b"msg", &sig).is_err());
+    assert!(dsa::verify(&pk_a, b"msg", &sig[..sig.len() - 1]).is_err());
+}

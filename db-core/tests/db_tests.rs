@@ -1120,6 +1120,42 @@ fn test_profile_node_crud() {
     assert_eq!(list[0].properties, "{\"links\":[\"a\",\"b\"]}");
     assert_eq!(repo.delete_all_for("u1").unwrap(), 1);
     assert!(repo.list_by_user("u1").unwrap().is_empty());
+
+    // Upsert overwrites (same id, new owner + order); list is ordered by
+    // sort_order then layout_row.
+    let mut row2 = ProfileNodeRow {
+        id: row.id.clone(),
+        user_pubkey: "u2".into(),
+        node_type: row.node_type.clone(),
+        styles: row.styles.clone(),
+        properties: row.properties.clone(),
+        layout_row: row.layout_row,
+        layout_col: row.layout_col,
+        sort_order: row.sort_order,
+    };
+    row2.user_pubkey = "u2".into();
+    row2.node_type = "image".into();
+    row2.layout_row = 3;
+    row2.sort_order = 2;
+    repo.upsert(&row2).unwrap();
+    row2.sort_order = 1;
+    row2.layout_row = 1;
+    repo.upsert(&row2).unwrap();
+    let list2 = repo.list_by_user("u2").unwrap();
+    assert_eq!(list2.len(), 1);
+    assert_eq!(list2[0].node_type, "image");
+    assert_eq!(list2[0].layout_row, 1);
+    // Upsert keyed by id: re-upserting "pn1" moved the row to u2.
+    assert!(repo.list_by_user("u1").unwrap().is_empty());
+    // delete removes only the matching id (id, not user).
+    assert_eq!(repo.delete("u2").unwrap(), ());
+    assert_eq!(
+        repo.list_by_user("u2").unwrap().len(),
+        1,
+        "delete matched nothing"
+    );
+    assert_eq!(repo.delete("pn1").unwrap(), ());
+    assert!(repo.list_by_user("u2").unwrap().is_empty());
 }
 
 #[test]

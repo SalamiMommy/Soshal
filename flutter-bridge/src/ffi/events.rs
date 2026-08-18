@@ -537,6 +537,150 @@ mod tests {
         let result = events_rsvp("a".repeat(64), "pk".to_string(), "maybe".to_string());
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_events_create_validation() {
+        assert!(events_create(
+            "pk".into(),
+            "x".repeat(301),
+            String::new(),
+            String::new(),
+            0.0,
+            0.0,
+            100,
+            200,
+            String::new()
+        )
+        .is_err());
+        assert!(events_create(
+            "pk".into(),
+            String::new(),
+            String::new(),
+            String::new(),
+            0.0,
+            0.0,
+            100,
+            200,
+            String::new()
+        )
+        .is_err());
+        assert!(events_create(
+            "pk".into(),
+            "t".into(),
+            String::new(),
+            String::new(),
+            0.0,
+            0.0,
+            0,
+            200,
+            String::new()
+        )
+        .is_err());
+        assert!(events_create(
+            "pk".into(),
+            "t".into(),
+            String::new(),
+            String::new(),
+            0.0,
+            0.0,
+            200,
+            100,
+            String::new()
+        )
+        .is_err());
+        assert!(events_create(
+            "pk".into(),
+            "t".into(),
+            String::new(),
+            String::new(),
+            0.0,
+            0.0,
+            100,
+            100 + 8 * 24 * 3600,
+            String::new()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_events_missing_event_paths() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        super::super::db::tmp_db("events_missing", "evt");
+        assert!(events_rsvp("nonexistent".into(), "pk".into(), "accepted".into()).is_err());
+        assert!(events_check_in("nonexistent".into(), "pk".into(), 0.0, 0.0).is_err());
+        assert!(events_get_event("nonexistent".into()).is_err());
+        assert!(events_get_attendees("nonexistent".into())
+            .unwrap()
+            .is_empty());
+        assert_eq!(events_fetch_user_events("pk".into(), 10).unwrap(), "[]");
+        assert!(events_reminder_upsert("r".into(), "e".into(), "t".into(), 1, -1).is_err());
+    }
+
+    #[test]
+    fn test_events_full_flow() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        super::super::db::tmp_db("events_flow", "evt");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let now = soshal_common_core::format::now_secs() as u64;
+        let created = events_create(
+            pk.clone(),
+            "Test Event".into(),
+            "desc".into(),
+            "HQ".into(),
+            0.0,
+            0.0,
+            now - 3600,
+            now + 3600,
+            String::new(),
+        )
+        .unwrap();
+        let created_id: serde_json::Value = serde_json::from_str(&created).unwrap();
+        let event_id = created_id["id"].as_str().unwrap().to_string();
+
+        assert!(events_rsvp(event_id.clone(), pk.clone(), "accepted".into()).unwrap());
+        assert!(events_rsvp(event_id.clone(), pk.clone(), "declined".into()).unwrap());
+        // Local RSVP rows are relay-synced; the denormalized rsvp_event_id
+        // column is only set by the sync ingest path, so attendee counts
+        // stay empty until the RSVP event comes back through sync.
+        assert!(events_get_attendees(event_id.clone()).unwrap().is_empty());
+
+        let detail: EventInfo =
+            serde_json::from_str(&events_get_event(event_id.clone()).unwrap()).unwrap();
+        assert_eq!(detail.title, "Test Event");
+        assert_eq!(detail.attendees, 0);
+
+        assert!(events_check_in(event_id.clone(), pk.clone(), 0.0, 0.0).unwrap());
+
+        let mine: Vec<serde_json::Value> =
+            serde_json::from_str(&events_fetch_user_events(pk.clone(), 10).unwrap()).unwrap();
+        assert_eq!(mine.len(), 1);
+        assert_eq!(mine[0]["id"].as_str().unwrap(), event_id);
+
+        let score = events_interest_score(r#"["nostr"]"#.into(), r#"["nostr"]"#.into()).unwrap();
+        assert!(score.contains(':'));
+        let scored = events_score_events(
+            r#"[{"id":"e1","title":"nostr meetup","description":""}]"#.into(),
+            r#"["nostr"]"#.into(),
+        )
+        .unwrap();
+        assert!(scored.contains("e1"));
+
+        let rid = events_reminder_upsert(String::new(), event_id.clone(), "remind".into(), 123, 30)
+            .unwrap();
+        assert!(!rid.is_empty());
+        assert!(events_reminders_list().unwrap().contains(&rid));
+        assert!(events_reminder_delete(rid.clone()).unwrap());
+        assert!(!events_reminders_list().unwrap().contains(&rid));
+    }
 }
 
 // ─── Event reminders ────────────────────────────────────────────────────────
