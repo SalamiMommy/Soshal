@@ -331,7 +331,7 @@ fn hashtag_get_trending() {
             tag: tag.into(),
             pubkey: "pk".into(),
             last_used_at: 1000,
-            count: count,
+            count,
         })
         .unwrap();
     }
@@ -481,7 +481,7 @@ fn post_delete_older_than_and_all() {
     assert_eq!(deleted, 1);
     let old = repo.get_by_id("old").unwrap().unwrap();
     assert!(old.is_deleted, "soft delete");
-    assert_eq!(repo.get_by_id("new").unwrap().unwrap().is_deleted, false);
+    assert!(!repo.get_by_id("new").unwrap().unwrap().is_deleted);
 
     let all = repo.delete_all_posts().unwrap();
     assert_eq!(all, 1, "new post soft-deleted");

@@ -97,180 +97,148 @@ fn v1_creates_base_tables() {
 }
 
 #[test]
-fn v2_creates_group_messages() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v2_create_group_messages(&conn).unwrap();
-    assert!(table_exists(&conn, "group_messages"));
-    assert_eq!(max_version(&conn), 2);
-}
-
-#[test]
-fn v3_creates_social_tables() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v3_create_social_tables(&conn).unwrap();
-    for t in ["polls", "poll_votes", "marketplace_reviews", "spam_reports"] {
-        assert!(table_exists(&conn, t), "missing table {t}");
-    }
-    assert_eq!(max_version(&conn), 3);
-}
-
-#[test]
-fn v4_creates_sync_tables() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v4_create_sync_tables(&conn).unwrap();
-    for t in ["tx_nodes", "tx_edges", "outbox_queue"] {
-        assert!(table_exists(&conn, t), "missing table {t}");
-    }
-    assert_eq!(max_version(&conn), 4);
-}
-
-#[test]
-fn v5_creates_missing_tables() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v5_create_missing_tables(&conn).unwrap();
-    for t in [
-        "diagnostic_logs",
-        "do_not_refetch_items",
-        "custom_profile_nodes",
-        "geohash_peers",
-        "friend_backups",
-        "link_previews",
-        "stream_chat",
-        "guestbook_entries",
-        "huddle_posts",
-        "banned_members",
-        "group_join_requests",
-        "group_invites",
-        "musiclouds",
-        "musicloud_comments",
-        "story_reactions",
-        "muted_conversations",
-        "dating_unmatches",
-    ] {
-        assert!(table_exists(&conn, t), "missing table {t}");
-    }
-    assert_eq!(max_version(&conn), 5);
-}
-
-#[test]
-fn v7_rebuilds_fts_triggers() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v7_rebuild_fts_triggers(&conn).unwrap();
-    for t in ["posts_ai", "posts_ad", "posts_au"] {
-        assert!(trigger_exists(&conn, t), "missing trigger {t}");
-    }
-    assert_eq!(max_version(&conn), 7);
-}
-
-#[test]
-fn v8_adds_shared_keys_and_escrow_confirms() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v8_shared_keys_escrow_confirms(&conn).unwrap();
-    assert!(table_exists(&conn, "group_shared_keys"));
-    assert!(column_exists(&conn, "escrows", "buyer_confirmed"));
-    assert!(column_exists(&conn, "escrows", "seller_confirmed"));
-    assert_eq!(max_version(&conn), 8);
-}
-
-#[test]
-fn v9_adds_users_fts() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v9_users_fts(&conn).unwrap();
-    assert!(table_exists(&conn, "users_fts"));
-    for t in ["users_ai", "users_ad", "users_au"] {
-        assert!(trigger_exists(&conn, t), "missing trigger {t}");
-    }
-    assert_eq!(max_version(&conn), 9);
-}
-
-#[test]
-fn v10_adds_perf_indexes() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v2_create_group_messages(&conn).unwrap();
-    migrations::v4_create_sync_tables(&conn).unwrap();
-    migrations::v5_create_missing_tables(&conn).unwrap();
-    migrations::v10_perf_indexes(&conn).unwrap();
-    for i in [
-        "idx_group_messages_fetch",
-        "idx_outbox_queue_pending",
-        "idx_outbox_queue_created",
-        "idx_messages_conv_deleted",
-        "idx_reminders_start",
-        "idx_geohash_peers_last_seen",
-        "idx_huddle_posts_expires",
-        "idx_diagnostic_logs_created",
-    ] {
-        assert!(index_exists(&conn, i), "missing index {i}");
-    }
-    assert_eq!(max_version(&conn), 10);
-}
-
-#[test]
-fn v11_adds_conversations_and_post_columns() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v5_create_missing_tables(&conn).unwrap();
-    migrations::v11_perf_schema(&conn).unwrap();
-    assert!(table_exists(&conn, "conversations"));
-    assert!(column_exists(&conn, "posts", "rsvp_event_id"));
-    assert!(column_exists(&conn, "reminders", "trigger_at"));
-    assert!(index_exists(&conn, "idx_notifications_unread_type"));
-    assert_eq!(max_version(&conn), 11);
-}
-
-#[test]
-fn v12_adds_post_category_and_follower_count() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v5_create_missing_tables(&conn).unwrap();
-    migrations::v11_perf_schema(&conn).unwrap();
-    migrations::v12_perf_schema(&conn).unwrap();
-    assert!(column_exists(&conn, "posts", "category"));
-    assert!(column_exists(&conn, "users", "follower_count"));
-    assert_eq!(max_version(&conn), 12);
-}
-
-#[test]
-fn v13_adds_perf_schema_round2() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v5_create_missing_tables(&conn).unwrap();
-    migrations::v11_perf_schema(&conn).unwrap();
-    migrations::v12_perf_schema(&conn).unwrap();
-    migrations::v13_perf_schema(&conn).unwrap();
-    assert!(column_exists(&conn, "posts", "reposts_count"));
-    assert!(column_exists(&conn, "posts", "event_lat"));
-    assert!(column_exists(&conn, "posts", "event_lng"));
-    assert!(index_exists(&conn, "idx_post_views_post_id"));
-    assert!(index_exists(&conn, "idx_posts_event_lat_lng"));
-    assert!(trigger_exists(&conn, "reposts_ai"));
-    assert!(trigger_exists(&conn, "reposts_ad"));
-    assert_eq!(max_version(&conn), 13);
-}
-
-#[test]
 fn full_chain_reaches_schema_version() {
     let (_db, conn) = bare_db();
     migrations::v1_create_tables(&conn).unwrap();
-    migrations::v2_create_group_messages(&conn).unwrap();
-    migrations::v3_create_social_tables(&conn).unwrap();
-    migrations::v4_create_sync_tables(&conn).unwrap();
-    migrations::v5_create_missing_tables(&conn).unwrap();
-    migrations::v6_purge_orphan_fts_rows(&conn).unwrap();
-    migrations::v7_rebuild_fts_triggers(&conn).unwrap();
-    migrations::v8_shared_keys_escrow_confirms(&conn).unwrap();
-    migrations::v9_users_fts(&conn).unwrap();
-    migrations::v10_perf_indexes(&conn).unwrap();
-    migrations::v11_perf_schema(&conn).unwrap();
-    migrations::v12_perf_schema(&conn).unwrap();
-    migrations::v13_perf_schema(&conn).unwrap();
     assert_eq!(max_version(&conn), SCHEMA_VERSION);
+}
+
+/// Legacy pre-squash database: the four tables that gained columns via ALTER
+/// TABLE in old migrations v008-v013, without those columns. Everything else
+/// is created fresh by v1_create_tables during migrate.
+fn legacy_db() -> Database {
+    let db = Database::open_in_memory().unwrap();
+    {
+        let conn = db.conn().unwrap();
+        soshal_db_core::block_on(conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')));
+             CREATE TABLE users (
+                 pubkey TEXT PRIMARY KEY,
+                 npub TEXT NOT NULL,
+                 name TEXT,
+                 display_name TEXT,
+                 about TEXT,
+                 picture TEXT,
+                 banner TEXT,
+                 nip05 TEXT,
+                 lud16 TEXT,
+                 created_at INTEGER NOT NULL DEFAULT 0,
+                 updated_at INTEGER NOT NULL DEFAULT 0,
+                 metadata_json TEXT,
+                 contact_pubkeys TEXT DEFAULT '[]',
+                 relay_list TEXT DEFAULT '[]'
+             );
+             CREATE TABLE posts (
+                 id TEXT PRIMARY KEY,
+                 pubkey TEXT NOT NULL REFERENCES users(pubkey),
+                 content TEXT NOT NULL DEFAULT '',
+                 kind INTEGER NOT NULL DEFAULT 1,
+                 created_at INTEGER NOT NULL,
+                 tags_json TEXT NOT NULL DEFAULT '[]',
+                 sig TEXT,
+                 reply_to TEXT,
+                 root_id TEXT,
+                 mentioned_pubkeys TEXT DEFAULT '[]',
+                 mentioned_hashtags TEXT DEFAULT '[]',
+                 subject TEXT,
+                 sync_status TEXT NOT NULL DEFAULT 'pending',
+                 is_deleted INTEGER NOT NULL DEFAULT 0,
+                 scheduled_at INTEGER,
+                 freenet_key TEXT,
+                 is_freenet_native INTEGER NOT NULL DEFAULT 1
+             );
+             CREATE TABLE reminders (
+                 id TEXT PRIMARY KEY,
+                 event_id TEXT NOT NULL,
+                 title TEXT NOT NULL,
+                 start_time INTEGER NOT NULL,
+                 minutes_before INTEGER NOT NULL DEFAULT 10,
+                 created_at INTEGER NOT NULL DEFAULT 0
+             );
+             CREATE TABLE escrows (
+                 id TEXT PRIMARY KEY,
+                 listing_id TEXT NOT NULL,
+                 buyer_pubkey TEXT NOT NULL,
+                 seller_pubkey TEXT NOT NULL,
+                 amount_msats INTEGER NOT NULL,
+                 currency TEXT NOT NULL DEFAULT 'sats',
+                 status TEXT NOT NULL DEFAULT 'created',
+                 escrow_note TEXT,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );",
+        ))
+        .unwrap();
+    }
+    db
+}
+
+const HEALED_COLUMNS: &[(&str, &str)] = &[
+    ("posts", "rsvp_event_id"),
+    ("posts", "category"),
+    ("posts", "reposts_count"),
+    ("posts", "event_lat"),
+    ("posts", "event_lng"),
+    ("reminders", "trigger_at"),
+    ("users", "follower_count"),
+    ("escrows", "buyer_confirmed"),
+    ("escrows", "seller_confirmed"),
+];
+
+#[test]
+fn legacy_db_heals_missing_columns() {
+    let db = legacy_db();
+    db.migrate().unwrap();
+    let conn = db.conn().unwrap();
+    for &(table, column) in HEALED_COLUMNS {
+        assert!(
+            column_exists(&conn, table, column),
+            "missing {table}.{column}"
+        );
+    }
+    assert!(index_exists(&conn, "idx_posts_rsvp_event"));
+    assert!(index_exists(&conn, "idx_posts_event_lat_lng"));
+    assert!(index_exists(&conn, "idx_users_follower_count"));
+    assert!(trigger_exists(&conn, "posts_ai"));
+    assert_eq!(max_version(&conn), 1);
+}
+
+#[test]
+fn legacy_db_with_old_migrations_heals_before_short_circuit() {
+    let db = legacy_db();
+    {
+        let conn = db.conn().unwrap();
+        soshal_db_core::block_on(
+            conn.execute_batch("INSERT OR IGNORE INTO _migrations (version) VALUES (13);"),
+        )
+        .unwrap();
+    }
+    db.migrate().unwrap();
+    let conn = db.conn().unwrap();
+    for &(table, column) in HEALED_COLUMNS {
+        assert!(
+            column_exists(&conn, table, column),
+            "missing {table}.{column}"
+        );
+    }
+    assert_eq!(max_version(&conn), 13);
+    assert!(
+        !table_exists(&conn, "messages"),
+        "v1 must be skipped when already migrated"
+    );
+}
+
+#[test]
+fn heal_legacy_schema_is_idempotent() {
+    let db = legacy_db();
+    db.migrate().unwrap();
+    db.migrate().unwrap();
+    let conn = db.conn().unwrap();
+    for &(table, column) in HEALED_COLUMNS {
+        assert!(
+            column_exists(&conn, table, column),
+            "missing {table}.{column}"
+        );
+    }
+    assert_eq!(max_version(&conn), 1);
 }

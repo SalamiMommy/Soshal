@@ -194,7 +194,12 @@ fn test_v6_purges_orphan_fts_rows() {
         .unwrap();
     }
 
-    soshal_db_core::schema::migrations::v6_purge_orphan_fts_rows(&db.conn().unwrap()).unwrap();
+    soshal_db_core::block_on(db.conn().unwrap().execute_batch(
+        "DELETE FROM posts_fts
+                 WHERE rowid > 0
+                   AND rowid NOT IN (SELECT rowid FROM posts);",
+    ))
+    .unwrap();
 
     let conn = db.conn().unwrap();
     let orphan: i64 = soshal_db_core::query::query_first(

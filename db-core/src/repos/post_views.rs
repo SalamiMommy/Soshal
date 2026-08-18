@@ -55,7 +55,9 @@ impl<'a> PostViewsRepo<'a> {
                 .await?
                 .next()
                 .await?
-                .ok_or_else(|| crate::error::DbError::Migration("count query returned no row".to_string()))?
+                .ok_or_else(|| {
+                    crate::error::DbError::Migration("count query returned no row".to_string())
+                })?
                 .get(0)?;
             if count > MAX_SEEN_PER_USER {
                 tx.execute("DELETE FROM post_views WHERE pubkey = ?1 AND rowid IN (SELECT rowid FROM post_views WHERE pubkey = ?1 ORDER BY seen_at DESC, rowid DESC LIMIT -1 OFFSET ?2)", params![pubkey, MAX_SEEN_PER_USER]).await?;

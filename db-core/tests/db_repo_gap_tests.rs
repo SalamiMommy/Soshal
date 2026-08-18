@@ -84,7 +84,7 @@ fn notification_upsert_batch_skips_oversized_and_conflicts_update() {
         .unwrap();
     let unread = repo.get_unread("pk", 10).unwrap();
     assert!(unread.is_empty(), "conflict updates is_read");
-    assert!(repo.upsert_batch(&[]).unwrap() == ());
+    repo.upsert_batch(&[]).unwrap();
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn relay_get_all_and_delete() {
     };
     repo.upsert_batch(&[mk("wss://a.example", 1), mk("wss://b.example", 2)])
         .unwrap();
-    assert!(repo.upsert_batch(&[]).unwrap() == ());
+    repo.upsert_batch(&[]).unwrap();
     let all = repo.get_all().unwrap();
     assert_eq!(all.len(), 2);
     repo.delete("wss://a.example").unwrap();
