@@ -78,7 +78,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _refresh();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
   }
 
   Future<void> _refresh() async {
