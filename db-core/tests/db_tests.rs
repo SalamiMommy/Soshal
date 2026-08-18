@@ -657,6 +657,9 @@ fn test_reminder_crud_and_due_filtering() {
     repo.upsert(&r1).unwrap();
     let list = repo.list().unwrap();
     assert_eq!(list.len(), 1);
+
+    assert_eq!(repo.due(300, 60_000).unwrap().len(), 1);
+    assert!(repo.due(400, 1_000).unwrap().is_empty());
 }
 
 #[test]
@@ -1655,4 +1658,294 @@ fn test_async_query_api() {
         .unwrap();
         assert_eq!(capped, vec!["async_pk".to_string()]);
     });
+}
+
+#[test]
+fn test_message_upsert_batch_empty_and_oversize_skip() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = MessageRepo::new(&db);
+
+    // Empty slice is a no-op.
+    repo.upsert_batch(&[]).unwrap();
+    assert!(repo
+        .get_conversation("conv:1", 10, None)
+        .unwrap()
+        .is_empty());
+
+    let valid = MessageRow {
+        id: "m1".into(),
+        conversation_id: "conv:1".into(),
+        pubkey: "pk1".into(),
+        content: "hello".into(),
+        created_at: 100,
+        tags_json: "[]".into(),
+        reply_to: None,
+        sync_status: "synced".into(),
+        is_deleted: false,
+    };
+    let oversize = MessageRow {
+        id: "m2".into(),
+        conversation_id: "conv:1".into(),
+        pubkey: "pk1".into(),
+        content: "x".repeat(limits::MAX_CONTENT_BYTES + 1),
+        created_at: 200,
+        tags_json: "[]".into(),
+        reply_to: None,
+        sync_status: "synced".into(),
+        is_deleted: false,
+    };
+
+    repo.upsert_batch(&[valid, oversize]).unwrap();
+    let msgs = repo.get_conversation("conv:1", 10, None).unwrap();
+    assert_eq!(msgs.len(), 1, "oversize row must be skipped");
+    assert_eq!(msgs[0].id, "m1");
+    assert!(repo.get_by_id("m2").unwrap().is_none());
+    // Conversation last_message_at touched by the valid row only.
+    let conn = db.conn().unwrap();
+    let at: Option<i64> = soshal_db_core::query::query_first(
+        &conn,
+        "SELECT last_message_at FROM conversations WHERE conversation_id=?1",
+        soshal_db_core::libsql::params!["conv:1"],
+        |r| r.get(0),
+    )
+    .unwrap();
+    assert_eq!(at, Some(100));
+}
+
+#[test]
+fn test_message_upsert_batch_conflict_update() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = MessageRepo::new(&db);
+
+    let make = |id: &str, content: &str, created_at: i64| MessageRow {
+        id: id.into(),
+        conversation_id: "conv:2".into(),
+        pubkey: "pk1".into(),
+        content: content.into(),
+        created_at,
+        tags_json: "[]".into(),
+        reply_to: None,
+        sync_status: "synced".into(),
+        is_deleted: false,
+    };
+
+    // Same id twice in one batch: last occurrence wins.
+    repo.upsert_batch(&[make("m1", "first", 100), make("m1", "second", 100)])
+        .unwrap();
+    let got = repo.get_by_id("m1").unwrap().unwrap();
+    assert_eq!(got.content, "second");
+
+    // Re-batch with the same id updates stored fields.
+    let updated = MessageRow {
+        content: "edited".into(),
+        is_deleted: true,
+        ..make("m1", "second", 100)
+    };
+    repo.upsert_batch(&[updated]).unwrap();
+    let got = repo.get_by_id("m1").unwrap().unwrap();
+    assert_eq!(got.content, "edited");
+    assert!(got.is_deleted);
+    // get_conversation excludes deleted rows; undelete and re-check.
+    repo.upsert_batch(&[MessageRow {
+        id: "m1".into(),
+        conversation_id: "conv:2".into(),
+        pubkey: "pk1".into(),
+        content: "edited".into(),
+        created_at: 100,
+        tags_json: "[]".into(),
+        reply_to: None,
+        sync_status: "synced".into(),
+        is_deleted: false,
+    }])
+    .unwrap();
+    assert_eq!(repo.get_conversation("conv:2", 10, None).unwrap().len(), 1);
+}
+
+#[test]
+fn test_escrow_list_ordering() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = EscrowRepo::new(&db);
+
+    // Empty db -> empty vec.
+    assert!(repo.list().unwrap().is_empty());
+
+    let make = |id: &str, created_at: i64| EscrowRow {
+        id: id.into(),
+        listing_id: "l1".into(),
+        buyer_pubkey: "buyer".into(),
+        seller_pubkey: "seller".into(),
+        amount_msats: 1000,
+        currency: "sat".into(),
+        status: "created".into(),
+        escrow_note: None,
+        created_at,
+        updated_at: created_at,
+    };
+    repo.create(&make("e1", 100)).unwrap();
+    repo.create(&make("e2", 300)).unwrap();
+    repo.create(&make("e3", 200)).unwrap();
+
+    let list = repo.list().unwrap();
+    let ids: Vec<&str> = list.iter().map(|e| e.id.as_str()).collect();
+    assert_eq!(ids, vec!["e2", "e3", "e1"], "list must be created_at DESC");
+    let ats: Vec<i64> = list.iter().map(|e| e.created_at).collect();
+    assert_eq!(ats, vec![300, 200, 100]);
+}
+
+#[test]
+fn test_group_role_delete_by_id() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    {
+        let conn = db.conn().unwrap();
+        soshal_db_core::query::execute(
+            &conn,
+            "INSERT INTO groups (id, name) VALUES ('grp_del', 'Test Group')",
+            (),
+        )
+        .unwrap();
+    }
+    let repo = GroupRoleRepo::new(&db);
+
+    let role1 = GroupRoleRow {
+        id: "role_del_1".into(),
+        group_id: "grp_del".into(),
+        name: "Moderator".into(),
+        color: "#ff0000".into(),
+        position: 1,
+        permissions: "[]".into(),
+        created_at: 100,
+    };
+    let role2 = GroupRoleRow {
+        id: "role_del_2".into(),
+        group_id: "grp_del".into(),
+        name: "Admin".into(),
+        color: "#00ff00".into(),
+        position: 2,
+        permissions: "[]".into(),
+        created_at: 200,
+    };
+    repo.upsert(&role1).unwrap();
+    repo.upsert(&role2).unwrap();
+    assert_eq!(repo.list("grp_del").unwrap().len(), 2);
+
+    repo.delete("role_del_1").unwrap();
+    let remaining = repo.list("grp_del").unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, "role_del_2");
+
+    repo.delete("role_del_missing").unwrap();
+    assert_eq!(repo.list("grp_del").unwrap().len(), 1);
+}
+
+#[test]
+fn test_ephemeral_media_delete_by_id() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = EphemeralMediaRepo::new(&db);
+
+    let em1 = EphemeralMediaRow {
+        id: "em_del_1".into(),
+        message_id: "msg1".into(),
+        conversation_id: "conv1".into(),
+        conversation_type: "dm".into(),
+        media_url: "https://example.com/a.jpg".into(),
+        media_type: "image".into(),
+        sender_pubkey: "sender1".into(),
+        recipient_pubkey: "recipient1".into(),
+        max_views: 2,
+        current_views: 0,
+        state: "pending".into(),
+        expires_at: Some(2000),
+        created_at: 1000,
+        viewed_at: None,
+    };
+    let em2 = EphemeralMediaRow {
+        id: "em_del_2".into(),
+        message_id: "msg2".into(),
+        conversation_id: "conv1".into(),
+        conversation_type: "dm".into(),
+        media_url: "https://example.com/b.jpg".into(),
+        media_type: "image".into(),
+        sender_pubkey: "sender1".into(),
+        recipient_pubkey: "recipient1".into(),
+        max_views: 1,
+        current_views: 0,
+        state: "pending".into(),
+        expires_at: Some(2000),
+        created_at: 1001,
+        viewed_at: None,
+    };
+    repo.create(&em1).unwrap();
+    repo.create(&em2).unwrap();
+
+    repo.delete("em_del_1").unwrap();
+    assert!(repo.get("em_del_1").unwrap().is_none());
+    let sibling = repo.get("em_del_2").unwrap().unwrap();
+    assert_eq!(sibling.message_id, "msg2");
+
+    repo.delete("em_del_missing").unwrap();
+    assert!(repo.get("em_del_2").unwrap().is_some());
+}
+
+#[test]
+fn test_huddle_post_delete_by_id() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = HuddlePostRepo::new(&db);
+
+    let hp1 = HuddlePostRow {
+        id: "hp_del_1".into(),
+        huddle_id: "h_del".into(),
+        pubkey: "pk1".into(),
+        content: "one".into(),
+        created_at: 1000,
+        expires_at: 500,
+    };
+    let hp2 = HuddlePostRow {
+        id: "hp_del_2".into(),
+        huddle_id: "h_del".into(),
+        pubkey: "pk2".into(),
+        content: "two".into(),
+        created_at: 1001,
+        expires_at: 600,
+    };
+    repo.insert(&hp1).unwrap();
+    repo.insert(&hp2).unwrap();
+    assert_eq!(repo.list_by_huddle("h_del", 10, true).unwrap().len(), 2);
+
+    repo.delete("hp_del_1").unwrap();
+    let remaining = repo.list_by_huddle("h_del", 10, true).unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, "hp_del_2");
+
+    repo.delete("hp_del_missing").unwrap();
+    assert_eq!(repo.list_by_huddle("h_del", 10, true).unwrap().len(), 1);
+}
+
+#[test]
+fn test_reminder_delete_by_id() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = ReminderRepo::new(&db);
+
+    let r1 = ReminderRow {
+        id: "rem_del_1".into(),
+        event_id: "evt_del".into(),
+        title: "Delete Me".into(),
+        start_time: 900,
+        minutes_before: 10,
+        created_at: 0,
+    };
+    repo.upsert(&r1).unwrap();
+    assert_eq!(repo.list().unwrap().len(), 1);
+
+    repo.delete("rem_del_1").unwrap();
+    assert!(repo.list().unwrap().is_empty());
+
+    repo.delete("rem_del_missing").unwrap();
+    assert!(repo.list().unwrap().is_empty());
 }

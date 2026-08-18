@@ -102,30 +102,33 @@ impl<'a> MessageRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
             let sql = "INSERT INTO messages (id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted";
-            let mut stmt = tx.prepare(sql).await.map_err(crate::error::DbError::from)?;
+            // libsql quirk: re-executing a prepared UPSERT statement inside a
+            // transaction silently no-ops on conflict; execute per row instead.
             let mut convs: Vec<(&str, i64)> = Vec::new();
             for msg in messages {
                 if crate::repos::limits::row_too_big(&msg.content, &msg.tags_json) {
                     continue; // relay content too large: skip, never store
                 }
-                stmt.execute(params![
-                    msg.id.as_str(),
-                    msg.conversation_id.as_str(),
-                    msg.pubkey.as_str(),
-                    msg.content.as_str(),
-                    msg.created_at,
-                    msg.tags_json.as_str(),
-                    msg.reply_to.as_deref(),
-                    msg.sync_status.as_str(),
-                    msg.is_deleted,
-                ])
+                tx.execute(
+                    sql,
+                    params![
+                        msg.id.as_str(),
+                        msg.conversation_id.as_str(),
+                        msg.pubkey.as_str(),
+                        msg.content.as_str(),
+                        msg.created_at,
+                        msg.tags_json.as_str(),
+                        msg.reply_to.as_deref(),
+                        msg.sync_status.as_str(),
+                        msg.is_deleted,
+                    ],
+                )
                 .await
                 .map_err(crate::error::DbError::from)?;
                 if msg.conversation_id.starts_with("conv:") {
                     convs.push((msg.conversation_id.as_str(), msg.created_at));
                 }
             }
-            drop(stmt);
             for (conv_id, at) in convs {
                 tx.execute(
                     "INSERT INTO conversations (conversation_id, last_message_at) VALUES (?1, ?2) \

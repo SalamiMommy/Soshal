@@ -304,3 +304,109 @@ fn infer_mime_from_path(path: &str) -> String {
     }
     .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetch_from_blossom_rejects_loopback_and_bad_scheme() {
+        // loopback host rejected by SSRF guard
+        let err = protocol_fetch_from_blossom("http://127.0.0.1/x")
+            .await
+            .unwrap_err();
+        assert_eq!(err, "Invalid media URL");
+        // non-http(s) scheme rejected
+        let err = protocol_fetch_from_blossom("ftp://host/x")
+            .await
+            .unwrap_err();
+        assert_eq!(err, "Invalid media URL");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_from_blossom_requires_blob_path() {
+        let err = protocol_fetch_from_blossom("https://host")
+            .await
+            .unwrap_err();
+        assert_eq!(err, "media URL must point to a blob path");
+    }
+
+    #[tokio::test]
+    async fn test_handle_media_missing_blossom_url() {
+        let err = protocol_handle_media("/blossom").await.unwrap_err();
+        assert_eq!(err, "Missing blossom URL");
+    }
+
+    #[test]
+    fn test_metadata_media_path_validation() {
+        let err = protocol_metadata_media("/x").unwrap_err();
+        assert_eq!(err, "Invalid media path");
+        let err = protocol_metadata_media("/blossom/x").unwrap_err();
+        assert_eq!(err, "Unknown media source");
+    }
+
+    #[tokio::test]
+    async fn test_handle_relay_unknown_endpoint() {
+        let err = protocol_handle_relay("/nope").await.unwrap_err();
+        assert_eq!(err, "Unknown relay endpoint");
+    }
+
+    #[test]
+    fn test_infer_mime_from_path() {
+        let cases = [
+            ("a.jpg", "image/jpeg"),
+            ("a.jpeg", "image/jpeg"),
+            ("a.png", "image/png"),
+            ("a.GIF", "image/gif"),
+            ("a.webp", "image/webp"),
+            ("a.mp4", "video/mp4"),
+            ("a.webm", "video/webm"),
+            ("a.wav", "audio/wav"),
+            ("a.mp3", "audio/mpeg"),
+            ("a.json", "application/json"),
+            ("a.bin", "application/octet-stream"),
+            ("noext", "application/octet-stream"),
+        ];
+        for (path, want) in cases {
+            assert_eq!(infer_mime_from_path(path), want, "path: {path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_avatar_missing_pubkey() {
+        let err = protocol_handle_avatar("/").await.unwrap_err();
+        assert_eq!(err, "Missing pubkey");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_avatar_falls_back_to_identicon_on_invalid_picture_url() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _p = crate::ffi::db::tmp_db("proto_avatar", "proto");
+        let now = soshal_common_core::format::now_secs();
+        let row = soshal_db_core::repos::user::UserRow {
+            pubkey: "pk".to_string(),
+            npub: "npk".to_string(),
+            name: None,
+            display_name: None,
+            about: None,
+            picture: Some("http://127.0.0.1/x".to_string()),
+            banner: None,
+            nip05: None,
+            lud16: None,
+            created_at: now,
+            updated_at: now,
+            metadata_json: None,
+            contact_pubkeys: "[]".to_string(),
+            relay_list: "[]".to_string(),
+        };
+        super::super::db::with_db_result(|db| {
+            soshal_db_core::repos::user::UserRepo::new(db).upsert(&row)?;
+            Ok(true)
+        })
+        .unwrap();
+
+        // picture is a loopback URL -> fetch fails -> identicon fallback
+        let out = protocol_handle_avatar("/pk").await.unwrap();
+        assert_eq!(out, soshal_media_core::identicon::identicon_png("pk"));
+    }
+}

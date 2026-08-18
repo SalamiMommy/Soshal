@@ -670,4 +670,173 @@ mod tests {
         assert!(!v["is_following"].as_bool().unwrap(), "json: {json}");
         super::super::signer::signer_lock().unwrap();
     }
+
+    #[test]
+    fn test_wot_status_warning_distance_two() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("identity-wot", "identity");
+        let me = "a".repeat(64);
+        let friend = "b".repeat(64);
+        let target = "c".repeat(64);
+        let stranger = "d".repeat(64);
+        for (pk, npub, contacts) in [
+            (me.clone(), "npub1me", format!("[\"{friend}\"]")),
+            (friend.clone(), "npub1fr", format!("[\"{target}\"]")),
+            (target.clone(), "npub1tg", "[]".to_string()),
+            (stranger.clone(), "npub1st", "[]".to_string()),
+        ] {
+            crate::ffi::db::db_execute_raw(format!(
+                "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{pk}', '{npub}', '{contacts}') ON CONFLICT(pubkey) DO UPDATE SET contact_pubkeys='{contacts}'"
+            ))
+            .unwrap();
+        }
+        assert_eq!(
+            identity_get_wot_status(target.clone(), me.clone()).unwrap(),
+            "warning"
+        );
+        assert_eq!(
+            identity_get_wot_status(friend.clone(), me.clone()).unwrap(),
+            "trusted"
+        );
+        assert_eq!(
+            identity_get_wot_status(stranger.clone(), me.clone()).unwrap(),
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn test_store_profile_non_json_content_silent() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("identity-store-bad", "identity");
+        let pk = "e".repeat(64);
+        assert!(
+            identity_store_profile(format!(r#"{{"pubkey":"{pk}","content":"not json"}}"#)).unwrap()
+        );
+        let v: serde_json::Value =
+            serde_json::from_str(&identity_get_profile(pk.clone()).unwrap()).unwrap();
+        for k in [
+            "name",
+            "display_name",
+            "about",
+            "picture",
+            "banner",
+            "nip05",
+        ] {
+            assert_eq!(v[k], "", "field {k}");
+        }
+        let pk2 = "f".repeat(64);
+        assert!(identity_store_profile(format!(r#"{{"pubkey":"{pk2}","content":""}}"#)).unwrap());
+        let v: serde_json::Value =
+            serde_json::from_str(&identity_get_profile(pk2.clone()).unwrap()).unwrap();
+        assert_eq!(v["name"], "");
+    }
+
+    #[test]
+    fn test_search_users_limit_clamp() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("identity-search", "identity");
+        for i in 0..3 {
+            let pk = format!("{:064x}", i + 1);
+            let name = format!("alice{i}");
+            identity_store_profile(format!(
+                r#"{{"pubkey":"{pk}","content":"{{\"name\":\"{name}\"}}"}}"#
+            ))
+            .unwrap();
+        }
+        for limit in [0, -5] {
+            let out: Vec<serde_json::Value> =
+                serde_json::from_str(&identity_search_users("alice".into(), limit).unwrap())
+                    .unwrap();
+            assert_eq!(out.len(), 1, "limit {limit}");
+        }
+        let out: Vec<serde_json::Value> =
+            serde_json::from_str(&identity_search_users("alice".into(), 1000).unwrap()).unwrap();
+        assert_eq!(out.len(), 3);
+    }
+
+    #[test]
+    fn test_follow_user_idempotent_persist() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("identity-follow-dup", "identity");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        let target = "9".repeat(64);
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        crate::ffi::db::db_execute_raw(format!(
+            "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{me}', 'npub1me', '[\"{target}\"]') ON CONFLICT(pubkey) DO UPDATE SET contact_pubkeys='[\"{target}\"]'"
+        ))
+        .unwrap();
+        // No relay client in tests: publish fails, but the local follow
+        // persists before the publish step — call twice, expect one entry.
+        for _ in 0..2 {
+            let err = identity_follow_user(target.clone()).unwrap_err();
+            assert!(!err.contains("signer locked"), "{err}");
+        }
+        let follows: Vec<String> =
+            serde_json::from_str(&identity_fetch_follows(me.clone()).unwrap()).unwrap();
+        assert_eq!(follows.len(), 1);
+        assert_eq!(follows[0], target);
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_fetch_follows_roundtrip_and_malformed() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("identity-fetch-follows", "identity");
+        let pk = "1".repeat(64);
+        let x = "2".repeat(64);
+        let y = "3".repeat(64);
+        crate::ffi::db::db_execute_raw(format!(
+            "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{pk}', 'npub1x', '[\"{x}\",\"{y}\"]')"
+        ))
+        .unwrap();
+        let follows: Vec<String> =
+            serde_json::from_str(&identity_fetch_follows(pk.clone()).unwrap()).unwrap();
+        assert_eq!(follows, vec![x, y]);
+        crate::ffi::db::db_execute_raw(format!(
+            "UPDATE users SET contact_pubkeys='not-json' WHERE pubkey='{pk}'"
+        ))
+        .unwrap();
+        assert_eq!(identity_fetch_follows(pk.clone()).unwrap(), "[]");
+        assert_eq!(identity_fetch_follows("9".repeat(64)).unwrap(), "[]");
+    }
+
+    #[test]
+    fn test_all_users_ok_path() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("identity-all-users", "identity");
+        let p1 = "a1".repeat(32);
+        let p2 = "b2".repeat(32);
+        identity_store_profile(format!(
+            r#"{{"pubkey":"{p1}","content":"{{\"name\":\"Ann\"}}"}}"#
+        ))
+        .unwrap();
+        identity_store_profile(format!(
+            r#"{{"pubkey":"{p2}","content":"{{\"name\":\"Bob\"}}"}}"#
+        ))
+        .unwrap();
+        let users = all_users().unwrap();
+        assert_eq!(users.len(), 2);
+        let mut names: Vec<String> = users
+            .iter()
+            .map(|u| u.name.clone().unwrap_or_default())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["Ann".to_string(), "Bob".to_string()]);
+    }
 }

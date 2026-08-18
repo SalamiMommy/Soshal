@@ -428,4 +428,40 @@ mod tests {
         assert!(!*node.running.lock().unwrap_or_else(|e| e.into_inner()));
         assert!(node.udp_socket.is_none());
     }
+
+    #[test]
+    fn test_process_packet_non_announce_skips_routing() {
+        let node = ReticulumNode::new("test_pubkey_non_announce");
+        let other = ReticulumAddress::from_pubkey("other_pubkey");
+        let pkt = ReticulumPacket::new(other, ReticulumPacketType::LinkRequest, vec![]);
+
+        let forwarded = node.process_packet(&pkt).unwrap();
+        assert_eq!(forwarded.packet_type, ReticulumPacketType::LinkRequest);
+        assert_eq!(forwarded.hops, 1);
+
+        // Non-Announce packets must not touch the path table
+        assert_eq!(node.path_table.lock().unwrap().len(), 0);
+        assert_eq!(*node.rx_count.lock().unwrap_or_else(|e| e.into_inner()), 1);
+    }
+
+    #[test]
+    fn test_process_packet_self_addressed_returns_none() {
+        let node = ReticulumNode::new("test_pubkey_self");
+        let pkt = ReticulumPacket::new(node.destination, ReticulumPacketType::Announce, vec![]);
+
+        assert!(node.process_packet(&pkt).is_none());
+        assert_eq!(*node.rx_count.lock().unwrap_or_else(|e| e.into_inner()), 1);
+    }
+
+    #[test]
+    fn test_send_packet_without_transport_errors() {
+        let node = ReticulumNode::new("test_pubkey_no_udp");
+        let pkt = ReticulumPacket::new(node.destination, ReticulumPacketType::Announce, vec![]);
+
+        let err = node
+            .send_packet("127.0.0.1:4242".parse().unwrap(), &pkt)
+            .unwrap_err();
+        assert_eq!(err, "UDP transport not started");
+        assert_eq!(*node.tx_count.lock().unwrap_or_else(|e| e.into_inner()), 0);
+    }
 }

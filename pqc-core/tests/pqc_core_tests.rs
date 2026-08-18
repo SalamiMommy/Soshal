@@ -2,6 +2,7 @@
 //!
 //! Pure-Rust core: no FFI, no platform crates. Companion to `pqc_tests.rs`.
 
+use ml_dsa::{MlDsa65, Seed, SigningKey};
 use soshal_pqc_core::compat::{make_signer_from_secret_bytes, SignerFn};
 use soshal_pqc_core::dsa::{
     dsa_keygen, dsa_sign, dsa_sign_bytes, dsa_verify, dsa_verify_bytes, dsa_verify_hex,
@@ -136,6 +137,17 @@ fn dsa_verify_rejects_garbage() {
     assert!(!dsa_verify(&sig_bytes, b"msg", &pk));
 }
 
+#[test]
+fn dsa_sign_rejects_bad_sk_hex() {
+    assert!(dsa_sign(b"msg", "zz").is_none());
+}
+
+#[test]
+fn dsa_keygen_short_zero_seed_falls_back_to_rng() {
+    // len < 32 -> OS RNG fallback branch; must not panic.
+    assert!(dsa_keygen(Some(&[0u8; 5])).is_ok());
+}
+
 // ---------------------------------------------------------------- hybrid
 
 #[test]
@@ -197,6 +209,22 @@ fn hybrid_rejects_bad_version_and_lengths() {
     assert!(hybrid_decapsulate("00", &sk, b"d").is_err());
 }
 
+#[test]
+fn hybrid_rejects_bad_ek_and_garbage_ct_implicit_rejection() {
+    // Version byte valid but garbage ML-KEM ek: FIPS 203 canonical check fails -> Err.
+    let mut bad_ek = [0xFFu8; HYBRID_PK_LEN];
+    bad_ek[0] = HYBRID_VERSION;
+    assert!(hybrid_encapsulate_bytes(&bad_ek, b"d").is_err());
+    // Garbage ct never Errs: Ciphertext::try_from only checks length, decapsulate
+    // cannot fail (implicit rejection) -> Ok with a wrong ss.
+    let (pk, sk) = hybrid_keygen_bytes().unwrap();
+    let (_, ss_real) = hybrid_encapsulate_bytes(&pk, b"d").unwrap();
+    let mut bad_ct = [0xFFu8; HYBRID_CT_LEN];
+    bad_ct[0] = HYBRID_VERSION;
+    let ss_garbage = hybrid_decapsulate_bytes(&bad_ct, &sk, b"d").unwrap();
+    assert_ne!(ss_garbage, ss_real);
+}
+
 // ---------------------------------------------------------------- hkdf
 
 #[test]
@@ -241,6 +269,12 @@ fn kem_seal_roundtrip_empty_and_large() {
 }
 
 #[test]
+fn kem_seal_rejects_bad_pk_hex() {
+    assert!(kem_seal(b"x", "zz", b"d").is_err()); // bad hex
+    assert!(kem_seal(b"x", "00", b"d").is_err()); // wrong length
+}
+
+#[test]
 fn kem_unseal_rejects_bad_inputs() {
     let (pk, sk) = kem_keygen().unwrap();
     let (ct, nonce, enc) = kem_seal(b"payload", &pk, b"d").unwrap();
@@ -277,6 +311,8 @@ fn hybrid_seal_rejects_bad_inputs() {
     assert!(hybrid_unseal(&enc, "00", &ct, &sk, b"d").is_err());
     assert!(hybrid_unseal(&enc, &nonce, "00", &sk, b"d").is_err());
     assert!(hybrid_unseal(&enc, &nonce, &ct, "00", b"d").is_err());
+    assert!(hybrid_unseal(&enc, &nonce, "zz", &sk, b"d").is_err()); // ct bad hex
+    assert!(hybrid_unseal(&enc, &nonce, &ct, "zz", b"d").is_err()); // sk bad hex
 }
 
 // ---------------------------------------------------------------- freenet identity
@@ -365,5 +401,24 @@ fn compat_signer_seed_path_matches_dsa_sign() {
 fn compat_signer_rejects_invalid_keys() {
     assert!(make_signer_from_secret_bytes(&[]).is_none());
     assert!(make_signer_from_secret_bytes(&[1u8, 2, 3]).is_none());
+    assert!(make_signer_from_secret_bytes(&[0u8; 33]).is_none());
+}
+
+#[test]
+fn compat_signer_expanded_key_branch() {
+    let seed = [0x42u8; 32];
+    let seed_arr = Seed::try_from(seed.as_slice()).unwrap();
+    let sk = SigningKey::<MlDsa65>::from_seed(&seed_arr);
+    #[allow(deprecated)]
+    let expanded = sk.expanded_key().to_expanded();
+    assert_eq!(expanded.as_slice().len(), 4032);
+    // 4032-byte input fails the 32-byte seed branch, must take the expanded branch.
+    let signer: SignerFn = make_signer_from_secret_bytes(expanded.as_slice()).unwrap();
+    let msg = b"expanded-key";
+    let sig = signer(msg);
+    assert!(sig.len() > 3000); // ML-DSA-65 signature size
+    let (_, pk) = dsa_keygen(Some(&seed)).unwrap();
+    assert!(dsa_verify_bytes(&sig, msg, &hex::decode(&pk).unwrap()));
+    // 33-byte input matches neither branch.
     assert!(make_signer_from_secret_bytes(&[0u8; 33]).is_none());
 }

@@ -229,3 +229,105 @@ pub fn extract_waveform_path(path: &str, bins: usize) -> Result<Vec<f32>, String
 pub fn extract_waveform(path: &str, bins: usize) -> Result<Vec<f32>, String> {
     extract_waveform_path(path, bins)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_waveform_bytes, peaks};
+
+    /// Hand-rolled mono 16-bit PCM WAV (44-byte RIFF header), `n` samples at
+    /// constant `amplitude`. 8 kHz — waveform binning is rate-agnostic.
+    fn wav_pcm_i16(n: usize, amplitude: i16) -> Vec<u8> {
+        let data_len = n * 2;
+        let mut out = Vec::with_capacity(44 + data_len);
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(36 + data_len as u32).to_le_bytes());
+        out.extend_from_slice(b"WAVEfmt ");
+        out.extend_from_slice(&16u32.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        out.extend_from_slice(&1u16.to_le_bytes()); // mono
+        out.extend_from_slice(&8_000u32.to_le_bytes());
+        out.extend_from_slice(&16_000u32.to_le_bytes()); // byte rate
+        out.extend_from_slice(&2u16.to_le_bytes()); // block align
+        out.extend_from_slice(&16u16.to_le_bytes()); // bits
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&(data_len as u32).to_le_bytes());
+        for _ in 0..n {
+            out.extend_from_slice(&amplitude.to_le_bytes());
+        }
+        out
+    }
+
+    /// Pins the known inconsistency at the partial-tail bucket: full buckets
+    /// get the 0.01 RMS floor, the tail (samples % bins != 0) does not.
+    /// Quiet constant samples floor every full bucket to 0, yet the unfloored
+    /// tail survives — documenting current behavior, not fixing it.
+    #[test]
+    fn partial_tail_bucket_skips_silence_floor() {
+        let amp = 9.99e-5f32; // sqrt(amp) ~= 0.009995 < 0.01 → floored
+        let out = peaks(&[amp; 10], 32);
+        assert_eq!(out.len(), 32);
+        assert_eq!(out[0], 0.0, "full bucket must be floored by the 0.01 gate");
+        assert_eq!(out[1], (amp as f64).sqrt() as f32, "tail is unfloored");
+        assert!(out[2..].iter().all(|p| *p == 0.0));
+    }
+
+    /// Pins the empty-samples early return: zero samples → all-zero bins.
+    #[test]
+    fn empty_samples_yield_all_zero_bins() {
+        assert_eq!(peaks(&[], 32), vec![0.0; 32]);
+        // Empty-data WAV (44-byte header only) decodes to zero samples; the
+        // container path is guarded since symphonia behavior is out of scope.
+        if let Ok(out) = extract_waveform_bytes(&wav_pcm_i16(0, 0), 32) {
+            assert_eq!(out.len(), 32);
+            assert!(out.iter().all(|p| *p == 0.0));
+        }
+    }
+
+    /// Pins the strict `>` at the 0.01 RMS gate: just below floors to 0,
+    /// just above survives (then normalizes to 1.0).
+    #[test]
+    fn rms_just_below_and_above_floor_boundary() {
+        // sqrt(9.99e-5) ~= 0.009995 < 0.01 → all buckets floored to 0
+        assert_eq!(peaks(&[9.99e-5f32; 10], 2), vec![0.0, 0.0]);
+        // sqrt(1.0001e-4) ~= 0.010005 > 0.01 → kept, normalized to 1.0
+        assert_eq!(peaks(&[1.0001e-4f32; 10], 2), vec![1.0, 1.0]);
+    }
+
+    /// Pins the zero-pad tail: samples < bins leaves trailing 0.0 buckets.
+    #[test]
+    fn samples_fewer_than_bins_zero_pad() {
+        let wav = wav_pcm_i16(10, i16::MAX);
+        let out = extract_waveform_bytes(&wav, 32).unwrap();
+        assert_eq!(out.len(), 32);
+        // Bucket 0 (1 sample) + unfloored tail (9 samples) both land near 1.0
+        // after normalization; the other 30 buckets are padded zeros.
+        assert!((out[0] - 1.0).abs() < 1e-5, "bucket 0: {}", out[0]);
+        assert!(out[1] > 0.99, "tail bucket: {}", out[1]);
+        assert!(out[2..].iter().all(|p| *p == 0.0));
+    }
+
+    /// Pins the post-normalization <0.001 zero-out: a small-but-nonzero peak
+    /// survives the 0.01 floor, then normalization divides it down below
+    /// 0.001 and it is zeroed.
+    #[test]
+    fn normalize_zeroes_small_but_nonzero_peaks() {
+        // Bucket flush quirk: sample 0 flushes bucket 0 alone (rms 12); the
+        // next flush lands at i=10 covering samples 1..=10. Make those quiet
+        // (rms 0.01, just over the 0.01 floor): 0.01 / 12 < 0.001 → zeroed.
+        let mut samples = [1.0001e-4f32; 20];
+        samples[0] = 144.0;
+        let out = peaks(&samples, 2);
+        assert_eq!(out[0], 1.0);
+        assert_eq!(out[1], 0.0);
+    }
+
+    /// Pins NaN poisoning: an f32 NaN sample fails the strict `>` gate
+    /// (NaN > 0.01 is false), so its whole bucket floors to 0 while
+    /// neighboring buckets stay intact. peaks() takes f32 samples directly,
+    /// so no f32-WAV fixture is needed — 16-bit path can't carry NaN.
+    #[test]
+    fn nan_sample_poisons_bucket_to_zero() {
+        assert_eq!(peaks(&[f32::NAN, 1.0], 2), vec![0.0, 1.0]);
+        assert_eq!(peaks(&[1.0, f32::NAN], 2), vec![1.0, 0.0]);
+    }
+}

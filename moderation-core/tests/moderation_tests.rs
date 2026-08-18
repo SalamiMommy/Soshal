@@ -329,3 +329,19 @@ fn glitter_drops_css_uri_and_scheme_in_all_attr_names() {
     let cleaned = sanitize_glitter_content("<div style=\"background:url(filesystem:x)\">y</div>");
     assert!(!cleaned.contains("filesystem:"), "{cleaned}");
 }
+
+#[test]
+fn glitter_keeps_undecodable_entities_in_suspicious_attr_values() {
+    // &#39; decodes to a plain `'` (named-table decimal arm); &#xZZ; is not
+    // valid hex so the entity decoder strips the non-hex digits and the
+    // stub `&#x;ZZ;` survives. With no entity strings left, the
+    // contains_entity_for guard is inert and the href survives intact.
+    let input = "<a href=\"x&#xZZ;&#39;y\">text</a>";
+    let cleaned = sanitize_glitter_content(input);
+    assert_eq!(cleaned, "<a href=\"x&#x;ZZ;'y\">text</a>", "{cleaned}");
+    // &#47; decodes to `/`; the named table has no `/` entry (glitter.rs:14),
+    // so the entity guard never trips and the src survives intact.
+    let input = "<img src=\"x&#xZZ;&#47;y\">";
+    let cleaned = sanitize_glitter_content(input);
+    assert_eq!(cleaned, "<img src=\"x&#x;ZZ;/y\">", "{cleaned}");
+}

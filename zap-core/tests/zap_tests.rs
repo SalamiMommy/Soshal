@@ -187,3 +187,89 @@ fn nwc_connection_info_derives() {
     let deserialized: NwcConnectionInfo = serde_json::from_str(&json_str).unwrap();
     assert_eq!(info, deserialized);
 }
+
+#[test]
+fn nwc_uri_userinfo_ignored() {
+    let uri = format!(
+        "nostr+walletconnect://user@{}?relay=wss://relay.example.com&secret={}",
+        "a".repeat(64),
+        "b".repeat(64)
+    );
+    let info = parse_nwc_uri(&uri).unwrap();
+    assert_eq!(info.wallet_pubkey, "a".repeat(64));
+}
+
+#[test]
+fn nwc_uri_uppercase_hex_pubkey_accepted() {
+    let uri = format!(
+        "nostr+walletconnect://{}?relay=wss://relay.example.com&secret={}",
+        "A".repeat(64),
+        "b".repeat(64)
+    );
+    let info = parse_nwc_uri(&uri).unwrap();
+    assert_eq!(info.wallet_pubkey, "A".repeat(64));
+}
+
+#[test]
+fn nwc_uri_duplicate_query_keys_last_wins() {
+    let uri = format!(
+        "nostr+walletconnect://{}?relay=wss://first.example.com&relay=wss://second.example.com&secret={}",
+        "a".repeat(64),
+        "b".repeat(64)
+    );
+    let info = parse_nwc_uri(&uri).unwrap();
+    assert_eq!(info.relay_url, "wss://second.example.com");
+}
+
+#[test]
+fn nwc_uri_percent_encoded_secret_decoded() {
+    let uri = format!(
+        "nostr+walletconnect://{}?relay=wss://relay.example.com&secret={}",
+        "a".repeat(64),
+        "%62".repeat(64)
+    );
+    let info = parse_nwc_uri(&uri).unwrap();
+    assert_eq!(info.secret_hex, "b".repeat(64));
+}
+
+#[test]
+fn nwc_uri_non_443_wss_port_accepted() {
+    let uri = format!(
+        "nostr+walletconnect://{}?relay=wss://relay.example.com:444&secret={}",
+        "a".repeat(64),
+        "b".repeat(64)
+    );
+    let info = parse_nwc_uri(&uri).unwrap();
+    assert_eq!(info.relay_url, "wss://relay.example.com:444");
+}
+
+#[test]
+fn make_invoice_low_bound_one_sat() {
+    let req = make_invoice_request(1, "low".into()).unwrap();
+    match &req.params {
+        nostr::nips::nip47::RequestParams::MakeInvoice(p) => assert_eq!(p.amount, 1000),
+        _ => panic!("expected make_invoice params"),
+    }
+}
+
+#[test]
+fn bolt11_non_unit_letter_uses_btc_multiplier_and_caps() {
+    // "x" is not a unit letter: falls through to the BTC multiplier (10^11
+    // msat/BTC), overshooting the parse cap.
+    let err = parse_msats_from_bolt11("lnbc123x").unwrap_err();
+    assert!(err.contains("exceeds zap cap"), "got {err}");
+}
+
+#[test]
+fn bolt11_length_over_4096_silently_ok_zero() {
+    // Any input longer than 4096 bytes returns Ok(0) — including past 5000;
+    // there is no length-based Err branch.
+    assert_eq!(parse_msats_from_bolt11(&"x".repeat(4097)), Ok(0));
+    assert_eq!(parse_msats_from_bolt11(&"x".repeat(5001)), Ok(0));
+}
+
+#[test]
+fn bolt11_amount_sats_sub_sat_rounds_to_none() {
+    // 9n = 900 msat < 1000: rounds down to 0 sats -> None.
+    assert_eq!(bolt11_amount_sats("lnbc9n"), None);
+}

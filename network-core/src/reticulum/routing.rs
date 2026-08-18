@@ -113,4 +113,89 @@ mod tests {
         assert_eq!(table.get_route(&dest).unwrap().hop_count, 1);
         assert_eq!(table.get_route(&dest).unwrap().next_hop, hop2);
     }
+
+    #[test]
+    fn test_prune_expired_removes_stale_routes() {
+        let mut table = PathTable::new();
+        let dest = ReticulumAddress::from_pubkey("prune_dest");
+        let hop = ReticulumAddress::from_pubkey("prune_hop");
+
+        table.update_route(dest, hop, 1, 1000);
+        assert_eq!(table.len(), 1);
+
+        // Advance clock past the 7200 s TTL
+        let removed = table.prune_expired(1000 + DEFAULT_ROUTE_TTL_SECS + 1);
+        assert_eq!(removed, 1);
+        assert_eq!(table.len(), 0);
+        assert!(table.get_route(&dest).is_none());
+    }
+
+    #[test]
+    fn test_update_route_accepts_worse_hop_when_expired() {
+        let mut table = PathTable::new();
+        let dest = ReticulumAddress::from_pubkey("expired_dest");
+        let hop1 = ReticulumAddress::from_pubkey("expired_hop1");
+        let hop2 = ReticulumAddress::from_pubkey("expired_hop2");
+
+        assert!(table.update_route(dest, hop1, 2, 1000));
+
+        // Existing route is expired (now past TTL) so a worse hop is accepted
+        let now = 1000 + DEFAULT_ROUTE_TTL_SECS + 1;
+        assert!(table.update_route(dest, hop2, 5, now));
+        let route = table.get_route(&dest).unwrap();
+        assert_eq!(route.hop_count, 5);
+        assert_eq!(route.next_hop, hop2);
+    }
+
+    #[test]
+    fn test_update_route_accepts_equal_hop_count() {
+        let mut table = PathTable::new();
+        let dest = ReticulumAddress::from_pubkey("equal_dest");
+        let hop1 = ReticulumAddress::from_pubkey("equal_hop1");
+        let hop2 = ReticulumAddress::from_pubkey("equal_hop2");
+
+        assert!(table.update_route(dest, hop1, 2, 1000));
+
+        // Equal hop count is accepted (<=) and refreshes the route
+        assert!(table.update_route(dest, hop2, 2, 1005));
+        let route = table.get_route(&dest).unwrap();
+        assert_eq!(route.hop_count, 2);
+        assert_eq!(route.next_hop, hop2);
+    }
+
+    #[test]
+    fn test_entries_returns_all_routes() {
+        let mut table = PathTable::new();
+        table.update_route(
+            ReticulumAddress::from_pubkey("entries_dest1"),
+            ReticulumAddress::from_pubkey("entries_hop1"),
+            1,
+            1000,
+        );
+        table.update_route(
+            ReticulumAddress::from_pubkey("entries_dest2"),
+            ReticulumAddress::from_pubkey("entries_hop2"),
+            3,
+            1000,
+        );
+
+        let entries = table.entries();
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().any(|e| e.hop_count == 1));
+        assert!(entries.iter().any(|e| e.hop_count == 3));
+    }
+
+    #[test]
+    fn test_is_empty_reflects_table_state() {
+        let mut table = PathTable::new();
+        assert!(table.is_empty());
+
+        table.update_route(
+            ReticulumAddress::from_pubkey("empty_dest"),
+            ReticulumAddress::from_pubkey("empty_hop"),
+            1,
+            1000,
+        );
+        assert!(!table.is_empty());
+    }
 }

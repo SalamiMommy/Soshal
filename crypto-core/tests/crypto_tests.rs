@@ -448,3 +448,35 @@ fn pqc_error_paths_and_seed_determinism() {
     assert!(dsa::verify(&pk_a[..pk_a.len() - 1], b"msg", &sig).is_err());
     assert!(dsa::verify(&pk_a, b"msg", &sig[..sig.len() - 1]).is_err());
 }
+
+#[test]
+fn pqc_invalid_key_and_ciphertext_error_strings() {
+    // FIPS 203 §7.2 modulus check: each 12-bit 0xFFF chunk of an all-ones
+    // ek reduces mod q=3329 on decode, so the ByteEncode12 round-trip fails
+    // and EncapsulationKey768::new_from_slice errors (zeroed pk round-trips,
+    // so ML-KEM only validates the modulus, not key math).
+    let all_ones_pk = [0xFFu8; kem::PUBLIC_KEY_LEN];
+    assert_eq!(
+        kem::encapsulate(&all_ones_pk).unwrap_err(),
+        "invalid public key"
+    );
+    let zero_pk = [0u8; kem::PUBLIC_KEY_LEN];
+    assert!(kem::encapsulate(&zero_pk).is_ok());
+
+    // Wrong hybrid ct version byte reaches decapsulate's map_err.
+    let (pk, sk) = hybrid::keypair().unwrap();
+    let (ct, real_ss) = hybrid::encapsulate(&pk, b"domain").unwrap();
+    let mut bad_ct = ct;
+    bad_ct[0] = 0x02;
+    assert_eq!(
+        hybrid::decapsulate(&sk, &bad_ct, b"domain").unwrap_err(),
+        "invalid hybrid ciphertext"
+    );
+
+    // Version-1 garbage body is NOT validated: ct parse and KDF never fail,
+    // so decapsulate returns a wrong-but-valid shared secret.
+    let mut garbage_ct = [0u8; hybrid::CIPHERTEXT_LEN];
+    garbage_ct[0] = hybrid::VERSION;
+    let wrong_ss = hybrid::decapsulate(&sk, &garbage_ct, b"domain").unwrap();
+    assert_ne!(wrong_ss, real_ss);
+}

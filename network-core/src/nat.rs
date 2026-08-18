@@ -294,7 +294,7 @@ async fn run_manager(
                             {
                                 let remote = session.remote_candidates.lock().unwrap();
                                 for raw in &candidates {
-                                    if remote.len() >= MAX_REMOTE_CANDIDATES {
+                                    if remote.len() + added.len() >= MAX_REMOTE_CANDIDATES {
                                         break;
                                     }
                                     if remote.contains(raw) {
@@ -651,5 +651,100 @@ mod tests {
             "re-gather after remove"
         );
         handle.stop();
+    }
+
+    #[test]
+    fn add_remote_skips_duplicate_remote_candidate() {
+        let handle = spawn_nat_manager("eve".repeat(2)).unwrap();
+        let pk = "frank".repeat(2);
+        handle
+            .gather(&pk, &["stun:192.0.2.1:9".to_string()])
+            .unwrap();
+        let cand = "1 1 udp 2122260223 127.0.0.1 50050 typ host".to_string();
+        handle.add_remote(&pk, "u", "p", &[cand.clone()]).unwrap();
+        handle.add_remote(&pk, "u", "p", &[cand]).unwrap();
+        let statuses = handle.status();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(
+            statuses[0].remote_candidates.len(),
+            1,
+            "duplicate candidate skipped on second add_remote"
+        );
+        handle.remove(&pk);
+        handle.stop();
+    }
+
+    #[test]
+    fn add_remote_caps_remote_candidates_at_32() {
+        let handle = spawn_nat_manager("grace".repeat(2)).unwrap();
+        let pk = "heidi".repeat(2);
+        handle
+            .gather(&pk, &["stun:192.0.2.1:9".to_string()])
+            .unwrap();
+        let candidates: Vec<String> = (0..=32)
+            .map(|i| format!("1 1 udp 2122260223 127.0.0.1 {} typ host", 51000 + i))
+            .collect();
+        assert_eq!(candidates.len(), 33);
+        handle.add_remote(&pk, "u", "p", &candidates).unwrap();
+        let statuses = handle.status();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(
+            statuses[0].remote_candidates.len(),
+            MAX_REMOTE_CANDIDATES,
+            "33rd candidate dropped at cap"
+        );
+        handle.remove(&pk);
+        handle.stop();
+    }
+
+    #[test]
+    fn add_remote_rejects_empty_remote_credentials() {
+        let handle = spawn_nat_manager("ivan".repeat(2)).unwrap();
+        let pk = "judy".repeat(2);
+        handle
+            .gather(&pk, &["stun:192.0.2.1:9".to_string()])
+            .unwrap();
+        let cand = "1 1 udp 2122260223 127.0.0.1 52000 typ host".to_string();
+        let err = handle
+            .add_remote(&pk, "", "p", &[cand.clone()])
+            .unwrap_err();
+        assert!(err.contains("set remote credentials failed"), "got {err}");
+        let err = handle.add_remote(&pk, "u", "", &[cand]).unwrap_err();
+        assert!(err.contains("set remote credentials failed"), "got {err}");
+        handle.remove(&pk);
+        handle.stop();
+    }
+
+    #[test]
+    fn prune_failed_sessions_removes_failed_state_only() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let mk = |state: String| async move {
+                let config = AgentConfig {
+                    urls: Vec::new(),
+                    failed_timeout: Some(std::time::Duration::from_millis(100)),
+                    disconnected_timeout: Some(std::time::Duration::from_millis(100)),
+                    network_types: webrtc_ice::network_type::supported_network_types(),
+                    is_controlling: true,
+                    include_loopback: true,
+                    ..Default::default()
+                };
+                let shared = Arc::new(SessionShared::default());
+                *shared.state.lock().unwrap() = state;
+                Session {
+                    agent: Arc::new(Agent::new(config).await.unwrap()),
+                    shared,
+                    remote_candidates: Mutex::new(Vec::new()),
+                    ufrag: "u".to_string(),
+                    pwd: "p".to_string(),
+                }
+            };
+            let mut sessions: HashMap<String, Session> = HashMap::new();
+            sessions.insert("failed-pk".to_string(), mk("failed".to_string()).await);
+            sessions.insert("checking-pk".to_string(), mk("checking".to_string()).await);
+            prune_failed_sessions(&mut sessions).await;
+            assert_eq!(sessions.len(), 1, "failed session pruned");
+            assert!(sessions.contains_key("checking-pk"), "healthy session kept");
+        });
     }
 }
