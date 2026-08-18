@@ -80,7 +80,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1182769100;
+  int get rustContentHash => 1533595583;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -1018,6 +1018,8 @@ abstract class RustLibApi extends BaseApi {
 
   Future<String> crateFfiNetworkNetworkGetRelayStatus();
 
+  String crateFfiNetworkNetworkGetResolvedTransport();
+
   String crateFfiNetworkNetworkGetSysDiagnostics();
 
   String crateFfiNetworkNetworkGetTransportMode();
@@ -1237,6 +1239,14 @@ abstract class RustLibApi extends BaseApi {
       {required PlatformInt64 textureId, required BigInt frameTimestampNs});
 
   bool crateFfiRelationsRelationsSendFriendRequest({required String pubkey});
+
+  bool crateFfiRelayRelayConnectI2P({required String destination});
+
+  String crateFfiRelayRelayNodeStart({required String pubkey});
+
+  String crateFfiRelayRelayNodeStatus();
+
+  bool crateFfiRelayRelayNodeStop();
 
   Future<Uint8List> crateFfiRenderRenderComputeMeshFrame(
       {required PlatformInt64 sessionId,
@@ -9523,6 +9533,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  String crateFfiNetworkNetworkGetResolvedTransport() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__network__network_get_resolved_transport(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiNetworkNetworkGetResolvedTransportConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiNetworkNetworkGetResolvedTransportConstMeta =>
+      const TaskConstMeta(
+        debugName: "network_get_resolved_transport",
+        argNames: [],
+      );
+
+  @override
   String crateFfiNetworkNetworkGetSysDiagnostics() {
     return handler.executeSync(SyncTask(
       callFfi: () {
@@ -11715,6 +11750,107 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "relations_send_friend_request",
         argNames: ["pubkey"],
+      );
+
+  @override
+  bool crateFfiRelayRelayConnectI2P({required String destination}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(destination, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__relay__relay_connect_i2p(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiRelayRelayConnectI2PConstMeta,
+      argValues: [destination],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiRelayRelayConnectI2PConstMeta =>
+      const TaskConstMeta(
+        debugName: "relay_connect_i2p",
+        argNames: ["destination"],
+      );
+
+  @override
+  String crateFfiRelayRelayNodeStart({required String pubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(pubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__relay__relay_node_start(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiRelayRelayNodeStartConstMeta,
+      argValues: [pubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiRelayRelayNodeStartConstMeta =>
+      const TaskConstMeta(
+        debugName: "relay_node_start",
+        argNames: ["pubkey"],
+      );
+
+  @override
+  String crateFfiRelayRelayNodeStatus() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__relay__relay_node_status(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiRelayRelayNodeStatusConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiRelayRelayNodeStatusConstMeta =>
+      const TaskConstMeta(
+        debugName: "relay_node_status",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiRelayRelayNodeStop() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__relay__relay_node_stop(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiRelayRelayNodeStopConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiRelayRelayNodeStopConstMeta => const TaskConstMeta(
+        debugName: "relay_node_stop",
+        argNames: [],
       );
 
   @override

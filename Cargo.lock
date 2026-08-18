@@ -4555,6 +4555,7 @@ dependencies = [
  "soshal-nostr-core",
  "soshal-notification-core",
  "soshal-pqc-core",
+ "soshal-relay-core",
  "soshal-search-core",
  "soshal-social-core",
  "soshal-spatial-core",
@@ -4755,6 +4756,16 @@ dependencies = [
  "serde_json",
  "x25519-dalek",
  "zeroize",
+]
+
+[[package]]
+name = "soshal-relay-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "soshal-network-core",
+ "tokio",
 ]
 
 [[package]]

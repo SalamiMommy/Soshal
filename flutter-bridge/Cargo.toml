@@ -17,6 +17,7 @@ soshal-media-core = { path = "../media-core" }
 soshal-content-core = { path = "../content-core" }
 soshal-identity-core = { path = "../identity-core" }
 soshal-network-core = { path = "../network-core" }
+soshal-relay-core = { path = "../relay-core" }
 soshal-storage-core = { path = "../storage-core" }
 soshal-feed-core = { path = "../feed-core" }
 soshal-groups-core = { path = "../groups-core" }

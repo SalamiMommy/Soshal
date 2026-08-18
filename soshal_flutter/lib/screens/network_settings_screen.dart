@@ -96,12 +96,37 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
   }
 
   Future<void> _setTransportMode(TransportMode mode) async {
-    final ok = await context.read<NetworkService>().setTransportMode(mode);
+    final service = context.read<NetworkService>();
+    final ok = await service.setTransportMode(mode);
+    if (ok) service.refreshResolvedTransport();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(ok
-            ? 'Transport mode: ${mode.name}'
+            ? 'Transport mode: ${mode.label}'
             : 'Transport mode change failed')));
+  }
+
+  void _startMeshRelay(NetworkService service) {
+    final pubkey = context.read<SessionService>().activePubkey ?? '';
+    if (pubkey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sign in first to start the relay')));
+      return;
+    }
+    try {
+      service.startMeshRelay(pubkey);
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Mesh relay: $e')));
+    }
+  }
+
+  String _meshPeersSummary(Map<String, dynamic> status) {
+    final peers = status['peers'];
+    if (peers is! Map) return '0';
+    final parts = <String>[];
+    peers.forEach((kind, count) => parts.add('$kind $count'));
+    return parts.isEmpty ? '0' : parts.join(' · ');
   }
 
   Future<void> _startI2p() async {
@@ -670,13 +695,63 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                 children: [
                   for (final mode in TransportMode.values)
                     ChoiceChip(
-                      label: Text(mode.name),
+                      label: Text(mode.label),
                       selected: service.transportMode == mode,
                       onSelected: (_) => _setTransportMode(mode),
                     ),
                 ],
               ),
             ),
+            if (service.resolved != null)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.route_outlined),
+                title: Text(
+                    'In use: ${service.resolved!.resolved.toUpperCase()}'),
+                subtitle: Text(service.resolved!.satisfied
+                    ? 'Mode ${service.transportMode.label}'
+                    : 'Preferred transport down - fell back to Nostr'),
+                trailing: Icon(
+                  service.resolved!.satisfied
+                      ? Icons.check_circle
+                      : Icons.warning_amber,
+                  color:
+                      service.resolved!.satisfied ? Colors.green : Colors.orange,
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    onPressed: service.meshRelayRunning
+                        ? service.stopMeshRelay
+                        : () => _startMeshRelay(service),
+                    icon: Icon(service.meshRelayRunning
+                        ? Icons.stop
+                        : Icons.hub_outlined),
+                    label: Text(service.meshRelayRunning
+                        ? 'Stop mesh relay'
+                        : 'Start mesh relay'),
+                  ),
+                  TextButton.icon(
+                    onPressed: service.refreshMeshRelayStatus,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Relay status'),
+                  ),
+                ],
+              ),
+            ),
+            if (service.meshStatus != null)
+              ListTile(
+                dense: true,
+                title: Text('Mesh relay: peers ${_meshPeersSummary(service.meshStatus!)}'),
+                subtitle: Text(
+                    'published ${service.meshStatus!['published']} · '
+                    'received ${service.meshStatus!['received']} · '
+                    'delivered ${service.meshStatus!['delivered']}'),
+              ),
             TextButton.icon(
               onPressed: () async {
                 final messenger = ScaffoldMessenger.of(context);

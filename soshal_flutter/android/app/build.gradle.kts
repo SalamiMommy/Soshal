@@ -19,7 +19,10 @@ android {
         applicationId = "com.example.soshal_flutter"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // AAudio (libaaudio, API 26) is linked into the Rust bridge (.so)
+        // for the H264/AAC codec layer, so devices older than Android 8.0
+        // cannot load it.
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)

@@ -52,7 +52,7 @@ void main() {
 
       await svc.loadTransportMode();
 
-      expect(svc.transportMode, TransportMode.auto);
+      expect(svc.transportMode, TransportMode.chain);
       expect(svc.i2pForced, isFalse);
       expect(api.callCount('crateFfiNetworkNetworkSetTransportMode'), 0);
     });
@@ -65,7 +65,7 @@ void main() {
       await svc.loadTransportMode();
 
       expectLastError(svc, 'db down');
-      expect(svc.transportMode, TransportMode.clearnet);
+      expect(svc.transportMode, TransportMode.chain);
     });
 
     test('setTransportMode applies and persists on success', () async {
@@ -91,7 +91,7 @@ void main() {
       final ok = await svc.setTransportMode(TransportMode.i2p);
 
       expect(ok, isFalse);
-      expect(svc.transportMode, TransportMode.clearnet);
+      expect(svc.transportMode, TransportMode.chain);
       expect(api.callCount('crateFfiDbDbSetSetting'), 0);
     });
 
@@ -102,7 +102,7 @@ void main() {
           (_) => throw Exception('mode boom'));
 
       await expectLater(
-        svc.setTransportMode(TransportMode.auto),
+        svc.setTransportMode(TransportMode.chain),
         throwsException,
       );
       expectLastError(svc, 'mode boom');
@@ -149,6 +149,77 @@ void main() {
       expect(map['running'], isTrue);
       expect(map['destination'], 'abc');
       expect(svc.lastError, isNull);
+    });
+  });
+
+  group('NetworkService resolved transport + mesh relay', () {
+    test('refreshResolvedTransport decodes probe-aware status', () async {
+      final svc = NetworkService();
+      addTearDown(svc.dispose);
+      api.stubString(
+        'crateFfiNetworkNetworkGetResolvedTransport',
+        '{"mode":"reticulum","resolved":"reticulum","satisfied":true}',
+      );
+
+      svc.refreshResolvedTransport();
+
+      expect(svc.resolved, isNotNull);
+      expect(svc.resolved!.mode, 'reticulum');
+      expect(svc.resolved!.resolved, 'reticulum');
+      expect(svc.resolved!.satisfied, isTrue);
+      expect(svc.lastError, isNull);
+    });
+
+    test('refreshResolvedTransport decodes unsatisfied fallback', () async {
+      final svc = NetworkService();
+      addTearDown(svc.dispose);
+      api.stubString(
+        'crateFfiNetworkNetworkGetResolvedTransport',
+        '{"mode":"i2p","resolved":"nostr","satisfied":false}',
+      );
+
+      svc.refreshResolvedTransport();
+
+      expect(svc.resolved!.resolved, 'nostr');
+      expect(svc.resolved!.satisfied, isFalse);
+    });
+
+    test('startMeshRelay forwards pubkey and parses status', () async {
+      final svc = NetworkService();
+      addTearDown(svc.dispose);
+      api.stubString(
+        'crateFfiRelayRelayNodeStart',
+        '{"running":true,"peers":{},"published":0,"received":0,"delivered":0}',
+      );
+
+      svc.startMeshRelay('abc123');
+
+      expect(svc.meshRelayRunning, isTrue);
+      expect(svc.meshStatus?['running'], isTrue);
+      final inv = api.callsOf('crateFfiRelayRelayNodeStart').single;
+      expect(api.namedArg(inv, 'pubkey'), 'abc123');
+    });
+
+    test('stopMeshRelay and refreshMeshRelayStatus toggle running flag',
+        () async {
+      final svc = NetworkService();
+      addTearDown(svc.dispose);
+      api.stubBool('crateFfiRelayRelayNodeStop', true);
+      api.stubString(
+        'crateFfiRelayRelayNodeStatus',
+        '{"running":true,"peers":{"reticulum":2},"published":1,'
+        '"received":4,"delivered":3}',
+      );
+
+      expect(svc.stopMeshRelay(), isTrue);
+      expect(svc.meshRelayRunning, isFalse);
+      expect(svc.meshStatus, isNull);
+
+      svc.refreshMeshRelayStatus();
+
+      expect(svc.meshRelayRunning, isTrue);
+      expect(svc.meshStatus?['peers'], {'reticulum': 2});
+      expect(svc.meshStatus?['delivered'], 3);
     });
   });
 

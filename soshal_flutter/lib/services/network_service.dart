@@ -24,13 +24,19 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
   bool? _i2p;
   bool? _freenet;
   List<RelayInfo> _relays = [];
-  TransportMode _transportMode = TransportMode.clearnet;
+  TransportMode _transportMode = TransportMode.chain;
+  ResolvedTransport? _resolved;
+  Map<String, dynamic>? _meshStatus;
+  bool _meshRelayRunning = false;
 
   bool? get i2p => _i2p;
   bool? get freenet => _freenet;
   List<RelayInfo> get relays => _relays;
   TransportMode get transportMode => _transportMode;
   bool get i2pForced => _transportMode == TransportMode.i2p;
+  ResolvedTransport? get resolved => _resolved;
+  Map<String, dynamic>? get meshStatus => _meshStatus;
+  bool get meshRelayRunning => _meshRelayRunning;
 
   /// Loads the persisted transport mode, then syncs the Rust-side static.
   Future<void> loadTransportMode() async {
@@ -42,7 +48,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       } else {
         final current =
             RustLib.instance.api.crateFfiNetworkNetworkGetTransportMode();
-        _transportMode = TransportMode.parse(current) ?? TransportMode.clearnet;
+        _transportMode = TransportMode.parse(current) ?? TransportMode.chain;
         notifyListeners();
       }
     } catch (e, st) {
@@ -56,11 +62,11 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
   Future<bool> setTransportMode(TransportMode mode) async {
     try {
       final ok = RustLib.instance.api
-          .crateFfiNetworkNetworkSetTransportMode(mode: mode.name);
+          .crateFfiNetworkNetworkSetTransportMode(mode: mode.key);
       if (ok) {
         _transportMode = mode;
         RustLib.instance.api
-            .crateFfiDbDbSetSetting(key: _modeKey, value: mode.name);
+            .crateFfiDbDbSetSetting(key: _modeKey, value: mode.key);
         clearLastError();
         notifyListeners();
       }
@@ -70,6 +76,52 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Queries the Rust-side resolved transport (probe-aware) and caches it.
+  void refreshResolvedTransport() {
+    try {
+      final json = RustLib.instance.api
+          .crateFfiNetworkNetworkGetResolvedTransport();
+      _resolved = ResolvedTransport.fromJson(jsonDecode(json));
+    } catch (e, st) {
+      setLastError(e, st);
+    }
+    notifyListeners();
+  }
+
+  /// Starts the device-as-relay mesh node (Reticulum + I2P SAM + Freenet
+  /// backends) plus its inbound ingest task. Returns the status JSON.
+  String startMeshRelay(String pubkey) {
+    final json = RustLib.instance.api.crateFfiRelayRelayNodeStart(pubkey: pubkey);
+    _meshRelayRunning = true;
+    _meshStatus = jsonDecode(json);
+    notifyListeners();
+    return json;
+  }
+
+  /// Stops the mesh relay node and its ingest task.
+  bool stopMeshRelay() {
+    final ok = RustLib.instance.api.crateFfiRelayRelayNodeStop();
+    if (ok) {
+      _meshRelayRunning = false;
+      _meshStatus = null;
+    }
+    notifyListeners();
+    return ok;
+  }
+
+  /// Refreshes mesh relay status JSON (peers per kind, published, received,
+  /// delivered).
+  void refreshMeshRelayStatus() {
+    try {
+      final json = RustLib.instance.api.crateFfiRelayRelayNodeStatus();
+      _meshStatus = jsonDecode(json);
+      _meshRelayRunning = _meshStatus?['running'] == true;
+    } catch (e, st) {
+      setLastError(e, st);
+    }
+    notifyListeners();
   }
 
   /// Starts the persistent i2p SAM session; returns the destination address.
@@ -682,16 +734,52 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
 }
 
 /// Transport mode for outgoing traffic (mirrors network-core transport.rs).
+/// `chain` is the default fallback chain Reticulum -> Freenet -> I2P -> Nostr;
+/// the four "only" modes pin a single transport and fall back to Nostr with
+/// `satisfied=false` when it is down. Keys match Rust `TransportMode::as_str`.
 enum TransportMode {
-  clearnet,
-  auto,
-  i2p;
+  chain('default', 'Default chain'),
+  reticulum('reticulum', 'Reticulum only'),
+  freenet('freenet', 'Freenet only'),
+  i2p('i2p', 'I2P only'),
+  nostr('nostr', 'Nostr only');
 
+  final String key;
+  final String label;
+
+  const TransportMode(this.key, this.label);
+
+  /// Parses a persisted key; legacy names "clearnet" -> nostr and
+  /// "auto" -> chain are accepted.
   static TransportMode? parse(String name) {
     for (final mode in TransportMode.values) {
-      if (mode.name == name) return mode;
+      if (mode.key == name) return mode;
     }
+    if (name == 'auto') return TransportMode.chain;
+    if (name == 'clearnet') return TransportMode.nostr;
     return null;
+  }
+}
+
+/// Resolved transport status as served by the bridge network module:
+/// `{mode, resolved, satisfied}`.
+class ResolvedTransport {
+  final String mode;
+  final String resolved;
+  final bool satisfied;
+
+  ResolvedTransport({
+    required this.mode,
+    required this.resolved,
+    required this.satisfied,
+  });
+
+  factory ResolvedTransport.fromJson(Map<String, dynamic> json) {
+    return ResolvedTransport(
+      mode: json.strOf('mode'),
+      resolved: json.strOf('resolved'),
+      satisfied: json['satisfied'] == true,
+    );
   }
 }
 

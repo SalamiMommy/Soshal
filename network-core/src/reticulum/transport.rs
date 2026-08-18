@@ -4,12 +4,12 @@ use super::address::ReticulumAddress;
 use super::auto_interface::{AutoInterface, AutoInterfaceConfig};
 use super::interface::{ReticulumInterfaceKind, ReticulumInterfaceStatus};
 use super::link::LinkManager;
-use super::packet::{ReticulumPacket, ReticulumPacketType};
+use super::packet::{ReticulumPacket, ReticulumPacketType, MAX_HOPS};
 use super::routing::PathTable;
 use super::tcp_interface::{TcpInterfaceConfig, TcpServerInterface};
 use serde::{Deserialize, Serialize};
 use soshal_common_core::format::now_secs;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{SocketAddr, UdpSocket};
 
 use std::sync::{Arc, Mutex, OnceLock};
@@ -34,6 +34,8 @@ pub struct ReticulumNode {
     pub tx_count: Arc<Mutex<u64>>,
     pub running: Arc<Mutex<bool>>,
     pub link_manager: Arc<LinkManager>,
+    pub peers: Arc<Mutex<HashSet<SocketAddr>>>,
+    pub delivered: Arc<Mutex<VecDeque<Vec<u8>>>>,
     udp_socket: Option<Arc<UdpSocket>>,
     transport_thread: Option<thread::JoinHandle<()>>,
     auto_interface: Option<AutoInterface>,
@@ -53,6 +55,8 @@ impl ReticulumNode {
             tx_count: Arc::new(Mutex::new(0)),
             running: Arc::new(Mutex::new(true)),
             link_manager: Arc::new(LinkManager::new()),
+            peers: Arc::new(Mutex::new(HashSet::new())),
+            delivered: Arc::new(Mutex::new(VecDeque::new())),
             udp_socket: None,
             transport_thread: None,
             auto_interface: None,
@@ -103,8 +107,10 @@ impl ReticulumNode {
         let interfaces = self.interfaces.clone();
         let rx_count = self.rx_count.clone();
         let _tx_count = self.tx_count.clone();
-        let _destination = self.destination;
+        let destination = self.destination;
         let link_manager = self.link_manager.clone();
+        let peers = self.peers.clone();
+        let delivered = self.delivered.clone();
 
         let udp_clone = udp_socket.clone();
         let handle = thread::spawn(move || {
@@ -112,12 +118,47 @@ impl ReticulumNode {
 
             while *running.lock().unwrap_or_else(|e| e.into_inner()) {
                 match udp_clone.recv_from(&mut buf) {
-                    Ok((len, _src_addr)) => {
+                    Ok((len, src_addr)) => {
                         if let Ok(packet_data) = super::slip::slip_decode(&buf[..len]) {
                             if let Ok(pkt) = ReticulumPacket::from_bytes(&packet_data) {
                                 let mut rx_guard =
                                     rx_count.lock().unwrap_or_else(|e| e.into_inner());
                                 *rx_guard += 1;
+
+                                peers
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .insert(src_addr);
+
+                                if pkt.packet_type == ReticulumPacketType::Data
+                                    && pkt.payload.len() <= 262144
+                                {
+                                    if pkt.destination.is_broadcast()
+                                        || pkt.destination == destination
+                                    {
+                                        let mut dq =
+                                            delivered.lock().unwrap_or_else(|e| e.into_inner());
+                                        if dq.len() >= 4096 {
+                                            dq.pop_front();
+                                        }
+                                        dq.push_back(pkt.payload.clone());
+                                    }
+                                    if pkt.hops < MAX_HOPS {
+                                        let mut fwd = pkt.clone();
+                                        fwd.increment_hops_in_place();
+                                        let known: Vec<SocketAddr> = peers
+                                            .lock()
+                                            .unwrap_or_else(|e| e.into_inner())
+                                            .iter()
+                                            .copied()
+                                            .filter(|p| *p != src_addr)
+                                            .collect();
+                                        let fwd_bytes = super::slip::slip_encode(&fwd.to_bytes());
+                                        for peer in known {
+                                            let _ = udp_clone.send_to(&fwd_bytes, peer);
+                                        }
+                                    }
+                                }
 
                                 let now_secs = now_secs() as u64;
 
@@ -209,6 +250,59 @@ impl ReticulumNode {
         }
 
         Ok(())
+    }
+
+    /// Broadcasts a Data packet to all known peers, returning the number sent to.
+    pub fn broadcast_data(&self, payload: Vec<u8>) -> usize {
+        if payload.len() > 262144 {
+            return 0;
+        }
+        let known = self.known_peers();
+        if known.is_empty() {
+            return 0;
+        }
+        let pkt = ReticulumPacket::new(
+            ReticulumAddress::from_bytes([0xffu8; 16]),
+            ReticulumPacketType::Data,
+            payload,
+        );
+        for peer in &known {
+            let _ = self.send_packet(*peer, &pkt);
+        }
+        known.len()
+    }
+
+    /// Drains and returns all queued inbound Data payloads.
+    pub fn drain_delivered(&self) -> Vec<Vec<u8>> {
+        let mut guard = self.delivered.lock().unwrap_or_else(|e| e.into_inner());
+        guard.drain(..).collect()
+    }
+
+    /// Returns a sorted copy of the known peer addresses.
+    pub fn known_peers(&self) -> Vec<SocketAddr> {
+        let mut peers: Vec<SocketAddr> = self
+            .peers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .copied()
+            .collect();
+        peers.sort();
+        peers
+    }
+
+    /// Number of known peer addresses.
+    pub fn peers_count(&self) -> usize {
+        self.peers.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    /// Sends a unicast Data packet to a specific peer.
+    pub fn send_data_to(&self, peer: SocketAddr, payload: Vec<u8>) -> Result<(), String> {
+        if payload.len() > 262144 {
+            return Err("Data payload exceeds 256 KiB cap".to_string());
+        }
+        let pkt = ReticulumPacket::new(self.destination, ReticulumPacketType::Data, payload);
+        self.send_packet(peer, &pkt)
     }
 
     pub fn get_status(&self) -> ReticulumNodeStatus {
@@ -463,5 +557,100 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, "UDP transport not started");
         assert_eq!(*node.tx_count.lock().unwrap_or_else(|e| e.into_inner()), 0);
+    }
+
+    fn poll_until(mut cond: impl FnMut() -> bool, what: &str) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if cond() {
+                break;
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("timeout waiting for {what}");
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    fn bound_addr(node: &ReticulumNode) -> SocketAddr {
+        node.udp_socket.as_ref().unwrap().local_addr().unwrap()
+    }
+
+    #[test]
+    fn test_data_broadcast_delivery() {
+        let mut node_a = ReticulumNode::new("test_pubkey_bcast_a");
+        node_a.start_udp_transport("127.0.0.1:0").unwrap();
+        let a_addr = bound_addr(&node_a);
+
+        let mut node_b = ReticulumNode::new("test_pubkey_bcast_b");
+        node_b.start_udp_transport("127.0.0.1:0").unwrap();
+        let b_addr = bound_addr(&node_b);
+
+        node_b.send_data_to(a_addr, vec![]).unwrap();
+        poll_until(|| node_a.peers_count() >= 1, "A to learn B");
+
+        let sent = node_a.broadcast_data(b"hello".to_vec());
+        assert_eq!(sent, 1);
+
+        let mut got = Vec::new();
+        poll_until(
+            || {
+                got = node_b.drain_delivered();
+                !got.is_empty()
+            },
+            "B to deliver broadcast",
+        );
+        assert_eq!(got, vec![b"hello".to_vec()]);
+
+        node_a.stop();
+        node_b.stop();
+    }
+
+    #[test]
+    fn test_data_forwarding() {
+        let mut node_a = ReticulumNode::new("test_pubkey_fwd_a");
+        node_a.start_udp_transport("127.0.0.1:0").unwrap();
+        let a_addr = bound_addr(&node_a);
+
+        let mut node_b = ReticulumNode::new("test_pubkey_fwd_b");
+        node_b.start_udp_transport("127.0.0.1:0").unwrap();
+        let b_addr = bound_addr(&node_b);
+
+        let mut node_c = ReticulumNode::new("test_pubkey_fwd_c");
+        node_c.start_udp_transport("127.0.0.1:0").unwrap();
+
+        node_c.send_data_to(b_addr, b"seed".to_vec()).unwrap();
+        node_b.send_data_to(a_addr, b"peer".to_vec()).unwrap();
+        poll_until(
+            || node_a.peers_count() >= 1 && node_b.peers_count() >= 1,
+            "A and B to learn peers",
+        );
+
+        let sent = node_a.broadcast_data(b"msg".to_vec());
+        assert_eq!(sent, 1);
+
+        let mut got_b = Vec::new();
+        poll_until(
+            || {
+                got_b = node_b.drain_delivered();
+                !got_b.is_empty()
+            },
+            "B to deliver msg",
+        );
+        assert_eq!(got_b, vec![b"msg".to_vec()]);
+
+        let mut got_c = Vec::new();
+        poll_until(
+            || {
+                got_c = node_c.drain_delivered();
+                !got_c.is_empty()
+            },
+            "C to receive forwarded msg",
+        );
+        assert_eq!(got_c, vec![b"msg".to_vec()]);
+
+        node_a.stop();
+        node_b.stop();
+        node_c.stop();
     }
 }

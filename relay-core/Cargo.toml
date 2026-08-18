@@ -1,0 +1,13 @@
+[package]
+name = "soshal-relay-core"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+soshal-network-core = { path = "../network-core" }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

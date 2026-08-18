@@ -12,7 +12,7 @@ use nostr_sdk::prelude::{Filter, SubscriptionId};
 use nostr_sdk::proxy::Proxy;
 use serde::{Deserialize, Serialize};
 use soshal_network_core::i2p_sam::I2PSessionManager;
-use soshal_network_core::transport::{TransportMode, I2P_SOCKS_PORT};
+use soshal_network_core::transport::{TransportKind, TransportMode, I2P_SOCKS_PORT};
 use std::net::SocketAddr;
 use std::sync::{Mutex, OnceLock};
 
@@ -20,8 +20,9 @@ use std::sync::{Mutex, OnceLock};
 /// already be signed (`signer_sign_unsigned`).
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
-/// Current transport mode for outgoing traffic (clearnet / auto / i2p).
-static TRANSPORT_MODE: Mutex<TransportMode> = Mutex::new(TransportMode::Clearnet);
+/// Current transport mode for outgoing traffic
+/// (default / reticulum / freenet / i2p / nostr).
+static TRANSPORT_MODE: Mutex<TransportMode> = Mutex::new(TransportMode::Default);
 
 /// Persistent i2p SAM session shared across p2p/streaming FFI calls.
 static I2P_MANAGER: Mutex<Option<I2PSessionManager>> = Mutex::new(None);
@@ -30,13 +31,29 @@ fn transport_mode() -> TransportMode {
     *TRANSPORT_MODE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Whether outgoing traffic should ride the local i2pd daemon right now.
+/// Whether the Reticulum mesh transport is started (bridge-side handle).
+fn reticulum_started() -> bool {
+    RETICULUM
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some()
+}
+
+/// Resolves the concrete transport to use for outgoing traffic.
+/// Default chain: Reticulum -> Freenet -> I2P -> Nostr. "Only" modes fall
+/// back to Nostr with satisfied=false when their transport is unavailable.
+pub(super) fn resolved_kind() -> (TransportKind, bool) {
+    transport_mode().resolve(
+        reticulum_started(),
+        super::util::tcp_probe("127.0.0.1", 8888),
+        super::util::tcp_probe("127.0.0.1", 7656),
+    )
+}
+
+/// Whether outgoing traffic should ride the local i2pd daemon right now
+/// (relay-proxy only — mesh traffic never uses the SOCKS hop).
 fn i2p_active() -> bool {
-    match transport_mode() {
-        TransportMode::I2p => true,
-        TransportMode::Auto => super::util::tcp_probe("127.0.0.1", 7656),
-        TransportMode::Clearnet => false,
-    }
+    resolved_kind().0 == TransportKind::I2p
 }
 
 /// SOCKS5 proxy address for the current transport, if i2p is active.
@@ -286,10 +303,26 @@ pub fn network_freenet_status() -> Result<bool, String> {
     Ok(super::util::tcp_probe("127.0.0.1", 8888)).into()
 }
 
-/// Current transport mode: `"clearnet"`, `"auto"`, or `"i2p"`.
+/// Current transport mode: `"default"`, `"reticulum"`, `"freenet"`,
+/// `"i2p"`, or `"nostr"` (legacy `"clearnet"`/`"auto"` accepted on set).
 #[frb(sync, serialize)]
 pub fn network_get_transport_mode() -> Result<String, String> {
     Ok(transport_mode().as_str().to_string()).into()
+}
+
+/// Resolved transport status: JSON `{mode, resolved, satisfied}`. `resolved`
+/// is the concrete transport in use after probing (Default chain + "only"
+/// fallbacks); `satisfied` is false when a preferred transport is down.
+#[frb(sync, serialize)]
+pub fn network_get_resolved_transport() -> Result<String, String> {
+    let (kind, satisfied) = resolved_kind();
+    Ok(serde_json::json!({
+        "mode": transport_mode().as_str(),
+        "resolved": kind.as_str(),
+        "satisfied": satisfied,
+    })
+    .to_string())
+    .into()
 }
 
 /// Sets the transport mode for all outgoing traffic. Persist in Dart
@@ -844,12 +877,44 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        for name in ["clearnet", "auto", "i2p"] {
+        for name in ["default", "reticulum", "freenet", "i2p", "nostr"] {
             assert!(super::network_set_transport_mode(name.to_string()).unwrap());
             assert_eq!(super::network_get_transport_mode().unwrap(), name);
         }
-        assert!(super::network_set_transport_mode("bogus".to_string()).is_err());
+        // Legacy persisted names still parse.
         assert!(super::network_set_transport_mode("clearnet".to_string()).unwrap());
+        assert_eq!(super::network_get_transport_mode().unwrap(), "nostr");
+        assert!(super::network_set_transport_mode("auto".to_string()).unwrap());
+        assert_eq!(super::network_get_transport_mode().unwrap(), "default");
+        assert!(super::network_set_transport_mode("bogus".to_string()).is_err());
+        assert!(super::network_set_transport_mode("nostr".to_string()).unwrap());
+    }
+
+    #[test]
+    fn test_resolved_transport_json() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        assert!(super::network_set_transport_mode("nostr".to_string()).unwrap());
+        let v: serde_json::Value =
+            serde_json::from_str(&super::network_get_resolved_transport().unwrap()).unwrap();
+        assert_eq!(v["mode"], "nostr");
+        assert_eq!(v["resolved"], "nostr");
+        assert_eq!(v["satisfied"], true);
+    }
+
+    #[test]
+    fn test_i2p_socks_addr_by_transport_mode() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for name in ["default", "reticulum", "freenet", "i2p", "nostr"] {
+            assert!(super::network_set_transport_mode(name.to_string()).unwrap());
+            // No local daemons in tests: nothing resolves to i2p, so the
+            // SOCKS proxy stays off (decoupled from mesh traffic).
+            assert!(super::i2p_socks_addr().is_none(), "mode {name}");
+        }
+        assert!(super::network_set_transport_mode("nostr".to_string()).unwrap());
     }
 
     #[tokio::test]
@@ -1052,23 +1117,6 @@ mod tests {
         // Restore the "no client" baseline for other tests.
         *super::client_guard() = None;
         assert!(super::network_get_relay_status().await.is_err());
-    }
-
-    #[test]
-    fn test_i2p_socks_addr_by_transport_mode() {
-        for name in ["clearnet", "auto"] {
-            assert!(super::network_set_transport_mode(name.to_string()).unwrap());
-            assert!(super::i2p_socks_addr().is_none(), "mode {name}");
-        }
-        assert!(super::network_set_transport_mode("i2p".to_string()).unwrap());
-        assert_eq!(
-            super::i2p_socks_addr(),
-            Some(std::net::SocketAddr::from((
-                [127, 0, 0, 1],
-                soshal_network_core::transport::I2P_SOCKS_PORT
-            )))
-        );
-        assert!(super::network_set_transport_mode("clearnet".to_string()).unwrap());
     }
 }
 

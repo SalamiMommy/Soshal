@@ -2655,6 +2655,14 @@ class RustLibWire implements BaseWire {
           port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__network__network_get_resolved_transport(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__network__network_get_resolved_transport(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__network__network_get_sys_diagnostics(
               PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_,
@@ -3310,6 +3318,38 @@ class RustLibWire implements BaseWire {
               int rust_vec_len_,
               int data_len_) =>
           wasmModule.wire__crate__ffi__relations__relations_send_friend_request(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__relay__relay_connect_i2p(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__relay__relay_connect_i2p(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__relay__relay_node_start(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__relay__relay_node_start(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__relay__relay_node_status(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__relay__relay_node_status(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__relay__relay_node_stop(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__relay__relay_node_stop(
               ptr_, rust_vec_len_, data_len_);
 
   void wire__crate__ffi__render__render_compute_mesh_frame(
@@ -5758,6 +5798,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
       int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__network__network_get_resolved_transport(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__network__network_get_sys_diagnostics(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
@@ -6224,6 +6270,30 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__relations__relations_send_friend_request(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__relay__relay_connect_i2p(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__relay__relay_node_start(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__relay__relay_node_status(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__relay__relay_node_stop(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);

@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `client_guard`, `connect_i2p`, `i2p_active`, `i2p_socks_addr`, `relay_status_snapshot`, `transport_mode`
+// These functions are ignored because they are not marked as `pub`: `client_guard`, `connect_i2p`, `i2p_active`, `i2p_socks_addr`, `relay_status_snapshot`, `resolved_kind`, `reticulum_started`, `transport_mode`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `RelayInfo`, `ReticulumStatusDto`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 
@@ -73,9 +73,16 @@ Future<bool> networkI2PStatus() =>
 Future<bool> networkFreenetStatus() =>
     RustLib.instance.api.crateFfiNetworkNetworkFreenetStatus();
 
-/// Current transport mode: `"clearnet"`, `"auto"`, or `"i2p"`.
+/// Current transport mode: `"default"`, `"reticulum"`, `"freenet"`,
+/// `"i2p"`, or `"nostr"` (legacy `"clearnet"`/`"auto"` accepted on set).
 String networkGetTransportMode() =>
     RustLib.instance.api.crateFfiNetworkNetworkGetTransportMode();
+
+/// Resolved transport status: JSON `{mode, resolved, satisfied}`. `resolved`
+/// is the concrete transport in use after probing (Default chain + "only"
+/// fallbacks); `satisfied` is false when a preferred transport is down.
+String networkGetResolvedTransport() =>
+    RustLib.instance.api.crateFfiNetworkNetworkGetResolvedTransport();
 
 /// Sets the transport mode for all outgoing traffic. Persist in Dart
 /// (settings KV) and re-init relays for the proxy to take effect.

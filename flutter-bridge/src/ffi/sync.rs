@@ -24,6 +24,17 @@ fn sink_guard() -> std::sync::MutexGuard<'static, Option<StreamSink<String>>> {
     SINK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Push a serialized update to the Dart stream (used by the mesh ingest
+/// task, mirroring the sync engine's forwarder).
+pub(crate) fn push_update_to_sink(json: String) {
+    let mut guard = sink_guard();
+    if let Some(sink) = guard.as_mut() {
+        if sink.add(json).is_err() {
+            *guard = None;
+        }
+    }
+}
+
 /// Subscribe to live sync updates. Each item is a JSON object tagged by
 /// `t`: `feed`, `dm`, `reaction`, or `profile`. The `StreamSink` parameter
 /// makes this a Rust→Dart stream: Dart subscribes via `syncEvents()`.
@@ -32,7 +43,7 @@ pub fn sync_events(sink: StreamSink<String>) {
 }
 
 /// Serialize one engine update into its Dart-facing JSON payload.
-fn update_json(update: SyncUpdate) -> Option<String> {
+pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
     match update {
         SyncUpdate::Feed {
             id,
@@ -180,11 +191,26 @@ fn event_id_of(event_json: &str) -> Option<String> {
 }
 
 /// Publish a freshly-signed event, or queue it in the persistent outbox when
-/// the relay client is unavailable (offline mode). Returns Ok on success or
-/// successful enqueue; the outbox is drained by the sync engine.
+/// no transport is available (offline mode). The mesh relay node is tried
+/// first when it is the resolved transport; otherwise the relay client.
+/// Returns Ok on success or successful enqueue; the outbox is drained by
+/// the sync engine.
 pub(crate) async fn publish_or_enqueue(action_type: &str, event_json: &str) -> Result<(), String> {
     let event_id = event_id_of(event_json).unwrap_or_else(|| "unknown".to_string());
-    match super::network::network_publish_event(event_json.to_string()).await {
+    let mut published = false;
+    if let Ok(mesh_ok) = super::relay::try_mesh_publish(event_json) {
+        if mesh_ok {
+            published = true;
+        }
+    }
+    let result: Result<(), String> = if published {
+        Ok(())
+    } else {
+        super::network::network_publish_event(event_json.to_string())
+            .await
+            .map(|_| ())
+    };
+    match result {
         Ok(_) => Ok(()),
         Err(pub_err) => {
             let now = soshal_common_core::format::now_secs();

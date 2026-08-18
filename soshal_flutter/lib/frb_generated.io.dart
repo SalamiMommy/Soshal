@@ -9159,6 +9159,37 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__network__network_get_relay_statusPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
+  WireSyncRust2DartSse
+  wire__crate__ffi__network__network_get_resolved_transport(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__network__network_get_resolved_transport(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__network__network_get_resolved_transportPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__network__network_get_resolved_transport',
+      );
+  late final _wire__crate__ffi__network__network_get_resolved_transport =
+      _wire__crate__ffi__network__network_get_resolved_transportPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   WireSyncRust2DartSse wire__crate__ffi__network__network_get_sys_diagnostics(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -11809,6 +11840,118 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__relations__relations_send_friend_request =
       _wire__crate__ffi__relations__relations_send_friend_requestPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__relay__relay_connect_i2p(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__relay__relay_connect_i2p(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__relay__relay_connect_i2pPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__relay__relay_connect_i2p');
+  late final _wire__crate__ffi__relay__relay_connect_i2p =
+      _wire__crate__ffi__relay__relay_connect_i2pPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__relay__relay_node_start(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__relay__relay_node_start(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__relay__relay_node_startPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__relay__relay_node_start');
+  late final _wire__crate__ffi__relay__relay_node_start =
+      _wire__crate__ffi__relay__relay_node_startPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__relay__relay_node_status(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__relay__relay_node_status(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__relay__relay_node_statusPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__relay__relay_node_status');
+  late final _wire__crate__ffi__relay__relay_node_status =
+      _wire__crate__ffi__relay__relay_node_statusPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__relay__relay_node_stop(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__relay__relay_node_stop(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__relay__relay_node_stopPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__relay__relay_node_stop');
+  late final _wire__crate__ffi__relay__relay_node_stop =
+      _wire__crate__ffi__relay__relay_node_stopPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -14849,9 +14992,6 @@ const int COLOR_FormatYUV420Flexible = 2135033992;
 
 typedef DartPort = ffi.Int64;
 typedef DartDartPort = int;
-
-
-
 
 
 typedef __ssize_t = ffi.Long;

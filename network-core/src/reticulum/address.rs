@@ -16,6 +16,11 @@ impl ReticulumAddress {
         Self(bytes)
     }
 
+    /// Returns true if this address is the broadcast address (all 0xff bytes).
+    pub fn is_broadcast(&self) -> bool {
+        self.0.iter().all(|b| *b == 0xff)
+    }
+
     /// Derives a 16-byte Reticulum address from a Nostr public key (hex or npub).
     pub fn from_pubkey(pubkey: &str) -> Self {
         let mut hasher = Sha256::new();

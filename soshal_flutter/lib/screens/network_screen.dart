@@ -191,6 +191,40 @@ class _NetworkScreenState extends State<NetworkScreen> {
     if (mounted) setState(() => _startingMesh = false);
   }
 
+  Future<void> _setTransportMode(
+      BuildContext context, NetworkService network, TransportMode mode) async {
+    final ok = await network.setTransportMode(mode);
+    if (ok) network.refreshResolvedTransport();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ok
+            ? 'Transport mode: ${mode.label}'
+            : 'Transport mode change failed')));
+  }
+
+  void _startMeshRelay(BuildContext context, NetworkService network) {
+    final pubkey = context.read<SessionService>().activePubkey ?? '';
+    if (pubkey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sign in first to start the relay')));
+      return;
+    }
+    try {
+      network.startMeshRelay(pubkey);
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Mesh relay: $e')));
+    }
+  }
+
+  String _meshPeersSummary(Map<String, dynamic>? status) {
+    final peers = status?['peers'];
+    if (peers is! Map) return '0';
+    final parts = <String>[];
+    peers.forEach((kind, count) => parts.add('$kind $count'));
+    return parts.isEmpty ? '0' : parts.join(' · ');
+  }
+
   Future<void> _refreshMesh() async {
     try {
       await context.read<MeshService>().refreshStatus();
@@ -829,6 +863,38 @@ class _NetworkScreenState extends State<NetworkScreen> {
           builder: (context, network, _) {
             return Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final mode in TransportMode.values)
+                        ChoiceChip(
+                          label: Text(mode.label),
+                          selected: network.transportMode == mode,
+                          onSelected: (_) =>
+                              _setTransportMode(context, network, mode),
+                        ),
+                    ],
+                  ),
+                ),
+                if (network.resolved != null)
+                  ListTile(
+                    dense: true,
+                    title: Text(
+                        'In use: ${network.resolved!.resolved.toUpperCase()}'),
+                    subtitle: Text(network.resolved!.satisfied
+                        ? 'Mode ${network.transportMode.label}'
+                        : 'Preferred transport down - fell back to Nostr'),
+                    trailing: Icon(
+                      network.resolved!.satisfied
+                          ? Icons.check_circle
+                          : Icons.warning_amber,
+                      color: network.resolved!.satisfied
+                          ? Colors.green
+                          : Colors.orange,
+                    ),
+                  ),
                 _transportRow(
                   context,
                   'I2P',
@@ -840,6 +906,23 @@ class _NetworkScreenState extends State<NetworkScreen> {
                   'Freenet',
                   network.freenet,
                   'Local Freenet gateway (127.0.0.1:8888)',
+                ),
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.hub_outlined),
+                  title: const Text('Mesh relay (device-as-relay)'),
+                  subtitle: Text(network.meshRelayRunning
+                      ? 'running - peers ${_meshPeersSummary(network.meshStatus)}'
+                      : 'stopped'),
+                  trailing: network.meshRelayRunning
+                      ? TextButton(
+                          onPressed: network.stopMeshRelay,
+                          child: const Text('Stop'),
+                        )
+                      : TextButton(
+                          onPressed: () => _startMeshRelay(context, network),
+                          child: const Text('Start'),
+                        ),
                 ),
               ],
             );

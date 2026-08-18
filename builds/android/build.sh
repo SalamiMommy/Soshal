@@ -214,7 +214,7 @@ build_abi() {
   env "CC_${triple}_linux_android=$NDK_BIN/$cc" \
   ${CC_GNU:+CC_arm-linux-androideabi_linux_android=$NDK_BIN/$cc} \
   "CC_${triple}=$NDK_BIN/$cc" \
-  RUSTFLAGS="-C linker=$NDK_BIN/$cc -L native=$SYSROOT/usr/lib/$libdir/24" \
+  RUSTFLAGS="-C linker=$NDK_BIN/$cc -L native=$SYSROOT/usr/lib/$libdir/24 -L native=$SYSROOT/usr/lib/$libdir/26" \
   OPUS_LIB_DIR="$OPUS_DIR/$abi/lib" LIBOPUS_STATIC=1 OPUS_NO_PKG=1 \
     cargo build -p "$BRIDGE" --release --target "$triple" --target-dir "$cache"
   cp "$so" "$JNI_LIBS/$abi/"
