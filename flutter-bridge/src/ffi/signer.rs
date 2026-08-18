@@ -463,4 +463,161 @@ mod tests {
         assert_eq!(signer_at_rest_key().unwrap(), rest1, "at-rest key stable");
         signer_lock().unwrap();
     }
+
+    #[test]
+    fn test_unlock_validation_and_schnorr_errors() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        signer_lock().unwrap();
+        let err = signer_unlock("not-a-secret-key".to_string()).unwrap_err();
+        assert!(
+            err.starts_with("invalid secret key: "),
+            "expected invalid secret key err, got: {err}"
+        );
+        assert!(signer_is_locked().unwrap());
+
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let nsec = keys.secret_key().to_bech32().unwrap();
+        assert!(nsec.starts_with("nsec1"), "nsec bech32: {nsec}");
+        assert_eq!(signer_unlock(nsec).unwrap(), keys.public_key().to_hex());
+
+        let err = signer_schnorr_sign("ab".repeat(31)).unwrap_err();
+        assert_eq!(err, "message must be 32 bytes");
+        let err = signer_schnorr_sign("zz".to_string()).unwrap_err();
+        assert!(err.starts_with("invalid hex: "), "got: {err}");
+        signer_lock().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_keyring_validation() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk_hex = keys.public_key().to_hex();
+        let other = soshal_nostr_core::keys::generate_keys();
+
+        signer_lock().unwrap();
+        let err = signer_save_to_keyring(pk_hex.clone()).await.unwrap_err();
+        assert_eq!(err, "signer locked");
+        signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let err = signer_save_to_keyring(other.public_key().to_hex())
+            .await
+            .unwrap_err();
+        assert_eq!(err, "pubkey does not match unlocked signer");
+
+        match signer_remove_from_keyring(other.public_key().to_hex()) {
+            Ok(removed) => assert!(!removed, "missing keychain entry must not report removal"),
+            Err(_) => {} // headless CI: keychain backend absent
+        }
+
+        if signer_save_to_keyring(pk_hex.clone()).await.is_ok() {
+            if let Ok(entry) = keyring::Entry::new(keychain_service(), &keychain_user(&pk_hex)) {
+                // valid secret of a DIFFERENT key under this entry → mismatch
+                if entry
+                    .set_password(&other.secret_key().to_secret_hex())
+                    .is_ok()
+                {
+                    let err = signer_unlock_from_keyring(pk_hex.clone())
+                        .await
+                        .unwrap_err();
+                    assert!(
+                        err.contains("stored key does not match pubkey"),
+                        "got: {err}"
+                    );
+                }
+                // garbage stored secret → rejected at parse
+                if entry.set_password("garbage-not-a-secret").is_ok() {
+                    let err = signer_unlock_from_keyring(pk_hex.clone())
+                        .await
+                        .unwrap_err();
+                    assert!(err.starts_with("stored key invalid: "), "got: {err}");
+                    let _ = signer_remove_from_keyring(pk_hex.clone());
+                }
+            }
+        }
+        signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_signing_and_nip44_error_paths() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let alice = soshal_nostr_core::keys::generate_keys();
+        let bob = soshal_nostr_core::keys::generate_keys();
+        signer_unlock(alice.secret_key().to_secret_hex()).unwrap();
+
+        let err = signer_sign_unsigned("not-json".to_string()).unwrap_err();
+        assert!(err.starts_with("invalid unsigned event: "), "got: {err}");
+
+        let json = serde_json::json!({
+            "pubkey": bob.public_key().to_hex(),
+            "created_at": soshal_common_core::format::now_secs(),
+            "kind": 1,
+            "tags": [],
+            "content": "hi",
+        })
+        .to_string();
+        let err = signer_sign_unsigned(json).unwrap_err();
+        assert!(err.starts_with("sign failed: "), "got: {err}");
+
+        signer_lock().unwrap();
+        let err = signer_nip44_encrypt("hi".to_string(), bob.public_key().to_hex()).unwrap_err();
+        assert_eq!(err, "signer locked");
+        signer_unlock(alice.secret_key().to_secret_hex()).unwrap();
+
+        let err = signer_nip44_encrypt("hi".to_string(), "not-a-pubkey".to_string()).unwrap_err();
+        assert!(err.starts_with("invalid recipient pubkey: "), "got: {err}");
+        let err = signer_nip44_decrypt("AAAA".to_string(), "not-a-pubkey".to_string()).unwrap_err();
+        assert!(err.starts_with("invalid sender pubkey: "), "got: {err}");
+
+        let payload =
+            signer_nip44_encrypt("secret dm".to_string(), bob.public_key().to_hex()).unwrap();
+        let mut chars: Vec<char> = payload.chars().collect();
+        chars[5] = if chars[5] == 'A' { 'B' } else { 'A' };
+        let tampered: String = chars.into_iter().collect();
+        let err = signer_nip44_decrypt(tampered, bob.public_key().to_hex()).unwrap_err();
+        assert!(err.starts_with("nip44 decrypt: "), "got: {err}");
+        signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_at_rest_first_call_order() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let keys = soshal_nostr_core::keys::generate_keys();
+        // at-rest FIRST (cache None branch), then lan
+        signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let rest_first = signer_at_rest_key().unwrap();
+        assert_ne!(rest_first, [0u8; 32]);
+        let lan_after_rest = lan_key().unwrap();
+        assert_eq!(
+            lan_key().unwrap(),
+            lan_after_rest,
+            "lan cached after at-rest fill"
+        );
+        assert_eq!(
+            signer_at_rest_key().unwrap(),
+            rest_first,
+            "at-rest stable after lan call"
+        );
+        // fresh cache (unlock clears): lan first, at-rest must derive identically
+        signer_lock().unwrap();
+        signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let lan_first = lan_key().unwrap();
+        assert_ne!(lan_first, [0u8; 32]);
+        assert_eq!(
+            signer_at_rest_key().unwrap(),
+            rest_first,
+            "at-rest order-independent of lan-first derivation"
+        );
+        signer_lock().unwrap();
+    }
 }
