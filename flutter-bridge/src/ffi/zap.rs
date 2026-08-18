@@ -291,7 +291,7 @@ pub fn zap_fetch_receipts(event_id: String, limit: i32) -> Result<String, String
             Ok::<_, libsql::Error>(out)
         })
         .map_err(soshal_db_core::error::DbError::from)?;
-        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+        Ok(super::util::json_ok_or_empty(&out))
     })?;
     Ok(json).into()
 }

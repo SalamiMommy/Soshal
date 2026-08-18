@@ -8,7 +8,7 @@ use crate::{SyncUpdate, WM_DM, WM_FEED, WM_META};
 use nostr::event::{Event, Kind};
 use nostr::key::PublicKey;
 use nostr::nips::nip19::ToBech32;
-use soshal_common_core::consts::KIND_EVENT_RSVP;
+use soshal_common_core::consts::{KIND_EVENT_RSVP, KIND_REACTION};
 use soshal_db_core::error::DbError;
 use soshal_db_core::repos::bookmark::{BookmarkRepo, BookmarkRow};
 use soshal_db_core::repos::post::{PostRepo, PostRow};
@@ -334,7 +334,7 @@ async fn handle_impl(
                 id: event.id.to_hex(),
                 pubkey: event.pubkey.to_hex(),
                 event_id: target.clone(),
-                kind: 7,
+                kind: KIND_REACTION as i64,
                 content: Some(event.content.clone()),
                 created_at: event.created_at.as_secs() as i64,
             };

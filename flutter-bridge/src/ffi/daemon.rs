@@ -35,15 +35,15 @@ fn daemons_dir() -> Result<std::path::PathBuf, String> {
 
 fn write_file(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        fs::create_dir_all(parent).map_err(super::util::to_err)?;
     }
     let mut f = OpenOptions::new()
         .create(true)
         .truncate(true)
         .write(true)
         .open(path)
-        .map_err(|e| e.to_string())?;
-    f.write_all(bytes).map_err(|e| e.to_string())
+        .map_err(super::util::to_err)?;
+    f.write_all(bytes).map_err(super::util::to_err)
 }
 
 /// Extract the three bundled daemons from assets into files/daemons/.
@@ -51,7 +51,7 @@ fn write_file(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
 #[frb(sync, serialize)]
 pub fn daemon_extract_daemons() -> Result<bool, String> {
     let dir = daemons_dir()?;
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&dir).map_err(super::util::to_err)?;
     let mut any = false;
     for name in DAEMONS {
         let bytes = match crate::platform::read_asset(&format!("daemons/{name}")) {
@@ -62,7 +62,7 @@ pub fn daemon_extract_daemons() -> Result<bool, String> {
         write_file(&target, &bytes)?;
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&target, fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
+            .map_err(super::util::to_err)?;
         any = true;
     }
     Ok(any)

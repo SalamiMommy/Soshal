@@ -835,12 +835,13 @@ pub fn marketplace_poll_close(poll_id: String, user_pubkey: String) -> Result<bo
         let repo = soshal_db_core::repos::poll::PollRepo::new(db);
         let poll = repo
             .get_poll(&poll_id)
-            .map_err(|e| e.to_string())?
+            .map_err(super::util::to_err)?
             .ok_or_else(|| "poll not found".to_string())?;
         if poll.pubkey != user_pubkey {
             return Err("not poll owner".to_string());
         }
-        repo.set_closed(&poll_id, true).map_err(|e| e.to_string())?;
+        repo.set_closed(&poll_id, true)
+            .map_err(super::util::to_err)?;
         Ok(true)
     })
 }

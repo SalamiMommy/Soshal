@@ -228,7 +228,7 @@ pub fn groups_fetch_messages(
             }
             Ok::<_, libsql::Error>(out)
         })?;
-        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+        Ok(super::util::json_ok_or_empty(&out))
     })
 }
 

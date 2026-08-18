@@ -1,3 +1,4 @@
+import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
@@ -288,8 +289,8 @@ class SessionAccount {
 
   factory SessionAccount.fromJson(Map<String, dynamic> json) {
     return SessionAccount(
-      pubkey: json['pubkey'] as String? ?? '',
-      npub: json['npub'] as String? ?? '',
+      pubkey: json.strOf('pubkey'),
+      npub: json.strOf('npub'),
       lastUsed: json['last_used'] as int? ?? 0,
       relayList: List<String>.from(json['relay_list'] ?? []),
     );
@@ -317,7 +318,7 @@ class SessionData {
 
   factory SessionData.fromJson(Map<String, dynamic> json) {
     return SessionData(
-      activePubkey: json['active_pubkey'] as String?,
+      activePubkey: json.strOrNull('active_pubkey'),
       accounts: (json['accounts'] as List?)
               ?.map((a) => SessionAccount.fromJson(a))
               .toList() ??

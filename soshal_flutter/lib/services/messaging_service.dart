@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 import 'moderation_service.dart';
@@ -659,13 +660,13 @@ class DirectMessage {
 
   factory DirectMessage.fromJson(Map<String, dynamic> json) {
     return DirectMessage(
-      id: json['id'] as String? ?? '',
-      sender: json['sender'] as String? ?? '',
-      recipient: json['recipient'] as String? ?? '',
-      content: json['content'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      decrypted: json['decrypted'] as bool? ?? false,
-      isOwn: json['is_own'] as bool? ?? false,
+      id: json.strOf('id'),
+      sender: json.strOf('sender'),
+      recipient: json.strOf('recipient'),
+      content: json.strOf('content'),
+      createdAt: json.intOf('created_at'),
+      decrypted: json.boolOf('decrypted'),
+      isOwn: json.boolOf('is_own'),
     );
   }
 
@@ -725,19 +726,19 @@ class ProfileInfo {
 
   factory ProfileInfo.fromJson(Map<String, dynamic> json) {
     return ProfileInfo(
-      pubkey: json['pubkey'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      displayName: json['display_name'] as String? ?? '',
-      picture: json['picture'] as String? ?? '',
-      banner: json['banner'] as String? ?? '',
-      about: json['about'] as String? ?? '',
-      nip05: json['nip05'] as String? ?? '',
-      nip05Valid: json['nip05_valid'] as bool? ?? false,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      followers: (json['followers'] as num?)?.toInt() ?? 0,
-      following: (json['following'] as num?)?.toInt() ?? 0,
-      isFollowing: json['is_following'] as bool? ?? false,
-      wotStatus: json['wot_status'] as String? ?? 'unknown',
+      pubkey: json.strOf('pubkey'),
+      name: json.strOf('name'),
+      displayName: json.strOf('display_name'),
+      picture: json.strOf('picture'),
+      banner: json.strOf('banner'),
+      about: json.strOf('about'),
+      nip05: json.strOf('nip05'),
+      nip05Valid: json.boolOf('nip05_valid'),
+      createdAt: json.intOf('created_at'),
+      followers: json.intOf('followers'),
+      following: json.intOf('following'),
+      isFollowing: json.boolOf('is_following'),
+      wotStatus: json.strOrNull('wot_status') ?? 'unknown',
     );
   }
 }
@@ -778,20 +779,20 @@ class EphemeralMedia {
 
   factory EphemeralMedia.fromJson(Map<String, dynamic> json) {
     return EphemeralMedia(
-      id: json['id'] as String? ?? '',
-      messageId: json['message_id'] as String? ?? '',
-      conversationId: json['conversation_id'] as String? ?? '',
-      conversationType: json['conversation_type'] as String? ?? '',
-      mediaUrl: json['media_url'] as String? ?? '',
-      mediaType: json['media_type'] as String? ?? 'image',
-      senderPubkey: json['sender_pubkey'] as String? ?? '',
-      recipientPubkey: json['recipient_pubkey'] as String? ?? '',
+      id: json.strOf('id'),
+      messageId: json.strOf('message_id'),
+      conversationId: json.strOf('conversation_id'),
+      conversationType: json.strOf('conversation_type'),
+      mediaUrl: json.strOf('media_url'),
+      mediaType: json.strOrNull('media_type') ?? 'image',
+      senderPubkey: json.strOf('sender_pubkey'),
+      recipientPubkey: json.strOf('recipient_pubkey'),
       maxViews: (json['max_views'] as num?)?.toInt() ?? 1,
-      currentViews: (json['current_views'] as num?)?.toInt() ?? 0,
-      state: json['state'] as String? ?? '',
-      expiresAt: (json['expires_at'] as num?)?.toInt() ?? 0,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      viewedAt: (json['viewed_at'] as num?)?.toInt() ?? 0,
+      currentViews: json.intOf('current_views'),
+      state: json.strOf('state'),
+      expiresAt: json.intOf('expires_at'),
+      createdAt: json.intOf('created_at'),
+      viewedAt: json.intOf('viewed_at'),
     );
   }
 }

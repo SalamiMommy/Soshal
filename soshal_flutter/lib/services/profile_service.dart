@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 import '../ffi/auth.dart';
 import '../ffi/content.dart' as ffi_content;
 import '../ffi/db.dart' as ffi_db;
+import '../utils/json_ext.dart';
 
 const int customProfileKind = 30085;
 
@@ -88,24 +89,24 @@ class SanitizedStyles {
 
   factory SanitizedStyles.fromJson(Map<String, dynamic> json) {
     return SanitizedStyles(
-      backgroundColor: json['backgroundColor'] as String?,
-      borderColor: json['borderColor'] as String?,
-      textColor: json['textColor'] as String?,
-      accentColor: json['accentColor'] as String?,
-      secondaryTextColor: json['secondaryTextColor'] as String?,
+      backgroundColor: json.strOrNull('backgroundColor'),
+      borderColor: json.strOrNull('borderColor'),
+      textColor: json.strOrNull('textColor'),
+      accentColor: json.strOrNull('accentColor'),
+      secondaryTextColor: json.strOrNull('secondaryTextColor'),
       padding: (json['padding'] as num?)?.toDouble(),
       margin: (json['margin'] as num?)?.toDouble(),
       borderRadius: (json['borderRadius'] as num?)?.toDouble(),
       borderWidth: (json['borderWidth'] as num?)?.toDouble(),
-      borderStyle: json['borderStyle'] as String?,
-      flexDirection: json['flexDirection'] as String?,
-      justifyContent: json['justifyContent'] as String?,
-      alignItems: json['alignItems'] as String?,
+      borderStyle: json.strOrNull('borderStyle'),
+      flexDirection: json.strOrNull('flexDirection'),
+      justifyContent: json.strOrNull('justifyContent'),
+      alignItems: json.strOrNull('alignItems'),
       height: json['height'],
       width: json['width'],
-      fontFamily: json['fontFamily'] as String?,
-      fontSize: json['fontSize'] as String?,
-      textAlign: json['textAlign'] as String?,
+      fontFamily: json.strOrNull('fontFamily'),
+      fontSize: json.strOrNull('fontSize'),
+      textAlign: json.strOrNull('textAlign'),
       offsetX: (json['offsetX'] as num?)?.toDouble(),
       offsetY: (json['offsetY'] as num?)?.toDouble(),
     );
@@ -176,7 +177,7 @@ class BaseWidgetProperties {
 
   factory BaseWidgetProperties.fromJson(Map<String, dynamic> json) {
     return BaseWidgetProperties(
-      title: json['title'] as String?,
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -210,10 +211,10 @@ class ThemeProperties extends BaseWidgetProperties {
   factory ThemeProperties.fromJson(Map<String, dynamic> json) {
     return ThemeProperties(
       themeName: json['themeName'] as String,
-      backgroundImageUrl: json['backgroundImageUrl'] as String?,
+      backgroundImageUrl: json.strOrNull('backgroundImageUrl'),
       backgroundBlur: (json['backgroundBlur'] as num?)?.toDouble(),
       enableOverlay: json['enableOverlay'] as bool?,
-      title: json['title'] as String?,
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -240,9 +241,9 @@ class TextBlockProperties extends BaseWidgetProperties {
 
   factory TextBlockProperties.fromJson(Map<String, dynamic> json) {
     return TextBlockProperties(
-      content: json['content'] as String? ?? '',
-      markdownEnabled: json['markdownEnabled'] as bool? ?? false,
-      title: json['title'] as String?,
+      content: json.strOf('content'),
+      markdownEnabled: json.boolOf('markdownEnabled'),
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -278,8 +279,8 @@ class ProfileMediaItem {
       id: json['id'] as String,
       url: json['url'] as String,
       type: json['type'] as String,
-      caption: json['caption'] as String?,
-      content: json['content'] as String?,
+      caption: json.strOrNull('caption'),
+      content: json.strOrNull('content'),
     );
   }
 }
@@ -312,9 +313,9 @@ class MediaGalleryProperties extends BaseWidgetProperties {
               ?.map((e) => ProfileMediaItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      layoutType: json['layoutType'] as String? ?? 'grid',
+      layoutType: json.strOrNull('layoutType') ?? 'grid',
       columns: json['columns'] as int?,
-      title: json['title'] as String?,
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -349,7 +350,7 @@ class FriendGridProperties extends BaseWidgetProperties {
           ?.map((e) => e as String)
           .toList(),
       showOnlineStatus: json['showOnlineStatus'] as bool? ?? true,
-      title: json['title'] as String?,
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -419,9 +420,9 @@ class MusicPlayerProperties extends BaseWidgetProperties {
               ?.map((e) => AudioTrack.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      autoplay: json['autoplay'] as bool? ?? false,
-      loop: json['loop'] as bool? ?? false,
-      title: json['title'] as String?,
+      autoplay: json.boolOf('autoplay'),
+      loop: json.boolOf('loop'),
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -455,12 +456,12 @@ class ContactCardProperties extends BaseWidgetProperties {
   factory ContactCardProperties.fromJson(Map<String, dynamic> json) {
     return ContactCardProperties(
       enableMessage: json['enableMessage'] as bool? ?? true,
-      enableVouch: json['enableVouch'] as bool? ?? false,
+      enableVouch: json.boolOf('enableVouch'),
       enableAddFriend: json['enableAddFriend'] as bool? ?? true,
       customLinks: (json['customLinks'] as List<dynamic>?)
           ?.map((e) => Map<String, String>.from(e as Map))
           .toList(),
-      title: json['title'] as String?,
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -512,7 +513,7 @@ class QAListProperties extends BaseWidgetProperties {
               ?.map((e) => QAPair.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      title: json['title'] as String?,
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -571,7 +572,7 @@ class TabContainerProperties extends BaseWidgetProperties {
               ?.map((e) => TabDef.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      title: json['title'] as String?,
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -616,10 +617,10 @@ class GuestbookEntry {
       id: json['id'] as String,
       pubkey: json['pubkey'] as String,
       name: json['name'] as String,
-      avatar: json['avatar'] as String?,
+      avatar: json.strOrNull('avatar'),
       content: json['content'] as String,
       createdAt: json['createdAt'] as int,
-      sig: json['sig'] as String?,
+      sig: json.strOrNull('sig'),
       approved: json['approved'] as bool?,
     );
   }
@@ -653,9 +654,9 @@ class GuestbookProperties extends BaseWidgetProperties {
               ?.map((e) => GuestbookEntry.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      allowAnonymous: json['allowAnonymous'] as bool? ?? false,
+      allowAnonymous: json.boolOf('allowAnonymous'),
       maxEntries: json['maxEntries'] as int? ?? 20,
-      title: json['title'] as String?,
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -684,7 +685,7 @@ class ProfileLinksProperties extends BaseWidgetProperties {
     return ProfileLinksProperties(
       showMinis: json['showMinis'] as bool? ?? true,
       showMusicloud: json['showMusicloud'] as bool? ?? true,
-      title: json['title'] as String?,
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -713,7 +714,7 @@ class HistoryProperties extends BaseWidgetProperties {
     return HistoryProperties(
       showReposts: json['showReposts'] as bool? ?? true,
       maxEntries: json['maxEntries'] as int? ?? 50,
-      title: json['title'] as String?,
+      title: json.strOrNull('title'),
       isVisible: json['isVisible'] as bool? ?? true,
     );
   }
@@ -832,7 +833,7 @@ class CustomProfile {
 
   factory CustomProfile.fromJson(Map<String, dynamic> json) {
     return CustomProfile(
-      themeId: json['themeId'] as String? ?? 'default',
+      themeId: json.strOrNull('themeId') ?? 'default',
       nodes: (json['nodes'] as List<dynamic>?)
               ?.map(
                   (e) => CustomProfileNode.fromJson(e as Map<String, dynamic>))

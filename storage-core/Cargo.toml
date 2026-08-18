@@ -18,7 +18,7 @@ zeroize = { workspace = true }
 tokio = { workspace = true }
 raptorq = "1.8"
 cuckoo_filter = "0.1"
-libc = "0.2"
+libc = { workspace = true }
 memmap2 = { workspace = true }
 
 

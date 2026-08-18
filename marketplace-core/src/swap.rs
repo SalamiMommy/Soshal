@@ -121,6 +121,7 @@ pub fn validate_swap_event_json(input: &str) -> String {
 mod tests {
     use super::*;
     use nostr::event::{EventBuilder, FinalizeEvent, Kind, Tag};
+    use soshal_common_core::consts::KIND_SWAP;
 
     fn keys() -> nostr::key::Keys {
         nostr::key::Keys::parse("0000000000000000000000000000000000000000000000000000000000000001")
@@ -135,8 +136,8 @@ mod tests {
         type_tag: &str,
         content: &str,
     ) -> String {
-        let mut builder =
-            EventBuilder::new(Kind::Custom(38383), content).tag(Tag::parse(["d", d_tag]).unwrap());
+        let mut builder = EventBuilder::new(Kind::Custom(KIND_SWAP), content)
+            .tag(Tag::parse(["d", d_tag]).unwrap());
         if with_p_tag {
             builder = builder.tag(Tag::parse(["p", keys.public_key().to_hex().as_str()]).unwrap());
         }
@@ -200,7 +201,7 @@ mod tests {
     fn swap_expiry_not_enforced() {
         let keys = keys();
         let pk = keys.public_key().to_hex();
-        let ev = EventBuilder::new(Kind::Custom(38383), "{}")
+        let ev = EventBuilder::new(Kind::Custom(KIND_SWAP), "{}")
             .tag(Tag::parse(["d", "swap-x"]).unwrap())
             .tag(Tag::parse(["p", pk.as_str()]).unwrap())
             .tag(Tag::parse(["role", "buyer"]).unwrap())
@@ -222,7 +223,7 @@ mod tests {
         let keys = keys();
         let pk = keys.public_key().to_hex();
 
-        let no_d = EventBuilder::new(Kind::Custom(38383), "{}")
+        let no_d = EventBuilder::new(Kind::Custom(KIND_SWAP), "{}")
             .tag(Tag::parse(["p", pk.as_str()]).unwrap())
             .tag(Tag::parse(["role", "buyer"]).unwrap())
             .tag(Tag::parse(["type", "buy_now"]).unwrap())
@@ -242,7 +243,7 @@ mod tests {
                 .unwrap();
         assert_eq!(v["valid"], false);
 
-        let no_role = EventBuilder::new(Kind::Custom(38383), "{}")
+        let no_role = EventBuilder::new(Kind::Custom(KIND_SWAP), "{}")
             .tag(Tag::parse(["d", "s3"]).unwrap())
             .tag(Tag::parse(["p", pk.as_str()]).unwrap())
             .tag(Tag::parse(["type", "buy_now"]).unwrap())
@@ -256,7 +257,7 @@ mod tests {
         .unwrap();
         assert_eq!(v["valid"], false);
 
-        let no_type = EventBuilder::new(Kind::Custom(38383), "{}")
+        let no_type = EventBuilder::new(Kind::Custom(KIND_SWAP), "{}")
             .tag(Tag::parse(["d", "s4"]).unwrap())
             .tag(Tag::parse(["p", pk.as_str()]).unwrap())
             .tag(Tag::parse(["role", "buyer"]).unwrap())

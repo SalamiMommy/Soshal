@@ -73,7 +73,7 @@ pub fn ephemeral_get(id: String) -> Result<String, String> {
 pub fn ephemeral_list_pending(pubkey: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
         let rows = EphemeralMediaRepo::new(db).get_pending_for_recipient(&pubkey)?;
-        Ok(serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string()))
+        Ok(super::util::json_ok_or_empty(&rows))
     })
 }
 

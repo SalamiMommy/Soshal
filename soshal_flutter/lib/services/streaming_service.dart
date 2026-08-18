@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/ffi/p2p.dart' as moq;
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 
@@ -510,7 +511,7 @@ class StreamRow {
   });
 
   factory StreamRow.fromJson(Map<String, dynamic> json) {
-    final content = json['content'] as String? ?? '';
+    final content = json.strOf('content');
     String parsedTitle = 'Untitled';
     String parsedSummary = '';
 
@@ -535,11 +536,11 @@ class StreamRow {
     }
 
     return StreamRow(
-      id: json['id'] as String? ?? '',
-      pubkey: json['pubkey'] as String? ?? '',
+      id: json.strOf('id'),
+      pubkey: json.strOf('pubkey'),
       content: content,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      views: (json['views'] as num?)?.toInt() ?? 0,
+      createdAt: json.intOf('created_at'),
+      views: json.intOf('views'),
       title: parsedTitle,
       summary: parsedSummary,
     );

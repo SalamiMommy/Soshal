@@ -17,3 +17,18 @@ resolve_flutter_bin() {
     exit 1
   fi
 }
+
+# Single stub fallback: writes a failing placeholder when a download fails
+create_stub() {
+  local path="${1:-$RELEASE_DIR/rnsd}" msg="$2"
+  cat > "$path" << EOF
+#!/bin/sh
+echo "$msg"
+exit 1
+EOF
+  chmod +x "$path"
+}
+
+resolve_script_dir() {
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)"
+}

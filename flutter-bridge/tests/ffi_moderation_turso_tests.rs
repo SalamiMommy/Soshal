@@ -1,28 +1,11 @@
+#[path = "common/mod.rs"]
+mod test_util;
+
 #[cfg(test)]
 mod ffi_tests {
     use soshal_flutter_bridge::*;
     use std::sync::Mutex;
-
     static DB_LOCK: Mutex<()> = Mutex::new(());
-
-    fn init_db(name: &str) -> (String, std::sync::MutexGuard<'static, ()>) {
-        let g = DB_LOCK.lock().unwrap();
-        let path = soshal_test_util::tmp_path("mod", name)
-            .to_string_lossy()
-            .to_string();
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-        assert!(db::db_init(path.clone()).is_ok());
-        (path, g)
-    }
-
-    fn cleanup(path: &str) {
-        let _ = std::fs::remove_file(path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-    }
-
     #[test]
     fn test_should_filter_pattern_content() {
         assert!(moderation::moderation_should_filter(
@@ -36,10 +19,9 @@ mod ffi_tests {
                 .unwrap()
         );
     }
-
     #[test]
     fn test_word_filters_roundtrip() {
-        let (path, _db_guard) = init_db("wordfilters");
+        let path = crate::test_util::init_db("moderation", "wordfilters");
         assert!(moderation::moderation_set_word_filters(
             r#"["badword","spam","kike"]"#.to_string()
         )
@@ -53,12 +35,11 @@ mod ffi_tests {
             ]
         );
         assert!(moderation::moderation_set_word_filters("not json".to_string()).is_err());
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_mute_unmute_roundtrip() {
-        let (path, _db_guard) = init_db("mute");
+        let path = crate::test_util::init_db("moderation", "mute");
         assert!(
             moderation::moderation_mute_user("me_pk".to_string(), "target_pk".to_string()).is_ok()
         );
@@ -79,12 +60,11 @@ mod ffi_tests {
         assert!(!moderation::moderation_get_muted("me_pk".to_string())
             .unwrap()
             .contains(&"target_pk".to_string()));
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_block_unblock_roundtrip() {
-        let (path, _db_guard) = init_db("block");
+        let path = crate::test_util::init_db("moderation", "block");
         assert!(
             moderation::moderation_block_user("me_pk".to_string(), "target_pk".to_string()).is_ok()
         );
@@ -105,12 +85,11 @@ mod ffi_tests {
         assert!(moderation::moderation_get_blocked("me_pk".to_string())
             .unwrap()
             .is_empty());
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_report_roundtrip() {
-        let (path, _db_guard) = init_db("report");
+        let path = crate::test_util::init_db("moderation", "report");
         assert!(moderation::moderation_report_content(
             "reporter_pk".to_string(),
             "post".to_string(),
@@ -148,9 +127,8 @@ mod ffi_tests {
         )
         .unwrap();
         assert!(gone.is_empty());
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_jury_case_create_and_partial_vote() {
         let case = moderation::moderation_create_jury_case(
@@ -175,7 +153,6 @@ mod ffi_tests {
         );
         assert!(moderation::moderation_submit_jury_vote(case, "not json".to_string()).is_err());
     }
-
     #[test]
     fn test_jury_vote_reaches_threshold() {
         let case = moderation::moderation_create_jury_case(
@@ -192,10 +169,9 @@ mod ffi_tests {
         assert!(out.contains(r#""threshold_reached":true"#));
         assert!(!out.contains(r#""verdict_signature":null"#));
     }
-
     #[test]
     fn test_turso_configure_and_status() {
-        let (path, _db_guard) = init_db("turso");
+        let path = crate::test_util::init_db("moderation", "turso");
         let res = moderation::moderation_unmute_user("x".to_string(), "y".to_string());
         assert!(res.is_ok());
         let status = turso::db_turso_status().unwrap();
@@ -207,12 +183,11 @@ mod ffi_tests {
         );
         let after = turso::db_turso_status().unwrap();
         assert!(after.contains(r#""configured":true"#));
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_turso_sync_paths() {
-        let (path, _db_guard) = init_db("tursosync");
+        let path = crate::test_util::init_db("moderation", "tursosync");
         assert!(turso::db_turso_sync()
             .unwrap_err()
             .contains("Turso credentials not configured"));
@@ -224,6 +199,6 @@ mod ffi_tests {
         assert!(synced.contains("Turso sync complete: target https://sync.turso.io"));
         let after = turso::db_turso_status().unwrap();
         assert!(after.contains(r#""status":"synced""#));
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
 }

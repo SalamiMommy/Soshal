@@ -1,3 +1,4 @@
+import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
@@ -113,23 +114,23 @@ class ScheduledPost {
 
   factory ScheduledPost.fromJson(Map<String, dynamic> json) {
     return ScheduledPost(
-      id: json['id'] as String? ?? '',
-      pubkey: json['pubkey'] as String? ?? '',
-      content: json['content'] as String? ?? '',
+      id: json.strOf('id'),
+      pubkey: json.strOf('pubkey'),
+      content: json.strOf('content'),
       kind: (json['kind'] as num?)?.toInt() ?? 1,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      tagsJson: json['tags_json'] as String? ?? '',
-      sig: json['sig'] as String?,
-      replyTo: json['reply_to'] as String?,
-      rootId: json['root_id'] as String?,
+      createdAt: json.intOf('created_at'),
+      tagsJson: json.strOf('tags_json'),
+      sig: json.strOrNull('sig'),
+      replyTo: json.strOrNull('reply_to'),
+      rootId: json.strOrNull('root_id'),
       mentionedPubkeys: _listFrom(json['mentioned_pubkeys']),
       mentionedHashtags: _listFrom(json['mentioned_hashtags']),
-      subject: json['subject'] as String?,
-      syncStatus: json['sync_status'] as String? ?? '',
-      isDeleted: json['is_deleted'] as bool? ?? false,
+      subject: json.strOrNull('subject'),
+      syncStatus: json.strOf('sync_status'),
+      isDeleted: json.boolOf('is_deleted'),
       scheduledAt: (json['scheduled_at'] as num?)?.toInt(),
-      freenetKey: json['freenet_key'] as String?,
-      isFreenetNative: json['is_freenet_native'] as bool? ?? false,
+      freenetKey: json.strOrNull('freenet_key'),
+      isFreenetNative: json.boolOf('is_freenet_native'),
     );
   }
 

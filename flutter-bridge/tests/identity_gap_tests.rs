@@ -3,49 +3,31 @@
 //! client, so success paths are asserted as far as `relay client not
 //! initialized`.
 
+#[path = "common/mod.rs"]
+mod test_util;
+
 #[cfg(test)]
 mod identity_gap_tests {
     use soshal_flutter_bridge::*;
-    use std::sync::Mutex;
-
-    static LOCK: Mutex<()> = Mutex::new(());
-
-    fn init_db(name: &str) -> String {
-        let path = format!(
-            "{}/soshal_identity_{}_{name}.db",
-            std::env::temp_dir().to_string_lossy(),
-            std::process::id()
-        );
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-        assert!(db::db_init(path.clone()).is_ok());
-        path
-    }
-
     fn unlock_signer() -> String {
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         pk
     }
-
     fn kind0_json(pubkey: &str, name: &str) -> String {
         format!(
             r#"{{"pubkey":"{pubkey}","content":"{{\"name\":\"{name}\",\"display_name\":\"{name} d\",\"about\":\"bio\",\"picture\":\"https://example.com/p.png\",\"banner\":\"https://example.com/b.png\",\"nip05\":\"{name}@example.com\"}}","created_at":1700000000}}"#
         )
     }
-
     #[test]
     fn profile_store_query_search_and_self_alias() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let db = init_db("profile");
+        let _g = crate::test_util::lock();
+        let db = crate::test_util::init_db("identity_gap", "profile");
         let pk = "a".repeat(64);
-
         let empty = identity::identity_get_profile(pk.clone()).unwrap();
         assert!(empty.contains("\"name\":\"\""));
         assert!(empty.contains("\"wot_status\":\"unknown\""));
-
         assert!(identity::identity_store_profile(kind0_json(&pk, "alice")).unwrap());
         let stored = identity::identity_get_profile(pk.clone()).unwrap();
         let v: serde_json::Value = serde_json::from_str(&stored).unwrap();
@@ -54,32 +36,26 @@ mod identity_gap_tests {
         assert_eq!(v["picture"], "https://example.com/p.png");
         assert_eq!(v["nip05"], "alice@example.com");
         assert_eq!(v["nip05_valid"], false);
-
         let self_profile = identity::identity_get_profile(pk.clone()).unwrap();
         assert!(self_profile.contains("\"name\":\"alice\""));
-
         let hits = identity::identity_search_users("ali".into(), 10).unwrap();
         assert!(hits.contains("\"name\":\"alice\""), "{hits}");
-
         let follows = identity::identity_fetch_follows(pk.clone()).unwrap();
         assert_eq!(follows, "[]");
         let _ = identity::identity_fetch_follows("b".repeat(64)).unwrap();
-
         let bad = identity::identity_store_profile(r#"{"content":"{}"}"#.into()).unwrap_err();
         assert!(bad.contains("missing pubkey"), "{bad}");
         let bad = identity::identity_store_profile("not json".into()).unwrap_err();
         assert!(bad.contains("invalid profile JSON"), "{bad}");
         let _ = db;
     }
-
     #[test]
     fn trust_score_and_wot_status_from_graph() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let db = init_db("wot");
+        let _g = crate::test_util::lock();
+        let db = crate::test_util::init_db("identity_gap", "wot");
         let me = "a".repeat(64);
         let friend = "b".repeat(64);
         let stranger = "c".repeat(64);
-
         let insert = |pk: &str, contacts: &str| {
             let sql = format!(
                 "INSERT INTO users (pubkey, npub, contact_pubkeys, relay_list) VALUES ('{pk}', '', '{contacts}', '[]')"
@@ -89,12 +65,10 @@ mod identity_gap_tests {
         insert(&me, &format!("[\"{friend}\"]"));
         insert(&friend, &format!("[\"{me}\"]"));
         insert(&stranger, "[]");
-
         let score = identity::identity_get_trust_score(me.clone(), friend.clone()).unwrap();
         assert!(score > 0.5, "mutual follow should score high: {score}");
         let low = identity::identity_get_trust_score(me.clone(), stranger.clone()).unwrap();
         assert!(low < 0.5, "no path should score low: {low}");
-
         assert_eq!(
             identity::identity_get_wot_status(friend.clone(), me.clone()).unwrap(),
             "trusted"
@@ -105,14 +79,12 @@ mod identity_gap_tests {
         );
         let _ = db;
     }
-
     #[test]
     fn blocked_users_roundtrip_via_moderation() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let db = init_db("blocks");
+        let _g = crate::test_util::lock();
+        let db = crate::test_util::init_db("identity_gap", "blocks");
         let me = "a".repeat(64);
         let target = "b".repeat(64);
-
         assert!(identity::identity_is_blocked(me.clone(), target.clone()).unwrap() == false);
         assert!(moderation::moderation_block_user(me.clone(), target.clone()).unwrap());
         assert!(identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
@@ -122,15 +94,13 @@ mod identity_gap_tests {
         assert!(identity::identity_is_blocked(me.clone(), target.clone()).unwrap() == false);
         let _ = db;
     }
-
     #[test]
     fn update_profile_signer_gated_and_signs() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let db = init_db("update");
+        let _g = crate::test_util::lock();
+        let db = crate::test_util::init_db("identity_gap", "update");
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
         signer::signer_lock().unwrap();
-
         let locked = identity::identity_update_profile(
             pk.clone(),
             "n".into(),
@@ -142,7 +112,6 @@ mod identity_gap_tests {
         )
         .unwrap_err();
         assert!(locked.contains("signer locked"), "{locked}");
-
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let other = identity::identity_update_profile(
             "f".repeat(64),
@@ -155,7 +124,6 @@ mod identity_gap_tests {
         )
         .unwrap_err();
         assert!(other.contains("does not match"), "{other}");
-
         let signed = identity::identity_update_profile(
             pk.clone(),
             "alice".into(),
@@ -175,25 +143,21 @@ mod identity_gap_tests {
             .contains("\"name\":\"alice\""));
         let _ = db;
     }
-
     #[test]
     fn publish_relay_list_and_follow_unfollow_reach_publish() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let db = init_db("publish");
+        let _g = crate::test_util::lock();
+        let db = crate::test_util::init_db("identity_gap", "publish");
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
         signer::signer_lock().unwrap();
-
         let locked = identity::identity_publish_relay_list(vec!["wss://relay.example.com".into()])
             .unwrap_err();
         assert!(locked.contains("signer locked"), "{locked}");
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-
         let bad_url =
             identity::identity_publish_relay_list(vec!["http://relay.example.com".into()])
                 .unwrap_err();
         assert!(bad_url.contains("invalid relay url"), "{bad_url}");
-
         let no_client =
             identity::identity_publish_relay_list(vec!["wss://relay.example.com".into()])
                 .unwrap_err();
@@ -201,7 +165,6 @@ mod identity_gap_tests {
             no_client.contains("relay client not initialized"),
             "{no_client}"
         );
-
         let target = "b".repeat(64);
         signer::signer_lock().unwrap();
         let locked = identity::identity_follow_user(target.clone()).unwrap_err();
@@ -219,24 +182,20 @@ mod identity_gap_tests {
         );
         let _ = db;
     }
-
     #[test]
     fn custom_profile_pubkey_gated() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let db = init_db("custom");
+        let _g = crate::test_util::lock();
+        let db = crate::test_util::init_db("identity_gap", "custom");
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
         signer::signer_lock().unwrap();
-
         let locked =
             identity::identity_publish_custom_profile(pk.clone(), "{}".into()).unwrap_err();
         assert!(locked.contains("signer locked"), "{locked}");
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-
         let mismatch =
             identity::identity_publish_custom_profile("f".repeat(64), "{}".into()).unwrap_err();
         assert!(mismatch.contains("does not match"), "{mismatch}");
-
         let no_client = identity::identity_publish_custom_profile(pk, "{}".into()).unwrap_err();
         assert!(
             no_client.contains("relay client not initialized"),
@@ -244,10 +203,9 @@ mod identity_gap_tests {
         );
         let _ = db;
     }
-
     #[test]
     fn nip05_verify_rejects_local_and_malformed() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::test_util::lock();
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -263,10 +221,9 @@ mod identity_gap_tests {
             assert!(!err.is_empty(), "{err}");
         });
     }
-
     #[test]
     fn in_process_signer_valid_and_invalid() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::test_util::lock();
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = identity::identity_in_process_signer(keys.secret_key().to_secret_hex()).unwrap();
         assert_eq!(pk, keys.public_key().to_hex());

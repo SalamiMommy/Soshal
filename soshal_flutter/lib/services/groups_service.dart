@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 
@@ -710,18 +711,18 @@ class SoshalGroup {
   });
 
   factory SoshalGroup.fromJson(Map<String, dynamic> json) {
-    final id = json['id'] as String? ?? '';
-    final isMember = json['is_member'] as bool? ?? false;
+    final id = json.strOf('id');
+    final isMember = json.boolOf('is_member');
     return SoshalGroup(
       id: id,
-      name: json['name'] as String? ?? '',
-      description: json['description'] as String? ?? '',
-      picture: json['picture'] as String? ?? '',
-      owner: json['owner'] as String? ?? '',
-      members: (json['members'] as num?)?.toInt() ?? 0,
+      name: json.strOf('name'),
+      description: json.strOf('description'),
+      picture: json.strOf('picture'),
+      owner: json.strOf('owner'),
+      members: json.intOf('members'),
       isMember: isMember,
-      role: json['role'] as String? ?? (isMember ? 'member' : ''),
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      role: json.strOrNull('role') ?? (isMember ? 'member' : ''),
+      createdAt: json.intOf('created_at'),
     );
   }
 }
@@ -744,11 +745,11 @@ class GroupMessage {
 
   factory GroupMessage.fromJson(Map<String, dynamic> json) {
     return GroupMessage(
-      id: json['id'] as String? ?? '',
-      groupId: json['group_id'] as String? ?? '',
+      id: json.strOf('id'),
+      groupId: json.strOf('group_id'),
       senderPubkey: json['sender_pubkey'] ?? json['pubkey'] ?? '',
-      content: json['content'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      content: json.strOf('content'),
+      createdAt: json.intOf('created_at'),
     );
   }
 }
@@ -775,13 +776,13 @@ class GroupRole {
 
   factory GroupRole.fromJson(Map<String, dynamic> json) {
     return GroupRole(
-      id: json['id'] as String? ?? '',
-      groupId: json['group_id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      color: json['color'] as String? ?? '',
-      position: (json['position'] as num?)?.toInt() ?? 0,
-      permissions: json['permissions'] as String? ?? '[]',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      groupId: json.strOf('group_id'),
+      name: json.strOf('name'),
+      color: json.strOf('color'),
+      position: json.intOf('position'),
+      permissions: json.strOrNull('permissions') ?? '[]',
+      createdAt: json.intOf('created_at'),
     );
   }
 }
@@ -795,8 +796,8 @@ class GroupMemberWithRole {
 
   factory GroupMemberWithRole.fromJson(Map<String, dynamic> json) {
     return GroupMemberWithRole(
-      pubkey: json['pubkey'] as String? ?? '',
-      role: json['role'] as String? ?? 'member',
+      pubkey: json.strOf('pubkey'),
+      role: json.strOrNull('role') ?? 'member',
     );
   }
 }
@@ -912,15 +913,15 @@ class GroupRoom {
 
   factory GroupRoom.fromJson(Map<String, dynamic> json) {
     return GroupRoom(
-      id: json['id'] as String? ?? '',
-      groupId: json['group_id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      topic: json['topic'] as String? ?? '',
-      emoji: json['emoji'] as String? ?? '',
-      color: json['color'] as String? ?? '#8b5cf6',
-      position: (json['position'] as num?)?.toInt() ?? 0,
-      createdBy: json['created_by'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      groupId: json.strOf('group_id'),
+      name: json.strOf('name'),
+      topic: json.strOf('topic'),
+      emoji: json.strOf('emoji'),
+      color: json.strOrNull('color') ?? '#8b5cf6',
+      position: json.intOf('position'),
+      createdBy: json.strOf('created_by'),
+      createdAt: json.intOf('created_at'),
     );
   }
 }
@@ -964,15 +965,15 @@ class GroupThread {
 
   factory GroupThread.fromJson(Map<String, dynamic> json) {
     return GroupThread(
-      id: json['id'] as String? ?? '',
-      groupId: json['group_id'] as String? ?? '',
-      title: json['title'] as String? ?? '',
-      body: json['body'] as String? ?? '',
-      author: json['author'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      isPinned: json['is_pinned'] as bool? ?? false,
-      replyCount: (json['reply_count'] as num?)?.toInt() ?? 0,
-      reactionCount: (json['reaction_count'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      groupId: json.strOf('group_id'),
+      title: json.strOf('title'),
+      body: json.strOf('body'),
+      author: json.strOf('author'),
+      createdAt: json.intOf('created_at'),
+      isPinned: json.boolOf('is_pinned'),
+      replyCount: json.intOf('reply_count'),
+      reactionCount: json.intOf('reaction_count'),
     );
   }
 }
@@ -1001,11 +1002,11 @@ class ThreadReaction {
 
   factory ThreadReaction.fromJson(Map<String, dynamic> json) {
     return ThreadReaction(
-      threadId: json['thread_id'] as String? ?? '',
-      replyId: json['reply_id'] as String? ?? '',
-      emoji: json['emoji'] as String? ?? '',
-      count: (json['count'] as num?)?.toInt() ?? 0,
-      reacted: json['reacted'] as bool? ?? false,
+      threadId: json.strOf('thread_id'),
+      replyId: json.strOf('reply_id'),
+      emoji: json.strOf('emoji'),
+      count: json.intOf('count'),
+      reacted: json.boolOf('reacted'),
     );
   }
 }
@@ -1030,12 +1031,12 @@ class GroupThreadReply {
 
   factory GroupThreadReply.fromJson(Map<String, dynamic> json) {
     return GroupThreadReply(
-      id: json['id'] as String? ?? '',
-      threadId: json['thread_id'] as String? ?? '',
-      parentId: json['parent_id'] as String? ?? '',
-      author: json['author'] as String? ?? '',
-      content: json['content'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      threadId: json.strOf('thread_id'),
+      parentId: json.strOf('parent_id'),
+      author: json.strOf('author'),
+      content: json.strOf('content'),
+      createdAt: json.intOf('created_at'),
     );
   }
 }
@@ -1060,12 +1061,12 @@ class GroupVoiceChannel {
 
   factory GroupVoiceChannel.fromJson(Map<String, dynamic> json) {
     return GroupVoiceChannel(
-      id: json['id'] as String? ?? '',
-      groupId: json['group_id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      position: (json['position'] as num?)?.toInt() ?? 0,
-      createdBy: json['created_by'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      groupId: json.strOf('group_id'),
+      name: json.strOf('name'),
+      position: json.intOf('position'),
+      createdBy: json.strOf('created_by'),
+      createdAt: json.intOf('created_at'),
     );
   }
 }
@@ -1084,9 +1085,9 @@ class GroupVoicePresence {
 
   factory GroupVoicePresence.fromJson(Map<String, dynamic> json) {
     return GroupVoicePresence(
-      channelId: json['channel_id'] as String? ?? '',
-      pubkey: json['pubkey'] as String? ?? '',
-      joinedAt: (json['joined_at'] as num?)?.toInt() ?? 0,
+      channelId: json.strOf('channel_id'),
+      pubkey: json.strOf('pubkey'),
+      joinedAt: json.intOf('joined_at'),
     );
   }
 }

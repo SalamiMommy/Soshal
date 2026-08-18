@@ -52,7 +52,7 @@ pub fn crypto_hkdf_expand(
     info: Vec<u8>,
     len: usize,
 ) -> Result<String, String> {
-    let okm = hash::hkdf_sha256(&ikm, &salt, &info, len).map_err(|e| e.to_string())?;
+    let okm = hash::hkdf_sha256(&ikm, &salt, &info, len).map_err(super::util::to_err)?;
     Ok(hex::encode(okm)).into()
 }
 

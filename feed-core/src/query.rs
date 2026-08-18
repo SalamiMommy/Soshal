@@ -170,7 +170,7 @@ pub fn aggregate_reaction_map(events: &[NostrEvent]) -> serde_json::Map<String, 
 pub fn aggregate_reply_map(events: &[NostrEvent]) -> HashMap<String, u64> {
     let mut map = HashMap::new();
     for ev in events {
-        if ev.kind != 1 {
+        if ev.kind != soshal_common_core::consts::KIND_TEXT_NOTE as u32 {
             continue;
         }
         if let Some(target) = ev.find_tag("e") {

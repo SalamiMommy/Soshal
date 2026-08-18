@@ -9,6 +9,7 @@ nostr = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
 soshal-content-core = { path = "../content-core" }
+soshal-common-core = { path = "../common-core" }
 
 [dev-dependencies]
 serde_json = { workspace = true }

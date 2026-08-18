@@ -1,30 +1,28 @@
+#[path = "common/mod.rs"]
+mod test_util;
+
 // Tests for Flutter FFI bridge
 // Run with: cargo test --test flutter_bridge_tests
-
 #[cfg(test)]
 mod ffi_tests {
     use soshal_flutter_bridge::*;
-
     #[test]
     fn test_auth_generate_mnemonic() {
         let result = auth::auth_generate_mnemonic().unwrap();
         assert!(!result.is_empty());
     }
-
     #[test]
     fn test_auth_validate_mnemonic() {
         let mnemonic = auth::auth_generate_mnemonic().unwrap();
         let valid = auth::auth_validate_mnemonic(mnemonic).unwrap();
         assert!(valid);
     }
-
     #[test]
     fn test_auth_validate_invalid_mnemonic() {
         let valid =
             auth::auth_validate_mnemonic("not a valid mnemonic phrase".to_string()).unwrap();
         assert!(!valid);
     }
-
     #[test]
     fn test_auth_keypair_generation() {
         let keypair: KeyPairResult =
@@ -37,7 +35,6 @@ mod ffi_tests {
             "secret key must stay blank across the bridge"
         );
     }
-
     #[test]
     fn test_auth_npub_encode_decode() {
         let keypair: KeyPairResult =
@@ -47,7 +44,6 @@ mod ffi_tests {
         let decoded = auth::auth_npub_decode(npub).unwrap();
         assert_eq!(decoded, keypair.public_key);
     }
-
     #[test]
     fn test_crypto_sha256_hex() {
         let hash = util::util_sha256_hex("hello world".to_string()).unwrap();
@@ -56,7 +52,6 @@ mod ffi_tests {
             "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
         );
     }
-
     #[test]
     fn test_crypto_random_bytes() {
         let bytes = crypto::crypto_random_bytes(32).unwrap();
@@ -64,14 +59,12 @@ mod ffi_tests {
         let bytes2 = crypto::crypto_random_bytes(32).unwrap();
         assert_ne!(bytes, bytes2);
     }
-
     #[test]
     fn test_util_base64url_encode_decode() {
         let encoded = util::util_base64url_encode("hello world".to_string()).unwrap();
         let decoded = util::util_base64url_decode(encoded).unwrap();
         assert_eq!(decoded, "hello world");
     }
-
     #[test]
     fn test_util_extract_hashtags() {
         let tags =
@@ -80,7 +73,6 @@ mod ffi_tests {
         assert!(tags.contains(&"rust".to_string()));
         assert!(tags.contains(&"soshal".to_string()));
     }
-
     #[test]
     fn test_ffi_error_propagation() {
         // Exercise real FFI error paths: Result<T, String> must surface the
@@ -92,12 +84,10 @@ mod ffi_tests {
         assert!(!err2.is_empty());
     }
 }
-
 // Integration tests (requires real setup)
 #[cfg(test)]
 mod integration_tests {
     use soshal_flutter_bridge::*;
-
     #[tokio::test]
     async fn test_auth_flow_end_to_end() {
         let mnemonic = auth::auth_generate_mnemonic().unwrap();
@@ -111,7 +101,6 @@ mod integration_tests {
         let npub = auth::auth_npub_encode(restored_kp.public_key.clone()).unwrap();
         assert!(npub.starts_with("npub1"));
     }
-
     #[test]
     fn test_database_workflow() {
         let path = soshal_test_util::tmp_path("bridge_flow", "flow.db")
@@ -130,7 +119,6 @@ mod integration_tests {
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
     }
-
     #[tokio::test]
     #[ignore] // Requires live network relays (wss://relay.damus.io, wss://nos.lol)
     async fn test_relay_pool_workflow() {
@@ -141,12 +129,9 @@ mod integration_tests {
         let _ = network::network_init_relays(relays).await.unwrap();
         let _ = network::network_get_relay_status().await.unwrap();
     }
-
     // --- P2P (LAN chunk server + swarm downloads + power scheduler) -------
-
     static P2P_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     static P2P_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
     fn tmp_p2p_root(label: &str) -> std::path::PathBuf {
         let n = P2P_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!(
@@ -157,29 +142,25 @@ mod integration_tests {
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
-
     #[test]
     fn test_p2p_power_scheduler_transitions() {
-        let _g = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = P2P_TEST_LOCK.lock().unwrap();
         let full = p2p::p2p_power_update(true, 100, false, false).unwrap();
         assert_eq!(full.mode, "full");
         assert!(!full.paused);
         assert_eq!(full.max_parallel_uploads, 8);
-
         let paused = p2p::p2p_power_update(false, 40, true, true).unwrap();
         assert_eq!(paused.mode, "paused");
         assert!(paused.paused);
         assert_eq!(paused.max_parallel_uploads, 0);
-
         let throttled = p2p::p2p_power_update(false, 60, false, false).unwrap();
         assert_eq!(throttled.mode, "throttled");
         assert!(!throttled.paused);
         assert!(throttled.max_parallel_uploads < 8);
     }
-
     #[test]
     fn test_p2p_lan_server_requires_unlocked_signer() {
-        let _g = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = P2P_TEST_LOCK.lock().unwrap();
         let _ = p2p::p2p_lan_server_stop();
         signer::signer_lock().unwrap();
         assert!(p2p::p2p_lan_server_start(String::new()).is_err());
@@ -192,25 +173,21 @@ mod integration_tests {
         )
         .is_err());
     }
-
     #[test]
     fn test_p2p_lan_swarm_loopback_roundtrip() {
-        let _g = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = P2P_TEST_LOCK.lock().unwrap();
         let _ = p2p::p2p_stop_all();
         let keys = soshal_nostr_core::keys::generate_keys();
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-
         let root = tmp_p2p_root("store");
         let store = soshal_media_core::cas::ChunkStore::new(root.clone());
         let data: Vec<u8> = (0..1024 * 1024).map(|i| (i % 251) as u8).collect();
         let manifest = store.store_reader(std::io::Cursor::new(&data)).unwrap();
         store.save_manifest(&manifest).unwrap();
         let manifest_json = serde_json::to_string(&manifest).unwrap();
-
         let port = p2p::p2p_lan_server_start(root.to_string_lossy().to_string()).unwrap();
         assert!(port > 0);
         assert_eq!(port, p2p::p2p_lan_server_port().unwrap());
-
         let out_dir = tmp_p2p_root("out");
         std::fs::create_dir_all(&out_dir).unwrap();
         let out = out_dir.join("blob.bin");
@@ -222,7 +199,6 @@ mod integration_tests {
             4,
         )
         .unwrap();
-
         let mut status = p2p::p2p_swarm_poll(id.clone()).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while status.state != "done" && std::time::Instant::now() < deadline {
@@ -233,18 +209,15 @@ mod integration_tests {
         assert_eq!(status.verified_chunks, manifest.chunks.len());
         assert_eq!(status.failures, 0);
         assert_eq!(status.bytes_downloaded as usize, data.len());
-
         let got = std::fs::read(&out).unwrap();
         assert_eq!(got.len(), data.len());
         assert_eq!(
             soshal_crypto_core::hash::blake3_hash_hex(&got),
             manifest.blob_hash
         );
-
         p2p::p2p_stop_all().unwrap();
         signer::signer_lock().unwrap();
     }
-
     // --- signer: process-global key state (SIGNER static in the lib) ------
     //
     // Every test here mutates the process-global signer, so it holds BOTH the
@@ -252,7 +225,6 @@ mod integration_tests {
     // (the p2p tests above unlock/lock the same SIGNER under P2P_TEST_LOCK).
     // Fixed acquisition order: test_lock() first, P2P_TEST_LOCK second; the
     // p2p tests never take test_lock(), so there is no lock cycle.
-
     fn unlock_fresh_signer() -> (String, String) {
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
@@ -260,11 +232,10 @@ mod integration_tests {
         signer::signer_unlock(secret.clone()).unwrap();
         (pk, secret)
     }
-
     #[tokio::test]
     async fn test_signer_locked_error_paths() {
         let _t = soshal_test_util::test_lock();
-        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = P2P_TEST_LOCK.lock().unwrap();
         signer::signer_lock().unwrap();
         assert!(signer::signer_is_locked().unwrap());
         assert!(signer::signer_pubkey()
@@ -301,11 +272,10 @@ mod integration_tests {
         assert!(bad.contains("invalid secret key"), "got {bad}");
         assert!(signer::signer_is_locked().unwrap());
     }
-
     #[test]
     fn test_signer_unlock_pubkey_and_lock_roundtrip() {
         let _t = soshal_test_util::test_lock();
-        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = P2P_TEST_LOCK.lock().unwrap();
         let (pk, _) = unlock_fresh_signer();
         assert!(!signer::signer_is_locked().unwrap());
         assert_eq!(signer::signer_pubkey().unwrap(), pk);
@@ -313,11 +283,10 @@ mod integration_tests {
         assert!(signer::signer_is_locked().unwrap());
         assert!(signer::signer_pubkey().is_err());
     }
-
     #[test]
     fn test_signer_schnorr_and_text_signing() {
         let _t = soshal_test_util::test_lock();
-        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = P2P_TEST_LOCK.lock().unwrap();
         let _ = unlock_fresh_signer();
         // 32-byte digest (64 hex chars) -> 64-byte schnorr sig (128 hex chars)
         let sig = signer::signer_schnorr_sign("42".repeat(32)).unwrap();
@@ -332,11 +301,10 @@ mod integration_tests {
         let e = signer::signer_schnorr_sign("00".repeat(16)).unwrap_err();
         assert!(e.contains("32 bytes"), "got {e}");
     }
-
     #[test]
     fn test_signer_sign_unsigned_event() {
         let _t = soshal_test_util::test_lock();
-        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = P2P_TEST_LOCK.lock().unwrap();
         let (pk, _) = unlock_fresh_signer();
         let mut v: serde_json::Value = serde_json::from_str(
             "{\"pubkey\":\"\",\"created_at\":0,\"kind\":1,\"tags\":[],\"content\":\"hello\"}",
@@ -354,11 +322,10 @@ mod integration_tests {
         let e = signer::signer_sign_unsigned("not json".to_string()).unwrap_err();
         assert!(e.contains("invalid unsigned event"), "got {e}");
     }
-
     #[test]
     fn test_signer_nip44_encrypt_decrypt_roundtrip() {
         let _t = soshal_test_util::test_lock();
-        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = P2P_TEST_LOCK.lock().unwrap();
         let alice = soshal_nostr_core::keys::generate_keys();
         let bob = soshal_nostr_core::keys::generate_keys();
         signer::signer_unlock(alice.secret_key().to_secret_hex()).unwrap();
@@ -385,11 +352,10 @@ mod integration_tests {
         assert!(e.contains("nip44 decrypt"), "got {e}");
         signer::signer_lock().unwrap();
     }
-
     #[tokio::test]
     async fn test_signer_keyring_save_unlock_remove() {
         let _t = soshal_test_util::test_lock();
-        let _p = P2P_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _p = P2P_TEST_LOCK.lock().unwrap();
         let (pk, _) = unlock_fresh_signer();
         // mismatched pubkey is rejected before any keychain access
         let e = signer::signer_save_to_keyring("bb".repeat(32))

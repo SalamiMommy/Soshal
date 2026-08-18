@@ -1,12 +1,10 @@
+#[path = "common/mod.rs"]
+mod test_util;
+
 use soshal_flutter_bridge::*;
-use std::sync::Mutex;
-
-static TEST_LOCK: Mutex<()> = Mutex::new(());
-
 fn lock() -> std::sync::MutexGuard<'static, ()> {
-    TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    test_util::lock()
 }
-
 fn gen_keys() -> (String, String) {
     let keys = soshal_nostr_core::keys::generate_keys();
     (
@@ -14,11 +12,9 @@ fn gen_keys() -> (String, String) {
         keys.public_key().to_hex(),
     )
 }
-
 fn unlock(secret: &str) -> String {
     signer::signer_unlock(secret.to_string()).unwrap()
 }
-
 fn setup_db(name: &str) -> String {
     let path = soshal_test_util::tmp_path("dm", name)
         .to_string_lossy()
@@ -29,13 +25,11 @@ fn setup_db(name: &str) -> String {
     db::db_init(path.clone()).unwrap();
     path
 }
-
 fn cleanup_db(path: &str) {
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_file(format!("{path}-wal"));
     let _ = std::fs::remove_file(format!("{path}-shm"));
 }
-
 fn create_profile(pk: &str, name: &str, age: i32, interests: &str) -> String {
     let signed = dating::dating_create_profile(
         pk.to_string(),
@@ -62,7 +56,6 @@ fn create_profile(pk: &str, name: &str, age: i32, interests: &str) -> String {
     let v: serde_json::Value = serde_json::from_str(&signed).unwrap();
     v["id"].as_str().unwrap().to_string()
 }
-
 #[test]
 fn test_dating_profile_roundtrip() {
     let _g = lock();
@@ -180,7 +173,6 @@ fn test_dating_profile_roundtrip() {
     assert!(dating::dating_get_own_profile(alice).is_err());
     cleanup_db(&path);
 }
-
 #[test]
 fn test_dating_like_is_sign_only() {
     let _g = lock();
@@ -201,7 +193,6 @@ fn test_dating_like_is_sign_only() {
     assert!(matches.is_empty());
     cleanup_db(&path);
 }
-
 #[test]
 fn test_dating_pass_excludes_from_swipes() {
     let _g = lock();
@@ -225,7 +216,6 @@ fn test_dating_pass_excludes_from_swipes() {
     assert!(profiles.is_empty());
     cleanup_db(&path);
 }
-
 #[test]
 fn test_dating_filter_profiles() {
     let _g = lock();
@@ -308,7 +298,6 @@ fn test_dating_filter_profiles() {
     assert_eq!(all.len(), 3);
     cleanup_db(&path);
 }
-
 #[test]
 fn test_dating_block_unblock() {
     let _g = lock();
@@ -339,7 +328,6 @@ fn test_dating_block_unblock() {
     assert!(rows.is_empty());
     cleanup_db(&path);
 }
-
 #[test]
 fn test_dating_score_and_stats() {
     let _g = lock();
@@ -367,7 +355,6 @@ fn test_dating_score_and_stats() {
     assert_eq!(stats["matches"], 0);
     cleanup_db(&path);
 }
-
 #[test]
 fn test_marketplace_listing_roundtrip() {
     let _g = lock();
@@ -492,7 +479,6 @@ fn test_marketplace_listing_roundtrip() {
     assert!(all.is_empty());
     cleanup_db(&path);
 }
-
 #[test]
 fn test_marketplace_poll_roundtrip() {
     let _g = lock();
@@ -533,7 +519,6 @@ fn test_marketplace_poll_roundtrip() {
     assert!(marketplace::marketplace_poll_close(poll_id.clone(), user.clone()).unwrap());
     cleanup_db(&path);
 }
-
 #[test]
 fn test_marketplace_order_escrow_lifecycle() {
     let _g = lock();

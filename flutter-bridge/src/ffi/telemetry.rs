@@ -77,7 +77,7 @@ pub fn telemetry_info_json() -> Result<String, String> {
         "entries": info.entries,
         "sealed": info.sealed,
     }))
-    .map_err(|e| e.to_string())
+    .map_err(super::util::to_err)
     .into()
 }
 
@@ -115,7 +115,7 @@ pub fn telemetry_read_all_json() -> Result<String, String> {
         })
         .collect();
     serde_json::to_string(&arr)
-        .map_err(|e| e.to_string())
+        .map_err(super::util::to_err)
         .into()
 }
 

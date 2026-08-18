@@ -1,3 +1,4 @@
+import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
@@ -58,13 +59,13 @@ class AuditRow {
 
   factory AuditRow.fromJson(Map<String, dynamic> json) {
     return AuditRow(
-      id: json['id'] as String? ?? '',
-      groupId: json['group_id'] as String?,
-      actorPubkey: json['actor_pubkey'] as String? ?? '',
-      action: json['action'] as String? ?? '',
-      targetPubkey: json['target_pubkey'] as String?,
-      details: json['details'] as String?,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      groupId: json.strOrNull('group_id'),
+      actorPubkey: json.strOf('actor_pubkey'),
+      action: json.strOf('action'),
+      targetPubkey: json.strOrNull('target_pubkey'),
+      details: json.strOrNull('details'),
+      createdAt: json.intOf('created_at'),
     );
   }
 }

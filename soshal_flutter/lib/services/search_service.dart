@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 
@@ -203,7 +204,7 @@ class SearchResultItem {
   });
 
   factory SearchResultItem.fromJson(Map<String, dynamic> json) {
-    final rawKind = json['result_type'] as String? ?? '';
+    final rawKind = json.strOf('result_type');
     String kind = rawKind;
     if (kind.isEmpty) {
       if (json.containsKey('event_id')) kind = 'post';
@@ -218,9 +219,9 @@ class SearchResultItem {
           json['about'] ??
           json['content'] ??
           '') as String,
-      pubkey: json['pubkey'] as String?,
+      pubkey: json.strOrNull('pubkey'),
       kind: kind,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      createdAt: json.intOf('created_at'),
     );
   }
 }

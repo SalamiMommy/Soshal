@@ -21,7 +21,7 @@ pub fn zk_apply_rollup(db_path: String, rollup_json: String) -> Result<bool, Str
     // pragmas); `db_path` is kept for FFI signature compatibility.
     let _ = db_path;
     crate::ffi::db::with_db_string(|db| {
-        let conn = db.conn().map_err(|e| e.to_string())?;
+        let conn = db.conn().map_err(super::util::to_err)?;
         let engine = soshal_sync_core::zk_rollup::get_global_zk_engine();
         engine.apply_rollup_to_db(&conn, &rollup)
     })

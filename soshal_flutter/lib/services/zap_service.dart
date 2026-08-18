@@ -1,3 +1,4 @@
+import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
@@ -201,11 +202,11 @@ class ZapReceipt {
 
   factory ZapReceipt.fromJson(Map<String, dynamic> json) {
     return ZapReceipt(
-      id: json['id'] as String? ?? '',
-      eventId: json['event_id'] as String? ?? '',
+      id: json.strOf('id'),
+      eventId: json.strOf('event_id'),
       zapperPubkey: json['zapper_pubkey'] ?? json['pubkey'] ?? '',
-      amountMsat: (json['amount_msat'] as num?)?.toInt() ?? 0,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      amountMsat: json.intOf('amount_msat'),
+      createdAt: json.intOf('created_at'),
     );
   }
 }

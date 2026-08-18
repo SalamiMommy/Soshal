@@ -34,9 +34,9 @@ pub async fn pin_set(pin: String) -> Result<bool, String> {
     let hash = derive_pin_hash(&pin, &salt_hex, PIN_ITERATIONS, PIN_DK_LEN)?;
     with_repo(|r| {
         r.set(PIN_HASH_KEY, &format!("{salt_hex}:{hash}"))
-            .map_err(|e| e.to_string())?;
+            .map_err(super::util::to_err)?;
         r.set("pin_permanently_locked", "false")
-            .map_err(|e| e.to_string())
+            .map_err(super::util::to_err)
     })?;
     Ok(true)
 }
@@ -46,7 +46,7 @@ pub async fn pin_set(pin: String) -> Result<bool, String> {
 pub fn pin_has() -> Result<bool, String> {
     with_repo(|r| {
         Ok(r.get(PIN_HASH_KEY)
-            .map_err(|e| e.to_string())?
+            .map_err(super::util::to_err)?
             .map(|v| !v.is_empty())
             .unwrap_or(false))
     })
@@ -56,11 +56,11 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
     let now = soshal_common_core::util::now_ms() as i64;
     let permanent = with_repo(|r| {
         Ok(r.get("pin_permanently_locked")
-            .map_err(|e| e.to_string())?
+            .map_err(super::util::to_err)?
             .map(|v| v == "true")
             .unwrap_or(false))
     })?;
-    let stored = with_repo(|r| r.get(PIN_HASH_KEY).map_err(|e| e.to_string()))?;
+    let stored = with_repo(|r| r.get(PIN_HASH_KEY).map_err(super::util::to_err))?;
     let stored = stored
         .filter(|v| !v.is_empty())
         .ok_or_else(|| "no PIN configured; set a PIN in Settings > Security first".to_string())?;
@@ -73,7 +73,7 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
     with_repo(|r| {
         let mut state: PinLockoutState = r
             .get("pin_lockout_state")
-            .map_err(|e| e.to_string())?
+            .map_err(super::util::to_err)?
             .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_default();
         let verdict = apply_pin_attempt(&mut state, now, ok, permanent);
@@ -119,7 +119,7 @@ pub async fn pin_verify(pin: String) -> Result<bool, String> {
 pub fn pin_clear(pin: String) -> Result<bool, String> {
     check_pin_with_lockout(&pin)?;
     with_repo(|r| {
-        r.set(PIN_HASH_KEY, "").map_err(|e| e.to_string())?;
+        r.set(PIN_HASH_KEY, "").map_err(super::util::to_err)?;
         let _ = r.set("pin_lockout_state", "{}");
         let _ = r.set("pin_permanently_locked", "false");
         Ok(())
@@ -133,12 +133,12 @@ pub fn pin_lockout_state() -> Result<String, String> {
     let (state, permanent) = with_repo(|r| {
         let state: serde_json::Value = r
             .get("pin_lockout_state")
-            .map_err(|e| e.to_string())?
+            .map_err(super::util::to_err)?
             .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_else(|| serde_json::json!({}));
         let permanent = r
             .get("pin_permanently_locked")
-            .map_err(|e| e.to_string())?
+            .map_err(super::util::to_err)?
             .map(|v| v == "true")
             .unwrap_or(false);
         Ok((state, permanent))

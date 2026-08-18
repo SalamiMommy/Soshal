@@ -1,3 +1,4 @@
+import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
@@ -160,9 +161,9 @@ class KeyPair {
   factory KeyPair.fromJson(Map<String, dynamic> json) {
     return KeyPair(
       publicKey:
-          json['publicKey'] as String? ?? json['public_key'] as String? ?? '',
+          json.strOrNull('publicKey') ?? json.strOf('public_key'),
       secretKey:
-          json['secretKey'] as String? ?? json['secret_key'] as String? ?? '',
+          json.strOrNull('secretKey') ?? json.strOf('secret_key'),
     );
   }
 

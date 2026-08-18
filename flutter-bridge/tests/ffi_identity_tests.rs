@@ -1,33 +1,9 @@
+#[path = "common/mod.rs"]
+mod test_util;
+
 #[cfg(test)]
 mod ffi_identity_tests {
     use soshal_flutter_bridge::*;
-    use std::sync::Mutex;
-
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    fn unique_pubkey(tag: &str) -> String {
-        let kp: KeyPairResult =
-            serde_json::from_str(&auth::auth_generate_keypair().unwrap()).unwrap();
-        format!("{}_{}", tag, &kp.public_key[..12])
-    }
-
-    fn init_db(name: &str) -> String {
-        let path = soshal_test_util::tmp_path("identity", name)
-            .to_string_lossy()
-            .to_string();
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-        assert!(db::db_init(path.clone()).is_ok());
-        path
-    }
-
-    fn cleanup(path: &str) {
-        let _ = std::fs::remove_file(path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-    }
-
     fn profile_event(pubkey: &str, name: &str) -> String {
         let content = serde_json::json!({
             "name": name,
@@ -45,12 +21,11 @@ mod ffi_identity_tests {
         })
         .to_string()
     }
-
     #[test]
     fn test_identity_store_get_profile_roundtrip() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let path = init_db("roundtrip");
-        let pubkey = unique_pubkey("rt");
+        let _g = crate::test_util::lock();
+        let path = crate::test_util::init_db("identity", "roundtrip");
+        let pubkey = crate::test_util::unique_pubkey("rt");
         assert!(identity::identity_store_profile(profile_event(&pubkey, "alice_rt")).is_ok());
         let got = identity::identity_get_profile(pubkey.clone()).unwrap();
         let p: ProfileInfo = serde_json::from_str(&got).unwrap();
@@ -61,26 +36,24 @@ mod ffi_identity_tests {
         assert_eq!(p.nip05, "alice_rt@example.com");
         assert!(!p.is_following);
         assert_eq!(p.wot_status, "unknown");
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_identity_get_self_profile_unknown() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let path = init_db("self");
-        let pubkey = unique_pubkey("self");
+        let _g = crate::test_util::lock();
+        let path = crate::test_util::init_db("identity", "self");
+        let pubkey = crate::test_util::unique_pubkey("self");
         let got = identity::identity_get_profile(pubkey.clone()).unwrap();
         let p: ProfileInfo = serde_json::from_str(&got).unwrap();
         assert_eq!(p.pubkey, pubkey);
         assert!(p.name.is_empty());
         assert_eq!(p.wot_status, "unknown");
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_identity_update_profile() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let path = init_db("update");
+        let _g = crate::test_util::lock();
+        let path = crate::test_util::init_db("identity", "update");
         signer::signer_lock().unwrap();
         let err = identity::identity_update_profile(
             "aa606060606060606060606060606060606060606060606060606060606060606a".to_string(),
@@ -110,28 +83,26 @@ mod ffi_identity_tests {
         assert_eq!(ev["pubkey"], kp.public_key);
         assert!(ev["content"].as_str().unwrap().contains("about bob"));
         signer::signer_lock().unwrap();
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_identity_follow_unfollow_signer_locked() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::test_util::lock();
         signer::signer_lock().unwrap();
-        let path = init_db("follow");
+        let path = crate::test_util::init_db("identity", "follow");
         let target = "aa".repeat(32);
         let err = identity::identity_follow_user(target.clone());
         assert!(err.unwrap_err().contains("signer locked"));
         let err = identity::identity_unfollow_user(target);
         assert!(err.unwrap_err().contains("signer locked"));
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_identity_block_unblock_flow() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let path = init_db("block");
-        let me = unique_pubkey("me");
-        let target = unique_pubkey("tgt");
+        let _g = crate::test_util::lock();
+        let path = crate::test_util::init_db("identity", "block");
+        let me = crate::test_util::unique_pubkey("me");
+        let target = crate::test_util::unique_pubkey("tgt");
         assert!(!identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
         assert!(moderation::moderation_block_user(me.clone(), target.clone()).unwrap());
         assert!(identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
@@ -141,14 +112,13 @@ mod ffi_identity_tests {
         assert!(!identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
         let list = identity::identity_get_blocked_users(me).unwrap();
         assert!(!list.contains(&target));
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_identity_search_users() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let path = init_db("search");
-        let pubkey = unique_pubkey("srch");
+        let _g = crate::test_util::lock();
+        let path = crate::test_util::init_db("identity", "search");
+        let pubkey = crate::test_util::unique_pubkey("srch");
         let res = identity::identity_search_users("zzzz_no_such_user_qq".to_string(), 10);
         let rows: Vec<ProfileInfo> = serde_json::from_str(&res.unwrap()).unwrap();
         assert!(rows.is_empty());
@@ -159,21 +129,20 @@ mod ffi_identity_tests {
         let rows: Vec<ProfileInfo> = serde_json::from_str(&res.unwrap()).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "alice_smoke_xyz");
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
-
     #[test]
     fn test_identity_wot_and_trust_score() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let path = init_db("wot");
-        let viewer = unique_pubkey("view");
-        let target = unique_pubkey("wtarget");
+        let _g = crate::test_util::lock();
+        let path = crate::test_util::init_db("identity", "wot");
+        let viewer = crate::test_util::unique_pubkey("view");
+        let target = crate::test_util::unique_pubkey("wtarget");
         assert_eq!(
             identity::identity_get_wot_status(target.clone(), viewer.clone()).unwrap(),
             "unknown"
         );
         let score = identity::identity_get_trust_score(viewer, target).unwrap();
         assert!((0.0..=1.0).contains(&score));
-        cleanup(&path);
+        crate::test_util::cleanup(&path);
     }
 }

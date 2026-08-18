@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/blob_resolver.dart';
+import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 import 'media_service.dart';
@@ -161,20 +162,20 @@ class MusicTrack {
   });
 
   factory MusicTrack.fromJson(Map<String, dynamic> json) => MusicTrack(
-        id: json['id'] as String? ?? '',
-        pubkey: json['pubkey'] as String? ?? '',
-        audioUrl: json['audioUrl'] as String? ?? '',
-        blobHash: json['blobHash'] as String? ?? '',
-        mediaSize: (json['mediaSize'] as num?)?.toInt() ?? 0,
-        title: json['title'] as String? ?? '',
-        thumbnail: json['thumbnail'] as String? ?? '',
+        id: json.strOf('id'),
+        pubkey: json.strOf('pubkey'),
+        audioUrl: json.strOf('audioUrl'),
+        blobHash: json.strOf('blobHash'),
+        mediaSize: json.intOf('mediaSize'),
+        title: json.strOf('title'),
+        thumbnail: json.strOf('thumbnail'),
         hashtags: (json['hashtags'] as List<dynamic>? ?? const [])
             .map((e) => e as String? ?? '')
             .where((e) => e.isNotEmpty)
             .toList(),
-        d: json['d'] as String? ?? '',
-        audience: json['audience'] as String? ?? 'public',
-        createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+        d: json.strOf('d'),
+        audience: json.strOrNull('audience') ?? 'public',
+        createdAt: json.intOf('createdAt'),
       );
 }
 
@@ -210,10 +211,10 @@ class TrackComment extends SocialEntry {
   });
 
   factory TrackComment.fromJson(Map<String, dynamic> json) => TrackComment(
-        id: json['id'] as String? ?? '',
-        pubkey: json['pubkey'] as String? ?? '',
-        content: json['textOverlay'] as String? ?? '',
-        createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+        id: json.strOf('id'),
+        pubkey: json.strOf('pubkey'),
+        content: json.strOf('textOverlay'),
+        createdAt: json.intOf('createdAt'),
       );
 }
 

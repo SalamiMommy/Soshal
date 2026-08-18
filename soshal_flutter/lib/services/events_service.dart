@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 
@@ -298,12 +299,12 @@ class EventReminder {
 
   factory EventReminder.fromJson(Map<String, dynamic> json) {
     return EventReminder(
-      id: json['id'] as String? ?? '',
-      eventId: json['event_id'] as String? ?? '',
-      title: json['title'] as String? ?? '',
-      startTime: (json['start_time'] as num?)?.toInt() ?? 0,
-      minutesBefore: (json['minutes_before'] as num?)?.toInt() ?? 0,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      eventId: json.strOf('event_id'),
+      title: json.strOf('title'),
+      startTime: json.intOf('start_time'),
+      minutesBefore: json.intOf('minutes_before'),
+      createdAt: json.intOf('created_at'),
     );
   }
 
@@ -346,19 +347,19 @@ class SoshalEvent {
 
   factory SoshalEvent.fromJson(Map<String, dynamic> json) {
     return SoshalEvent(
-      id: json['id'] as String? ?? '',
-      creatorPubkey: json['creator_pubkey'] as String? ?? '',
-      title: json['title'] as String? ?? '',
-      description: json['description'] as String? ?? '',
-      location: json['location'] as String? ?? '',
+      id: json.strOf('id'),
+      creatorPubkey: json.strOf('creator_pubkey'),
+      title: json.strOf('title'),
+      description: json.strOf('description'),
+      location: json.strOf('location'),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
-      startTime: (json['start_time'] as num?)?.toInt() ?? 0,
-      endTime: (json['end_time'] as num?)?.toInt() ?? 0,
-      image: json['image'] as String? ?? '',
-      attendees: (json['attendees'] as num?)?.toInt() ?? 0,
-      rsvpStatus: json['rsvp_status'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      startTime: json.intOf('start_time'),
+      endTime: json.intOf('end_time'),
+      image: json.strOf('image'),
+      attendees: json.intOf('attendees'),
+      rsvpStatus: json.strOf('rsvp_status'),
+      createdAt: json.intOf('created_at'),
     );
   }
 }

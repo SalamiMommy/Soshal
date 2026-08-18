@@ -26,7 +26,7 @@ pub fn content_custom_profile_default_node(
 pub fn content_custom_profile_node_types() -> Result<String, String> {
     let types = custom_profile::node_types();
     serde_json::to_string(&types)
-        .map_err(|e| e.to_string())
+        .map_err(super::util::to_err)
         .into()
 }
 

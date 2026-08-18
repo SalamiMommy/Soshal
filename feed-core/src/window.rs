@@ -23,6 +23,7 @@ pub fn fetch_feed_window(
     start_index: usize,
     limit: usize,
 ) -> Result<Vec<FeedPostItem>, String> {
+    let limit = soshal_db_core::repos::clamp_limit(limit as i64) as usize;
     let conn = db.conn().map_err(|e| e.to_string())?;
     block_on(async {
         let mut stmt = conn

@@ -8,10 +8,9 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$(dirname "${BASH_SOURCE[0]}")/../common.sh"
+resolve_script_dir
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-
-source "$SCRIPT_DIR/../common.sh"
 
 MODE="debug"
 OUT_NAME="soshal_flutter.apk"

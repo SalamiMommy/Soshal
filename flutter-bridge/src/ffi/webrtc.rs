@@ -57,7 +57,7 @@ pub fn webrtc_get_turn_servers(_auth_token: Option<String>) -> Result<String, St
         server["credential"] = serde_json::json!(cred);
         server["credentialType"] = serde_json::json!("password");
     }
-    Ok(serde_json::to_string(&vec![server]).unwrap_or_else(|_| "[]".to_string())).into()
+    Ok(super::util::json_ok_or_empty(&vec![server])).into()
 }
 
 /// Sanitize SDP to remove private IPs. `force_relay` true drops non-relay

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 
@@ -351,16 +352,16 @@ class AppNotification {
 
   factory AppNotification.fromJson(Map<String, dynamic> json) {
     return AppNotification(
-      id: json['id'] as String? ?? '',
-      notificationType: json['notification_type'] as String? ?? '',
-      fromPubkey: json['from_pubkey'] as String? ?? '',
-      fromName: json['from_name'] as String? ?? '',
-      fromAvatar: json['from_avatar'] as String? ?? '',
-      contentPreview: json['content_preview'] as String? ?? '',
-      eventId: json['event_id'] as String?,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      read: json['read'] as bool? ?? false,
-      actionUrl: json['action_url'] as String? ?? '',
+      id: json.strOf('id'),
+      notificationType: json.strOf('notification_type'),
+      fromPubkey: json.strOf('from_pubkey'),
+      fromName: json.strOf('from_name'),
+      fromAvatar: json.strOf('from_avatar'),
+      contentPreview: json.strOf('content_preview'),
+      eventId: json.strOrNull('event_id'),
+      createdAt: json.intOf('created_at'),
+      read: json.boolOf('read'),
+      actionUrl: json.strOf('action_url'),
     );
   }
 }

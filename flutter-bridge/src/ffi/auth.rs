@@ -49,7 +49,7 @@ pub async fn auth_restore_from_mnemonic(
     mnemonic: String,
     passphrase: String,
 ) -> Result<String, String> {
-    let keys = restore_from_mnemonic(&mnemonic, &passphrase).map_err(|e| e.to_string())?;
+    let keys = restore_from_mnemonic(&mnemonic, &passphrase).map_err(super::util::to_err)?;
     let pk = super::signer::signer_unlock(keys.private_key_hex.clone())?;
     super::util::json_ok(KeyPairResult {
         public_key: pk,
@@ -61,7 +61,7 @@ pub async fn auth_restore_from_mnemonic(
 #[frb(sync, serialize)]
 pub fn auth_public_key_from_nsec(nsec: String) -> Result<String, String> {
     from_nsec(&nsec)
-        .map_err(|e| e.to_string())
+        .map_err(super::util::to_err)
         .map(|keys| keys.public_key().to_string())
         .into()
 }
@@ -71,8 +71,8 @@ pub fn auth_public_key_from_nsec(nsec: String) -> Result<String, String> {
 pub fn auth_npub_encode(public_key: String) -> Result<String, String> {
     use nostr::key::PublicKey;
     PublicKey::from_hex(&public_key)
-        .map_err(|e| e.to_string())
-        .and_then(|pk| pk.to_bech32().map_err(|e| e.to_string()))
+        .map_err(super::util::to_err)
+        .and_then(|pk| pk.to_bech32().map_err(super::util::to_err))
         .into()
 }
 
@@ -81,7 +81,7 @@ pub fn auth_npub_encode(public_key: String) -> Result<String, String> {
 pub fn auth_npub_decode(npub: String) -> Result<String, String> {
     use nostr::key::PublicKey;
     PublicKey::from_bech32(&npub)
-        .map_err(|e| e.to_string())
+        .map_err(super::util::to_err)
         .map(|pk| pk.to_hex())
         .into()
 }

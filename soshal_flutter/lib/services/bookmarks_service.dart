@@ -1,3 +1,4 @@
+import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
@@ -132,10 +133,10 @@ class BookmarkRow {
 
   factory BookmarkRow.fromJson(Map<String, dynamic> json) {
     return BookmarkRow(
-      id: json['id'] as String? ?? '',
-      pubkey: json['pubkey'] as String? ?? '',
-      eventId: json['event_id'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      pubkey: json.strOf('pubkey'),
+      eventId: json.strOf('event_id'),
+      createdAt: json.intOf('created_at'),
     );
   }
 }

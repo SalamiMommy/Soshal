@@ -1,3 +1,4 @@
+import '../utils/json_ext.dart';
 /// Shared base for {id, pubkey, content, createdAt} relay entries.
 class SocialEntry {
   final String id;
@@ -14,10 +15,10 @@ class SocialEntry {
 
   factory SocialEntry.fromJson(Map<String, dynamic> json) {
     return SocialEntry(
-      id: json['id'] as String? ?? '',
-      pubkey: json['pubkey'] as String? ?? '',
-      content: json['content'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      pubkey: json.strOf('pubkey'),
+      content: json.strOf('content'),
+      createdAt: json.intOf('created_at'),
     );
   }
 }

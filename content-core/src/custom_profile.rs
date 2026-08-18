@@ -3,12 +3,11 @@
 //! DTOs for rendering only.
 
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub const CUSTOM_PROFILE_KIND: u64 = 30085;
+pub const CUSTOM_PROFILE_KIND: u64 = soshal_common_core::consts::KIND_CUSTOM_PROFILE as u64;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -651,10 +650,7 @@ pub fn default_node(node_type: &str, index: u64) -> Result<String, String> {
     if !valid_node_types().contains(&node_type) {
         return Err(format!("unknown node type: {node_type}"));
     }
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+    let millis = soshal_common_core::util::now_ms();
     let id = format!("widget_{millis}{:04}", millis % 10_000);
     let mut props = Map::new();
     let title = |t: &str| {

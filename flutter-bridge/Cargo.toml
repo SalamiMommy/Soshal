@@ -49,17 +49,17 @@ ring = { workspace = true }
 libsql = { workspace = true }
 reqwest = { workspace = true }
 keyring = { workspace = true }
-rustls = { version = "0.23", features = ["ring"] }
+rustls = { workspace = true }
 
 # FFI-specific dependencies
 flutter_rust_bridge = "=2.12.0"
 jni = "0.21"
-libc = "0.2"
+libc = { workspace = true }
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "location"] }
-futures-util = "0.3"
+futures-util = { workspace = true }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 lazy_static = "1.4"
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
+image = { workspace = true }
 dirs = "5.0"
 bytes = { workspace = true }
 hex = { workspace = true }

@@ -227,8 +227,8 @@ async fn verify_nip05_fut(nip05: &str) -> Result<(bool, String), String> {
     let client = builder
         .resolve_to_addrs(&host, &pinned_addrs)
         .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+        .map_err(super::util::to_err)?;
+    let resp = client.get(&url).send().await.map_err(super::util::to_err)?;
     if !resp.status().is_success() {
         return Ok((false, String::new()));
     }
@@ -240,7 +240,7 @@ async fn verify_nip05_fut(nip05: &str) -> Result<(bool, String), String> {
     }
     let mut body = Vec::new();
     let mut resp = resp;
-    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+    while let Some(chunk) = resp.chunk().await.map_err(super::util::to_err)? {
         if body.len() + chunk.len() > MAX_NIP05_BODY {
             return Err("nip05 response too large".into());
         }

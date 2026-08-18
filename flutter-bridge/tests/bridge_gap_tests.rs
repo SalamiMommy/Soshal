@@ -1,26 +1,12 @@
 //! FFI gap tests: social (friend suggestions), music (publish/fetch error
 //! paths), headless background sync, bookmarks CRUD + post resolution.
 
+#[path = "common/mod.rs"]
+mod test_util;
+
 #[cfg(test)]
 mod bridge_gap_tests {
     use soshal_flutter_bridge::*;
-    use std::sync::Mutex;
-
-    static LOCK: Mutex<()> = Mutex::new(());
-
-    fn init_db(name: &str) -> String {
-        let path = format!(
-            "{}/soshal_bridge_{}_{name}.db",
-            std::env::temp_dir().to_string_lossy(),
-            std::process::id()
-        );
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(format!("{path}-wal"));
-        let _ = std::fs::remove_file(format!("{path}-shm"));
-        assert!(db::db_init(path.clone()).is_ok());
-        path
-    }
-
     fn gen_keys() -> (String, String) {
         let keys = soshal_nostr_core::keys::generate_keys();
         (
@@ -28,22 +14,19 @@ mod bridge_gap_tests {
             keys.secret_key().to_secret_hex(),
         )
     }
-
     #[test]
     fn friend_suggestions_empty_and_from_graph() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let db = init_db("social");
+        let _g = crate::test_util::lock();
+        let db = crate::test_util::init_db("bridge_gap", "social");
         signer::signer_lock().unwrap();
         assert_eq!(
             social::social_friend_suggestions().unwrap(),
             Vec::<String>::new()
         );
-
         let (me, secret) = gen_keys();
         let (friend, _) = gen_keys();
         let (mutual, _) = gen_keys();
         signer::signer_unlock(secret).unwrap();
-
         let insert = |pk: &str, contacts: &str| {
             let sql = format!(
                 "INSERT INTO users (pubkey, npub, contact_pubkeys, relay_list) VALUES ('{pk}', '', '{contacts}', '[]')"
@@ -53,18 +36,16 @@ mod bridge_gap_tests {
         insert(&me, &format!("[\"{friend}\"]"));
         insert(&friend, &format!("[\"{me}\",\"{mutual}\"]"));
         insert(&mutual, &format!("[\"{me}\"]"));
-
         let suggestions = social::social_friend_suggestions().unwrap();
         assert!(suggestions.contains(&mutual), "{suggestions:?}");
         let cached = social::social_friend_suggestions().unwrap();
         assert_eq!(suggestions, cached, "60s cache hit");
         let _ = db;
     }
-
     #[test]
     fn music_publish_and_share_error_paths() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let db = init_db("music");
+        let _g = crate::test_util::lock();
+        let db = crate::test_util::init_db("bridge_gap", "music");
         let (pk, secret) = gen_keys();
         signer::signer_lock().unwrap();
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -82,7 +63,6 @@ mod bridge_gap_tests {
             .await
             .unwrap_err();
             assert!(bad_url.contains("audio_url"), "{bad_url}");
-
             signer::signer_unlock(secret).unwrap();
             let no_client = music::music_publish(
                 "https://example.com/a.mp3".into(),
@@ -97,7 +77,6 @@ mod bridge_gap_tests {
                 no_client.contains("relay client not initialized"),
                 "{no_client}"
             );
-
             let empty_msg =
                 music::music_share_to_feed("id".into(), pk.clone(), "   ".into(), vec![])
                     .await
@@ -111,7 +90,6 @@ mod bridge_gap_tests {
                 no_client.contains("relay client not initialized"),
                 "{no_client}"
             );
-
             let no_client = music::music_comment(31022, "x".repeat(64), "d".into(), "c".into())
                 .await
                 .unwrap_err();
@@ -134,41 +112,33 @@ mod bridge_gap_tests {
             let _ = db;
         });
     }
-
     #[test]
     fn background_sync_task_guards() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::test_util::lock();
         let err = headless::background_sync_task(String::new()).unwrap_err();
         assert!(err.contains("empty"), "{err}");
-
         let missing = "/nonexistent/soshal/sync.db".to_string();
         let err = headless::background_sync_task(missing).unwrap_err();
         assert!(err.contains("Failed to open DB"), "{err}");
-
-        let db = init_db("headless");
+        let db = crate::test_util::init_db("bridge_gap", "headless");
         assert_eq!(headless::background_sync_task(db.clone()).unwrap(), 0);
         let _ = db;
     }
-
     #[test]
     fn bookmarks_crud_and_resolve() {
-        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let db = init_db("bookmarks");
+        let _g = crate::test_util::lock();
+        let db = crate::test_util::init_db("bridge_gap", "bookmarks");
         let (pk, _) = gen_keys();
-
         let id = bookmarks::bookmarks_save(pk.clone(), "evt1".into()).unwrap();
         assert_eq!(id, "bm:evt1");
         let id2 = bookmarks::bookmarks_save(pk.clone(), "evt2".into()).unwrap();
         assert_eq!(id2, "bm:evt2");
-
         let list = bookmarks::bookmarks_list(pk.clone(), 10, 0).unwrap();
         let v: serde_json::Value = serde_json::from_str(&list).unwrap();
         assert_eq!(v.as_array().unwrap().len(), 2);
-
         let paged = bookmarks::bookmarks_list(pk.clone(), 1, 1).unwrap();
         let pv: serde_json::Value = serde_json::from_str(&paged).unwrap();
         assert_eq!(pv.as_array().unwrap().len(), 1);
-
         assert!(bookmarks::bookmarks_delete("bm:evt1".into()).unwrap());
         assert_eq!(
             bookmarks::bookmarks_list(pk.clone(), 10, 0)
@@ -176,10 +146,8 @@ mod bridge_gap_tests {
                 .contains("evt2"),
             true
         );
-
         let empty = bookmarks::bookmarks_resolve_post("nope".into()).unwrap();
         assert_eq!(empty, "");
-
         let (other, _) = gen_keys();
         db::db_execute_raw(format!(
             "INSERT INTO users (pubkey, npub, relay_list) VALUES ('{other}', '', '[]')"
@@ -191,12 +159,10 @@ mod bridge_gap_tests {
         .unwrap();
         let resolved = bookmarks::bookmarks_resolve_post("evt2".into()).unwrap();
         assert!(resolved.contains("\"content\":\"hello\""), "{resolved}");
-
         let map = bookmarks::bookmarks_resolve_posts(r#"["evt2","missing"]"#.into()).unwrap();
         let mv: serde_json::Value = serde_json::from_str(&map).unwrap();
         assert!(mv.get("evt2").is_some());
         assert!(mv.get("missing").is_none());
-
         let bad = bookmarks::bookmarks_resolve_posts("not-json".into()).unwrap_err();
         assert!(bad.contains("invalid ids JSON"), "{bad}");
         let _ = db;

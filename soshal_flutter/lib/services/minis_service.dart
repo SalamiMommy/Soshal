@@ -1,3 +1,4 @@
+import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 import 'dart:io';
@@ -127,15 +128,15 @@ class MiniItem {
   });
 
   factory MiniItem.fromJson(Map<String, dynamic> json) => MiniItem(
-        id: json['id'] as String? ?? '',
-        pubkey: json['pubkey'] as String? ?? '',
-        videoUrl: json['videoUrl'] as String? ?? '',
-        blobHash: json['blobHash'] as String? ?? '',
-        mediaSize: (json['mediaSize'] as num?)?.toInt() ?? 0,
-        textOverlay: json['textOverlay'] as String? ?? '',
-        thumbnail: json['thumbnail'] as String? ?? '',
-        audience: json['audience'] as String? ?? 'public',
-        createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+        id: json.strOf('id'),
+        pubkey: json.strOf('pubkey'),
+        videoUrl: json.strOf('videoUrl'),
+        blobHash: json.strOf('blobHash'),
+        mediaSize: json.intOf('mediaSize'),
+        textOverlay: json.strOf('textOverlay'),
+        thumbnail: json.strOf('thumbnail'),
+        audience: json.strOrNull('audience') ?? 'public',
+        createdAt: json.intOf('createdAt'),
       );
 }
 

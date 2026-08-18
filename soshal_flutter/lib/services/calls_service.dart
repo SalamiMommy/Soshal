@@ -1,3 +1,4 @@
+import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:async';
 import 'dart:convert';
@@ -265,15 +266,15 @@ class CallSignal {
   });
 
   factory CallSignal.fromJson(Map<String, dynamic> json) {
-    final content = json['content'] as String? ?? '';
+    final content = json.strOf('content');
     final contentJson = content.isNotEmpty ? jsonDecode(content) : null;
     final contentMap = contentJson is Map<String, dynamic> ? contentJson : {};
     return CallSignal(
-      id: json['id'] as String? ?? '',
-      pubkey: json['pubkey'] as String? ?? '',
+      id: json.strOf('id'),
+      pubkey: json.strOf('pubkey'),
       content: content,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      kind: (json['kind'] as num?)?.toInt() ?? 0,
+      createdAt: json.intOf('created_at'),
+      kind: json.intOf('kind'),
       pTags: (json['p_tags'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??

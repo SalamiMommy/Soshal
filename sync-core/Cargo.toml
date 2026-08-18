@@ -15,7 +15,7 @@ soshal-db-core = { path = "../db-core" }
 soshal-network-core = { path = "../network-core" }
 soshal-nostr-core = { path = "../nostr-core" }
 libsql = { workspace = true }
-rustls = { version = "0.23", features = ["ring"] }
+rustls = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 oxidelta.workspace = true

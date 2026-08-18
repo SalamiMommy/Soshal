@@ -50,7 +50,6 @@ mod tests {
     use crate::models::verify_event;
     use nostr::event::{Event, EventBuilder, EventId, FinalizeEvent, Signature, Tag};
     use nostr::key::{Keys, PublicKey};
-    use std::net::IpAddr;
 
     const SK_HEX: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
@@ -83,18 +82,9 @@ mod tests {
     }
 
     fn outgoing_url_blocked(url: &str) -> bool {
-        match url_host(url).and_then(|h| h.parse::<IpAddr>().ok()) {
-            Some(IpAddr::V4(v4)) => {
-                let o = v4.octets();
-                o[0] == 127
-                    || o[0] == 10
-                    || (o[0] == 192 && o[1] == 168)
-                    || (o[0] == 172 && (16..=31).contains(&o[1]))
-                    || v4.is_unspecified()
-            }
-            Some(IpAddr::V6(v6)) => v6.is_loopback() || v6.is_unspecified() || v6.is_unique_local(),
-            None => false,
-        }
+        url_host(url)
+            .map(soshal_common_core::url::is_private_ip_str)
+            .unwrap_or(false)
     }
 
     #[test]

@@ -216,7 +216,7 @@ pub fn db_query_params(sql: &str, params: &[String]) -> Result<String, String> {
                 .await?;
             rows_json(&stmt, &mut rows).await
         })?;
-        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+        Ok(super::util::json_ok_or_empty(&out))
     })
 }
 
@@ -398,7 +398,7 @@ pub fn db_storage_stats() -> Result<String, String> {
         "rows": 0,
         "bytes": file_bytes
     }));
-    Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+    Ok(super::util::json_ok_or_empty(&out))
 }
 
 /// Checkpoint the WAL and copy the database file to `backup_path` (a full
@@ -614,7 +614,7 @@ pub fn db_get_trending_hashtags(limit: i64) -> Result<String, String> {
     with_db(|db| {
         use soshal_db_core::repos::hashtag::HashtagRepo;
         let repo = HashtagRepo::new(db);
-        let rows = repo.get_trending(limit.clamp(1, 100))?;
+        let rows = repo.get_trending(soshal_db_core::repos::clamp_limit(limit).min(100))?;
         let out: Vec<serde_json::Value> = rows
             .into_iter()
             .map(|r| {
@@ -626,7 +626,7 @@ pub fn db_get_trending_hashtags(limit: i64) -> Result<String, String> {
                 })
             })
             .collect();
-        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+        Ok(super::util::json_ok_or_empty(&out))
     })
 }
 
@@ -654,7 +654,7 @@ pub fn db_get_escrows_by_participant(pubkey: String) -> Result<String, String> {
                 })
             })
             .collect();
-        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+        Ok(super::util::json_ok_or_empty(&out))
     })
 }
 

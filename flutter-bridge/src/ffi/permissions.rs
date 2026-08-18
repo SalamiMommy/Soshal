@@ -104,22 +104,22 @@ async fn ashpd_location() -> Result<Option<LocationFixDto>, String> {
     use ashpd::desktop::location::{Accuracy, CreateSessionOptions, LocationProxy};
     use futures_util::{FutureExt, StreamExt};
 
-    let proxy = LocationProxy::new().await.map_err(|e| e.to_string())?;
+    let proxy = LocationProxy::new().await.map_err(super::util::to_err)?;
     let session = proxy
         .create_session(CreateSessionOptions::default().set_accuracy(Accuracy::Street))
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(super::util::to_err)?;
     let mut stream = proxy
         .receive_location_updated()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(super::util::to_err)?;
     let (start, location) = futures_util::join!(
         proxy
             .start(&session, None, Default::default())
-            .map(|r| r.map_err(|e| e.to_string())),
+            .map(|r| r.map_err(super::util::to_err)),
         stream.next().map(|r| {
             r.ok_or_else(|| "portal stream exhausted".to_string())
-                .map_err(|e| e.to_string())
+                .map_err(super::util::to_err)
         }),
     );
     start?; // session started (response unnecessary for a one-shot fix)

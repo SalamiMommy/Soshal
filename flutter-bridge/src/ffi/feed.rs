@@ -108,7 +108,7 @@ pub fn feed_validate_note(content: String) -> Result<bool, String> {
 /// signed event JSON.
 #[frb(serialize)]
 pub async fn feed_publish_text_note(content: String, tags_json: String) -> Result<String, String> {
-    soshal_feed_core::publish::validate_note_content(&content).map_err(|e| e.to_string())?;
+    soshal_feed_core::publish::validate_note_content(&content).map_err(super::util::to_err)?;
     let tags: Vec<Vec<String>> =
         serde_json::from_str(&tags_json).map_err(|e| format!("invalid tags JSON: {e}"))?;
     let builder = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, content).tags(
@@ -141,7 +141,7 @@ pub async fn feed_publish_reply(
     root_event_id: String,
     reply_to_event_id: String,
 ) -> Result<String, String> {
-    soshal_feed_core::publish::validate_note_content(&content).map_err(|e| e.to_string())?;
+    soshal_feed_core::publish::validate_note_content(&content).map_err(super::util::to_err)?;
     let mut builder = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, content);
     if let Ok(tag) = nostr::event::Tag::parse(vec!["e".to_string(), root_event_id.clone()]) {
         builder = builder.tag(tag);
@@ -573,6 +573,6 @@ pub fn feed_compute_card_layouts(requests_json: String) -> Result<String, String
         results.push(soshal_layout_core::compute_card_layout(req));
     }
     serde_json::to_string(&results)
-        .map_err(|e| e.to_string())
+        .map_err(super::util::to_err)
         .into()
 }

@@ -187,7 +187,7 @@ pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, Stri
             Ok::<_, libsql::Error>(out)
         })
         .map_err(soshal_db_core::error::DbError::from)?;
-        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+        Ok(super::util::json_ok_or_empty(&out))
     })?;
     // NOTE: contact_pubkeys holds the user's own contacts, so "followed"
     // semantics here use the reverse direction (followers live). Relay-side
@@ -282,7 +282,7 @@ pub fn streaming_end_live(stream_id: String, broadcaster_pubkey: String) -> Resu
             Ok::<_, libsql::Error>(out)
         })
         .map_err(soshal_db_core::error::DbError::from)?;
-        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
+        Ok(super::util::json_ok_or_empty(&out))
     })?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let row = rows.first().ok_or("stream not found".to_string())?;

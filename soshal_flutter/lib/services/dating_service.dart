@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 
@@ -448,25 +449,25 @@ class DatingCard {
 
   factory DatingCard.fromJson(Map<String, dynamic> json) {
     return DatingCard(
-      pubkey: json['pubkey'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      age: (json['age'] as num?)?.toInt() ?? 0,
-      location: json['location'] as String? ?? '',
-      gender: json['gender'] as String? ?? '',
-      seeking: json['seeking'] as String? ?? '',
+      pubkey: json.strOf('pubkey'),
+      name: json.strOf('name'),
+      age: json.intOf('age'),
+      location: json.strOf('location'),
+      gender: json.strOf('gender'),
+      seeking: json.strOf('seeking'),
       height: (json['height'] as num?)?.toDouble() ?? 0,
-      bodyType: json['body_type'] as String? ?? '',
-      smoking: json['smoking'] as String? ?? '',
-      drinking: json['drinking'] as String? ?? '',
-      relationshipIntent: json['relationship_intent'] as String? ?? '',
-      politics: json['politics'] as String? ?? '',
-      ethnicity: json['ethnicity'] as String? ?? '',
-      education: json['education'] as String? ?? '',
+      bodyType: json.strOf('body_type'),
+      smoking: json.strOf('smoking'),
+      drinking: json.strOf('drinking'),
+      relationshipIntent: json.strOf('relationship_intent'),
+      politics: json.strOf('politics'),
+      ethnicity: json.strOf('ethnicity'),
+      education: json.strOf('education'),
       language: (json['language'] as List<dynamic>? ?? [])
           .map((e) => e.toString())
           .toList(),
       maxDistanceKm: (json['max_distance_km'] as num?)?.toDouble() ?? 0,
-      bio: json['bio'] as String? ?? '',
+      bio: json.strOf('bio'),
       images: (json['images'] as List<dynamic>? ?? [])
           .map((e) => e.toString())
           .toList(),
@@ -475,7 +476,7 @@ class DatingCard {
           .toList(),
       compatibilityScore:
           (json['compatibility_score'] as num?)?.toDouble() ?? 0,
-      lastSeen: (json['last_seen'] as num?)?.toInt() ?? 0,
+      lastSeen: json.intOf('last_seen'),
     );
   }
 }
@@ -500,12 +501,12 @@ class DatingStats {
 
   factory DatingStats.fromJson(Map<String, dynamic> json) {
     return DatingStats(
-      profileViews: (json['profile_views'] as num?)?.toInt() ?? 0,
-      likesReceived: (json['likes_received'] as num?)?.toInt() ?? 0,
-      superlikeReceived: (json['superlike_received'] as num?)?.toInt() ?? 0,
-      matches: (json['matches'] as num?)?.toInt() ?? 0,
-      profileComplete: json['profile_complete'] as bool? ?? false,
-      photoCount: (json['photo_count'] as num?)?.toInt() ?? 0,
+      profileViews: json.intOf('profile_views'),
+      likesReceived: json.intOf('likes_received'),
+      superlikeReceived: json.intOf('superlike_received'),
+      matches: json.intOf('matches'),
+      profileComplete: json.boolOf('profile_complete'),
+      photoCount: json.intOf('photo_count'),
     );
   }
 }

@@ -20,10 +20,10 @@ log = "0.4"
 webrtc-ice = { workspace = true }
 quinn = { workspace = true }
 rcgen = "0.13"
-rustls = { version = "0.23", features = ["ring", "std", "tls12"] }
+rustls = { workspace = true }
 aes-gcm = "0.10"
 tokio-tungstenite = "0.21"
-futures-util = "0.3"
+futures-util = { workspace = true }
 soshal-common-core = { path = "../common-core" }
 soshal-content-core = { path = "../content-core" }
 soshal-crypto-core = { path = "../crypto-core" }

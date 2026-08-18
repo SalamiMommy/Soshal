@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 
@@ -584,22 +585,22 @@ class ListingInfo {
 
   factory ListingInfo.fromJson(Map<String, dynamic> json) {
     return ListingInfo(
-      id: json['id'] as String? ?? '',
-      sellerPubkey: json['seller_pubkey'] as String? ?? '',
-      sellerName: json['seller_name'] as String? ?? '',
-      title: json['title'] as String? ?? '',
-      description: json['description'] as String? ?? '',
+      id: json.strOf('id'),
+      sellerPubkey: json.strOf('seller_pubkey'),
+      sellerName: json.strOf('seller_name'),
+      title: json.strOf('title'),
+      description: json.strOf('description'),
       images: (json['images'] as List<dynamic>? ?? [])
           .map((e) => e.toString())
           .toList(),
-      price: (json['price'] as num?)?.toInt() ?? 0,
-      currency: json['currency'] as String? ?? '',
-      category: json['category'] as String? ?? '',
-      condition: json['condition'] as String? ?? '',
-      shippingAvailable: json['shipping_available'] as bool? ?? false,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
-      status: json['status'] as String? ?? '',
+      price: json.intOf('price'),
+      currency: json.strOf('currency'),
+      category: json.strOf('category'),
+      condition: json.strOf('condition'),
+      shippingAvailable: json.boolOf('shipping_available'),
+      createdAt: json.intOf('created_at'),
+      updatedAt: json.intOf('updated_at'),
+      status: json.strOf('status'),
     );
   }
 
@@ -628,13 +629,13 @@ class OrderInfo {
 
   factory OrderInfo.fromJson(Map<String, dynamic> json) {
     return OrderInfo(
-      id: json['id'] as String? ?? '',
-      listingId: json['listing_id'] as String? ?? '',
-      buyerPubkey: json['buyer_pubkey'] as String? ?? '',
-      sellerPubkey: json['seller_pubkey'] as String? ?? '',
-      status: json['status'] as String? ?? '',
-      amount: (json['amount'] as num?)?.toInt() ?? 0,
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      listingId: json.strOf('listing_id'),
+      buyerPubkey: json.strOf('buyer_pubkey'),
+      sellerPubkey: json.strOf('seller_pubkey'),
+      status: json.strOf('status'),
+      amount: json.intOf('amount'),
+      createdAt: json.intOf('created_at'),
     );
   }
 }
@@ -667,16 +668,16 @@ class EscrowInfo {
 
   factory EscrowInfo.fromJson(Map<String, dynamic> json) {
     return EscrowInfo(
-      id: json['id'] as String? ?? '',
-      listingId: json['listing_id'] as String? ?? '',
-      buyerPubkey: json['buyer_pubkey'] as String? ?? '',
-      sellerPubkey: json['seller_pubkey'] as String? ?? '',
-      amountMsats: (json['amount_msats'] as num?)?.toInt() ?? 0,
-      currency: json['currency'] as String? ?? '',
-      status: json['status'] as String? ?? '',
-      note: json['escrow_note'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
+      id: json.strOf('id'),
+      listingId: json.strOf('listing_id'),
+      buyerPubkey: json.strOf('buyer_pubkey'),
+      sellerPubkey: json.strOf('seller_pubkey'),
+      amountMsats: json.intOf('amount_msats'),
+      currency: json.strOf('currency'),
+      status: json.strOf('status'),
+      note: json.strOf('escrow_note'),
+      createdAt: json.intOf('created_at'),
+      updatedAt: json.intOf('updated_at'),
     );
   }
 

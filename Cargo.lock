@@ -4723,6 +4723,7 @@ dependencies = [
  "nostr-sdk",
  "serde",
  "serde_json",
+ "soshal-common-core",
  "soshal-content-core",
  "tokio",
 ]

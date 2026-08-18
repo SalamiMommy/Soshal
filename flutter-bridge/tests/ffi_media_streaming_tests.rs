@@ -1,10 +1,9 @@
+#[path = "common/mod.rs"]
+mod test_util;
+
 #[cfg(test)]
 mod ffi_media_streaming_tests {
     use soshal_flutter_bridge::*;
-    use std::sync::Mutex;
-
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
     const PNG_1X1_RGBA: &[u8] = &[
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
         0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
@@ -12,25 +11,21 @@ mod ffi_media_streaming_tests {
         0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
         0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     ];
-
     fn temp_path(tag: &str) -> String {
         soshal_test_util::tmp_path("media_stream", tag)
             .to_string_lossy()
             .to_string()
     }
-
     fn db_path(tag: &str) -> String {
         soshal_test_util::tmp_path("media_stream", &format!("{tag}.db"))
             .to_string_lossy()
             .to_string()
     }
-
     fn remove_db(path: &str) {
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
     }
-
     fn unique_bytes() -> Vec<u8> {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -41,13 +36,11 @@ mod ffi_media_streaming_tests {
             .map(|i| ((seed as usize + i) % 253) as u8)
             .collect()
     }
-
     fn unlock_test_signer() -> String {
         let secret = "01".repeat(32);
         signer::signer_unlock(secret).unwrap();
         signer::signer_pubkey().unwrap()
     }
-
     #[test]
     fn media_decode_png_rgba() {
         let path = temp_path("decode");
@@ -60,7 +53,6 @@ mod ffi_media_streaming_tests {
         assert!(media::media_decode_image_rgba(missing, None, None).is_err());
         let _ = std::fs::remove_file(&path);
     }
-
     #[test]
     fn media_mime_mapping() {
         assert_eq!(
@@ -112,7 +104,6 @@ mod ffi_media_streaming_tests {
             "application/octet-stream"
         );
     }
-
     #[test]
     fn media_cache_path_and_clear() {
         let cache = media::media_get_cache_path().unwrap();
@@ -122,10 +113,9 @@ mod ffi_media_streaming_tests {
         assert!(media::media_clear_cache(dir.clone()).is_ok());
         assert!(media::media_clear_cache(dir).is_err());
     }
-
     #[test]
     fn media_local_server_start_stop() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::test_util::lock();
         let port1 = media::media_start_local_server().unwrap();
         assert!(port1 > 0);
         let port2 = media::media_start_local_server().unwrap();
@@ -133,10 +123,9 @@ mod ffi_media_streaming_tests {
         assert!(media::media_stop_local_server().unwrap());
         assert!(media::media_stop_local_server().unwrap());
     }
-
     #[test]
     fn media_blob_upload_fetch_roundtrip() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::test_util::lock();
         let data = unique_bytes();
         let json = media::media_upload_blob(data.clone()).unwrap();
         let manifest: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -153,10 +142,9 @@ mod ffi_media_streaming_tests {
         let _ = std::fs::remove_file(&out);
         let _ = std::fs::remove_file(&out2);
     }
-
     #[tokio::test]
     async fn media_upload_blob_file_roundtrip() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::test_util::lock();
         let data = unique_bytes();
         let src = temp_path("blob_src");
         std::fs::write(&src, &data).unwrap();
@@ -173,10 +161,9 @@ mod ffi_media_streaming_tests {
         let _ = std::fs::remove_file(&src);
         let _ = std::fs::remove_file(&out);
     }
-
     #[tokio::test]
     async fn media_upload_blob_file_rejects_ssrf_urls() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::test_util::lock();
         for url in [
             "http://localhost:8080/a.jpg",
             "http://127.0.0.1/a.jpg",
@@ -192,7 +179,6 @@ mod ffi_media_streaming_tests {
             );
         }
     }
-
     #[test]
     fn media_load_local_roundtrip_and_missing() {
         let data = unique_bytes();
@@ -202,10 +188,9 @@ mod ffi_media_streaming_tests {
         assert!(media::media_load_local(temp_path("missing")).is_err());
         let _ = std::fs::remove_file(&path);
     }
-
     #[test]
     fn streaming_fetch_empty_with_fresh_db() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::test_util::lock();
         let path = db_path("empty");
         remove_db(&path);
         assert!(db::db_init(path.clone()).is_ok());
@@ -224,10 +209,9 @@ mod ffi_media_streaming_tests {
         );
         remove_db(&path);
     }
-
     #[test]
     fn streaming_story_roundtrip() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::test_util::lock();
         let path = db_path("story");
         remove_db(&path);
         assert!(db::db_init(path.clone()).is_ok());
@@ -252,10 +236,9 @@ mod ffi_media_streaming_tests {
         signer::signer_lock().unwrap();
         remove_db(&path);
     }
-
     #[test]
     fn streaming_live_roundtrip() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = crate::test_util::lock();
         let path = db_path("live");
         remove_db(&path);
         assert!(db::db_init(path.clone()).is_ok());
@@ -290,7 +273,6 @@ mod ffi_media_streaming_tests {
         signer::signer_lock().unwrap();
         remove_db(&path);
     }
-
     #[test]
     fn streaming_moq_publish_object() {
         let key = streaming::streaming_moq_publish_object(
@@ -309,7 +291,6 @@ mod ffi_media_streaming_tests {
         assert_eq!(h["object_sequence"], 3, "payload 3 bytes");
         assert_eq!(h["payload_size"], 3);
         assert!(h["timestamp_ms"].as_u64().unwrap() > 0);
-
         let delta = streaming::streaming_moq_publish_object(
             "sid1".to_string(),
             "pk".to_string(),
@@ -323,7 +304,6 @@ mod ffi_media_streaming_tests {
         assert_eq!(h["track_type"], "VideoDelta");
         assert_eq!(h["group_sequence"], 0, "fresh session, delta does not bump");
         assert_eq!(h["payload_size"], 1);
-
         assert!(streaming::streaming_moq_publish_object(
             "sid1".to_string(),
             "pk".to_string(),
@@ -333,7 +313,6 @@ mod ffi_media_streaming_tests {
         )
         .is_err());
     }
-
     #[test]
     fn streaming_moq_subscribe_status() {
         let res =
@@ -347,7 +326,6 @@ mod ffi_media_streaming_tests {
             "no stream registered -> deterministic unknown"
         );
     }
-
     #[test]
     fn streaming_get_video_url_uninitialized() {
         let e = streaming::streaming_get_video_url(
@@ -357,11 +335,10 @@ mod ffi_media_streaming_tests {
         .unwrap_err();
         assert!(e.contains("not initialized"), "got {e}");
     }
-
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn streaming_get_video_url_happy_path() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::test_util::lock();
         let port = streaming::streaming_start_local_server().await.unwrap();
         let url = streaming::streaming_get_video_url(
             "vid1".to_string(),

@@ -9,10 +9,10 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$(dirname "${BASH_SOURCE[0]}")/../common.sh"
 
-source "$SCRIPT_DIR/../common.sh"
+resolve_script_dir
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 resolve_flutter_bin
 

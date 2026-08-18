@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 
@@ -606,15 +607,15 @@ class FeedPost {
   factory FeedPost.fromJson(Map<String, dynamic> json) {
     return FeedPost(
       eventId: (json['event_id'] ?? json['id']) as String? ?? '',
-      pubkey: json['pubkey'] as String? ?? '',
-      content: json['content'] as String? ?? '',
-      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      reactions: (json['reactions'] as num?)?.toInt() ?? 0,
-      replies: (json['replies'] as num?)?.toInt() ?? 0,
-      reposts: (json['reposts'] as num?)?.toInt() ?? 0,
-      liked: json['liked'] as bool? ?? false,
-      profileName: json['profile_name'] as String?,
-      profilePicture: json['profile_picture'] as String?,
+      pubkey: json.strOf('pubkey'),
+      content: json.strOf('content'),
+      createdAt: json.intOf('created_at'),
+      reactions: json.intOf('reactions'),
+      replies: json.intOf('replies'),
+      reposts: json.intOf('reposts'),
+      liked: json.boolOf('liked'),
+      profileName: json.strOrNull('profile_name'),
+      profilePicture: json.strOrNull('profile_picture'),
       media: _parseMedia(json),
     );
   }
@@ -651,10 +652,10 @@ class PostMedia {
 
   factory PostMedia.fromJson(Map<String, dynamic> json) {
     return PostMedia(
-      url: json['url'] as String? ?? '',
-      type: json['type'] as String? ?? 'image',
-      blobHash: json['blob_hash'] as String? ?? '',
-      size: (json['size'] as num?)?.toInt() ?? 0,
+      url: json.strOf('url'),
+      type: json.strOrNull('type') ?? 'image',
+      blobHash: json.strOf('blob_hash'),
+      size: json.intOf('size'),
     );
   }
 }
@@ -673,9 +674,9 @@ class ReactionSummary {
 
   factory ReactionSummary.fromJson(Map<String, dynamic> json) {
     return ReactionSummary(
-      emoji: json['emoji'] as String? ?? '+',
-      count: (json['count'] as num?)?.toInt() ?? 0,
-      hasReacted: json['hasReacted'] as bool? ?? false,
+      emoji: json.strOrNull('emoji') ?? '+',
+      count: json.intOf('count'),
+      hasReacted: json.boolOf('hasReacted'),
     );
   }
 }

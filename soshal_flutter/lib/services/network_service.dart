@@ -1,3 +1,4 @@
+import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 import 'dart:io';
@@ -710,10 +711,10 @@ class RelayInfo {
 
   factory RelayInfo.fromJson(Map<String, dynamic> json) {
     return RelayInfo(
-      url: json['url'] as String? ?? '',
-      connected: json['connected'] as bool? ?? false,
-      latencyMs: (json['latency_ms'] as num?)?.toInt() ?? 0,
-      lastEventAt: (json['last_event_at'] as num?)?.toInt() ?? 0,
+      url: json.strOf('url'),
+      connected: json.boolOf('connected'),
+      latencyMs: json.intOf('latency_ms'),
+      lastEventAt: json.intOf('last_event_at'),
     );
   }
 }

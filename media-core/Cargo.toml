@@ -12,18 +12,18 @@ reqwest = { workspace = true }
 fastcdc = { workspace = true }
 blake3 = { workspace = true }
 memmap2 = { workspace = true }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+image = { workspace = true }
 soshal-crypto-core = { path = "../crypto-core" }
 soshal-pqc-core = { path = "../pqc-core" }
 soshal-nostr-core = { path = "../nostr-core" }
 soshal-common-core = { path = "../common-core" }
 thumbhash.workspace = true
 url.workspace = true
-tokio = { version = "1", features = ["net", "macros", "rt-multi-thread"] }
+tokio = { workspace = true }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 soshal-test-util = { path = "../test-util" }
-tokio = { version = "1", features = ["net", "macros", "rt-multi-thread"] }
+tokio = { workspace = true }
