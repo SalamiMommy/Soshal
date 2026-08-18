@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/scheduled_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/app_snack.dart';
 
 /// Scheduled Posts: draft posts with a future scheduled_at, broadcast by
 /// the sync pipeline when due.
@@ -173,8 +174,7 @@ class _ScheduledScreenState extends State<ScheduledScreen> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: SelectableText(message)));
+    showAppSnack(context, message);
   }
 
   String _fmtTs(int ts) {

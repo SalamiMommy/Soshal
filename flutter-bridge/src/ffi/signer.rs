@@ -244,18 +244,22 @@ pub fn signer_sign_text(message: String) -> Result<String, String> {
     signer_schnorr_sign(hash)
 }
 
+fn sign_event_core(keys: &Keys, unsigned: UnsignedEvent) -> Result<String, String> {
+    match keys.sign_event(unsigned) {
+        Ok(event) => match serde_json::to_string(&event) {
+            Ok(json) => Ok(json),
+            Err(e) => Err(format!("serialize: {e}")),
+        },
+        Err(e) => Err(format!("sign failed: {e}")),
+    }
+}
+
 /// Sign a fully-formed `EventBuilder` with the unlocked key. Internal helper
 /// for the domain modules (feed, messaging, relations).
 pub(crate) fn sign_builder(builder: nostr::event::EventBuilder) -> Result<String, String> {
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
     match guard.as_ref() {
-        Some(keys) => match keys.sign_event(builder.finalize_unsigned(keys.public_key())) {
-            Ok(event) => match serde_json::to_string(&event) {
-                Ok(json) => Ok(json),
-                Err(e) => Err(format!("serialize: {e}")),
-            },
-            Err(e) => Err(format!("sign failed: {e}")),
-        },
+        Some(keys) => sign_event_core(keys, builder.finalize_unsigned(keys.public_key())),
         None => Err("signer locked".to_string()),
     }
 }
@@ -272,13 +276,7 @@ pub fn signer_sign_unsigned(event_json: String) -> Result<String, String> {
                 Ok(u) => u,
                 Err(e) => return Err(format!("invalid unsigned event: {e}")).into(),
             };
-            match keys.sign_event(unsigned) {
-                Ok(event) => match serde_json::to_string(&event) {
-                    Ok(json) => Ok(json).into(),
-                    Err(e) => Err(format!("serialize: {e}")).into(),
-                },
-                Err(e) => Err(format!("sign failed: {e}")).into(),
-            }
+            sign_event_core(keys, unsigned).into()
         }
         None => Err("signer locked".to_string()),
     }

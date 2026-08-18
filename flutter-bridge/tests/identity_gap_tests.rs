@@ -55,7 +55,7 @@ mod identity_gap_tests {
         assert_eq!(v["nip05"], "alice@example.com");
         assert_eq!(v["nip05_valid"], false);
 
-        let self_profile = identity::identity_get_self_profile(pk.clone()).unwrap();
+        let self_profile = identity::identity_get_profile(pk.clone()).unwrap();
         assert!(self_profile.contains("\"name\":\"alice\""));
 
         let hits = identity::identity_search_users("ali".into(), 10).unwrap();

@@ -12,6 +12,7 @@ import '../services/permissions_service.dart';
 import '../services/session_service.dart';
 import '../services/streaming_service.dart';
 import '../utils/format.dart';
+import '../widgets/app_snack.dart';
 import '../widgets/error_state_text.dart';
 
 /// Live broadcast capture screen.
@@ -265,8 +266,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: SelectableText(msg)));
+    showAppSnack(context, msg);
   }
 
   /// Lazily init the AAC encoder once, then toggle the mic + drain timer.

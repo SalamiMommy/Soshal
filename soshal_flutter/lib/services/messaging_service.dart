@@ -426,7 +426,7 @@ class IdentityService extends ChangeNotifier
   Future<ProfileInfo> getSelfProfile(String pubkey) async {
     try {
       final json = RustLib.instance.api
-          .crateFfiIdentityIdentityGetSelfProfile(pubkey: pubkey);
+          .crateFfiIdentityIdentityGetProfile(pubkey: pubkey);
       final profile =
           ProfileInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
       _profiles[pubkey] = profile;

@@ -18,6 +18,7 @@ aead = { workspace = true }
 zeroize = { workspace = true }
 soshal-pqc-core = { path = "../pqc-core" }
 soshal-content-core = { path = "../content-core" }
+soshal-common-core = { path = "../common-core" }
 
 
 [dev-dependencies]

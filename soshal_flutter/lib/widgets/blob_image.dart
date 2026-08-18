@@ -1,10 +1,9 @@
 // ignore_for_file: invalid_use_of_internal_member
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/media_service.dart';
 import '../services/p2p_service.dart';
+import '../utils/blob_resolver.dart';
 import 'rust_native_image.dart';
 
 /// Renders an image whose source is either an http(s) URL or a local CAS
@@ -90,24 +89,13 @@ class _BlobImageState extends State<BlobImage> {
       return;
     }
     final media = context.read<MediaService>();
-    try {
-      final path = await media.fetchBlob(hash);
-      if (!mounted) return;
+    final p2p = context.read<P2pService>();
+    final path = await resolveBlobPath(media, p2p, hash);
+    if (!mounted) return;
+    if (path == null) {
+      setState(() => _failed = true);
+    } else {
       setState(() => _path = path);
-    } catch (_) {
-      try {
-        final p2p = context.read<P2pService>();
-        final path = await media.fetchBlobFromLan(
-          hash,
-          peers: p2p.peers,
-          outPath: '${Directory.systemTemp.path}/$hash',
-        );
-        if (!mounted) return;
-        setState(() => _path = path);
-      } catch (_) {
-        if (!mounted) return;
-        setState(() => _failed = true);
-      }
     }
   }
 

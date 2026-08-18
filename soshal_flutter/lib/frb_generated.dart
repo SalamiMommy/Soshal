@@ -706,8 +706,6 @@ abstract class RustLibApi extends BaseApi {
 
   String crateFfiIdentityIdentityGetProfile({required String pubkey});
 
-  String crateFfiIdentityIdentityGetSelfProfile({required String pubkey});
-
   double crateFfiIdentityIdentityGetTrustScore(
       {required String sourcePubkey, required String targetPubkey});
 
@@ -6948,32 +6946,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiIdentityIdentityGetProfileConstMeta =>
       const TaskConstMeta(
         debugName: "identity_get_profile",
-        argNames: ["pubkey"],
-      );
-
-  @override
-  String crateFfiIdentityIdentityGetSelfProfile({required String pubkey}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(pubkey, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__identity__identity_get_self_profile(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiIdentityIdentityGetSelfProfileConstMeta,
-      argValues: [pubkey],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiIdentityIdentityGetSelfProfileConstMeta =>
-      const TaskConstMeta(
-        debugName: "identity_get_self_profile",
         argNames: ["pubkey"],
       );
 

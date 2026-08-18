@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/groups_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 
 /// Parses a #rrggbb hex color (falls back to purple).
 Color hexColor(String hex) {
@@ -12,8 +13,7 @@ Color hexColor(String hex) {
       : const Color(0xFF8b5cf6);
 }
 
-String _shortKey(String pubkey) =>
-    pubkey.length >= 12 ? pubkey.substring(0, 12) : pubkey;
+String _shortKey(String pubkey) => firstChars(pubkey, 12);
 
 /// Rooms tab: default `# general` room plus themed rooms with per-room chat.
 class GroupRoomsTab extends StatefulWidget {

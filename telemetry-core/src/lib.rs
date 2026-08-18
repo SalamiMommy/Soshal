@@ -136,7 +136,7 @@ impl Recorder {
         if hdr.sealed {
             return Err("recorder sealed".to_string());
         }
-        let ts = now_ms();
+        let ts = soshal_common_core::util::now_ms();
         let total = (ENTRY_HEADER + payload.len() + 3) & !3; // pad to 4B
         let mut entry = Vec::with_capacity(total);
         entry.extend_from_slice(&(total as u32).to_le_bytes());
@@ -341,10 +341,6 @@ fn random_nonce() -> Result<[u8; 12], String> {
     let mut n = [0u8; 12];
     getrandom::fill(&mut n).map_err(|e| format!("nonce entropy: {e}"))?;
     Ok(n)
-}
-
-fn now_ms() -> u64 {
-    soshal_common_core::format::now_secs() as u64 * 1000
 }
 
 fn checksum(data: &[u8]) -> [u8; 8] {

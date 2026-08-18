@@ -79,7 +79,7 @@ void main() {
 
   testWidgets('edit profile screen renders empty form with account',
       (tester) async {
-    api.stubString('crateFfiIdentityIdentityGetSelfProfile', '{}');
+    api.stubString('crateFfiIdentityIdentityGetProfile', '{}');
     await pump(tester, const EditProfileScreen(), withSession: true);
 
     expect(find.text('Edit Profile'), findsOneWidget);
@@ -87,12 +87,12 @@ void main() {
     expect(find.text('Display name'), findsOneWidget);
     expect(find.text('About'), findsOneWidget);
     expect(find.text('NIP-05 identifier'), findsOneWidget);
-    expect(api.callCount('crateFfiIdentityIdentityGetSelfProfile'), 1);
+    expect(api.callCount('crateFfiIdentityIdentityGetProfile'), 1);
   });
 
   testWidgets('edit profile screen keeps form on load failure',
       (tester) async {
-    api.stub('crateFfiIdentityIdentityGetSelfProfile', (_) {
+    api.stub('crateFfiIdentityIdentityGetProfile', (_) {
       throw Exception('relay down');
     });
     await pump(tester, const EditProfileScreen(), withSession: true);

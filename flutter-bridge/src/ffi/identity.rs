@@ -148,12 +148,6 @@ pub fn identity_search_users(query: String, limit: i32) -> Result<String, String
     .map(super::util::json_ok)?
 }
 
-/// Get the active account's own profile (alias of `identity_get_profile`).
-#[frb(sync, serialize)]
-pub fn identity_get_self_profile(pubkey: String) -> Result<String, String> {
-    identity_get_profile(pubkey)
-}
-
 /// Build and sign a kind-0 profile metadata event for the unlocked account.
 /// `pubkey` is validated against the unlocked signer; returns signed JSON
 /// (publish via `network_publish_event`).

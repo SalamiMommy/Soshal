@@ -25,19 +25,6 @@ pub fn beacon_mac(key: &[u8; 32], body: &str) -> String {
     hex::encode(hmac_sha256(key, body.as_bytes()))
 }
 
-/// Constant-time byte compare. Used for MAC verification so a timing
-/// side-channel cannot leak the expected MAC byte by byte.
-fn ct_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut acc: u8 = 0;
-    for (x, y) in a.iter().zip(b) {
-        acc |= x ^ y;
-    }
-    acc == 0
-}
-
 /// Maximum accepted age skew (seconds) between a beacon's timestamp and the
 /// receiver's clock, both past and future directions.
 /// 30 seconds is sufficient for normal clock drift on a LAN while keeping the
@@ -76,7 +63,7 @@ pub fn parse_beacon(
     let expected = beacon_mac(key, body);
     let expected_bytes = hex::decode(expected).ok()?;
     let got_bytes = hex::decode(rest).ok()?;
-    if !ct_eq(&got_bytes, &expected_bytes) {
+    if !soshal_common_core::util::constant_time_eq(&got_bytes, &expected_bytes) {
         return None;
     }
     let peer_pk = fields[1];

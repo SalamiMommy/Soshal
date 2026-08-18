@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:video_player/video_player.dart';
+import '../widgets/mini_video_player.dart';
 import '../services/media_service.dart';
 import '../services/minis_service.dart';
 import '../services/p2p_service.dart';
@@ -97,7 +97,7 @@ class _MinisUserScreenState extends State<MinisUserScreen> {
     }
     await showDialog<void>(
       context: context,
-      builder: (_) => _MiniVideoPlayer(url),
+      builder: (_) => MiniVideoPlayer(url),
     );
   }
 
@@ -147,73 +147,6 @@ class _MinisUserScreenState extends State<MinisUserScreen> {
           onTap: () => _openMini(mini),
         );
       },
-    );
-  }
-}
-
-/// Plays a mini video (local blob-server URL or remote fallback) via
-/// video_player inside a dialog.
-class _MiniVideoPlayer extends StatefulWidget {
-  final String url;
-
-  const _MiniVideoPlayer(this.url);
-
-  @override
-  State<_MiniVideoPlayer> createState() => _MiniVideoPlayerState();
-}
-
-class _MiniVideoPlayerState extends State<_MiniVideoPlayer> {
-  VideoPlayerController? _controller;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
-        if (!mounted) return;
-        setState(() {});
-        _controller!.play();
-      }).catchError((e) {
-        if (!mounted) return;
-        setState(() => _error = 'Playback failed: $e');
-      });
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Mini'),
-      content: SizedBox(
-        width: 360,
-        height: 240,
-        child: _error != null
-            ? Center(
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
-              )
-            : _controller != null && _controller!.value.isInitialized
-                ? FittedBox(
-                    fit: BoxFit.contain,
-                    child: SizedBox(
-                      width: _controller!.value.size.width,
-                      height: _controller!.value.size.height,
-                      child: VideoPlayer(_controller!),
-                    ),
-                  )
-                : const Center(child: CircularProgressIndicator()),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
-        ),
-      ],
     );
   }
 }

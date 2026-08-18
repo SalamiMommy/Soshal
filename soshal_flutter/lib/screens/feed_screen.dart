@@ -15,6 +15,7 @@ import '../utils/format.dart';
 import 'composer_screen.dart';
 import '../services/zap_service.dart';
 import '../services/layout_service.dart';
+import '../widgets/app_snack.dart';
 import '../widgets/error_state_text.dart';
 
 /// Narrow view of [FeedService] — rebuilds only when list identity or
@@ -751,8 +752,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: SelectableText(message)));
+    showAppSnack(context, message);
   }
 
   Future<void> _showEmojiPicker() async {

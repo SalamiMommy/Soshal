@@ -8,6 +8,7 @@ import '../services/marketplace_service.dart';
 import '../services/media_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/app_snack.dart';
 import '../widgets/blob_image.dart';
 
 /// Marketplace: listings, search, create, buy, orders and escrow.
@@ -939,8 +940,7 @@ class _EscrowSectionState extends State<_EscrowSection> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: SelectableText(message)));
+    showAppSnack(context, message);
   }
 
   /// Runs a transition, reports the result, then refetches escrow state.
@@ -1452,8 +1452,7 @@ class _PollSectionState extends State<_PollSection> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: SelectableText(message)));
+    showAppSnack(context, message);
   }
 
   Future<void> _loadPoll(String pollId) async {

@@ -15,6 +15,7 @@ use base64::{engine::general_purpose, Engine as _};
 use chacha20poly1305::{ChaCha20Poly1305, Key as P1305Key, Nonce as P1305Nonce};
 
 use crate::hash;
+use soshal_common_core::util::constant_time_eq;
 
 const NIP44_INFO: &[u8] = b"nip44-v2";
 const DERIVED_LEN: usize = 76;
@@ -301,17 +302,6 @@ fn decrypt_spec(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static
     nonce12.zeroize();
 
     unpad_in_place(plaintext)
-}
-
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
 }
 
 /// Legacy encryption format (pre-spec): random salt, then

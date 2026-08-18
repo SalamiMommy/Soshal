@@ -1,9 +1,9 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../utils/blob_resolver.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 import 'media_service.dart';
@@ -187,17 +187,9 @@ Future<String?> resolveTrackPlaybackUrl(
   P2pService p2p,
 ) async {
   if (track.blobHash.isNotEmpty) {
-    try {
-      await media.fetchBlob(track.blobHash);
-      await media.startLocalServer();
-      return media.getLocalUrl(track.blobHash);
-    } catch (_) {
+    final path = await resolveBlobPath(media, p2p, track.blobHash);
+    if (path != null) {
       try {
-        await media.fetchBlobFromLan(
-          track.blobHash,
-          peers: p2p.peers,
-          outPath: '${Directory.systemTemp.path}/${track.blobHash}',
-        );
         await media.startLocalServer();
         return media.getLocalUrl(track.blobHash);
       } catch (_) {

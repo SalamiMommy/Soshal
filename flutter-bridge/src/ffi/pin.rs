@@ -13,10 +13,6 @@ use soshal_identity_core::security::{
 
 const PIN_HASH_KEY: &str = "pin_hash";
 
-fn now_ms() -> i64 {
-    soshal_common_core::format::now_secs() * 1000
-}
-
 fn with_repo<T>(
     f: impl FnOnce(&soshal_db_core::repos::settings::SettingsRepo) -> Result<T, String>,
 ) -> Result<T, String> {
@@ -57,7 +53,7 @@ pub fn pin_has() -> Result<bool, String> {
 }
 
 fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
-    let now = now_ms();
+    let now = soshal_common_core::util::now_ms() as i64;
     let permanent = with_repo(|r| {
         Ok(r.get("pin_permanently_locked")
             .map_err(|e| e.to_string())?
@@ -205,7 +201,7 @@ mod tests {
         let s = state_json();
         assert_eq!(s["attemptCount"], 3);
         let until = s["lockoutUntil"].as_i64().unwrap();
-        let now = now_ms();
+        let now = soshal_common_core::util::now_ms() as i64;
         assert!(until > now, "lockoutUntil {until} should be in the future");
         assert_eq!(s["permanentLocked"], false);
         assert!(

@@ -6,6 +6,7 @@ import 'dart:convert';
 import '../services/calls_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/app_snack.dart';
 
 /// Full-screen in-call view for voice/video calls.
 ///
@@ -191,8 +192,7 @@ class _CallScreenState extends State<CallScreen> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: SelectableText(message)));
+    showAppSnack(context, message);
   }
 
   @override

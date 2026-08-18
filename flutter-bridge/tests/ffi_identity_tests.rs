@@ -69,7 +69,7 @@ mod ffi_identity_tests {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let path = init_db("self");
         let pubkey = unique_pubkey("self");
-        let got = identity::identity_get_self_profile(pubkey.clone()).unwrap();
+        let got = identity::identity_get_profile(pubkey.clone()).unwrap();
         let p: ProfileInfo = serde_json::from_str(&got).unwrap();
         assert_eq!(p.pubkey, pubkey);
         assert!(p.name.is_empty());

@@ -125,6 +125,13 @@ pub async fn minis_publish(
     Ok(id)
 }
 
+fn wasm_stub_err(wasm_bytes_hex: &str) -> String {
+    if hex::decode(wasm_bytes_hex).is_err() {
+        return "invalid wasm hex".to_string();
+    }
+    "wasm runtime unavailable: WASI component host on roadmap, runtime simulated".to_string()
+}
+
 /// Execute a WASI 0.2 Wasm content filter component plugin (runtime itself
 /// still simulated in minis-core; wasm bytes must be valid hex).
 #[frb(sync, serialize)]
@@ -133,9 +140,7 @@ pub fn minis_wasm_execute_filter(
     _text: String,
     wasm_bytes_hex: String,
 ) -> Result<String, String> {
-    hex::decode(&wasm_bytes_hex).map_err(|_| "invalid wasm hex".to_string())?;
-    Err("wasm runtime unavailable: WASI component host on roadmap, runtime simulated".to_string())
-        .into()
+    Err(wasm_stub_err(&wasm_bytes_hex))
 }
 
 /// Execute a WASI 0.2 Wasm feed ranker component plugin (runtime itself still
@@ -146,9 +151,7 @@ pub fn minis_wasm_rank_feed(
     _posts_json: Vec<String>,
     wasm_bytes_hex: String,
 ) -> Result<Vec<String>, String> {
-    hex::decode(&wasm_bytes_hex).map_err(|_| "invalid wasm hex".to_string())?;
-    Err("wasm runtime unavailable: WASI component host on roadmap, runtime simulated".to_string())
-        .into()
+    Err(wasm_stub_err(&wasm_bytes_hex))
 }
 
 #[cfg(test)]

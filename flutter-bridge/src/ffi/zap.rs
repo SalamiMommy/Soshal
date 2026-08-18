@@ -217,10 +217,12 @@ pub async fn zap_send_payment(bolt11: String) -> Result<String, String> {
 /// only — never the `amount` tag of an unverified receipt).
 #[frb(serialize)]
 pub fn zap_get_total_msat(event_id: String) -> Result<u64, String> {
-    super::db::with_db_result(|db| {
-        let sum = soshal_db_core::repos::zap::ZapRepo::new(db).sum_by_event(&event_id)?;
-        Ok(sum.max(0) as u64)
-    })
+    let json = zap_fetch_totals(vec![event_id.clone()])?;
+    let v: serde_json::Value = serde_json::from_str(&json).map_err(|e| format!("parse: {e}"))?;
+    Ok(v.get(&event_id)
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0)
+        .max(0) as u64)
 }
 
 /// Batch zap totals for many event ids: one query, one FFI roundtrip.

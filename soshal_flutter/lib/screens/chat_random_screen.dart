@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../services/chatrandom_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/app_snack.dart';
 
 /// Chat Random: interest-based random pairing with strangers via relay
 /// availability announcements and request/accept events.
@@ -148,8 +149,7 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: SelectableText(message)));
+    showAppSnack(context, message);
   }
 
   String _short(String pubkey) => prefixEllipsis(pubkey, 16);

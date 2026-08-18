@@ -50,7 +50,7 @@ pub struct LanChunkRequest {
 }
 
 #[repr(u8)]
-enum ResponseKind {
+pub(crate) enum ResponseKind {
     Ok = 0,
     NotFound = 1,
     Denied = 2,

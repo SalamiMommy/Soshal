@@ -412,6 +412,7 @@ mod tests {
 // ============================================================================
 
 use crate::lan;
+use crate::lan_transport::ResponseKind;
 use crate::power::global_power_scheduler;
 use soshal_media_core::cas::ChunkStore;
 use std::net::UdpSocket;
@@ -673,7 +674,7 @@ async fn serve_stream(
     }
     let req_len = u32::from_le_bytes(len_buf) as usize;
     if req_len == 0 || req_len > MAX_STREAM_FRAME {
-        let _ = write_stream_frame(&mut send, StreamResponseKind::BadRequest, &[]).await;
+        let _ = write_stream_frame(&mut send, ResponseKind::BadRequest, &[]).await;
         let _ = send.finish();
         return;
     }
@@ -691,7 +692,7 @@ async fn serve_stream(
     let req: StreamRequest = match serde_json::from_slice(&req_bytes) {
         Ok(r) => r,
         Err(_) => {
-            let _ = write_stream_frame(&mut send, StreamResponseKind::BadRequest, &[]).await;
+            let _ = write_stream_frame(&mut send, ResponseKind::BadRequest, &[]).await;
             let _ = send.finish();
             return;
         }
@@ -701,22 +702,21 @@ async fn serve_stream(
         StreamRequest::Chunk(chunk_req) => {
             if chunk_req.want_manifest {
                 let kind = if chunk_req.hash.len() != 64 {
-                    StreamResponseKind::BadRequest
+                    ResponseKind::BadRequest
                 } else if global_power_scheduler().mode().paused() {
-                    StreamResponseKind::Denied
+                    ResponseKind::Denied
                 } else {
                     match store.load_manifest(&chunk_req.hash) {
                         Some(m) => match serde_json::to_vec(&m) {
                             Ok(bytes) if bytes.len() <= MAX_STREAM_FRAME => {
                                 let _ =
-                                    write_stream_frame(&mut send, StreamResponseKind::Ok, &bytes)
-                                        .await;
+                                    write_stream_frame(&mut send, ResponseKind::Ok, &bytes).await;
                                 let _ = send.finish();
                                 return;
                             }
-                            Ok(_) | Err(_) => StreamResponseKind::BadRequest,
+                            Ok(_) | Err(_) => ResponseKind::BadRequest,
                         },
-                        None => StreamResponseKind::NotFound,
+                        None => ResponseKind::NotFound,
                     }
                 };
                 let _ = write_stream_frame(&mut send, kind, &[]).await;
@@ -727,9 +727,9 @@ async fn serve_stream(
                 || chunk_req.length == 0
                 || chunk_req.length > MAX_STREAM_FRAME
             {
-                StreamResponseKind::BadRequest
+                ResponseKind::BadRequest
             } else if global_power_scheduler().mode().paused() {
-                StreamResponseKind::Denied
+                ResponseKind::Denied
             } else {
                 let manifest = store
                     .load_manifest(&chunk_req.hash)
@@ -739,11 +739,11 @@ async fn serve_stream(
                     .and_then(|m| store.blob_slice(m, chunk_req.offset, chunk_req.length))
                 {
                     Some(bytes) => {
-                        let _ = write_stream_frame(&mut send, StreamResponseKind::Ok, &bytes).await;
+                        let _ = write_stream_frame(&mut send, ResponseKind::Ok, &bytes).await;
                         let _ = send.finish();
                         return;
                     }
-                    None => StreamResponseKind::NotFound,
+                    None => ResponseKind::NotFound,
                 }
             };
             let _ = write_stream_frame(&mut send, kind, &[]).await;
@@ -754,10 +754,10 @@ async fn serve_stream(
             window_ms,
         } => {
             if stream_id.is_empty() || stream_id.len() > LIVE_MAX_STREAM_ID {
-                let _ = write_stream_frame(&mut send, StreamResponseKind::BadRequest, &[]).await;
+                let _ = write_stream_frame(&mut send, ResponseKind::BadRequest, &[]).await;
                 let _ = send.finish();
             } else if global_power_scheduler().mode().paused() {
-                let _ = write_stream_frame(&mut send, StreamResponseKind::Denied, &[]).await;
+                let _ = write_stream_frame(&mut send, ResponseKind::Denied, &[]).await;
                 let _ = send.finish();
             } else {
                 serve_moq_subscription(&mut send, &stream_id, window_ms).await;
@@ -770,7 +770,7 @@ async fn serve_stream(
 /// new groups every poll interval until an idle gap or the window expires.
 async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, window_ms: u64) {
     let Some(log) = live_registry().get(stream_id) else {
-        let _ = write_stream_frame(send, StreamResponseKind::NotFound, &[]).await;
+        let _ = write_stream_frame(send, ResponseKind::NotFound, &[]).await;
         let _ = send.finish();
         return;
     };
@@ -795,7 +795,7 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
     };
     let mut watermark = wm;
     for group in &replay {
-        if write_stream_frame(send, StreamResponseKind::Ok, group.as_slice())
+        if write_stream_frame(send, ResponseKind::Ok, group.as_slice())
             .await
             .is_err()
         {
@@ -829,7 +829,7 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
             }
         }
         for (seq, group) in &pending {
-            if write_stream_frame(send, StreamResponseKind::Ok, group.as_slice())
+            if write_stream_frame(send, ResponseKind::Ok, group.as_slice())
                 .await
                 .is_err()
             {
@@ -895,17 +895,9 @@ async fn read_exact_async(recv: &mut quinn::RecvStream, buf: &mut [u8]) -> Resul
     Ok(())
 }
 
-#[repr(u8)]
-enum StreamResponseKind {
-    Ok = 0,
-    NotFound = 1,
-    Denied = 2,
-    BadRequest = 3,
-}
-
 async fn write_stream_frame(
     send: &mut quinn::SendStream,
-    kind: StreamResponseKind,
+    kind: ResponseKind,
     payload: &[u8],
 ) -> Result<(), String> {
     send.write_all(&[kind as u8])

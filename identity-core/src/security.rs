@@ -1,4 +1,3 @@
-use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
 fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], iterations: u32, dk_len: usize) -> Vec<u8> {
@@ -8,8 +7,7 @@ fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], iterations: u32, dk_len: usi
 }
 
 pub fn constant_time_equal(a: &str, b: &str) -> bool {
-    let equal: bool = a.as_bytes().ct_eq(b.as_bytes()).into();
-    equal
+    soshal_common_core::util::constant_time_eq(a.as_bytes(), b.as_bytes())
 }
 
 /// Derives a PIN hash with a server-chosen salt and fixed parameters.

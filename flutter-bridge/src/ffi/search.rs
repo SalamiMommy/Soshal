@@ -58,8 +58,8 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
                         0 => "profile".to_string(),
                         _ => "post".to_string(),
                     },
-                    title: truncate_preview(&row.get::<String>(2)?, 80),
-                    description: truncate_preview(&row.get::<String>(2)?, 160),
+                    title: soshal_common_core::format::truncate(&row.get::<String>(2)?, 80),
+                    description: soshal_common_core::format::truncate(&row.get::<String>(2)?, 160),
                     pubkey: Some(row.get(1)?),
                     score: 1.0,
                     created_at: row.get::<i64>(4)?.max(0) as u64,
@@ -72,14 +72,6 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
         out.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         Ok(out)
     })
-}
-
-fn truncate_preview(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let cut: String = s.chars().take(max).collect();
-    format!("{cut}…")
 }
 
 /// Search posts by content (kind 1).
@@ -264,7 +256,10 @@ pub fn search_trending_profiles(limit: i32) -> Result<String, String> {
                 id: r["pubkey"].as_str()?.to_string(),
                 result_type: "profile".to_string(),
                 title: r["name"].as_str().unwrap_or("").to_string(),
-                description: truncate_preview(r["about"].as_str().unwrap_or(""), 160),
+                description: soshal_common_core::format::truncate(
+                    r["about"].as_str().unwrap_or(""),
+                    160,
+                ),
                 pubkey: r["pubkey"].as_str().map(|s| s.to_string()),
                 score: 1.0,
                 created_at: 0,
@@ -285,7 +280,7 @@ pub fn search_index_post(
     let row = soshal_db_core::repos::search_index::SearchIndexRow {
         id: event_id,
         pubkey,
-        content: truncate_preview(&content, 4096),
+        content: soshal_common_core::format::truncate(&content, 4096),
         kind,
         created_at: soshal_common_core::format::now_secs(),
     };
@@ -315,7 +310,7 @@ pub fn search_index_posts(rows_json: String) -> Result<bool, String> {
             .map(|r| soshal_db_core::repos::search_index::SearchIndexRow {
                 id: r.id,
                 pubkey: r.pubkey,
-                content: truncate_preview(&r.content, 4096),
+                content: soshal_common_core::format::truncate(&r.content, 4096),
                 kind: r.kind,
                 created_at: soshal_common_core::format::now_secs(),
             })
@@ -687,12 +682,15 @@ mod tests {
         let desc = arr[0]["description"].as_str().unwrap();
         assert_eq!(desc.chars().count(), 161);
         assert!(desc.ends_with('…'));
-        // truncate_preview: >80 chars -> 80 + ellipsis.
-        let t = truncate_preview(&"a".repeat(81), 80);
+        // truncate: >80 chars -> 80 + ellipsis.
+        let t = soshal_common_core::format::truncate(&"a".repeat(81), 80);
         assert_eq!(t.chars().count(), 81);
         assert!(t.ends_with('…'));
-        assert_eq!(truncate_preview(&"a".repeat(80), 80), "a".repeat(80));
-        assert_eq!(truncate_preview("", 80), "");
+        assert_eq!(
+            soshal_common_core::format::truncate(&"a".repeat(80), 80),
+            "a".repeat(80)
+        );
+        assert_eq!(soshal_common_core::format::truncate("", 80), "");
     }
 
     #[tokio::test(flavor = "multi_thread")]

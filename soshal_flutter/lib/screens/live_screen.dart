@@ -7,6 +7,7 @@ import 'live_broadcast_screen.dart';
 import 'moq_viewer_screen.dart';
 import '../ffi/p2p.dart';
 import '../utils/format.dart';
+import '../widgets/app_snack.dart';
 
 /// Live streams: presence list + start/end own stream.
 class LiveScreen extends StatefulWidget {
@@ -293,8 +294,7 @@ class _LiveScreenState extends State<LiveScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: SelectableText(msg)));
+    showAppSnack(context, msg);
   }
 
   @override

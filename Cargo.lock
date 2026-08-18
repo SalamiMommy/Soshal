@@ -4456,6 +4456,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "soshal-common-core",
  "soshal-content-core",
  "soshal-pqc-core",
  "zeroize",
