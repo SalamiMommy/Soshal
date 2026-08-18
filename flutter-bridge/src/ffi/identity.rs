@@ -299,8 +299,7 @@ pub fn identity_get_trust_score(
 
 /// WoT contact-graph snapshot, cached per DB path for `WOT_GRAPH_TTL` so
 /// repeated trust/WoT calls skip rebuilding the whole graph.
-static WOT_GRAPH_CACHE: std::sync::Mutex<Option<WotGraphSnapshot>> =
-    std::sync::Mutex::new(None);
+static WOT_GRAPH_CACHE: std::sync::Mutex<Option<WotGraphSnapshot>> = std::sync::Mutex::new(None);
 const WOT_GRAPH_TTL: std::time::Duration = std::time::Duration::from_secs(45);
 
 struct WotGraphSnapshot {

@@ -291,8 +291,7 @@ class _InboxScreenState extends State<InboxScreen> {
         final advertising =
             context.select<P2pService, bool>((p) => p.advertising);
         final browsing = context.select<P2pService, bool>((p) => p.browsing);
-        final power =
-            context.select<P2pService, P2pPowerDto?>((p) => p.power);
+        final power = context.select<P2pService, P2pPowerDto?>((p) => p.power);
         final peers =
             context.select<P2pService, List<P2pPeerDto>>((p) => p.peers);
         return Column(
@@ -378,7 +377,8 @@ class _InboxScreenState extends State<InboxScreen> {
                     )
                   else
                     ActionChip(
-                      avatar: const Icon(Icons.wifi_tethering_outlined, size: 18),
+                      avatar:
+                          const Icon(Icons.wifi_tethering_outlined, size: 18),
                       label: const Text('Browse LAN'),
                       onPressed: () async {
                         await p2p.startBrowsing();

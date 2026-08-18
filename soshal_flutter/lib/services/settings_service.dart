@@ -17,11 +17,6 @@ class SettingsService extends ChangeNotifier {
     RustLib.instance.api.crateFfiDbDbSetSetting(key: key, value: value);
   }
 
-  /// Initialize the database at the given path.
-  Future<void> dbInit({required String dbPath}) async {
-    RustLib.instance.api.crateFfiDbDbInit(dbPath: dbPath);
-  }
-
   /// Per-table row counts plus `__db_file__` size row.
   List<Map<String, dynamic>> storageStats() {
     final json = RustLib.instance.api.crateFfiDbDbStorageStats();

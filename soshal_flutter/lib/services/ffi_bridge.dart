@@ -1,9 +1,11 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:soshal_flutter/frb_generated.dart';
+import '../ffi/db.dart' as db_ffi;
 
 /// FFI Bridge to the Rust backend.
 class FfiBridge {
@@ -52,5 +54,51 @@ class FfiBridge {
   static Future<String> getDbPath() async {
     final dir = await getApplicationDocumentsDirectory();
     return '${dir.path}/soshal.db';
+  }
+
+  /// Initialize the database with automatic migration handling.
+  /// This checks the current schema version and forces a migration if
+  /// the database is out of date (handles cases where the schema version
+  /// is stuck at an older version due to failed migrations).
+  static Future<String> initDatabase() async {
+    final dbPath = await getDbPath();
+    try {
+      final result = RustLib.instance.api.crateFfiDbDbInit(dbPath: dbPath);
+      // Check if the schema version is current
+      try {
+        final currentVersion = db_ffi.dbSchemaVersion();
+        const expectedVersion = 1; // Must match db-core SCHEMA_VERSION
+        debugPrint('Database schema version: $currentVersion, expected: $expectedVersion');
+        
+        if (currentVersion > expectedVersion) {
+          debugPrint('Database schema version $currentVersion is ahead of expected $expectedVersion. This may cause compatibility issues. Forcing migration to reset to current schema...');
+          final migrateResult = db_ffi.dbForceMigrate();
+          debugPrint('Migration result: $migrateResult');
+          // Verify the migration succeeded
+          final newVersion = db_ffi.dbSchemaVersion();
+          debugPrint('Database schema version after migration: $newVersion');
+          if (newVersion != expectedVersion) {
+            throw Exception('Migration failed to reset schema version to $expectedVersion');
+          }
+        } else if (currentVersion < expectedVersion) {
+          debugPrint('Database schema version $currentVersion is behind expected $expectedVersion, forcing migration...');
+          final migrateResult = db_ffi.dbForceMigrate();
+          debugPrint('Migration result: $migrateResult');
+          // Verify the migration succeeded
+          final newVersion = db_ffi.dbSchemaVersion();
+          debugPrint('Database schema version after migration: $newVersion');
+          if (newVersion < expectedVersion) {
+            throw Exception('Migration failed to update schema version to $expectedVersion');
+          }
+        }
+      } catch (e) {
+        debugPrint('Error checking schema version: $e');
+        // Continue anyway - the init may have succeeded
+      }
+      return result;
+    } catch (e) {
+      debugPrint('Database init failed: $e');
+      rethrow;
+    }
   }
 }

@@ -899,6 +899,14 @@ class RustLibWire implements BaseWire {
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__db__db_force_migrate(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__db__db_force_migrate(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__db__db_get_custom_profile_nodes(
               PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_,
@@ -970,6 +978,14 @@ class RustLibWire implements BaseWire {
               int rust_vec_len_,
               int data_len_) =>
           wasmModule.wire__crate__ffi__db__db_save_custom_profile(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__db__db_schema_version(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__db__db_schema_version(
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
@@ -4006,6 +4022,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_, int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__db__db_force_migrate(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__db__db_get_custom_profile_nodes(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
@@ -4054,6 +4076,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__db__db_save_custom_profile(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__db__db_schema_version(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);

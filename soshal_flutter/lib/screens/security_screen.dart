@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
+import '../services/settings_service.dart';
 import '../services/shell_service.dart';
 import '../services/signer_service.dart';
 import '../utils/format.dart';
@@ -19,11 +20,21 @@ class SecurityScreen extends StatefulWidget {
 class _SecurityScreenState extends State<SecurityScreen> {
   String? _pubkey;
   bool? _locked;
+  bool _keychainUnlockEnabled = false;
 
   @override
   void initState() {
     super.initState();
+    _loadSettings();
     _refresh();
+  }
+
+  void _loadSettings() {
+    final settings = context.read<SettingsService>();
+    final value = settings.getSetting('keychain_unlock_enabled');
+    setState(() {
+      _keychainUnlockEnabled = value == 'true';
+    });
   }
 
   Future<void> _refresh() async {
@@ -157,21 +168,39 @@ class _SecurityScreenState extends State<SecurityScreen> {
               child: const Text('Save'),
             ),
           ),
+          SwitchListTile(
+            dense: true,
+            title: const Text('Enable keychain unlock'),
+            subtitle: const Text('Allow unlocking from device keychain'),
+            value: _keychainUnlockEnabled,
+            onChanged: (value) async {
+              final settings = context.read<SettingsService>();
+              await settings.setSetting(
+                  'keychain_unlock_enabled', value.toString());
+              setState(() {
+                _keychainUnlockEnabled = value;
+              });
+            },
+          ),
           ListTile(
             dense: true,
             title: const Text('Unlock from device keychain'),
+            enabled: _keychainUnlockEnabled,
             trailing: OutlinedButton(
-              onPressed: () async {
-                if (pubkey.isEmpty) return;
-                await signer.unlockFromKeyring(pubkey);
-                await _refresh();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: SelectableText('Unlocked from keychain')),
-                  );
-                }
-              },
+              onPressed: _keychainUnlockEnabled
+                  ? () async {
+                      if (pubkey.isEmpty) return;
+                      await signer.unlockFromKeyring(pubkey);
+                      await _refresh();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content:
+                                  SelectableText('Unlocked from keychain')),
+                        );
+                      }
+                    }
+                  : null,
               child: const Text('Unlock'),
             ),
           ),

@@ -1710,16 +1710,17 @@ mod tests {
         let event_id = ev["id"].as_str().unwrap();
         let info: serde_json::Value =
             serde_json::from_str(&marketplace_get_listing(event_id.to_string()).unwrap()).unwrap();
-        assert!(
-            info.is_object(),
-            "info is not an object: {info:?}"
-        );
+        assert!(info.is_object(), "info is not an object: {info:?}");
         assert!(
             info.get("content").is_none() || !info["content"].is_string(),
             "content is a string, keys: {:?}",
             info.as_object().map(|m| m.keys().collect::<Vec<_>>())
         );
-        eprintln!("INFO KEYS: {:?} content={:?}", info.as_object().map(|m| m.keys().collect::<Vec<_>>()), info.get("content"));
+        eprintln!(
+            "INFO KEYS: {:?} content={:?}",
+            info.as_object().map(|m| m.keys().collect::<Vec<_>>()),
+            info.get("content")
+        );
         let info_content: serde_json::Value =
             serde_json::from_str(info["content"].as_str().unwrap()).unwrap();
         assert!(

@@ -71,8 +71,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     int batteryPercent,
     bool cellular,
     bool lowPowerMode,
-  })?
-  _lastPowerSample;
+  })? _lastPowerSample;
 
   P2pService() {
     _lifecycle = AppLifecycleListener(

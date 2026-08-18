@@ -135,8 +135,7 @@ pub fn zap_connect_nwc(nwc_uri: String) -> Result<bool, String> {
     let info = soshal_zap_core::nwc::parse_nwc_uri(&nwc_uri)
         .map_err(|e| format!("invalid NWC URI: {e}"))?;
     *NWC.lock().unwrap_or_else(|e| e.into_inner()) = Some(info.into());
-    *NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner()) =
-        Some(ZeroizingString::new(nwc_uri));
+    *NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(ZeroizingString::new(nwc_uri));
     Ok(true).into()
 }
 

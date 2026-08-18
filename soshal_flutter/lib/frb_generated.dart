@@ -74,7 +74,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -379110393;
+  int get rustContentHash => -2123938841;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -277,6 +277,8 @@ abstract class RustLibApi extends BaseApi {
 
   BigInt crateFfiDbDbExecuteRaw({required String sql});
 
+  String crateFfiDbDbForceMigrate();
+
   String crateFfiDbDbGetCustomProfileNodes({required String pubkey});
 
   String crateFfiDbDbGetEscrowsByParticipant({required String pubkey});
@@ -301,6 +303,8 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiDbDbSaveCustomProfile(
       {required String pubkey, required String profileJson});
+
+  PlatformInt64 crateFfiDbDbSchemaVersion();
 
   bool crateFfiDbDbSetSetting({required String key, required String value});
 
@@ -3064,6 +3068,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  String crateFfiDbDbForceMigrate() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__db__db_force_migrate(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDbDbForceMigrateConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDbDbForceMigrateConstMeta => const TaskConstMeta(
+        debugName: "db_force_migrate",
+        argNames: [],
+      );
+
+  @override
   String crateFfiDbDbGetCustomProfileNodes({required String pubkey}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
@@ -3342,6 +3370,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "db_save_custom_profile",
         argNames: ["pubkey", "profileJson"],
+      );
+
+  @override
+  PlatformInt64 crateFfiDbDbSchemaVersion() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__db__db_schema_version(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_i_64,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDbDbSchemaVersionConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDbDbSchemaVersionConstMeta => const TaskConstMeta(
+        debugName: "db_schema_version",
+        argNames: [],
       );
 
   @override

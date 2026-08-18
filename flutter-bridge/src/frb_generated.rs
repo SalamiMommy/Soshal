@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -379110393;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2123938841;
 
 // Section: executor
 
@@ -2096,6 +2096,35 @@ fn wire__crate__ffi__db__db_execute_raw_impl(
         },
     )
 }
+fn wire__crate__ffi__db__db_force_migrate_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "db_force_migrate",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::db::db_force_migrate()?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__db__db_get_custom_profile_nodes_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -2415,6 +2444,35 @@ fn wire__crate__ffi__db__db_save_custom_profile_impl(
             transform_result_sse::<_, String>((move || {
                 let output_ok =
                     crate::ffi::db::db_save_custom_profile(api_pubkey, api_profile_json)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__db__db_schema_version_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "db_schema_version",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::db::db_schema_version()?;
                 Ok(output_ok)
             })())
         },
@@ -14943,6 +15001,15 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__db__db_force_migrate(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__db__db_force_migrate_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__db__db_get_custom_profile_nodes(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -15039,6 +15106,15 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__db__db_save_custom_profile_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__db__db_schema_version(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__db__db_schema_version_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -19175,6 +19251,15 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__db__db_force_migrate(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__db__db_force_migrate_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__db__db_get_custom_profile_nodes(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -19271,6 +19356,15 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__db__db_save_custom_profile_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__db__db_schema_version(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__db__db_schema_version_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]

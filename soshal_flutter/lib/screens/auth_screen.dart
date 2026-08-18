@@ -435,6 +435,9 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
         logRuntimeError('onboarding keychain save: $e', st);
       }
 
+      // Refresh signer state to reflect that it's now unlocked
+      await signer.refresh();
+
       // Start the Rust-side background relay sync for the new account.
       if (mounted) {
         context.read<SyncService>().start(relays: defaultRelays);

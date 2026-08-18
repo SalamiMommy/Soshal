@@ -303,16 +303,15 @@ fn event_host_and_d_tag(event_id: &str) -> Option<(String, String)> {
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).ok()?;
     let row = rows.first()?;
     let host = row["pubkey"].as_str().unwrap_or("").to_string();
-    let d_tag = serde_json::from_str::<Vec<Vec<String>>>(
-        row["tags_json"].as_str().unwrap_or_default(),
-    )
-    .ok()
-    .and_then(|t| {
-        t.into_iter()
-            .find(|t| t.first().map(|k| k == "d").unwrap_or(false))
-            .and_then(|t| t.get(1).cloned())
-    })
-    .unwrap_or_default();
+    let d_tag =
+        serde_json::from_str::<Vec<Vec<String>>>(row["tags_json"].as_str().unwrap_or_default())
+            .ok()
+            .and_then(|t| {
+                t.into_iter()
+                    .find(|t| t.first().map(|k| k == "d").unwrap_or(false))
+                    .and_then(|t| t.get(1).cloned())
+            })
+            .unwrap_or_default();
     Some((host, d_tag))
 }
 

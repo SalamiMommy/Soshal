@@ -117,6 +117,55 @@ pub fn db_path() -> Result<String, String> {
     }
 }
 
+/// Get the current schema version from the _migrations table.
+#[frb(sync, serialize)]
+pub fn db_schema_version() -> Result<i64, String> {
+    with_db(|db| {
+        let conn = db.conn()?;
+        let version = block_on(async {
+            let mut rows = conn
+                .query("SELECT COALESCE(MAX(version), 0) FROM _migrations", ())
+                .await?;
+            if let Some(row) = rows.next().await? {
+                Ok::<i64, libsql::Error>(row.get::<i64>(0)?)
+            } else {
+                Ok(0)
+            }
+        })?;
+        Ok(version)
+    })
+}
+
+/// Force re-run all migrations from scratch. This deletes the _migrations table
+/// and re-runs the full migration sequence. Use with caution - it may fail if
+/// schema changes are not backwards compatible.
+#[frb(sync, serialize)]
+pub fn db_force_migrate() -> Result<String, String> {
+    with_db(|db| {
+        let conn = db.conn()?;
+
+        let tables: Vec<String> = block_on(async {
+            let mut rows = conn.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", ()).await?;
+            let mut names = Vec::new();
+            while let Some(row) = rows.next().await? {
+                names.push(row.get::<String>(0)?);
+            }
+            Ok::<Vec<String>, libsql::Error>(names)
+        })?;
+
+        let _ = block_on(conn.execute("PRAGMA foreign_keys = OFF", ()));
+        for table in tables {
+            let _ = block_on(conn.execute(&format!("DROP TABLE IF EXISTS {}", table), ()));
+        }
+        let _ = block_on(conn.execute("PRAGMA foreign_keys = ON", ()));
+
+        // Re-run migrations
+        db.migrate()
+            .map_err(|e| DbError::Migration(format!("migration failed: {e}")))?;
+        Ok("Migration re-run complete".to_string())
+    })
+}
+
 /// Execute a raw SELECT query; rows are returned as a JSON array of objects
 /// (column names as keys). Parameter binding is supported with `?1..?N`.
 #[frb(sync, serialize)]

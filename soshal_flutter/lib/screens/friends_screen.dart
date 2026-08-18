@@ -32,7 +32,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
   void initState() {
     super.initState();
     _service = context.read<FriendsService>();
-    _loadSuggestions();
+    // Defer loading suggestions to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSuggestions();
+    });
   }
 
   Future<void> _loadSuggestions() async {

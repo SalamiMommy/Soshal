@@ -16,6 +16,15 @@ String dbInit({required String dbPath}) =>
 /// Get the current database path, or an error if not initialized.
 String dbPath() => RustLib.instance.api.crateFfiDbDbPath();
 
+/// Get the current schema version from the _migrations table.
+PlatformInt64 dbSchemaVersion() =>
+    RustLib.instance.api.crateFfiDbDbSchemaVersion();
+
+/// Force re-run all migrations from scratch. This deletes the _migrations table
+/// and re-runs the full migration sequence. Use with caution - it may fail if
+/// schema changes are not backwards compatible.
+String dbForceMigrate() => RustLib.instance.api.crateFfiDbDbForceMigrate();
+
 /// Execute a raw SELECT query; rows are returned as a JSON array of objects
 /// (column names as keys). Parameter binding is supported with `?1..?N`.
 String dbQueryRaw({required String sql}) =>
@@ -27,8 +36,7 @@ Future<String> dbQueryParams(
         {required String sql, required List<String> params}) =>
     RustLib.instance.api.crateFfiDbDbQueryParams(sql: sql, params: params);
 
-/// Execute a raw INSERT/UPDATE/DELETE (no parameters case); returns rows
-/// affected.
+/// Execute a raw INSERT/UPDATE/DELETE (no parameters); returns rows affected.
 BigInt dbExecuteRaw({required String sql}) =>
     RustLib.instance.api.crateFfiDbDbExecuteRaw(sql: sql);
 
@@ -55,11 +63,18 @@ String dbStorageStats() => RustLib.instance.api.crateFfiDbDbStorageStats();
 
 /// Checkpoint the WAL and copy the database file to `backup_path` (a full
 /// file snapshot — the only state SQLite needs for a consistent restore).
+///
+/// `backup_path` must resolve to the same directory as the current database
+/// file; paths outside that directory are rejected to prevent path traversal.
 String dbBackup({required String backupPath}) =>
     RustLib.instance.api.crateFfiDbDbBackup(backupPath: backupPath);
 
 /// Restore: close the current handle, replace the file, and reopen with
 /// migrations. Any in-flight connection is dropped.
+///
+/// `backup_path` must resolve to the same directory as the current database
+/// file; paths outside that directory are rejected to prevent path traversal
+/// and malicious DB injection.
 String dbRestore({required String backupPath}) =>
     RustLib.instance.api.crateFfiDbDbRestore(backupPath: backupPath);
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
+import '../services/settings_service.dart';
 import '../services/signer_service.dart';
 
 /// Full-screen signer lock overlay: shown when a session exists but the
@@ -18,6 +19,21 @@ class _SignerLockScreenState extends State<SignerLockScreen> {
   final TextEditingController _phrase = TextEditingController();
   bool _busy = false;
   String? _error;
+  bool _keychainUnlockEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  void _loadSettings() {
+    final settings = context.read<SettingsService>();
+    final value = settings.getSetting('keychain_unlock_enabled');
+    setState(() {
+      _keychainUnlockEnabled = value == 'true';
+    });
+  }
 
   Future<void> _unlockFromKeychain() async {
     final signer = context.read<SignerService>();
@@ -107,14 +123,17 @@ class _SignerLockScreenState extends State<SignerLockScreen> {
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _busy ? null : _unlockFromKeychain,
-                    icon: const Icon(Icons.key),
-                    label: const Text('Unlock from device keychain'),
-                  ),
-                  const SizedBox(height: 24),
+                  if (_keychainUnlockEnabled)
+                    FilledButton.icon(
+                      onPressed: _busy ? null : _unlockFromKeychain,
+                      icon: const Icon(Icons.key),
+                      label: const Text('Unlock from device keychain'),
+                    ),
+                  SizedBox(height: _keychainUnlockEnabled ? 24 : 8),
                   Text(
-                    'or restore with recovery phrase',
+                    _keychainUnlockEnabled
+                        ? 'or restore with recovery phrase'
+                        : 'Restore with recovery phrase',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall,
                   ),

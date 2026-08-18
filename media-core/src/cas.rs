@@ -237,7 +237,10 @@ impl ChunkStore {
     fn verified_contains(&self, hash: &str, size: u64, mtime: Option<SystemTime>) -> bool {
         self.verified
             .lock()
-            .map(|c| c.get(hash).map_or(false, |(s, m)| *s == size && *m == mtime))
+            .map(|c| {
+                c.get(hash)
+                    .map_or(false, |(s, m)| *s == size && *m == mtime)
+            })
             .unwrap_or(false)
     }
 

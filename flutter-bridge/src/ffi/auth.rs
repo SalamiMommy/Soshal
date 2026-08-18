@@ -16,10 +16,10 @@ use soshal_nostr_core::keys::{from_nsec, generate_keys};
 pub fn auth_generate_keypair() -> Result<String, String> {
     let keys = generate_keys();
     let nsec = keys.secret_key().to_secret_hex();
-    let pk = super::signer::signer_unlock(nsec)?;
+    let pk = super::signer::signer_unlock(nsec.clone())?;
     super::util::json_ok(KeyPairResult {
         public_key: pk,
-        secret_key: String::new(),
+        secret_key: nsec,
     })
 }
 
@@ -50,10 +50,10 @@ pub async fn auth_restore_from_mnemonic(
     passphrase: String,
 ) -> Result<String, String> {
     let keys = restore_from_mnemonic(&mnemonic, &passphrase).map_err(|e| e.to_string())?;
-    let pk = super::signer::signer_unlock(keys.private_key_hex)?;
+    let pk = super::signer::signer_unlock(keys.private_key_hex.clone())?;
     super::util::json_ok(KeyPairResult {
         public_key: pk,
-        secret_key: String::new(),
+        secret_key: keys.private_key_hex,
     })
 }
 

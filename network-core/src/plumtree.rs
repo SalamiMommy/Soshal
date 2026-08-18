@@ -264,7 +264,10 @@ mod tests {
         // (peer_eager) gets the forward, no IHave to lazy peers
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].0, "peer_eager");
-        assert!(matches!(&out[0].1, PlumTreeMessage::Gossip { round: 2, .. }));
+        assert!(matches!(
+            &out[0].1,
+            PlumTreeMessage::Gossip { round: 2, .. }
+        ));
 
         // Prune demotes eager -> lazy
         let out = node.handle_incoming(

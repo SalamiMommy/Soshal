@@ -203,8 +203,8 @@ class _FeedScreenState extends State<FeedScreen> {
                 } catch (e) {
                   debugPrint('feed load: $e');
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: SelectableText('Feed load error: $e')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: SelectableText('Feed load error: $e')));
                 }
               },
               child: const Text('Refresh'),
@@ -216,9 +216,8 @@ class _FeedScreenState extends State<FeedScreen> {
       body = ListView.builder(
         controller: _scrollController,
         itemCount: feedView.display.length + 1,
-        itemExtentBuilder: (index, _) => context
-            .read<LayoutService>()
-            .extentFor(index, feedView.display),
+        itemExtentBuilder: (index, _) =>
+            context.read<LayoutService>().extentFor(index, feedView.display),
         itemBuilder: (context, index) {
           if (index == feedView.display.length) {
             if (feedView.loading) {

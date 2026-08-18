@@ -2089,6 +2089,34 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  WireSyncRust2DartSse wire__crate__ffi__db__db_force_migrate(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__db__db_force_migrate(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__db__db_force_migratePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__db__db_force_migrate');
+  late final _wire__crate__ffi__db__db_force_migrate =
+      _wire__crate__ffi__db__db_force_migratePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   WireSyncRust2DartSse wire__crate__ffi__db__db_get_custom_profile_nodes(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -2381,6 +2409,34 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__db__db_save_custom_profile');
   late final _wire__crate__ffi__db__db_save_custom_profile =
       _wire__crate__ffi__db__db_save_custom_profilePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__db__db_schema_version(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__db__db_schema_version(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__db__db_schema_versionPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__db__db_schema_version');
+  late final _wire__crate__ffi__db__db_schema_version =
+      _wire__crate__ffi__db__db_schema_versionPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -12224,6 +12280,7 @@ class RustLibWire implements BaseWire {
 
 typedef DartPort = ffi.Int64;
 typedef DartDartPort = int;
+
 
 final class wire_cst_list_String extends ffi.Struct {
   external ffi.Pointer<ffi.Pointer<wire_cst_list_prim_u_8_strict>> ptr;

@@ -144,9 +144,7 @@ impl I2PSamClient {
                         self.destination = Some(dest.to_string());
                     }
                     _ => {
-                        return Err(
-                            "Session created without DESTINATION= in response".to_string()
-                        );
+                        return Err("Session created without DESTINATION= in response".to_string());
                     }
                 }
             } else {
@@ -555,19 +553,26 @@ mod tests {
 
         // I2PSessionManager::start builds its own config with the default
         // SAM port, so the mock must bind 127.0.0.1:SAM_DEFAULT_PORT.
-        let listener = TcpListener::bind(("127.0.0.1", SAM_DEFAULT_PORT)).expect("bind default sam port");
-        let (bridge, _port) = (MockBridge { listener, conn_replies: vec![
-            vec![
-                "HELLO REPLY VERSION=3.1".to_string(),
-                "DEST REPLY DEST=gen-1".to_string(),
-                "SESSION STATUS RESULT=OK DESTINATION=trans-1".to_string(),
-            ],
-            vec![
-                "HELLO REPLY VERSION=3.1".to_string(),
-                "DEST REPLY DEST=gen-2".to_string(),
-                "SESSION STATUS RESULT=OK DESTINATION=trans-2".to_string(),
-            ],
-        ] }, 0);
+        let listener =
+            TcpListener::bind(("127.0.0.1", SAM_DEFAULT_PORT)).expect("bind default sam port");
+        let (bridge, _port) = (
+            MockBridge {
+                listener,
+                conn_replies: vec![
+                    vec![
+                        "HELLO REPLY VERSION=3.1".to_string(),
+                        "DEST REPLY DEST=gen-1".to_string(),
+                        "SESSION STATUS RESULT=OK DESTINATION=trans-1".to_string(),
+                    ],
+                    vec![
+                        "HELLO REPLY VERSION=3.1".to_string(),
+                        "DEST REPLY DEST=gen-2".to_string(),
+                        "SESSION STATUS RESULT=OK DESTINATION=trans-2".to_string(),
+                    ],
+                ],
+            },
+            0,
+        );
         let handle = bridge.serve();
         let manager = I2PSessionManager::new();
         assert_eq!(manager.start(None).expect("first start"), "gen-1");
