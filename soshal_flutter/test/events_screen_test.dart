@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/events_screen.dart';
 import 'package:soshal_flutter/services/dating_service.dart';
 import 'package:soshal_flutter/services/events_service.dart';
+import 'package:soshal_flutter/services/friends_service.dart';
+import 'package:soshal_flutter/services/media_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 
 import 'helpers/test_env.dart';
@@ -75,6 +77,8 @@ void main() {
           ChangeNotifierProvider<SessionService>.value(value: session),
           ChangeNotifierProvider(create: (_) => EventsService()),
           ChangeNotifierProvider(create: (_) => DatingService()),
+          ChangeNotifierProvider(create: (_) => FriendsService()),
+          ChangeNotifierProvider(create: (_) => MediaService()),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),
@@ -110,6 +114,8 @@ void main() {
           ChangeNotifierProvider<SessionService>.value(value: session),
           ChangeNotifierProvider(create: (_) => EventsService()),
           ChangeNotifierProvider(create: (_) => DatingService()),
+          ChangeNotifierProvider(create: (_) => FriendsService()),
+          ChangeNotifierProvider(create: (_) => MediaService()),
         ],
         child: const MaterialApp(home: EventDetailScreen(eventId: 'ev1')),
       ),
@@ -117,11 +123,11 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// The nearby-mode bottom bar (radius Slider) fills the whole viewport
-  /// height on Flutter 3.27+ sliders, collapsing the body — toggle to
-  /// "Mine" (hides the bar) before interacting with the list.
+  /// Opens the Find events menu, picks Mine to hide the radius slider.
   Future<void> pumpMine(WidgetTester tester) async {
     await pumpScreen(tester);
+    await tester.tap(find.text('Find events'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Mine'));
     await tester.pumpAndSettle();
   }
@@ -132,9 +138,11 @@ void main() {
 
     await pumpMine(tester);
 
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
     expect(find.text('No events yet'), findsOneWidget);
     expect(find.byTooltip('Create event'), findsOneWidget);
-    expect(find.text('All'), findsOneWidget);
+    expect(find.text('Find events'), findsOneWidget);
     expect(find.text('List'), findsOneWidget);
     expect(find.text('Calendar'), findsOneWidget);
     expect(find.byType(Slider), findsNothing);
@@ -150,6 +158,8 @@ void main() {
 
     await pumpMine(tester);
 
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
     expect(find.text('Jazz Night'), findsOneWidget);
     expect(find.text('Remote · flexible · 3 going'), findsOneWidget);
     expect(api.callCount('crateFfiEventsEventsScoreEvents'),
@@ -163,6 +173,8 @@ void main() {
 
     await pumpMine(tester);
 
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
     expect(find.text('No events yet'), findsOneWidget);
   });
 
@@ -222,18 +234,23 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
-  testWidgets('mine toggle fetches user events', (tester) async {
+  testWidgets('find events menu mine mode fetches user events', (tester) async {
     api.stubString('crateFfiEventsEventsFetchUserEvents', '[]');
 
     await pumpScreen(tester);
 
+    await tester.tap(find.text('Find events'));
+    await tester.pumpAndSettle();
+    expect(find.text('All'), findsOneWidget);
+    expect(find.text('Friends'), findsOneWidget);
+    expect(find.text('Friends of friends'), findsOneWidget);
+    expect(find.text('Mine'), findsOneWidget);
     await tester.tap(find.text('Mine'));
     await tester.pumpAndSettle();
 
     expect(api.callCount('crateFfiEventsEventsFetchUserEvents'), 1);
     final inv = api.callsOf('crateFfiEventsEventsFetchUserEvents').single;
     expect(api.namedArg(inv, 'userPubkey'), 'pk123');
-    expect(find.text('All'), findsOneWidget);
     expect(find.byType(Slider), findsNothing);
   });
 
@@ -257,9 +274,6 @@ void main() {
 
     await pumpMine(tester);
 
-    await tester.tap(find.text('Calendar'));
-    await tester.pumpAndSettle();
-
     final now = DateTime.now();
     expect(find.text('${monthNames[now.month - 1]} ${now.year}'),
         findsOneWidget);
@@ -269,6 +283,36 @@ void main() {
     await tester.tap(find.text('15'));
     await tester.pumpAndSettle();
     expect(find.text('No events this day.'), findsOneWidget);
+  });
+
+  testWidgets('friends audience shows only friend-created events',
+      (tester) async {
+    const mineJson = '{"id":"ev2","creator_pubkey":"friend1","title":"Friend Gig",'
+        '"description":"","location":"","latitude":0,"longitude":0,'
+        '"start_time":0,"end_time":0,"image":"","attendees":1,'
+        '"rsvp_status":"","created_at":0}';
+    const strangerJson =
+        '{"id":"ev3","creator_pubkey":"stranger1","title":"Stranger Meetup",'
+        '"description":"","location":"","latitude":0,"longitude":0,'
+        '"start_time":0,"end_time":0,"image":"","attendees":0,'
+        '"rsvp_status":"","created_at":0}';
+    api.stubString('crateFfiEventsEventsFetchNearby', '[$mineJson,$strangerJson]');
+    api.stubString('crateFfiIdentityIdentityFetchFollows', '["friend1"]');
+
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
+    expect(find.text('Friend Gig'), findsOneWidget);
+    expect(find.text('Stranger Meetup'), findsOneWidget);
+
+    await tester.tap(find.text('Find events'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Friends'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Friend Gig'), findsOneWidget);
+    expect(find.text('Stranger Meetup'), findsNothing);
   });
 
   testWidgets('event tap opens detail and RSVP calls bridge',
@@ -281,6 +325,8 @@ void main() {
 
     await pumpMine(tester);
 
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Jazz Night'));
     await tester.pumpAndSettle();
 

@@ -1,10 +1,58 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../services/events_service.dart';
 import '../services/dating_service.dart';
+import '../services/events_service.dart';
+import '../services/friends_service.dart';
+import '../services/media_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+
+enum _AudienceMode { all, friends, fof, mine }
+
+/// Event photo: blob:// hashes resolve via the chunk store; http(s) load
+/// directly. Falls back to an icon when missing or unresolvable.
+class _EventImage extends StatelessWidget {
+  const _EventImage({required this.url, this.height});
+
+  final String url;
+  final double? height;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) {
+      return const Icon(Icons.event);
+    }
+    if (trimmed.startsWith('blob://')) {
+      final hash = trimmed.substring('blob://'.length);
+      return FutureBuilder<String>(
+        future: context.read<MediaService>().fetchBlob(hash),
+        builder: (context, snap) {
+          if (snap.hasData && snap.data!.isNotEmpty) {
+            return Image.file(
+              File(snap.data!),
+              fit: BoxFit.cover,
+              height: height,
+              errorBuilder: (_, __, ___) => const Icon(Icons.event),
+            );
+          }
+          return const Icon(Icons.event);
+        },
+      );
+    }
+    return Image.network(
+      trimmed,
+      fit: BoxFit.cover,
+      height: height,
+      errorBuilder: (_, __, ___) => const Icon(Icons.event),
+    );
+  }
+}
 
 /// Events: nearby list, create dialog, detail with RSVP + check-in.
 class EventsScreen extends StatefulWidget {
@@ -56,7 +104,9 @@ class _EventsScreenState extends State<EventsScreen> {
   ];
 
   bool _loading = true;
-  bool _mineOnly = false;
+
+  _AudienceMode _audienceMode = _AudienceMode.all;
+  List<String> _friendSet = const [];
 
   List<SoshalEvent>? _sortedCache;
   List<SoshalEvent>? _sortedCacheKey;
@@ -76,7 +126,15 @@ class _EventsScreenState extends State<EventsScreen> {
     return _sortedCache!;
   }
 
-  String _viewMode = 'list';
+  List<SoshalEvent> _visibleEvents(List<SoshalEvent> events) {
+    if (_audienceMode != _AudienceMode.friends &&
+        _audienceMode != _AudienceMode.fof) {
+      return events;
+    }
+    return events.where((e) => _friendSet.contains(e.creatorPubkey)).toList();
+  }
+
+  String _viewMode = 'calendar';
   int _monthOffset = 0;
   DateTime? _selectedDay;
 
@@ -94,11 +152,18 @@ class _EventsScreenState extends State<EventsScreen> {
       final api = context.read<EventsService>();
       final session = context.read<SessionService>();
       final dating = context.read<DatingService>();
-      if (_mineOnly && session.activePubkey != null) {
+      if (_audienceMode == _AudienceMode.mine && session.activePubkey != null) {
         await api.fetchUserEvents(session.activePubkey!);
       } else {
-        await api.fetchNearby(radiusKm: _radiusKm);
+        await api.fetchNearby(
+          radiusKm: _radiusKm,
+          limit: _audienceMode == _AudienceMode.friends ||
+                  _audienceMode == _AudienceMode.fof
+              ? 100
+              : 50,
+        );
       }
+      await _loadFriendSet(session);
       var mine = const <String>[];
       final pk = session.activePubkey;
       if (pk != null) {
@@ -115,6 +180,49 @@ class _EventsScreenState extends State<EventsScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
+  Future<void> _loadFriendSet(SessionService session) async {
+    try {
+      if (_audienceMode != _AudienceMode.friends &&
+          _audienceMode != _AudienceMode.fof) {
+        _friendSet = const [];
+        return;
+      }
+      final pk = session.activePubkey;
+      if (pk == null) {
+        _friendSet = const [];
+        return;
+      }
+      final friends = context.read<FriendsService>();
+      var mine = <String>[];
+      try {
+        mine = (jsonDecode(await friends.fetchFollows(pk)) as List<dynamic>)
+            .whereType<String>()
+            .toList();
+      } catch (_) {
+        mine = const [];
+      }
+      if (_audienceMode == _AudienceMode.friends) {
+        _friendSet = mine;
+        return;
+      }
+      final union = <String>{};
+      for (final f in mine.take(100)) {
+        try {
+          union.addAll((jsonDecode(await friends.fetchFollows(f))
+              as List<dynamic>)
+              .whereType<String>());
+        } catch (e) {
+          debugPrint('fof follows: $e');
+        }
+      }
+      union.remove(pk);
+      _friendSet = union.toList();
+    } catch (e) {
+      debugPrint('friend set: $e');
+      _friendSet = const [];
+    }
+  }
+
   Future<void> _createDialog() async {
     final title = TextEditingController();
     final desc = TextEditingController();
@@ -122,6 +230,8 @@ class _EventsScreenState extends State<EventsScreen> {
     final now = DateTime.now();
     var start = now.add(const Duration(hours: 1));
     var end = start.add(const Duration(hours: 2));
+    String imageUrl = '';
+    String? pickedPath;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -194,6 +304,58 @@ class _EventsScreenState extends State<EventsScreen> {
                     });
                   },
                 ),
+                if (pickedPath == null)
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      try {
+                        final picked =
+                            await FilePicker.pickFile(type: FileType.image);
+                        final path = picked?.path;
+                        if (path == null) return;
+                        final manifest = await context
+                            .read<MediaService>()
+                            .uploadMedia(path);
+                        final hash = manifest['blob_hash'] as String? ?? '';
+                        if (hash.length != 64) {
+                          throw Exception('Bad upload manifest');
+                        }
+                        setDialogState(() {
+                          pickedPath = path;
+                          imageUrl = 'blob://$hash';
+                        });
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: SelectableText('Photo failed: $e')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.image_outlined),
+                    label: const Text('Add photo'),
+                  )
+                else
+                  Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          File(pickedPath!),
+                          height: 120,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () => setDialogState(() {
+                            pickedPath = null;
+                            imageUrl = '';
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -226,7 +388,7 @@ class _EventsScreenState extends State<EventsScreen> {
               0,
               start.millisecondsSinceEpoch ~/ 1000,
               end.millisecondsSinceEpoch ~/ 1000,
-              '',
+              imageUrl,
             );
         await _load();
       } catch (e) {
@@ -242,18 +404,52 @@ class _EventsScreenState extends State<EventsScreen> {
   String _fmt(DateTime t) =>
       '${t.month}/${t.day} ${t.hour}:${t.minute.toString().padLeft(2, '0')}';
 
+  String _audienceLabel(_AudienceMode m) {
+    if (m == _AudienceMode.all) return 'All';
+    if (m == _AudienceMode.friends) return 'Friends';
+    if (m == _AudienceMode.fof) return 'Friends of friends';
+    return 'Mine';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Events'),
         actions: [
-          TextButton(
-            onPressed: () {
-              setState(() => _mineOnly = !_mineOnly);
+          PopupMenuButton<_AudienceMode>(
+            tooltip: 'Find events',
+            onSelected: (m) {
+              setState(() => _audienceMode = m);
               _load();
             },
-            child: Text(_mineOnly ? 'All' : 'Mine'),
+            itemBuilder: (context) => [
+              for (final m in _AudienceMode.values)
+                PopupMenuItem(
+                  value: m,
+                  child: Row(
+                    children: [
+                      if (_audienceMode == m) const Icon(Icons.check, size: 16),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          _audienceLabel(m),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.explore_outlined, size: 18),
+                SizedBox(width: 4),
+                Text('Find events'),
+              ],
+            ),
           ),
         ],
       ),
@@ -262,7 +458,7 @@ class _EventsScreenState extends State<EventsScreen> {
         tooltip: 'Create event',
         child: const Icon(Icons.add),
       ),
-      bottomNavigationBar: _mineOnly
+      bottomNavigationBar: _audienceMode == _AudienceMode.mine
           ? null
           : Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -270,19 +466,22 @@ class _EventsScreenState extends State<EventsScreen> {
                 children: [
                   const Icon(Icons.radar, size: 18),
                   Expanded(
-                    child: Slider(
-                      min: 0,
-                      max: 500,
-                      divisions: 10,
-                      value: _radiusKm,
-                      label: _radiusKm == 0
-                          ? 'Everywhere'
-                          : '${_radiusKm.round()} km',
-                      onChanged: (v) {
-                        _radiusKm = v;
-                        setState(() {});
-                        _load();
-                      },
+                    child: SizedBox(
+                      height: 48,
+                      child: Slider(
+                        min: 0,
+                        max: 500,
+                        divisions: 10,
+                        value: _radiusKm,
+                        label: _radiusKm == 0
+                            ? 'Everywhere'
+                            : '${_radiusKm.round()} km',
+                        onChanged: (v) {
+                          _radiusKm = v;
+                          setState(() {});
+                          _load();
+                        },
+                      ),
                     ),
                   ),
                   Text(
@@ -296,6 +495,7 @@ class _EventsScreenState extends State<EventsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Consumer<EventsService>(
               builder: (context, api, _) {
+                final visible = _visibleEvents(api.events);
                 return Column(
                   children: [
                     Padding(
@@ -320,8 +520,8 @@ class _EventsScreenState extends State<EventsScreen> {
                     ),
                     Expanded(
                       child: _viewMode == 'calendar'
-                          ? _buildCalendar(api.events)
-                          : _buildList(_sortedEvents(api.events, api.scores)),
+                          ? _buildCalendar(visible)
+                          : _buildList(_sortedEvents(visible, api.scores)),
                     ),
                   ],
                 );
@@ -344,15 +544,16 @@ class _EventsScreenState extends State<EventsScreen> {
           return ListTile(
             leading: e.image.isNotEmpty
                 ? CircleAvatar(
-                    backgroundImage: ResizeImage.resizeIfNeeded(
-                      128,
-                      128,
-                      NetworkImage(e.image),
+                    radius: 24,
+                    child: ClipOval(
+                      child: SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: _EventImage(url: e.image),
+                      ),
                     ),
                   )
-                : const CircleAvatar(
-                    child: Icon(Icons.event),
-                  ),
+                : const CircleAvatar(child: Icon(Icons.event)),
             title: Text(e.title),
             subtitle: Text(
               '${e.location.isEmpty ? 'Remote' : e.location} · '
@@ -533,8 +734,15 @@ class _EventsScreenState extends State<EventsScreen> {
           contentPadding: EdgeInsets.zero,
           leading: e.image.isNotEmpty
               ? CircleAvatar(
-                  backgroundImage:
-                      ResizeImage.resizeIfNeeded(64, 64, NetworkImage(e.image)))
+                  radius: 16,
+                  child: ClipOval(
+                    child: SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: _EventImage(url: e.image),
+                    ),
+                  ),
+                )
               : const CircleAvatar(child: Icon(Icons.event, size: 18)),
           title: Text(e.title),
           subtitle: Text(_timeRange(e)),
@@ -781,13 +989,12 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   padding: const EdgeInsets.all(16),
                   children: [
                     if (e.image.isNotEmpty)
-                      Image.network(
-                        e.image,
-                        height: 200,
-                        cacheWidth: 600,
-                        cacheHeight: 400,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: SizedBox(
+                          height: 200,
+                          child: _EventImage(url: e.image, height: 200),
+                        ),
                       ),
                     const SizedBox(height: 12),
                     Text(e.title,
