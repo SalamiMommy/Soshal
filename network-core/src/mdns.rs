@@ -177,4 +177,24 @@ mod tests {
         let ip = Ipv4Addr::new(8, 8, 8, 8);
         assert!(!crate::lan::is_private_ip(IpAddr::V4(ip)));
     }
+
+    #[test]
+    fn advertiser_start_with_explicit_ip_and_quic_port() {
+        let adv = MdnsAdvertiser::start(&"ab".repeat(32), "127.0.0.1", 42424, Some(9999))
+            .expect("mdns advertiser start");
+        drop(adv);
+    }
+
+    #[test]
+    fn advertiser_start_with_empty_ip_falls_back_to_lan_ip() {
+        let adv = MdnsAdvertiser::start(&"cd".repeat(32), "", 42425, None)
+            .expect("mdns advertiser start (empty ip)");
+        drop(adv);
+    }
+
+    #[test]
+    fn browser_start_and_drain_without_events() {
+        let mut browser = MdnsBrowser::start().expect("mdns browser start");
+        assert!(browser.drain_peers().is_empty());
+    }
 }

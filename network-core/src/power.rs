@@ -211,6 +211,37 @@ mod tests {
     }
 
     #[test]
+    fn per_mode_budgets_and_intervals() {
+        let paused = PowerState {
+            low_power_mode: true,
+            ..PowerState::default()
+        };
+        let throttled = PowerState {
+            charging: false,
+            cellular: false,
+            battery_percent: 40,
+            ..PowerState::default()
+        };
+        let full = PowerState {
+            charging: true,
+            cellular: false,
+            ..PowerState::default()
+        };
+        assert!(paused.seeding_mode().paused());
+        assert!(!throttled.seeding_mode().paused());
+        assert!(!full.seeding_mode().paused());
+        assert_eq!(paused.upload_budget_bytes_per_sec(), 0);
+        assert_eq!(throttled.upload_budget_bytes_per_sec(), 256 * 1024);
+        assert_eq!(full.upload_budget_bytes_per_sec(), u64::MAX);
+        assert_eq!(paused.mdns_broadcast_interval_secs(), 60);
+        assert_eq!(throttled.mdns_broadcast_interval_secs(), 30);
+        assert_eq!(full.mdns_broadcast_interval_secs(), 10);
+        assert_eq!(paused.quic_max_stream_window(), 4);
+        assert_eq!(throttled.quic_max_stream_window(), 16);
+        assert_eq!(full.quic_max_stream_window(), 64);
+    }
+
+    #[test]
     fn scheduler_update_roundtrip() {
         let s = global_power_scheduler();
         assert_eq!(s.mode(), SeedingMode::Full);

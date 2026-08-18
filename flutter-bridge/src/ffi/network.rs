@@ -841,6 +841,9 @@ mod tests {
 
     #[test]
     fn test_transport_mode_roundtrip() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         for name in ["clearnet", "auto", "i2p"] {
             assert!(super::network_set_transport_mode(name.to_string()).unwrap());
             assert_eq!(super::network_get_transport_mode().unwrap(), name);
@@ -994,6 +997,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_relay_error_paths_without_client() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert!(super::network_init_relays(vec![]).await.is_err());
         assert!(
             super::network_init_relays(vec!["http://10.0.0.1:7777".to_string()])
@@ -1025,6 +1031,44 @@ mod tests {
             .await
             .is_err());
         assert!(super::network_unsubscribe("any".to_string()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_relay_status_snapshot_with_unreachable_relay() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        assert!(
+            super::network_init_relays(vec!["wss://relay.invalid".to_string()])
+                .await
+                .is_ok()
+        );
+        let json = super::network_get_relay_status().await.unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let arr = v.as_array().expect("array");
+        assert_eq!(arr.len(), 1, "json: {json}");
+        assert_eq!(arr[0]["url"], "wss://relay.invalid");
+        assert_eq!(arr[0]["connected"], false);
+        // Restore the "no client" baseline for other tests.
+        *super::client_guard() = None;
+        assert!(super::network_get_relay_status().await.is_err());
+    }
+
+    #[test]
+    fn test_i2p_socks_addr_by_transport_mode() {
+        for name in ["clearnet", "auto"] {
+            assert!(super::network_set_transport_mode(name.to_string()).unwrap());
+            assert!(super::i2p_socks_addr().is_none(), "mode {name}");
+        }
+        assert!(super::network_set_transport_mode("i2p".to_string()).unwrap());
+        assert_eq!(
+            super::i2p_socks_addr(),
+            Some(std::net::SocketAddr::from((
+                [127, 0, 0, 1],
+                soshal_network_core::transport::I2P_SOCKS_PORT
+            )))
+        );
+        assert!(super::network_set_transport_mode("clearnet".to_string()).unwrap());
     }
 }
 

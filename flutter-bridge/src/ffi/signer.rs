@@ -440,4 +440,26 @@ mod tests {
         assert!(signer_unlock_from_keyring(pk_hex).await.is_err());
         signer_lock().unwrap();
     }
+
+    #[test]
+    fn test_derived_keys_locked_and_unlocked() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        assert!(lan_key().is_err());
+        assert!(signer_at_rest_key().is_err());
+        let keys = soshal_nostr_core::keys::generate_keys();
+        signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let lan1 = lan_key().unwrap();
+        assert_eq!(lan1.len(), 32);
+        assert_eq!(lan_key().unwrap(), lan1, "lan key cached");
+        let rest1 = signer_at_rest_key().unwrap();
+        assert_ne!(rest1, [0u8; 32], "at-rest key must be non-zero");
+        assert_eq!(signer_at_rest_key().unwrap(), rest1, "at-rest key cached");
+        clear_derived_cache();
+        assert_eq!(lan_key().unwrap(), lan1, "lan key stable across cache wipe");
+        assert_eq!(signer_at_rest_key().unwrap(), rest1, "at-rest key stable");
+        signer_lock().unwrap();
+    }
 }

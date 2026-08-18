@@ -268,8 +268,12 @@ impl ReticulumNode {
 
     /// Stops the Reticulum node and cleans up transport resources.
     pub fn stop(&mut self) {
-        let mut run_guard = self.running.lock().unwrap_or_else(|e| e.into_inner());
-        *run_guard = false;
+        // Scope the guard: the transport thread re-checks `running` on every
+        // iteration, so holding the lock across `join()` below deadlocks.
+        {
+            let mut run_guard = self.running.lock().unwrap_or_else(|e| e.into_inner());
+            *run_guard = false;
+        }
 
         if let Some(handle) = self.transport_thread.take() {
             let _ = handle.join();
@@ -311,6 +315,10 @@ pub fn reset_nodes() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reticulum::slip_encode;
+
+    /// Serializes tests that touch the process-global NODES registry.
+    static TRANSPORT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn test_reticulum_node_announce_and_process() {
@@ -328,5 +336,96 @@ mod tests {
         let status2 = node2.get_status();
         assert_eq!(status2.rx_packets, 1);
         assert_eq!(status2.active_routes, 1);
+    }
+
+    #[test]
+    fn test_node_for_creates_and_reuses() {
+        let _g = TRANSPORT_TEST_LOCK.lock().unwrap();
+        reset_nodes();
+        let a1 = node_for("pk_a").unwrap();
+        let a2 = node_for("pk_a").unwrap();
+        let b = node_for("pk_b").unwrap();
+        assert!(Arc::ptr_eq(&a1, &a2));
+        assert!(!Arc::ptr_eq(&a1, &b));
+        reset_nodes();
+    }
+
+    #[test]
+    fn test_reset_nodes_drops_registry() {
+        let _g = TRANSPORT_TEST_LOCK.lock().unwrap();
+        reset_nodes();
+        let before = node_for("pk_x").unwrap();
+        reset_nodes();
+        let after = node_for("pk_x").unwrap();
+        assert!(!Arc::ptr_eq(&before, &after));
+        reset_nodes();
+    }
+
+    #[test]
+    fn test_stop_fresh_node() {
+        let mut node = ReticulumNode::new("test_pubkey_stop");
+        node.stop();
+        assert!(!*node.running.lock().unwrap_or_else(|e| e.into_inner()));
+    }
+
+    #[test]
+    fn test_start_tcp_server_disabled() {
+        let mut node = ReticulumNode::new("test_pubkey_tcp");
+        let config = TcpInterfaceConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        node.start_tcp_server(config).unwrap();
+        assert_eq!(node.interfaces.lock().unwrap().len(), 2);
+        node.stop();
+    }
+
+    #[test]
+    fn test_start_auto_interface_disabled() {
+        let mut node = ReticulumNode::new("test_pubkey_auto");
+        let config = AutoInterfaceConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        node.start_auto_interface(config).unwrap();
+        assert_eq!(node.interfaces.lock().unwrap().len(), 2);
+        node.stop();
+    }
+
+    #[test]
+    fn test_start_udp_transport_receives_announce() {
+        let probe = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+
+        let mut node = ReticulumNode::new("test_pubkey_udp");
+        node.start_udp_transport(&format!("127.0.0.1:{port}"))
+            .unwrap();
+        assert_eq!(node.interfaces.lock().unwrap().len(), 1);
+
+        let sender = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let announce = node.create_announce(Some("udp-test"));
+        sender
+            .send_to(
+                &slip_encode(&announce.to_bytes()),
+                format!("127.0.0.1:{port}"),
+            )
+            .unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            let rx = *node.rx_count.lock().unwrap_or_else(|e| e.into_inner());
+            if rx >= 1 {
+                break;
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("udp transport never received announce");
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        node.stop();
+        assert!(!*node.running.lock().unwrap_or_else(|e| e.into_inner()));
+        assert!(node.udp_socket.is_none());
     }
 }

@@ -1300,6 +1300,10 @@ pub fn fetch_quic_moq_groups(
 mod stream_tests {
     use super::*;
 
+    /// Serializes tests that mutate the process-global live registry (it can
+    /// fill up at LIVE_MAX_STREAMS, breaking concurrent publishers).
+    static REGISTRY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn quic_stream_fetch_roundtrip() {
         let root = soshal_test_util::tmp_root("quic");
@@ -1382,6 +1386,7 @@ mod stream_tests {
 
     #[test]
     fn moq_live_registry_caps_history() {
+        let _g = REGISTRY_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let registry = super::live_registry();
         let mut last = 0u64;
         for i in 0..(super::LIVE_STREAM_HISTORY + 50) {
@@ -1398,14 +1403,56 @@ mod stream_tests {
 
     #[test]
     fn moq_live_registry_rejects_bad_input() {
+        let _g = REGISTRY_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let registry = super::live_registry();
         assert!(registry.push("", vec![1u8; 16]).is_err());
         assert!(registry.push(&"x".repeat(129), vec![1u8; 16]).is_err());
         assert!(registry.push("okstream", vec![]).is_err());
+        assert!(registry
+            .push("bigstream", vec![1u8; super::LIVE_MAX_GROUP_BYTES + 1])
+            .is_err());
+    }
+
+    #[test]
+    fn moq_live_registry_full_rejects_new_streams() {
+        let _g = REGISTRY_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let registry = super::live_registry();
+        registry.streams.lock().unwrap().clear();
+        let mut last = 0u64;
+        for i in 0..super::LIVE_MAX_STREAMS {
+            last = registry
+                .push(&format!("full-{i:02}"), format!("g-{i}").into_bytes())
+                .unwrap();
+        }
+        assert!(last > 0);
+        let err = registry
+            .push("full-overflow", b"one-more".to_vec())
+            .unwrap_err();
+        assert!(err.contains("live registry full"));
+        // Existing streams keep accepting groups.
+        assert!(registry.push("full-00", b"still-open".to_vec()).is_ok());
+        // Leave the global registry empty for other tests.
+        registry.streams.lock().unwrap().clear();
+    }
+
+    #[test]
+    fn moq_stream_known_and_publish_errors() {
+        let _g = REGISTRY_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(!super::moq_stream_known("unknown-stream-xyz"));
+        let err = super::moq_publish_group("", b"x".to_vec()).unwrap_err();
+        assert!(err.contains("bad live stream id"));
+        super::moq_publish_group("known-stream-abc", b"hello".to_vec()).unwrap();
+        assert!(super::moq_stream_known("known-stream-abc"));
+    }
+
+    #[test]
+    fn moq_default_window_is_configured() {
+        assert_eq!(super::default_moq_window(), super::LIVE_DEFAULT_WINDOW_MS);
     }
 
     #[test]
     fn moq_live_stream_replays_buffered_groups() {
+        let _g = REGISTRY_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = soshal_test_util::tmp_root("quic");
         let server = start_quic_stream_server_with_store([7u8; 32], root).unwrap();
         let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
@@ -1427,6 +1474,7 @@ mod stream_tests {
 
     #[test]
     fn moq_live_stream_follows_new_groups_in_window() {
+        let _g = REGISTRY_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = soshal_test_util::tmp_root("quic");
         let server = start_quic_stream_server_with_store([7u8; 32], root).unwrap();
         let addr = SocketAddr::from(([127, 0, 0, 1], server.port));

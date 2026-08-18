@@ -57,11 +57,10 @@ fn row_to_profile(row: &UserRow, me: Option<&str>) -> ProfileInfo {
     p.about = row.about.clone().unwrap_or_default();
     p.nip05 = row.nip05.clone().unwrap_or_default();
     p.created_at = row.created_at.max(0) as u64;
-    if let Some(me) = me {
-        if let Ok(follows) = serde_json::from_str::<Vec<String>>(&row.contact_pubkeys) {
-            p.is_following = follows.contains(&row.pubkey) && row.pubkey != me;
-        }
-    }
+    // NOTE: contact_pubkeys holds the row owner's own contacts, so the
+    // "does *me* follow this profile" flag can't be derived from this row —
+    // it is computed in `identity_get_profile` from the viewer's contacts.
+    let _ = me;
     p.following = serde_json::from_str::<Vec<String>>(&row.contact_pubkeys)
         .map(|f| f.len() as i32)
         .unwrap_or(0);
@@ -76,7 +75,20 @@ pub fn identity_get_profile(pubkey: String) -> Result<String, String> {
         let repo = UserRepo::new(db);
         let row = repo.get_by_pubkey(&pubkey)?;
         let p = match row {
-            Some(r) => row_to_profile(&r, me.as_deref()),
+            Some(r) => {
+                let mut p = row_to_profile(&r, me.as_deref());
+                if let (Some(me), true) = (me.as_deref(), me.as_deref() != Some(r.pubkey.as_str()))
+                {
+                    if let Ok(Some(my_row)) = repo.get_by_pubkey(me) {
+                        if let Ok(follows) =
+                            serde_json::from_str::<Vec<String>>(&my_row.contact_pubkeys)
+                        {
+                            p.is_following = follows.contains(&r.pubkey);
+                        }
+                    }
+                }
+                p
+            }
             None => empty_profile(pubkey),
         };
         Ok(p)
@@ -591,5 +603,71 @@ mod tests {
             split_nip05("bob@example.com"),
             ("bob".to_string(), "example.com".to_string())
         );
+    }
+
+    #[test]
+    fn test_row_to_profile_follow_state() {
+        let pk = "a".repeat(64);
+        let row = UserRow {
+            pubkey: pk.clone(),
+            npub: "npub1abc".into(),
+            name: Some("Alice".into()),
+            display_name: None,
+            about: None,
+            picture: None,
+            banner: None,
+            nip05: None,
+            lud16: None,
+            created_at: 10,
+            updated_at: 10,
+            metadata_json: None,
+            contact_pubkeys: serde_json::json!(["b".repeat(64), "c".repeat(64)]).to_string(),
+            relay_list: "[]".into(),
+        };
+        let p = row_to_profile(&row, None);
+        assert_eq!(p.following, 2);
+        assert!(!p.is_following);
+        let bad = UserRow {
+            contact_pubkeys: "not-json".into(),
+            ..row.clone()
+        };
+        assert_eq!(row_to_profile(&bad, None).following, 0);
+    }
+
+    #[test]
+    fn test_get_profile_is_following_from_viewer_contacts() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("identity-follow", "identity");
+        let keys = nostr::key::Keys::generate();
+        let me = keys.public_key().to_hex();
+        let target = "f".repeat(64);
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        // me follows target (my contacts) — but target does NOT follow me.
+        crate::ffi::db::db_execute_raw(
+            format!(
+                "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{me}', 'npub1me', '[\"{target}\"]') ON CONFLICT(pubkey) DO UPDATE SET contact_pubkeys='[\"{target}\"]'"
+            ),
+        )
+        .unwrap();
+        crate::ffi::db::db_execute_raw(
+            format!(
+                "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{target}', 'npub1tgt', '[]') ON CONFLICT(pubkey) DO UPDATE SET contact_pubkeys='[]'"
+            ),
+        )
+        .unwrap();
+        let json = identity_get_profile(target.clone()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["pubkey"], target);
+        assert!(v["is_following"].as_bool().unwrap(), "json: {json}");
+        // Target's own profile: never "following" even if listed in own contacts.
+        let json = identity_get_profile(me).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(!v["is_following"].as_bool().unwrap(), "json: {json}");
+        super::super::signer::signer_lock().unwrap();
     }
 }

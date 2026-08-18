@@ -189,8 +189,8 @@ pub async fn nwc_send_request<
 #[cfg(test)]
 mod tests {
     use super::{
-        get_balance_request, make_invoice_request, parse_nwc_uri, pay_invoice_request,
-        validate_pay_invoice, NwcConnectionInfo,
+        get_balance_request, make_invoice_request, nwc_send_request, parse_nwc_uri, pay_invoice,
+        pay_invoice_request, validate_pay_invoice, NwcConnectionInfo,
     };
     use crate::NWC_MAX_PAY_SATS;
     use nostr::nips::nip47::{ErrorCode, Method, RequestParams, Response, ResponseResult};
@@ -362,5 +362,40 @@ mod tests {
             serde_json::from_str::<NwcConnectionInfo>(&json).unwrap(),
             info
         );
+    }
+
+    #[test]
+    fn uri_rejects_oversized_relay() {
+        let secret = "b".repeat(64);
+        let uri = format!(
+            "nostr+walletconnect://{}?relay=wss://{}&secret={}",
+            "a".repeat(64),
+            "r".repeat(513),
+            secret
+        );
+        let err = parse_nwc_uri(&uri).unwrap_err();
+        assert!(err.contains("NWC relay too long"), "got {err}");
+    }
+
+    #[tokio::test]
+    async fn pay_invoice_rejects_empty_invoice_without_network() {
+        let signer = nostr::key::Keys::generate();
+        let err = pay_invoice(signer, &valid_uri(), String::new())
+            .await
+            .unwrap_err();
+        assert!(err.contains("invalid bolt11 invoice"), "got {err}");
+    }
+
+    #[tokio::test]
+    async fn nwc_send_request_rejects_missing_relay_without_network() {
+        let signer = nostr::key::Keys::generate();
+        let req = make_invoice_request(1000, "d".into()).unwrap();
+        let uri = format!(
+            "nostr+walletconnect://{}?secret={}",
+            "a".repeat(64),
+            "b".repeat(64)
+        );
+        let err = nwc_send_request(signer, &uri, req).await.unwrap_err();
+        assert!(err.contains("missing relay"), "got {err}");
     }
 }

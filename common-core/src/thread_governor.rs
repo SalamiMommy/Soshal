@@ -139,4 +139,23 @@ mod tests {
         let _ = pin_to_efficiency_cores();
         let _ = pin_to_performance_cores();
     }
+
+    #[test]
+    fn test_apply_affinity_empty_cores_is_noop() {
+        assert!(apply_affinity(&[]).is_ok());
+        // A real pin may succeed or fail depending on sandbox/permissions;
+        // it must just return a Result without panicking.
+        let _ = apply_affinity(&[0]);
+    }
+
+    #[test]
+    fn test_cpu_topology_partitions_cores() {
+        let topo = CpuTopology::discover();
+        let total = topo.performance_cores.len() + topo.efficiency_cores.len();
+        assert!(total > 0);
+        // discover() is built on sysfs data; the perf fallback guarantees a
+        // non-empty performance set, but eff can be empty on uniform-freq
+        // machines (every core lands in perf).
+        assert!(!topo.performance_cores.is_empty());
+    }
 }

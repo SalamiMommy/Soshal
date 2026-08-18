@@ -303,4 +303,50 @@ mod tests {
         });
         assert!(dm.is_none());
     }
+
+    #[test]
+    fn test_event_id_of_extraction() {
+        assert_eq!(
+            event_id_of(r#"{"id":"deadbeef","kind":1}"#).as_deref(),
+            Some("deadbeef")
+        );
+        assert_eq!(event_id_of(r#"{"kind":1}"#), None);
+        assert_eq!(event_id_of(r#"{"id":""}"#).as_deref(), Some(""));
+        assert_eq!(event_id_of("garbage"), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_or_enqueue_falls_back_to_outbox() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("sync", "sync");
+        // No relay client is configured in tests: publish fails fast, so the
+        // item must land in the persistent outbox.
+        let event_json = r#"{"id":"sync-outbox-1","pubkey":"a","created_at":1,"kind":1,"tags":[],"content":"hi","sig":"00"}"#;
+        publish_or_enqueue("post", event_json).await.unwrap();
+        let rows = crate::ffi::db::db_query_raw(
+            "SELECT id, action_type FROM outbox_queue WHERE id='sync-outbox-1'".to_string(),
+        )
+        .unwrap();
+        assert!(rows.contains("sync-outbox-1"), "rows: {rows}");
+        assert!(rows.contains("post"), "rows: {rows}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_or_enqueue_queues_invalid_json() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("sync-bad", "sync");
+        // Even malformed JSON is queued (publish fails, outbox succeeds);
+        // the event id falls back to "unknown".
+        publish_or_enqueue("post", "not-json").await.unwrap();
+        let rows = crate::ffi::db::db_query_raw(
+            "SELECT id, action_type FROM outbox_queue WHERE id='unknown'".to_string(),
+        )
+        .unwrap();
+        assert!(rows.contains("unknown"), "rows: {rows}");
+        assert!(rows.contains("post"), "rows: {rows}");
+    }
 }

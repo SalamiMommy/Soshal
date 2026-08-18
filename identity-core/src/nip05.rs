@@ -231,3 +231,59 @@ pub async fn resolve(nip05_address: &str) -> Nip05Result {
         error: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static NIP05_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn dead_addrs() -> Vec<std::net::SocketAddr> {
+        vec!["127.0.0.1:1".parse().unwrap()]
+    }
+
+    fn cache_size() -> usize {
+        let guard = NIP05_CLIENTS.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().map(|(map, _)| map.len()).unwrap_or(0)
+    }
+
+    #[test]
+    fn client_for_caches_per_host() {
+        let _g = NIP05_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        *NIP05_CLIENTS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        client_for("cache-host-a.example", &dead_addrs()).unwrap();
+        client_for("cache-host-a.example", &dead_addrs()).unwrap();
+        assert_eq!(cache_size(), 1);
+        client_for("cache-host-b.example", &dead_addrs()).unwrap();
+        assert_eq!(cache_size(), 2);
+        *NIP05_CLIENTS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    #[test]
+    fn client_for_evicts_oldest_at_capacity() {
+        let _g = NIP05_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        *NIP05_CLIENTS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        for i in 0..(MAX_NIP05_CLIENTS + 5) {
+            client_for(&format!("evict-{i}.example"), &dead_addrs()).unwrap();
+        }
+        assert_eq!(cache_size(), MAX_NIP05_CLIENTS);
+        // The oldest host must have been evicted: re-requesting it builds a
+        // fresh client and still keeps the cache at capacity.
+        client_for("evict-0.example", &dead_addrs()).unwrap();
+        assert_eq!(cache_size(), MAX_NIP05_CLIENTS);
+        *NIP05_CLIENTS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    #[tokio::test]
+    async fn fetch_rejects_private_ip_resolution() {
+        // Raw private IPs must be rejected before any request is attempted
+        // (either at the URL check or at the post-lookup check).
+        for host in ["10.0.0.1", "192.168.1.1", "127.0.0.1"] {
+            let err = fetch_nostr_json(&format!("user@{host}")).await.unwrap_err();
+            assert!(
+                err.contains("not allowed") || err.contains("internal address"),
+                "host {host}: got {err}"
+            );
+        }
+    }
+}

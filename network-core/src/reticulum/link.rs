@@ -281,4 +281,127 @@ mod tests {
         let decrypted = manager.decrypt_from_link(&dest, &encrypted).unwrap();
         assert_eq!(data.to_vec(), decrypted);
     }
+
+    #[test]
+    fn test_request_link_max_pending() {
+        let manager = LinkManager::new();
+        for i in 0..MAX_PENDING_LINKS {
+            let dest = ReticulumAddress::from_pubkey(&format!("peer_{i}"));
+            assert!(manager.request_link(dest).is_ok());
+        }
+        let extra = ReticulumAddress::from_pubkey("peer_overflow");
+        let err = manager.request_link(extra).unwrap_err();
+        assert!(err.contains("Maximum pending links reached"));
+    }
+
+    #[test]
+    fn test_link_proof_establishes_pending_and_enables_encryption() {
+        let manager = LinkManager::new();
+        let dest = ReticulumAddress::from_pubkey("test_pubkey");
+
+        let request = manager.request_link(dest).unwrap();
+        assert_eq!(request.packet_type, ReticulumPacketType::LinkRequest);
+
+        let key = [0x42u8; 32];
+        manager.handle_link_proof(dest, &key).unwrap();
+
+        let link_info = manager.get_link_info(&dest).unwrap();
+        assert!(matches!(link_info.state, LinkState::Established));
+
+        let data = b"proof-derived key roundtrip";
+        let encrypted = manager.encrypt_for_link(&dest, data).unwrap();
+        assert_ne!(data.to_vec(), encrypted);
+        let decrypted = manager.decrypt_from_link(&dest, &encrypted).unwrap();
+        assert_eq!(data.to_vec(), decrypted);
+    }
+
+    #[test]
+    fn test_link_proof_error_paths() {
+        let manager = LinkManager::new();
+        let dest = ReticulumAddress::from_pubkey("test_pubkey");
+
+        let err = manager.handle_link_proof(dest, &[0u8; 32]).unwrap_err();
+        assert!(err.contains("Unknown link"));
+
+        manager.handle_link_request(dest).unwrap();
+        let err = manager.handle_link_proof(dest, &[0u8; 32]).unwrap_err();
+        assert!(err.contains("not in pending state"));
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_without_context() {
+        let manager = LinkManager::new();
+        let dest = ReticulumAddress::from_pubkey("test_pubkey");
+
+        let err = manager.encrypt_for_link(&dest, b"data").unwrap_err();
+        assert!(err.contains("No encryption context"));
+        let err = manager.decrypt_from_link(&dest, b"data").unwrap_err();
+        assert!(err.contains("No encryption context"));
+    }
+
+    #[test]
+    fn test_update_activity_and_close() {
+        let manager = LinkManager::new();
+        let dest = ReticulumAddress::from_pubkey("test_pubkey");
+
+        manager.handle_link_request(dest).unwrap();
+        manager.update_activity(&dest);
+        assert!(manager.get_link_info(&dest).is_some());
+
+        manager.close_link(&dest);
+        assert!(manager.get_link_info(&dest).is_none());
+        assert!(manager.encrypt_for_link(&dest, b"data").is_err());
+        assert!(manager.get_active_links().is_empty());
+    }
+
+    #[test]
+    fn test_prune_stale_links() {
+        let manager = LinkManager::new();
+        let fresh = ReticulumAddress::from_pubkey("fresh_peer");
+        let stale = ReticulumAddress::from_pubkey("stale_peer");
+
+        manager.handle_link_request(fresh).unwrap();
+        manager.handle_link_request(stale).unwrap();
+
+        {
+            let mut links = manager.links.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(link) = links.get_mut(&stale) {
+                link.last_activity = 0;
+            }
+        }
+
+        let pruned = manager.prune_stale_links();
+        assert_eq!(pruned, 1);
+        assert!(manager.get_link_info(&fresh).is_some());
+        assert!(manager.get_link_info(&stale).is_none());
+        assert_eq!(manager.prune_stale_links(), 0);
+    }
+
+    #[test]
+    fn test_get_active_links_filters_pending() {
+        let manager = LinkManager::new();
+        let pending = ReticulumAddress::from_pubkey("pending_peer");
+        let established = ReticulumAddress::from_pubkey("established_peer");
+
+        manager.request_link(pending).unwrap();
+        manager.handle_link_request(established).unwrap();
+
+        let active = manager.get_active_links();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].remote_destination, established);
+    }
+
+    #[test]
+    fn test_announce() {
+        let manager = LinkManager::new();
+        assert!(!manager.announce("pk").unwrap());
+
+        let pending = ReticulumAddress::from_pubkey("pending_peer");
+        manager.request_link(pending).unwrap();
+        assert!(!manager.announce("pk").unwrap());
+
+        let established = ReticulumAddress::from_pubkey("established_peer");
+        manager.handle_link_request(established).unwrap();
+        assert!(manager.announce("pk").unwrap());
+    }
 }

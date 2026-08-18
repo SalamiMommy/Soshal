@@ -329,6 +329,93 @@ fn unsafe_mmap(file: &File) -> Option<memmap2::MmapMut> {
 mod tests {
     use super::*;
     use soshal_media_core::cas::ChunkStore;
+    use soshal_media_core::chunking::{ChunkManifest, ChunkRef};
+
+    fn empty_manifest() -> ChunkManifest {
+        ChunkManifest {
+            blob_hash: "ab".repeat(32),
+            total_size: 0,
+            chunks: vec![],
+        }
+    }
+
+    fn one_chunk_manifest() -> ChunkManifest {
+        ChunkManifest {
+            blob_hash: "cd".repeat(32),
+            total_size: 4,
+            chunks: vec![ChunkRef {
+                blake3: "ef".repeat(32),
+                offset: 0,
+                len: 4,
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn swarm_early_return_on_empty_chunks() {
+        let root = soshal_test_util::tmp_root("swarm_empty");
+        let out = root.join("out.bin");
+        let cfg = SwarmConfig {
+            manifest: empty_manifest(),
+            out_path: out.clone(),
+            peers: vec![],
+            quic_ports: vec![],
+            key: [7u8; 32],
+            my_pubkey: "ab".repeat(32),
+            max_parallel: 2,
+        };
+        let report = download(cfg).await;
+        assert_eq!(report.failures, 0);
+        assert!(report.failed_hashes.is_empty());
+        assert!(!out.exists());
+
+        // Peers present but zero chunks hits the same early return.
+        let cfg = SwarmConfig {
+            manifest: empty_manifest(),
+            out_path: out,
+            peers: vec!["127.0.0.1:1".parse().unwrap()],
+            quic_ports: vec![None],
+            key: [7u8; 32],
+            my_pubkey: "ab".repeat(32),
+            max_parallel: 2,
+        };
+        let report = download(cfg).await;
+        assert_eq!(report.failures, 0);
+    }
+
+    #[tokio::test]
+    async fn swarm_early_return_on_unwritable_out_path() {
+        let root = soshal_test_util::tmp_root("swarm_unwritable");
+        let cfg = SwarmConfig {
+            manifest: one_chunk_manifest(),
+            out_path: root.join("missing-dir").join("out.bin"),
+            peers: vec!["127.0.0.1:1".parse().unwrap()],
+            quic_ports: vec![None],
+            key: [7u8; 32],
+            my_pubkey: "ab".repeat(32),
+            max_parallel: 2,
+        };
+        let report = download(cfg).await;
+        assert_eq!(report.failures, 1);
+        assert_eq!(report.failed_hashes, vec!["ef".repeat(32)]);
+    }
+
+    #[test]
+    fn swarm_spawn_thread_reports_fast_on_empty() {
+        let root = soshal_test_util::tmp_root("swarm_spawn");
+        let handle = spawn_swarm_download(SwarmConfig {
+            manifest: empty_manifest(),
+            out_path: root.join("out.bin"),
+            peers: vec![],
+            quic_ports: vec![],
+            key: [7u8; 32],
+            my_pubkey: "ab".repeat(32),
+            max_parallel: 2,
+        });
+        let report = handle.join().unwrap();
+        assert_eq!(report.failures, 0);
+        assert!(report.failed_hashes.is_empty());
+    }
 
     #[test]
     fn mmap_sparse_rescue_on_failed_path() {

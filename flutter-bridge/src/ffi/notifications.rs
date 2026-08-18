@@ -482,6 +482,34 @@ mod tests {
     }
 
     #[test]
+    fn test_register_push_requires_active_account() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("push");
+        let n = std::sync::atomic::AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "soshal_session_push_{}_{}",
+            std::process::id(),
+            n.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("app.db").to_string_lossy().to_string();
+        session::session_load(db_path.clone()).unwrap();
+        session::session_add_account("pk1".to_string(), "npub1pk1".to_string(), "[]".to_string())
+            .unwrap();
+        // Wrong account for the active session.
+        assert!(notifications_register_push("pk2".to_string(), "tok".to_string()).is_err());
+        // Valid token for the active account.
+        assert!(notifications_register_push("pk1".to_string(), "tok123".to_string()).unwrap());
+        // Empty / oversized tokens rejected.
+        assert!(notifications_register_push("pk1".to_string(), String::new()).is_err());
+        assert!(notifications_register_push("pk1".to_string(), "x".repeat(5000)).is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn test_get_unread_count() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()

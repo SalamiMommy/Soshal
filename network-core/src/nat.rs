@@ -306,14 +306,14 @@ async fn run_manager(
                                             if let Err(e) = session.agent.add_remote_candidate(&c) {
                                                 let _ =
                                                     result.send(Err(format!("add candidate: {e}")));
-                                                return;
+                                                continue;
                                             }
                                             added.push(raw.clone());
                                         }
                                         Err(e) => {
                                             let _ = result
                                                 .send(Err(format!("bad candidate {raw}: {e}")));
-                                            return;
+                                            continue;
                                         }
                                     }
                                 }
@@ -326,7 +326,7 @@ async fn run_manager(
                             {
                                 let _ =
                                     result.send(Err("set remote credentials failed".to_string()));
-                                return;
+                                continue;
                             }
                             {
                                 let mut remote = session.remote_candidates.lock().unwrap();
@@ -336,7 +336,7 @@ async fn run_manager(
                         }
                         None => {
                             let _ = result.send(Err("no session for pubkey".to_string()));
-                            return;
+                            continue;
                         }
                     }
                     let _ = result.send(Ok(()));
@@ -621,5 +621,35 @@ mod tests {
         handle.remove("bob".repeat(2).as_str());
         handle.stop();
         assert!(handle.status().is_empty());
+    }
+
+    #[test]
+    fn nat_session_lifecycle_error_paths() {
+        let handle = spawn_nat_manager("carol".repeat(2)).unwrap();
+        let pk = "dave".repeat(2);
+        assert!(handle
+            .gather(&pk, &["stun:192.0.2.1:9".to_string()])
+            .is_ok());
+        let err = handle
+            .gather(&pk, &["stun:192.0.2.1:9".to_string()])
+            .unwrap_err();
+        assert!(err.contains("already exists"), "got {err}");
+        let err = handle.add_remote(&pk, "u", "p", &["not-a-candidate".to_string()]);
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("bad candidate"));
+        assert!(handle.creds(&pk).is_ok());
+        let statuses = handle.status();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].pubkey, pk);
+        handle.remove(&pk);
+        assert!(handle.status().is_empty());
+        assert!(handle.creds(&pk).is_err());
+        assert!(
+            handle
+                .gather(&pk, &["stun:192.0.2.1:9".to_string()])
+                .is_ok(),
+            "re-gather after remove"
+        );
+        handle.stop();
     }
 }
