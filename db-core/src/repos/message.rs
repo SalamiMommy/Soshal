@@ -123,8 +123,7 @@ impl<'a> MessageRepo<'a> {
                         msg.is_deleted,
                     ],
                 )
-                .await
-                .map_err(crate::error::DbError::from)?;
+                .await?;
                 if msg.conversation_id.starts_with("conv:") {
                     convs.push((msg.conversation_id.as_str(), msg.created_at));
                 }

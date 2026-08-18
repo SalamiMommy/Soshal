@@ -48,7 +48,7 @@ fn empty_profile(pubkey: String) -> ProfileInfo {
     }
 }
 
-fn row_to_profile(row: &UserRow, me: Option<&str>) -> ProfileInfo {
+fn row_to_profile(row: &UserRow) -> ProfileInfo {
     let mut p = empty_profile(row.pubkey.clone());
     p.name = row.name.clone().unwrap_or_default();
     p.display_name = row.display_name.clone().unwrap_or_default();
@@ -60,7 +60,6 @@ fn row_to_profile(row: &UserRow, me: Option<&str>) -> ProfileInfo {
     // NOTE: contact_pubkeys holds the row owner's own contacts, so the
     // "does *me* follow this profile" flag can't be derived from this row —
     // it is computed in `identity_get_profile` from the viewer's contacts.
-    let _ = me;
     p.following = serde_json::from_str::<Vec<String>>(&row.contact_pubkeys)
         .map(|f| f.len() as i32)
         .unwrap_or(0);
@@ -76,7 +75,7 @@ pub fn identity_get_profile(pubkey: String) -> Result<String, String> {
         let row = repo.get_by_pubkey(&pubkey)?;
         let p = match row {
             Some(r) => {
-                let mut p = row_to_profile(&r, me.as_deref());
+                let mut p = row_to_profile(&r);
                 if let (Some(me), true) = (me.as_deref(), me.as_deref() != Some(r.pubkey.as_str()))
                 {
                     if let Ok(Some(my_row)) = repo.get_by_pubkey(me) {
@@ -143,7 +142,7 @@ pub fn identity_search_users(query: String, limit: i32) -> Result<String, String
     let limit = limit.clamp(1, 100) as i64;
     super::db::with_db_result(|db| {
         let rows = UserRepo::new(db).search(&query, limit)?;
-        let profiles: Vec<ProfileInfo> = rows.iter().map(|r| row_to_profile(r, None)).collect();
+        let profiles: Vec<ProfileInfo> = rows.iter().map(|r| row_to_profile(r)).collect();
         Ok(profiles)
     })
     .map(super::util::json_ok)?
@@ -624,14 +623,14 @@ mod tests {
             contact_pubkeys: serde_json::json!(["b".repeat(64), "c".repeat(64)]).to_string(),
             relay_list: "[]".into(),
         };
-        let p = row_to_profile(&row, None);
+        let p = row_to_profile(&row);
         assert_eq!(p.following, 2);
         assert!(!p.is_following);
         let bad = UserRow {
             contact_pubkeys: "not-json".into(),
             ..row.clone()
         };
-        assert_eq!(row_to_profile(&bad, None).following, 0);
+        assert_eq!(row_to_profile(&bad).following, 0);
     }
 
     #[test]

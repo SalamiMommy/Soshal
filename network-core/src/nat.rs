@@ -297,7 +297,7 @@ async fn run_manager(
                                     if remote.len() + added.len() >= MAX_REMOTE_CANDIDATES {
                                         break;
                                     }
-                                    if remote.contains(raw) {
+                                    if remote.contains(raw) || added.contains(raw) {
                                         continue;
                                     }
                                     match unmarshal_candidate(raw) {
@@ -662,7 +662,10 @@ mod tests {
             .unwrap();
         let cand = "1 1 udp 2122260223 127.0.0.1 50050 typ host".to_string();
         handle.add_remote(&pk, "u", "p", &[cand.clone()]).unwrap();
-        handle.add_remote(&pk, "u", "p", &[cand]).unwrap();
+        handle.add_remote(&pk, "u", "p", &[cand.clone()]).unwrap();
+        handle
+            .add_remote(&pk, "u", "p", &[cand.clone(), cand])
+            .unwrap();
         let statuses = handle.status();
         assert_eq!(statuses.len(), 1);
         assert_eq!(
