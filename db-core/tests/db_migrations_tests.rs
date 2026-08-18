@@ -100,7 +100,16 @@ fn v1_creates_base_tables() {
 fn full_chain_reaches_schema_version() {
     let (_db, conn) = bare_db();
     migrations::v1_create_tables(&conn).unwrap();
+    migrations::v2_group_channels(&conn).unwrap();
+    migrations::v3_group_thread_reactions(&conn).unwrap();
     assert_eq!(max_version(&conn), SCHEMA_VERSION);
+    assert!(table_exists(&conn, "group_rooms"));
+    assert!(table_exists(&conn, "group_threads"));
+    assert!(table_exists(&conn, "group_thread_replies"));
+    assert!(table_exists(&conn, "group_thread_reactions"));
+    assert!(table_exists(&conn, "group_voice_channels"));
+    assert!(table_exists(&conn, "group_voice_presence"));
+    assert!(column_exists(&conn, "group_messages", "room_id"));
 }
 
 /// Legacy pre-squash database: the four tables that gained columns via ALTER
@@ -200,7 +209,7 @@ fn legacy_db_heals_missing_columns() {
     assert!(index_exists(&conn, "idx_posts_event_lat_lng"));
     assert!(index_exists(&conn, "idx_users_follower_count"));
     assert!(trigger_exists(&conn, "posts_ai"));
-    assert_eq!(max_version(&conn), 1);
+    assert_eq!(max_version(&conn), SCHEMA_VERSION);
 }
 
 #[test]
@@ -240,5 +249,5 @@ fn heal_legacy_schema_is_idempotent() {
             "missing {table}.{column}"
         );
     }
-    assert_eq!(max_version(&conn), 1);
+    assert_eq!(max_version(&conn), SCHEMA_VERSION);
 }

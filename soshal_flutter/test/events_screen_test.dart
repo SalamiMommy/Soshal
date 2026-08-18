@@ -390,8 +390,14 @@ void main() {
 
   testWidgets('check in calls bridge and shows confirmation', (tester) async {
     api.stubBool('crateFfiEventsEventsCheckIn', true);
+    api.stubBool('crateFfiPermissionsPermissionsLocationGranted', true);
+    api.stubBool('crateFfiPermissionsPermissionsLocationEnabled', true);
     PermissionsService.debugPlatformIsAndroid = true;
-    addTearDown(() => PermissionsService.debugPlatformIsAndroid = null);
+    PermissionsService.debugPlatformIsLinux = false;
+    addTearDown(() {
+      PermissionsService.debugPlatformIsAndroid = null;
+      PermissionsService.debugPlatformIsLinux = null;
+    });
     GeolocatorPlatform.instance = _MockGeolocator(Position(
       latitude: 52.52,
       longitude: 13.40,

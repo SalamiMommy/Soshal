@@ -131,11 +131,18 @@ class LayoutService extends ChangeNotifier {
   bool needsLayout(List<FeedPost> posts) =>
       posts.any((p) => !_heights.containsKey(p.eventId));
 
-  /// For ListView.itemExtentBuilder — index beyond posts maps to null
-  /// (loading footer sizes naturally).
-  double? extentFor(int index, List<FeedPost> posts) {
-    if (index >= posts.length) return null;
-    return _heights[posts[index].eventId];
+  /// Extent for ListView.itemExtentBuilder — MUST never return null
+  /// (the framework null-checks the result). Footer index gets a fixed
+  /// extent; uncached posts fall back to a per-card compute, then a
+  /// default when the compute fails.
+  static const double _footerExtent = 56.0;
+  static const double _defaultCardExtent = 180.0;
+
+  double extentFor(int index, List<FeedPost> posts) {
+    if (index >= posts.length) return _footerExtent;
+    final cached = _heights[posts[index].eventId];
+    if (cached != null) return cached;
+    return heightFor(posts[index]) ?? _defaultCardExtent;
   }
 
   void updateViewMetrics({required int screenWidth, double textScale = 1.0}) {

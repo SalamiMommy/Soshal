@@ -32,12 +32,15 @@ pub mod relay;
 pub mod reminder;
 pub mod repost;
 pub mod role;
+pub mod room;
 pub mod search_index;
 pub mod settings;
 pub mod spam_report;
 pub mod story_reaction;
 pub mod stream_chat;
+pub mod thread;
 pub mod user;
+pub mod voice;
 pub mod zap;
 
 /// Maximum rows any paged query may return.

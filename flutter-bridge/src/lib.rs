@@ -3,7 +3,9 @@
 //! This crate provides a thin FFI wrapper around the 26 Soshal core crates,
 //! enabling Flutter to access business logic via flutter_rust_bridge.
 
+mod codecs;
 mod ffi;
+mod platform;
 
 pub use ffi::*;
 

@@ -27,6 +27,8 @@ void main() {
       stubFutureString(
         'crateFfiMusicMusicFetch',
         '[{"id":"tr-1","pubkey":"pk-1","audioUrl":"ipfs://a",'
+        '"blobHash":"abababababababababababababababababababababababababababababababab",'
+        '"mediaSize":4096,'
         '"title":"Night Drive","thumbnail":"ipfs://t",'
         '"hashtags":["synth","chill"],"d":"d-1",'
         '"audience":"public","createdAt":1700000001}]',
@@ -37,6 +39,8 @@ void main() {
       expect(track.id, 'tr-1');
       expect(track.pubkey, 'pk-1');
       expect(track.audioUrl, 'ipfs://a');
+      expect(track.blobHash, 'abababababababababababababababababababababababababababababababab');
+      expect(track.mediaSize, 4096);
       expect(track.title, 'Night Drive');
       expect(track.hashtags, ['synth', 'chill']);
       expect(track.audience, 'public');
@@ -65,7 +69,7 @@ void main() {
       stubFutureString('crateFfiMusicMusicPublish', 'ev-pub-1');
 
       final id = await music.publishTrack(
-        audioUrl: 'ipfs://a',
+        mediaSource: '/tmp/night-drive.mp3',
         title: 'Night Drive',
         thumbnail: 'ipfs://t',
         hashtags: const ['synth'],
@@ -75,7 +79,7 @@ void main() {
       expect(music.lastError, isNull);
 
       final inv = api.callsOf('crateFfiMusicMusicPublish').single;
-      expect(api.namedArg(inv, 'audioUrl'), 'ipfs://a');
+      expect(api.namedArg(inv, 'mediaSource'), '/tmp/night-drive.mp3');
       expect(api.namedArg(inv, 'title'), 'Night Drive');
       expect(api.namedArg(inv, 'thumbnail'), 'ipfs://t');
       expect(api.namedArg(inv, 'hashtags'), ['synth']);
@@ -143,7 +147,7 @@ void main() {
       api.stub('crateFfiMusicMusicPublish',
           (_) => throw Exception('sign failed'));
       await expectLater(
-          music.publishTrack(audioUrl: 'ipfs://a'), throwsException);
+          music.publishTrack(mediaSource: '/tmp/x.mp3'), throwsException);
       expect(music.lastError, contains('sign failed'));
     });
   });

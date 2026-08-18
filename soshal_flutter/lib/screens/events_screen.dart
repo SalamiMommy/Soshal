@@ -209,9 +209,9 @@ class _EventsScreenState extends State<EventsScreen> {
       final union = <String>{};
       for (final f in mine.take(100)) {
         try {
-          union.addAll((jsonDecode(await friends.fetchFollows(f))
-              as List<dynamic>)
-              .whereType<String>());
+          union.addAll(
+              (jsonDecode(await friends.fetchFollows(f)) as List<dynamic>)
+                  .whereType<String>());
         } catch (e) {
           debugPrint('fof follows: $e');
         }

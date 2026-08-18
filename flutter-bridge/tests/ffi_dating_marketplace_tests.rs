@@ -42,6 +42,18 @@ fn create_profile(pk: &str, name: &str, age: i32, interests: &str) -> String {
         name.to_string(),
         age,
         "u123".to_string(),
+        "female".to_string(),
+        "male".to_string(),
+        170,
+        "athletic".to_string(),
+        "never".to_string(),
+        "socially".to_string(),
+        "serious".to_string(),
+        "liberal".to_string(),
+        "".to_string(),
+        "bachelor's".to_string(),
+        "[]".to_string(),
+        100,
         "bio".to_string(),
         "[]".to_string(),
         interests.to_string(),
@@ -63,16 +75,62 @@ fn test_dating_profile_roundtrip() {
         "alice".to_string(),
         150,
         "u123".to_string(),
+        "female".to_string(),
+        "male".to_string(),
+        170,
+        "athletic".to_string(),
+        "never".to_string(),
+        "socially".to_string(),
+        "serious".to_string(),
+        "liberal".to_string(),
+        "".to_string(),
+        "bachelor's".to_string(),
+        "[]".to_string(),
+        100,
         "bio".to_string(),
         "[]".to_string(),
         "[]".to_string()
+    )
+    .is_err());
+    assert!(dating::dating_create_profile(
+        alice.clone(),
+        "alice".to_string(),
+        30,
+        "".to_string(),
+        "female".to_string(),
+        "male".to_string(),
+        170,
+        "athletic".to_string(),
+        "never".to_string(),
+        "socially".to_string(),
+        "serious".to_string(),
+        "liberal".to_string(),
+        "".to_string(),
+        "bachelor's".to_string(),
+        "[]".to_string(),
+        100,
+        "hello".to_string(),
+        "[]".to_string(),
+        "[\"music\",\"books\"]".to_string()
     )
     .is_err());
     let signed = dating::dating_create_profile(
         alice.clone(),
         "alice".to_string(),
         30,
-        "u123".to_string(),
+        "51.5007,-0.1246".to_string(),
+        "female".to_string(),
+        "male".to_string(),
+        170,
+        "athletic".to_string(),
+        "never".to_string(),
+        "socially".to_string(),
+        "serious".to_string(),
+        "liberal".to_string(),
+        "".to_string(),
+        "bachelor's".to_string(),
+        "[]".to_string(),
+        100,
         "hello".to_string(),
         "[]".to_string(),
         "[\"music\",\"books\"]".to_string(),
@@ -87,7 +145,9 @@ fn test_dating_profile_roundtrip() {
     assert_eq!(card["name"], "");
     assert_eq!(card["age"], 30);
     assert_eq!(card["bio"], "hello");
-    assert_eq!(card["location"], "u123");
+    assert_eq!(card["location"], "gcpuvpmm2");
+    assert_eq!(card["height"], 170.0);
+    assert_eq!(card["smoking"], "never");
     assert_eq!(card["interests"], serde_json::json!(["music", "books"]));
     let own: serde_json::Value =
         serde_json::from_str(&dating::dating_get_own_profile(alice.clone()).unwrap()).unwrap();
@@ -95,11 +155,27 @@ fn test_dating_profile_roundtrip() {
     assert_eq!(own["age"], 30);
     assert!(dating::dating_update_profile(
         alice.clone(),
+        "u123".to_string(),
+        "female".to_string(),
+        "male".to_string(),
+        170,
+        "athletic".to_string(),
+        "never".to_string(),
+        "socially".to_string(),
+        "serious".to_string(),
+        "liberal".to_string(),
+        "".to_string(),
+        "bachelor's".to_string(),
+        "[]".to_string(),
+        100,
         "updated bio".to_string(),
         "[]".to_string(),
         "[]".to_string()
     )
     .unwrap());
+    let updated: serde_json::Value =
+        serde_json::from_str(&dating::dating_get_own_profile(alice.clone()).unwrap()).unwrap();
+    assert_eq!(updated["age"], 30, "update must preserve age");
     assert!(dating::dating_delete_profile(alice.clone()).unwrap());
     assert!(dating::dating_get_own_profile(alice).is_err());
     cleanup_db(&path);
@@ -168,21 +244,65 @@ fn test_dating_filter_profiles() {
     let _ = create_profile(&dave_pk, "dave", 30, "[\"music\"]");
     unlock(&alice_secret);
     let filtered: Vec<serde_json::Value> = serde_json::from_str(
-        &dating::dating_filter_profiles(alice_pk.clone(), 30, 0, 0, "".to_string()).unwrap(),
+        &dating::dating_filter_profiles(
+            alice_pk.clone(),
+            30,
+            0,
+            0,
+            0,
+            0,
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(filtered.len(), 2);
     assert!(filtered.iter().any(|c| c["pubkey"] == carol_pk));
     assert!(filtered.iter().any(|c| c["pubkey"] == dave_pk));
     let by_interest: Vec<serde_json::Value> = serde_json::from_str(
-        &dating::dating_filter_profiles(alice_pk.clone(), 0, 0, 0, "[\"music\"]".to_string())
-            .unwrap(),
+        &dating::dating_filter_profiles(
+            alice_pk.clone(),
+            0,
+            0,
+            0,
+            0,
+            0,
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "[\"music\"]".to_string(),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(by_interest.len(), 1);
     assert_eq!(by_interest[0]["pubkey"], dave_pk);
     let all: Vec<serde_json::Value> = serde_json::from_str(
-        &dating::dating_filter_profiles(alice_pk.clone(), 0, 100, 0, "".to_string()).unwrap(),
+        &dating::dating_filter_profiles(
+            alice_pk.clone(),
+            0,
+            100,
+            0,
+            0,
+            0,
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(all.len(), 3);

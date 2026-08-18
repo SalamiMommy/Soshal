@@ -18,6 +18,18 @@ pub struct DatingCardInfo {
     pub name: String,
     pub age: i32,
     pub location: String,
+    pub gender: String,
+    pub seeking: String,
+    pub height: f32,
+    pub body_type: String,
+    pub smoking: String,
+    pub drinking: String,
+    pub relationship_intent: String,
+    pub politics: String,
+    pub ethnicity: String,
+    pub education: String,
+    pub language: Vec<String>,
+    pub max_distance_km: f32,
     pub bio: String,
     pub images: Vec<String>,
     pub interests: Vec<String>,
@@ -29,8 +41,18 @@ pub struct DatingCardInfo {
 #[serde(rename_all = "camelCase")]
 struct ProfileContent {
     age: Option<f64>,
-    _gender: Option<String>,
-    _seeking: Option<String>,
+    gender: Option<String>,
+    seeking: Option<String>,
+    height: Option<f64>,
+    body_type: Option<String>,
+    smoking: Option<String>,
+    drinking: Option<String>,
+    relationship_intent: Option<String>,
+    politics: Option<String>,
+    ethnicity: Option<String>,
+    education: Option<String>,
+    language: Option<Vec<String>>,
+    max_distance_km: Option<f64>,
     location_geohash: Option<String>,
     bio: Option<String>,
     interests: Option<Vec<String>>,
@@ -48,6 +70,18 @@ fn card_from_value(v: &serde_json::Value) -> Option<DatingCardInfo> {
         name: v["name"].as_str().unwrap_or("").to_string(),
         age: content.age.unwrap_or(0.0) as i32,
         location: content.location_geohash.unwrap_or_default(),
+        gender: content.gender.unwrap_or_default(),
+        seeking: content.seeking.unwrap_or_default(),
+        height: content.height.unwrap_or(0.0) as f32,
+        body_type: content.body_type.unwrap_or_default(),
+        smoking: content.smoking.unwrap_or_default(),
+        drinking: content.drinking.unwrap_or_default(),
+        relationship_intent: content.relationship_intent.unwrap_or_default(),
+        politics: content.politics.unwrap_or_default(),
+        ethnicity: content.ethnicity.unwrap_or_default(),
+        education: content.education.unwrap_or_default(),
+        language: content.language.unwrap_or_default(),
+        max_distance_km: content.max_distance_km.unwrap_or(0.0) as f32,
         bio: content.bio.unwrap_or_default(),
         images: content.images.unwrap_or_default(),
         interests: content.interests.unwrap_or_default(),
@@ -64,6 +98,145 @@ fn profile_rows_sql(extra: &str, limit: i32) -> String {
          ORDER BY p.created_at DESC LIMIT {}",
         limit.clamp(1, 100)
     )
+}
+
+const GENDERS: [&str; 4] = ["male", "female", "non-binary", "other"];
+const SEEKING: [&str; 5] = ["male", "female", "non-binary", "other", "All"];
+const BODY_TYPES: [&str; 5] = ["slim", "athletic", "average", "curvy", "muscular"];
+const SMOKING: [&str; 3] = ["never", "occasionally", "regularly"];
+const DRINKING: [&str; 3] = ["never", "socially", "regularly"];
+const RELATIONSHIP_INTENTS: [&str; 3] = ["serious", "casual", "still figuring out"];
+const POLITICS: [&str; 6] = [
+    "prefer not to say",
+    "liberal",
+    "moderate",
+    "conservative",
+    "libertarian",
+    "other",
+];
+const EDUCATION: [&str; 7] = [
+    "high school",
+    "some college",
+    "associate",
+    "trade school",
+    "bachelor's",
+    "master's",
+    "doctorate",
+];
+
+/// Trimmed string, or `None` when empty.
+fn opt_str(s: &str) -> Option<String> {
+    let t = s.trim();
+    (!t.is_empty()).then(|| t.to_string())
+}
+
+fn validate_enum(field: &str, value: &str, allowed: &[&str]) -> Result<(), String> {
+    if !value.trim().is_empty() && !allowed.contains(&value.trim()) {
+        return Err(format!("invalid {field}: {value}").to_string());
+    }
+    Ok(())
+}
+
+/// Resolves the location input: either `lat,lon` (encoded to a geohash at
+/// precision 9) or a raw geohash string. Empty/invalid input is rejected —
+/// dating profiles require a geohash.
+fn resolve_location(location: &str) -> Result<String, String> {
+    let trimmed = location.trim();
+    if trimmed.is_empty() {
+        return Err("location is required".to_string());
+    }
+    if let Some((lat, lon)) = trimmed.split_once(',') {
+        let lat: f64 = lat
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid latitude: {}", lat.trim()))?;
+        let lon: f64 = lon
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid longitude: {}", lon.trim()))?;
+        return soshal_spatial_core::geohash::encode_geohash(lat, lon, 9)
+            .ok_or_else(|| "invalid coordinates (lat -90..=90, lon -180..=180)".to_string());
+    }
+    if !soshal_spatial_core::geohash::is_valid_geohash(trimmed) {
+        return Err(format!("invalid geohash: {trimmed}").to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Validates the full attribute set; shared by create and update.
+#[allow(clippy::too_many_arguments)]
+fn validate_attributes(
+    gender: &str,
+    seeking: &str,
+    height_cm: i32,
+    body_type: &str,
+    smoking: &str,
+    drinking: &str,
+    relationship_intent: &str,
+    politics: &str,
+    education: &str,
+    max_distance_km: i32,
+) -> Result<(), String> {
+    validate_enum("gender", gender, &GENDERS)?;
+    validate_enum("seeking", seeking, &SEEKING)?;
+    if height_cm > 0 && !(100..=250).contains(&height_cm) {
+        return Err(format!("height must be 100..=250 cm, got {height_cm}").to_string());
+    }
+    validate_enum("bodyType", body_type, &BODY_TYPES)?;
+    validate_enum("smoking", smoking, &SMOKING)?;
+    validate_enum("drinking", drinking, &DRINKING)?;
+    validate_enum(
+        "relationshipIntent",
+        relationship_intent,
+        &RELATIONSHIP_INTENTS,
+    )?;
+    validate_enum("politics", politics, &POLITICS)?;
+    validate_enum("education", education, &EDUCATION)?;
+    if !(0..=500).contains(&max_distance_km) {
+        return Err(format!("maxDistanceKm must be 0..=500, got {max_distance_km}").to_string());
+    }
+    Ok(())
+}
+
+/// Renders the attribute fields into content JSON (camelCase keys matching
+/// dating-core). Empty strings / 0 values render as null (unset).
+#[allow(clippy::too_many_arguments)]
+fn attribute_content(
+    location: &str,
+    gender: &str,
+    seeking: &str,
+    height_cm: i32,
+    body_type: &str,
+    smoking: &str,
+    drinking: &str,
+    relationship_intent: &str,
+    politics: &str,
+    ethnicity: &str,
+    education: &str,
+    language: Vec<String>,
+    max_distance_km: i32,
+    bio: &str,
+    interests: Vec<String>,
+    images: Vec<String>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "locationGeohash": location,
+        "gender": opt_str(gender),
+        "seeking": opt_str(seeking),
+        "height": (height_cm > 0).then_some(f64::from(height_cm)),
+        "bodyType": opt_str(body_type),
+        "smoking": opt_str(smoking),
+        "drinking": opt_str(drinking),
+        "relationshipIntent": opt_str(relationship_intent),
+        "politics": opt_str(politics),
+        "ethnicity": opt_str(ethnicity),
+        "education": opt_str(education),
+        "language": (!language.is_empty()).then_some(language),
+        "maxDistanceKm": (max_distance_km > 0).then_some(f64::from(max_distance_km)),
+        "bio": soshal_common_core::format::truncate(bio, 1500),
+        "interests": interests,
+        "images": images,
+    })
 }
 
 fn cards_from_json(
@@ -140,15 +313,29 @@ pub fn dating_get_profile(profile_id: String) -> Result<String, String> {
     super::util::json_ok(card)
 }
 
-/// Create dating profile (kind 30082, `d` = `dating_profile`). Signs with
-/// the unlocked signer and returns the signed event JSON for relay publish;
-/// also stores the row locally for immediate swipe use.
+/// Create dating profile (kind 30082, `d` = `dating_profile`). Requires a
+/// geohash (raw geohash or `lat,lon`); validates the full attribute set.
+/// Signs with the unlocked signer and returns the signed event JSON for
+/// relay publish; also stores the row locally for immediate swipe use.
 #[frb(sync, serialize)]
+#[allow(clippy::too_many_arguments)]
 pub fn dating_create_profile(
     user_pubkey: String,
     name: String,
     age: i32,
     location: String,
+    gender: String,
+    seeking: String,
+    height_cm: i32,
+    body_type: String,
+    smoking: String,
+    drinking: String,
+    relationship_intent: String,
+    politics: String,
+    ethnicity: String,
+    education: String,
+    language_json: String,
+    max_distance_km: i32,
     bio: String,
     images_json: String,
     interests_json: String,
@@ -156,6 +343,19 @@ pub fn dating_create_profile(
     if age <= 0 || age > 120 {
         return Err("age must be 1..=120".to_string()).into();
     }
+    validate_attributes(
+        &gender,
+        &seeking,
+        height_cm,
+        &body_type,
+        &smoking,
+        &drinking,
+        &relationship_intent,
+        &politics,
+        &education,
+        max_distance_km,
+    )?;
+    let geohash = resolve_location(&location)?;
     let images: Vec<String> =
         serde_json::from_str(&images_json).map_err(|e| format!("invalid images JSON: {e}"))?;
     if images.len() > 9 {
@@ -166,13 +366,30 @@ pub fn dating_create_profile(
         .into_iter()
         .take(20)
         .collect();
-    let content = serde_json::json!({
-        "age": age,
-        "bio": soshal_common_core::format::truncate(&bio, 1500),
-        "locationGeohash": if location.trim().is_empty() { serde_json::Value::Null } else { serde_json::json!(location) },
-        "interests": interests,
-        "images": images,
-    });
+    let language: Vec<String> = serde_json::from_str::<Vec<String>>(&language_json)
+        .map_err(|e| format!("invalid language JSON: {e}"))?
+        .into_iter()
+        .take(10)
+        .collect();
+    let mut content = attribute_content(
+        &geohash,
+        &gender,
+        &seeking,
+        height_cm,
+        &body_type,
+        &smoking,
+        &drinking,
+        &relationship_intent,
+        &politics,
+        &ethnicity,
+        &education,
+        language,
+        max_distance_km,
+        &bio,
+        interests,
+        images,
+    );
+    content["age"] = serde_json::json!(age);
     let builder = nostr::event::EventBuilder::new(
         nostr::event::Kind::from_u16(KIND_PROFILE),
         content.to_string(),
@@ -198,28 +415,97 @@ pub fn dating_create_profile(
     Ok(signed_json).into()
 }
 
-/// Update dating profile bio/images/interests (a new kind 30082 event;
-/// d-tag identity stays, so relays treat it as a replacement). Signs and
-/// stores the row locally for immediate swipe use.
+/// Update dating profile (a new kind 30082 event; d-tag identity stays, so
+/// relays treat it as a replacement). The full attribute set is written;
+/// form fields always come from the arguments, while non-form fields in the
+/// previous content (weights, dealbreakers, friends) are preserved.
 #[frb(sync, serialize)]
+#[allow(clippy::too_many_arguments)]
 pub fn dating_update_profile(
     user_pubkey: String,
+    location: String,
+    gender: String,
+    seeking: String,
+    height_cm: i32,
+    body_type: String,
+    smoking: String,
+    drinking: String,
+    relationship_intent: String,
+    politics: String,
+    ethnicity: String,
+    education: String,
+    language_json: String,
+    max_distance_km: i32,
     bio: String,
     images_json: String,
     interests_json: String,
 ) -> Result<bool, String> {
+    validate_attributes(
+        &gender,
+        &seeking,
+        height_cm,
+        &body_type,
+        &smoking,
+        &drinking,
+        &relationship_intent,
+        &politics,
+        &education,
+        max_distance_km,
+    )?;
+    let geohash = resolve_location(&location)?;
     let images: Vec<String> =
         serde_json::from_str(&images_json).map_err(|e| format!("invalid images JSON: {e}"))?;
+    if images.len() > 9 {
+        return Err("too many images".to_string()).into();
+    }
     let interests: Vec<String> = serde_json::from_str::<Vec<String>>(&interests_json)
         .map_err(|e| format!("invalid interests JSON: {e}"))?
         .into_iter()
         .take(20)
         .collect();
-    let content = serde_json::json!({
-        "bio": soshal_common_core::format::truncate(&bio, 1500),
-        "interests": interests,
-        "images": images,
-    });
+    let language: Vec<String> = serde_json::from_str::<Vec<String>>(&language_json)
+        .map_err(|e| format!("invalid language JSON: {e}"))?
+        .into_iter()
+        .take(10)
+        .collect();
+    let mut content = attribute_content(
+        &geohash,
+        &gender,
+        &seeking,
+        height_cm,
+        &body_type,
+        &smoking,
+        &drinking,
+        &relationship_intent,
+        &politics,
+        &ethnicity,
+        &education,
+        language,
+        max_distance_km,
+        &bio,
+        interests,
+        images,
+    );
+    let old_json = super::db::db_query_raw(format!(
+        "SELECT content FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}' AND is_deleted = 0 \
+         ORDER BY created_at DESC LIMIT 1",
+        user_pubkey.replace('\'', "''")
+    ))?;
+    let old: Vec<serde_json::Value> = serde_json::from_str(&old_json).unwrap_or_default();
+    if let Some(prev) = old
+        .first()
+        .and_then(|r| r["content"].as_str())
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(c).ok())
+    {
+        if let Some(age) = prev.get("age").cloned() {
+            content["age"] = age;
+        }
+        for key in ["preferenceWeights", "dealbreakers", "verifiedMutualFriends"] {
+            if let Some(v) = prev.get(key).cloned() {
+                content[key] = v;
+            }
+        }
+    }
     let builder = nostr::event::EventBuilder::new(
         nostr::event::Kind::from_u16(KIND_PROFILE),
         content.to_string(),
@@ -470,14 +756,23 @@ pub fn dating_calculate_score(
         .unwrap_or_else(|| Ok(0.0).into())
 }
 
-/// Filter profiles by age/location preferences, delegating the policy to
-/// dating-core.
+/// Filter profiles by age/location/trait preferences, delegating the policy
+/// to dating-core.
 #[frb(sync, serialize)]
+#[allow(clippy::too_many_arguments)]
 pub fn dating_filter_profiles(
     user_pubkey: String,
     min_age: i32,
     max_age: i32,
     location_radius_km: i32,
+    height_min_cm: i32,
+    height_max_cm: i32,
+    body_type: String,
+    smoking: String,
+    drinking: String,
+    relationship_intent: String,
+    politics: String,
+    education: String,
     interests_json: String,
 ) -> Result<String, String> {
     let mut cards: Vec<DatingCardInfo> =
@@ -489,16 +784,37 @@ pub fn dating_filter_profiles(
             cards.retain(|c| c.interests.iter().any(|i| interests.contains(i)));
         }
     }
-    let own_location = dating_get_own_profile(user_pubkey.clone())
+    let own_card = dating_get_own_profile(user_pubkey.clone())
         .ok()
-        .and_then(|p| serde_json::from_str::<DatingCardInfo>(&p).ok())
-        .and_then(|c| (!c.location.is_empty()).then_some(c.location));
+        .and_then(|p| serde_json::from_str::<DatingCardInfo>(&p).ok());
+    let own_location = own_card
+        .as_ref()
+        .and_then(|c| (!c.location.is_empty()).then(|| c.location.clone()));
+    let own_gender = own_card
+        .as_ref()
+        .and_then(|c| (!c.gender.is_empty()).then(|| c.gender.clone()));
+    let own_seeking = own_card
+        .as_ref()
+        .and_then(|c| (!c.seeking.is_empty()).then(|| c.seeking.clone()));
     let profiles: Vec<soshal_dating_core::DatingProfileInput> = cards
         .iter()
         .map(|c| soshal_dating_core::DatingProfileInput {
             pubkey: c.pubkey.clone(),
             age: Some(f64::from(c.age)),
-            location_geohash: (!c.location.is_empty()).then_some(c.location.clone()),
+            gender: (!c.gender.is_empty()).then(|| c.gender.clone()),
+            seeking: (!c.seeking.is_empty()).then(|| c.seeking.clone()),
+            height: (c.height > 0.0).then(|| f64::from(c.height)),
+            body_type: (!c.body_type.is_empty()).then(|| c.body_type.clone()),
+            smoking: (!c.smoking.is_empty()).then(|| c.smoking.clone()),
+            drinking: (!c.drinking.is_empty()).then(|| c.drinking.clone()),
+            relationship_intent: (!c.relationship_intent.is_empty())
+                .then(|| c.relationship_intent.clone()),
+            politics: (!c.politics.is_empty()).then(|| c.politics.clone()),
+            ethnicity: (!c.ethnicity.is_empty()).then(|| c.ethnicity.clone()),
+            education: (!c.education.is_empty()).then(|| c.education.clone()),
+            language: (!c.language.is_empty()).then(|| c.language.clone()),
+            max_distance_km: (c.max_distance_km > 0.0).then(|| f64::from(c.max_distance_km)),
+            location_geohash: (!c.location.is_empty()).then(|| c.location.clone()),
             interests: Some(c.interests.clone()),
             ..Default::default()
         })
@@ -506,20 +822,22 @@ pub fn dating_filter_profiles(
     let filtered = soshal_dating_core::filter::filter_dating_profiles(
         soshal_dating_core::FilterDatingProfilesInput {
             profiles: profiles.clone(),
-            own_gender: None,
-            own_seeking: None,
+            own_gender,
+            own_seeking,
             own_location_geohash: own_location,
             own_max_distance_km: (location_radius_km > 0).then_some(f64::from(location_radius_km)),
             self_contacts: Vec::new(),
             hide_friends: None,
             min_age: (min_age > 0).then_some(f64::from(min_age)),
             max_age: (max_age > 0).then_some(f64::from(max_age)),
-            body_type: None,
-            smoking: None,
-            drinking: None,
-            relationship_intent: None,
-            politics: None,
-            education: None,
+            height_min_cm: (height_min_cm > 0).then_some(f64::from(height_min_cm)),
+            height_max_cm: (height_max_cm > 0).then_some(f64::from(height_max_cm)),
+            body_type: opt_str(&body_type),
+            smoking: opt_str(&smoking),
+            drinking: opt_str(&drinking),
+            relationship_intent: opt_str(&relationship_intent),
+            politics: opt_str(&politics),
+            education: opt_str(&education),
         },
     );
     let kept: Vec<soshal_dating_core::DatingProfileInput> = filtered
@@ -667,6 +985,70 @@ pub fn dating_report_profile(
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
+    fn call_create(
+        pk: &str,
+        location: &str,
+        bio: &str,
+        images: &str,
+        interests: &str,
+    ) -> Result<String, String> {
+        dating_create_profile(
+            pk.to_string(),
+            "alice".to_string(),
+            30,
+            location.to_string(),
+            "female".to_string(),
+            "male".to_string(),
+            170,
+            "athletic".to_string(),
+            "never".to_string(),
+            "socially".to_string(),
+            "serious".to_string(),
+            "liberal".to_string(),
+            "caucasian".to_string(),
+            "bachelor's".to_string(),
+            r#"["English"]"#.to_string(),
+            100,
+            bio.to_string(),
+            images.to_string(),
+            interests.to_string(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn call_filter(
+        pk: &str,
+        min_age: i32,
+        max_age: i32,
+        radius: i32,
+        h_min: i32,
+        h_max: i32,
+        body_type: &str,
+        smoking: &str,
+        drinking: &str,
+        intent: &str,
+        politics: &str,
+        education: &str,
+        interests: &str,
+    ) -> Result<String, String> {
+        dating_filter_profiles(
+            pk.to_string(),
+            min_age,
+            max_age,
+            radius,
+            h_min,
+            h_max,
+            body_type.to_string(),
+            smoking.to_string(),
+            drinking.to_string(),
+            intent.to_string(),
+            politics.to_string(),
+            education.to_string(),
+            interests.to_string(),
+        )
+    }
+
     #[test]
     fn test_card_parse() {
         let v = serde_json::json!({
@@ -694,12 +1076,53 @@ mod tests {
             "pk".to_string(),
             "x".to_string(),
             150,
+            "u33dc0".to_string(),
             "".to_string(),
+            "".to_string(),
+            0,
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "[]".to_string(),
+            0,
             "".to_string(),
             "[]".to_string(),
             "[]".to_string(),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_location() {
+        assert_eq!(resolve_location("u33dc0").unwrap(), "u33dc0");
+        let encoded = resolve_location("51.5007,-0.1246").unwrap();
+        assert_eq!(encoded, "gcpuvpmm2");
+        assert_eq!(resolve_location("").unwrap_err(), "location is required");
+        assert!(resolve_location("not a geohash!!").is_err());
+        assert!(resolve_location("91,0").is_err());
+    }
+
+    #[test]
+    fn test_validate_attributes_bad_enum() {
+        assert!(validate_enum("smoking", "always", &SMOKING).is_err());
+        assert!(validate_enum("gender", "female", &GENDERS).is_ok());
+        assert!(validate_attributes(
+            "male",
+            "female",
+            300,
+            "athletic",
+            "never",
+            "socially",
+            "serious",
+            "liberal",
+            "bachelor's",
+            100,
+        )
+        .is_err());
     }
 
     #[test]
@@ -715,11 +1138,37 @@ mod tests {
         assert!(insert("own1", "own", 30, "u33dc0", 300).is_ok());
         assert!(insert("near1", "near", 25, "u33dc0", 200).is_ok());
         assert!(insert("far1", "far", 25, "9q8yyk", 100).is_ok());
-        let res = dating_filter_profiles("own".to_string(), 18, 40, 100, "[]".to_string()).unwrap();
+        let res = call_filter("own", 18, 40, 100, 0, 0, "", "", "", "", "", "", "[]").unwrap();
         let cards: Vec<DatingCardInfo> = serde_json::from_str(&res).unwrap();
         assert!(cards.iter().any(|c| c.pubkey == "near"));
         assert!(!cards.iter().any(|c| c.pubkey == "far"));
         assert!(!cards.iter().any(|c| c.pubkey == "own"));
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
+    #[test]
+    fn test_filter_profiles_traits_and_height() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let path = crate::ffi::db::tmp_db("dating_traits", "ffi");
+        let insert = |id: &str, pubkey: &str, height: i64, smoking: &str, ts: i64| {
+            super::super::db::db_execute_raw(format!(
+                "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+                 VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"u33dc0\",\"interests\":[],\"height\":{height},\"smoking\":\"{smoking}\",\"drinking\":\"socially\",\"bodyType\":\"athletic\"}}',{KIND_PROFILE},{ts},'[]','synced',0)"
+            ))
+        };
+        assert!(insert("own1", "own", 170, "never", 300).is_ok());
+        assert!(insert("h1", "tall", 190, "never", 200).is_ok());
+        assert!(insert("h2", "short", 160, "regularly", 100).is_ok());
+        let res = call_filter(
+            "own", 0, 0, 0, 175, 0, "athletic", "never", "", "", "", "", "[]",
+        )
+        .unwrap();
+        let cards: Vec<DatingCardInfo> = serde_json::from_str(&res).unwrap();
+        assert!(cards.iter().any(|c| c.pubkey == "tall"), "{res}");
+        assert!(!cards.iter().any(|c| c.pubkey == "short"), "{res}");
+        assert!(!cards.iter().any(|c| c.pubkey == "own"), "{res}");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
@@ -766,45 +1215,29 @@ mod tests {
         ))
         .unwrap();
 
-        let err = dating_create_profile(
-            pk.clone(),
-            "alice".to_string(),
-            30,
-            "".to_string(),
-            "hi".to_string(),
-            serde_json::to_string(&vec!["u".to_string(); 10]).unwrap(),
-            "[]".to_string(),
+        let err = call_create(
+            &pk,
+            "u33dc0",
+            "hi",
+            &serde_json::to_string(&vec!["u".to_string(); 10]).unwrap(),
+            "[]",
         );
         assert_eq!(err.unwrap_err(), "too many images");
-        let err = dating_create_profile(
-            pk.clone(),
-            "alice".to_string(),
-            30,
-            "".to_string(),
-            "hi".to_string(),
-            "not-json".to_string(),
-            "[]".to_string(),
-        );
+        let err = call_create(&pk, "u33dc0", "hi", "not-json", "[]");
         assert!(err.unwrap_err().contains("invalid images JSON"));
-        let err = dating_create_profile(
-            pk.clone(),
-            "alice".to_string(),
-            30,
-            "".to_string(),
-            "hi".to_string(),
-            "[]".to_string(),
-            "not-json".to_string(),
-        );
+        let err = call_create(&pk, "u33dc0", "hi", "[]", "not-json");
         assert!(err.unwrap_err().contains("invalid interests JSON"));
+        let err = call_create(&pk, "", "hi", "[]", "[]");
+        assert_eq!(err.unwrap_err(), "location is required");
+        let err = call_create(&pk, "nonsense!", "hi", "[]", "[]");
+        assert!(err.unwrap_err().contains("invalid geohash"));
 
-        let signed = dating_create_profile(
-            pk.clone(),
-            "alice".to_string(),
-            30,
-            "".to_string(),
-            "hello".to_string(),
-            r#"["https://x/a.png"]"#.to_string(),
-            r#"["music","art"]"#.to_string(),
+        let signed = call_create(
+            &pk,
+            "51.5007,-0.1246",
+            "hello",
+            r#"["https://x/a.png"]"#,
+            r#"["music","art"]"#,
         )
         .unwrap();
         let signed_v: serde_json::Value = serde_json::from_str(&signed).unwrap();
@@ -816,12 +1249,18 @@ mod tests {
         let rows_v: Vec<serde_json::Value> = serde_json::from_str(&rows).unwrap();
         let content_v: serde_json::Value =
             serde_json::from_str(rows_v[0]["content"].as_str().unwrap()).unwrap();
-        assert!(content_v["locationGeohash"].is_null(), "{rows}");
+        assert_eq!(content_v["locationGeohash"], "gcpuvpmm2", "{rows}");
+        assert_eq!(content_v["height"], 170.0);
+        assert_eq!(content_v["smoking"], "never");
+        assert_eq!(content_v["maxDistanceKm"], 100.0);
 
         let card: DatingCardInfo =
             serde_json::from_str(&dating_get_profile(event_id.clone()).unwrap()).unwrap();
         assert_eq!(card.name, "alice");
         assert_eq!(card.age, 30);
+        assert_eq!(card.location, "gcpuvpmm2");
+        assert_eq!(card.height, 170.0);
+        assert_eq!(card.gender, "female");
         assert_eq!(card.interests, vec!["music".to_string(), "art".to_string()]);
         assert_eq!(
             dating_get_profile("deadbeef".to_string()).unwrap_err(),
@@ -839,6 +1278,19 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(1100));
         assert!(dating_update_profile(
             pk.clone(),
+            "u33dc0".to_string(),
+            "female".to_string(),
+            "male".to_string(),
+            170,
+            "athletic".to_string(),
+            "never".to_string(),
+            "socially".to_string(),
+            "serious".to_string(),
+            "liberal".to_string(),
+            "caucasian".to_string(),
+            "bachelor's".to_string(),
+            r#"["English"]"#.to_string(),
+            100,
             "updated bio".to_string(),
             "[]".to_string(),
             r#"["sports"]"#.to_string(),
@@ -847,6 +1299,9 @@ mod tests {
         let updated: DatingCardInfo =
             serde_json::from_str(&dating_get_own_profile(pk.clone()).unwrap()).unwrap();
         assert_eq!(updated.bio, "updated bio");
+        assert_eq!(updated.age, 30, "update must preserve age");
+        assert_eq!(updated.location, "u33dc0", "update must preserve geohash");
+        assert_eq!(updated.interests, vec!["sports".to_string()]);
         let cnt = super::super::db::db_query_raw(format!(
             "SELECT COUNT(*) AS c FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{pk}' AND is_deleted = 0"
         ))
@@ -1030,9 +1485,22 @@ mod tests {
         assert!(insert_post("c1", "cand1", "u33dc0", "[\"music\",\"art\"]", 250).is_ok());
         assert!(insert_post("c2", "cand2", "u33dc0", "[\"sports\"]", 240).is_ok());
         assert!(insert_post("c3", "far", "9q8yyk", "[\"music\"]", 230).is_ok());
-        let filtered =
-            dating_filter_profiles("selfpk".to_string(), 18, 40, 0, r#"["music"]"#.to_string())
-                .unwrap();
+        let filtered = call_filter(
+            "selfpk",
+            18,
+            40,
+            0,
+            0,
+            0,
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            r#"["music"]"#,
+        )
+        .unwrap();
         let fv: Vec<DatingCardInfo> = serde_json::from_str(&filtered).unwrap();
         let pubs: Vec<String> = fv.iter().map(|c| c.pubkey.clone()).collect();
         assert!(pubs.contains(&"cand1".to_string()), "{pubs:?}");
@@ -1040,7 +1508,7 @@ mod tests {
         assert!(pubs.contains(&"far".to_string()), "{pubs:?}");
 
         let nearby =
-            dating_filter_profiles("selfpk".to_string(), 18, 40, 100, "[]".to_string()).unwrap();
+            call_filter("selfpk", 18, 40, 100, 0, 0, "", "", "", "", "", "", "[]").unwrap();
         let nv: Vec<DatingCardInfo> = serde_json::from_str(&nearby).unwrap();
         assert!(nv.iter().any(|c| c.pubkey == "cand1"), "{nearby}");
         assert!(!nv.iter().any(|c| c.pubkey == "far"), "{nearby}");
@@ -1055,8 +1523,7 @@ mod tests {
             )
             .is_ok());
         }
-        let truncated =
-            dating_filter_profiles("selfpk".to_string(), 0, 0, 0, "".to_string()).unwrap();
+        let truncated = call_filter("selfpk", 0, 0, 0, 0, 0, "", "", "", "", "", "", "").unwrap();
         let tv: Vec<DatingCardInfo> = serde_json::from_str(&truncated).unwrap();
         assert_eq!(tv.len(), 50, "{truncated}");
         let _ = std::fs::remove_file(&path);

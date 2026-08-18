@@ -34,6 +34,14 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     int minAge = 0,
     int maxAge = 0,
     int radiusKm = 0,
+    int heightMinCm = 0,
+    int heightMaxCm = 0,
+    String bodyType = '',
+    String smoking = '',
+    String drinking = '',
+    String relationshipIntent = '',
+    String politics = '',
+    String education = '',
     List<String> interests = const [],
   }) async {
     return _decode(
@@ -42,6 +50,14 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         minAge: minAge,
         maxAge: maxAge,
         locationRadiusKm: radiusKm,
+        heightMinCm: heightMinCm,
+        heightMaxCm: heightMaxCm,
+        bodyType: bodyType,
+        smoking: smoking,
+        drinking: drinking,
+        relationshipIntent: relationshipIntent,
+        politics: politics,
+        education: education,
         interestsJson: jsonEncode(interests),
       ),
     );
@@ -152,17 +168,41 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     String userPubkey,
     String name,
     int age,
-    String location,
-    String bio,
-    List<String> images,
-    List<String> interests,
-  ) async {
+    String location, {
+    String gender = '',
+    String seeking = '',
+    int heightCm = 0,
+    String bodyType = '',
+    String smoking = '',
+    String drinking = '',
+    String relationshipIntent = '',
+    String politics = '',
+    String ethnicity = '',
+    String education = '',
+    List<String> language = const [],
+    int maxDistanceKm = 0,
+    String bio = '',
+    List<String> images = const [],
+    List<String> interests = const [],
+  }) async {
     try {
       final eventId = RustLib.instance.api.crateFfiDatingDatingCreateProfile(
         userPubkey: userPubkey,
         name: name,
         age: age,
         location: location,
+        gender: gender,
+        seeking: seeking,
+        heightCm: heightCm,
+        bodyType: bodyType,
+        smoking: smoking,
+        drinking: drinking,
+        relationshipIntent: relationshipIntent,
+        politics: politics,
+        ethnicity: ethnicity,
+        education: education,
+        languageJson: jsonEncode(language),
+        maxDistanceKm: maxDistanceKm,
         bio: bio,
         imagesJson: jsonEncode(images),
         interestsJson: jsonEncode(interests),
@@ -181,11 +221,37 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     String userPubkey,
     String bio,
     List<String> images,
-    List<String> interests,
-  ) async {
+    List<String> interests, {
+    String location = '',
+    String gender = '',
+    String seeking = '',
+    int heightCm = 0,
+    String bodyType = '',
+    String smoking = '',
+    String drinking = '',
+    String relationshipIntent = '',
+    String politics = '',
+    String ethnicity = '',
+    String education = '',
+    List<String> language = const [],
+    int maxDistanceKm = 0,
+  }) async {
     try {
       final ok = RustLib.instance.api.crateFfiDatingDatingUpdateProfile(
         userPubkey: userPubkey,
+        location: location,
+        gender: gender,
+        seeking: seeking,
+        heightCm: heightCm,
+        bodyType: bodyType,
+        smoking: smoking,
+        drinking: drinking,
+        relationshipIntent: relationshipIntent,
+        politics: politics,
+        ethnicity: ethnicity,
+        education: education,
+        languageJson: jsonEncode(language),
+        maxDistanceKm: maxDistanceKm,
         bio: bio,
         imagesJson: jsonEncode(images),
         interestsJson: jsonEncode(interests),
@@ -338,6 +404,18 @@ class DatingCard {
   final String name;
   final int age;
   final String location;
+  final String gender;
+  final String seeking;
+  final double height;
+  final String bodyType;
+  final String smoking;
+  final String drinking;
+  final String relationshipIntent;
+  final String politics;
+  final String ethnicity;
+  final String education;
+  final List<String> language;
+  final double maxDistanceKm;
   final String bio;
   final List<String> images;
   final List<String> interests;
@@ -349,6 +427,18 @@ class DatingCard {
     required this.name,
     required this.age,
     required this.location,
+    this.gender = '',
+    this.seeking = '',
+    this.height = 0,
+    this.bodyType = '',
+    this.smoking = '',
+    this.drinking = '',
+    this.relationshipIntent = '',
+    this.politics = '',
+    this.ethnicity = '',
+    this.education = '',
+    this.language = const [],
+    this.maxDistanceKm = 0,
     required this.bio,
     required this.images,
     required this.interests,
@@ -362,6 +452,20 @@ class DatingCard {
       name: json['name'] as String? ?? '',
       age: (json['age'] as num?)?.toInt() ?? 0,
       location: json['location'] as String? ?? '',
+      gender: json['gender'] as String? ?? '',
+      seeking: json['seeking'] as String? ?? '',
+      height: (json['height'] as num?)?.toDouble() ?? 0,
+      bodyType: json['body_type'] as String? ?? '',
+      smoking: json['smoking'] as String? ?? '',
+      drinking: json['drinking'] as String? ?? '',
+      relationshipIntent: json['relationship_intent'] as String? ?? '',
+      politics: json['politics'] as String? ?? '',
+      ethnicity: json['ethnicity'] as String? ?? '',
+      education: json['education'] as String? ?? '',
+      language: (json['language'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
+      maxDistanceKm: (json['max_distance_km'] as num?)?.toDouble() ?? 0,
       bio: json['bio'] as String? ?? '',
       images: (json['images'] as List<dynamic>? ?? [])
           .map((e) => e.toString())

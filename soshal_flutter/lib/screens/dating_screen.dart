@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/dating_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/blob_image.dart';
 
 /// Dating: browse cards, like/pass/superlike, matches, likes received.
 class DatingScreen extends StatefulWidget {
@@ -134,42 +135,173 @@ class _DatingScreenState extends State<DatingScreen>
     final minAge = TextEditingController();
     final maxAge = TextEditingController();
     final interests = TextEditingController();
+    int radiusKm = 0;
+    int heightMinCm = 0;
+    int heightMaxCm = 0;
+    String bodyType = '';
+    String smoking = '';
+    String drinking = '';
+    String intent = '';
+    String politics = '';
+    String education = '';
     final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Filter profiles'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: minAge,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Min age'),
-            ),
-            TextField(
-              controller: maxAge,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Max age'),
-            ),
-            TextField(
-              controller: interests,
-              decoration: const InputDecoration(
-                labelText: 'Interests',
-                hintText: 'comma separated',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Filter profiles'),
+          content: SizedBox(
+            width: 320,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: minAge,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Min age'),
+                  ),
+                  TextField(
+                    controller: maxAge,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Max age'),
+                  ),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Radius'),
+                    subtitle:
+                        Text(radiusKm <= 0 ? 'Unlimited' : '$radiusKm km'),
+                    trailing: SizedBox(
+                      width: 120,
+                      child: Slider(
+                        min: 0,
+                        max: 500,
+                        divisions: 10,
+                        value: radiusKm.toDouble(),
+                        label: radiusKm <= 0 ? 'Unlimited' : '$radiusKm km',
+                        onChanged: (v) =>
+                            setDialogState(() => radiusKm = v.round()),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: TextEditingController(
+                              text: heightMinCm == 0 ? '' : '$heightMinCm'),
+                          keyboardType: TextInputType.number,
+                          decoration:
+                              const InputDecoration(labelText: 'Min height cm'),
+                          onChanged: (v) =>
+                              heightMinCm = int.tryParse(v.trim()) ?? 0,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: TextEditingController(
+                              text: heightMaxCm == 0 ? '' : '$heightMaxCm'),
+                          keyboardType: TextInputType.number,
+                          decoration:
+                              const InputDecoration(labelText: 'Max height cm'),
+                          onChanged: (v) =>
+                              heightMaxCm = int.tryParse(v.trim()) ?? 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                  _filterDropdown(
+                      'Body type',
+                      bodyType,
+                      const [
+                        '',
+                        'slim',
+                        'athletic',
+                        'average',
+                        'curvy',
+                        'muscular',
+                      ],
+                      (v) => bodyType = v),
+                  _filterDropdown(
+                      'Smoking',
+                      smoking,
+                      const [
+                        '',
+                        'never',
+                        'occasionally',
+                        'regularly',
+                      ],
+                      (v) => smoking = v),
+                  _filterDropdown(
+                      'Drinking',
+                      drinking,
+                      const [
+                        '',
+                        'never',
+                        'socially',
+                        'regularly',
+                      ],
+                      (v) => drinking = v),
+                  _filterDropdown(
+                      'Relationship intent',
+                      intent,
+                      const [
+                        '',
+                        'serious',
+                        'casual',
+                        'still figuring out',
+                      ],
+                      (v) => intent = v),
+                  _filterDropdown(
+                      'Politics',
+                      politics,
+                      const [
+                        '',
+                        'prefer not to say',
+                        'liberal',
+                        'moderate',
+                        'conservative',
+                        'libertarian',
+                        'other',
+                      ],
+                      (v) => politics = v),
+                  _filterDropdown(
+                      'Education',
+                      education,
+                      const [
+                        '',
+                        'high school',
+                        'some college',
+                        'associate',
+                        'trade school',
+                        "bachelor's",
+                        "master's",
+                        'doctorate',
+                      ],
+                      (v) => education = v),
+                  TextField(
+                    controller: interests,
+                    decoration: const InputDecoration(
+                      labelText: 'Interests',
+                      hintText: 'comma separated',
+                    ),
+                  ),
+                ],
               ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Clear'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Apply'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Clear'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Apply'),
-          ),
-        ],
       ),
     );
     if (ok == null || !mounted) return;
@@ -187,7 +319,33 @@ class _DatingScreenState extends State<DatingScreen>
       pubkey,
       minAge: int.tryParse(minAge.text.trim()) ?? 0,
       maxAge: int.tryParse(maxAge.text.trim()) ?? 0,
+      radiusKm: radiusKm,
+      heightMinCm: heightMinCm,
+      heightMaxCm: heightMaxCm,
+      bodyType: bodyType,
+      smoking: smoking,
+      drinking: drinking,
+      relationshipIntent: intent,
+      politics: politics,
+      education: education,
       interests: list,
+    );
+  }
+
+  Widget _filterDropdown(
+    String label,
+    String value,
+    List<String> options,
+    ValueChanged<String> onChanged,
+  ) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      decoration: InputDecoration(labelText: label),
+      items: [
+        for (final o in options)
+          DropdownMenuItem(value: o, child: Text(o.isEmpty ? 'Any' : o)),
+      ],
+      onChanged: (v) => onChanged(v ?? ''),
     );
   }
 
@@ -210,13 +368,11 @@ class _DatingScreenState extends State<DatingScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (card.images.isNotEmpty)
-                          Image.network(
-                            card.images.first,
+                          BlobImage(
+                            source: card.images.first,
                             height: 220,
-                            cacheWidth: 660,
-                            cacheHeight: 440,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
+                            errorBuilder: (_) => Container(
                               height: 220,
                               color: Colors.grey[300],
                               child: const Icon(Icons.person, size: 80),
@@ -451,12 +607,11 @@ class _DatingScreenState extends State<DatingScreen>
             if (profile.images.isNotEmpty)
               ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: Image.network(
-                  profile.images.first,
+                child: BlobImage(
+                  source: profile.images.first,
                   height: 200,
-                  cacheWidth: 800,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (_) => Container(
                     height: 200,
                     color: Colors.grey[300],
                     child: const Icon(Icons.person, size: 64),
@@ -487,6 +642,22 @@ class _DatingScreenState extends State<DatingScreen>
                     for (final i in profile.interests)
                       Chip(
                         label: Text('#$i'),
+                        labelStyle: const TextStyle(fontSize: 11),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
+                ),
+              ),
+            if (_profileChips(profile).isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final c in _profileChips(profile))
+                      Chip(
+                        label: Text(c),
                         labelStyle: const TextStyle(fontSize: 11),
                         visualDensity: VisualDensity.compact,
                       ),
@@ -527,6 +698,32 @@ class _DatingScreenState extends State<DatingScreen>
         ),
       ),
     );
+  }
+
+  /// Attribute chips for the profile detail sheet.
+  List<String> _profileChips(DatingCard p) {
+    final chips = <String>[];
+    void add(String label) {
+      if (label.isNotEmpty) chips.add(label);
+    }
+
+    add(p.gender);
+    add(p.seeking == 'All'
+        ? 'seeking anyone'
+        : p.seeking.isNotEmpty
+            ? 'seeking ${p.seeking}'
+            : '');
+    if (p.height > 0) add('${p.height.round()} cm');
+    add(p.bodyType);
+    add(p.smoking.isNotEmpty ? 'smoking: ${p.smoking}' : '');
+    add(p.drinking.isNotEmpty ? 'drinking: ${p.drinking}' : '');
+    add(p.relationshipIntent);
+    add(p.politics);
+    add(p.education);
+    add(p.ethnicity);
+    if (p.language.isNotEmpty) add(p.language.join(', '));
+    if (p.maxDistanceKm > 0) add('within ${p.maxDistanceKm.round()} km');
+    return chips;
   }
 
   Widget _buildLikes(String pubkey) {
@@ -825,11 +1022,13 @@ class _MatchesTabState extends State<_MatchesTab> {
             final m = matches[index];
             return ListTile(
               leading: m.images.isNotEmpty
-                  ? CircleAvatar(
-                      backgroundImage: ResizeImage.resizeIfNeeded(
-                        128,
-                        128,
-                        NetworkImage(m.images.first),
+                  ? ClipOval(
+                      child: BlobImage(
+                        source: m.images.first,
+                        width: 48,
+                        height: 48,
+                        errorBuilder: (_) =>
+                            const CircleAvatar(child: Icon(Icons.person)),
                       ),
                     )
                   : const CircleAvatar(child: Icon(Icons.person)),
@@ -932,11 +1131,13 @@ class _LikesTabState extends State<_LikesTab> {
             final l = likes[index];
             return ListTile(
               leading: l.images.isNotEmpty
-                  ? CircleAvatar(
-                      backgroundImage: ResizeImage.resizeIfNeeded(
-                        128,
-                        128,
-                        NetworkImage(l.images.first),
+                  ? ClipOval(
+                      child: BlobImage(
+                        source: l.images.first,
+                        width: 48,
+                        height: 48,
+                        errorBuilder: (_) =>
+                            const CircleAvatar(child: Icon(Icons.person)),
                       ),
                     )
                   : const CircleAvatar(child: Icon(Icons.person)),

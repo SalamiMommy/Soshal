@@ -6,11 +6,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
+import 'ffi/audio.dart';
 import 'ffi/auth.dart';
+import 'ffi/content.dart';
+import 'ffi/daemon.dart';
 import 'ffi/db.dart';
+import 'ffi/h264.dart';
 import 'ffi/media.dart';
 import 'ffi/network.dart';
 import 'ffi/p2p.dart';
+import 'ffi/permissions.dart';
+import 'ffi/power.dart';
 import 'ffi/raster.dart';
 import 'ffi/session.dart';
 import 'frb_generated.dart';
@@ -37,6 +43,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected bool dco_decode_bool(dynamic raw);
 
+@protected LocationFixDto dco_decode_box_autoadd_location_fix_dto(dynamic raw);
+
 @protected int dco_decode_box_autoadd_u_16(dynamic raw);
 
 @protected int dco_decode_box_autoadd_u_32(dynamic raw);
@@ -59,6 +67,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected List<String> dco_decode_list_String(dynamic raw);
 
+@protected List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
+
 @protected List<P2pPeerDto> dco_decode_list_p_2_p_peer_dto(dynamic raw);
 
 @protected Float32List dco_decode_list_prim_f_32_strict(dynamic raw);
@@ -71,7 +81,11 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
+@protected LocationFixDto dco_decode_location_fix_dto(dynamic raw);
+
 @protected String? dco_decode_opt_String(dynamic raw);
+
+@protected LocationFixDto? dco_decode_opt_box_autoadd_location_fix_dto(dynamic raw);
 
 @protected int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
 
@@ -84,6 +98,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected P2pPowerDto dco_decode_p_2_p_power_dto(dynamic raw);
 
 @protected P2pSwarmStatusDto dco_decode_p_2_p_swarm_status_dto(dynamic raw);
+
+@protected PowerStateDto dco_decode_power_state_dto(dynamic raw);
 
 @protected int dco_decode_u_16(dynamic raw);
 
@@ -104,6 +120,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected String sse_decode_String(SseDeserializer deserializer);
 
 @protected bool sse_decode_bool(SseDeserializer deserializer);
+
+@protected LocationFixDto sse_decode_box_autoadd_location_fix_dto(SseDeserializer deserializer);
 
 @protected int sse_decode_box_autoadd_u_16(SseDeserializer deserializer);
 
@@ -127,6 +145,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected List<String> sse_decode_list_String(SseDeserializer deserializer);
 
+@protected List<Uint8List> sse_decode_list_list_prim_u_8_strict(SseDeserializer deserializer);
+
 @protected List<P2pPeerDto> sse_decode_list_p_2_p_peer_dto(SseDeserializer deserializer);
 
 @protected Float32List sse_decode_list_prim_f_32_strict(SseDeserializer deserializer);
@@ -139,7 +159,11 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
+@protected LocationFixDto sse_decode_location_fix_dto(SseDeserializer deserializer);
+
 @protected String? sse_decode_opt_String(SseDeserializer deserializer);
+
+@protected LocationFixDto? sse_decode_opt_box_autoadd_location_fix_dto(SseDeserializer deserializer);
 
 @protected int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
 
@@ -152,6 +176,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected P2pPowerDto sse_decode_p_2_p_power_dto(SseDeserializer deserializer);
 
 @protected P2pSwarmStatusDto sse_decode_p_2_p_swarm_status_dto(SseDeserializer deserializer);
+
+@protected PowerStateDto sse_decode_power_state_dto(SseDeserializer deserializer);
 
 @protected int sse_decode_u_16(SseDeserializer deserializer);
 
@@ -214,6 +240,8 @@ wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 
 @protected void sse_encode_bool(bool self, SseSerializer serializer);
 
+@protected void sse_encode_box_autoadd_location_fix_dto(LocationFixDto self, SseSerializer serializer);
+
 @protected void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer);
 
 @protected void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
@@ -236,6 +264,8 @@ wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 
 @protected void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
+@protected void sse_encode_list_list_prim_u_8_strict(List<Uint8List> self, SseSerializer serializer);
+
 @protected void sse_encode_list_p_2_p_peer_dto(List<P2pPeerDto> self, SseSerializer serializer);
 
 @protected void sse_encode_list_prim_f_32_strict(Float32List self, SseSerializer serializer);
@@ -248,7 +278,11 @@ wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 
 @protected void sse_encode_list_prim_u_8_strict(Uint8List self, SseSerializer serializer);
 
+@protected void sse_encode_location_fix_dto(LocationFixDto self, SseSerializer serializer);
+
 @protected void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+@protected void sse_encode_opt_box_autoadd_location_fix_dto(LocationFixDto? self, SseSerializer serializer);
 
 @protected void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
 
@@ -261,6 +295,8 @@ wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 @protected void sse_encode_p_2_p_power_dto(P2pPowerDto self, SseSerializer serializer);
 
 @protected void sse_encode_p_2_p_swarm_status_dto(P2pSwarmStatusDto self, SseSerializer serializer);
+
+@protected void sse_encode_power_state_dto(PowerStateDto self, SseSerializer serializer);
 
 @protected void sse_encode_u_16(int self, SseSerializer serializer);
 
@@ -303,6 +339,839 @@ class RustLibWire implements BaseWire {
   RustLibWire.fromLookup(
     ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
   ) : _lookup = lookup;
+
+  int AAudioStreamBuilder_create(
+    ffi.Pointer<ffi.Pointer<AAudioStreamBuilder>> builder,
+  ) {
+    return _AAudioStreamBuilder_create(builder);
+  }
+
+  late final _AAudioStreamBuilder_createPtr =
+      _lookup<
+        ffi.NativeFunction<
+          aaudio_result_t Function(
+            ffi.Pointer<ffi.Pointer<AAudioStreamBuilder>>,
+          )
+        >
+      >('AAudioStreamBuilder_create');
+  late final _AAudioStreamBuilder_create =
+      _AAudioStreamBuilder_createPtr.asFunction<
+        int Function(ffi.Pointer<ffi.Pointer<AAudioStreamBuilder>>)
+      >();
+
+  void AAudioStreamBuilder_delete(ffi.Pointer<AAudioStreamBuilder> builder) {
+    return _AAudioStreamBuilder_delete(builder);
+  }
+
+  late final _AAudioStreamBuilder_deletePtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Void Function(ffi.Pointer<AAudioStreamBuilder>)>
+      >('AAudioStreamBuilder_delete');
+  late final _AAudioStreamBuilder_delete =
+      _AAudioStreamBuilder_deletePtr.asFunction<
+        void Function(ffi.Pointer<AAudioStreamBuilder>)
+      >();
+
+  int AAudioStreamBuilder_openStream(
+    ffi.Pointer<AAudioStreamBuilder> builder,
+    ffi.Pointer<ffi.Pointer<AAudioStream>> stream,
+  ) {
+    return _AAudioStreamBuilder_openStream(builder, stream);
+  }
+
+  late final _AAudioStreamBuilder_openStreamPtr =
+      _lookup<
+        ffi.NativeFunction<
+          aaudio_result_t Function(
+            ffi.Pointer<AAudioStreamBuilder>,
+            ffi.Pointer<ffi.Pointer<AAudioStream>>,
+          )
+        >
+      >('AAudioStreamBuilder_openStream');
+  late final _AAudioStreamBuilder_openStream =
+      _AAudioStreamBuilder_openStreamPtr.asFunction<
+        int Function(
+          ffi.Pointer<AAudioStreamBuilder>,
+          ffi.Pointer<ffi.Pointer<AAudioStream>>,
+        )
+      >();
+
+  void AAudioStreamBuilder_setBufferCapacityInFrames(
+    ffi.Pointer<AAudioStreamBuilder> builder,
+    int frames,
+  ) {
+    return _AAudioStreamBuilder_setBufferCapacityInFrames(builder, frames);
+  }
+
+  late final _AAudioStreamBuilder_setBufferCapacityInFramesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<AAudioStreamBuilder>, ffi.Int32)
+        >
+      >('AAudioStreamBuilder_setBufferCapacityInFrames');
+  late final _AAudioStreamBuilder_setBufferCapacityInFrames =
+      _AAudioStreamBuilder_setBufferCapacityInFramesPtr.asFunction<
+        void Function(ffi.Pointer<AAudioStreamBuilder>, int)
+      >();
+
+  void AAudioStreamBuilder_setChannelCount(
+    ffi.Pointer<AAudioStreamBuilder> builder,
+    int channel_count,
+  ) {
+    return _AAudioStreamBuilder_setChannelCount(builder, channel_count);
+  }
+
+  late final _AAudioStreamBuilder_setChannelCountPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<AAudioStreamBuilder>, ffi.Int32)
+        >
+      >('AAudioStreamBuilder_setChannelCount');
+  late final _AAudioStreamBuilder_setChannelCount =
+      _AAudioStreamBuilder_setChannelCountPtr.asFunction<
+        void Function(ffi.Pointer<AAudioStreamBuilder>, int)
+      >();
+
+  void AAudioStreamBuilder_setDirection(
+    ffi.Pointer<AAudioStreamBuilder> builder,
+    int direction,
+  ) {
+    return _AAudioStreamBuilder_setDirection(builder, direction);
+  }
+
+  late final _AAudioStreamBuilder_setDirectionPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<AAudioStreamBuilder>, ffi.Int32)
+        >
+      >('AAudioStreamBuilder_setDirection');
+  late final _AAudioStreamBuilder_setDirection =
+      _AAudioStreamBuilder_setDirectionPtr.asFunction<
+        void Function(ffi.Pointer<AAudioStreamBuilder>, int)
+      >();
+
+  void AAudioStreamBuilder_setFormat(
+    ffi.Pointer<AAudioStreamBuilder> builder,
+    int format,
+  ) {
+    return _AAudioStreamBuilder_setFormat(builder, format);
+  }
+
+  late final _AAudioStreamBuilder_setFormatPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<AAudioStreamBuilder>, ffi.Int32)
+        >
+      >('AAudioStreamBuilder_setFormat');
+  late final _AAudioStreamBuilder_setFormat =
+      _AAudioStreamBuilder_setFormatPtr.asFunction<
+        void Function(ffi.Pointer<AAudioStreamBuilder>, int)
+      >();
+
+  void AAudioStreamBuilder_setInputPreset(
+    ffi.Pointer<AAudioStreamBuilder> builder,
+    int preset,
+  ) {
+    return _AAudioStreamBuilder_setInputPreset(builder, preset);
+  }
+
+  late final _AAudioStreamBuilder_setInputPresetPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<AAudioStreamBuilder>, ffi.Int32)
+        >
+      >('AAudioStreamBuilder_setInputPreset');
+  late final _AAudioStreamBuilder_setInputPreset =
+      _AAudioStreamBuilder_setInputPresetPtr.asFunction<
+        void Function(ffi.Pointer<AAudioStreamBuilder>, int)
+      >();
+
+  void AAudioStreamBuilder_setPerformanceMode(
+    ffi.Pointer<AAudioStreamBuilder> builder,
+    int mode,
+  ) {
+    return _AAudioStreamBuilder_setPerformanceMode(builder, mode);
+  }
+
+  late final _AAudioStreamBuilder_setPerformanceModePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<AAudioStreamBuilder>, ffi.Int32)
+        >
+      >('AAudioStreamBuilder_setPerformanceMode');
+  late final _AAudioStreamBuilder_setPerformanceMode =
+      _AAudioStreamBuilder_setPerformanceModePtr.asFunction<
+        void Function(ffi.Pointer<AAudioStreamBuilder>, int)
+      >();
+
+  void AAudioStreamBuilder_setSampleRate(
+    ffi.Pointer<AAudioStreamBuilder> builder,
+    int sample_rate,
+  ) {
+    return _AAudioStreamBuilder_setSampleRate(builder, sample_rate);
+  }
+
+  late final _AAudioStreamBuilder_setSampleRatePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<AAudioStreamBuilder>, ffi.Int32)
+        >
+      >('AAudioStreamBuilder_setSampleRate');
+  late final _AAudioStreamBuilder_setSampleRate =
+      _AAudioStreamBuilder_setSampleRatePtr.asFunction<
+        void Function(ffi.Pointer<AAudioStreamBuilder>, int)
+      >();
+
+  int AAudioStream_close(ffi.Pointer<AAudioStream> stream) {
+    return _AAudioStream_close(stream);
+  }
+
+  late final _AAudioStream_closePtr =
+      _lookup<
+        ffi.NativeFunction<aaudio_result_t Function(ffi.Pointer<AAudioStream>)>
+      >('AAudioStream_close');
+  late final _AAudioStream_close =
+      _AAudioStream_closePtr.asFunction<
+        int Function(ffi.Pointer<AAudioStream>)
+      >();
+
+  int AAudioStream_read(
+    ffi.Pointer<AAudioStream> stream,
+    ffi.Pointer<ffi.Void> buffer,
+    int num_frames,
+    int timeout_nanoseconds,
+  ) {
+    return _AAudioStream_read(stream, buffer, num_frames, timeout_nanoseconds);
+  }
+
+  late final _AAudioStream_readPtr =
+      _lookup<
+        ffi.NativeFunction<
+          aaudio_result_t Function(
+            ffi.Pointer<AAudioStream>,
+            ffi.Pointer<ffi.Void>,
+            ffi.Int32,
+            ffi.Int64,
+          )
+        >
+      >('AAudioStream_read');
+  late final _AAudioStream_read =
+      _AAudioStream_readPtr.asFunction<
+        int Function(ffi.Pointer<AAudioStream>, ffi.Pointer<ffi.Void>, int, int)
+      >();
+
+  int AAudioStream_requestStart(ffi.Pointer<AAudioStream> stream) {
+    return _AAudioStream_requestStart(stream);
+  }
+
+  late final _AAudioStream_requestStartPtr =
+      _lookup<
+        ffi.NativeFunction<aaudio_result_t Function(ffi.Pointer<AAudioStream>)>
+      >('AAudioStream_requestStart');
+  late final _AAudioStream_requestStart =
+      _AAudioStream_requestStartPtr.asFunction<
+        int Function(ffi.Pointer<AAudioStream>)
+      >();
+
+  int AAudioStream_requestStop(ffi.Pointer<AAudioStream> stream) {
+    return _AAudioStream_requestStop(stream);
+  }
+
+  late final _AAudioStream_requestStopPtr =
+      _lookup<
+        ffi.NativeFunction<aaudio_result_t Function(ffi.Pointer<AAudioStream>)>
+      >('AAudioStream_requestStop');
+  late final _AAudioStream_requestStop =
+      _AAudioStream_requestStopPtr.asFunction<
+        int Function(ffi.Pointer<AAudioStream>)
+      >();
+
+  int AAudioStream_write(
+    ffi.Pointer<AAudioStream> stream,
+    ffi.Pointer<ffi.Void> buffer,
+    int num_frames,
+    int timeout_nanoseconds,
+  ) {
+    return _AAudioStream_write(stream, buffer, num_frames, timeout_nanoseconds);
+  }
+
+  late final _AAudioStream_writePtr =
+      _lookup<
+        ffi.NativeFunction<
+          aaudio_result_t Function(
+            ffi.Pointer<AAudioStream>,
+            ffi.Pointer<ffi.Void>,
+            ffi.Int32,
+            ffi.Int64,
+          )
+        >
+      >('AAudioStream_write');
+  late final _AAudioStream_write =
+      _AAudioStream_writePtr.asFunction<
+        int Function(ffi.Pointer<AAudioStream>, ffi.Pointer<ffi.Void>, int, int)
+      >();
+
+  int AImage_getHeight(
+    ffi.Pointer<AImage> image,
+    ffi.Pointer<ffi.Int32> height,
+  ) {
+    return _AImage_getHeight(image, height);
+  }
+
+  late final _AImage_getHeightPtr =
+      _lookup<
+        ffi.NativeFunction<
+          mediastatus_t Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
+        >
+      >('AImage_getHeight');
+  late final _AImage_getHeight =
+      _AImage_getHeightPtr.asFunction<
+        int Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
+      >();
+
+  int AImage_getNumberOfPlanes(
+    ffi.Pointer<AImage> image,
+    ffi.Pointer<ffi.Int32> num_planes,
+  ) {
+    return _AImage_getNumberOfPlanes(image, num_planes);
+  }
+
+  late final _AImage_getNumberOfPlanesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          mediastatus_t Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
+        >
+      >('AImage_getNumberOfPlanes');
+  late final _AImage_getNumberOfPlanes =
+      _AImage_getNumberOfPlanesPtr.asFunction<
+        int Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
+      >();
+
+  int AImage_getPlaneData(
+    ffi.Pointer<AImage> image,
+    int plane_idx,
+    ffi.Pointer<ffi.Pointer<ffi.Uint8>> data,
+    ffi.Pointer<ffi.Int32> data_length,
+  ) {
+    return _AImage_getPlaneData(image, plane_idx, data, data_length);
+  }
+
+  late final _AImage_getPlaneDataPtr =
+      _lookup<
+        ffi.NativeFunction<
+          mediastatus_t Function(
+            ffi.Pointer<AImage>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('AImage_getPlaneData');
+  late final _AImage_getPlaneData =
+      _AImage_getPlaneDataPtr.asFunction<
+        int Function(
+          ffi.Pointer<AImage>,
+          int,
+          ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
+  int AImage_getPlanePixelStride(
+    ffi.Pointer<AImage> image,
+    int plane_idx,
+    ffi.Pointer<ffi.Int32> pixel_stride,
+  ) {
+    return _AImage_getPlanePixelStride(image, plane_idx, pixel_stride);
+  }
+
+  late final _AImage_getPlanePixelStridePtr =
+      _lookup<
+        ffi.NativeFunction<
+          mediastatus_t Function(
+            ffi.Pointer<AImage>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('AImage_getPlanePixelStride');
+  late final _AImage_getPlanePixelStride =
+      _AImage_getPlanePixelStridePtr.asFunction<
+        int Function(ffi.Pointer<AImage>, int, ffi.Pointer<ffi.Int32>)
+      >();
+
+  int AImage_getPlaneRowStride(
+    ffi.Pointer<AImage> image,
+    int plane_idx,
+    ffi.Pointer<ffi.Int32> row_stride,
+  ) {
+    return _AImage_getPlaneRowStride(image, plane_idx, row_stride);
+  }
+
+  late final _AImage_getPlaneRowStridePtr =
+      _lookup<
+        ffi.NativeFunction<
+          mediastatus_t Function(
+            ffi.Pointer<AImage>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('AImage_getPlaneRowStride');
+  late final _AImage_getPlaneRowStride =
+      _AImage_getPlaneRowStridePtr.asFunction<
+        int Function(ffi.Pointer<AImage>, int, ffi.Pointer<ffi.Int32>)
+      >();
+
+  int AImage_getWidth(ffi.Pointer<AImage> image, ffi.Pointer<ffi.Int32> width) {
+    return _AImage_getWidth(image, width);
+  }
+
+  late final _AImage_getWidthPtr =
+      _lookup<
+        ffi.NativeFunction<
+          mediastatus_t Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
+        >
+      >('AImage_getWidth');
+  late final _AImage_getWidth =
+      _AImage_getWidthPtr.asFunction<
+        int Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
+      >();
+
+  void AImage_release(ffi.Pointer<AImage> image) {
+    return _AImage_release(image);
+  }
+
+  late final _AImage_releasePtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<AImage>)>>(
+        'AImage_release',
+      );
+  late final _AImage_release =
+      _AImage_releasePtr.asFunction<void Function(ffi.Pointer<AImage>)>();
+
+  int AMediaCodec_configure(
+    ffi.Pointer<AMediaCodec> codec,
+    ffi.Pointer<AMediaFormat> format,
+    ffi.Pointer<ffi.Void> surface,
+    ffi.Pointer<ffi.Void> crypto,
+    int flags,
+  ) {
+    return _AMediaCodec_configure(codec, format, surface, crypto, flags);
+  }
+
+  late final _AMediaCodec_configurePtr =
+      _lookup<
+        ffi.NativeFunction<
+          mediastatus_t Function(
+            ffi.Pointer<AMediaCodec>,
+            ffi.Pointer<AMediaFormat>,
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Void>,
+            ffi.Uint32,
+          )
+        >
+      >('AMediaCodec_configure');
+  late final _AMediaCodec_configure =
+      _AMediaCodec_configurePtr.asFunction<
+        int Function(
+          ffi.Pointer<AMediaCodec>,
+          ffi.Pointer<AMediaFormat>,
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Void>,
+          int,
+        )
+      >();
+
+  ffi.Pointer<AMediaCodec> AMediaCodec_createDecoderByType(
+    ffi.Pointer<ffi.Char> mime,
+  ) {
+    return _AMediaCodec_createDecoderByType(mime);
+  }
+
+  late final _AMediaCodec_createDecoderByTypePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<AMediaCodec> Function(ffi.Pointer<ffi.Char>)
+        >
+      >('AMediaCodec_createDecoderByType');
+  late final _AMediaCodec_createDecoderByType =
+      _AMediaCodec_createDecoderByTypePtr.asFunction<
+        ffi.Pointer<AMediaCodec> Function(ffi.Pointer<ffi.Char>)
+      >();
+
+  ffi.Pointer<AMediaCodec> AMediaCodec_createEncoderByType(
+    ffi.Pointer<ffi.Char> mime,
+  ) {
+    return _AMediaCodec_createEncoderByType(mime);
+  }
+
+  late final _AMediaCodec_createEncoderByTypePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<AMediaCodec> Function(ffi.Pointer<ffi.Char>)
+        >
+      >('AMediaCodec_createEncoderByType');
+  late final _AMediaCodec_createEncoderByType =
+      _AMediaCodec_createEncoderByTypePtr.asFunction<
+        ffi.Pointer<AMediaCodec> Function(ffi.Pointer<ffi.Char>)
+      >();
+
+  int AMediaCodec_delete(ffi.Pointer<AMediaCodec> codec) {
+    return _AMediaCodec_delete(codec);
+  }
+
+  late final _AMediaCodec_deletePtr =
+      _lookup<
+        ffi.NativeFunction<mediastatus_t Function(ffi.Pointer<AMediaCodec>)>
+      >('AMediaCodec_delete');
+  late final _AMediaCodec_delete =
+      _AMediaCodec_deletePtr.asFunction<
+        int Function(ffi.Pointer<AMediaCodec>)
+      >();
+
+  int AMediaCodec_dequeueInputBuffer(
+    ffi.Pointer<AMediaCodec> codec,
+    int timeout_us,
+  ) {
+    return _AMediaCodec_dequeueInputBuffer(codec, timeout_us);
+  }
+
+  late final _AMediaCodec_dequeueInputBufferPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ssize_t Function(ffi.Pointer<AMediaCodec>, ffi.Int64)
+        >
+      >('AMediaCodec_dequeueInputBuffer');
+  late final _AMediaCodec_dequeueInputBuffer =
+      _AMediaCodec_dequeueInputBufferPtr.asFunction<
+        int Function(ffi.Pointer<AMediaCodec>, int)
+      >();
+
+  int AMediaCodec_dequeueOutputBuffer(
+    ffi.Pointer<AMediaCodec> codec,
+    ffi.Pointer<AMediaCodecBufferInfo> info,
+    int timeout_us,
+  ) {
+    return _AMediaCodec_dequeueOutputBuffer(codec, info, timeout_us);
+  }
+
+  late final _AMediaCodec_dequeueOutputBufferPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ssize_t Function(
+            ffi.Pointer<AMediaCodec>,
+            ffi.Pointer<AMediaCodecBufferInfo>,
+            ffi.Int64,
+          )
+        >
+      >('AMediaCodec_dequeueOutputBuffer');
+  late final _AMediaCodec_dequeueOutputBuffer =
+      _AMediaCodec_dequeueOutputBufferPtr.asFunction<
+        int Function(
+          ffi.Pointer<AMediaCodec>,
+          ffi.Pointer<AMediaCodecBufferInfo>,
+          int,
+        )
+      >();
+
+  ffi.Pointer<ffi.Uint8> AMediaCodec_getInputBuffer(
+    ffi.Pointer<AMediaCodec> codec,
+    int idx,
+    ffi.Pointer<ffi.UintPtr> out_size,
+  ) {
+    return _AMediaCodec_getInputBuffer(codec, idx, out_size);
+  }
+
+  late final _AMediaCodec_getInputBufferPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Uint8> Function(
+            ffi.Pointer<AMediaCodec>,
+            ffi.UintPtr,
+            ffi.Pointer<ffi.UintPtr>,
+          )
+        >
+      >('AMediaCodec_getInputBuffer');
+  late final _AMediaCodec_getInputBuffer =
+      _AMediaCodec_getInputBufferPtr.asFunction<
+        ffi.Pointer<ffi.Uint8> Function(
+          ffi.Pointer<AMediaCodec>,
+          int,
+          ffi.Pointer<ffi.UintPtr>,
+        )
+      >();
+
+  ffi.Pointer<AMediaFormat> AMediaCodec_getInputFormat(
+    ffi.Pointer<AMediaCodec> codec,
+  ) {
+    return _AMediaCodec_getInputFormat(codec);
+  }
+
+  late final _AMediaCodec_getInputFormatPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<AMediaFormat> Function(ffi.Pointer<AMediaCodec>)
+        >
+      >('AMediaCodec_getInputFormat');
+  late final _AMediaCodec_getInputFormat =
+      _AMediaCodec_getInputFormatPtr.asFunction<
+        ffi.Pointer<AMediaFormat> Function(ffi.Pointer<AMediaCodec>)
+      >();
+
+  ffi.Pointer<ffi.Uint8> AMediaCodec_getOutputBuffer(
+    ffi.Pointer<AMediaCodec> codec,
+    int idx,
+    ffi.Pointer<ffi.UintPtr> out_size,
+  ) {
+    return _AMediaCodec_getOutputBuffer(codec, idx, out_size);
+  }
+
+  late final _AMediaCodec_getOutputBufferPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Uint8> Function(
+            ffi.Pointer<AMediaCodec>,
+            ffi.UintPtr,
+            ffi.Pointer<ffi.UintPtr>,
+          )
+        >
+      >('AMediaCodec_getOutputBuffer');
+  late final _AMediaCodec_getOutputBuffer =
+      _AMediaCodec_getOutputBufferPtr.asFunction<
+        ffi.Pointer<ffi.Uint8> Function(
+          ffi.Pointer<AMediaCodec>,
+          int,
+          ffi.Pointer<ffi.UintPtr>,
+        )
+      >();
+
+  ffi.Pointer<AMediaFormat> AMediaCodec_getOutputFormat(
+    ffi.Pointer<AMediaCodec> codec,
+  ) {
+    return _AMediaCodec_getOutputFormat(codec);
+  }
+
+  late final _AMediaCodec_getOutputFormatPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<AMediaFormat> Function(ffi.Pointer<AMediaCodec>)
+        >
+      >('AMediaCodec_getOutputFormat');
+  late final _AMediaCodec_getOutputFormat =
+      _AMediaCodec_getOutputFormatPtr.asFunction<
+        ffi.Pointer<AMediaFormat> Function(ffi.Pointer<AMediaCodec>)
+      >();
+
+  int AMediaCodec_getOutputImage(
+    ffi.Pointer<AMediaCodec> codec,
+    int idx,
+    ffi.Pointer<ffi.Pointer<AImage>> image,
+  ) {
+    return _AMediaCodec_getOutputImage(codec, idx, image);
+  }
+
+  late final _AMediaCodec_getOutputImagePtr =
+      _lookup<
+        ffi.NativeFunction<
+          mediastatus_t Function(
+            ffi.Pointer<AMediaCodec>,
+            ffi.UintPtr,
+            ffi.Pointer<ffi.Pointer<AImage>>,
+          )
+        >
+      >('AMediaCodec_getOutputImage');
+  late final _AMediaCodec_getOutputImage =
+      _AMediaCodec_getOutputImagePtr.asFunction<
+        int Function(
+          ffi.Pointer<AMediaCodec>,
+          int,
+          ffi.Pointer<ffi.Pointer<AImage>>,
+        )
+      >();
+
+  int AMediaCodec_queueInputBuffer(
+    ffi.Pointer<AMediaCodec> codec,
+    int idx,
+    int offset,
+    int size,
+    int timestamp_us,
+    int flags,
+  ) {
+    return _AMediaCodec_queueInputBuffer(
+      codec,
+      idx,
+      offset,
+      size,
+      timestamp_us,
+      flags,
+    );
+  }
+
+  late final _AMediaCodec_queueInputBufferPtr =
+      _lookup<
+        ffi.NativeFunction<
+          mediastatus_t Function(
+            ffi.Pointer<AMediaCodec>,
+            ffi.UintPtr,
+            ffi.UintPtr,
+            ffi.UintPtr,
+            ffi.Uint64,
+            ffi.Uint32,
+          )
+        >
+      >('AMediaCodec_queueInputBuffer');
+  late final _AMediaCodec_queueInputBuffer =
+      _AMediaCodec_queueInputBufferPtr.asFunction<
+        int Function(ffi.Pointer<AMediaCodec>, int, int, int, int, int)
+      >();
+
+  int AMediaCodec_releaseOutputBuffer(
+    ffi.Pointer<AMediaCodec> codec,
+    int idx,
+    int render,
+  ) {
+    return _AMediaCodec_releaseOutputBuffer(codec, idx, render);
+  }
+
+  late final _AMediaCodec_releaseOutputBufferPtr =
+      _lookup<
+        ffi.NativeFunction<
+          mediastatus_t Function(
+            ffi.Pointer<AMediaCodec>,
+            ffi.UintPtr,
+            ffi.Uint8,
+          )
+        >
+      >('AMediaCodec_releaseOutputBuffer');
+  late final _AMediaCodec_releaseOutputBuffer =
+      _AMediaCodec_releaseOutputBufferPtr.asFunction<
+        int Function(ffi.Pointer<AMediaCodec>, int, int)
+      >();
+
+  int AMediaCodec_start(ffi.Pointer<AMediaCodec> codec) {
+    return _AMediaCodec_start(codec);
+  }
+
+  late final _AMediaCodec_startPtr =
+      _lookup<
+        ffi.NativeFunction<mediastatus_t Function(ffi.Pointer<AMediaCodec>)>
+      >('AMediaCodec_start');
+  late final _AMediaCodec_start =
+      _AMediaCodec_startPtr.asFunction<
+        int Function(ffi.Pointer<AMediaCodec>)
+      >();
+
+  int AMediaCodec_stop(ffi.Pointer<AMediaCodec> codec) {
+    return _AMediaCodec_stop(codec);
+  }
+
+  late final _AMediaCodec_stopPtr =
+      _lookup<
+        ffi.NativeFunction<mediastatus_t Function(ffi.Pointer<AMediaCodec>)>
+      >('AMediaCodec_stop');
+  late final _AMediaCodec_stop =
+      _AMediaCodec_stopPtr.asFunction<int Function(ffi.Pointer<AMediaCodec>)>();
+
+  void AMediaFormat_delete(ffi.Pointer<AMediaFormat> format) {
+    return _AMediaFormat_delete(format);
+  }
+
+  late final _AMediaFormat_deletePtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<AMediaFormat>)>>(
+        'AMediaFormat_delete',
+      );
+  late final _AMediaFormat_delete =
+      _AMediaFormat_deletePtr.asFunction<
+        void Function(ffi.Pointer<AMediaFormat>)
+      >();
+
+  int AMediaFormat_getInt32(
+    ffi.Pointer<AMediaFormat> format,
+    ffi.Pointer<ffi.Char> key,
+    ffi.Pointer<ffi.Int32> out,
+  ) {
+    return _AMediaFormat_getInt32(format, key, out);
+  }
+
+  late final _AMediaFormat_getInt32Ptr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<AMediaFormat>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('AMediaFormat_getInt32');
+  late final _AMediaFormat_getInt32 =
+      _AMediaFormat_getInt32Ptr.asFunction<
+        int Function(
+          ffi.Pointer<AMediaFormat>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
+  ffi.Pointer<AMediaFormat> AMediaFormat_new() {
+    return _AMediaFormat_new();
+  }
+
+  late final _AMediaFormat_newPtr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<AMediaFormat> Function()>>(
+        'AMediaFormat_new',
+      );
+  late final _AMediaFormat_new =
+      _AMediaFormat_newPtr.asFunction<ffi.Pointer<AMediaFormat> Function()>();
+
+  void AMediaFormat_setInt32(
+    ffi.Pointer<AMediaFormat> format,
+    ffi.Pointer<ffi.Char> key,
+    int value,
+  ) {
+    return _AMediaFormat_setInt32(format, key, value);
+  }
+
+  late final _AMediaFormat_setInt32Ptr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<AMediaFormat>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int32,
+          )
+        >
+      >('AMediaFormat_setInt32');
+  late final _AMediaFormat_setInt32 =
+      _AMediaFormat_setInt32Ptr.asFunction<
+        void Function(ffi.Pointer<AMediaFormat>, ffi.Pointer<ffi.Char>, int)
+      >();
+
+  void AMediaFormat_setString(
+    ffi.Pointer<AMediaFormat> format,
+    ffi.Pointer<ffi.Char> key,
+    ffi.Pointer<ffi.Char> value,
+  ) {
+    return _AMediaFormat_setString(format, key, value);
+  }
+
+  late final _AMediaFormat_setStringPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<AMediaFormat>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('AMediaFormat_setString');
+  late final _AMediaFormat_setString =
+      _AMediaFormat_setStringPtr.asFunction<
+        void Function(
+          ffi.Pointer<AMediaFormat>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 
   ffi.Pointer<wire_cst_list_String> cst_new_list_String(int len) {
     return _cst_new_list_String(len);
@@ -445,6 +1314,202 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__analytics__analytics_slm_generate_embedding =
       _wire__crate__ffi__analytics__analytics_slm_generate_embeddingPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
+  WireSyncRust2DartSse wire__crate__ffi__audio__audio_drain(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__audio__audio_drain(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__audio__audio_drainPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__audio__audio_drain');
+  late final _wire__crate__ffi__audio__audio_drain =
+      _wire__crate__ffi__audio__audio_drainPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__audio__audio_feed_aac(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__audio__audio_feed_aac(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__audio__audio_feed_aacPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__audio__audio_feed_aac');
+  late final _wire__crate__ffi__audio__audio_feed_aac =
+      _wire__crate__ffi__audio__audio_feed_aacPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__audio__audio_init_decode(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__audio__audio_init_decode(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__audio__audio_init_decodePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__audio__audio_init_decode');
+  late final _wire__crate__ffi__audio__audio_init_decode =
+      _wire__crate__ffi__audio__audio_init_decodePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__audio__audio_init_encode(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__audio__audio_init_encode(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__audio__audio_init_encodePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__audio__audio_init_encode');
+  late final _wire__crate__ffi__audio__audio_init_encode =
+      _wire__crate__ffi__audio__audio_init_encodePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__audio__audio_is_supported(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__audio__audio_is_supported(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__audio__audio_is_supportedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__audio__audio_is_supported');
+  late final _wire__crate__ffi__audio__audio_is_supported =
+      _wire__crate__ffi__audio__audio_is_supportedPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__audio__audio_release(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__audio__audio_release(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__audio__audio_releasePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__audio__audio_release');
+  late final _wire__crate__ffi__audio__audio_release =
+      _wire__crate__ffi__audio__audio_releasePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__audio__audio_set_mic_enable(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__audio__audio_set_mic_enable(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__audio__audio_set_mic_enablePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__audio__audio_set_mic_enable');
+  late final _wire__crate__ffi__audio__audio_set_mic_enable =
+      _wire__crate__ffi__audio__audio_set_mic_enablePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
 
   WireSyncRust2DartSse wire__crate__ffi__audit__audit_list(
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -992,6 +2057,130 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  WireSyncRust2DartSse
+  wire__crate__ffi__content__content_custom_profile_default_node(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__content__content_custom_profile_default_node(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__content__content_custom_profile_default_nodePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__content__content_custom_profile_default_node',
+      );
+  late final _wire__crate__ffi__content__content_custom_profile_default_node =
+      _wire__crate__ffi__content__content_custom_profile_default_nodePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__content__content_custom_profile_default_profile(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__content__content_custom_profile_default_profile(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__content__content_custom_profile_default_profilePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__content__content_custom_profile_default_profile',
+      );
+  late final _wire__crate__ffi__content__content_custom_profile_default_profile =
+      _wire__crate__ffi__content__content_custom_profile_default_profilePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__content__content_custom_profile_node_types(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__content__content_custom_profile_node_types(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__content__content_custom_profile_node_typesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__content__content_custom_profile_node_types',
+      );
+  late final _wire__crate__ffi__content__content_custom_profile_node_types =
+      _wire__crate__ffi__content__content_custom_profile_node_typesPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__content__content_custom_profile_validate(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__content__content_custom_profile_validate(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__content__content_custom_profile_validatePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__content__content_custom_profile_validate',
+      );
+  late final _wire__crate__ffi__content__content_custom_profile_validate =
+      _wire__crate__ffi__content__content_custom_profile_validatePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   WireSyncRust2DartSse wire__crate__ffi__content__content_decompress_json_dict(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -1375,6 +2564,242 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__crypto__crypto_zeroize');
   late final _wire__crate__ffi__crypto__crypto_zeroize =
       _wire__crate__ffi__crypto__crypto_zeroizePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__daemon__daemon_are_daemons_available(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__daemon__daemon_are_daemons_available(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__daemon__daemon_are_daemons_availablePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__daemon__daemon_are_daemons_available',
+      );
+  late final _wire__crate__ffi__daemon__daemon_are_daemons_available =
+      _wire__crate__ffi__daemon__daemon_are_daemons_availablePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__daemon__daemon_extract_daemons(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__daemon__daemon_extract_daemons(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__daemon__daemon_extract_daemonsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__daemon__daemon_extract_daemons',
+      );
+  late final _wire__crate__ffi__daemon__daemon_extract_daemons =
+      _wire__crate__ffi__daemon__daemon_extract_daemonsPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__daemon__daemon_get_daemon_path(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__daemon__daemon_get_daemon_path(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__daemon__daemon_get_daemon_pathPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__daemon__daemon_get_daemon_path',
+      );
+  late final _wire__crate__ffi__daemon__daemon_get_daemon_path =
+      _wire__crate__ffi__daemon__daemon_get_daemon_pathPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__daemon__daemon_get_daemon_status(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__daemon__daemon_get_daemon_status(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__daemon__daemon_get_daemon_statusPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__daemon__daemon_get_daemon_status',
+      );
+  late final _wire__crate__ffi__daemon__daemon_get_daemon_status =
+      _wire__crate__ffi__daemon__daemon_get_daemon_statusPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__daemon__daemon_is_i2pd_running(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__daemon__daemon_is_i2pd_running(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__daemon__daemon_is_i2pd_runningPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__daemon__daemon_is_i2pd_running',
+      );
+  late final _wire__crate__ffi__daemon__daemon_is_i2pd_running =
+      _wire__crate__ffi__daemon__daemon_is_i2pd_runningPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__daemon__daemon_is_rnsd_running(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__daemon__daemon_is_rnsd_running(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__daemon__daemon_is_rnsd_runningPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__daemon__daemon_is_rnsd_running',
+      );
+  late final _wire__crate__ffi__daemon__daemon_is_rnsd_running =
+      _wire__crate__ffi__daemon__daemon_is_rnsd_runningPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__daemon__daemon_start_daemons(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__daemon__daemon_start_daemons(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__daemon__daemon_start_daemonsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__daemon__daemon_start_daemons');
+  late final _wire__crate__ffi__daemon__daemon_start_daemons =
+      _wire__crate__ffi__daemon__daemon_start_daemonsPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__daemon__daemon_stop_daemons(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__daemon__daemon_stop_daemons(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__daemon__daemon_stop_daemonsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__daemon__daemon_stop_daemons');
+  late final _wire__crate__ffi__daemon__daemon_stop_daemons =
+      _wire__crate__ffi__daemon__daemon_stop_daemonsPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -2085,6 +3510,36 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__db__db_execute_raw');
   late final _wire__crate__ffi__db__db_execute_raw =
       _wire__crate__ffi__db__db_execute_rawPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__db__db_expected_schema_version(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__db__db_expected_schema_version(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__db__db_expected_schema_versionPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__db__db_expected_schema_version',
+      );
+  late final _wire__crate__ffi__db__db_expected_schema_version =
+      _wire__crate__ffi__db__db_expected_schema_versionPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -3816,6 +5271,118 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_rooms_create(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_rooms_create(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_rooms_createPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_rooms_create');
+  late final _wire__crate__ffi__groups__groups_rooms_create =
+      _wire__crate__ffi__groups__groups_rooms_createPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_rooms_delete(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_rooms_delete(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_rooms_deletePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_rooms_delete');
+  late final _wire__crate__ffi__groups__groups_rooms_delete =
+      _wire__crate__ffi__groups__groups_rooms_deletePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_rooms_list(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_rooms_list(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_rooms_listPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_rooms_list');
+  late final _wire__crate__ffi__groups__groups_rooms_list =
+      _wire__crate__ffi__groups__groups_rooms_listPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_rooms_update(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_rooms_update(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_rooms_updatePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_rooms_update');
+  late final _wire__crate__ffi__groups__groups_rooms_update =
+      _wire__crate__ffi__groups__groups_rooms_updatePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   WireSyncRust2DartSse wire__crate__ffi__groups__groups_set_member_role(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -3842,6 +5409,638 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__groups__groups_set_member_role =
       _wire__crate__ffi__groups__groups_set_member_rolePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_threads_create(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_threads_create(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_threads_createPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__groups__groups_threads_create',
+      );
+  late final _wire__crate__ffi__groups__groups_threads_create =
+      _wire__crate__ffi__groups__groups_threads_createPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_threads_delete(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_threads_delete(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_threads_deletePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__groups__groups_threads_delete',
+      );
+  late final _wire__crate__ffi__groups__groups_threads_delete =
+      _wire__crate__ffi__groups__groups_threads_deletePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_threads_list(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_threads_list(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_threads_listPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_threads_list');
+  late final _wire__crate__ffi__groups__groups_threads_list =
+      _wire__crate__ffi__groups__groups_threads_listPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_threads_pin(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_threads_pin(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_threads_pinPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_threads_pin');
+  late final _wire__crate__ffi__groups__groups_threads_pin =
+      _wire__crate__ffi__groups__groups_threads_pinPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_threads_react(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_threads_react(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_threads_reactPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_threads_react');
+  late final _wire__crate__ffi__groups__groups_threads_react =
+      _wire__crate__ffi__groups__groups_threads_reactPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_threads_reactions(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_threads_reactions(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_threads_reactionsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__groups__groups_threads_reactions',
+      );
+  late final _wire__crate__ffi__groups__groups_threads_reactions =
+      _wire__crate__ffi__groups__groups_threads_reactionsPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_threads_replies(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_threads_replies(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_threads_repliesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__groups__groups_threads_replies',
+      );
+  late final _wire__crate__ffi__groups__groups_threads_replies =
+      _wire__crate__ffi__groups__groups_threads_repliesPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_threads_reply(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_threads_reply(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_threads_replyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_threads_reply');
+  late final _wire__crate__ffi__groups__groups_threads_reply =
+      _wire__crate__ffi__groups__groups_threads_replyPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_voice_channels_create(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_voice_channels_create(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_voice_channels_createPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__groups__groups_voice_channels_create',
+      );
+  late final _wire__crate__ffi__groups__groups_voice_channels_create =
+      _wire__crate__ffi__groups__groups_voice_channels_createPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_voice_channels_delete(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_voice_channels_delete(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_voice_channels_deletePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__groups__groups_voice_channels_delete',
+      );
+  late final _wire__crate__ffi__groups__groups_voice_channels_delete =
+      _wire__crate__ffi__groups__groups_voice_channels_deletePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_voice_channels_list(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_voice_channels_list(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_voice_channels_listPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__groups__groups_voice_channels_list',
+      );
+  late final _wire__crate__ffi__groups__groups_voice_channels_list =
+      _wire__crate__ffi__groups__groups_voice_channels_listPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_voice_join(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_voice_join(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_voice_joinPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_voice_join');
+  late final _wire__crate__ffi__groups__groups_voice_join =
+      _wire__crate__ffi__groups__groups_voice_joinPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_voice_leave(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_voice_leave(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_voice_leavePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_voice_leave');
+  late final _wire__crate__ffi__groups__groups_voice_leave =
+      _wire__crate__ffi__groups__groups_voice_leavePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_voice_presence(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_voice_presence(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_voice_presencePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__groups__groups_voice_presence',
+      );
+  late final _wire__crate__ffi__groups__groups_voice_presence =
+      _wire__crate__ffi__groups__groups_voice_presencePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__h264__h264_feed_decode(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__h264__h264_feed_decode(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__h264__h264_feed_decodePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__h264__h264_feed_decode');
+  late final _wire__crate__ffi__h264__h264_feed_decode =
+      _wire__crate__ffi__h264__h264_feed_decodePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__h264__h264_feed_encode(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__h264__h264_feed_encode(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__h264__h264_feed_encodePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__h264__h264_feed_encode');
+  late final _wire__crate__ffi__h264__h264_feed_encode =
+      _wire__crate__ffi__h264__h264_feed_encodePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__h264__h264_init_decode(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__h264__h264_init_decode(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__h264__h264_init_decodePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__h264__h264_init_decode');
+  late final _wire__crate__ffi__h264__h264_init_decode =
+      _wire__crate__ffi__h264__h264_init_decodePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__h264__h264_init_encode(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__h264__h264_init_encode(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__h264__h264_init_encodePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__h264__h264_init_encode');
+  late final _wire__crate__ffi__h264__h264_init_encode =
+      _wire__crate__ffi__h264__h264_init_encodePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__h264__h264_init_record(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__h264__h264_init_record(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__h264__h264_init_recordPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__h264__h264_init_record');
+  late final _wire__crate__ffi__h264__h264_init_record =
+      _wire__crate__ffi__h264__h264_init_recordPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__h264__h264_is_supported(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__h264__h264_is_supported(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__h264__h264_is_supportedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__h264__h264_is_supported');
+  late final _wire__crate__ffi__h264__h264_is_supported =
+      _wire__crate__ffi__h264__h264_is_supportedPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__h264__h264_release(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__h264__h264_release(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__h264__h264_releasePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__h264__h264_release');
+  late final _wire__crate__ffi__h264__h264_release =
+      _wire__crate__ffi__h264__h264_releasePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__h264__h264_stop_record(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__h264__h264_stop_record(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__h264__h264_stop_recordPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__h264__h264_stop_record');
+  late final _wire__crate__ffi__h264__h264_stop_record =
+      _wire__crate__ffi__h264__h264_stop_recordPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -5832,6 +8031,35 @@ class RustLibWire implements BaseWire {
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
+
+  void wire__crate__ffi__minis__minis_publish(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__minis__minis_publish(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__minis__minis_publishPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__minis__minis_publish');
+  late final _wire__crate__ffi__minis__minis_publish =
+      _wire__crate__ffi__minis__minis_publishPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   WireSyncRust2DartSse wire__crate__ffi__minis__minis_wasm_execute_filter(
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -9019,6 +11247,284 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__p2p__p_2_p_swarm_status_dto_defaultPtr
           .asFunction<void Function(int)>();
 
+  WireSyncRust2DartSse
+  wire__crate__ffi__permissions__permissions_camera_mic_granted(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__permissions__permissions_camera_mic_granted(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__permissions__permissions_camera_mic_grantedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__permissions__permissions_camera_mic_granted',
+      );
+  late final _wire__crate__ffi__permissions__permissions_camera_mic_granted =
+      _wire__crate__ffi__permissions__permissions_camera_mic_grantedPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__permissions__permissions_camera_mic_permanently_denied(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__permissions__permissions_camera_mic_permanently_denied(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__permissions__permissions_camera_mic_permanently_deniedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__permissions__permissions_camera_mic_permanently_denied',
+      );
+  late final _wire__crate__ffi__permissions__permissions_camera_mic_permanently_denied =
+      _wire__crate__ffi__permissions__permissions_camera_mic_permanently_deniedPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__permissions__permissions_camera_mic_request(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__permissions__permissions_camera_mic_request(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__permissions__permissions_camera_mic_requestPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__permissions__permissions_camera_mic_request',
+      );
+  late final _wire__crate__ffi__permissions__permissions_camera_mic_request =
+      _wire__crate__ffi__permissions__permissions_camera_mic_requestPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__permissions__permissions_location_enabled(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__permissions__permissions_location_enabled(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__permissions__permissions_location_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__permissions__permissions_location_enabled',
+      );
+  late final _wire__crate__ffi__permissions__permissions_location_enabled =
+      _wire__crate__ffi__permissions__permissions_location_enabledPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__permissions__permissions_location_granted(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__permissions__permissions_location_granted(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__permissions__permissions_location_grantedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__permissions__permissions_location_granted',
+      );
+  late final _wire__crate__ffi__permissions__permissions_location_granted =
+      _wire__crate__ffi__permissions__permissions_location_grantedPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  void wire__crate__ffi__permissions__permissions_location_portal_fix(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__permissions__permissions_location_portal_fix(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__permissions__permissions_location_portal_fixPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__permissions__permissions_location_portal_fix',
+      );
+  late final _wire__crate__ffi__permissions__permissions_location_portal_fix =
+      _wire__crate__ffi__permissions__permissions_location_portal_fixPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__permissions__permissions_location_request(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__permissions__permissions_location_request(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__permissions__permissions_location_requestPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__permissions__permissions_location_request',
+      );
+  late final _wire__crate__ffi__permissions__permissions_location_request =
+      _wire__crate__ffi__permissions__permissions_location_requestPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__permissions__permissions_open_settings(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__permissions__permissions_open_settings(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__permissions__permissions_open_settingsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__permissions__permissions_open_settings',
+      );
+  late final _wire__crate__ffi__permissions__permissions_open_settings =
+      _wire__crate__ffi__permissions__permissions_open_settingsPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__permissions__permissions_platform_current(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__permissions__permissions_platform_current(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__permissions__permissions_platform_currentPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__permissions__permissions_platform_current',
+      );
+  late final _wire__crate__ffi__permissions__permissions_platform_current =
+      _wire__crate__ffi__permissions__permissions_platform_currentPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   WireSyncRust2DartSse wire__crate__ffi__pin__pin_clear(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -9151,6 +11657,35 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__pin__pin_verify');
   late final _wire__crate__ffi__pin__pin_verify =
       _wire__crate__ffi__pin__pin_verifyPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
+  void wire__crate__ffi__power__power_sample_os_state(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__power__power_sample_os_state(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__power__power_sample_os_statePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__power__power_sample_os_state');
+  late final _wire__crate__ffi__power__power_sample_os_state =
+      _wire__crate__ffi__power__power_sample_os_statePtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   void wire__crate__ffi__protocol_handler__protocol_get_metadata(
@@ -12276,11 +14811,86 @@ class RustLibWire implements BaseWire {
           >();
 }
 
+const int AAUDIO_DIRECTION_INPUT = 1;
+
+const int AAUDIO_DIRECTION_OUTPUT = 0;
+
+const int AAUDIO_FORMAT_PCM_I16 = 2;
+
+const int AAUDIO_INPUT_PRESET_VOICE_RECOGNITION = 6;
+
+const int AAUDIO_OK = 0;
+
+const int AAUDIO_PERFORMANCE_MODE_LOW_LATENCY = 2;
+
+final class AAudioStream extends ffi.Opaque {}
+
+final class AAudioStreamBuilder extends ffi.Opaque {}
+
+final class AImage extends ffi.Opaque {}
+
+const int AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG = 2;
+
+const int AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM = 4;
+
+const int AMEDIACODEC_BUFFER_FLAG_KEY_FRAME = 1;
+
+const int AMEDIACODEC_CONFIGURE_FLAG_ENCODE = 1;
+
+const int AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED = -3;
+
+const int AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED = -2;
+
+const int AMEDIACODEC_INFO_TRY_AGAIN_LATER = -1;
+
+final class AMediaCodec extends ffi.Opaque {}
+
+final class AMediaCodecBufferInfo extends ffi.Struct {
+  @ffi.Int32()
+  external int offset;
+
+  @ffi.Int32()
+  external int size;
+
+  @ffi.Int64()
+  external int presentation_time_us;
+
+  @ffi.Uint32()
+  external int flags;
+
+  static ffi.Pointer<AMediaCodecBufferInfo> $allocate(
+    ffi.Allocator $allocator, {
+    required int offset,
+    required int size,
+    required int presentation_time_us,
+    required int flags,
+  }) => $allocator<AMediaCodecBufferInfo>()
+    ..ref.offset = offset
+    ..ref.size = size
+    ..ref.presentation_time_us = presentation_time_us
+    ..ref.flags = flags;
+}
+
+final class AMediaFormat extends ffi.Opaque {}
+
+const int COLOR_FormatYUV420Flexible = 2135033992;
+
 
 
 typedef DartPort = ffi.Int64;
 typedef DartDartPort = int;
 
+
+
+
+
+typedef __ssize_t = ffi.Long;
+typedef Dart__ssize_t = int;
+typedef aaudio_result_t = ffi.Int32;
+typedef Dartaaudio_result_t = int;
+typedef mediastatus_t = ffi.Int32;
+typedef Dartmediastatus_t = int;
+typedef ssize_t = __ssize_t;
 
 final class wire_cst_list_String extends ffi.Struct {
   external ffi.Pointer<ffi.Pointer<wire_cst_list_prim_u_8_strict>> ptr;

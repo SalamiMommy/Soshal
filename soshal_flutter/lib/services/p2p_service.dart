@@ -2,8 +2,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:battery_plus/battery_plus.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:soshal_flutter/ffi/p2p.dart'
@@ -30,6 +28,8 @@ import 'package:soshal_flutter/ffi/p2p.dart'
         p2PSwarmDownload,
         p2PSwarmPoll,
         p2PStopAll;
+import 'package:soshal_flutter/ffi/power.dart'
+    show PowerStateDto, powerSampleOsState;
 
 import 'error_log.dart';
 
@@ -38,8 +38,8 @@ import 'error_log.dart';
 /// Local-first peer stack: mDNS LAN discovery (advertise + browse), the
 /// HMAC-authenticated LAN chunk server, parallel swarm downloads into
 /// mmap'd sparse files, and the thermal/battery-aware seeding scheduler.
-/// All key material stays in the Rust signer; Dart only sees pubkeys and
-/// OS power/connectivity facts.
+/// All key material stays in the Rust signer; OS power/connectivity facts
+/// come from Rust too (JNI on Android, UPower + NetworkManager on Linux).
 class P2pService extends ChangeNotifier with LastErrorMixin {
   final List<P2pPeerDto> _peers = [];
   final Map<String, P2pSwarmStatusDto> _downloads = {};
@@ -58,20 +58,13 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   bool get advertising => _advertising;
   bool get browsing => _browsing;
 
-  /// Battery/connectivity plugin handles (lazy, so construction never fails).
-  final _battery = Battery();
-  final _connectivity = Connectivity();
+  /// Battery/connectivity handles live in Rust (`ffi/power.dart`); the
+  /// periodic poller below pushes samples into the seeding scheduler.
   Timer? _powerTimer;
-  StreamSubscription<List<ConnectivityResult>>? _connSub;
   AppLifecycleListener? _lifecycle;
   bool _appActive = true;
   Duration _powerInterval = const Duration(seconds: 30);
-  ({
-    bool charging,
-    int batteryPercent,
-    bool cellular,
-    bool lowPowerMode,
-  })? _lastPowerSample;
+  PowerStateDto? _lastPowerSample;
 
   P2pService() {
     _lifecycle = AppLifecycleListener(
@@ -80,10 +73,6 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
       onResume: _resumePowerTimer,
     );
     _startPowerTimer();
-    _connSub = _connectivity.onConnectivityChanged.listen(
-      (_) => _pollPower(),
-      onError: (Object _) {},
-    );
     _pollPower();
   }
 
@@ -291,26 +280,13 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   /// seeding scheduler now (same path as the periodic poller).
   Future<void> refreshPowerFromOs() => _pollPower();
 
-  /// Sample battery + connectivity and push into the Rust seeding scheduler.
-  /// Errors are swallowed: power state simply stays at its last good value.
-  /// Idle unchanged state backs off 30s → 60s → 120s; state change, active
-  /// peers, or in-flight downloads reset to 30s.
+  /// Sample OS power/connectivity in Rust and push into the seeding
+  /// scheduler. Errors are swallowed: power state simply stays at its last
+  /// good value. Idle unchanged state backs off 30s → 60s → 120s; state
+  /// change, active peers, or in-flight downloads reset to 30s.
   Future<void> _pollPower() async {
     try {
-      final batteryLevel = await _battery.batteryLevel;
-      final batteryState = await _battery.batteryState;
-      final isSaving = await _battery.isInBatterySaveMode;
-      final connections = await _connectivity.checkConnectivity();
-      final cellular = connections.any(
-        (c) => c == ConnectivityResult.mobile,
-      );
-      final sample = (
-        charging: batteryState == BatteryState.charging ||
-            batteryState == BatteryState.full,
-        batteryPercent: batteryLevel < 0 ? 100 : batteryLevel,
-        cellular: cellular,
-        lowPowerMode: isSaving,
-      );
+      final sample = await powerSampleOsState();
       await updatePower(
         charging: sample.charging,
         batteryPercent: sample.batteryPercent,
@@ -329,7 +305,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
       _lastPowerSample = sample;
       _startPowerTimer();
     } catch (_) {
-      // Plugins can throw on emulators / desktop; keep last known state.
+      // Sampling can fail off-Android / on emulators; keep last state.
     }
   }
 
@@ -534,7 +510,6 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   void dispose() {
     _pollTimer?.cancel();
     _powerTimer?.cancel();
-    _connSub?.cancel();
     _lifecycle?.dispose();
     super.dispose();
   }

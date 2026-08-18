@@ -125,10 +125,15 @@ pub fn groups_leave(group_id: String, user_pubkey: String) -> Result<bool, Strin
 }
 
 /// Sign a kind-1059 group message envelope and persist it to the local
-/// `group_messages` table so offline fetches work. Returns the signed event
-/// JSON (for relay publish in a later pipeline).
+/// `group_messages` table so offline fetches work. [room_id] scopes the
+/// message to a themed room (empty = the default `#general` room). Returns
+/// the signed event JSON (for relay publish in a later pipeline).
 #[frb(sync, serialize)]
-pub fn groups_post_message(group_id: String, content: String) -> Result<String, String> {
+pub fn groups_post_message(
+    group_id: String,
+    room_id: String,
+    content: String,
+) -> Result<String, String> {
     let content = super::db::with_db_result(|db| {
         let key = GroupRepo::new(db).get_shared_key(&group_id)?;
         Ok(match key {
@@ -162,10 +167,10 @@ pub fn groups_post_message(group_id: String, content: String) -> Result<String, 
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         soshal_db_core::block_on(conn.execute(
-            "INSERT INTO group_messages (id, group_id, sender_pubkey, content, created_at, sync_status, is_deleted) \
-             VALUES (?1,?2,?3,?4,?5,0,0) \
+            "INSERT INTO group_messages (id, group_id, room_id, sender_pubkey, content, created_at, sync_status, is_deleted) \
+             VALUES (?1,?2,?3,?4,?5,?6,0,0) \
              ON CONFLICT(id) DO UPDATE SET content=excluded.content",
-            libsql::params![id, group_id, sender, content, created_at],
+            libsql::params![id, group_id, room_id, sender, content, created_at],
         ))
         .map_err(soshal_db_core::error::DbError::from)?;
         Ok(())
@@ -184,9 +189,15 @@ struct GroupMessageRow {
     is_deleted: i64,
 }
 
-/// Fetch group chat messages from DB with pagination.
+/// Fetch group chat messages from DB with pagination, scoped to a room
+/// (empty [room_id] = the default `#general` room).
 #[frb(sync, serialize)]
-pub fn groups_fetch_messages(group_id: String, limit: i32, offset: i32) -> Result<String, String> {
+pub fn groups_fetch_messages(
+    group_id: String,
+    room_id: String,
+    limit: i32,
+    offset: i32,
+) -> Result<String, String> {
     let limit = (limit.clamp(1, 200)) as i64;
     let offset = (offset.max(0)) as i64;
     super::db::with_db_result(|db| {
@@ -196,11 +207,13 @@ pub fn groups_fetch_messages(group_id: String, limit: i32, offset: i32) -> Resul
                 .prepare(
                     "SELECT id, group_id, sender_pubkey, content, created_at, sync_status, is_deleted \
                      FROM group_messages \
-                     WHERE group_id = ?1 AND is_deleted = 0 \
-                     ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
+                     WHERE group_id = ?1 AND room_id = ?2 AND is_deleted = 0 \
+                     ORDER BY created_at DESC LIMIT ?3 OFFSET ?4",
                 )
                 .await?;
-            let mut rows = stmt.query(libsql::params![group_id, limit, offset]).await?;
+            let mut rows = stmt
+                .query(libsql::params![group_id, room_id, limit, offset])
+                .await?;
             let mut out = Vec::with_capacity(32);
             while let Some(row) = rows.next().await? {
                 out.push(GroupMessageRow {
@@ -332,6 +345,343 @@ pub fn groups_members_with_roles(group_id: String) -> Result<String, String> {
                 })
             })
             .collect();
+        serde_json::to_string(&rows)
+            .map_err(|e| soshal_db_core::error::DbError::Oversized(e.to_string()))
+    })
+}
+
+/// Verify `actor` is the group owner; error otherwise (admin-gate helper).
+fn require_owner(group_id: &str, actor: &str) -> Result<(), String> {
+    let owner = super::db::with_db_result(|db| {
+        GroupRepo::new(db)
+            .get_by_id(group_id)?
+            .map(|r| r.pubkey)
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)
+    })?;
+    if owner != actor {
+        return Err("only the group owner can do that".to_string());
+    }
+    Ok(())
+}
+
+/// List themed rooms of a group (JSON rows).
+#[frb(sync, serialize)]
+pub fn groups_rooms_list(group_id: String) -> Result<String, String> {
+    super::db::with_db_result(|db| {
+        let rows = soshal_db_core::repos::room::GroupRoomRepo::new(db).list(&group_id)?;
+        serde_json::to_string(&rows)
+            .map_err(|e| soshal_db_core::error::DbError::Oversized(e.to_string()))
+    })
+}
+
+/// Create a themed room; returns its id.
+#[frb(sync, serialize)]
+pub fn groups_rooms_create(
+    group_id: String,
+    name: String,
+    topic: String,
+    emoji: String,
+    color: String,
+    creator: String,
+) -> Result<String, String> {
+    require_owner(&group_id, &creator)?;
+    let now = soshal_common_core::format::now_secs();
+    let id = format!("room_{now}_{:x}", rand::random::<u32>());
+    let row = soshal_db_core::repos::room::GroupRoomRow {
+        id: id.clone(),
+        group_id,
+        name,
+        topic,
+        emoji,
+        color,
+        position: 0,
+        created_by: creator,
+        created_at: now,
+    };
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::room::GroupRoomRepo::new(db).upsert(&row)?;
+        Ok(())
+    })?;
+    Ok(id).into()
+}
+
+/// Update a room's name/topic/emoji/color (owner only).
+#[frb(sync, serialize)]
+pub fn groups_rooms_update(
+    room_id: String,
+    group_id: String,
+    name: String,
+    topic: String,
+    emoji: String,
+    color: String,
+    actor: String,
+) -> Result<bool, String> {
+    require_owner(&group_id, &actor)?;
+    super::db::with_db_result(|db| {
+        let repo = soshal_db_core::repos::room::GroupRoomRepo::new(db);
+        let existing = repo
+            .get(&room_id)?
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
+        let row = soshal_db_core::repos::room::GroupRoomRow {
+            id: room_id,
+            group_id,
+            name,
+            topic,
+            emoji,
+            color,
+            position: existing.position,
+            created_by: existing.created_by,
+            created_at: existing.created_at,
+        };
+        repo.upsert(&row)?;
+        Ok(true)
+    })
+}
+
+/// Delete a room (owner only); its messages stay (room_id blanks out).
+#[frb(sync, serialize)]
+pub fn groups_rooms_delete(room_id: String, actor: String) -> Result<bool, String> {
+    let group_id = super::db::with_db_result(|db| {
+        let repo = soshal_db_core::repos::room::GroupRoomRepo::new(db);
+        repo.get(&room_id)?
+            .map(|r| r.group_id)
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)
+    })?;
+    require_owner(&group_id, &actor)?;
+    super::db::with_db_result(|db| {
+        let repo = soshal_db_core::repos::room::GroupRoomRepo::new(db);
+        repo.delete(&room_id)?;
+        let conn = db.conn()?;
+        soshal_db_core::block_on(conn.execute(
+            "UPDATE group_messages SET room_id = '' WHERE room_id = ?1",
+            libsql::params![room_id],
+        ))
+        .map_err(soshal_db_core::error::DbError::from)?;
+        Ok(true)
+    })
+}
+
+/// List group threads, pinned-first, sorted by recency or hot engagement
+/// (JSON rows with reply + reaction counts).
+#[frb(sync, serialize)]
+pub fn groups_threads_list(group_id: String, sort: String) -> Result<String, String> {
+    super::db::with_db_result(|db| {
+        let sort = soshal_db_core::repos::thread::ThreadSort::parse(&sort);
+        let rows = soshal_db_core::repos::thread::GroupThreadRepo::new(db).list(&group_id, sort)?;
+        serde_json::to_string(&rows)
+            .map_err(|e| soshal_db_core::error::DbError::Oversized(e.to_string()))
+    })
+}
+
+/// Create a thread; returns its id.
+#[frb(sync, serialize)]
+pub fn groups_threads_create(
+    group_id: String,
+    title: String,
+    body: String,
+    author: String,
+) -> Result<String, String> {
+    let now = soshal_common_core::format::now_secs();
+    let id = format!("thr_{now}_{:x}", rand::random::<u32>());
+    let row = soshal_db_core::repos::thread::GroupThreadRow {
+        id: id.clone(),
+        group_id,
+        title,
+        body,
+        author,
+        created_at: now,
+        is_pinned: false,
+        reply_count: 0,
+        reaction_count: 0,
+    };
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::thread::GroupThreadRepo::new(db).upsert(&row)?;
+        Ok(())
+    })?;
+    Ok(id).into()
+}
+
+/// Delete a thread and its replies (owner only).
+#[frb(sync, serialize)]
+pub fn groups_threads_delete(thread_id: String, actor: String) -> Result<bool, String> {
+    let group_id = super::db::with_db_result(|db| {
+        let repo = soshal_db_core::repos::thread::GroupThreadRepo::new(db);
+        repo.get(&thread_id)?
+            .map(|r| r.group_id)
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)
+    })?;
+    require_owner(&group_id, &actor)?;
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::thread::GroupThreadRepo::new(db).delete(&thread_id)?;
+        Ok(true)
+    })
+}
+
+/// Pin or unpin a thread (owner only).
+#[frb(sync, serialize)]
+pub fn groups_threads_pin(thread_id: String, pinned: bool, actor: String) -> Result<bool, String> {
+    let group_id = super::db::with_db_result(|db| {
+        let repo = soshal_db_core::repos::thread::GroupThreadRepo::new(db);
+        repo.get(&thread_id)?
+            .map(|r| r.group_id)
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)
+    })?;
+    require_owner(&group_id, &actor)?;
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::thread::GroupThreadRepo::new(db).set_pinned(&thread_id, pinned)?;
+        Ok(true)
+    })
+}
+
+/// Reply to a thread (flat or nested via [parent_id]); returns reply id.
+#[frb(sync, serialize)]
+pub fn groups_threads_reply(
+    thread_id: String,
+    parent_id: String,
+    content: String,
+    author: String,
+) -> Result<String, String> {
+    let now = soshal_common_core::format::now_secs();
+    let id = format!("rpl_{now}_{:x}", rand::random::<u32>());
+    let row = soshal_db_core::repos::thread::GroupThreadReplyRow {
+        id: id.clone(),
+        thread_id,
+        parent_id,
+        author,
+        content,
+        created_at: now,
+    };
+    super::db::with_db_result(|db| {
+        let repo = soshal_db_core::repos::thread::GroupThreadRepo::new(db);
+        repo.add_reply(&row)?;
+        Ok(())
+    })?;
+    Ok(id).into()
+}
+
+/// Replies of a thread, oldest-first (JSON rows).
+#[frb(sync, serialize)]
+pub fn groups_threads_replies(thread_id: String) -> Result<String, String> {
+    super::db::with_db_result(|db| {
+        let rows = soshal_db_core::repos::thread::GroupThreadRepo::new(db).replies(&thread_id)?;
+        serde_json::to_string(&rows)
+            .map_err(|e| soshal_db_core::error::DbError::Oversized(e.to_string()))
+    })
+}
+
+/// Toggle an emoji reaction on a thread (`reply_id` empty) or a reply;
+/// returns true when added, false when removed.
+#[frb(sync, serialize)]
+pub fn groups_threads_react(
+    thread_id: String,
+    reply_id: String,
+    pubkey: String,
+    emoji: String,
+) -> Result<bool, String> {
+    if emoji.is_empty() || emoji.chars().count() > 16 {
+        return Err("invalid reaction emoji".into());
+    }
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::thread::GroupThreadRepo::new(db)
+            .toggle_reaction(&thread_id, &reply_id, &pubkey, &emoji)
+    })
+}
+
+/// Emoji reaction counts for a thread, per target (thread + each reply),
+/// each with whether `viewer_pubkey` reacted (JSON rows).
+#[frb(sync, serialize)]
+pub fn groups_threads_reactions(
+    thread_id: String,
+    viewer_pubkey: String,
+) -> Result<String, String> {
+    super::db::with_db_result(|db| {
+        let rows = soshal_db_core::repos::thread::GroupThreadRepo::new(db)
+            .reaction_summary(&thread_id, &viewer_pubkey)?;
+        serde_json::to_string(&rows)
+            .map_err(|e| soshal_db_core::error::DbError::Oversized(e.to_string()))
+    })
+}
+
+/// List voice channels of a group (JSON rows).
+#[frb(sync, serialize)]
+pub fn groups_voice_channels_list(group_id: String) -> Result<String, String> {
+    super::db::with_db_result(|db| {
+        let rows =
+            soshal_db_core::repos::voice::GroupVoiceRepo::new(db).list_channels(&group_id)?;
+        serde_json::to_string(&rows)
+            .map_err(|e| soshal_db_core::error::DbError::Oversized(e.to_string()))
+    })
+}
+
+/// Create a voice channel (owner only); returns its id.
+#[frb(sync, serialize)]
+pub fn groups_voice_channels_create(
+    group_id: String,
+    name: String,
+    creator: String,
+) -> Result<String, String> {
+    require_owner(&group_id, &creator)?;
+    let now = soshal_common_core::format::now_secs();
+    let id = format!("vc_{now}_{:x}", rand::random::<u32>());
+    let row = soshal_db_core::repos::voice::GroupVoiceChannelRow {
+        id: id.clone(),
+        group_id,
+        name,
+        position: 0,
+        created_by: creator,
+        created_at: now,
+    };
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::voice::GroupVoiceRepo::new(db).upsert_channel(&row)?;
+        Ok(())
+    })?;
+    Ok(id).into()
+}
+
+/// Delete a voice channel and its presence rows (owner only).
+#[frb(sync, serialize)]
+pub fn groups_voice_channels_delete(channel_id: String, actor: String) -> Result<bool, String> {
+    let group_id = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let group_id: Option<String> = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT group_id FROM group_voice_channels WHERE id = ?1",
+            libsql::params![channel_id.clone()],
+            |r| r.get(0),
+        )?;
+        group_id.ok_or_else(|| soshal_db_core::error::DbError::NotFound)
+    })?;
+    require_owner(&group_id, &actor)?;
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::voice::GroupVoiceRepo::new(db).delete_channel(&channel_id)?;
+        Ok(true)
+    })
+}
+
+/// Mark local presence in a voice channel (audio transport is a roadmap
+/// surface; this only records intent).
+#[frb(sync, serialize)]
+pub fn groups_voice_join(channel_id: String, pubkey: String) -> Result<bool, String> {
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::voice::GroupVoiceRepo::new(db).join(&channel_id, &pubkey)?;
+        Ok(true)
+    })
+}
+
+/// Clear local presence from a voice channel.
+#[frb(sync, serialize)]
+pub fn groups_voice_leave(channel_id: String, pubkey: String) -> Result<bool, String> {
+    super::db::with_db_result(|db| {
+        soshal_db_core::repos::voice::GroupVoiceRepo::new(db).leave(&channel_id, &pubkey)?;
+        Ok(true)
+    })
+}
+
+/// Members currently present in a voice channel (JSON rows).
+#[frb(sync, serialize)]
+pub fn groups_voice_presence(channel_id: String) -> Result<String, String> {
+    super::db::with_db_result(|db| {
+        let rows = soshal_db_core::repos::voice::GroupVoiceRepo::new(db).presence(&channel_id)?;
         serde_json::to_string(&rows)
             .map_err(|e| soshal_db_core::error::DbError::Oversized(e.to_string()))
     })
@@ -604,7 +954,7 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("no_msgs");
         assert_eq!(
-            groups_fetch_messages("g5".to_string(), 20, 0).unwrap(),
+            groups_fetch_messages("g5".to_string(), String::new(), 20, 0).unwrap(),
             "[]"
         );
     }
@@ -623,30 +973,316 @@ mod tests {
         create_group("g5", &owner);
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
 
-        let signed = groups_post_message("g5".to_string(), "hello group".to_string()).unwrap();
+        let signed =
+            groups_post_message("g5".to_string(), String::new(), "hello group".to_string())
+                .unwrap();
         let ev: serde_json::Value = serde_json::from_str(&signed).unwrap();
         assert_eq!(ev["kind"], 1059);
         assert_eq!(ev["pubkey"], keys.public_key().to_hex());
         assert!(ev["sig"].as_str().is_some());
 
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        groups_post_message("g5".to_string(), "second message".to_string()).unwrap();
+        groups_post_message(
+            "g5".to_string(),
+            String::new(),
+            "second message".to_string(),
+        )
+        .unwrap();
 
-        let msgs = groups_fetch_messages("g5".to_string(), 10, 0).unwrap();
+        let msgs = groups_fetch_messages("g5".to_string(), String::new(), 10, 0).unwrap();
         assert!(msgs.contains("second message"));
         assert!(msgs.contains("hello group"));
 
-        let newest = groups_fetch_messages("g5".to_string(), 1, 0).unwrap();
+        let newest = groups_fetch_messages("g5".to_string(), String::new(), 1, 0).unwrap();
         assert!(newest.contains("second message"));
         assert!(!newest.contains("hello group"));
 
-        let page2 = groups_fetch_messages("g5".to_string(), 1, 1).unwrap();
+        let page2 = groups_fetch_messages("g5".to_string(), String::new(), 1, 1).unwrap();
         assert!(page2.contains("hello group"));
 
-        let clamped = groups_fetch_messages("g5".to_string(), 0, -5).unwrap();
+        let clamped = groups_fetch_messages("g5".to_string(), String::new(), 0, -5).unwrap();
         assert!(clamped.contains("second message"));
 
         super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_rooms_crud_and_scoped_messages() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("rooms");
+        let owner = "a".repeat(64);
+        create_group("g6", &owner);
+        super::super::signer::signer_unlock(
+            "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(groups_rooms_list("g6".to_string()).unwrap(), "[]");
+        let room_id = groups_rooms_create(
+            "g6".to_string(),
+            "gaming".to_string(),
+            "FPS talk".to_string(),
+            "🎮".to_string(),
+            "#ff0000".to_string(),
+            owner.clone(),
+        )
+        .unwrap();
+        assert!(room_id.starts_with("room_"));
+        let list = groups_rooms_list("g6".to_string()).unwrap();
+        assert!(list.contains("gaming"));
+        assert!(list.contains("🎮"));
+
+        assert!(groups_rooms_update(
+            room_id.clone(),
+            "g6".to_string(),
+            "games".to_string(),
+            "new topic".to_string(),
+            "🕹️".to_string(),
+            "#00ff00".to_string(),
+            owner.clone(),
+        )
+        .unwrap());
+        let list = groups_rooms_list("g6".to_string()).unwrap();
+        assert!(list.contains("games"));
+        assert!(!list.contains("gaming"));
+
+        groups_post_message("g6".to_string(), room_id.clone(), "in room".to_string()).unwrap();
+        groups_post_message("g6".to_string(), String::new(), "general chat".to_string()).unwrap();
+        let room_msgs = groups_fetch_messages("g6".to_string(), room_id.clone(), 10, 0).unwrap();
+        assert!(room_msgs.contains("in room"));
+        assert!(!room_msgs.contains("general chat"));
+        let general_msgs = groups_fetch_messages("g6".to_string(), String::new(), 10, 0).unwrap();
+        assert!(general_msgs.contains("general chat"));
+        assert!(!general_msgs.contains("in room"));
+
+        let denied = groups_rooms_delete(room_id.clone(), "b".repeat(64));
+        assert!(denied.unwrap_err().contains("only the group owner"));
+        assert!(groups_rooms_delete(room_id.clone(), owner.clone()).unwrap());
+        assert_eq!(groups_rooms_list("g6".to_string()).unwrap(), "[]");
+        let orphan = groups_fetch_messages("g6".to_string(), room_id.clone(), 10, 0).unwrap();
+        assert_eq!(orphan, "[]");
+
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_threads_crud_replies_pin() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("threads");
+        let owner = "a".repeat(64);
+        let member = "b".repeat(64);
+        create_group("g7", &owner);
+        insert_user(&member);
+
+        assert_eq!(
+            groups_threads_list("g7".to_string(), "newest".to_string()).unwrap(),
+            "[]"
+        );
+        let thread_id = groups_threads_create(
+            "g7".to_string(),
+            "First thread".to_string(),
+            "body text".to_string(),
+            owner.clone(),
+        )
+        .unwrap();
+        assert!(thread_id.starts_with("thr_"));
+
+        let reply_id = groups_threads_reply(
+            thread_id.clone(),
+            String::new(),
+            "a reply".to_string(),
+            member.clone(),
+        )
+        .unwrap();
+        let nested = groups_threads_reply(
+            thread_id.clone(),
+            reply_id.clone(),
+            "nested reply".to_string(),
+            member.clone(),
+        )
+        .unwrap();
+        assert!(nested.starts_with("rpl_"));
+
+        let replies = groups_threads_replies(thread_id.clone()).unwrap();
+        assert!(replies.contains("a reply"));
+        assert!(replies.contains("nested reply"));
+
+        let list = groups_threads_list("g7".to_string(), "newest".to_string()).unwrap();
+        assert!(list.contains("First thread"));
+        assert!(list.contains("\"reply_count\":2"));
+        assert!(list.contains("\"reaction_count\":0"));
+
+        let denied = groups_threads_pin(thread_id.clone(), true, member.clone());
+        assert!(denied.unwrap_err().contains("only the group owner"));
+        assert!(groups_threads_pin(thread_id.clone(), true, owner.clone()).unwrap());
+        let pinned = groups_threads_list("g7".to_string(), "newest".to_string()).unwrap();
+        assert!(pinned.contains("\"is_pinned\":true"));
+
+        assert!(groups_threads_delete(thread_id.clone(), owner.clone()).unwrap());
+        assert_eq!(groups_threads_replies(thread_id.clone()).unwrap(), "[]");
+        assert_eq!(
+            groups_threads_list("g7".to_string(), "newest".to_string()).unwrap(),
+            "[]"
+        );
+    }
+
+    #[test]
+    fn test_thread_reactions_and_popular_sort() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("thread_reacts");
+        let owner = "a".repeat(64);
+        let member = "b".repeat(64);
+        let other = "c".repeat(64);
+        create_group("g9", &owner);
+        insert_user(&member);
+        insert_user(&other);
+
+        let old = groups_threads_create(
+            "g9".to_string(),
+            "Old busy thread".to_string(),
+            "".to_string(),
+            owner.clone(),
+        )
+        .unwrap();
+        // Distinct timestamps so the newest sort has a deterministic order.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let fresh = groups_threads_create(
+            "g9".to_string(),
+            "Fresh quiet thread".to_string(),
+            "".to_string(),
+            owner.clone(),
+        )
+        .unwrap();
+
+        assert!(
+            groups_threads_react(old.clone(), String::new(), member.clone(), "👍".to_string(),)
+                .unwrap()
+        );
+        assert!(
+            groups_threads_react(old.clone(), String::new(), other.clone(), "👍".to_string(),)
+                .unwrap()
+        );
+        assert!(
+            groups_threads_react(old.clone(), String::new(), member.clone(), "❤️".to_string(),)
+                .unwrap()
+        );
+
+        let summary = groups_threads_reactions(old.clone(), member.clone()).unwrap();
+        assert!(summary.contains("\"emoji\":\"👍\""));
+        assert!(summary.contains("\"count\":2"));
+        assert!(summary.contains("\"reacted\":true"));
+
+        // Toggle off removes.
+        assert!(!groups_threads_react(
+            old.clone(),
+            String::new(),
+            member.clone(),
+            "👍".to_string(),
+        )
+        .unwrap());
+        let summary = groups_threads_reactions(old.clone(), member.clone()).unwrap();
+        assert!(summary.contains("\"count\":1"));
+        assert!(summary.contains("\"reacted\":false"));
+
+        // Reply-level reactions carry reply_id.
+        let rpl = groups_threads_reply(
+            old.clone(),
+            String::new(),
+            "reaction target".to_string(),
+            member.clone(),
+        )
+        .unwrap();
+        assert!(
+            groups_threads_react(old.clone(), rpl.clone(), other.clone(), "🔥".to_string(),)
+                .unwrap()
+        );
+        let summary = groups_threads_reactions(old.clone(), member.clone()).unwrap();
+        assert!(summary.contains(&format!("\"reply_id\":\"{}\"", rpl)));
+        assert!(summary.contains("\"emoji\":\"🔥\""));
+
+        // Empty/oversized emoji rejected.
+        assert!(
+            groups_threads_react(old.clone(), String::new(), member.clone(), String::new())
+                .is_err()
+        );
+        assert!(
+            groups_threads_react(old.clone(), String::new(), member.clone(), "x".repeat(20))
+                .is_err()
+        );
+
+        // Popular sort ranks the engaged old thread above the fresh quiet one
+        // (pinned state equal, so pure hot score decides).
+        let popular = groups_threads_list("g9".to_string(), "popular".to_string()).unwrap();
+        assert!(
+            popular.find("Old busy thread").unwrap() < popular.find("Fresh quiet thread").unwrap()
+        );
+        let newest = groups_threads_list("g9".to_string(), "newest".to_string()).unwrap();
+        assert!(
+            newest.find("Fresh quiet thread").unwrap() < newest.find("Old busy thread").unwrap()
+        );
+        // Unknown sort falls back to newest.
+        assert_eq!(
+            groups_threads_list("g9".to_string(), "bogus".to_string()).unwrap(),
+            newest
+        );
+    }
+
+    #[test]
+    fn test_voice_channels_and_presence() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("voice");
+        let owner = "a".repeat(64);
+        let member = "b".repeat(64);
+        create_group("g8", &owner);
+        insert_user(&member);
+
+        assert_eq!(groups_voice_channels_list("g8".to_string()).unwrap(), "[]");
+        let denied =
+            groups_voice_channels_create("g8".to_string(), "Lounge".to_string(), member.clone());
+        assert!(denied.unwrap_err().contains("only the group owner"));
+        let ch =
+            groups_voice_channels_create("g8".to_string(), "Lounge".to_string(), owner.clone())
+                .unwrap();
+        assert!(ch.starts_with("vc_"));
+
+        assert!(groups_voice_join(ch.clone(), member.clone()).unwrap());
+        assert!(groups_voice_join(ch.clone(), owner.clone()).unwrap());
+        let presence = groups_voice_presence(ch.clone()).unwrap();
+        assert!(presence.contains(&format!("\"pubkey\":\"{}\"", member)));
+        assert!(presence.contains(&format!("\"pubkey\":\"{}\"", owner)));
+
+        assert!(groups_voice_leave(ch.clone(), member.clone()).unwrap());
+        let presence = groups_voice_presence(ch.clone()).unwrap();
+        assert!(!presence.contains(&format!("\"pubkey\":\"{}\"", member)));
+
+        assert!(groups_voice_channels_delete(ch.clone(), member.clone()).is_err());
+        assert!(groups_voice_channels_delete(ch.clone(), owner.clone()).unwrap());
+        assert_eq!(groups_voice_channels_list("g8".to_string()).unwrap(), "[]");
+        assert_eq!(groups_voice_presence(ch.clone()).unwrap(), "[]");
+    }
+
+    #[test]
+    fn test_admin_ops_on_missing_rows_error() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("missing_rows");
+        let owner = "a".repeat(64);
+        assert!(groups_rooms_delete("nope".to_string(), owner.clone()).is_err());
+        assert!(groups_threads_delete("nope".to_string(), owner.clone()).is_err());
+        assert!(groups_threads_pin("nope".to_string(), true, owner.clone()).is_err());
+        assert!(groups_voice_channels_delete("nope".to_string(), owner.clone()).is_err());
     }
 
     #[test]
@@ -659,6 +1295,6 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("msg_locked");
         super::super::signer::signer_lock().unwrap();
-        assert!(groups_post_message("g5".to_string(), "hi".to_string()).is_err());
+        assert!(groups_post_message("g5".to_string(), String::new(), "hi".to_string()).is_err());
     }
 }

@@ -15,15 +15,43 @@ void main() {
   });
 
   group('MinisService', () {
-    test('fetchMinis returns stub registry list verbatim', () {
+    test('fetchMinis parses registry JSON into MiniItems', () {
       final minis = MinisService();
-      api.stubListString(
-          'crateFfiMinisMinisFetch', const ['/minis/feed-ranker.wasm']);
+      api.stubString(
+        'crateFfiMinisMinisFetch',
+        '[{"id":"m-1","pubkey":"pk-1","videoUrl":"blob://'
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
+        '"blobHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
+        '"mediaSize":2048,"textOverlay":"first","thumbnail":"","audience":"public",'
+        '"createdAt":1700000001}]',
+      );
 
       final result = minis.fetchMinis();
-      expect(result, ['/minis/feed-ranker.wasm']);
+      expect(result, hasLength(1));
+      final item = result.single;
+      expect(item.id, 'm-1');
+      expect(item.pubkey, 'pk-1');
+      expect(item.blobHash,
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      expect(item.mediaSize, 2048);
+      expect(item.textOverlay, 'first');
+      expect(item.videoUrl, startsWith('blob://'));
       expect(minis.lastError, isNull);
       expect(api.callCount('crateFfiMinisMinisFetch'), 1);
+    });
+
+    test('publishMini forwards mediaSource and returns id', () async {
+      final minis = MinisService();
+      api.stub('crateFfiMinisMinisPublish', (_) async => 'ev-mini-1');
+
+      final id = await minis.publishMini(
+        mediaSource: '/tmp/clip.mp4',
+        textOverlay: 'hello',
+      );
+      expect(id, 'ev-mini-1');
+      final inv = api.callsOf('crateFfiMinisMinisPublish').single;
+      expect(api.namedArg(inv, 'mediaSource'), '/tmp/clip.mp4');
+      expect(api.namedArg(inv, 'textOverlay'), 'hello');
     });
 
     test('runFilter passes pluginId/text/wasmBytesHex, returns result', () {

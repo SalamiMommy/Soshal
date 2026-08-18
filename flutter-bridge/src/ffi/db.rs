@@ -35,7 +35,12 @@ const COUNTABLE_TABLES: &[&str] = &[
     "group_members",
     "group_messages",
     "group_roles",
+    "group_rooms",
     "group_shared_keys",
+    "group_thread_replies",
+    "group_threads",
+    "group_voice_channels",
+    "group_voice_presence",
     "groups",
     "guestbook_entries",
     "hashtags",
@@ -136,6 +141,14 @@ pub fn db_schema_version() -> Result<i64, String> {
     })
 }
 
+/// The schema version this build's migration runner produces
+/// (db-core `SCHEMA_VERSION`). Clients use it to detect stale binaries
+/// without hardcoding a copy.
+#[frb(sync, serialize)]
+pub fn db_expected_schema_version() -> i64 {
+    soshal_db_core::schema::SCHEMA_VERSION
+}
+
 /// Force re-run all migrations from scratch. This deletes the _migrations table
 /// and re-runs the full migration sequence. Use with caution - it may fail if
 /// schema changes are not backwards compatible.
@@ -143,6 +156,24 @@ pub fn db_schema_version() -> Result<i64, String> {
 pub fn db_force_migrate() -> Result<String, String> {
     with_db(|db| {
         let conn = db.conn()?;
+
+        let current: i64 = block_on(async {
+            let mut rows = conn
+                .query("SELECT COALESCE(MAX(version), 0) FROM _migrations", ())
+                .await?;
+            if let Some(row) = rows.next().await? {
+                Ok::<i64, libsql::Error>(row.get::<i64>(0)?)
+            } else {
+                Ok(0)
+            }
+        })?;
+        if current >= soshal_db_core::schema::SCHEMA_VERSION {
+            return Err(DbError::Migration(format!(
+                "refusing to wipe: schema already at version {} (current), expected {}",
+                current,
+                soshal_db_core::schema::SCHEMA_VERSION
+            )));
+        }
 
         let tables: Vec<String> = block_on(async {
             let mut rows = conn.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", ()).await?;

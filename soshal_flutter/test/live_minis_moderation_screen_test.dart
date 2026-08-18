@@ -110,7 +110,7 @@ void main() {
   });
 
   testWidgets('minis screen empty registry', (tester) async {
-    api.stubListString('crateFfiMinisMinisFetch', []);
+    api.stubString('crateFfiMinisMinisFetch', '[]');
     await pump(tester, const MinisScreen());
 
     expect(find.text('Minis'), findsWidgets);
@@ -121,7 +121,7 @@ void main() {
   });
 
   testWidgets('minis user screen empty registry', (tester) async {
-    api.stubListString('crateFfiMinisMinisFetch', []);
+    api.stubString('crateFfiMinisMinisFetch', '[]');
     await pump(tester, const MinisUserScreen(pubkey: 'pk-abc'));
 
     expect(find.text('Minis'), findsWidgets);

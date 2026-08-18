@@ -21,5 +21,12 @@ if cargo clippy --workspace --quiet 2>&1 | grep -iE "error|deny"; then
 fi
 echo "✅ Clippy OK"
 
+# 3. lib/ platform access guard (MethodChannel / Platform facts / banned plugins)
+if ! bash scripts/guard-lib-platform.sh; then
+    echo "❌ lib/ platform access guard failed"
+    exit 1
+fi
+echo "✅ lib/ platform guard OK"
+
 echo ""
 echo "✅ Pre-commit checks passed!"

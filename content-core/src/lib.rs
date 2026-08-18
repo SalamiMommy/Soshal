@@ -1,6 +1,7 @@
 pub mod ast_parser;
 pub mod chunk;
 pub mod compress;
+pub mod custom_profile;
 pub mod entities;
 pub mod extension;
 pub mod forcelayout;

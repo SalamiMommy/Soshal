@@ -60,6 +60,14 @@ void main() {
         minAge: 25,
         maxAge: 35,
         radiusKm: 10,
+        heightMinCm: 160,
+        heightMaxCm: 185,
+        bodyType: 'athletic',
+        smoking: 'never',
+        drinking: 'socially',
+        relationshipIntent: 'serious',
+        politics: 'liberal',
+        education: "bachelor's",
         interests: const ['music', 'hiking'],
       );
       expect(cards.single.name, 'Cara');
@@ -70,6 +78,14 @@ void main() {
       expect(api.namedArg(inv, 'minAge'), 25);
       expect(api.namedArg(inv, 'maxAge'), 35);
       expect(api.namedArg(inv, 'locationRadiusKm'), 10);
+      expect(api.namedArg(inv, 'heightMinCm'), 160);
+      expect(api.namedArg(inv, 'heightMaxCm'), 185);
+      expect(api.namedArg(inv, 'bodyType'), 'athletic');
+      expect(api.namedArg(inv, 'smoking'), 'never');
+      expect(api.namedArg(inv, 'drinking'), 'socially');
+      expect(api.namedArg(inv, 'relationshipIntent'), 'serious');
+      expect(api.namedArg(inv, 'politics'), 'liberal');
+      expect(api.namedArg(inv, 'education'), "bachelor's");
       expect(api.namedArg(inv, 'interestsJson'),
           jsonEncode(['music', 'hiking']));
     });
@@ -142,7 +158,19 @@ void main() {
       );
 
       final id = await dating.createProfile(
-          'me', 'Me', 30, 'Berlin', 'bio', const ['img'], const ['art']);
+        'me',
+        'Me',
+        30,
+        '52.52,13.40',
+        gender: 'female',
+        seeking: 'male',
+        heightCm: 170,
+        smoking: 'never',
+        drinking: 'socially',
+        bio: 'bio',
+        images: const ['img'],
+        interests: const ['art'],
+      );
       expect(id, 'ev-1');
       expect(dating.ownProfile?.name, 'Me');
 
@@ -150,6 +178,13 @@ void main() {
           api.callsOf('crateFfiDatingDatingCreateProfile').single;
       expect(api.namedArg(inv, 'name'), 'Me');
       expect(api.namedArg(inv, 'age'), 30);
+      expect(api.namedArg(inv, 'location'), '52.52,13.40');
+      expect(api.namedArg(inv, 'gender'), 'female');
+      expect(api.namedArg(inv, 'seeking'), 'male');
+      expect(api.namedArg(inv, 'heightCm'), 170);
+      expect(api.namedArg(inv, 'smoking'), 'never');
+      expect(api.namedArg(inv, 'drinking'), 'socially');
+      expect(api.namedArg(inv, 'bio'), 'bio');
       expect(api.namedArg(inv, 'imagesJson'), jsonEncode(['img']));
       expect(api.namedArg(inv, 'interestsJson'), jsonEncode(['art']));
       expect(api.callCount('crateFfiDatingDatingGetOwnProfile'), 1);

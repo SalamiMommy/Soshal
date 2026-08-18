@@ -87,6 +87,8 @@ jobs:
         run: cd soshal_flutter && flutter pub get && cd ..
       - name: Lint Flutter code
         run: cd soshal_flutter && flutter analyze && cd ..
+      - name: Guard lib/ platform access
+        run: bash scripts/guard-lib-platform.sh
       - name: Check Flutter formatting
         run: cd soshal_flutter && dart format --set-exit-if-changed lib/ && cd ..
       - name: Run Flutter tests

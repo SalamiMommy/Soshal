@@ -527,9 +527,10 @@ class _WidgetRenderer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final typeInfo = nodeTypes.firstWhere(
+    final allTypes = context.read<ProfileService>().nodeTypes;
+    final typeInfo = allTypes.firstWhere(
       (t) => t.type == node.type,
-      orElse: () => nodeTypes[0],
+      orElse: () => allTypes[0],
     );
 
     return Column(

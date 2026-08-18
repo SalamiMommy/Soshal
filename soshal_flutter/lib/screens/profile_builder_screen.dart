@@ -104,19 +104,19 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
         return;
       }
 
-      // Save to database
+      // Save to database (Rust validates the payload first)
       final profile = CustomProfile(themeId: 'default', nodes: _nodes);
+      final profileJson = jsonEncode(profile.toJson());
+      final canonical =
+          context.read<ProfileService>().validateProfile(profileJson);
       context.read<ProfileService>().saveCustomProfile(
             pubkey: pubkey,
-            profileJson: jsonEncode(profile.toJson()),
+            profileJson: canonical,
           );
 
       // Publish to relays (Nostr event kind 30085)
       try {
-        await messagingService.publishCustomProfile(
-          pubkey,
-          jsonEncode(profile.toJson()),
-        );
+        await messagingService.publishCustomProfile(pubkey, canonical);
       } catch (e) {
         debugPrint('Failed to publish to relays: $e');
         if (mounted) {
@@ -158,17 +158,26 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
               child: Text('Add Widget',
                   style: Theme.of(sheetContext).textTheme.titleLarge),
             ),
-            for (final typeInfo in nodeTypes)
+            for (final typeInfo in context.read<ProfileService>().nodeTypes)
               ListTile(
                 leading: Text(typeInfo.icon),
                 title: Text(typeInfo.label),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   setState(() {
-                    _nodes = [
-                      ..._nodes,
-                      makeDefaultNode(typeInfo.type, _nodes.length)
-                    ];
+                    try {
+                      final nodeJson = context
+                          .read<ProfileService>()
+                          .defaultNode(
+                              type: typeInfo.type, index: _nodes.length);
+                      _nodes = [
+                        ..._nodes,
+                        CustomProfileNode.fromJson(
+                            jsonDecode(nodeJson) as Map<String, dynamic>),
+                      ];
+                    } catch (e) {
+                      debugPrint('Failed to create node: $e');
+                    }
                   });
                 },
               ),
@@ -268,9 +277,11 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
                         },
                         itemBuilder: (context, index) {
                           final node = _nodes[index];
-                          final typeInfo = nodeTypes.firstWhere(
+                          final allTypes =
+                              context.read<ProfileService>().nodeTypes;
+                          final typeInfo = allTypes.firstWhere(
                             (t) => t.type == node.type,
-                            orElse: () => nodeTypes[0],
+                            orElse: () => allTypes[0],
                           );
                           return _WidgetListItem(
                             key: ValueKey(node.id),

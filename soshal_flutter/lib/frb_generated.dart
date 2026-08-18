@@ -5,11 +5,17 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'ffi/audio.dart';
 import 'ffi/auth.dart';
+import 'ffi/content.dart';
+import 'ffi/daemon.dart';
 import 'ffi/db.dart';
+import 'ffi/h264.dart';
 import 'ffi/media.dart';
 import 'ffi/network.dart';
 import 'ffi/p2p.dart';
+import 'ffi/permissions.dart';
+import 'ffi/power.dart';
 import 'ffi/raster.dart';
 import 'ffi/session.dart';
 import 'frb_generated.dart';
@@ -74,7 +80,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -2123938841;
+  int get rustContentHash => 1182769100;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -93,6 +99,20 @@ abstract class RustLibApi extends BaseApi {
 
   Future<String> crateFfiAnalyticsAnalyticsSlmGenerateEmbedding(
       {required String text});
+
+  List<Uint8List> crateFfiAudioAudioDrain();
+
+  bool crateFfiAudioAudioFeedAac({required List<int> blob});
+
+  bool crateFfiAudioAudioInitDecode();
+
+  bool crateFfiAudioAudioInitEncode();
+
+  bool crateFfiAudioAudioIsSupported();
+
+  bool crateFfiAudioAudioRelease();
+
+  bool crateFfiAudioAudioSetMicEnable({required bool on_});
 
   String crateFfiAuditAuditList(
       {required PlatformInt64 limit, String? actorPubkey});
@@ -153,6 +173,16 @@ abstract class RustLibApi extends BaseApi {
 
   String crateFfiContentContentCompressJsonDict({required String data});
 
+  String crateFfiContentContentCustomProfileDefaultNode(
+      {required String nodeType, required BigInt index});
+
+  String crateFfiContentContentCustomProfileDefaultProfile();
+
+  String crateFfiContentContentCustomProfileNodeTypes();
+
+  String crateFfiContentContentCustomProfileValidate(
+      {required String profileJson});
+
   String crateFfiContentContentDecompressJsonDict({required String encoded});
 
   Future<String> crateFfiCryptoCryptoFrostAggregateSignature(
@@ -197,6 +227,22 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiCryptoCryptoZeroize({required List<int> data});
 
+  bool crateFfiDaemonDaemonAreDaemonsAvailable();
+
+  bool crateFfiDaemonDaemonExtractDaemons();
+
+  String crateFfiDaemonDaemonGetDaemonPath({required String daemonName});
+
+  String crateFfiDaemonDaemonGetDaemonStatus();
+
+  bool crateFfiDaemonDaemonIsI2PdRunning();
+
+  bool crateFfiDaemonDaemonIsRnsdRunning();
+
+  bool crateFfiDaemonDaemonStartDaemons();
+
+  bool crateFfiDaemonDaemonStopDaemons();
+
   bool crateFfiDatingDatingBlockProfile(
       {required String userPubkey, required String targetPubkey});
 
@@ -210,6 +256,18 @@ abstract class RustLibApi extends BaseApi {
       required String name,
       required int age,
       required String location,
+      required String gender,
+      required String seeking,
+      required int heightCm,
+      required String bodyType,
+      required String smoking,
+      required String drinking,
+      required String relationshipIntent,
+      required String politics,
+      required String ethnicity,
+      required String education,
+      required String languageJson,
+      required int maxDistanceKm,
       required String bio,
       required String imagesJson,
       required String interestsJson});
@@ -228,6 +286,14 @@ abstract class RustLibApi extends BaseApi {
       required int minAge,
       required int maxAge,
       required int locationRadiusKm,
+      required int heightMinCm,
+      required int heightMaxCm,
+      required String bodyType,
+      required String smoking,
+      required String drinking,
+      required String relationshipIntent,
+      required String politics,
+      required String education,
       required String interestsJson});
 
   String crateFfiDatingDatingGetOwnProfile({required String userPubkey});
@@ -261,6 +327,19 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiDatingDatingUpdateProfile(
       {required String userPubkey,
+      required String location,
+      required String gender,
+      required String seeking,
+      required int heightCm,
+      required String bodyType,
+      required String smoking,
+      required String drinking,
+      required String relationshipIntent,
+      required String politics,
+      required String ethnicity,
+      required String education,
+      required String languageJson,
+      required int maxDistanceKm,
       required String bio,
       required String imagesJson,
       required String interestsJson});
@@ -276,6 +355,8 @@ abstract class RustLibApi extends BaseApi {
   bool crateFfiDbDbDeleteSetting({required String key});
 
   BigInt crateFfiDbDbExecuteRaw({required String sql});
+
+  PlatformInt64 crateFfiDbDbExpectedSchemaVersion();
 
   String crateFfiDbDbForceMigrate();
 
@@ -457,7 +538,10 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiGroupsGroupsFetchGroups({required String userPubkey});
 
   String crateFfiGroupsGroupsFetchMessages(
-      {required String groupId, required int limit, required int offset});
+      {required String groupId,
+      required String roomId,
+      required int limit,
+      required int offset});
 
   String crateFfiGroupsGroupsGetGroupInfo({required String groupId});
 
@@ -472,7 +556,9 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiGroupsGroupsMembersWithRoles({required String groupId});
 
   String crateFfiGroupsGroupsPostMessage(
-      {required String groupId, required String content});
+      {required String groupId,
+      required String roomId,
+      required String content});
 
   bool crateFfiGroupsGroupsRemoveMember(
       {required String groupId,
@@ -491,11 +577,101 @@ abstract class RustLibApi extends BaseApi {
 
   String crateFfiGroupsGroupsRolesList({required String groupId});
 
+  String crateFfiGroupsGroupsRoomsCreate(
+      {required String groupId,
+      required String name,
+      required String topic,
+      required String emoji,
+      required String color,
+      required String creator});
+
+  bool crateFfiGroupsGroupsRoomsDelete(
+      {required String roomId, required String actor});
+
+  String crateFfiGroupsGroupsRoomsList({required String groupId});
+
+  bool crateFfiGroupsGroupsRoomsUpdate(
+      {required String roomId,
+      required String groupId,
+      required String name,
+      required String topic,
+      required String emoji,
+      required String color,
+      required String actor});
+
   bool crateFfiGroupsGroupsSetMemberRole(
       {required String groupId,
       required String memberPubkey,
       required String role,
       required String adminPubkey});
+
+  String crateFfiGroupsGroupsThreadsCreate(
+      {required String groupId,
+      required String title,
+      required String body,
+      required String author});
+
+  bool crateFfiGroupsGroupsThreadsDelete(
+      {required String threadId, required String actor});
+
+  String crateFfiGroupsGroupsThreadsList(
+      {required String groupId, required String sort});
+
+  bool crateFfiGroupsGroupsThreadsPin(
+      {required String threadId, required bool pinned, required String actor});
+
+  bool crateFfiGroupsGroupsThreadsReact(
+      {required String threadId,
+      required String replyId,
+      required String pubkey,
+      required String emoji});
+
+  String crateFfiGroupsGroupsThreadsReactions(
+      {required String threadId, required String viewerPubkey});
+
+  String crateFfiGroupsGroupsThreadsReplies({required String threadId});
+
+  String crateFfiGroupsGroupsThreadsReply(
+      {required String threadId,
+      required String parentId,
+      required String content,
+      required String author});
+
+  String crateFfiGroupsGroupsVoiceChannelsCreate(
+      {required String groupId, required String name, required String creator});
+
+  bool crateFfiGroupsGroupsVoiceChannelsDelete(
+      {required String channelId, required String actor});
+
+  String crateFfiGroupsGroupsVoiceChannelsList({required String groupId});
+
+  bool crateFfiGroupsGroupsVoiceJoin(
+      {required String channelId, required String pubkey});
+
+  bool crateFfiGroupsGroupsVoiceLeave(
+      {required String channelId, required String pubkey});
+
+  String crateFfiGroupsGroupsVoicePresence({required String channelId});
+
+  List<Uint8List> crateFfiH264H264FeedDecode({required List<int> nal});
+
+  List<Uint8List> crateFfiH264H264FeedEncode({required List<int> bgra});
+
+  bool crateFfiH264H264InitDecode();
+
+  bool crateFfiH264H264InitEncode(
+      {required int width,
+      required int height,
+      required int bitrate,
+      required int fps});
+
+  String? crateFfiH264H264InitRecord();
+
+  bool crateFfiH264H264IsSupported();
+
+  bool crateFfiH264H264Release();
+
+  String? crateFfiH264H264StopRecord();
 
   bool crateFfiNetworkI2PConnect(
       {required String samHost, required int samPort});
@@ -733,7 +909,13 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiMessagingMessagingStoreDms({required String dmsJson});
 
-  List<String> crateFfiMinisMinisFetch();
+  String crateFfiMinisMinisFetch();
+
+  Future<String> crateFfiMinisMinisPublish(
+      {required String mediaSource,
+      String? textOverlay,
+      String? thumbnail,
+      String? audience});
 
   String crateFfiMinisMinisWasmExecuteFilter(
       {required String pluginId,
@@ -811,7 +993,7 @@ abstract class RustLibApi extends BaseApi {
       {required BigInt limit, String? author});
 
   Future<String> crateFfiMusicMusicPublish(
-      {required String audioUrl,
+      {required String mediaSource,
       String? title,
       String? thumbnail,
       required List<String> hashtags,
@@ -1014,6 +1196,24 @@ abstract class RustLibApi extends BaseApi {
 
   Future<P2pSwarmStatusDto> crateFfiP2PP2PSwarmStatusDtoDefault();
 
+  bool crateFfiPermissionsPermissionsCameraMicGranted();
+
+  bool crateFfiPermissionsPermissionsCameraMicPermanentlyDenied();
+
+  bool crateFfiPermissionsPermissionsCameraMicRequest();
+
+  bool crateFfiPermissionsPermissionsLocationEnabled();
+
+  bool crateFfiPermissionsPermissionsLocationGranted();
+
+  Future<LocationFixDto?> crateFfiPermissionsPermissionsLocationPortalFix();
+
+  bool crateFfiPermissionsPermissionsLocationRequest();
+
+  bool crateFfiPermissionsPermissionsOpenSettings();
+
+  String crateFfiPermissionsPermissionsPlatformCurrent();
+
   bool crateFfiPinPinClear({required String pin});
 
   bool crateFfiPinPinHas();
@@ -1023,6 +1223,8 @@ abstract class RustLibApi extends BaseApi {
   Future<bool> crateFfiPinPinSet({required String pin});
 
   Future<bool> crateFfiPinPinVerify({required String pin});
+
+  Future<PowerStateDto> crateFfiPowerPowerSampleOsState();
 
   Future<String> crateFfiProtocolHandlerProtocolGetMetadata(
       {required String scheme, required String host, required String path});
@@ -1423,6 +1625,180 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "analytics_slm_generate_embedding",
         argNames: ["text"],
+      );
+
+  @override
+  List<Uint8List> crateFfiAudioAudioDrain() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__audio__audio_drain(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_list_list_prim_u_8_strict,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAudioAudioDrainConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiAudioAudioDrainConstMeta => const TaskConstMeta(
+        debugName: "audio_drain",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiAudioAudioFeedAac({required List<int> blob}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_list_prim_u_8_loose(blob, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__audio__audio_feed_aac(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAudioAudioFeedAacConstMeta,
+      argValues: [blob],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiAudioAudioFeedAacConstMeta => const TaskConstMeta(
+        debugName: "audio_feed_aac",
+        argNames: ["blob"],
+      );
+
+  @override
+  bool crateFfiAudioAudioInitDecode() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__audio__audio_init_decode(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAudioAudioInitDecodeConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiAudioAudioInitDecodeConstMeta =>
+      const TaskConstMeta(
+        debugName: "audio_init_decode",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiAudioAudioInitEncode() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__audio__audio_init_encode(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAudioAudioInitEncodeConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiAudioAudioInitEncodeConstMeta =>
+      const TaskConstMeta(
+        debugName: "audio_init_encode",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiAudioAudioIsSupported() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__audio__audio_is_supported(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAudioAudioIsSupportedConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiAudioAudioIsSupportedConstMeta =>
+      const TaskConstMeta(
+        debugName: "audio_is_supported",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiAudioAudioRelease() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__audio__audio_release(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAudioAudioReleaseConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiAudioAudioReleaseConstMeta => const TaskConstMeta(
+        debugName: "audio_release",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiAudioAudioSetMicEnable({required bool on_}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_bool(on_, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__audio__audio_set_mic_enable(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAudioAudioSetMicEnableConstMeta,
+      argValues: [on_],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiAudioAudioSetMicEnableConstMeta =>
+      const TaskConstMeta(
+        debugName: "audio_set_mic_enable",
+        argNames: ["on_"],
       );
 
   @override
@@ -1983,6 +2359,115 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  String crateFfiContentContentCustomProfileDefaultNode(
+      {required String nodeType, required BigInt index}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(nodeType, serializer);
+        sse_encode_u_64(index, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__content__content_custom_profile_default_node(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiContentContentCustomProfileDefaultNodeConstMeta,
+      argValues: [nodeType, index],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiContentContentCustomProfileDefaultNodeConstMeta =>
+      const TaskConstMeta(
+        debugName: "content_custom_profile_default_node",
+        argNames: ["nodeType", "index"],
+      );
+
+  @override
+  String crateFfiContentContentCustomProfileDefaultProfile() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__content__content_custom_profile_default_profile(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiContentContentCustomProfileDefaultProfileConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiContentContentCustomProfileDefaultProfileConstMeta =>
+          const TaskConstMeta(
+            debugName: "content_custom_profile_default_profile",
+            argNames: [],
+          );
+
+  @override
+  String crateFfiContentContentCustomProfileNodeTypes() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__content__content_custom_profile_node_types(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiContentContentCustomProfileNodeTypesConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiContentContentCustomProfileNodeTypesConstMeta =>
+      const TaskConstMeta(
+        debugName: "content_custom_profile_node_types",
+        argNames: [],
+      );
+
+  @override
+  String crateFfiContentContentCustomProfileValidate(
+      {required String profileJson}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(profileJson, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__content__content_custom_profile_validate(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiContentContentCustomProfileValidateConstMeta,
+      argValues: [profileJson],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiContentContentCustomProfileValidateConstMeta =>
+      const TaskConstMeta(
+        debugName: "content_custom_profile_validate",
+        argNames: ["profileJson"],
+      );
+
+  @override
   String crateFfiContentContentDecompressJsonDict({required String encoded}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
@@ -2350,6 +2835,207 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateFfiDaemonDaemonAreDaemonsAvailable() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__daemon__daemon_are_daemons_available(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDaemonDaemonAreDaemonsAvailableConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDaemonDaemonAreDaemonsAvailableConstMeta =>
+      const TaskConstMeta(
+        debugName: "daemon_are_daemons_available",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiDaemonDaemonExtractDaemons() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__daemon__daemon_extract_daemons(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDaemonDaemonExtractDaemonsConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDaemonDaemonExtractDaemonsConstMeta =>
+      const TaskConstMeta(
+        debugName: "daemon_extract_daemons",
+        argNames: [],
+      );
+
+  @override
+  String crateFfiDaemonDaemonGetDaemonPath({required String daemonName}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(daemonName, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__daemon__daemon_get_daemon_path(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDaemonDaemonGetDaemonPathConstMeta,
+      argValues: [daemonName],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDaemonDaemonGetDaemonPathConstMeta =>
+      const TaskConstMeta(
+        debugName: "daemon_get_daemon_path",
+        argNames: ["daemonName"],
+      );
+
+  @override
+  String crateFfiDaemonDaemonGetDaemonStatus() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__daemon__daemon_get_daemon_status(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDaemonDaemonGetDaemonStatusConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDaemonDaemonGetDaemonStatusConstMeta =>
+      const TaskConstMeta(
+        debugName: "daemon_get_daemon_status",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiDaemonDaemonIsI2PdRunning() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__daemon__daemon_is_i2pd_running(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDaemonDaemonIsI2PdRunningConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDaemonDaemonIsI2PdRunningConstMeta =>
+      const TaskConstMeta(
+        debugName: "daemon_is_i2pd_running",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiDaemonDaemonIsRnsdRunning() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__daemon__daemon_is_rnsd_running(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDaemonDaemonIsRnsdRunningConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDaemonDaemonIsRnsdRunningConstMeta =>
+      const TaskConstMeta(
+        debugName: "daemon_is_rnsd_running",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiDaemonDaemonStartDaemons() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__daemon__daemon_start_daemons(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDaemonDaemonStartDaemonsConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDaemonDaemonStartDaemonsConstMeta =>
+      const TaskConstMeta(
+        debugName: "daemon_start_daemons",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiDaemonDaemonStopDaemons() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__daemon__daemon_stop_daemons(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDaemonDaemonStopDaemonsConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDaemonDaemonStopDaemonsConstMeta =>
+      const TaskConstMeta(
+        debugName: "daemon_stop_daemons",
+        argNames: [],
+      );
+
+  @override
   bool crateFfiDatingDatingBlockProfile(
       {required String userPubkey, required String targetPubkey}) {
     return handler.executeSync(SyncTask(
@@ -2414,6 +3100,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       required String name,
       required int age,
       required String location,
+      required String gender,
+      required String seeking,
+      required int heightCm,
+      required String bodyType,
+      required String smoking,
+      required String drinking,
+      required String relationshipIntent,
+      required String politics,
+      required String ethnicity,
+      required String education,
+      required String languageJson,
+      required int maxDistanceKm,
       required String bio,
       required String imagesJson,
       required String interestsJson}) {
@@ -2424,6 +3122,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(name, serializer);
         sse_encode_i_32(age, serializer);
         sse_encode_String(location, serializer);
+        sse_encode_String(gender, serializer);
+        sse_encode_String(seeking, serializer);
+        sse_encode_i_32(heightCm, serializer);
+        sse_encode_String(bodyType, serializer);
+        sse_encode_String(smoking, serializer);
+        sse_encode_String(drinking, serializer);
+        sse_encode_String(relationshipIntent, serializer);
+        sse_encode_String(politics, serializer);
+        sse_encode_String(ethnicity, serializer);
+        sse_encode_String(education, serializer);
+        sse_encode_String(languageJson, serializer);
+        sse_encode_i_32(maxDistanceKm, serializer);
         sse_encode_String(bio, serializer);
         sse_encode_String(imagesJson, serializer);
         sse_encode_String(interestsJson, serializer);
@@ -2441,6 +3151,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         name,
         age,
         location,
+        gender,
+        seeking,
+        heightCm,
+        bodyType,
+        smoking,
+        drinking,
+        relationshipIntent,
+        politics,
+        ethnicity,
+        education,
+        languageJson,
+        maxDistanceKm,
         bio,
         imagesJson,
         interestsJson
@@ -2457,6 +3179,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "name",
           "age",
           "location",
+          "gender",
+          "seeking",
+          "heightCm",
+          "bodyType",
+          "smoking",
+          "drinking",
+          "relationshipIntent",
+          "politics",
+          "ethnicity",
+          "education",
+          "languageJson",
+          "maxDistanceKm",
           "bio",
           "imagesJson",
           "interestsJson"
@@ -2575,6 +3309,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       required int minAge,
       required int maxAge,
       required int locationRadiusKm,
+      required int heightMinCm,
+      required int heightMaxCm,
+      required String bodyType,
+      required String smoking,
+      required String drinking,
+      required String relationshipIntent,
+      required String politics,
+      required String education,
       required String interestsJson}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
@@ -2583,6 +3325,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(minAge, serializer);
         sse_encode_i_32(maxAge, serializer);
         sse_encode_i_32(locationRadiusKm, serializer);
+        sse_encode_i_32(heightMinCm, serializer);
+        sse_encode_i_32(heightMaxCm, serializer);
+        sse_encode_String(bodyType, serializer);
+        sse_encode_String(smoking, serializer);
+        sse_encode_String(drinking, serializer);
+        sse_encode_String(relationshipIntent, serializer);
+        sse_encode_String(politics, serializer);
+        sse_encode_String(education, serializer);
         sse_encode_String(interestsJson, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__dating__dating_filter_profiles(
@@ -2593,7 +3343,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiDatingDatingFilterProfilesConstMeta,
-      argValues: [userPubkey, minAge, maxAge, locationRadiusKm, interestsJson],
+      argValues: [
+        userPubkey,
+        minAge,
+        maxAge,
+        locationRadiusKm,
+        heightMinCm,
+        heightMaxCm,
+        bodyType,
+        smoking,
+        drinking,
+        relationshipIntent,
+        politics,
+        education,
+        interestsJson
+      ],
       apiImpl: this,
     ));
   }
@@ -2606,6 +3370,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "minAge",
           "maxAge",
           "locationRadiusKm",
+          "heightMinCm",
+          "heightMaxCm",
+          "bodyType",
+          "smoking",
+          "drinking",
+          "relationshipIntent",
+          "politics",
+          "education",
           "interestsJson"
         ],
       );
@@ -2887,6 +3659,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   bool crateFfiDatingDatingUpdateProfile(
       {required String userPubkey,
+      required String location,
+      required String gender,
+      required String seeking,
+      required int heightCm,
+      required String bodyType,
+      required String smoking,
+      required String drinking,
+      required String relationshipIntent,
+      required String politics,
+      required String ethnicity,
+      required String education,
+      required String languageJson,
+      required int maxDistanceKm,
       required String bio,
       required String imagesJson,
       required String interestsJson}) {
@@ -2894,6 +3679,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(userPubkey, serializer);
+        sse_encode_String(location, serializer);
+        sse_encode_String(gender, serializer);
+        sse_encode_String(seeking, serializer);
+        sse_encode_i_32(heightCm, serializer);
+        sse_encode_String(bodyType, serializer);
+        sse_encode_String(smoking, serializer);
+        sse_encode_String(drinking, serializer);
+        sse_encode_String(relationshipIntent, serializer);
+        sse_encode_String(politics, serializer);
+        sse_encode_String(ethnicity, serializer);
+        sse_encode_String(education, serializer);
+        sse_encode_String(languageJson, serializer);
+        sse_encode_i_32(maxDistanceKm, serializer);
         sse_encode_String(bio, serializer);
         sse_encode_String(imagesJson, serializer);
         sse_encode_String(interestsJson, serializer);
@@ -2906,7 +3704,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiDatingDatingUpdateProfileConstMeta,
-      argValues: [userPubkey, bio, imagesJson, interestsJson],
+      argValues: [
+        userPubkey,
+        location,
+        gender,
+        seeking,
+        heightCm,
+        bodyType,
+        smoking,
+        drinking,
+        relationshipIntent,
+        politics,
+        ethnicity,
+        education,
+        languageJson,
+        maxDistanceKm,
+        bio,
+        imagesJson,
+        interestsJson
+      ],
       apiImpl: this,
     ));
   }
@@ -2914,7 +3730,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiDatingDatingUpdateProfileConstMeta =>
       const TaskConstMeta(
         debugName: "dating_update_profile",
-        argNames: ["userPubkey", "bio", "imagesJson", "interestsJson"],
+        argNames: [
+          "userPubkey",
+          "location",
+          "gender",
+          "seeking",
+          "heightCm",
+          "bodyType",
+          "smoking",
+          "drinking",
+          "relationshipIntent",
+          "politics",
+          "ethnicity",
+          "education",
+          "languageJson",
+          "maxDistanceKm",
+          "bio",
+          "imagesJson",
+          "interestsJson"
+        ],
       );
 
   @override
@@ -3065,6 +3899,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiDbDbExecuteRawConstMeta => const TaskConstMeta(
         debugName: "db_execute_raw",
         argNames: ["sql"],
+      );
+
+  @override
+  PlatformInt64 crateFfiDbDbExpectedSchemaVersion() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__db__db_expected_schema_version(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_i_64,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiDbDbExpectedSchemaVersionConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDbDbExpectedSchemaVersionConstMeta =>
+      const TaskConstMeta(
+        debugName: "db_expected_schema_version",
+        argNames: [],
       );
 
   @override
@@ -4690,11 +5549,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateFfiGroupsGroupsFetchMessages(
-      {required String groupId, required int limit, required int offset}) {
+      {required String groupId,
+      required String roomId,
+      required int limit,
+      required int offset}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(groupId, serializer);
+        sse_encode_String(roomId, serializer);
         sse_encode_i_32(limit, serializer);
         sse_encode_i_32(offset, serializer);
         final raw_ = serializer.intoRaw();
@@ -4706,7 +5569,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiGroupsGroupsFetchMessagesConstMeta,
-      argValues: [groupId, limit, offset],
+      argValues: [groupId, roomId, limit, offset],
       apiImpl: this,
     ));
   }
@@ -4714,7 +5577,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiGroupsGroupsFetchMessagesConstMeta =>
       const TaskConstMeta(
         debugName: "groups_fetch_messages",
-        argNames: ["groupId", "limit", "offset"],
+        argNames: ["groupId", "roomId", "limit", "offset"],
       );
 
   @override
@@ -4851,11 +5714,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateFfiGroupsGroupsPostMessage(
-      {required String groupId, required String content}) {
+      {required String groupId,
+      required String roomId,
+      required String content}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(groupId, serializer);
+        sse_encode_String(roomId, serializer);
         sse_encode_String(content, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__groups__groups_post_message(
@@ -4866,7 +5732,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiGroupsGroupsPostMessageConstMeta,
-      argValues: [groupId, content],
+      argValues: [groupId, roomId, content],
       apiImpl: this,
     ));
   }
@@ -4874,7 +5740,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiGroupsGroupsPostMessageConstMeta =>
       const TaskConstMeta(
         debugName: "groups_post_message",
-        argNames: ["groupId", "content"],
+        argNames: ["groupId", "roomId", "content"],
       );
 
   @override
@@ -5005,6 +5871,144 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  String crateFfiGroupsGroupsRoomsCreate(
+      {required String groupId,
+      required String name,
+      required String topic,
+      required String emoji,
+      required String color,
+      required String creator}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(groupId, serializer);
+        sse_encode_String(name, serializer);
+        sse_encode_String(topic, serializer);
+        sse_encode_String(emoji, serializer);
+        sse_encode_String(color, serializer);
+        sse_encode_String(creator, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_rooms_create(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsRoomsCreateConstMeta,
+      argValues: [groupId, name, topic, emoji, color, creator],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsRoomsCreateConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_rooms_create",
+        argNames: ["groupId", "name", "topic", "emoji", "color", "creator"],
+      );
+
+  @override
+  bool crateFfiGroupsGroupsRoomsDelete(
+      {required String roomId, required String actor}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(roomId, serializer);
+        sse_encode_String(actor, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_rooms_delete(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsRoomsDeleteConstMeta,
+      argValues: [roomId, actor],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsRoomsDeleteConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_rooms_delete",
+        argNames: ["roomId", "actor"],
+      );
+
+  @override
+  String crateFfiGroupsGroupsRoomsList({required String groupId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(groupId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_rooms_list(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsRoomsListConstMeta,
+      argValues: [groupId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsRoomsListConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_rooms_list",
+        argNames: ["groupId"],
+      );
+
+  @override
+  bool crateFfiGroupsGroupsRoomsUpdate(
+      {required String roomId,
+      required String groupId,
+      required String name,
+      required String topic,
+      required String emoji,
+      required String color,
+      required String actor}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(roomId, serializer);
+        sse_encode_String(groupId, serializer);
+        sse_encode_String(name, serializer);
+        sse_encode_String(topic, serializer);
+        sse_encode_String(emoji, serializer);
+        sse_encode_String(color, serializer);
+        sse_encode_String(actor, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_rooms_update(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsRoomsUpdateConstMeta,
+      argValues: [roomId, groupId, name, topic, emoji, color, actor],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsRoomsUpdateConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_rooms_update",
+        argNames: [
+          "roomId",
+          "groupId",
+          "name",
+          "topic",
+          "emoji",
+          "color",
+          "actor"
+        ],
+      );
+
+  @override
   bool crateFfiGroupsGroupsSetMemberRole(
       {required String groupId,
       required String memberPubkey,
@@ -5035,6 +6039,614 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "groups_set_member_role",
         argNames: ["groupId", "memberPubkey", "role", "adminPubkey"],
+      );
+
+  @override
+  String crateFfiGroupsGroupsThreadsCreate(
+      {required String groupId,
+      required String title,
+      required String body,
+      required String author}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(groupId, serializer);
+        sse_encode_String(title, serializer);
+        sse_encode_String(body, serializer);
+        sse_encode_String(author, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_threads_create(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsThreadsCreateConstMeta,
+      argValues: [groupId, title, body, author],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsThreadsCreateConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_threads_create",
+        argNames: ["groupId", "title", "body", "author"],
+      );
+
+  @override
+  bool crateFfiGroupsGroupsThreadsDelete(
+      {required String threadId, required String actor}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(threadId, serializer);
+        sse_encode_String(actor, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_threads_delete(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsThreadsDeleteConstMeta,
+      argValues: [threadId, actor],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsThreadsDeleteConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_threads_delete",
+        argNames: ["threadId", "actor"],
+      );
+
+  @override
+  String crateFfiGroupsGroupsThreadsList(
+      {required String groupId, required String sort}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(groupId, serializer);
+        sse_encode_String(sort, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_threads_list(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsThreadsListConstMeta,
+      argValues: [groupId, sort],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsThreadsListConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_threads_list",
+        argNames: ["groupId", "sort"],
+      );
+
+  @override
+  bool crateFfiGroupsGroupsThreadsPin(
+      {required String threadId, required bool pinned, required String actor}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(threadId, serializer);
+        sse_encode_bool(pinned, serializer);
+        sse_encode_String(actor, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_threads_pin(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsThreadsPinConstMeta,
+      argValues: [threadId, pinned, actor],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsThreadsPinConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_threads_pin",
+        argNames: ["threadId", "pinned", "actor"],
+      );
+
+  @override
+  bool crateFfiGroupsGroupsThreadsReact(
+      {required String threadId,
+      required String replyId,
+      required String pubkey,
+      required String emoji}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(threadId, serializer);
+        sse_encode_String(replyId, serializer);
+        sse_encode_String(pubkey, serializer);
+        sse_encode_String(emoji, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_threads_react(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsThreadsReactConstMeta,
+      argValues: [threadId, replyId, pubkey, emoji],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsThreadsReactConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_threads_react",
+        argNames: ["threadId", "replyId", "pubkey", "emoji"],
+      );
+
+  @override
+  String crateFfiGroupsGroupsThreadsReactions(
+      {required String threadId, required String viewerPubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(threadId, serializer);
+        sse_encode_String(viewerPubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_threads_reactions(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsThreadsReactionsConstMeta,
+      argValues: [threadId, viewerPubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsThreadsReactionsConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_threads_reactions",
+        argNames: ["threadId", "viewerPubkey"],
+      );
+
+  @override
+  String crateFfiGroupsGroupsThreadsReplies({required String threadId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(threadId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_threads_replies(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsThreadsRepliesConstMeta,
+      argValues: [threadId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsThreadsRepliesConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_threads_replies",
+        argNames: ["threadId"],
+      );
+
+  @override
+  String crateFfiGroupsGroupsThreadsReply(
+      {required String threadId,
+      required String parentId,
+      required String content,
+      required String author}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(threadId, serializer);
+        sse_encode_String(parentId, serializer);
+        sse_encode_String(content, serializer);
+        sse_encode_String(author, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_threads_reply(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsThreadsReplyConstMeta,
+      argValues: [threadId, parentId, content, author],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsThreadsReplyConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_threads_reply",
+        argNames: ["threadId", "parentId", "content", "author"],
+      );
+
+  @override
+  String crateFfiGroupsGroupsVoiceChannelsCreate(
+      {required String groupId,
+      required String name,
+      required String creator}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(groupId, serializer);
+        sse_encode_String(name, serializer);
+        sse_encode_String(creator, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_voice_channels_create(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsVoiceChannelsCreateConstMeta,
+      argValues: [groupId, name, creator],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsVoiceChannelsCreateConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_voice_channels_create",
+        argNames: ["groupId", "name", "creator"],
+      );
+
+  @override
+  bool crateFfiGroupsGroupsVoiceChannelsDelete(
+      {required String channelId, required String actor}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(channelId, serializer);
+        sse_encode_String(actor, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_voice_channels_delete(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsVoiceChannelsDeleteConstMeta,
+      argValues: [channelId, actor],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsVoiceChannelsDeleteConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_voice_channels_delete",
+        argNames: ["channelId", "actor"],
+      );
+
+  @override
+  String crateFfiGroupsGroupsVoiceChannelsList({required String groupId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(groupId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_voice_channels_list(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsVoiceChannelsListConstMeta,
+      argValues: [groupId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsVoiceChannelsListConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_voice_channels_list",
+        argNames: ["groupId"],
+      );
+
+  @override
+  bool crateFfiGroupsGroupsVoiceJoin(
+      {required String channelId, required String pubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(channelId, serializer);
+        sse_encode_String(pubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_voice_join(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsVoiceJoinConstMeta,
+      argValues: [channelId, pubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsVoiceJoinConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_voice_join",
+        argNames: ["channelId", "pubkey"],
+      );
+
+  @override
+  bool crateFfiGroupsGroupsVoiceLeave(
+      {required String channelId, required String pubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(channelId, serializer);
+        sse_encode_String(pubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_voice_leave(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsVoiceLeaveConstMeta,
+      argValues: [channelId, pubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsVoiceLeaveConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_voice_leave",
+        argNames: ["channelId", "pubkey"],
+      );
+
+  @override
+  String crateFfiGroupsGroupsVoicePresence({required String channelId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(channelId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_voice_presence(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsVoicePresenceConstMeta,
+      argValues: [channelId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsVoicePresenceConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_voice_presence",
+        argNames: ["channelId"],
+      );
+
+  @override
+  List<Uint8List> crateFfiH264H264FeedDecode({required List<int> nal}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_list_prim_u_8_loose(nal, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__h264__h264_feed_decode(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_list_list_prim_u_8_strict,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiH264H264FeedDecodeConstMeta,
+      argValues: [nal],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiH264H264FeedDecodeConstMeta => const TaskConstMeta(
+        debugName: "h264_feed_decode",
+        argNames: ["nal"],
+      );
+
+  @override
+  List<Uint8List> crateFfiH264H264FeedEncode({required List<int> bgra}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_list_prim_u_8_loose(bgra, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__h264__h264_feed_encode(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_list_list_prim_u_8_strict,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiH264H264FeedEncodeConstMeta,
+      argValues: [bgra],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiH264H264FeedEncodeConstMeta => const TaskConstMeta(
+        debugName: "h264_feed_encode",
+        argNames: ["bgra"],
+      );
+
+  @override
+  bool crateFfiH264H264InitDecode() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__h264__h264_init_decode(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiH264H264InitDecodeConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiH264H264InitDecodeConstMeta => const TaskConstMeta(
+        debugName: "h264_init_decode",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiH264H264InitEncode(
+      {required int width,
+      required int height,
+      required int bitrate,
+      required int fps}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_i_32(width, serializer);
+        sse_encode_i_32(height, serializer);
+        sse_encode_i_32(bitrate, serializer);
+        sse_encode_i_32(fps, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__h264__h264_init_encode(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiH264H264InitEncodeConstMeta,
+      argValues: [width, height, bitrate, fps],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiH264H264InitEncodeConstMeta => const TaskConstMeta(
+        debugName: "h264_init_encode",
+        argNames: ["width", "height", "bitrate", "fps"],
+      );
+
+  @override
+  String? crateFfiH264H264InitRecord() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__h264__h264_init_record(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_opt_String,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiH264H264InitRecordConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiH264H264InitRecordConstMeta => const TaskConstMeta(
+        debugName: "h264_init_record",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiH264H264IsSupported() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__h264__h264_is_supported(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiH264H264IsSupportedConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiH264H264IsSupportedConstMeta =>
+      const TaskConstMeta(
+        debugName: "h264_is_supported",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiH264H264Release() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__h264__h264_release(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiH264H264ReleaseConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiH264H264ReleaseConstMeta => const TaskConstMeta(
+        debugName: "h264_release",
+        argNames: [],
+      );
+
+  @override
+  String? crateFfiH264H264StopRecord() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__h264__h264_stop_record(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_opt_String,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiH264H264StopRecordConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiH264H264StopRecordConstMeta => const TaskConstMeta(
+        debugName: "h264_stop_record",
+        argNames: [],
       );
 
   @override
@@ -7089,7 +8701,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  List<String> crateFfiMinisMinisFetch() {
+  String crateFfiMinisMinisFetch() {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
@@ -7098,7 +8710,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
-        decodeSuccessData: sse_decode_list_String,
+        decodeSuccessData: sse_decode_String,
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiMinisMinisFetchConstMeta,
@@ -7110,6 +8722,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiMinisMinisFetchConstMeta => const TaskConstMeta(
         debugName: "minis_fetch",
         argNames: [],
+      );
+
+  @override
+  Future<String> crateFfiMinisMinisPublish(
+      {required String mediaSource,
+      String? textOverlay,
+      String? thumbnail,
+      String? audience}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(mediaSource, serializer);
+        sse_encode_opt_String(textOverlay, serializer);
+        sse_encode_opt_String(thumbnail, serializer);
+        sse_encode_opt_String(audience, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__minis__minis_publish(
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMinisMinisPublishConstMeta,
+      argValues: [mediaSource, textOverlay, thumbnail, audience],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMinisMinisPublishConstMeta => const TaskConstMeta(
+        debugName: "minis_publish",
+        argNames: ["mediaSource", "textOverlay", "thumbnail", "audience"],
       );
 
   @override
@@ -7705,7 +9349,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<String> crateFfiMusicMusicPublish(
-      {required String audioUrl,
+      {required String mediaSource,
       String? title,
       String? thumbnail,
       required List<String> hashtags,
@@ -7713,7 +9357,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return handler.executeNormal(NormalTask(
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(audioUrl, serializer);
+        sse_encode_String(mediaSource, serializer);
         sse_encode_opt_String(title, serializer);
         sse_encode_opt_String(thumbnail, serializer);
         sse_encode_list_String(hashtags, serializer);
@@ -7727,14 +9371,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiMusicMusicPublishConstMeta,
-      argValues: [audioUrl, title, thumbnail, hashtags, audience],
+      argValues: [mediaSource, title, thumbnail, hashtags, audience],
       apiImpl: this,
     ));
   }
 
   TaskConstMeta get kCrateFfiMusicMusicPublishConstMeta => const TaskConstMeta(
         debugName: "music_publish",
-        argNames: ["audioUrl", "title", "thumbnail", "hashtags", "audience"],
+        argNames: ["mediaSource", "title", "thumbnail", "hashtags", "audience"],
       );
 
   @override
@@ -9582,6 +11226,237 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateFfiPermissionsPermissionsCameraMicGranted() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__permissions__permissions_camera_mic_granted(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiPermissionsPermissionsCameraMicGrantedConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPermissionsPermissionsCameraMicGrantedConstMeta =>
+      const TaskConstMeta(
+        debugName: "permissions_camera_mic_granted",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiPermissionsPermissionsCameraMicPermanentlyDenied() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__permissions__permissions_camera_mic_permanently_denied(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta:
+          kCrateFfiPermissionsPermissionsCameraMicPermanentlyDeniedConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiPermissionsPermissionsCameraMicPermanentlyDeniedConstMeta =>
+          const TaskConstMeta(
+            debugName: "permissions_camera_mic_permanently_denied",
+            argNames: [],
+          );
+
+  @override
+  bool crateFfiPermissionsPermissionsCameraMicRequest() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__permissions__permissions_camera_mic_request(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiPermissionsPermissionsCameraMicRequestConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPermissionsPermissionsCameraMicRequestConstMeta =>
+      const TaskConstMeta(
+        debugName: "permissions_camera_mic_request",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiPermissionsPermissionsLocationEnabled() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__permissions__permissions_location_enabled(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiPermissionsPermissionsLocationEnabledConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPermissionsPermissionsLocationEnabledConstMeta =>
+      const TaskConstMeta(
+        debugName: "permissions_location_enabled",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiPermissionsPermissionsLocationGranted() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__permissions__permissions_location_granted(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiPermissionsPermissionsLocationGrantedConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPermissionsPermissionsLocationGrantedConstMeta =>
+      const TaskConstMeta(
+        debugName: "permissions_location_granted",
+        argNames: [],
+      );
+
+  @override
+  Future<LocationFixDto?> crateFfiPermissionsPermissionsLocationPortalFix() {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__permissions__permissions_location_portal_fix(
+                port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_opt_box_autoadd_location_fix_dto,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPermissionsPermissionsLocationPortalFixConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPermissionsPermissionsLocationPortalFixConstMeta =>
+      const TaskConstMeta(
+        debugName: "permissions_location_portal_fix",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiPermissionsPermissionsLocationRequest() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__permissions__permissions_location_request(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiPermissionsPermissionsLocationRequestConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPermissionsPermissionsLocationRequestConstMeta =>
+      const TaskConstMeta(
+        debugName: "permissions_location_request",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiPermissionsPermissionsOpenSettings() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__permissions__permissions_open_settings(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiPermissionsPermissionsOpenSettingsConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPermissionsPermissionsOpenSettingsConstMeta =>
+      const TaskConstMeta(
+        debugName: "permissions_open_settings",
+        argNames: [],
+      );
+
+  @override
+  String crateFfiPermissionsPermissionsPlatformCurrent() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__permissions__permissions_platform_current(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiPermissionsPermissionsPlatformCurrentConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPermissionsPermissionsPlatformCurrentConstMeta =>
+      const TaskConstMeta(
+        debugName: "permissions_platform_current",
+        argNames: [],
+      );
+
+  @override
   bool crateFfiPinPinClear({required String pin}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
@@ -9702,6 +11577,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiPinPinVerifyConstMeta => const TaskConstMeta(
         debugName: "pin_verify",
         argNames: ["pin"],
+      );
+
+  @override
+  Future<PowerStateDto> crateFfiPowerPowerSampleOsState() {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__power__power_sample_os_state(
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_power_state_dto,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPowerPowerSampleOsStateConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPowerPowerSampleOsStateConstMeta =>
+      const TaskConstMeta(
+        debugName: "power_sample_os_state",
+        argNames: [],
       );
 
   @override
@@ -12791,6 +14691,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LocationFixDto dco_decode_box_autoadd_location_fix_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_location_fix_dto(raw);
+  }
+
+  @protected
   int dco_decode_box_autoadd_u_16(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -12879,6 +14785,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_list_prim_u_8_strict).toList();
+  }
+
+  @protected
   List<P2pPeerDto> dco_decode_list_p_2_p_peer_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_p_2_p_peer_dto).toList();
@@ -12915,9 +14827,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LocationFixDto dco_decode_location_fix_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return LocationFixDto(
+      latitude: dco_decode_f_64(arr[0]),
+      longitude: dco_decode_f_64(arr[1]),
+    );
+  }
+
+  @protected
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  LocationFixDto? dco_decode_opt_box_autoadd_location_fix_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_location_fix_dto(raw);
   }
 
   @protected
@@ -12982,6 +14912,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PowerStateDto dco_decode_power_state_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return PowerStateDto(
+      charging: dco_decode_bool(arr[0]),
+      batteryPercent: dco_decode_i_32(arr[1]),
+      cellular: dco_decode_bool(arr[2]),
+      lowPowerMode: dco_decode_bool(arr[3]),
+    );
+  }
+
+  @protected
   int dco_decode_u_16(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -13042,6 +14986,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   bool sse_decode_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint8() != 0;
+  }
+
+  @protected
+  LocationFixDto sse_decode_box_autoadd_location_fix_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_location_fix_dto(deserializer));
   }
 
   @protected
@@ -13135,6 +15086,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<Uint8List> sse_decode_list_list_prim_u_8_strict(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <Uint8List>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_list_prim_u_8_strict(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<P2pPeerDto> sse_decode_list_p_2_p_peer_dto(
       SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -13183,11 +15147,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LocationFixDto sse_decode_location_fix_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_latitude = sse_decode_f_64(deserializer);
+    var var_longitude = sse_decode_f_64(deserializer);
+    return LocationFixDto(latitude: var_latitude, longitude: var_longitude);
+  }
+
+  @protected
   String? sse_decode_opt_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  LocationFixDto? sse_decode_opt_box_autoadd_location_fix_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_location_fix_dto(deserializer));
     } else {
       return null;
     }
@@ -13266,6 +15250,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         bytesDownloaded: var_bytesDownloaded,
         failures: var_failures,
         failedHashes: var_failedHashes);
+  }
+
+  @protected
+  PowerStateDto sse_decode_power_state_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_charging = sse_decode_bool(deserializer);
+    var var_batteryPercent = sse_decode_i_32(deserializer);
+    var var_cellular = sse_decode_bool(deserializer);
+    var var_lowPowerMode = sse_decode_bool(deserializer);
+    return PowerStateDto(
+        charging: var_charging,
+        batteryPercent: var_batteryPercent,
+        cellular: var_cellular,
+        lowPowerMode: var_lowPowerMode);
   }
 
   @protected
@@ -13348,6 +15346,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_location_fix_dto(
+      LocationFixDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_location_fix_dto(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_16(self, serializer);
@@ -13427,6 +15432,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_list_prim_u_8_strict(
+      List<Uint8List> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_list_prim_u_8_strict(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_p_2_p_peer_dto(
       List<P2pPeerDto> self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -13479,12 +15494,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_location_fix_dto(
+      LocationFixDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_64(self.latitude, serializer);
+    sse_encode_f_64(self.longitude, serializer);
+  }
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_location_fix_dto(
+      LocationFixDto? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_location_fix_dto(self, serializer);
     }
   }
 
@@ -13546,6 +15580,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.bytesDownloaded, serializer);
     sse_encode_usize(self.failures, serializer);
     sse_encode_list_String(self.failedHashes, serializer);
+  }
+
+  @protected
+  void sse_encode_power_state_dto(
+      PowerStateDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.charging, serializer);
+    sse_encode_i_32(self.batteryPercent, serializer);
+    sse_encode_bool(self.cellular, serializer);
+    sse_encode_bool(self.lowPowerMode, serializer);
   }
 
   @protected

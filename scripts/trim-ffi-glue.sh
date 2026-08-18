@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DIR=soshal_flutter/lib/ffi
-KEEP="auth db media network p2p raster session"
+KEEP="audio auth content daemon db h264 media network p2p permissions power raster session"
 for f in "$DIR"/*.dart; do
   base=$(basename "$f" .dart)
   if [[ " $KEEP " != *" $base "* ]]; then

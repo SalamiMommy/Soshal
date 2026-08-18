@@ -1,31 +1,27 @@
-import 'dart:io' show Platform;
+import 'dart:typed_data';
 
-import 'package:flutter/services.dart';
+import '../ffi/audio.dart' as ffi_audio;
 
-/// Dart wrapper over the native AAC codec channel (`com.soshal/audio`,
-/// implemented in `MainActivity.kt` via `AudioCodec.kt` — AudioRecord +
-/// MediaCodec AAC-LC encode, MediaCodec decode -> AudioTrack).
+/// Dart wrapper over the Rust AAC codec (codecs/audio.rs — AAudio mic +
+/// AMediaCodec AAC-LC encode, AMediaCodec decode → AAudio playback).
 ///
-/// Encode side runs on a native background thread; `drainAudio` returns the
+/// Encode side runs on a Rust background thread; `drainAudio` returns the
 /// queued blobs as `[tag, ...aac]` (tag 2 = codec config, tag 1 = frame).
 /// Decode side is fed via `feedAac` and plays through the device speaker.
 ///
-/// Every call is a no-op on non-Android or when the channel is missing —
-/// callers fall back to video-only streams.
+/// Every call is a no-op off-Android — callers fall back to video-only
+/// streams.
 class AudioCodec {
   AudioCodec._();
 
-  static const MethodChannel _channel = MethodChannel('com.soshal/audio');
-
   static bool? _supported;
 
-  /// True only on Android with a live native channel.
+  /// True only on Android ≥ 26 with the native bridge available.
   static Future<bool> isSupported() async {
-    if (!Platform.isAndroid) return false;
     final cached = _supported;
     if (cached != null) return cached;
     try {
-      final ok = await _channel.invokeMethod<bool>('isSupported') ?? false;
+      final ok = ffi_audio.audioIsSupported();
       _supported = ok;
       return ok;
     } catch (_) {
@@ -38,7 +34,7 @@ class AudioCodec {
   /// `setMicEnable(true)` before audio flows.
   static Future<bool> initEncode() async {
     try {
-      return await _channel.invokeMethod<bool>('initEncode') ?? false;
+      return ffi_audio.audioInitEncode();
     } catch (_) {
       return false;
     }
@@ -47,26 +43,25 @@ class AudioCodec {
   /// Toggle the mic. Returns immediately; keep polling `drainAudio`.
   static Future<void> setMicEnable(bool on) async {
     try {
-      await _channel.invokeMethod<void>('setMicEnable', on);
+      ffi_audio.audioSetMicEnable(on_: on);
     } catch (_) {
-      // channel missing
+      // bridge missing
     }
   }
 
   /// Drain queued AAC blobs: `[2, ...config]` or `[1, ...frame]`.
   static Future<List<Uint8List>> drainAudio() async {
     try {
-      final out = await _channel.invokeListMethod<Uint8List>('drainAudio');
-      return out ?? const [];
+      return ffi_audio.audioDrain();
     } catch (_) {
       return const [];
     }
   }
 
-  /// Set up the decoder + AudioTrack. Safe to call once per viewer session.
+  /// Set up the decoder + audio output. Safe to call once per viewer session.
   static Future<bool> initDecode() async {
     try {
-      return await _channel.invokeMethod<bool>('initDecode') ?? false;
+      return ffi_audio.audioInitDecode();
     } catch (_) {
       return false;
     }
@@ -76,18 +71,18 @@ class AudioCodec {
   static Future<void> feedAac(List<int> aac) async {
     try {
       final bytes = aac is Uint8List ? aac : Uint8List.fromList(aac);
-      await _channel.invokeMethod<void>('feedAac', bytes);
+      ffi_audio.audioFeedAac(blob: bytes);
     } catch (_) {
-      // channel missing
+      // bridge missing
     }
   }
 
   /// Stop mic, codecs, playback; release everything.
   static Future<void> release() async {
     try {
-      await _channel.invokeMethod<void>('release');
+      ffi_audio.audioRelease();
     } catch (_) {
-      // channel missing
+      // bridge missing
     }
   }
 }

@@ -30,7 +30,6 @@ object LiveRecorder {
     private var audioTrack = -1
     private var videoCsd: ByteArray? = null
     private var audioCsd: ByteArray? = null
-    private var videoFormatSnapshot: MediaFormat? = null
     private var started = false
     private var baseUs = 0L
     private val lock = Any()
@@ -57,7 +56,6 @@ object LiveRecorder {
             audioTrack = -1
             videoCsd = null
             audioCsd = null
-            videoFormatSnapshot = null
             started = false
             baseUs = System.nanoTime() / 1000
             recording = true
@@ -90,15 +88,8 @@ object LiveRecorder {
         path
     }
 
-    /** Called by H264Codec on INFO_OUTPUT_FORMAT_CHANGED (encoder side). */
-    fun setVideoFormat(format: MediaFormat?) {
-        synchronized(lock) {
-            videoFormatSnapshot = format
-        }
-    }
-
-    /** Video sample from the H.264 encoder drain. */
-    fun writeVideo(nal: ByteArray, isKey: Boolean, isConfig: Boolean) {
+    /** Video sample from the H.264 encoder drain (Rust codecs → JNI). */
+    fun writeVideo(nal: ByteArray, isKey: Boolean, isConfig: Boolean, width: Int, height: Int) {
         synchronized(lock) {
             if (!recording) return
             if (isConfig) {
@@ -106,14 +97,9 @@ object LiveRecorder {
                 return
             }
             val mx = muxer ?: return
-            val fmt = videoFormatSnapshot ?: return
             if (videoTrack < 0) {
                 val csd = videoCsd ?: return // SPS/PPS not seen yet — drop
-                val format = MediaFormat.createVideoFormat(
-                    "video/avc",
-                    fmt.getInteger(MediaFormat.KEY_WIDTH),
-                    fmt.getInteger(MediaFormat.KEY_HEIGHT),
-                ).apply {
+                val format = MediaFormat.createVideoFormat("video/avc", width, height).apply {
                     setByteBuffer("csd-0", ByteBuffer.wrap(csd))
                 }
                 try {

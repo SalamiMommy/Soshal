@@ -263,6 +263,10 @@ pub struct FilterDatingProfilesInput {
     pub min_age: Option<f64>,
     #[serde(default, deserialize_with = "de_opt_f64")]
     pub max_age: Option<f64>,
+    #[serde(default, deserialize_with = "de_opt_f64")]
+    pub height_min_cm: Option<f64>,
+    #[serde(default, deserialize_with = "de_opt_f64")]
+    pub height_max_cm: Option<f64>,
     pub body_type: Option<String>,
     pub smoking: Option<String>,
     pub drinking: Option<String>,

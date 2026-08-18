@@ -4,6 +4,7 @@
 //! exposing synchronous and asynchronous functions to Flutter.
 
 pub mod analytics;
+pub mod audio;
 pub mod audit;
 pub mod auth;
 pub mod bookmarks;
@@ -11,6 +12,7 @@ pub mod calls;
 pub mod chatrandom;
 pub mod content;
 pub mod crypto;
+pub mod daemon;
 pub mod dating;
 pub mod db;
 pub mod ebpf;
@@ -18,6 +20,7 @@ pub mod ephemeral;
 pub mod events;
 pub mod feed;
 pub mod groups;
+pub mod h264;
 pub mod headless;
 pub mod identity;
 pub mod marketplace;
@@ -29,7 +32,9 @@ pub mod music;
 pub mod network;
 pub mod notifications;
 pub mod p2p;
+pub mod permissions;
 pub mod pin;
+pub mod power;
 pub mod protocol_handler;
 pub mod raster;
 pub mod relations;

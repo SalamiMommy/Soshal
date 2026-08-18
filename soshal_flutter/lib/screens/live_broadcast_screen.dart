@@ -373,8 +373,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
                       if (_cameraDenied) ...[
                         const SizedBox(height: 12),
                         FilledButton.icon(
-                          onPressed: () =>
-                              PermissionsService.openSettings(),
+                          onPressed: () => PermissionsService.openSettings(),
                           icon: const Icon(Icons.settings),
                           label: const Text('Open app settings'),
                         ),

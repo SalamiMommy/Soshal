@@ -237,10 +237,7 @@ impl ChunkStore {
     fn verified_contains(&self, hash: &str, size: u64, mtime: Option<SystemTime>) -> bool {
         self.verified
             .lock()
-            .map(|c| {
-                c.get(hash)
-                    .map_or(false, |(s, m)| *s == size && *m == mtime)
-            })
+            .map(|c| c.get(hash).is_some_and(|(s, m)| *s == size && *m == mtime))
             .unwrap_or(false)
     }
 
@@ -413,7 +410,7 @@ impl ChunkStore {
         if blob_hash.len() != 64 {
             return None;
         }
-        if let Ok(mut cache) = self.manifest_cache.lock() {
+        if let Ok(cache) = self.manifest_cache.lock() {
             if let Some(m) = cache.get(blob_hash) {
                 return Some(m.as_ref().clone());
             }

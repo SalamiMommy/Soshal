@@ -75,6 +75,12 @@ pub fn encode_geohash(lat: f64, lon: f64, precision: usize) -> Option<String> {
     geohash::encode(geohash::Coord { x: lon, y: lat }, p).ok()
 }
 
+/// Returns true if `s` is a decodable geohash string (non-empty, ≤
+/// `MAX_PRECISION` chars, valid base32 alphabet).
+pub fn is_valid_geohash(s: &str) -> bool {
+    !s.is_empty() && s.len() <= MAX_PRECISION && geohash::decode(s).is_ok()
+}
+
 pub fn compute_spatial_matrix_json(input: &str) -> String {
     #[derive(serde::Deserialize)]
     struct LocationPoint {

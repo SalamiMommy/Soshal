@@ -1,6 +1,8 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../services/media_service.dart';
 import '../services/messaging_service.dart';
 import '../services/session_service.dart';
 
@@ -91,6 +93,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _pickAndSet(TextEditingController controller) async {
+    try {
+      final picked = await FilePicker.pickFile(type: FileType.image);
+      final path = picked?.path;
+      if (path == null || !mounted) return;
+      final manifest = await context.read<MediaService>().uploadMedia(path);
+      final hash = manifest['blob_hash'] as String? ?? '';
+      if (hash.length != 64) {
+        throw Exception('Image upload failed (bad manifest)');
+      }
+      if (mounted) {
+        setState(() => controller.text = 'n$hash');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Upload error: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -120,15 +143,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _pictureController,
-                  keyboardType: TextInputType.url,
-                  decoration:
-                      const InputDecoration(labelText: 'Picture URL (Blossom)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Picture',
+                    hintText: 'pick from device or paste a URL',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _pickAndSet(_pictureController),
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('Pick picture from device'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _bannerController,
-                  keyboardType: TextInputType.url,
-                  decoration: const InputDecoration(labelText: 'Banner URL'),
+                  decoration: const InputDecoration(
+                    labelText: 'Banner',
+                    hintText: 'pick from device or paste a URL',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _pickAndSet(_bannerController),
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('Pick banner from device'),
                 ),
                 const SizedBox(height: 12),
                 TextField(

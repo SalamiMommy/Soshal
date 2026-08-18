@@ -1,12 +1,18 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
+import '../services/media_service.dart';
 import '../services/minis_service.dart';
+import '../services/p2p_service.dart';
+import '../widgets/blob_image.dart';
 
-/// Minis: mini-app registry. Each mini is a URL — tapping offers to open it
-/// (copies the URL to the clipboard; there is no in-app webview).
+/// Minis: mini video registry (kind-31020). Each mini is a video hosted
+/// from device caches — the local chunk store first, then LAN peers, with
+/// the original URL as fallback. Tapping plays the video in-app.
 class MinisScreen extends StatefulWidget {
   /// Minis screen.
   const MinisScreen({super.key});
@@ -16,7 +22,7 @@ class MinisScreen extends StatefulWidget {
 }
 
 class _MinisScreenState extends State<MinisScreen> {
-  List<String> _minis = [];
+  List<MiniItem> _minis = [];
   bool _loading = true;
   String _filterText = '';
   String? _filterResult;
@@ -64,7 +70,7 @@ class _MinisScreenState extends State<MinisScreen> {
     }
     if (_minis.isEmpty) return;
     final service = context.read<MinisService>();
-    final posts = _minis.map((u) => jsonEncode({'url': u})).toList();
+    final posts = _minis.map((m) => jsonEncode({'url': m.videoUrl})).toList();
     final ranked = service.rankFeed(
       pluginId: 'feed-ranker',
       postsJson: posts,
@@ -78,39 +84,151 @@ class _MinisScreenState extends State<MinisScreen> {
     });
   }
 
-  void _openMini(String url) {
-    showModalBottomSheet<void>(
+  Future<void> _play(MiniItem mini) async {
+    final url = await resolveMiniPlaybackUrl(
+      mini,
+      context.read<MediaService>(),
+      context.read<P2pService>(),
+    );
+    if (!mounted) return;
+    if (url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Mini unavailable — no device has this blob.')),
+      );
+      return;
+    }
+    if (mini.videoUrl.startsWith('http') && url == mini.videoUrl) {
+      // Remote fallback: offer to open externally (no in-app webview).
+      showModalBottomSheet<void>(
+        context: context,
+        builder: (sheetContext) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Mini',
+                    style: Theme.of(sheetContext).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                Text(
+                  mini.videoUrl,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(sheetContext).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: mini.videoUrl));
+                    Navigator.of(sheetContext).pop();
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Mini URL copied to clipboard')),
+                    );
+                  },
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Open mini'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+    await showDialog<void>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Mini', style: Theme.of(sheetContext).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              Text(
-                url,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(sheetContext).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: url));
-                  Navigator.of(sheetContext).pop();
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Mini URL copied to clipboard')),
-                  );
-                },
-                icon: const Icon(Icons.open_in_new),
-                label: const Text('Open mini'),
-              ),
-            ],
+      builder: (_) => _MiniVideoPlayer(url),
+    );
+  }
+
+  Future<void> _openUpload() async {
+    final overlay = TextEditingController();
+    var busy = false;
+    var status = '';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('New Mini', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 12),
+                Text(
+                  'Pick a video file — it is hosted from device caches '
+                  '(yours + devices that play it).',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: overlay,
+                  decoration: const InputDecoration(
+                    labelText: 'Caption (optional)',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final picked = await FilePicker.pickFile(
+                            type: FileType.video,
+                          );
+                          final path = picked?.path;
+                          if (path == null || !sheetContext.mounted) return;
+                          setSheetState(() {
+                            busy = true;
+                            status = 'Publishing…';
+                          });
+                          try {
+                            final id =
+                                await context.read<MinisService>().publishMini(
+                                      mediaSource: path,
+                                      textOverlay: overlay.text.trim().isEmpty
+                                          ? null
+                                          : overlay.text.trim(),
+                                    );
+                            if (!sheetContext.mounted) return;
+                            Navigator.of(sheetContext).pop();
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: SelectableText('Mini published: $id'),
+                              ),
+                            );
+                            await _load();
+                          } catch (e) {
+                            if (sheetContext.mounted) {
+                              setSheetState(
+                                  () => status = 'Publish failed: $e');
+                            }
+                          }
+                        },
+                  child: const Text('Pick video & publish'),
+                ),
+                if (status.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(status,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      )),
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -122,6 +240,11 @@ class _MinisScreenState extends State<MinisScreen> {
     final display = _rankOn && _ranked.isNotEmpty ? _ranked : _minis;
     return Scaffold(
       appBar: AppBar(title: const Text('Minis')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openUpload,
+        tooltip: 'Publish mini',
+        child: const Icon(Icons.add),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -204,7 +327,7 @@ class _MinisScreenState extends State<MinisScreen> {
                       child: Column(
                         children: [
                           Icon(
-                            Icons.apps,
+                            Icons.video_library,
                             size: 56,
                             color: Theme.of(context).colorScheme.outline,
                           ),
@@ -213,7 +336,8 @@ class _MinisScreenState extends State<MinisScreen> {
                               style: Theme.of(context).textTheme.titleLarge),
                           const SizedBox(height: 8),
                           Text(
-                            'The mini registry is empty on the backend right now. Minis are not installed on-device in this build.',
+                            'Publish a mini video — it is hosted from '
+                            'device caches, not URL links.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                                 color: Theme.of(context)
@@ -223,31 +347,132 @@ class _MinisScreenState extends State<MinisScreen> {
                         ],
                       ),
                     )
+                  else if (_rankOn && _ranked.isNotEmpty)
+                    for (final url in _ranked) ...[
+                      ListTile(
+                        leading: Icon(
+                          Icons.video_library,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        title: Text(url,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: const Text('Mini video (ranked)'),
+                      ),
+                      const Divider(height: 1),
+                    ]
                   else
                     for (var i = 0; i < display.length; i++) ...[
                       ListTile(
-                        leading: Icon(
-                          Icons.apps,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
+                        leading: _minis[i].thumbnail.isNotEmpty
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: BlobImage(
+                                  source: _minis[i].thumbnail,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_) => Icon(
+                                    Icons.video_library,
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
+                                  ),
+                                ),
+                              )
+                            : Icon(
+                                Icons.video_library,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
                         title: Text(
-                          display[i],
+                          _minis[i].textOverlay.isEmpty
+                              ? (_minis[i].videoUrl.startsWith('blob://')
+                                  ? 'Mini video'
+                                  : _minis[i].videoUrl)
+                              : _minis[i].textOverlay,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         subtitle: Text(
-                          _rankOn && _ranked.isNotEmpty
-                              ? 'Mini app URL · rank ${i + 1}'
-                              : 'Mini app URL',
+                          _minis[i].videoUrl.startsWith('blob://')
+                              ? 'Mini video · hosted from device caches'
+                              : 'Mini video · ${_minis[i].videoUrl}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        trailing: const Icon(Icons.open_in_new),
-                        onTap: () => _openMini(display[i]),
+                        trailing: const Icon(Icons.play_circle_outline),
+                        onTap: () => _play(_minis[i]),
                       ),
                       if (i < display.length - 1) const Divider(height: 1),
                     ],
                 ],
               ),
             ),
+    );
+  }
+}
+
+/// Plays a mini video (local blob-server URL or remote fallback) via
+/// video_player inside a dialog.
+class _MiniVideoPlayer extends StatefulWidget {
+  final String url;
+
+  const _MiniVideoPlayer(this.url);
+
+  @override
+  State<_MiniVideoPlayer> createState() => _MiniVideoPlayerState();
+}
+
+class _MiniVideoPlayerState extends State<_MiniVideoPlayer> {
+  VideoPlayerController? _controller;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        if (!mounted) return;
+        setState(() {});
+        _controller!.play();
+      }).catchError((e) {
+        if (!mounted) return;
+        setState(() => _error = 'Playback failed: $e');
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Mini'),
+      content: SizedBox(
+        width: 360,
+        height: 240,
+        child: _error != null
+            ? Center(
+                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              )
+            : _controller != null && _controller!.value.isInitialized
+                ? FittedBox(
+                    fit: BoxFit.contain,
+                    child: SizedBox(
+                      width: _controller!.value.size.width,
+                      height: _controller!.value.size.height,
+                      child: VideoPlayer(_controller!),
+                    ),
+                  )
+                : const Center(child: CircularProgressIndicator()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
     );
   }
 }

@@ -114,21 +114,81 @@ void main() {
     });
   });
 
-  group('CustomProfile models', () {
-    test('makeDefaultNode builds a node for every registered type', () {
-      for (final info in nodeTypes) {
-        final node = makeDefaultNode(info.type, 3);
-        expect(node.type, info.type);
-        expect(node.id, startsWith('widget_'));
-        expect(node.position.order, 3);
-        expect(node.properties, isNotEmpty);
-      }
+  group('CustomProfile schema (Rust-backed)', () {
+    test('nodeTypes loads the 12 types from Rust', () {
+      api.stubString(
+        'crateFfiContentContentCustomProfileNodeTypes',
+        '[{"type":"theme","label":"Theme","icon":"🎨"},'
+        '{"type":"container","label":"Container","icon":"📦"}]',
+      );
+
+      final service = ProfileService();
+      expect(service.nodeTypes.length, 2);
+      expect(service.nodeTypes.first.type, 'theme');
+      expect(service.nodeTypes.first.label, 'Theme');
+      expect(
+        api.callsOf('crateFfiContentContentCustomProfileNodeTypes'),
+        isNotEmpty,
+      );
     });
 
-    test('makeDefaultNode falls back to container for unknown type', () {
-      final node = makeDefaultNode('hologram', 0);
-      expect(node.type, 'container');
-      expect(node.properties['title'], 'Widget');
+    test('nodeTypes stays empty when Rust errors', () {
+      api.stub('crateFfiContentContentCustomProfileNodeTypes', (_) {
+        throw Exception('backend down');
+      });
+
+      final service = ProfileService();
+      expect(service.nodeTypes, isEmpty);
+    });
+
+    test('defaultNode forwards type and index to Rust', () {
+      const nodeJson =
+          '{"id":"widget_1","type":"text_block","styles":{},'
+          '"position":{"row":0,"column":0,"order":3},'
+          '"properties":{"content":"","title":"About Me"}}';
+      api.stubString(
+        'crateFfiContentContentCustomProfileDefaultNode',
+        nodeJson,
+      );
+
+      final service = ProfileService();
+      final json = service.defaultNode(type: 'text_block', index: 3);
+
+      expect(json, nodeJson);
+      final inv = api
+          .callsOf('crateFfiContentContentCustomProfileDefaultNode')
+          .single;
+      expect(api.namedArg(inv, 'nodeType'), 'text_block');
+      expect(api.namedArg(inv, 'index'), BigInt.from(3));
+    });
+
+    test('defaultNode propagates backend error for unknown type', () {
+      api.stub('crateFfiContentContentCustomProfileDefaultNode', (_) {
+        throw Exception('unknown node type');
+      });
+
+      final service = ProfileService();
+      expect(
+        () => service.defaultNode(type: 'hologram', index: 0),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('validateProfile forwards payload and returns canonical JSON', () {
+      const canonical = '{"themeId":"default","nodes":[]}';
+      api.stubString(
+        'crateFfiContentContentCustomProfileValidate',
+        canonical,
+      );
+
+      final service = ProfileService();
+      final result = service.validateProfile('{"nodes":[]}');
+
+      expect(result, canonical);
+      final inv = api
+          .callsOf('crateFfiContentContentCustomProfileValidate')
+          .single;
+      expect(api.namedArg(inv, 'profileJson'), '{"nodes":[]}');
     });
 
     test('CustomProfile fromJson applies defaults for missing keys', () {
@@ -138,7 +198,13 @@ void main() {
     });
 
     test('CustomProfile toJson round-trips nodes', () {
-      final node = makeDefaultNode('text_block', 0);
+      final node = CustomProfileNode.fromJson(const {
+        'id': 'widget_1',
+        'type': 'text_block',
+        'styles': {},
+        'position': {'row': 0, 'column': 0, 'order': 0},
+        'properties': {'content': '', 'title': 'About Me'},
+      });
       final profile = CustomProfile(themeId: 'dark', nodes: [node]);
 
       final restored = CustomProfile.fromJson(profile.toJson());

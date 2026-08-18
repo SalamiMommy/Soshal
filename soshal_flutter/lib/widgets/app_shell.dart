@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +10,8 @@ import '../services/notifications_service.dart';
 import '../services/session_service.dart';
 import '../services/shell_service.dart';
 import '../services/signer_service.dart';
+import '../services/theme_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import 'lock_screen.dart';
 import 'signer_lock_screen.dart';
@@ -125,37 +129,40 @@ class _AppShellState extends State<AppShell> {
         final scaffold = Scaffold(
           body: Stack(
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (wide)
-                    _NavigationRailView(
-                      currentPath: _currentPath,
-                      maxHeight: constraints.maxHeight,
-                    ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (offline) const _OfflineBanner(),
-                        Expanded(
-                          child: Stack(
-                            children: [
-                              widget.child,
-                              if (!wide && _isTopLevel)
-                                const _HamburgerButton(),
-                              if (incomingCall != null)
-                                _IncomingCallBanner(
-                                  call: incomingCall,
-                                ),
-                              if (audioPlaying) const _GlobalAudioBar(),
-                            ],
+              const _BackgroundLayer(),
+              _GlassContent(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (wide)
+                      _NavigationRailView(
+                        currentPath: _currentPath,
+                        maxHeight: constraints.maxHeight,
+                      ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (offline) const _OfflineBanner(),
+                          Expanded(
+                            child: Stack(
+                              children: [
+                                widget.child,
+                                if (!wide && _isTopLevel)
+                                  const _HamburgerButton(),
+                                if (incomingCall != null)
+                                  _IncomingCallBanner(
+                                    call: incomingCall,
+                                  ),
+                                if (audioPlaying) const _GlobalAudioBar(),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               if (signedIn && signerLocked) const SignerLockScreen(),
               if (locked) const LockScreen(),
@@ -165,6 +172,66 @@ class _AppShellState extends State<AppShell> {
         );
         return scaffold;
       },
+    );
+  }
+}
+
+/// Glass-backs the shell content: every translucent screen surface sits on
+/// the blurred background image (true frosted glass).
+class _GlassContent extends StatelessWidget {
+  final Widget child;
+  const _GlassContent({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: child,
+      ),
+    );
+  }
+}
+
+// ─── Background image layer ────────────────────────────────────────────────
+
+/// Full-shell background: user-picked image (or bundled default) with a
+/// scrim for readability. Screens paint translucent surfaces over it.
+class _BackgroundLayer extends StatelessWidget {
+  const _BackgroundLayer();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<ThemeService>();
+    final path = theme.backgroundImage;
+    final Widget image = path.startsWith('assets/')
+        ? Image.asset(
+            path,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            errorBuilder: (context, error, stack) => ColoredBox(
+              color: Theme.of(context).colorScheme.surface,
+            ),
+          )
+        : Image.file(
+            File(path),
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            errorBuilder: (context, error, stack) => ColoredBox(
+              color: Theme.of(context).colorScheme.surface,
+            ),
+          );
+    return Positioned.fill(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          image,
+          // Scrim: keeps text legible over bright custom images.
+          ColoredBox(color: Colors.black.withValues(alpha: 0.25)),
+        ],
+      ),
     );
   }
 }
@@ -521,40 +588,56 @@ class _NavigationRailView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final shell = context.watch<ShellService>();
-    // Use the parent's provided maxHeight so the NavigationRail gets the
-    // exact bounded height from the Row/LayoutBuilder instead of relying on
-    // MediaQuery (which can differ) and avoid unbounded/overflow issues.
-    return SizedBox(
-      height: maxHeight,
-      child: NavigationRail(
-        scrollable: true,
-        selectedIndex: _selectedIndex(shell, currentPath),
-        onDestinationSelected: (i) {
-          if (i >= 0 && i < shell.items.length) {
-            context.go(ShellService.routeForItem[shell.items[i].id] ?? '/feed');
-          }
-        },
-        extended: true,
-        leading: const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text(
-            'Soshal',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+    final glass = Theme.of(context).extension<AppThemeExtension>()!;
+    final rail = NavigationRail(
+      scrollable: true,
+      backgroundColor: Colors.transparent,
+      selectedIndex: _selectedIndex(shell, currentPath),
+      onDestinationSelected: (i) {
+        if (i >= 0 && i < shell.items.length) {
+          context.go(ShellService.routeForItem[shell.items[i].id] ?? '/feed');
+        }
+      },
+      extended: true,
+      leading: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Text(
+          'Soshal',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+      ),
+      trailing: IconButton(
+        tooltip: 'Edit tabs',
+        icon: const Icon(Icons.edit_outlined),
+        onPressed: () => _showEditTabsDialog(context, shell),
+      ),
+      destinations: [
+        for (final item in shell.items)
+          NavigationRailDestination(
+            icon: Icon(navIconFor(item.id)),
+            selectedIcon: Icon(navIconFor(item.id)),
+            label: Text(item.label),
+          ),
+      ],
+    );
+    // Floating glass card: rounded, blurred, inset from the screen edges.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 0, 12),
+      child: SizedBox(
+        height: maxHeight - 24,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: glass.glassWindow,
+                border: Border.all(color: glass.glassWindowBorder),
+              ),
+              child: rail,
+            ),
           ),
         ),
-        trailing: IconButton(
-          tooltip: 'Edit tabs',
-          icon: const Icon(Icons.edit_outlined),
-          onPressed: () => _showEditTabsDialog(context, shell),
-        ),
-        destinations: [
-          for (final item in shell.items)
-            NavigationRailDestination(
-              icon: Icon(navIconFor(item.id)),
-              selectedIcon: Icon(navIconFor(item.id)),
-              label: Text(item.label),
-            ),
-        ],
       ),
     );
   }
@@ -623,11 +706,19 @@ class _HamburgerButton extends StatelessWidget {
         child: Material(
           elevation: 2,
           shape: const CircleBorder(),
-          color: Theme.of(context).colorScheme.surface,
-          child: IconButton(
-            icon: const Icon(Icons.menu),
-            tooltip: 'Open Menu',
-            onPressed: () => Scaffold.of(context).openDrawer(),
+          color: Colors.transparent,
+          child: ClipOval(
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: Container(
+                color: Theme.of(context).colorScheme.surface,
+                child: IconButton(
+                  icon: const Icon(Icons.menu),
+                  tooltip: 'Open Menu',
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
+              ),
+            ),
           ),
         ),
       ),

@@ -163,19 +163,32 @@ deleted — do not restore). `lib/ffi/raster.dart` must be kept: `frb_generated.
 references its `ImpellerFrameBufferInfo`.
 
 **KNOWN codegen bug — io.dart corruption (frb 2.12.0)**: after EVERY regen,
-check `grep -n "typedef bool" soshal_flutter/lib/frb_generated.io.dart`. The
-cst-merge step deterministically splices a stray `typedef bool =
-ffi.NativeFunction<...>` (from C's `DartPostCObjectFnType`) plus a dangling
-`=> $allocator<WireSyncRust2DartSse>()…` fragment into
-`wire_cst_list_String`'s section (right after `typedef DartDartPort = int;`).
-That typedef SHADOWS `dart:core bool` for every importer → hundreds of bogus
-`bool` mismatch errors across `lib/ffi/*.dart` + services + glued code (they
-look "phantom" — they are real, caused by the shadowing). Delete that whole
-block down to the `final class wire_cst_list_String` line; keep the
-`typedef DartPort/DartDartPort` lines. Verify with
-`dart analyze lib/frb_generated.io.dart lib/frb_generated.dart` — full-project
-`flutter analyze` caches stale results after a regen; per-file `dart analyze`
-is the source of truth.
+run per-file `dart analyze lib/frb_generated.io.dart lib/frb_generated.dart`
+FIRST (full-project `flutter analyze` caches stale results after a regen;
+per-file `dart analyze` is the source of truth). Two deterministic
+corruptions to repair:
+
+1. **Spliced `typedef bool` line**: cst-merge splices a stray `typedef bool
+   = ffi.NativeFunction<…>` (from C's `DartPostCObjectFnType`) into the wire
+   typedef section. It SHADOWS `dart:core bool` for every importer →
+   hundreds of bogus `bool`/`NativeFunction` signature errors across
+   frb_generated.dart + fake_api.dart + glue. Delete that line only.
+2. **Spliced `$allocate` fragment**: a stray fragment (`}) => $allocator<X>()`
+   + `..ref.*` lines + `}`) lands right after `typedef DartDartPort = int;`.
+   The allocator type X varies between regens (observed: `WireSyncRust2DartSse`,
+   `AMediaCodecBufferInfo`). It is the ONLY fragment appearing OUTSIDE a class
+   body — delete those lines only. Legit `$allocate` bodies live inside
+   `final class … extends ffi.Struct` and must NOT be touched: deleting one
+   breaks every class declared after it (dozens of bogus "undefined class" +
+   `InvalidType` errors). Both corruptions may appear in the SAME regen.
+3. **Dropped wire types** (only when the fragment splice happens): the
+   splice displaces `final class wire_cst_list_String` (extends `ffi.Struct`;
+   ptr = `ffi.Pointer<ffi.Pointer<wire_cst_list_prim_u_8_strict>>`,
+   `@ffi.Int32() external int len`) plus `typedef mediastatus_t = ffi.Int32;`
+   / `typedef Dartmediastatus_t = int;` / `typedef ssize_t = ffi.IntPtr;` /
+   `typedef Dartssize_t = int;` (from codecs/ndk.rs type aliases). Hand-restore
+   them next to `typedef DartDartPort = int;`. Errors naming these three types
+   = they're missing.
 
 **DB migrations** (db-core): `SCHEMA_VERSION` + a `v0NN_*.rs` migration file;
 each migration SQL records its own version
@@ -278,6 +291,69 @@ each migration SQL records its own version
    Tauri; the Flutter app uses the in-process signer + OS keychain.
 4. **Backend-gated surfaces** — mostly real now; remaining gaps are
    external-infra only:
+- **Runtime permissions (Phase 4, 2026-08)**: camera/mic + fine-location
+      permission state/requests live in Rust — `flutter-bridge/src/ffi/permissions.rs`
+      (sync fns polling `Activity.checkSelfPermission` via JNI in platform.rs;
+      `requestPermissions` fires the dialog, callers poll `*_granted` 20×250 ms;
+      permanent denial approximated with `shouldShowRequestPermissionRationale`;
+      `permissions_open_settings` builds the app-details Intent; location-service
+      state via `LocationManager.isProviderEnabled`). Linux location via XDG
+      Desktop Portal through ashpd 0.13 (`LocationProxy::create_session` +
+      `receive_location_updated` stream, `location` + `tokio` features; `tokio`
+      runtime supplied by frb) — supersedes the `com.soshal/portal`
+      MethodChannel in `my_application.cc`. `geolocator` plugin remains ONLY for
+      the Android GPS fix (its permission flow bypassed); `permission_handler`
+      plugin dependency removed. Kotlin untouched (live checks reflect the
+      dialog decision — no result store needed).
+- **CI platform guard (Phase 6, 2026-08)**: `scripts/guard-lib-platform.sh`
+      (wired into pre-commit + CI flutter-lint job) bans, in `soshal_flutter/lib/`:
+      `MethodChannel(` usage, imports of removed plugins
+      (permission_handler/battery_plus/connectivity_plus), and `Platform.is*` /
+      `Platform.operatingSystem|version|numberOfProcessors` fact sniffing —
+      platform facts must come from Rust ffi fns (e.g.
+      `permissions_platform_current()`). Exemptions: `ffi_bridge.dart` (native
+      lib loading is the FFI boundary), `utils/offthread.dart`
+      (`FLUTTER_TEST` env probe), `Platform.pathSeparator` (path building).
+      Tests that stub `debugPlatformIs*` hooks must set BOTH
+      `debugPlatformIsAndroid` AND `debugPlatformIsLinux` (unset hook falls
+      back to the ffi platform call and throws in FakeApi tests).
+- **Power sampling (Phase 5, 2026-08)**: battery/connectivity facts for the
+      seeding scheduler live in Rust — `flutter-bridge/src/ffi/power.rs`
+      (`power_sample_os_state`, async frb). Android: JNI on
+      `BatteryManager.getIntProperty` (capacity + status), `PowerManager.isPowerSaveMode`,
+      `ConnectivityManager.getActiveNetworkInfo().getType()` (mobile/wimax =
+      cellular). Linux: UPower (`OnBattery`, first battery device `Percentage`)
+      + NetworkManager (`Devices` list, any MODEM type = cellular) via zbus 5
+      (direct dep, tokio feature; tokio runtime supplied by frb); session bus
+      absence degrades to desktop defaults. `battery_plus` + `connectivity_plus`
+      plugins REMOVED from pubspec. `p2p_service.dart` polls via
+      `powerSampleOsState()`; `updatePower` (push into scheduler) unchanged.
+- **Runtime permissions (Phase 4, 2026-08)**: camera/mic + fine-location
+      permission state/requests live in Rust — `flutter-bridge/src/ffi/permissions.rs`
+      (sync fns polling `Activity.checkSelfPermission` via JNI in platform.rs;
+      `requestPermissions` fires the dialog, callers poll `*_granted` 20×250 ms;
+      permanent denial approximated with `shouldShowRequestPermissionRationale`;
+      `permissions_open_settings` builds the app-details Intent; location-service
+      state via `LocationManager.isProviderEnabled`). Linux location via XDG
+      Desktop Portal through ashpd 0.13 (`LocationProxy::create_session` +
+      `receive_location_updated` stream, `location` + `tokio` features; `tokio`
+      runtime supplied by frb) — supersedes the `com.soshal/portal`
+      MethodChannel in `my_application.cc`. `geolocator` plugin remains ONLY for
+      the Android GPS fix (its permission flow bypassed); `permission_handler`
+      plugin dependency removed. Kotlin untouched (live checks reflect the
+      dialog decision — no result store needed).
+- **CI platform guard (Phase 6, 2026-08)**: `scripts/guard-lib-platform.sh`
+      (wired into pre-commit + CI flutter-lint job) bans, in `soshal_flutter/lib/`:
+      `MethodChannel(` usage, imports of removed plugins
+      (permission_handler/battery_plus/connectivity_plus), and `Platform.is*` /
+      `Platform.operatingSystem|version|numberOfProcessors` fact sniffing —
+      platform facts must come from Rust ffi fns (e.g.
+      `permissions_platform_current()`). Exemptions: `ffi_bridge.dart` (native
+      lib loading is the FFI boundary), `utils/offthread.dart`
+      (`FLUTTER_TEST` env probe), `Platform.pathSeparator` (path building).
+      Tests that stub `debugPlatformIs*` hooks must set BOTH
+      `debugPlatformIsAndroid` AND `debugPlatformIsLinux` (unset hook falls
+      back to the ffi platform call and throws in FakeApi tests).
 - Real: `zap_fetch_invoice`/`zap_send_payment` (NIP-47 NWC exchange),
       friend suggestions (WoT over contact graph) + friend requests
       (kind-3 follows), `webrtc_get_turn_servers` reads `turn_endpoint`

@@ -2,33 +2,127 @@
 //! Minis, Musicloud, custom profiles
 
 use flutter_rust_bridge::frb;
+use soshal_minis_core::events as minis_events;
 
-/// Fetch known mini URLs from the local registry: kind-31020 rows ingested
-/// by the sync engine (subscription added in sync-core). Newest first.
+fn add_tag(builder: nostr::event::EventBuilder, tag: Vec<String>) -> nostr::event::EventBuilder {
+    match nostr::event::Tag::parse(tag) {
+        Ok(t) => builder.tag(t),
+        Err(_) => builder,
+    }
+}
+
+/// Fetch known minis from the local registry: kind-31020 rows ingested by
+/// the sync engine (subscription added in sync-core). Newest first. Returns
+/// a JSON array of mini entries (id, pubkey, videoUrl, blobHash, mediaSize,
+/// textOverlay, thumbnail, audience, createdAt).
 #[frb(sync, serialize)]
-pub fn minis_fetch() -> Result<Vec<String>, String> {
+pub fn minis_fetch() -> Result<String, String> {
     let json = super::db::db_query_raw(
-        "SELECT tags_json FROM posts WHERE kind = 31020 AND is_deleted = 0 \
+        "SELECT id, pubkey, content, created_at, tags_json FROM posts \
+         WHERE kind = 31020 AND is_deleted = 0 \
          ORDER BY created_at DESC LIMIT 200"
             .to_string(),
     )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    let mut urls: Vec<String> = Vec::new();
+    let mut out: Vec<serde_json::Value> = Vec::new();
     for row in rows {
         let tags: Vec<Vec<String>> =
             serde_json::from_str(row["tags_json"].as_str().unwrap_or("[]")).unwrap_or_default();
-        let Some(url) = tags
-            .iter()
-            .find(|t| t.first().map(|s| s == "url").unwrap_or(false))
-            .and_then(|t| t.get(1))
-        else {
-            continue;
+        let ev = soshal_nostr_core::models::NostrEvent {
+            id: row["id"].as_str().unwrap_or_default().to_string(),
+            pubkey: row["pubkey"].as_str().unwrap_or_default().to_string(),
+            content: row["content"].as_str().unwrap_or_default().to_string(),
+            tags,
+            created_at: row["created_at"].as_f64().unwrap_or(0.0),
+            kind: 31020,
         };
-        if !url.is_empty() && !urls.contains(url) {
-            urls.push(url.clone());
+        if let Some(mapped) = minis_events::mini_from_event(&ev) {
+            out.push(mapped);
         }
     }
-    Ok(urls).into()
+    super::util::json_ok(out)
+}
+
+/// Publish a mini video (kind 31020). `media_source` is a local video file
+/// path or an https media URL; the bytes are uploaded to the local chunk
+/// store (CAS) and the event carries the feed `["media", ...]` blob tag so
+/// other devices fetch it from the publisher's or any peer's cache. When
+/// the source is a URL it is kept in the `url` tag as a fallback. Returns
+/// the event id.
+#[frb(serialize)]
+pub async fn minis_publish(
+    media_source: String,
+    text_overlay: Option<String>,
+    thumbnail: Option<String>,
+    audience: Option<String>,
+) -> Result<String, String> {
+    if media_source.is_empty() {
+        return Err("media_source must be a local file path or https URL".into());
+    }
+    let is_url = soshal_media_core::source::is_url_source(&media_source);
+    if is_url {
+        if !soshal_content_core::url::is_valid_media_url(&media_source) {
+            return Err("media_source must be a valid https media URL".into());
+        }
+    } else if std::fs::metadata(&media_source).is_err() {
+        return Err("media file not found".into());
+    }
+    let manifest_json = super::media::media_upload_blob_file(media_source.clone()).await?;
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest_json).map_err(|e| format!("parse blob manifest: {e}"))?;
+    let blob_hash = manifest["blob_hash"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    let media_size: u64 = manifest["total_size"].as_u64().unwrap_or(0);
+    if blob_hash.len() != 64 {
+        return Err("blob upload produced an invalid hash".into());
+    }
+    let url_tag = if is_url {
+        media_source.clone()
+    } else {
+        format!("blob://{blob_hash}")
+    };
+    let aud = audience.unwrap_or_else(|| "public".into());
+    let content = text_overlay.unwrap_or_default();
+    let mut builder = nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(31020), content);
+    builder = add_tag(builder, vec!["url".to_string(), url_tag]);
+    builder = add_tag(
+        builder,
+        vec![
+            "media".to_string(),
+            "video".to_string(),
+            format!("blob://{blob_hash}"),
+            blob_hash,
+            media_size.to_string(),
+        ],
+    );
+    if let Some(th) = thumbnail {
+        if !th.is_empty() {
+            let thumb_tag = if soshal_media_core::source::is_url_source(&th) {
+                if !soshal_content_core::url::is_valid_media_url(&th) {
+                    return Err("thumbnail must be a valid https media URL".into());
+                }
+                th
+            } else if std::fs::metadata(&th).is_ok() {
+                let t_manifest = super::media::media_upload_blob_file(th.clone()).await?;
+                let t_json: serde_json::Value = serde_json::from_str(&t_manifest)
+                    .map_err(|e| format!("parse thumbnail manifest: {e}"))?;
+                let t_hash = t_json["blob_hash"].as_str().unwrap_or_default().to_string();
+                format!("blob://{t_hash}")
+            } else {
+                return Err("thumbnail file not found".into());
+            };
+            builder = add_tag(builder, vec!["image".to_string(), thumb_tag]);
+        }
+    }
+    builder = add_tag(builder, vec!["audience".to_string(), aud]);
+    let signed = super::signer::sign_builder(builder)?;
+    let event: serde_json::Value =
+        serde_json::from_str(&signed).map_err(|e| format!("parse signed event: {e}"))?;
+    let id = event["id"].as_str().unwrap_or_default().to_string();
+    let _ = super::network::network_publish_event(signed).await?;
+    Ok(id)
 }
 
 /// Execute a WASI 0.2 Wasm content filter component plugin (runtime itself
@@ -76,7 +170,9 @@ mod tests {
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
         assert!(super::super::db::db_init(path.clone()).is_ok());
-        assert!(minis_fetch().unwrap().is_empty());
+        let json = minis_fetch().unwrap();
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+        assert!(rows.is_empty());
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
@@ -105,14 +201,14 @@ mod tests {
                 .to_string()
         )
         .is_ok());
-        let urls = minis_fetch().unwrap();
-        assert_eq!(
-            urls,
-            vec![
-                "https://mini.example/b".to_string(),
-                "https://mini.example/a".to_string()
-            ]
-        );
+        let json = minis_fetch().unwrap();
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["videoUrl"], "https://mini.example/b");
+        assert_eq!(rows[0]["textOverlay"], "mini two");
+        assert_eq!(rows[1]["videoUrl"], "https://mini.example/a");
+        assert_eq!(rows[1]["thumbnail"], "https://img.example/a.png");
+        assert_eq!(rows[1]["blobHash"], "");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));

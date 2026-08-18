@@ -4,9 +4,12 @@
 /// or remote code execution (RCE).
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../ffi/auth.dart';
+import '../ffi/content.dart' as ffi_content;
 import '../ffi/db.dart' as ffi_db;
 
 const int customProfileKind = 30085;
@@ -786,10 +789,11 @@ class CustomProfileNode {
       id: json['id'] as String,
       type: json['type'] as String,
       styles: SanitizedStyles.fromJson(
-          json['styles'] as Map<String, dynamic>? ?? {}),
+          Map<String, dynamic>.from(json['styles'] as Map? ?? const {})),
       position: NodePosition.fromJson(
-          json['position'] as Map<String, dynamic>? ?? {}),
-      properties: json['properties'] as Map<String, dynamic>? ?? {},
+          Map<String, dynamic>.from(json['position'] as Map? ?? const {})),
+      properties:
+          Map<String, dynamic>.from(json['properties'] as Map? ?? const {}),
     );
   }
 
@@ -850,193 +854,50 @@ class NodeTypeInfo {
   });
 }
 
-final List<NodeTypeInfo> nodeTypes = [
-  NodeTypeInfo(type: 'theme', label: 'Theme', icon: '🎨'),
-  NodeTypeInfo(type: 'container', label: 'Container', icon: '📦'),
-  NodeTypeInfo(type: 'text_block', label: 'Text Block', icon: '📝'),
-  NodeTypeInfo(type: 'media_gallery', label: 'Media Gallery', icon: '🖼'),
-  NodeTypeInfo(type: 'friend_grid', label: 'Friend Grid', icon: '👥'),
-  NodeTypeInfo(type: 'music_player', label: 'Music Player', icon: '🎵'),
-  NodeTypeInfo(type: 'contact_card', label: 'Contact Card', icon: '📇'),
-  NodeTypeInfo(type: 'qa_list', label: 'Q&A List', icon: '❓'),
-  NodeTypeInfo(type: 'tab_container', label: 'Tab Container', icon: '📑'),
-  NodeTypeInfo(type: 'guestbook', label: 'Guestbook', icon: '📖'),
-  NodeTypeInfo(type: 'profile_links', label: 'Profile Links', icon: '🔗'),
-  NodeTypeInfo(type: 'post_history', label: 'Post History', icon: '📜'),
-];
-
-CustomProfileNode makeDefaultNode(String type, int index) {
-  final timestamp = DateTime.now().millisecondsSinceEpoch;
-  final randomSuffix = timestamp % 10000;
-  final id = 'widget_$timestamp${randomSuffix.toString().padLeft(4, '0')}';
-  final pos = NodePosition(row: 0, column: 0, order: index);
-
-  switch (type) {
-    case 'theme':
-      return CustomProfileNode(
-        id: id,
-        type: 'theme',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: ThemeProperties(
-          themeName: 'default',
-          title: 'Theme',
-        ).toJson(),
-      );
-    case 'container':
-      return CustomProfileNode(
-        id: id,
-        type: 'container',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: BaseWidgetProperties(
-          title: 'Section',
-        ).toJson(),
-      );
-    case 'text_block':
-      return CustomProfileNode(
-        id: id,
-        type: 'text_block',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: TextBlockProperties(
-          content: '',
-          title: 'About Me',
-        ).toJson(),
-      );
-    case 'media_gallery':
-      return CustomProfileNode(
-        id: id,
-        type: 'media_gallery',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: MediaGalleryProperties(
-          items: [],
-          layoutType: 'grid',
-          columns: 3,
-          title: 'Gallery',
-        ).toJson(),
-      );
-    case 'friend_grid':
-      return CustomProfileNode(
-        id: id,
-        type: 'friend_grid',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: FriendGridProperties(
-          limit: 8,
-          showOnlineStatus: true,
-          title: 'Top Friends',
-        ).toJson(),
-      );
-    case 'music_player':
-      return CustomProfileNode(
-        id: id,
-        type: 'music_player',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: MusicPlayerProperties(
-          tracks: [],
-          autoplay: false,
-          loop: false,
-          title: 'My Music',
-        ).toJson(),
-      );
-    case 'contact_card':
-      return CustomProfileNode(
-        id: id,
-        type: 'contact_card',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: ContactCardProperties(
-          enableMessage: true,
-          enableVouch: false,
-          enableAddFriend: true,
-          title: 'Contact',
-        ).toJson(),
-      );
-    case 'qa_list':
-      return CustomProfileNode(
-        id: id,
-        type: 'qa_list',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: QAListProperties(
-          pairs: [],
-          title: 'Q&A',
-        ).toJson(),
-      );
-    case 'tab_container':
-      return CustomProfileNode(
-        id: id,
-        type: 'tab_container',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: TabContainerProperties(
-          tabs: [
-            TabDef(
-              id: 'tab_$timestamp',
-              label: 'Photos',
-              items: [],
-            ),
-          ],
-          title: 'Media Tabs',
-        ).toJson(),
-      );
-    case 'profile_links':
-      return CustomProfileNode(
-        id: id,
-        type: 'profile_links',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: ProfileLinksProperties(
-          showMinis: true,
-          showMusicloud: true,
-          title: 'Profile Links',
-        ).toJson(),
-      );
-    case 'guestbook':
-      return CustomProfileNode(
-        id: id,
-        type: 'guestbook',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: GuestbookProperties(
-          entries: [],
-          allowAnonymous: false,
-          maxEntries: 20,
-          title: 'Guestbook',
-        ).toJson(),
-      );
-    case 'post_history':
-      return CustomProfileNode(
-        id: id,
-        type: 'post_history',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: HistoryProperties(
-          showReposts: true,
-          maxEntries: 50,
-          title: 'Post History',
-        ).toJson(),
-      );
-    default:
-      return CustomProfileNode(
-        id: id,
-        type: 'container',
-        styles: SanitizedStyles(),
-        position: pos,
-        properties: BaseWidgetProperties(
-          title: 'Widget',
-        ).toJson(),
-      );
-  }
-}
-
-/// Owns custom-profile operations: DB load/save + npub encoding for QR.
+/// Owns custom-profile operations: DB load/save, schema authority (node
+/// types + defaults live in Rust), npub encoding for QR.
 /// Legal FFI-call site per architecture rules; screens must use this
 /// instead of calling glue fns directly.
 class ProfileService extends ChangeNotifier {
+  List<NodeTypeInfo> _nodeTypes = const [];
+
+  /// The 12 supported node types, sourced from Rust (schema authority).
+  List<NodeTypeInfo> get nodeTypes => _nodeTypes;
+
+  ProfileService() {
+    _loadNodeTypes();
+  }
+
+  void _loadNodeTypes() {
+    try {
+      final json = ffi_content.contentCustomProfileNodeTypes();
+      final list = (jsonDecode(json) as List<dynamic>)
+          .map((e) => NodeTypeInfo(
+                type: (e as Map<String, dynamic>)['type'] as String,
+                label: e['label'] as String,
+                icon: e['icon'] as String,
+              ))
+          .toList();
+      _nodeTypes = List.unmodifiable(list);
+    } catch (e) {
+      debugPrint('Failed to load node types from Rust: $e');
+      _nodeTypes = const [];
+    }
+  }
+
+  /// Default node JSON for a node type; schema defaults live in Rust.
+  String defaultNode({required String type, required int index}) =>
+      ffi_content.contentCustomProfileDefaultNode(
+        nodeType: type,
+        index: BigInt.from(index),
+      );
+
+  /// Strict-validate a profile payload; returns canonical JSON or throws.
+  String validateProfile(String profileJson) =>
+      ffi_content.contentCustomProfileValidate(
+        profileJson: profileJson,
+      );
+
   /// Load custom profile nodes JSON for a pubkey from the database.
   String getCustomProfileNodes({required String pubkey}) =>
       ffi_db.dbGetCustomProfileNodes(pubkey: pubkey);

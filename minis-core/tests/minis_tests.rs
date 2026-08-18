@@ -132,6 +132,8 @@ fn sorts_by_created_desc() {
             id: "old".into(),
             pubkey: "".into(),
             video_url: "".into(),
+            blob_hash: "".into(),
+            media_size: 0,
             text_overlay: "".into(),
             thumbnail: "".into(),
             audience: "".into(),
@@ -141,6 +143,8 @@ fn sorts_by_created_desc() {
             id: "new".into(),
             pubkey: "".into(),
             video_url: "".into(),
+            blob_hash: "".into(),
+            media_size: 0,
             text_overlay: "".into(),
             thumbnail: "".into(),
             audience: "".into(),
@@ -150,6 +154,8 @@ fn sorts_by_created_desc() {
             id: "mid".into(),
             pubkey: "".into(),
             video_url: "".into(),
+            blob_hash: "".into(),
+            media_size: 0,
             text_overlay: "".into(),
             thumbnail: "".into(),
             audience: "".into(),
@@ -165,6 +171,8 @@ fn sorts_by_created_desc() {
             id: "b".into(),
             pubkey: "".into(),
             audio_url: "".into(),
+            blob_hash: "".into(),
+            media_size: 0,
             title: "".into(),
             thumbnail: "".into(),
             hashtags: vec![],
@@ -176,6 +184,8 @@ fn sorts_by_created_desc() {
             id: "a".into(),
             pubkey: "".into(),
             audio_url: "".into(),
+            blob_hash: "".into(),
+            media_size: 0,
             title: "".into(),
             thumbnail: "".into(),
             hashtags: vec![],
@@ -395,4 +405,75 @@ fn mini_audience_preserved() {
     );
     assert_eq!(mini_from_event(&e).unwrap()["audience"], "followers");
     assert_eq!(mini_event_out(&e).unwrap().audience, "followers");
+}
+
+#[test]
+fn media_blob_tag_parsed() {
+    let hash = "ab".repeat(32);
+    let media_tag = vec![
+        "media".to_string(),
+        "video".to_string(),
+        format!("blob://{hash}"),
+        hash.clone(),
+        "12345".to_string(),
+    ];
+    let blob_url = format!("blob://{hash}");
+    let e = ev(
+        "m1",
+        31020,
+        "overlay",
+        vec![tag("url", &blob_url), media_tag],
+    );
+    let out = mini_from_event(&e).unwrap();
+    assert_eq!(out["blobHash"], hash);
+    assert_eq!(out["mediaSize"], 12345);
+    let typed = mini_event_out(&e).unwrap();
+    assert_eq!(typed.blob_hash, hash);
+    assert_eq!(typed.media_size, 12345);
+
+    let mus = ev(
+        "m2",
+        31022,
+        "",
+        vec![
+            tag("url", "https://x/a.mp3"),
+            tag("title", "song"),
+            vec![
+                "media".to_string(),
+                "audio".to_string(),
+                format!("blob://{hash}"),
+                hash.clone(),
+                "999".to_string(),
+            ],
+        ],
+    );
+    let mout = musicloud_from_event(&mus).unwrap();
+    assert_eq!(mout["blobHash"], hash);
+    assert_eq!(mout["mediaSize"], 999);
+    let mtyped = musicloud_event_out(&mus).unwrap();
+    assert_eq!(mtyped.blob_hash, hash);
+    assert_eq!(mtyped.media_size, 999);
+}
+
+#[test]
+fn media_blob_tag_malformed_ignored() {
+    let e = ev(
+        "m3",
+        31020,
+        "",
+        vec![
+            tag("url", "https://x/v.mp4"),
+            vec![
+                "media".to_string(),
+                "video".to_string(),
+                "blob://nothex".to_string(),
+                "zz".to_string(),
+                "1".to_string(),
+            ],
+        ],
+    );
+    let typed = mini_event_out(&e).unwrap();
+    assert_eq!(typed.blob_hash, "");
+    assert_eq!(typed.media_size, 0);
+    assert_eq!(mini_from_event(&e).unwrap()["blobHash"], "");
 }

@@ -1,10 +1,13 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
+import 'media_service.dart';
+import 'p2p_service.dart';
 import 'social_entry.dart';
 
 /// Musicloud: kind-31022 track publishing, fetching, sharing to feed and
@@ -32,9 +35,12 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
-  /// Publish a track (kind 31022). Returns the event id.
+  /// Publish a track (kind 31022). `mediaSource` is a local audio file path
+  /// or an https media URL; the bytes are chunked into the local CAS and the
+  /// event carries a blob tag so peers can fetch from caches. Returns the
+  /// event id.
   Future<String> publishTrack({
-    required String audioUrl,
+    required String mediaSource,
     String? title,
     String? thumbnail,
     List<String> hashtags = const [],
@@ -42,7 +48,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
   }) async {
     try {
       final id = await RustLib.instance.api.crateFfiMusicMusicPublish(
-        audioUrl: audioUrl,
+        mediaSource: mediaSource,
         title: title,
         thumbnail: thumbnail,
         hashtags: hashtags,
@@ -131,6 +137,8 @@ class MusicTrack {
   final String id;
   final String pubkey;
   final String audioUrl;
+  final String blobHash;
+  final int mediaSize;
   final String title;
   final String thumbnail;
   final List<String> hashtags;
@@ -142,6 +150,8 @@ class MusicTrack {
     required this.id,
     required this.pubkey,
     required this.audioUrl,
+    required this.blobHash,
+    required this.mediaSize,
     required this.title,
     required this.thumbnail,
     required this.hashtags,
@@ -154,6 +164,8 @@ class MusicTrack {
         id: json['id'] as String? ?? '',
         pubkey: json['pubkey'] as String? ?? '',
         audioUrl: json['audioUrl'] as String? ?? '',
+        blobHash: json['blobHash'] as String? ?? '',
+        mediaSize: (json['mediaSize'] as num?)?.toInt() ?? 0,
         title: json['title'] as String? ?? '',
         thumbnail: json['thumbnail'] as String? ?? '',
         hashtags: (json['hashtags'] as List<dynamic>? ?? const [])
@@ -164,6 +176,36 @@ class MusicTrack {
         audience: json['audience'] as String? ?? 'public',
         createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
       );
+}
+
+/// Resolves a track's audio to a playable URL: local CAS blob first, then
+/// LAN peer fetch, then the original URL as fallback (blob-first, URL
+/// fallback). Returns null when nothing is reachable.
+Future<String?> resolveTrackPlaybackUrl(
+  MusicTrack track,
+  MediaService media,
+  P2pService p2p,
+) async {
+  if (track.blobHash.isNotEmpty) {
+    try {
+      await media.fetchBlob(track.blobHash);
+      await media.startLocalServer();
+      return media.getLocalUrl(track.blobHash);
+    } catch (_) {
+      try {
+        await media.fetchBlobFromLan(
+          track.blobHash,
+          peers: p2p.peers,
+          outPath: '${Directory.systemTemp.path}/${track.blobHash}',
+        );
+        await media.startLocalServer();
+        return media.getLocalUrl(track.blobHash);
+      } catch (_) {
+        // Fall through to the URL fallback.
+      }
+    }
+  }
+  return track.audioUrl.isNotEmpty ? track.audioUrl : null;
 }
 
 /// A comment on a track (kind 1 with `E` tag), serialized via `mini_event_out`.

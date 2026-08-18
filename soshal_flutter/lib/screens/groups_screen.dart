@@ -1,8 +1,14 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../ffi/db.dart' as db_ffi;
 import '../services/groups_service.dart';
+import '../services/media_service.dart';
 import '../services/session_service.dart';
+import '../widgets/blob_image.dart';
+import '../widgets/group_sidebar.dart';
+import '../widgets/group_tabs.dart';
 
 /// Groups: list, join/leave/create, detail view.
 class GroupsScreen extends StatefulWidget {
@@ -79,7 +85,35 @@ class _GroupsScreenState extends State<GroupsScreen> {
             ),
             TextField(
               controller: pic,
-              decoration: const InputDecoration(labelText: 'Picture URL'),
+              decoration: const InputDecoration(
+                labelText: 'Picture',
+                hintText: 'pick from device or paste a URL',
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () async {
+                try {
+                  final picked =
+                      await FilePicker.pickFile(type: FileType.image);
+                  final path = picked?.path;
+                  if (path == null) return;
+                  final manifest =
+                      await context.read<MediaService>().uploadMedia(path);
+                  final hash = manifest['blob_hash'] as String? ?? '';
+                  if (hash.length != 64) {
+                    throw Exception('Bad upload manifest');
+                  }
+                  pic.text = 'n$hash';
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: SelectableText('Upload error: $e')));
+                  }
+                }
+              },
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text('Pick image from device'),
             ),
           ],
         ),
@@ -146,9 +180,17 @@ class _GroupsScreenState extends State<GroupsScreen> {
                       final g = api.groups[index];
                       return ListTile(
                         leading: g.picture.isNotEmpty
-                            ? CircleAvatar(
-                                backgroundImage: ResizeImage.resizeIfNeeded(
-                                    128, 128, NetworkImage(g.picture)),
+                            ? ClipOval(
+                                child: BlobImage(
+                                  source: g.picture,
+                                  width: 48,
+                                  height: 48,
+                                  errorBuilder: (_) => CircleAvatar(
+                                    child: Text(g.name.isEmpty
+                                        ? '?'
+                                        : g.name[0].toUpperCase()),
+                                  ),
+                                ),
                               )
                             : CircleAvatar(
                                 child: Text(g.name.isEmpty
@@ -179,7 +221,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
   }
 }
 
-/// Group detail: members + admin actions.
+/// Group detail: tabs (voice / rooms / threads) + members/roles sidebar.
 class GroupDetailScreen extends StatefulWidget {
   /// Group detail screen.
   const GroupDetailScreen({super.key, required this.groupId});
@@ -191,20 +233,26 @@ class GroupDetailScreen extends StatefulWidget {
 }
 
 class _GroupDetailScreenState extends State<GroupDetailScreen> {
+  static const double _breakpoint = 700.0;
+  static const double _minSidebar = 240.0;
+  static const double _maxSidebar = 420.0;
+  static const String _widthSetting = 'group_sidebar_width';
+
   bool _loading = true;
-  bool _sending = false;
-  final TextEditingController _chat = TextEditingController();
+  bool _sidebarOpen = false;
+  double _sidebarWidth = 300.0;
 
   @override
   void initState() {
     super.initState();
+    final saved = db_ffi.dbGetSetting(key: _widthSetting);
+    if (saved != null) {
+      final parsed = double.tryParse(saved);
+      if (parsed != null) {
+        _sidebarWidth = parsed.clamp(_minSidebar, _maxSidebar);
+      }
+    }
     _load();
-  }
-
-  @override
-  void dispose() {
-    _chat.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -226,499 +274,155 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       } catch (e) {
         debugPrint('group messages: $e');
       }
+      try {
+        await api.fetchRooms(widget.groupId);
+      } catch (e) {
+        debugPrint('group rooms: $e');
+      }
+      try {
+        await api.fetchThreads(widget.groupId);
+      } catch (e) {
+        debugPrint('group threads: $e');
+      }
+      try {
+        await api.fetchVoiceChannels(widget.groupId);
+      } catch (e) {
+        debugPrint('group voice: $e');
+      }
     } catch (e) {
       debugPrint('group detail: $e');
     }
     if (mounted) setState(() => _loading = false);
   }
 
-  Future<void> _sendMessage() async {
-    final text = _chat.text.trim();
-    if (text.isEmpty) return;
-    setState(() => _sending = true);
-    try {
-      await context.read<GroupsService>().postMessage(widget.groupId, text);
-      _chat.clear();
-      if (!mounted) return;
-      await context.read<GroupsService>().fetchMessages(widget.groupId);
-      if (mounted) setState(() {});
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Send failed: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
+  void _persistWidth() {
+    db_ffi.dbSetSetting(key: _widthSetting, value: '${_sidebarWidth.round()}');
   }
 
-  String? _activePubkey() => context.read<SessionService>().activePubkey;
-
-  Future<void> _kickMember(String memberPubkey) async {
-    try {
-      final pubkey = _activePubkey();
-      if (pubkey == null) throw Exception('Sign in');
-      await context
-          .read<GroupsService>()
-          .removeMember(widget.groupId, memberPubkey, pubkey);
-      await _load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Failed: $e')));
-      }
-    }
-  }
-
-  Future<void> _assignRole(String memberPubkey, String role) async {
-    try {
-      final pubkey = _activePubkey();
-      if (pubkey == null) throw Exception('Sign in');
-      await context
-          .read<GroupsService>()
-          .setMemberRole(widget.groupId, memberPubkey, role, pubkey);
-      await _load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Failed: $e')));
-      }
-    }
-  }
-
-  Future<void> _saveRole({
-    String? roleId,
-    required String name,
-    required String color,
-    required int position,
-    required List<String> permissions,
-  }) async {
-    try {
-      await context.read<GroupsService>().upsertRole(
-            widget.groupId,
-            roleId: roleId ?? '',
-            name: name,
-            color: color,
-            position: position,
-            permissions: groupPermsToJson(permissions),
-          );
-      await _load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Save failed: $e')));
-      }
-    }
-  }
-
-  Future<void> _deleteRole(GroupRole role) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete role?'),
-        content: Text(
-            'Delete "${role.name}"? This cannot be undone. Members assigned to it lose their role badge.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      await context.read<GroupsService>().deleteRole(role.id);
-      await _load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Delete failed: $e')));
-      }
-    }
-  }
-
-  Future<void> _editRoleDialog({GroupRole? role}) async {
-    final name = TextEditingController(text: role?.name ?? '');
-    final position =
-        TextEditingController(text: (role?.position ?? 1).toString());
-    var color = groupRoleColor(role?.color ?? '#8b5cf6');
-    final perms = groupPermsSet(role?.permissions ?? '[]').toSet();
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(role == null ? 'New role' : 'Edit role'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: name,
-                  decoration: const InputDecoration(labelText: 'Name *'),
-                ),
-                TextField(
-                  controller: position,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Position'),
-                ),
-                const SizedBox(height: 8),
-                const Text('Color',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final c in groupRoleColors)
-                      GestureDetector(
-                        onTap: () => setDialogState(() => color = c),
-                        child: Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: _hexColor(c),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              width: 2,
-                              color: color == c
-                                  ? Colors.white
-                                  : Colors.transparent,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Permissions (${perms.length} enabled)',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                for (final (key, label) in groupPermissionKeys)
-                  CheckboxListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    title: Text(label, style: const TextStyle(fontSize: 13)),
-                    value: perms.contains(key),
-                    onChanged: (v) => setDialogState(() {
-                      if (v == true) {
-                        perms.add(key);
-                      } else {
-                        perms.remove(key);
-                      }
-                    }),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final n = name.text.trim();
-                if (n.isEmpty) return;
-                Navigator.pop(context);
-                _saveRole(
-                  roleId: role?.id,
-                  name: n,
-                  color: color,
-                  position: int.tryParse(position.text.trim()) ?? 0,
-                  permissions: perms.toList(),
-                );
-              },
-              child: const Text('Save'),
-            ),
-          ],
+  Widget _resizeHandle() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: (d) => setState(() {
+        _sidebarWidth =
+            (_sidebarWidth - d.delta.dx).clamp(_minSidebar, _maxSidebar);
+      }),
+      onHorizontalDragEnd: (_) => _persistWidth(),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeLeftRight,
+        child: Container(
+          width: 8,
+          color: Theme.of(context)
+              .colorScheme
+              .outlineVariant
+              .withValues(alpha: 0.4),
         ),
       ),
     );
   }
 
-  (String, String) _roleBadge(String role, List<GroupRole> roles) {
-    switch (role) {
-      case 'owner':
-        return ('Owner', '#f59e0b');
-      case 'admin':
-        return ('Admin', '#f59e0b');
-      case 'member':
-        return ('Member', '#6b7280');
-    }
-    for (final r in roles) {
-      if (r.id == role) return (r.name, groupRoleColor(r.color));
-    }
-    return (role, '#6b7280');
-  }
-
-  int _memberRank(String role, List<GroupRole> roles) {
-    if (role == 'owner' || role == 'admin') return 0;
-    if (roles.any((r) => r.id == role)) return 1;
-    return 2;
-  }
-
-  int _memberCountForRole(String roleId, List<GroupMemberWithRole> members) =>
-      members.where((m) => m.role == roleId).length;
-
-  Color _hexColor(String hex) =>
-      Color(0xFF000000 | int.parse(hex.substring(1), radix: 16));
-
-  Widget _roleCard(GroupRole role, GroupsService api, bool isOwner) {
-    final color = _hexColor(groupRoleColor(role.color));
-    final count = _memberCountForRole(role.id, api.memberRoles);
-    final perms = groupPermsSet(role.permissions);
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border(left: BorderSide(color: color, width: 4)),
-      ),
-      child: Row(
+  Widget _tabs(GroupsService api) {
+    return DefaultTabController(
+      length: 3,
+      child: Column(
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration:
-                          BoxDecoration(color: color, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(role.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                    const SizedBox(width: 8),
-                    Text('$count members',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Theme.of(context).hintColor)),
-                  ],
-                ),
-                if (perms.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      children: [
-                        for (final p in perms.take(3))
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainer,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(groupPermLabel(p),
-                                style: const TextStyle(fontSize: 12)),
-                          ),
-                        if (perms.length > 3)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainer,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text('+${perms.length - 3} more',
-                                style: const TextStyle(fontSize: 12)),
-                          ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (isOwner)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  tooltip: 'Edit role',
-                  onPressed: () => _editRoleDialog(role: role),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  tooltip: 'Delete role',
-                  onPressed: () => _deleteRole(role),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _permissionMatrix(List<GroupRole> roles) {
-    Widget cell(Widget child, {bool header = false}) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        alignment: Alignment.center,
-        child: child,
-      );
-    }
-
-    final headerStyle =
-        Theme.of(context).textTheme.labelSmall?.copyWith(fontSize: 10);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Table(
-        border: TableBorder.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
-          width: 1,
-        ),
-        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-        columnWidths: const {0: FixedColumnWidth(140)},
-        children: [
-          TableRow(
-            children: [
-              cell(Text('Role', style: headerStyle), header: true),
-              for (final (_, label) in groupPermissionKeys)
-                cell(
-                  Text(label, style: headerStyle, textAlign: TextAlign.center),
-                  header: true,
-                ),
+          TabBar(
+            tabs: const [
+              Tab(icon: Icon(Icons.headphones_outlined), text: 'Voice'),
+              Tab(icon: Icon(Icons.forum_outlined), text: 'Rooms'),
+              Tab(icon: Icon(Icons.article_outlined), text: 'Threads'),
             ],
           ),
-          for (final role in roles)
-            TableRow(
+          Expanded(
+            child: TabBarView(
               children: [
-                cell(
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(role.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12)),
-                  ),
-                ),
-                for (final (key, _) in groupPermissionKeys)
-                  cell(
-                    groupPermsSet(role.permissions).contains(key)
-                        ? Icon(Icons.check,
-                            size: 14,
-                            color: Theme.of(context).colorScheme.primary)
-                        : const Icon(Icons.remove,
-                            size: 14, color: Colors.grey),
-                  ),
+                GroupVoiceTab(groupId: widget.groupId),
+                GroupRoomsTab(groupId: widget.groupId),
+                GroupThreadsTab(groupId: widget.groupId),
               ],
             ),
+          ),
         ],
       ),
     );
   }
 
-  List<GroupMemberWithRole>? _membersRowsCache;
-  List<String>? _membersRowsCacheKey;
-
-  /// Sorted member rows, memoized on the service's member-list identity so
-  /// every rebuild doesn't re-sort + reallocate 200 rows.
-  List<GroupMemberWithRole> _sortedMemberRowsCached(GroupsService api) {
-    final members = api.members;
-    if (!identical(_membersRowsCacheKey, members)) {
-      _membersRowsCache = _sortedMemberRows(api);
-      _membersRowsCacheKey = members;
-    }
-    return _membersRowsCache!;
+  Widget _sidebar(BuildContext context) {
+    final session = context.watch<SessionService>();
+    final me = session.activePubkey;
+    final api = context.read<GroupsService>();
+    final isOwner = api.current != null && api.current!.owner == me;
+    return GroupSidebar(
+      groupId: widget.groupId,
+      isOwner: isOwner,
+      me: me,
+      onChanged: _load,
+    );
   }
 
-  List<GroupMemberWithRole> _sortedMemberRows(GroupsService api) {
-    final rows = api.memberRoles.isNotEmpty
-        ? [...api.memberRoles]
-        : [
-            for (final p in api.members)
-              GroupMemberWithRole(pubkey: p, role: 'member')
-          ];
-    rows.sort((a, b) => _memberRank(a.role, api.roles)
-        .compareTo(_memberRank(b.role, api.roles)));
-    return rows;
-  }
-
-  Widget _memberTile(
-      GroupMemberWithRole m, GroupsService api, bool isOwner, String? me) {
-    final (label, hex) = _roleBadge(m.role, api.roles);
-    final badgeColor = _hexColor(hex);
-    final isSelf = m.pubkey == me;
-    final isGroupOwner = m.role == 'owner';
-    final roleChoices = <String, String>{
-      'member': 'Member',
-      'admin': 'Admin',
-      for (final r in api.roles) r.id: r.name,
-    };
-    final canManage = isOwner && !isSelf && !isGroupOwner;
-    final selRole = roleChoices.containsKey(m.role) ? m.role : 'member';
-    return ListTile(
-      leading: const Icon(Icons.person_outline),
-      title: Text(m.pubkey, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          margin: const EdgeInsets.only(top: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: badgeColor),
+  Widget _desktop(Widget tabs, BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: tabs),
+        _resizeHandle(),
+        SizedBox(
+          width: _sidebarWidth,
+          child: Material(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            child: _sidebar(context),
           ),
-          child: Text(label, style: TextStyle(fontSize: 11, color: badgeColor)),
         ),
-      ),
-      trailing: canManage
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButton<String>(
-                  value: selRole,
-                  underline: const SizedBox.shrink(),
-                  style: const TextStyle(fontSize: 13),
-                  onChanged: (v) {
-                    if (v != null && v != m.role) {
-                      _assignRole(m.pubkey, v);
-                    }
-                  },
-                  items: [
-                    for (final entry in roleChoices.entries)
-                      DropdownMenuItem(
-                        value: entry.key,
-                        child: Text(entry.value),
-                      ),
-                  ],
-                ),
-                IconButton(
-                  icon: const Icon(Icons.person_remove_outlined),
-                  tooltip: 'Remove member',
-                  onPressed: () => _kickMember(m.pubkey),
-                ),
-              ],
-            )
-          : null,
+      ],
+    );
+  }
+
+  Widget _mobile(Widget tabs, BuildContext context) {
+    return Stack(
+      children: [
+        tabs,
+        if (_sidebarOpen) ...[
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => setState(() => _sidebarOpen = false),
+              child: ColoredBox(
+                color: Colors.black.withValues(alpha: 0.3),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: _sidebarWidth.clamp(
+                240.0, MediaQuery.sizeOf(context).width * 0.9),
+            child: Material(
+              elevation: 8,
+              color: Theme.of(context).colorScheme.surface,
+              child: Row(
+                children: [
+                  _resizeHandle(),
+                  Expanded(child: _sidebar(context)),
+                ],
+              ),
+            ),
+          ),
+        ],
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: 14,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragStart: (_) => setState(() => _sidebarOpen = true),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: ColoredBox(
+                color: Colors.transparent,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -728,7 +432,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     final me = session.activePubkey;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Group')),
+      appBar: AppBar(
+        title: const Text('Group'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.people_alt_outlined),
+            tooltip: 'Members & roles',
+            onPressed: () => setState(() => _sidebarOpen = !_sidebarOpen),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Consumer<GroupsService>(
@@ -737,266 +450,83 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 if (g == null) {
                   return const Center(child: Text('Group not found'));
                 }
-                final isOwner = g.owner == me;
-                return Column(
-                  children: [
-                    Expanded(
-                      child: CustomScrollView(
-                        slivers: [
-                          SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                final tabs = _tabs(api);
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final wide = constraints.maxWidth >= _breakpoint;
+                    return Column(
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          color:
+                              Theme.of(context).colorScheme.surfaceContainerLow,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  Text(g.name,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .headlineSmall),
-                                  if (g.description.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8),
-                                      child: Text(g.description),
-                                    ),
-                                  const SizedBox(height: 16),
-                                  Wrap(
-                                    children: [
-                                      if (!g.isMember)
-                                        FilledButton(
-                                          onPressed: () async {
-                                            final pubkey = me;
-                                            if (pubkey == null) return;
-                                            await context
-                                                .read<GroupsService>()
-                                                .join(widget.groupId, pubkey);
-                                            await _load();
-                                          },
-                                          child: const Text('Join'),
-                                        ),
-                                      if (g.isMember)
-                                        OutlinedButton(
-                                          onPressed: () async {
-                                            final pubkey = me;
-                                            if (pubkey == null) return;
-                                            await context
-                                                .read<GroupsService>()
-                                                .leave(widget.groupId, pubkey);
-                                            if (context.mounted) {
-                                              context.go('/groups');
-                                            }
-                                          },
-                                          child: const Text('Leave'),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SliverToBoxAdapter(
-                            child: Divider(),
-                          ),
-                          SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                              child: Row(
-                                children: [
-                                  Text('Roles (${api.roles.length})',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium),
-                                  const Spacer(),
-                                  if (isOwner)
-                                    TextButton.icon(
-                                      onPressed: () => _editRoleDialog(),
-                                      icon: const Icon(Icons.add, size: 18),
-                                      label: const Text('New Role'),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          SliverToBoxAdapter(
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child: Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  for (final (label, roleId, hex) in [
-                                    ('Owner', 'owner', '#f59e0b'),
-                                    ('Admin', 'admin', '#f59e0b'),
-                                    ('Member', 'member', '#6b7280'),
-                                  ])
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        borderRadius:
-                                            BorderRadius.circular(999),
-                                        border: Border.all(
-                                            color: _hexColor(hex), width: 1),
-                                      ),
-                                      child: Text(
-                                        '$label · '
-                                        '${_memberCountForRole(roleId, api.memberRoles)}',
-                                        style: TextStyle(
-                                            fontSize: 12,
-                                            color: _hexColor(hex)),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          SliverToBoxAdapter(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                const SizedBox(height: 8),
-                                if (api.roles.isEmpty)
-                                  const Padding(
-                                    padding:
-                                        EdgeInsets.symmetric(horizontal: 16),
-                                    child: Text('No custom roles yet.',
-                                        style: TextStyle(color: Colors.grey)),
-                                  )
-                                else
-                                  for (final role in api.roles)
-                                    _roleCard(role, api, isOwner),
-                                if (api.roles.isNotEmpty) ...[
-                                  const SizedBox(height: 12),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 4),
-                                    child: Text('Permission Matrix',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleMedium),
-                                  ),
-                                  const Padding(
-                                    padding:
-                                        EdgeInsets.only(left: 16, bottom: 8),
+                                  Expanded(
                                     child: Text(
-                                      'System roles have fixed permissions; '
-                                      'custom roles shown below.',
-                                      style: TextStyle(
-                                          fontSize: 12, color: Colors.grey),
+                                      g.name,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  _permissionMatrix(api.roles),
+                                  if (!g.isMember)
+                                    FilledButton(
+                                      onPressed: () async {
+                                        final pubkey = me;
+                                        if (pubkey == null) return;
+                                        await context
+                                            .read<GroupsService>()
+                                            .join(widget.groupId, pubkey);
+                                        await _load();
+                                      },
+                                      child: const Text('Join'),
+                                    )
+                                  else
+                                    OutlinedButton(
+                                      onPressed: () async {
+                                        final pubkey = me;
+                                        if (pubkey == null) return;
+                                        await context
+                                            .read<GroupsService>()
+                                            .leave(widget.groupId, pubkey);
+                                        if (context.mounted) {
+                                          context.go('/groups');
+                                        }
+                                      },
+                                      child: const Text('Leave'),
+                                    ),
                                 ],
-                                const SizedBox(height: 8),
-                                const Divider(),
-                              ],
-                            ),
-                          ),
-                          SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                              child: Text('Members (${api.members.length})',
-                                  style:
-                                      Theme.of(context).textTheme.titleMedium),
-                            ),
-                          ),
-                          if (api.members.isEmpty)
-                            const SliverToBoxAdapter(
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 16),
-                                child: Text('No members yet.',
-                                    style: TextStyle(color: Colors.grey)),
                               ),
-                            )
-                          else
-                            SliverList.separated(
-                              itemCount: _sortedMemberRowsCached(api).length,
-                              itemBuilder: (context, i) => _memberTile(
-                                  _sortedMemberRowsCached(api)[i],
-                                  api,
-                                  isOwner,
-                                  me),
-                              separatorBuilder: (context, i) =>
-                                  const Divider(height: 1),
-                            ),
-                          const SliverToBoxAdapter(
-                            child: Divider(),
-                          ),
-                          SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                              child: Text('Chat (${api.messages.length})',
-                                  style:
-                                      Theme.of(context).textTheme.titleMedium),
-                            ),
-                          ),
-                          if (api.messages.isEmpty)
-                            const SliverToBoxAdapter(
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Text('No messages yet'),
-                              ),
-                            )
-                          else
-                            SliverList.separated(
-                              itemCount: api.messages.length,
-                              itemBuilder: (context, i) {
-                                final m =
-                                    api.messages[api.messages.length - 1 - i];
-                                return ListTile(
-                                  dense: true,
-                                  leading: const Icon(Icons.person_outline,
-                                      size: 20),
-                                  title: Text(
-                                    m.senderPubkey.substring(
-                                        0,
-                                        m.senderPubkey.length >= 12
-                                            ? 12
-                                            : m.senderPubkey.length),
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                  subtitle: Text(m.content),
-                                  isThreeLine: true,
-                                );
-                              },
-                              separatorBuilder: (context, i) =>
-                                  const Divider(height: 1),
-                            ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _chat,
-                              decoration: InputDecoration(
-                                hintText: 'Message group',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24),
+                              if (g.description.isNotEmpty)
+                                Text(
+                                  g.description,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                          color: Theme.of(context).hintColor),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                              ),
-                              enabled: !_sending,
-                            ),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.send),
-                            onPressed: _sending ? null : _sendMessage,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                        ),
+                        Expanded(
+                          child: wide
+                              ? _desktop(tabs, context)
+                              : _mobile(tabs, context),
+                        ),
+                      ],
+                    );
+                  },
                 );
               },
             ),

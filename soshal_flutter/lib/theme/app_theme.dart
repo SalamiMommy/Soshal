@@ -95,7 +95,6 @@ class AppTheme {
     final primary = _hsl(accentHue, 85, 55);
     final secondary = _hsl(accentHue + 55, 85, 55);
 
-    final backgroundColor = _hsl(bgConfig.hue, bgConfig.bgSat, bgConfig.bg);
     final surfaceColor = _hsla(
         bgConfig.hue, bgConfig.surfSat, bgConfig.surface, bgConfig.surfAlpha);
     final elevatedColor = _hsla(
@@ -146,7 +145,9 @@ class AppTheme {
       useMaterial3: true,
       fontFamily: ff,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: _parseColor(backgroundColor),
+      // Transparent scaffold: screens paint over the AppShell background
+      // image. Out-of-shell fallback color is set in main.dart's builder.
+      scaffoldBackgroundColor: Colors.transparent,
       appBarTheme: AppBarTheme(
         centerTitle: true,
         elevation: 0,
@@ -162,9 +163,21 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: _parseColor(primary),
-          foregroundColor: Colors.white,
+          backgroundColor: _parseColor(glassBack),
+          foregroundColor: _parseColor(glassBlueText),
           elevation: 0,
+          side: BorderSide(color: _parseColor(glassBackBorder)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(_borderRadius['md']!),
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: _parseColor(glassBack),
+          foregroundColor: _parseColor(glassBlueText),
+          elevation: 0,
+          side: BorderSide(color: _parseColor(glassBackBorder)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(_borderRadius['md']!),
           ),

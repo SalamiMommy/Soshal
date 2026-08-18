@@ -57,48 +57,23 @@ class FfiBridge {
   }
 
   /// Initialize the database with automatic migration handling.
-  /// This checks the current schema version and forces a migration if
-  /// the database is out of date (handles cases where the schema version
-  /// is stuck at an older version due to failed migrations).
+  /// `db_init` runs the Rust migration runner, which transactionally brings
+  /// the schema to db-core SCHEMA_VERSION and short-circuits when already
+  /// current. Never force-migrate from Dart: the old reset path dropped every
+  /// table on a version mismatch (data loss) and a hardcoded expected version
+  /// drifted from SCHEMA_VERSION.
   static Future<String> initDatabase() async {
     final dbPath = await getDbPath();
-    try {
-      final result = RustLib.instance.api.crateFfiDbDbInit(dbPath: dbPath);
-      // Check if the schema version is current
-      try {
-        final currentVersion = db_ffi.dbSchemaVersion();
-        const expectedVersion = 1; // Must match db-core SCHEMA_VERSION
-        debugPrint('Database schema version: $currentVersion, expected: $expectedVersion');
-        
-        if (currentVersion > expectedVersion) {
-          debugPrint('Database schema version $currentVersion is ahead of expected $expectedVersion. This may cause compatibility issues. Forcing migration to reset to current schema...');
-          final migrateResult = db_ffi.dbForceMigrate();
-          debugPrint('Migration result: $migrateResult');
-          // Verify the migration succeeded
-          final newVersion = db_ffi.dbSchemaVersion();
-          debugPrint('Database schema version after migration: $newVersion');
-          if (newVersion != expectedVersion) {
-            throw Exception('Migration failed to reset schema version to $expectedVersion');
-          }
-        } else if (currentVersion < expectedVersion) {
-          debugPrint('Database schema version $currentVersion is behind expected $expectedVersion, forcing migration...');
-          final migrateResult = db_ffi.dbForceMigrate();
-          debugPrint('Migration result: $migrateResult');
-          // Verify the migration succeeded
-          final newVersion = db_ffi.dbSchemaVersion();
-          debugPrint('Database schema version after migration: $newVersion');
-          if (newVersion < expectedVersion) {
-            throw Exception('Migration failed to update schema version to $expectedVersion');
-          }
-        }
-      } catch (e) {
-        debugPrint('Error checking schema version: $e');
-        // Continue anyway - the init may have succeeded
-      }
-      return result;
-    } catch (e) {
-      debugPrint('Database init failed: $e');
-      rethrow;
+    final result = RustLib.instance.api.crateFfiDbDbInit(dbPath: dbPath);
+    final currentVersion = db_ffi.dbSchemaVersion();
+    final expectedVersion = db_ffi.dbExpectedSchemaVersion();
+    debugPrint(
+        'Database schema version: $currentVersion, expected: $expectedVersion');
+    if (currentVersion > expectedVersion) {
+      debugPrint(
+          'WARNING: database schema $currentVersion is ahead of this build ($expectedVersion) '
+          '— binary is older than the database. Downgrade unsupported; data preserved.');
     }
+    return result;
   }
 }

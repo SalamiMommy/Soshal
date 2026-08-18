@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../services/media_service.dart';
 import '../services/music_service.dart';
+import '../services/p2p_service.dart';
+import '../services/shell_service.dart';
 import '../utils/format.dart';
+import '../widgets/blob_image.dart';
 import '../widgets/user_content_list.dart';
 
 /// Musicloud user page: one author's published tracks (kind 31022).
@@ -57,6 +61,31 @@ class _MusicloudUserScreenState extends State<MusicloudUserScreen> {
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
+                onPressed: () async {
+                  final shell = context.read<ShellService>();
+                  final url = await resolveTrackPlaybackUrl(
+                    track,
+                    context.read<MediaService>(),
+                    context.read<P2pService>(),
+                  );
+                  if (url == null) {
+                    if (!sheetContext.mounted) return;
+                    ScaffoldMessenger.of(sheetContext).showSnackBar(
+                      const SnackBar(
+                          content: Text(
+                              'Audio unavailable — no device has this blob.')),
+                    );
+                    return;
+                  }
+                  await shell.playAudio(url, track.title);
+                  if (!sheetContext.mounted) return;
+                  Navigator.of(sheetContext).pop();
+                },
+                icon: const Icon(Icons.play_circle_outline),
+                label: const Text('Play'),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: track.audioUrl));
                   Navigator.of(sheetContext).pop();
@@ -95,13 +124,12 @@ class _MusicloudUserScreenState extends State<MusicloudUserScreen> {
           leading: track.thumbnail.isNotEmpty
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    track.thumbnail,
+                  child: BlobImage(
+                    source: track.thumbnail,
                     width: 48,
-                    cacheWidth: 160,
                     height: 48,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _trackIcon(context),
+                    errorBuilder: (_) => _trackIcon(context),
                   ),
                 )
               : _trackIcon(context),

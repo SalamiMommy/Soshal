@@ -12,11 +12,14 @@ class ThemeService extends ChangeNotifier {
   static const _optionsKey = 'theme_options';
   static const _themeKey = 'theme';
 
+  static const defaultBackgroundImage = 'assets/clouds.jpg';
+
   double hue = 195.0;
   String bgLevel = 'light';
   String customAccent = '';
   double fontScale = 1.0;
   String fontFamily = 'default';
+  String backgroundImage = defaultBackgroundImage;
 
   bool _loaded = false;
   bool get loaded => _loaded;
@@ -33,6 +36,8 @@ class ThemeService extends ChangeNotifier {
           customAccent = v['customAccent'] as String? ?? '';
           fontScale = (v['fontSizeScale'] as num?)?.toDouble() ?? 1.0;
           fontFamily = v['fontFamily'] as String? ?? 'default';
+          backgroundImage =
+              v['backgroundImage'] as String? ?? defaultBackgroundImage;
         } catch (_) {}
       }
       final theme = RustLib.instance.api.crateFfiDbDbGetSetting(key: _themeKey);
@@ -61,6 +66,7 @@ class ThemeService extends ChangeNotifier {
           'customAccent': customAccent,
           'fontSizeScale': fontScale,
           'fontFamily': fontFamily,
+          'backgroundImage': backgroundImage,
         }),
       );
       final themeName = bgLevel == 'light' ? 'light' : 'dark';
@@ -80,12 +86,14 @@ class ThemeService extends ChangeNotifier {
     String? customAccent,
     double? fontScale,
     String? fontFamily,
+    String? backgroundImage,
   }) {
     if (hue != null) this.hue = hue;
     if (bgLevel != null) this.bgLevel = bgLevel;
     if (customAccent != null) this.customAccent = customAccent;
     if (fontScale != null) this.fontScale = fontScale;
     if (fontFamily != null) this.fontFamily = fontFamily;
+    if (backgroundImage != null) this.backgroundImage = backgroundImage;
     notifyListeners();
   }
 

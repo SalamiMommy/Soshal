@@ -105,9 +105,9 @@ class _FeedScreenState extends State<FeedScreen> {
   Timer? _layoutDebounce;
 
   /// Feed changed → recompute card extents. Structural changes (new post
-  /// ids) refresh immediately — the next render needs the extents or
-  /// [LayoutService.extentFor] hits null — while bursts of live updates
-  /// (reactions on already-laid-out posts) are debounced.
+  /// ids) refresh immediately — the next render needs the extents (uncached
+  /// posts fall back to per-card compute, then a default) — while bursts of
+  /// live updates (reactions on already-laid-out posts) are debounced.
   void _onFeedChanged() {
     if (!mounted || !context.mounted) return;
     final layout = context.read<LayoutService>();

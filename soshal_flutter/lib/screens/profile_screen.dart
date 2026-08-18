@@ -6,6 +6,7 @@ import '../services/messaging_service.dart';
 import '../services/network_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/blob_image.dart';
 
 /// Profile Page
 /// Self and others, WoT indicators
@@ -181,10 +182,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       height: 200,
                       color: Colors.grey[300],
                       child: profile.banner.isNotEmpty
-                          ? Image.network(
-                              profile.banner,
-                              cacheWidth: 1200,
-                              cacheHeight: 400,
+                          ? BlobImage(
+                              source: profile.banner,
+                              height: 200,
                               fit: BoxFit.cover,
                             )
                           : null,
@@ -202,15 +202,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               children: [
                                 Transform.translate(
                                   offset: const Offset(0, -40),
-                                  child: CircleAvatar(
-                                    radius: 48,
-                                    backgroundImage: profile.picture.isNotEmpty
-                                        ? ResizeImage.resizeIfNeeded(192, 192,
-                                            NetworkImage(profile.picture))
-                                        : null,
-                                    onBackgroundImageError: profile.picture.isNotEmpty
-                                        ? (_, __) {}
-                                        : null,
+                                  child: ClipOval(
+                                    child: profile.picture.isNotEmpty
+                                        ? BlobImage(
+                                            source: profile.picture,
+                                            width: 96,
+                                            height: 96,
+                                            errorBuilder: (_) =>
+                                                const CircleAvatar(
+                                                    radius: 48,
+                                                    child: Icon(Icons.person)),
+                                          )
+                                        : const CircleAvatar(
+                                            radius: 48,
+                                            child: Icon(Icons.person)),
                                   ),
                                 ),
                                 const Spacer(),

@@ -1,46 +1,18 @@
-import 'package:flutter/services.dart';
+// ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
-import 'package:permission_handler_platform_interface/permission_handler_platform_interface.dart';
+import 'package:soshal_flutter/ffi/permissions.dart' show LocationFixDto;
 import 'package:soshal_flutter/services/permissions_service.dart';
 
-class _MockPermissionHandler extends PermissionHandlerPlatform {
-  final PermissionStatus status;
+import 'helpers/test_env.dart';
 
-  _MockPermissionHandler(this.status);
-
-  @override
-  Future<Map<Permission, PermissionStatus>> requestPermissions(
-      List<Permission> permissions) async {
-    return {for (final p in permissions) p: status};
-  }
-
-  @override
-  Future<PermissionStatus> checkPermissionStatus(Permission permission) async {
-    return status;
-  }
-}
+late FakeApi api;
 
 class _MockGeolocator extends GeolocatorPlatform {
-  final LocationPermission permission;
-  final bool serviceEnabled;
   final Position position;
 
-  _MockGeolocator({
-    required this.permission,
-    required this.serviceEnabled,
-    required this.position,
-  });
-
-  @override
-  Future<LocationPermission> checkPermission() async => permission;
-
-  @override
-  Future<LocationPermission> requestPermission() async => permission;
-
-  @override
-  Future<bool> isLocationServiceEnabled() async => serviceEnabled;
+  _MockGeolocator(this.position);
 
   @override
   Future<Position> getCurrentPosition({
@@ -49,10 +21,28 @@ class _MockGeolocator extends GeolocatorPlatform {
       position;
 }
 
+Position _pos(double lat, double lng) => Position(
+      latitude: lat,
+      longitude: lng,
+      timestamp: DateTime.fromMillisecondsSinceEpoch(0),
+      accuracy: 10.0,
+      altitude: 0.0,
+      altitudeAccuracy: 0.0,
+      heading: 0.0,
+      headingAccuracy: 0.0,
+      speed: 0.0,
+      speedAccuracy: 0.0,
+    );
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  final env = bootstrapTestEnv('test-permissions');
+  api = env.$1;
 
   setUp(() {
+    api.handlers.clear();
+    api.calls.clear();
+    PermissionsService.debugPollDelay = Duration.zero;
     PermissionsService.debugPlatformIsAndroid = null;
     PermissionsService.debugPlatformIsLinux = null;
   });
@@ -68,96 +58,94 @@ void main() {
       PermissionsService.debugPlatformIsLinux = false;
     });
 
-    test('ensureCameraMic granted when both permissions granted', () async {
-      PermissionHandlerPlatform.instance = _MockPermissionHandler(
-          PermissionStatus.granted);
+    test('ensureCameraMic granted when already granted, no dialog fired',
+        () async {
+      api.stubBool('crateFfiPermissionsPermissionsCameraMicGranted', true);
+
       final result = await PermissionsService.ensureCameraMic();
       expect(result.granted, isTrue);
+      expect(
+        api.callCount('crateFfiPermissionsPermissionsCameraMicRequest'),
+        0,
+      );
     });
 
-    test('ensureCameraMic denied with reason when mic denied', () async {
-      final handler = _MockPermissionHandler(PermissionStatus.granted);
-      var micRequests = 0;
-      PermissionHandlerPlatform.instance =
-          _RequestTrackingPermissionHandler(
-              status: PermissionStatus.denied,
-              onMic: () => micRequests++,
-              delegate: handler);
+    test('ensureCameraMic requests then polls until granted', () async {
+      api.stub('crateFfiPermissionsPermissionsCameraMicGranted', (_) {
+        return api.callCount('crateFfiPermissionsPermissionsCameraMicGranted') >
+            1;
+      });
+      api.stubBool('crateFfiPermissionsPermissionsCameraMicRequest', true);
+
+      final result = await PermissionsService.ensureCameraMic();
+      expect(result.granted, isTrue);
+      expect(
+        api.callCount('crateFfiPermissionsPermissionsCameraMicRequest'),
+        1,
+      );
+    });
+
+    test('ensureCameraMic denied with reason when still denied', () async {
+      api.stubBool('crateFfiPermissionsPermissionsCameraMicGranted', false);
+      api.stubBool('crateFfiPermissionsPermissionsCameraMicRequest', true);
+      api.stubBool(
+          'crateFfiPermissionsPermissionsCameraMicPermanentlyDenied', false);
+
       final result = await PermissionsService.ensureCameraMic();
       expect(result.granted, isFalse);
-      expect(result.reason, contains('microphone'));
-      expect(micRequests, 1);
+      expect(result.reason, contains('camera/microphone'));
+    });
+
+    test('ensureCameraMic reports permanent denial', () async {
+      api.stubBool('crateFfiPermissionsPermissionsCameraMicGranted', false);
+      api.stubBool('crateFfiPermissionsPermissionsCameraMicRequest', true);
+      api.stubBool(
+          'crateFfiPermissionsPermissionsCameraMicPermanentlyDenied', true);
+
+      final result = await PermissionsService.ensureCameraMic();
+      expect(result.granted, isFalse);
+      expect(result.reason, contains('permanently denied'));
+    });
+
+    test('isPermanentlyDenied mirrors FFI state', () async {
+      api.stubBool(
+          'crateFfiPermissionsPermissionsCameraMicPermanentlyDenied', true);
+
+      expect(await PermissionsService.isPermanentlyDenied(), isTrue);
+    });
+
+    test('openSettings calls FFI', () async {
+      api.stubBool('crateFfiPermissionsPermissionsOpenSettings', true);
+
+      expect(await PermissionsService.openSettings(), isTrue);
     });
 
     test('currentPosition returns coords when permission + service ok',
         () async {
-      PermissionHandlerPlatform.instance =
-          _MockPermissionHandler(PermissionStatus.granted);
-      GeolocatorPlatform.instance = _MockGeolocator(
-        permission: LocationPermission.whileInUse,
-        serviceEnabled: true,
-        position: Position(
-          latitude: 52.52,
-          longitude: 13.40,
-          timestamp: DateTime.fromMillisecondsSinceEpoch(0),
-          accuracy: 10.0,
-          altitude: 0.0,
-          altitudeAccuracy: 0.0,
-          heading: 0.0,
-          headingAccuracy: 0.0,
-          speed: 0.0,
-          speedAccuracy: 0.0,
-        ),
-      );
+      api.stubBool('crateFfiPermissionsPermissionsLocationGranted', true);
+      api.stubBool('crateFfiPermissionsPermissionsLocationEnabled', true);
+      GeolocatorPlatform.instance = _MockGeolocator(_pos(52.52, 13.40));
+
       final location = await PermissionsService.currentPosition();
       expect(location.ok, isTrue);
       expect(location.latitude, closeTo(52.52, 1e-9));
       expect(location.longitude, closeTo(13.40, 1e-9));
     });
 
-    test('currentPosition fails when permission denied forever', () async {
-      PermissionHandlerPlatform.instance =
-          _MockPermissionHandler(PermissionStatus.permanentlyDenied);
-      GeolocatorPlatform.instance = _MockGeolocator(
-        permission: LocationPermission.deniedForever,
-        serviceEnabled: true,
-        position: Position(
-          latitude: 0,
-          longitude: 0,
-          timestamp: DateTime.fromMillisecondsSinceEpoch(0),
-          accuracy: 0,
-          altitude: 0,
-          altitudeAccuracy: 0,
-          heading: 0,
-          headingAccuracy: 0,
-          speed: 0,
-          speedAccuracy: 0,
-        ),
-      );
+    test('currentPosition fails when permission denied', () async {
+      api.stubBool('crateFfiPermissionsPermissionsLocationGranted', false);
+      api.stubBool('crateFfiPermissionsPermissionsLocationRequest', true);
+
       final location = await PermissionsService.currentPosition();
       expect(location.ok, isFalse);
-      expect(location.error, contains('permanently denied'));
+      expect(location.error, contains('denied'));
     });
 
     test('currentPosition fails when location service off', () async {
-      PermissionHandlerPlatform.instance =
-          _MockPermissionHandler(PermissionStatus.granted);
-      GeolocatorPlatform.instance = _MockGeolocator(
-        permission: LocationPermission.whileInUse,
-        serviceEnabled: false,
-        position: Position(
-          latitude: 0,
-          longitude: 0,
-          timestamp: DateTime.fromMillisecondsSinceEpoch(0),
-          accuracy: 0,
-          altitude: 0,
-          altitudeAccuracy: 0,
-          heading: 0,
-          headingAccuracy: 0,
-          speed: 0,
-          speedAccuracy: 0,
-        ),
-      );
+      api.stubBool('crateFfiPermissionsPermissionsLocationGranted', true);
+      api.stubBool('crateFfiPermissionsPermissionsLocationEnabled', false);
+      GeolocatorPlatform.instance = _MockGeolocator(_pos(0, 0));
+
       final location = await PermissionsService.currentPosition();
       expect(location.ok, isFalse);
       expect(location.error, contains('Location service is off'));
@@ -176,18 +164,11 @@ void main() {
       expect(result.reason, contains('Linux'));
     });
 
-    test('currentPosition reads portal channel coords', () async {
-      const channel = MethodChannel('com.soshal/portal');
-      final binding = TestDefaultBinaryMessengerBinding.instance;
-      binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        channel,
-        (call) async {
-          expect(call.method, 'requestLocation');
-          return <String, double>{'latitude': 51.5, 'longitude': -0.12};
-        },
-      );
-      addTearDown(() => binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null));
+    test('currentPosition reads portal fix coords', () async {
+      api.stub('crateFfiPermissionsPermissionsLocationPortalFix', (_) async {
+        return const LocationFixDto(latitude: 51.5, longitude: -0.12);
+      });
+
       final location = await PermissionsService.currentPosition();
       expect(location.ok, isTrue);
       expect(location.latitude, closeTo(51.5, 1e-9));
@@ -195,17 +176,10 @@ void main() {
     });
 
     test('currentPosition surfaces portal denial', () async {
-      const channel = MethodChannel('com.soshal/portal');
-      final binding = TestDefaultBinaryMessengerBinding.instance;
-      binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        channel,
-        (call) async => throw PlatformException(
-          code: 'DENIED',
-          message: 'Location permission denied',
-        ),
-      );
-      addTearDown(() => binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null));
+      api.stub('crateFfiPermissionsPermissionsLocationPortalFix', (_) {
+        throw Exception('DENIED: Location permission denied');
+      });
+
       final location = await PermissionsService.currentPosition();
       expect(location.ok, isFalse);
       expect(location.error, contains('Location denied'));
@@ -219,31 +193,4 @@ void main() {
     expect(location.ok, isFalse);
     expect(location.error, contains('unavailable on this platform'));
   });
-}
-
-class _RequestTrackingPermissionHandler extends PermissionHandlerPlatform {
-  final PermissionStatus status;
-  final void Function() onMic;
-  final _MockPermissionHandler delegate;
-
-  _RequestTrackingPermissionHandler({
-    required this.status,
-    required this.onMic,
-    required this.delegate,
-  });
-
-  @override
-  Future<Map<Permission, PermissionStatus>> requestPermissions(
-      List<Permission> permissions) async {
-    if (permissions.contains(Permission.microphone)) onMic();
-    return {
-      for (final p in permissions)
-        p: p == Permission.microphone ? status : PermissionStatus.granted,
-    };
-  }
-
-  @override
-  Future<PermissionStatus> checkPermissionStatus(Permission permission) async {
-    return delegate.checkPermissionStatus(permission);
-  }
 }

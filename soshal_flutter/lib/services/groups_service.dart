@@ -15,6 +15,22 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<GroupMessage> _messages = [];
   List<GroupRole> _roles = [];
   List<GroupMemberWithRole> _memberRoles = [];
+  List<GroupRoom> _rooms = [];
+  List<GroupThread> _threads = [];
+  List<GroupThreadReply> _replies = [];
+  List<ThreadReaction> _reactions = [];
+  List<GroupVoiceChannel> _voiceChannels = [];
+  List<GroupVoicePresence> _presence = [];
+
+  /// Thread feed sort mode.
+  ThreadSort _threadSort = ThreadSort.popular;
+  ThreadSort get threadSort => _threadSort;
+
+  set threadSort(ThreadSort sort) {
+    if (_threadSort == sort) return;
+    _threadSort = sort;
+    notifyDeferred();
+  }
 
   List<SoshalGroup> get groups => _groups;
   SoshalGroup? get current => _current;
@@ -22,6 +38,24 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<GroupMessage> get messages => _messages;
   List<GroupRole> get roles => _roles;
   List<GroupMemberWithRole> get memberRoles => _memberRoles;
+  List<GroupRoom> get rooms => _rooms;
+  List<GroupThread> get threads => _threads;
+  List<GroupThreadReply> get replies => _replies;
+  List<ThreadReaction> get reactions => _reactions;
+  List<GroupVoiceChannel> get voiceChannels => _voiceChannels;
+  List<GroupVoicePresence> get presence => _presence;
+
+  /// Emoji reactions for a target (thread or reply id).
+  List<ThreadReaction> reactionsFor(String targetId) =>
+      _reactions.where((r) => r.matches(targetId)).toList();
+
+  /// True when [pubkey] reacted with [emoji] to [targetId].
+  bool reacted(String targetId, String emoji, String pubkey) => _reactions
+      .any((r) => r.matches(targetId) && r.emoji == emoji && r.reacted);
+
+  int reactionCountFor(String targetId) => _reactions
+      .where((r) => r.matches(targetId))
+      .fold(0, (sum, r) => sum + r.count);
 
   Future<List<SoshalGroup>> fetchGroups(String userPubkey) async {
     try {
@@ -102,10 +136,12 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  Future<String> postMessage(String groupId, String content) async {
+  Future<String> postMessage(String groupId, String content,
+      {String roomId = ''}) async {
     try {
       final eventJson = RustLib.instance.api.crateFfiGroupsGroupsPostMessage(
         groupId: groupId,
+        roomId: roomId,
         content: content,
       );
       clearLastError();
@@ -118,10 +154,11 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   }
 
   Future<List<GroupMessage>> fetchMessages(String groupId,
-      {int limit = 100, int offset = 0}) async {
+      {int limit = 100, int offset = 0, String roomId = ''}) async {
     try {
       final json = RustLib.instance.api.crateFfiGroupsGroupsFetchMessages(
         groupId: groupId,
+        roomId: roomId,
         limit: limit,
         offset: offset,
       );
@@ -279,6 +316,360 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       clearLastError();
       notifyDeferred();
       return _memberRoles;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<List<GroupRoom>> fetchRooms(String groupId) async {
+    try {
+      final json = RustLib.instance.api.crateFfiGroupsGroupsRoomsList(
+        groupId: groupId,
+      );
+      _rooms = (jsonDecode(json) as List<dynamic>)
+          .map((e) => GroupRoom.fromJson(e as Map<String, dynamic>))
+          .toList();
+      clearLastError();
+      notifyDeferred();
+      return _rooms;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<String> createRoom(
+    String groupId,
+    String name,
+    String topic,
+    String emoji,
+    String color,
+    String creator,
+  ) async {
+    try {
+      final id = RustLib.instance.api.crateFfiGroupsGroupsRoomsCreate(
+        groupId: groupId,
+        name: name,
+        topic: topic,
+        emoji: emoji,
+        color: color,
+        creator: creator,
+      );
+      clearLastError();
+      await fetchRooms(groupId);
+      return id;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> updateRoom(
+    String roomId,
+    String groupId,
+    String name,
+    String topic,
+    String emoji,
+    String color,
+    String actor,
+  ) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiGroupsGroupsRoomsUpdate(
+        roomId: roomId,
+        groupId: groupId,
+        name: name,
+        topic: topic,
+        emoji: emoji,
+        color: color,
+        actor: actor,
+      );
+      clearLastError();
+      await fetchRooms(groupId);
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> deleteRoom(String roomId, String actor) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiGroupsGroupsRoomsDelete(
+        roomId: roomId,
+        actor: actor,
+      );
+      clearLastError();
+      notifyDeferred();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<List<GroupThread>> fetchThreads(String groupId) async {
+    try {
+      final json = RustLib.instance.api.crateFfiGroupsGroupsThreadsList(
+        groupId: groupId,
+        sort: _threadSort.apiValue,
+      );
+      _threads = (jsonDecode(json) as List<dynamic>)
+          .map((e) => GroupThread.fromJson(e as Map<String, dynamic>))
+          .toList();
+      clearLastError();
+      notifyDeferred();
+      return _threads;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Toggle an emoji reaction on a thread or reply; refetches threads
+  /// (counts move) and, when reacting inside an open thread, its reactions.
+  Future<bool> react(
+      String threadId, String replyId, String emoji, String pubkey) async {
+    try {
+      final added = RustLib.instance.api.crateFfiGroupsGroupsThreadsReact(
+        threadId: threadId,
+        replyId: replyId,
+        pubkey: pubkey,
+        emoji: emoji,
+      );
+      clearLastError();
+      notifyDeferred();
+      return added;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Fetch emoji reaction summary for a thread (thread + reply targets).
+  Future<List<ThreadReaction>> fetchReactions(
+      String threadId, String viewerPubkey) async {
+    try {
+      final json = RustLib.instance.api.crateFfiGroupsGroupsThreadsReactions(
+        threadId: threadId,
+        viewerPubkey: viewerPubkey,
+      );
+      _reactions = (jsonDecode(json) as List<dynamic>)
+          .map((e) => ThreadReaction.fromJson(e as Map<String, dynamic>))
+          .toList();
+      clearLastError();
+      notifyDeferred();
+      return _reactions;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<String> createThread(
+    String groupId,
+    String title,
+    String body,
+    String author,
+  ) async {
+    try {
+      final id = RustLib.instance.api.crateFfiGroupsGroupsThreadsCreate(
+        groupId: groupId,
+        title: title,
+        body: body,
+        author: author,
+      );
+      clearLastError();
+      await fetchThreads(groupId);
+      return id;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> deleteThread(String threadId, String actor) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiGroupsGroupsThreadsDelete(
+        threadId: threadId,
+        actor: actor,
+      );
+      clearLastError();
+      notifyDeferred();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> setThreadPinned(
+      String threadId, bool pinned, String actor) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiGroupsGroupsThreadsPin(
+        threadId: threadId,
+        pinned: pinned,
+        actor: actor,
+      );
+      clearLastError();
+      notifyDeferred();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<String> replyToThread(
+    String threadId,
+    String parentId,
+    String content,
+    String author,
+  ) async {
+    try {
+      final id = RustLib.instance.api.crateFfiGroupsGroupsThreadsReply(
+        threadId: threadId,
+        parentId: parentId,
+        content: content,
+        author: author,
+      );
+      clearLastError();
+      await fetchReplies(threadId);
+      return id;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<List<GroupThreadReply>> fetchReplies(String threadId) async {
+    try {
+      final json = RustLib.instance.api.crateFfiGroupsGroupsThreadsReplies(
+        threadId: threadId,
+      );
+      _replies = (jsonDecode(json) as List<dynamic>)
+          .map((e) => GroupThreadReply.fromJson(e as Map<String, dynamic>))
+          .toList();
+      clearLastError();
+      notifyDeferred();
+      return _replies;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<List<GroupVoiceChannel>> fetchVoiceChannels(String groupId) async {
+    try {
+      final json = RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsList(
+        groupId: groupId,
+      );
+      _voiceChannels = (jsonDecode(json) as List<dynamic>)
+          .map((e) => GroupVoiceChannel.fromJson(e as Map<String, dynamic>))
+          .toList();
+      clearLastError();
+      notifyDeferred();
+      return _voiceChannels;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<String> createVoiceChannel(
+    String groupId,
+    String name,
+    String creator,
+  ) async {
+    try {
+      final id = RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsCreate(
+        groupId: groupId,
+        name: name,
+        creator: creator,
+      );
+      clearLastError();
+      await fetchVoiceChannels(groupId);
+      return id;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> deleteVoiceChannel(String channelId, String actor) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsDelete(
+        channelId: channelId,
+        actor: actor,
+      );
+      clearLastError();
+      notifyDeferred();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> voiceJoin(String channelId, String pubkey) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiGroupsGroupsVoiceJoin(
+        channelId: channelId,
+        pubkey: pubkey,
+      );
+      clearLastError();
+      notifyDeferred();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> voiceLeave(String channelId, String pubkey) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiGroupsGroupsVoiceLeave(
+        channelId: channelId,
+        pubkey: pubkey,
+      );
+      clearLastError();
+      notifyDeferred();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<List<GroupVoicePresence>> fetchPresence(String channelId) async {
+    try {
+      final json = RustLib.instance.api.crateFfiGroupsGroupsVoicePresence(
+        channelId: channelId,
+      );
+      _presence = (jsonDecode(json) as List<dynamic>)
+          .map((e) => GroupVoicePresence.fromJson(e as Map<String, dynamic>))
+          .toList();
+      clearLastError();
+      notifyDeferred();
+      return _presence;
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();
@@ -493,4 +884,209 @@ List<GroupMessage> _parseGroupMessages(String json) {
   return (decoded as List<dynamic>)
       .map((e) => GroupMessage.fromJson(e as Map<String, dynamic>))
       .toList();
+}
+
+/// A themed chatroom row.
+class GroupRoom {
+  final String id;
+  final String groupId;
+  final String name;
+  final String topic;
+  final String emoji;
+  final String color;
+  final int position;
+  final String createdBy;
+  final int createdAt;
+
+  GroupRoom({
+    required this.id,
+    required this.groupId,
+    required this.name,
+    required this.topic,
+    required this.emoji,
+    required this.color,
+    required this.position,
+    required this.createdBy,
+    required this.createdAt,
+  });
+
+  factory GroupRoom.fromJson(Map<String, dynamic> json) {
+    return GroupRoom(
+      id: json['id'] as String? ?? '',
+      groupId: json['group_id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      topic: json['topic'] as String? ?? '',
+      emoji: json['emoji'] as String? ?? '',
+      color: json['color'] as String? ?? '#8b5cf6',
+      position: (json['position'] as num?)?.toInt() ?? 0,
+      createdBy: json['created_by'] as String? ?? '',
+      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Thread feed sort modes.
+enum ThreadSort {
+  /// Pinned first, then newest first.
+  newest('newest'),
+
+  /// Pinned first, then hot engagement (reactions + replies per hour).
+  popular('popular');
+
+  final String apiValue;
+
+  const ThreadSort(this.apiValue);
+}
+
+/// A reddit-style thread row.
+class GroupThread {
+  final String id;
+  final String groupId;
+  final String title;
+  final String body;
+  final String author;
+  final int createdAt;
+  final bool isPinned;
+  final int replyCount;
+  final int reactionCount;
+
+  GroupThread({
+    required this.id,
+    required this.groupId,
+    required this.title,
+    required this.body,
+    required this.author,
+    required this.createdAt,
+    required this.isPinned,
+    required this.replyCount,
+    required this.reactionCount,
+  });
+
+  factory GroupThread.fromJson(Map<String, dynamic> json) {
+    return GroupThread(
+      id: json['id'] as String? ?? '',
+      groupId: json['group_id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      body: json['body'] as String? ?? '',
+      author: json['author'] as String? ?? '',
+      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      isPinned: json['is_pinned'] as bool? ?? false,
+      replyCount: (json['reply_count'] as num?)?.toInt() ?? 0,
+      reactionCount: (json['reaction_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// An emoji reaction summary row: per-target (thread or reply) counts with
+/// the viewer's own reaction flag.
+class ThreadReaction {
+  final String threadId;
+  final String replyId;
+  final String emoji;
+  final int count;
+  final bool reacted;
+
+  ThreadReaction({
+    required this.threadId,
+    required this.replyId,
+    required this.emoji,
+    required this.count,
+    required this.reacted,
+  });
+
+  /// True when this summary targets [targetId] (thread id when [replyId]
+  /// empty, reply id otherwise).
+  bool matches(String targetId) =>
+      replyId.isEmpty ? threadId == targetId : replyId == targetId;
+
+  factory ThreadReaction.fromJson(Map<String, dynamic> json) {
+    return ThreadReaction(
+      threadId: json['thread_id'] as String? ?? '',
+      replyId: json['reply_id'] as String? ?? '',
+      emoji: json['emoji'] as String? ?? '',
+      count: (json['count'] as num?)?.toInt() ?? 0,
+      reacted: json['reacted'] as bool? ?? false,
+    );
+  }
+}
+
+/// A thread reply row (flat or nested via [parentId]).
+class GroupThreadReply {
+  final String id;
+  final String threadId;
+  final String parentId;
+  final String author;
+  final String content;
+  final int createdAt;
+
+  GroupThreadReply({
+    required this.id,
+    required this.threadId,
+    required this.parentId,
+    required this.author,
+    required this.content,
+    required this.createdAt,
+  });
+
+  factory GroupThreadReply.fromJson(Map<String, dynamic> json) {
+    return GroupThreadReply(
+      id: json['id'] as String? ?? '',
+      threadId: json['thread_id'] as String? ?? '',
+      parentId: json['parent_id'] as String? ?? '',
+      author: json['author'] as String? ?? '',
+      content: json['content'] as String? ?? '',
+      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// A voice channel row.
+class GroupVoiceChannel {
+  final String id;
+  final String groupId;
+  final String name;
+  final int position;
+  final String createdBy;
+  final int createdAt;
+
+  GroupVoiceChannel({
+    required this.id,
+    required this.groupId,
+    required this.name,
+    required this.position,
+    required this.createdBy,
+    required this.createdAt,
+  });
+
+  factory GroupVoiceChannel.fromJson(Map<String, dynamic> json) {
+    return GroupVoiceChannel(
+      id: json['id'] as String? ?? '',
+      groupId: json['group_id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      position: (json['position'] as num?)?.toInt() ?? 0,
+      createdBy: json['created_by'] as String? ?? '',
+      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// A member present in a voice channel.
+class GroupVoicePresence {
+  final String channelId;
+  final String pubkey;
+  final int joinedAt;
+
+  GroupVoicePresence({
+    required this.channelId,
+    required this.pubkey,
+    required this.joinedAt,
+  });
+
+  factory GroupVoicePresence.fromJson(Map<String, dynamic> json) {
+    return GroupVoicePresence(
+      channelId: json['channel_id'] as String? ?? '',
+      pubkey: json['pubkey'] as String? ?? '',
+      joinedAt: (json['joined_at'] as num?)?.toInt() ?? 0,
+    );
+  }
 }

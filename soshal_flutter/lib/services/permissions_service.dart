@@ -1,9 +1,7 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart' as ph;
+
+import '../ffi/permissions.dart' as ffi;
 
 /// Outcome of a permission request.
 class PermissionResult {
@@ -34,21 +32,21 @@ class LocationResult {
 
 /// Runtime permission + device-location access.
 ///
-/// Android: `permission_handler` for camera/mic, `geolocator` for location
-/// (its own permission flow + GPS fix). Linux desktop: XDG Desktop Portal
-/// location via the native `com.soshal/portal` channel (`my_application.cc`);
-/// camera/mic have no Linux capture path (no PipeWire/v4l2 render stack in
-/// the Flutter embedder) and report honest failure. Every call is a safe
-/// no-op on other platforms.
+/// Android: Rust JNI (`ffi/permissions.dart`) for camera/mic + location
+/// permissions; `geolocator` remains ONLY for the GPS fix (its own
+/// permission flow is bypassed in favor of the Rust surface). Linux
+/// desktop: XDG Desktop Portal location via ashpd (Rust); camera/mic have
+/// no Linux capture path (no PipeWire/v4l2 render stack in the Flutter
+/// embedder) and report honest failure. Every call is a safe no-op on
+/// other platforms.
 class PermissionsService {
   PermissionsService._();
-
-  static const MethodChannel _portalChannel =
-      MethodChannel('com.soshal/portal');
 
   static const String _linuxCameraMicUnsupported =
       'Camera and microphone are not supported on Linux desktop '
       '(no camera capture path in the Linux build).';
+
+  static const String _androidSettingsHint = ' - enable it in app settings';
 
   /// Test hooks: override platform detection without touching the real OS.
   @visibleForTesting
@@ -57,44 +55,62 @@ class PermissionsService {
   @visibleForTesting
   static bool? debugPlatformIsLinux;
 
-  static bool get _isAndroid => debugPlatformIsAndroid ?? Platform.isAndroid;
+  /// Test hook: shrink the permission-result poll interval.
+  @visibleForTesting
+  static Duration debugPollDelay = const Duration(milliseconds: 250);
 
-  static bool get _isLinux => debugPlatformIsLinux ?? Platform.isLinux;
+  static String? _hostPlatform;
+
+  static String get _platform =>
+      _hostPlatform ??= ffi.permissionsPlatformCurrent();
+
+  static bool get _isAndroid =>
+      debugPlatformIsAndroid ?? _platform == 'android';
+
+  static bool get _isLinux => debugPlatformIsLinux ?? _platform == 'linux';
 
   /// Request camera + microphone together (grouped dialog on Android 12+).
   static Future<PermissionResult> ensureCameraMic() async {
     if (!_isAndroid) {
       return const PermissionResult.denied(_linuxCameraMicUnsupported);
     }
-    final camera = await _request(ph.Permission.camera);
-    if (!camera.granted) return camera;
-    return _request(ph.Permission.microphone);
+    return _ensureCameraMic();
   }
 
   static Future<PermissionResult> ensureCamera() async {
     if (!_isAndroid) {
       return const PermissionResult.denied(_linuxCameraMicUnsupported);
     }
-    return _request(ph.Permission.camera);
+    return _ensureCameraMic();
   }
 
   static Future<PermissionResult> ensureMic() async {
     if (!_isAndroid) {
       return const PermissionResult.denied(_linuxCameraMicUnsupported);
     }
-    return _request(ph.Permission.microphone);
+    return _ensureCameraMic();
   }
 
-  static Future<PermissionResult> _request(ph.Permission permission) async {
+  static Future<PermissionResult> _ensureCameraMic() async {
     try {
-      final status = await permission.request();
-      if (status.isGranted) return const PermissionResult.granted();
-      if (status.isPermanentlyDenied) {
-        return PermissionResult.denied(
-            'Permission permanently denied - enable it in app settings');
+      if (ffi.permissionsCameraMicGranted()) {
+        return const PermissionResult.granted();
       }
-      return PermissionResult.denied(
-          '${permission.toString().split('.').last} permission denied');
+      if (!ffi.permissionsCameraMicRequest()) {
+        return const PermissionResult.denied('Permission request unavailable');
+      }
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(debugPollDelay);
+        if (ffi.permissionsCameraMicGranted()) {
+          return const PermissionResult.granted();
+        }
+      }
+      if (ffi.permissionsCameraMicPermanentlyDenied()) {
+        return PermissionResult.denied(
+            'Permission permanently denied$_androidSettingsHint');
+      }
+      return const PermissionResult.denied(
+          'camera/microphone permission denied');
     } catch (e) {
       return PermissionResult.denied('Permission request failed: $e');
     }
@@ -104,8 +120,7 @@ class PermissionsService {
   static Future<bool> isPermanentlyDenied() async {
     if (!_isAndroid) return false;
     try {
-      return await ph.Permission.camera.isPermanentlyDenied ||
-          await ph.Permission.microphone.isPermanentlyDenied;
+      return ffi.permissionsCameraMicPermanentlyDenied();
     } catch (_) {
       return false;
     }
@@ -115,15 +130,14 @@ class PermissionsService {
   static Future<bool> openSettings() async {
     if (!_isAndroid) return false;
     try {
-      await ph.openAppSettings();
-      return true;
+      return ffi.permissionsOpenSettings();
     } catch (_) {
       return false;
     }
   }
 
-  /// Request location access (geolocator dialog on Android; portal grants
-  /// on demand on Linux, so no static prompt here).
+  /// Request location access (Rust dialog on Android; portal grants on
+  /// demand on Linux, so no static prompt here).
   static Future<PermissionResult> ensureLocation() async {
     if (!_isAndroid && !_isLinux) {
       return const PermissionResult.denied(
@@ -131,21 +145,20 @@ class PermissionsService {
     }
     if (_isLinux) return const PermissionResult.granted();
     try {
-      final status = await Geolocator.checkPermission();
-      if (status == LocationPermission.whileInUse ||
-          status == LocationPermission.always) {
+      if (ffi.permissionsLocationGranted()) {
         return const PermissionResult.granted();
       }
-      if (status == LocationPermission.deniedForever) {
-        return const PermissionResult.denied(
-            'Location permission permanently denied - enable it in app settings');
+      if (!ffi.permissionsLocationRequest()) {
+        return const PermissionResult.denied('Location permission failed');
       }
-      final requested = await Geolocator.requestPermission();
-      if (requested == LocationPermission.whileInUse ||
-          requested == LocationPermission.always) {
-        return const PermissionResult.granted();
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(debugPollDelay);
+        if (ffi.permissionsLocationGranted()) {
+          return const PermissionResult.granted();
+        }
       }
-      return const PermissionResult.denied('Location permission denied');
+      return const PermissionResult.denied(
+          'Location permission denied$_androidSettingsHint');
     } catch (e) {
       return PermissionResult.denied('Location permission failed: $e');
     }
@@ -153,14 +166,15 @@ class PermissionsService {
 
   /// Current device position, or a failure reason.
   ///
-  /// Android: geolocator GPS fix (location service must be enabled).
-  /// Linux: XDG Desktop Portal location via `com.soshal/portal`.
+  /// Android: geolocator GPS fix (location service must be enabled; the
+  /// permission flow itself is Rust). Linux: XDG Desktop Portal location
+  /// via ashpd.
   static Future<LocationResult> currentPosition() async {
     if (_isAndroid) {
       final granted = await ensureLocation();
       if (!granted.granted) return LocationResult.failed(granted.reason);
       try {
-        if (!await Geolocator.isLocationServiceEnabled()) {
+        if (!ffi.permissionsLocationEnabled()) {
           return const LocationResult.failed('Location service is off');
         }
         final pos = await Geolocator.getCurrentPosition(
@@ -176,24 +190,16 @@ class PermissionsService {
     }
     if (_isLinux) {
       try {
-        final map = await _portalChannel.invokeMapMethod<String, double>(
-          'requestLocation',
-        );
-        if (map == null) {
+        final fix = await ffi.permissionsLocationPortalFix();
+        if (fix == null) {
           return const LocationResult.failed('Location portal unavailable');
         }
-        final lat = map['latitude'];
-        final lng = map['longitude'];
-        if (lat == null || lng == null) {
-          return const LocationResult.failed('Location portal returned no fix');
-        }
-        return LocationResult.coords(lat, lng);
-      } on PlatformException catch (e) {
-        return LocationResult.failed(
-            '${e.code == 'DENIED' ? 'Location denied' : 'Location unavailable'}: '
-            '${e.message ?? e.code}');
+        return LocationResult.coords(fix.latitude, fix.longitude);
       } catch (e) {
-        return LocationResult.failed('Location portal failed: $e');
+        final msg = e.toString();
+        return LocationResult.failed(
+            '${msg.contains('DENIED') ? 'Location denied' : 'Location unavailable'}: '
+            '$msg');
       }
     }
     return const LocationResult.failed('Location unavailable on this platform');

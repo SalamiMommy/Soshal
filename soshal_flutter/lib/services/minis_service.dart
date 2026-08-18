@@ -1,9 +1,15 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import 'media_service.dart';
+import 'p2p_service.dart';
 
-/// Minis: mini-app registry (URLs) plus WASI content-filter / feed-ranker
-/// plugin execution. Stateless wrapper — screens own their UI state.
+/// Minis: mini video registry (kind-31020) plus WASI content-filter /
+/// feed-ranker plugin execution. Stateless wrapper — screens own their UI
+/// state.
 class MinisService with LastErrorMixin {
   bool _wasmRuntimeUnavailable = false;
 
@@ -11,12 +17,40 @@ class MinisService with LastErrorMixin {
   /// execution is simulated and errors are expected.
   bool get wasmRuntimeUnavailable => _wasmRuntimeUnavailable;
 
-  /// Fetch known mini URLs. Backend stub returns an empty list today.
-  List<String> fetchMinis() {
+  /// Fetch known minis from the local registry, newest first.
+  List<MiniItem> fetchMinis() {
     try {
-      final minis = RustLib.instance.api.crateFfiMinisMinisFetch();
+      final json = RustLib.instance.api.crateFfiMinisMinisFetch();
+      final list = (jsonDecode(json) as List<dynamic>)
+          .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
+          .toList();
       clearLastError();
-      return minis;
+      return list;
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
+  }
+
+  /// Publish a mini video (kind 31020). `mediaSource` is a local video file
+  /// path or an https media URL; bytes are chunked into the local CAS and
+  /// the event carries a blob tag so peers can fetch from caches. Returns
+  /// the event id.
+  Future<String> publishMini({
+    required String mediaSource,
+    String? textOverlay,
+    String? thumbnail,
+    String? audience,
+  }) async {
+    try {
+      final id = await RustLib.instance.api.crateFfiMinisMinisPublish(
+        mediaSource: mediaSource,
+        textOverlay: textOverlay,
+        thumbnail: thumbnail,
+        audience: audience,
+      );
+      clearLastError();
+      return id;
     } catch (e, st) {
       setLastError(e, st);
       rethrow;
@@ -66,4 +100,71 @@ class MinisService with LastErrorMixin {
       return const [];
     }
   }
+}
+
+/// A mini (kind 31020), serialized via `mini_from_event`.
+class MiniItem {
+  final String id;
+  final String pubkey;
+  final String videoUrl;
+  final String blobHash;
+  final int mediaSize;
+  final String textOverlay;
+  final String thumbnail;
+  final String audience;
+  final int createdAt;
+
+  MiniItem({
+    required this.id,
+    required this.pubkey,
+    required this.videoUrl,
+    required this.blobHash,
+    required this.mediaSize,
+    required this.textOverlay,
+    required this.thumbnail,
+    required this.audience,
+    required this.createdAt,
+  });
+
+  factory MiniItem.fromJson(Map<String, dynamic> json) => MiniItem(
+        id: json['id'] as String? ?? '',
+        pubkey: json['pubkey'] as String? ?? '',
+        videoUrl: json['videoUrl'] as String? ?? '',
+        blobHash: json['blobHash'] as String? ?? '',
+        mediaSize: (json['mediaSize'] as num?)?.toInt() ?? 0,
+        textOverlay: json['textOverlay'] as String? ?? '',
+        thumbnail: json['thumbnail'] as String? ?? '',
+        audience: json['audience'] as String? ?? 'public',
+        createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// Resolves a mini's video to a playable URL: local CAS blob first, then
+/// LAN peer fetch, then the original URL as fallback (blob-first, URL
+/// fallback). Returns null when nothing is reachable.
+Future<String?> resolveMiniPlaybackUrl(
+  MiniItem mini,
+  MediaService media,
+  P2pService p2p,
+) async {
+  if (mini.blobHash.isNotEmpty) {
+    try {
+      await media.fetchBlob(mini.blobHash);
+      await media.startLocalServer();
+      return media.getLocalUrl(mini.blobHash);
+    } catch (_) {
+      try {
+        await media.fetchBlobFromLan(
+          mini.blobHash,
+          peers: p2p.peers,
+          outPath: '${Directory.systemTemp.path}/${mini.blobHash}',
+        );
+        await media.startLocalServer();
+        return media.getLocalUrl(mini.blobHash);
+      } catch (_) {
+        // Fall through to the URL fallback.
+      }
+    }
+  }
+  return mini.videoUrl.isNotEmpty ? mini.videoUrl : null;
 }

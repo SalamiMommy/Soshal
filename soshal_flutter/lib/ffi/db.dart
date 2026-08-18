@@ -20,6 +20,12 @@ String dbPath() => RustLib.instance.api.crateFfiDbDbPath();
 PlatformInt64 dbSchemaVersion() =>
     RustLib.instance.api.crateFfiDbDbSchemaVersion();
 
+/// The schema version this build's migration runner produces
+/// (db-core `SCHEMA_VERSION`). Clients use it to detect stale binaries
+/// without hardcoding a copy.
+PlatformInt64 dbExpectedSchemaVersion() =>
+    RustLib.instance.api.crateFfiDbDbExpectedSchemaVersion();
+
 /// Force re-run all migrations from scratch. This deletes the _migrations table
 /// and re-runs the full migration sequence. Use with caution - it may fail if
 /// schema changes are not backwards compatible.

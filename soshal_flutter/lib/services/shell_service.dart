@@ -1,7 +1,9 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 
 /// A single sidebar navigation entry.
@@ -350,14 +352,28 @@ class ShellService extends ChangeNotifier {
 
   // ─── Global audio bar ────────────────────────────────────────────────────
 
-  void playAudio(String url, String title) {
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
+  /// Plays an audio URL (local blob-server URL or remote fallback) through
+  /// the global audio player.
+  Future<void> playAudio(String url, String title) async {
     _audioUrl = url;
     _audioTitle = title;
     _audioPlaying = true;
     notifyListeners();
+    try {
+      await _audioPlayer.stop();
+      await _audioPlayer.setUrl(url);
+      unawaited(_audioPlayer.play());
+    } catch (e) {
+      debugPrint('audio play failed: $e');
+    }
   }
 
-  void stopAudio() {
+  Future<void> stopAudio() async {
+    try {
+      await _audioPlayer.stop();
+    } catch (_) {}
     _audioUrl = '';
     _audioTitle = '';
     _audioPlaying = false;

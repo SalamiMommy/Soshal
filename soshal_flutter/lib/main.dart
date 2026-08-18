@@ -236,8 +236,17 @@ class _SoshalAppState extends State<SoshalApp> {
           theme: themeService.themeFor(),
           darkTheme: themeService.themeFor(),
           themeMode: themeService.isDark ? ThemeMode.dark : ThemeMode.light,
-          builder: (context, child) =>
-              LoggingScaffoldMessenger(child: child ?? const SizedBox.shrink()),
+          builder: (context, child) => LoggingScaffoldMessenger(
+            // Opaque fallback behind the transparent shell scaffolds:
+            // splash/auth paint over this; in-shell screens paint over the
+            // AppShell background image instead.
+            child: ColoredBox(
+              color: themeService.isDark
+                  ? const Color(0xFF05070A)
+                  : const Color(0xFFF0F7FC),
+              child: child ?? const SizedBox.shrink(),
+            ),
+          ),
           routerConfig: AppRouter.router,
         );
       },

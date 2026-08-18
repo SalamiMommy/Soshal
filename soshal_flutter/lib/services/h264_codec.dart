@@ -1,31 +1,26 @@
-import 'dart:io' show Platform;
+import 'dart:typed_data';
 
-import 'package:flutter/services.dart';
+import '../ffi/h264.dart' as ffi_h264;
 
-/// Thin Dart wrapper over the native H.264 codec channel (`com.soshal/h264`,
-/// implemented in `MainActivity.kt` via `H264Codec.kt` — MediaCodec).
+/// Thin Dart wrapper over the Rust H.264 codec (codecs/h264.rs, NDK
+/// AMediaCodec). Off-Android the bridge returns defaults, so callers fall
+/// back to the JPEG path.
 ///
 /// Encode: feed BGRA frame bytes, get drained Annex-B NAL blobs, each tagged
 /// with a leading key-frame flag (`1` = key frame, `0` = delta).
 /// Decode: feed Annex-B NAL blobs (one MoQ object payload each), get JPEG
 /// byte arrays back (one per drained video frame).
-///
-/// Every call is a no-op / returns empty on non-Android or when the channel
-/// is missing — callers fall back to the JPEG path.
 class H264Codec {
   H264Codec._();
 
-  static const MethodChannel _channel = MethodChannel('com.soshal/h264');
-
   static bool? _supported;
 
-  /// True only when running on Android AND the native encoder is present.
+  /// True only when running on Android ≥ 26 AND the native encoder exists.
   static Future<bool> isSupported() async {
-    if (!Platform.isAndroid) return false;
     final cached = _supported;
     if (cached != null) return cached;
     try {
-      final ok = await _channel.invokeMethod<bool>('isSupported') ?? false;
+      final ok = ffi_h264.h264IsSupported();
       _supported = ok;
       return ok;
     } catch (_) {
@@ -42,13 +37,12 @@ class H264Codec {
     int fps = 15,
   }) async {
     try {
-      return await _channel.invokeMethod<bool>('initEncode', {
-            'width': width,
-            'height': height,
-            'bitrate': bitrate,
-            'fps': fps,
-          }) ??
-          false;
+      return ffi_h264.h264InitEncode(
+        width: width,
+        height: height,
+        bitrate: bitrate,
+        fps: fps,
+      );
     } catch (_) {
       return false;
     }
@@ -58,9 +52,7 @@ class H264Codec {
   /// each `[flag, ...annexB]` (Uint8List of 1 + N bytes).
   static Future<List<Uint8List>> feedEncode(Uint8List bgra) async {
     try {
-      final out =
-          await _channel.invokeListMethod<Uint8List>('feedEncode', bgra);
-      return out ?? const [];
+      return ffi_h264.h264FeedEncode(bgra: bgra);
     } catch (_) {
       return const [];
     }
@@ -69,7 +61,7 @@ class H264Codec {
   /// Configure the decoder (software AVC; feed Annex-B directly).
   static Future<bool> initDecode() async {
     try {
-      return await _channel.invokeMethod<bool>('initDecode') ?? false;
+      return ffi_h264.h264InitDecode();
     } catch (_) {
       return false;
     }
@@ -78,8 +70,7 @@ class H264Codec {
   /// Feed one Annex-B NAL blob; returns JPEG frames drained from the decoder.
   static Future<List<Uint8List>> feedDecode(Uint8List nal) async {
     try {
-      final out = await _channel.invokeListMethod<Uint8List>('feedDecode', nal);
-      return out ?? const [];
+      return ffi_h264.h264FeedDecode(nal: nal);
     } catch (_) {
       return const [];
     }
@@ -90,7 +81,7 @@ class H264Codec {
   /// Safe to call while broadcasting (recording is off until this returns).
   static Future<String?> initRecord() async {
     try {
-      return await _channel.invokeMethod<String>('initRecord');
+      return ffi_h264.h264InitRecord();
     } catch (_) {
       return null;
     }
@@ -100,7 +91,7 @@ class H264Codec {
   /// when nothing was recorded).
   static Future<String?> stopRecord() async {
     try {
-      return await _channel.invokeMethod<String>('stopRecord');
+      return ffi_h264.h264StopRecord();
     } catch (_) {
       return null;
     }
@@ -109,9 +100,9 @@ class H264Codec {
   /// Stop + release both encoder and decoder if initialized.
   static Future<void> release() async {
     try {
-      await _channel.invokeMethod<void>('release');
+      ffi_h264.h264Release();
     } catch (_) {
-      // channel missing — nothing to release
+      // bridge missing — nothing to release
     }
   }
 }

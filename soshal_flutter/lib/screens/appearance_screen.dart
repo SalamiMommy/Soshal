@@ -1,5 +1,9 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../services/theme_service.dart';
 
@@ -44,6 +48,27 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ThemeService>().load();
     });
+  }
+
+  /// Picks an image file and copies it into the app support dir so the path
+  /// survives restarts; stores the path in the theme options.
+  Future<void> _pickBackground() async {
+    try {
+      final picked = await FilePicker.pickFile(type: FileType.image);
+      final path = picked?.path;
+      if (path == null || !mounted) return;
+      final dir = await getApplicationSupportDirectory();
+      final ext = path.split('.').last.toLowerCase();
+      final dest = '${dir.path}${Platform.pathSeparator}background.$ext';
+      await File(path).copy(dest);
+      if (!mounted) return;
+      context.read<ThemeService>().update(backgroundImage: dest);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to set background: $e')),
+      );
+    }
   }
 
   @override
@@ -113,6 +138,46 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
             onSubmitted: (v) => theme.update(customAccent: v.trim()),
           ),
           const SizedBox(height: 24),
+          Text('Background', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox(
+              height: 120,
+              width: double.infinity,
+              child: theme.backgroundImage.startsWith('assets/')
+                  ? Image.asset(
+                      theme.backgroundImage,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stack) =>
+                          const ColoredBox(color: Colors.grey),
+                    )
+                  : Image.file(
+                      File(theme.backgroundImage),
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stack) =>
+                          const ColoredBox(color: Colors.grey),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _pickBackground,
+                icon: const Icon(Icons.upload_outlined),
+                label: const Text('Upload image'),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () => theme.update(
+                  backgroundImage: ThemeService.defaultBackgroundImage,
+                ),
+                child: const Text('Reset to default'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
           Text('Font size scale',
               style: Theme.of(context).textTheme.titleMedium),
           Row(
@@ -168,6 +233,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
                 customAccent: '',
                 fontScale: 1.0,
                 fontFamily: 'default',
+                backgroundImage: ThemeService.defaultBackgroundImage,
               );
               theme.save();
             },

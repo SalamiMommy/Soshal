@@ -71,10 +71,14 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                     input.own_max_distance_km,
                 ) {
                     if *own_max > 0.0 {
-                        if let Some(ref other_gh) = profile.location_geohash {
-                            if haversine_distance(own_gh, other_gh) > *own_max {
-                                return false;
-                            }
+                        let other_gh = match profile.location_geohash.as_ref() {
+                            Some(gh) => gh,
+                            // A candidate without a geohash cannot be located;
+                            // exclude it when browsing by radius.
+                            None => return false,
+                        };
+                        if haversine_distance(own_gh, other_gh) > *own_max {
+                            return false;
                         }
                     }
                 }
@@ -99,6 +103,23 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                             }
                             if let Some(max) = input.max_age {
                                 if age > max {
+                                    return false;
+                                }
+                            }
+                        }
+                        None => return false,
+                    }
+                }
+                if input.height_min_cm.is_some() || input.height_max_cm.is_some() {
+                    match profile.height {
+                        Some(height) => {
+                            if let Some(min) = input.height_min_cm {
+                                if height < min {
+                                    return false;
+                                }
+                            }
+                            if let Some(max) = input.height_max_cm {
+                                if height > max {
                                     return false;
                                 }
                             }

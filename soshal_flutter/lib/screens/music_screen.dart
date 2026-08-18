@@ -1,9 +1,13 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../services/media_service.dart';
 import '../services/music_service.dart';
+import '../services/p2p_service.dart';
 import '../services/shell_service.dart';
 import '../utils/format.dart';
+import '../widgets/blob_image.dart';
 import '../widgets/error_state_text.dart';
 
 /// Musicloud: track list, publish form (FAB), and a detail view with
@@ -39,6 +43,7 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
     final url = TextEditingController();
     final title = TextEditingController();
     final hashtags = TextEditingController();
+    String? pickedPath;
     var busy = false;
     var status = '';
 
@@ -61,11 +66,30 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
                 Text('New Track',
                     style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  onPressed: () async {
+                    final picked = await FilePicker.pickFile(
+                      type: FileType.audio,
+                    );
+                    final path = picked?.path;
+                    if (path == null) return;
+                    setSheetState(() {
+                      pickedPath = path;
+                      status = '';
+                    });
+                  },
+                  icon: const Icon(Icons.audio_file),
+                  label: Text(pickedPath == null
+                      ? 'Pick audio file (hosted from device caches)'
+                      : 'Picked: ${pickedPath!.split('/').last}'),
+                ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: url,
                   keyboardType: TextInputType.url,
                   decoration: const InputDecoration(
-                    labelText: 'Audio URL (https mp3/ogg…) *',
+                    labelText:
+                        '…or audio URL (https mp3/ogg…) — fallback when no device has the blob',
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -85,10 +109,10 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
                   onPressed: busy
                       ? null
                       : () async {
-                          final audioUrl = url.text.trim();
-                          if (audioUrl.isEmpty) {
-                            setSheetState(
-                                () => status = 'Audio URL is required.');
+                          final mediaSource = pickedPath ?? url.text.trim();
+                          if (mediaSource.isEmpty) {
+                            setSheetState(() => status =
+                                'Pick an audio file or enter an audio URL.');
                             return;
                           }
                           setSheetState(() {
@@ -98,7 +122,7 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
                           try {
                             final id =
                                 await context.read<MusicService>().publishTrack(
-                                      audioUrl: audioUrl,
+                                      mediaSource: mediaSource,
                                       title: title.text.trim().isEmpty
                                           ? null
                                           : title.text.trim(),
@@ -142,13 +166,26 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
     );
   }
 
-  void _play(MusicTrack track) {
-    context.read<ShellService>().playAudio(track.audioUrl, track.title);
-    Clipboard.setData(ClipboardData(text: track.audioUrl));
+  Future<void> _play(MusicTrack track) async {
+    final shell = context.read<ShellService>();
+    final url = await resolveTrackPlaybackUrl(
+      track,
+      context.read<MediaService>(),
+      context.read<P2pService>(),
+    );
+    if (!mounted) return;
+    if (url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Audio unavailable — no device has this blob.')),
+      );
+      return;
+    }
+    await shell.playAudio(url, track.title);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: SelectableText(
-            'Playing — ${track.title} · audio URL copied to clipboard'),
+        content: SelectableText('Playing — ${track.title}'),
       ),
     );
   }
@@ -210,14 +247,12 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
                           leading: track.thumbnail.isNotEmpty
                               ? ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    track.thumbnail,
+                                  child: BlobImage(
+                                    source: track.thumbnail,
                                     width: 48,
-                                    cacheWidth: 160,
                                     height: 48,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        _trackIcon(context),
+                                    errorBuilder: (_) => _trackIcon(context),
                                   ),
                                 )
                               : _trackIcon(context),

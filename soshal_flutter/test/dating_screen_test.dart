@@ -201,7 +201,7 @@ void main() {
 
     await tester.enterText(find.byType(TextField).at(0), '25');
     await tester.enterText(find.byType(TextField).at(1), '35');
-    await tester.enterText(find.byType(TextField).at(2), 'hiking, art');
+    await tester.enterText(find.byType(TextField).at(4), 'hiking, art');
     await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
     await tester.pumpAndSettle();
 

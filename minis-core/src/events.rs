@@ -9,6 +9,8 @@ pub struct MiniEventOut {
     pub id: String,
     pub pubkey: String,
     pub video_url: String,
+    pub blob_hash: String,
+    pub media_size: u64,
     pub text_overlay: String,
     pub thumbnail: String,
     pub audience: String,
@@ -21,12 +23,39 @@ pub struct MusicloudEventOut {
     pub id: String,
     pub pubkey: String,
     pub audio_url: String,
+    pub blob_hash: String,
+    pub media_size: u64,
     pub title: String,
     pub thumbnail: String,
     pub hashtags: Vec<String>,
     pub d: String,
     pub audience: String,
     pub created_at: u64,
+}
+
+/// Extracts the `["media", type, url, blob_hash, size]` tag (feed wire
+/// format) from an event's tags. The blob hash must be 64 lowercase hex
+/// chars; malformed tags are ignored. Returns `(blob_hash, size)` with an
+/// empty hash when no valid media tag exists (URL-fallback events).
+pub fn media_blob_from_tags(tags: &[Vec<String>]) -> (String, u64) {
+    for tag in tags {
+        if tag.first().map(|s| s.as_str()) != Some("media") {
+            continue;
+        }
+        if tag.len() < 5 {
+            continue;
+        }
+        if !matches!(tag[1].as_str(), "image" | "video" | "audio") {
+            continue;
+        }
+        let blob_hash = tag[3].clone();
+        if blob_hash.len() != 64 || !blob_hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+            continue;
+        }
+        let size: u64 = tag[4].parse().unwrap_or(0);
+        return (blob_hash, size);
+    }
+    (String::new(), 0)
 }
 
 /// Maps a kind-31020 mini event to its typed struct. Returns `None` when the
@@ -44,10 +73,13 @@ pub fn mini_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
     } else {
         audience
     };
+    let (blob_hash, media_size) = media_blob_from_tags(&ev.tags);
     Some(serde_json::json!({
         "id": ev.id,
         "pubkey": ev.pubkey,
         "videoUrl": url,
+        "blobHash": blob_hash,
+        "mediaSize": media_size,
         "textOverlay": ev.content,
         "thumbnail": thumb,
         "audience": audience,
@@ -69,10 +101,13 @@ pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
     } else {
         audience
     };
+    let (blob_hash, media_size) = media_blob_from_tags(&ev.tags);
     Some(MiniEventOut {
         id: ev.id.clone(),
         pubkey: ev.pubkey.clone(),
         video_url: url.to_string(),
+        blob_hash,
+        media_size,
         text_overlay: ev.content.clone(),
         thumbnail: thumb.to_string(),
         audience: audience.to_string(),
@@ -113,10 +148,13 @@ pub fn musicloud_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
     } else {
         audience
     };
+    let (blob_hash, media_size) = media_blob_from_tags(&ev.tags);
     Some(serde_json::json!({
         "id": ev.id,
         "pubkey": ev.pubkey,
         "audioUrl": url,
+        "blobHash": blob_hash,
+        "mediaSize": media_size,
         "title": title,
         "thumbnail": thumbnail,
         "hashtags": hashtags,
@@ -159,10 +197,13 @@ pub fn musicloud_event_out(ev: &NostrEvent) -> Option<MusicloudEventOut> {
     } else {
         audience
     };
+    let (blob_hash, media_size) = media_blob_from_tags(&ev.tags);
     Some(MusicloudEventOut {
         id: ev.id.clone(),
         pubkey: ev.pubkey.clone(),
         audio_url: url.to_string(),
+        blob_hash,
+        media_size,
         title: title.to_string(),
         thumbnail: thumbnail.to_string(),
         hashtags,

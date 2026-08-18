@@ -1954,3 +1954,125 @@ fn test_reminder_delete_by_id() {
     repo.delete("rem_del_missing").unwrap();
     assert!(repo.list().unwrap().is_empty());
 }
+
+#[test]
+fn test_group_thread_reaction_toggle_and_sort() {
+    use soshal_db_core::repos::thread::{
+        GroupThreadReplyRow, GroupThreadRepo, GroupThreadRow, ThreadSort,
+    };
+
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = GroupThreadRepo::new(&db);
+    let now = soshal_common_core::format::now_secs();
+
+    let busy = GroupThreadRow {
+        id: "thr_busy".into(),
+        group_id: "g_t".into(),
+        title: "Busy".into(),
+        body: "".into(),
+        author: "a".repeat(64),
+        created_at: now - 7200,
+        is_pinned: false,
+        reply_count: 0,
+        reaction_count: 0,
+    };
+    let quiet = GroupThreadRow {
+        id: "thr_quiet".into(),
+        group_id: "g_t".into(),
+        title: "Quiet".into(),
+        body: "".into(),
+        author: "a".repeat(64),
+        created_at: now - 100,
+        is_pinned: false,
+        reply_count: 0,
+        reaction_count: 0,
+    };
+    repo.upsert(&busy).unwrap();
+    repo.upsert(&quiet).unwrap();
+
+    assert!(repo
+        .add_reaction("thr_busy", "", "b".repeat(64).as_str(), "👍")
+        .unwrap());
+    assert!(!repo
+        .add_reaction("thr_busy", "", "b".repeat(64).as_str(), "👍")
+        .unwrap());
+    assert!(repo
+        .add_reaction("thr_busy", "", "c".repeat(64).as_str(), "👍")
+        .unwrap());
+    assert!(repo
+        .add_reaction("thr_busy", "", "b".repeat(64).as_str(), "❤️")
+        .unwrap());
+    assert!(repo
+        .add_reaction("thr_busy", "", "b".repeat(64).as_str(), "🔥")
+        .unwrap());
+
+    let summary = repo
+        .reaction_summary("thr_busy", "b".repeat(64).as_str())
+        .unwrap();
+    assert_eq!(summary.len(), 3);
+    let thumbs = summary.iter().find(|r| r.emoji == "👍").unwrap();
+    assert_eq!(thumbs.count, 2);
+    assert!(thumbs.reacted);
+    assert!(thumbs.reply_id.is_empty());
+
+    // Toggle off the viewer's own 👍.
+    assert!(!repo
+        .toggle_reaction("thr_busy", "", "b".repeat(64).as_str(), "👍")
+        .unwrap());
+    let summary = repo
+        .reaction_summary("thr_busy", "b".repeat(64).as_str())
+        .unwrap();
+    let thumbs = summary.iter().find(|r| r.emoji == "👍").unwrap();
+    assert_eq!(thumbs.count, 1);
+    assert!(!thumbs.reacted);
+
+    // Toggle back on.
+    assert!(repo
+        .toggle_reaction("thr_busy", "", "b".repeat(64).as_str(), "👍")
+        .unwrap());
+
+    // Reply-level reactions carry reply_id.
+    let rpl = GroupThreadReplyRow {
+        id: "rpl_1".into(),
+        thread_id: "thr_busy".into(),
+        parent_id: "".into(),
+        author: "b".repeat(64),
+        content: "hi".into(),
+        created_at: now,
+    };
+    repo.add_reply(&rpl).unwrap();
+    assert!(repo
+        .add_reaction("thr_busy", "rpl_1", "c".repeat(64).as_str(), "🔥")
+        .unwrap());
+    let summary = repo
+        .reaction_summary("thr_busy", "b".repeat(64).as_str())
+        .unwrap();
+    assert!(summary
+        .iter()
+        .any(|r| r.reply_id == "rpl_1" && r.emoji == "🔥"));
+
+    // Hot sort: the 2-hour-old busy thread (4 reactions + 1 reply) outranks
+    // the quiet fresh one.
+    let popular = repo.list("g_t", ThreadSort::Popular).unwrap();
+    assert_eq!(popular[0].id, "thr_busy");
+    assert!(popular[0].reaction_count >= 4);
+    assert_eq!(popular[1].id, "thr_quiet");
+
+    // Newest sort: fresh first.
+    let newest = repo.list("g_t", ThreadSort::Newest).unwrap();
+    assert_eq!(newest[0].id, "thr_quiet");
+
+    // Pinned always floats to the top.
+    repo.set_pinned("thr_quiet", true).unwrap();
+    let popular = repo.list("g_t", ThreadSort::Popular).unwrap();
+    assert_eq!(popular[0].id, "thr_quiet");
+
+    // Deleting a thread cascades reactions.
+    repo.delete("thr_busy").unwrap();
+    let summary = repo
+        .reaction_summary("thr_busy", "b".repeat(64).as_str())
+        .unwrap();
+    assert!(summary.is_empty());
+    assert!(repo.delete_reply("rpl_1").is_ok());
+}

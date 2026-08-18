@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/ffi/p2p.dart';
+import 'package:soshal_flutter/ffi/power.dart' show PowerStateDto;
 import 'package:soshal_flutter/services/p2p_service.dart';
 
 import 'helpers/test_env.dart';
@@ -183,6 +184,44 @@ void main() {
       expect(current?.mode, 'paused');
       expect(current?.paused, isTrue);
       expect(p2p.power?.uploadBudgetBytesPerSec, BigInt.from(512));
+    });
+
+    test('polling samples OS power state and pushes into scheduler', () async {
+      final p2p = P2pService();
+      addTearDown(p2p.dispose);
+      api.stub('crateFfiPowerPowerSampleOsState', (_) async {
+        return PowerStateDto(
+          charging: true,
+          batteryPercent: 73,
+          cellular: false,
+          lowPowerMode: false,
+        );
+      });
+      api.stub('crateFfiP2PP2PPowerUpdate', (_) => power('full'));
+
+      await p2p.refreshPowerFromOs();
+
+      expect(api.callCount('crateFfiPowerPowerSampleOsState'),
+          greaterThanOrEqualTo(1));
+      final inv = api.callsOf('crateFfiP2PP2PPowerUpdate').last;
+      expect(api.namedArg(inv, 'charging'), isTrue);
+      expect(api.namedArg(inv, 'batteryPercent'), 73);
+      expect(p2p.power?.mode, 'full');
+    });
+
+    test('polling keeps last power state when sampling fails', () async {
+      final p2p = P2pService();
+      addTearDown(p2p.dispose);
+      api.stub('crateFfiPowerPowerSampleOsState', (_) {
+        throw Exception('no battery');
+      });
+
+      await p2p.refreshPowerFromOs();
+
+      expect(api.callCount('crateFfiPowerPowerSampleOsState'),
+          greaterThanOrEqualTo(1));
+      expect(p2p.power, isNull);
+      expect(p2p.lastError, isNull, reason: 'poll errors are swallowed');
     });
 
     test('fountain encode/decode roundtrip through FFI', () async {

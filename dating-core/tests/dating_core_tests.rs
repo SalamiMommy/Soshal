@@ -30,6 +30,8 @@ fn filter_input(profiles: Vec<DatingProfileInput>) -> FilterDatingProfilesInput 
         hide_friends: None,
         min_age: None,
         max_age: None,
+        height_min_cm: None,
+        height_max_cm: None,
         body_type: None,
         smoking: None,
         drinking: None,
@@ -360,6 +362,50 @@ fn filter_respects_profile_own_max_distance() {
     let mut input = filter_input(vec![p]);
     input.own_location_geohash = Some("def".to_string());
     assert!(!filter_dating_profiles(input)[0].passes);
+}
+
+#[test]
+fn filter_radius_excludes_missing_geohash() {
+    let mut input = filter_input(vec![prof("noloc")]);
+    input.own_location_geohash = Some("abc".to_string());
+    input.own_max_distance_km = Some(10.0);
+    assert!(!filter_dating_profiles(input)[0].passes);
+}
+
+#[test]
+fn filter_radius_without_radius_keeps_missing_geohash() {
+    let mut input = filter_input(vec![prof("noloc")]);
+    input.own_location_geohash = Some("abc".to_string());
+    assert!(filter_dating_profiles(input)[0].passes);
+}
+
+#[test]
+fn filter_height_range() {
+    let mut short = prof("short");
+    short.height = Some(160.0);
+    let mut tall = prof("tall");
+    tall.height = Some(190.0);
+    let mut no_height = prof("noheight");
+    let mut input = filter_input(vec![short, tall, no_height]);
+    input.height_min_cm = Some(170.0);
+    input.height_max_cm = Some(185.0);
+    let res = filter_dating_profiles(input);
+    assert!(!res[0].passes);
+    assert!(!res[1].passes);
+    assert!(!res[2].passes);
+}
+
+#[test]
+fn filter_height_open_min() {
+    let mut short = prof("short");
+    short.height = Some(160.0);
+    let mut tall = prof("tall");
+    tall.height = Some(190.0);
+    let mut input = filter_input(vec![short, tall]);
+    input.height_min_cm = Some(170.0);
+    let res = filter_dating_profiles(input);
+    assert!(!res[0].passes);
+    assert!(res[1].passes);
 }
 
 #[test]

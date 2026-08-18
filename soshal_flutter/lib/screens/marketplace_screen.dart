@@ -1,11 +1,14 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/marketplace_service.dart';
+import '../services/media_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/blob_image.dart';
 
 /// Marketplace: listings, search, create, buy, orders and escrow.
 class MarketplaceScreen extends StatefulWidget {
@@ -107,8 +110,50 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
               TextField(
                 controller: images,
                 decoration: const InputDecoration(
-                  labelText: 'Images (JSON array of URLs)',
+                  labelText: 'Images',
+                  hintText: 'pick from device or paste URLs',
                 ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  try {
+                    final picked =
+                        await FilePicker.pickFile(type: FileType.image);
+                    final path = picked?.path;
+                    if (path == null) return;
+                    final manifest =
+                        await context.read<MediaService>().uploadMedia(path);
+                    final hash = manifest['blob_hash'] as String? ?? '';
+                    if (hash.length != 64) {
+                      throw Exception('Bad upload manifest');
+                    }
+                    List<String> list = [];
+                    final current = images.text.trim();
+                    if (current.isNotEmpty) {
+                      try {
+                        list = (jsonDecode(current) as List<dynamic>)
+                            .map((e) => e.toString())
+                            .toList();
+                      } catch (_) {
+                        list = current
+                            .split(',')
+                            .map((e) => e.trim())
+                            .where((e) => e.isNotEmpty)
+                            .toList();
+                      }
+                    }
+                    list.add('n$hash');
+                    images.text = jsonEncode(list);
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: SelectableText('Upload error: $e')));
+                    }
+                  }
+                },
+                icon: const Icon(Icons.add_photo_alternate_outlined),
+                label: const Text('Pick image from device'),
               ),
             ],
           ),
@@ -546,14 +591,11 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                   leading: l.images.isNotEmpty
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
-                            l.images.first,
+                          child: BlobImage(
+                            source: l.images.first,
                             width: 56,
                             height: 56,
-                            cacheWidth: 160,
-                            cacheHeight: 112,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const SizedBox(
+                            errorBuilder: (_) => const SizedBox(
                               width: 56,
                               height: 56,
                               child: Icon(Icons.inventory_2),
