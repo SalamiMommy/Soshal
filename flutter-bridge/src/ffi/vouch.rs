@@ -129,4 +129,22 @@ mod tests {
         assert_eq!(entry["content"], serde_json::json!("trusted"));
         super::super::signer::signer_lock().unwrap();
     }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_vouch_publish_garbage_target_reaches_relay() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        // nostr Tag::parse only rejects empty tag vecs — garbage pubkey parses fine.
+        assert!(nostr::event::Tag::parse(vec!["p".to_string(), "zzz".to_string()]).is_ok());
+        let result = vouch_publish("zzz-not-a-pubkey".to_string(), "trusted".to_string()).await;
+        let err = result.unwrap_err();
+        assert!(err.contains("relay client not initialized"), "{err}");
+        assert!(!err.contains("signer locked"));
+        super::super::signer::signer_lock().unwrap();
+    }
 }

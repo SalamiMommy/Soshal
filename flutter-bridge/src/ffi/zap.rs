@@ -404,4 +404,59 @@ mod tests {
         assert_eq!(v["ev2"], 3);
         assert_eq!(v["ev3"], 0);
     }
+
+    #[test]
+    fn test_connect_nwc_uri_length_and_malformed() {
+        // Local validation only — no network involved.
+        let long = format!("nostr+walletconnect://{}", "a".repeat(4096));
+        let e = zap_connect_nwc(long).err().unwrap();
+        assert_eq!(e, "NWC URI too long");
+        let e = zap_connect_nwc("garbage".to_string()).err().unwrap();
+        assert!(e.starts_with("invalid NWC URI: "), "err: {e}");
+    }
+
+    #[test]
+    fn test_get_total_msat_seeded_and_empty() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("total-msat", "zap");
+        db::db_execute_raw(
+            "INSERT INTO zaps (id, event_id, recipient_pubkey, amount, amount_msat, created_at, zap_type) \
+             VALUES ('z1','ev1','pk',5,5000,1000,'public'),('z2','ev1','pk',7,7000,2000,'public'),('z3','ev2','pk',3,3000,1500,'public')"
+                .to_string(),
+        )
+        .unwrap();
+        // Sum uses the `amount` column (sats), like `zap_fetch_totals`.
+        assert_eq!(zap_get_total_msat("ev1".to_string()).unwrap(), 12);
+        assert_eq!(zap_get_total_msat("ev2".to_string()).unwrap(), 3);
+        assert_eq!(zap_get_total_msat("ev9".to_string()).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_fetch_receipts_validation_and_rows() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = db::tmp_db("receipts", "zap");
+        let e = zap_fetch_receipts("ev1".to_string(), 0).err().unwrap();
+        assert_eq!(e, "limit must be 1..=500");
+        let e = zap_fetch_receipts("ev1".to_string(), 501).err().unwrap();
+        assert_eq!(e, "limit must be 1..=500");
+        // Empty DB → empty rows, not an error.
+        assert_eq!(zap_fetch_receipts("ev1".to_string(), 1).unwrap(), "[]");
+        db::db_execute_raw(
+            "INSERT INTO zaps (id, event_id, recipient_pubkey, amount, amount_msat, created_at, zap_type) \
+             VALUES ('z1','ev1','pk',5,5000,1000,'public'),('z2','ev1','pk',7,7000,2000,'public')"
+                .to_string(),
+        )
+        .unwrap();
+        let json = zap_fetch_receipts("ev1".to_string(), 2).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v.as_array().unwrap().len(), 2);
+        assert!(json.contains("z1"), "json: {json}");
+        assert!(json.contains("\"amount_msat\":5000"), "json: {json}");
+        let one = zap_fetch_receipts("ev1".to_string(), 1).unwrap();
+        assert!(one.len() < json.len(), "limit ignored: {one}");
+    }
 }

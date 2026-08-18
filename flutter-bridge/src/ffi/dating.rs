@@ -752,4 +752,381 @@ mod tests {
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
     }
+
+    #[test]
+    fn test_create_get_own_update_delete_profile() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
+        let path = crate::ffi::db::tmp_db("dating_crud", "dt");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        super::super::db::db_execute_raw(format!(
+            "INSERT INTO users (pubkey, npub, name) VALUES ('{pk}', 'npub1alice', 'alice') ON CONFLICT DO NOTHING"
+        ))
+        .unwrap();
+
+        let err = dating_create_profile(
+            pk.clone(),
+            "alice".to_string(),
+            30,
+            "".to_string(),
+            "hi".to_string(),
+            serde_json::to_string(&vec!["u".to_string(); 10]).unwrap(),
+            "[]".to_string(),
+        );
+        assert_eq!(err.unwrap_err(), "too many images");
+        let err = dating_create_profile(
+            pk.clone(),
+            "alice".to_string(),
+            30,
+            "".to_string(),
+            "hi".to_string(),
+            "not-json".to_string(),
+            "[]".to_string(),
+        );
+        assert!(err.unwrap_err().contains("invalid images JSON"));
+        let err = dating_create_profile(
+            pk.clone(),
+            "alice".to_string(),
+            30,
+            "".to_string(),
+            "hi".to_string(),
+            "[]".to_string(),
+            "not-json".to_string(),
+        );
+        assert!(err.unwrap_err().contains("invalid interests JSON"));
+
+        let signed = dating_create_profile(
+            pk.clone(),
+            "alice".to_string(),
+            30,
+            "".to_string(),
+            "hello".to_string(),
+            r#"["https://x/a.png"]"#.to_string(),
+            r#"["music","art"]"#.to_string(),
+        )
+        .unwrap();
+        let signed_v: serde_json::Value = serde_json::from_str(&signed).unwrap();
+        let event_id = signed_v["id"].as_str().unwrap().to_string();
+        let rows = super::super::db::db_query_raw(format!(
+            "SELECT content FROM posts WHERE id = '{event_id}'"
+        ))
+        .unwrap();
+        assert!(rows.contains("\"locationGeohash\":null"), "{rows}");
+
+        let card: DatingCardInfo =
+            serde_json::from_str(&dating_get_profile(event_id.clone()).unwrap()).unwrap();
+        assert_eq!(card.name, "alice");
+        assert_eq!(card.age, 30);
+        assert_eq!(card.interests, vec!["music".to_string(), "art".to_string()]);
+        assert_eq!(
+            dating_get_profile("deadbeef".to_string()).unwrap_err(),
+            "Dating profile not found"
+        );
+
+        let own: DatingCardInfo =
+            serde_json::from_str(&dating_get_own_profile(pk.clone()).unwrap()).unwrap();
+        assert_eq!(own.bio, "hello");
+        assert_eq!(
+            dating_get_own_profile("otherpk".to_string()).unwrap_err(),
+            "No dating profile yet"
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert!(dating_update_profile(
+            pk.clone(),
+            "updated bio".to_string(),
+            "[]".to_string(),
+            r#"["sports"]"#.to_string(),
+        )
+        .unwrap());
+        let updated: DatingCardInfo =
+            serde_json::from_str(&dating_get_own_profile(pk.clone()).unwrap()).unwrap();
+        assert_eq!(updated.bio, "updated bio");
+        let cnt = super::super::db::db_query_raw(format!(
+            "SELECT COUNT(*) AS c FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{pk}' AND is_deleted = 0"
+        ))
+        .unwrap();
+        assert!(cnt.contains("\"c\":2"), "{cnt}");
+
+        assert!(dating_delete_profile(pk.clone()).unwrap());
+        assert_eq!(
+            dating_get_own_profile(pk).unwrap_err(),
+            "No dating profile yet"
+        );
+        let deleted = super::super::db::db_query_raw(format!(
+            "SELECT COUNT(*) AS c FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}' AND is_deleted = 1",
+            keys.public_key().to_hex()
+        ))
+        .unwrap();
+        assert!(deleted.contains("\"c\":2"), "{deleted}");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
+    #[test]
+    fn test_react_and_pass() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
+        let path = crate::ffi::db::tmp_db("dating_react", "dt");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let id64 = "a".repeat(64);
+
+        for f in [dating_like, dating_unlike, dating_superlike] {
+            let err = f(pk.clone(), "short".to_string()).unwrap_err();
+            assert_eq!(err, "invalid profile event id");
+        }
+        assert!(dating_like(pk.clone(), id64.clone()).unwrap());
+        assert!(dating_unlike(pk.clone(), id64.clone()).unwrap());
+        assert!(dating_superlike(pk.clone(), id64.clone()).unwrap());
+
+        let reactions = super::super::db::db_query_raw(format!(
+            "SELECT content FROM reactions WHERE event_id = '{id64}'"
+        ))
+        .unwrap();
+        let rv: Vec<serde_json::Value> = serde_json::from_str(&reactions).unwrap();
+        assert_eq!(rv.len(), 1);
+        assert_eq!(rv[0]["content"], "super");
+
+        let outbox = super::super::db::db_query_raw(
+            "SELECT payload_json FROM outbox_queue WHERE action_type = 'reaction'".to_string(),
+        )
+        .unwrap();
+        let ov: Vec<serde_json::Value> = serde_json::from_str(&outbox).unwrap();
+        assert_eq!(ov.len(), 3);
+        let payloads: Vec<String> = ov
+            .iter()
+            .map(|r| r["payload_json"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert!(payloads.iter().any(|p| p.contains("\"content\":\"+\"")));
+        assert!(payloads.iter().any(|p| p.contains("\"content\":\"-\"")));
+        assert!(payloads.iter().any(|p| p.contains("\"content\":\"super\"")));
+
+        let err = dating_pass(pk.clone(), "short".to_string()).unwrap_err();
+        assert_eq!(err, "invalid profile event id");
+        assert!(dating_pass(pk.clone(), id64.clone()).unwrap());
+        let pass_rows = super::super::db::db_query_raw(format!(
+            "SELECT content FROM reactions WHERE id = 'pass:{pk}:{id64}'"
+        ))
+        .unwrap();
+        assert!(pass_rows.contains("\"content\":\"pass\""), "{pass_rows}");
+        let outbox2 =
+            super::super::db::db_query_raw("SELECT COUNT(*) AS c FROM outbox_queue".to_string())
+                .unwrap();
+        assert!(outbox2.contains("\"c\":3"), "{outbox2}");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
+    #[test]
+    fn test_fetch_likes_matches_unmatch() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let path = crate::ffi::db::tmp_db("dating_graph", "dt");
+        let insert_post = |id: &str, pubkey: &str, gh: &str, ts: i64| {
+            super::super::db::db_execute_raw(format!(
+                "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+                 VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"{gh}\",\"interests\":[]}}',{KIND_PROFILE},{ts},'[]','synced',0)"
+            ))
+        };
+        let insert_react = |id: &str, event_id: &str, pubkey: &str, content: &str, ts: i64| {
+            super::super::db::db_execute_raw(format!(
+                "INSERT INTO reactions (id, event_id, pubkey, content, created_at, kind) \
+                 VALUES ('{id}','{event_id}','{pubkey}','{content}',{ts},7)"
+            ))
+        };
+        assert!(insert_post("own1", "me", "u33dc0", 400).is_ok());
+        assert!(insert_post("la1", "likera", "u33dc0", 300).is_ok());
+        assert!(insert_post("lb1", "likerb", "u33dc0", 200).is_ok());
+        assert!(insert_post("cand1", "cand", "u33dc0", 100).is_ok());
+        assert!(insert_post("cand2", "candb", "u33dc0", 90).is_ok());
+        assert!(insert_react("r1", "own1", "likera", "+", 300).is_ok());
+        assert!(insert_react("r2", "own1", "likera", "+", 200).is_ok());
+        assert!(insert_react("r3", "own1", "likerb", "+", 100).is_ok());
+
+        let likes = dating_fetch_likes("me".to_string()).unwrap();
+        let lv: Vec<DatingCardInfo> = serde_json::from_str(&likes).unwrap();
+        let mut seen: Vec<String> = lv.iter().map(|c| c.pubkey.clone()).collect();
+        seen.sort();
+        assert_eq!(
+            seen,
+            vec![
+                "likera".to_string(),
+                "likera".to_string(),
+                "likerb".to_string()
+            ]
+        );
+        let mut uniq = seen.clone();
+        uniq.dedup();
+        assert_eq!(uniq, vec!["likera".to_string(), "likerb".to_string()]);
+
+        assert!(insert_react("r4", "la1", "me", "+", 250).is_ok());
+        let matches = dating_fetch_matches("me".to_string()).unwrap();
+        let mv: Vec<DatingCardInfo> = serde_json::from_str(&matches).unwrap();
+        assert_eq!(mv.len(), 1, "{matches}");
+        assert_eq!(mv[0].pubkey, "likera");
+
+        assert!(dating_unmatch("me".to_string(), "cand2".to_string()).unwrap());
+        let profiles = dating_fetch_profiles("me".to_string(), 100).unwrap();
+        let pv: Vec<DatingCardInfo> = serde_json::from_str(&profiles).unwrap();
+        let pubs: Vec<String> = pv.iter().map(|c| c.pubkey.clone()).collect();
+        assert!(pubs.contains(&"cand".to_string()), "{pubs:?}");
+        assert!(!pubs.contains(&"candb".to_string()), "{pubs:?}");
+        assert!(!pubs.contains(&"likera".to_string()), "{pubs:?}");
+        assert!(!pubs.contains(&"me".to_string()), "{pubs:?}");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
+    #[test]
+    fn test_calculate_score_and_filter() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let path = crate::ffi::db::tmp_db("dating_scorefilter", "dt");
+        let insert_post = |id: &str, pubkey: &str, gh: &str, interests: &str, ts: i64| {
+            super::super::db::db_execute_raw(format!(
+                "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+                 VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"{gh}\",\"interests\":{interests}}}',{KIND_PROFILE},{ts},'[]','synced',0)"
+            ))
+        };
+        assert!(insert_post("self1", "selfpk", "u33dc0", "[\"music\"]", 400).is_ok());
+        assert!(insert_post("tgt1", "tgtpk", "u33dc0", "[\"music\"]", 300).is_ok());
+
+        let malformed = dating_calculate_score(
+            "selfpk".to_string(),
+            "tgtpk".to_string(),
+            "{not json".to_string(),
+        );
+        assert!(malformed.is_ok(), "{malformed:?}");
+        assert_eq!(
+            dating_calculate_score("ghost".to_string(), "tgtpk".to_string(), "{}".to_string())
+                .unwrap(),
+            0.0
+        );
+        assert_eq!(
+            dating_calculate_score("selfpk".to_string(), "ghost2".to_string(), "{}".to_string())
+                .unwrap(),
+            0.0
+        );
+        assert!(super::super::db::db_execute_raw(format!(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+             VALUES ('gself','gpk','not-json',{KIND_PROFILE},200,'[]','synced',0)"
+        ))
+        .is_ok());
+        let garbage =
+            dating_calculate_score("gpk".to_string(), "tgtpk".to_string(), "{}".to_string());
+        assert!(garbage.is_ok(), "{garbage:?}");
+
+        assert!(insert_post("c1", "cand1", "u33dc0", "[\"music\",\"art\"]", 250).is_ok());
+        assert!(insert_post("c2", "cand2", "u33dc0", "[\"sports\"]", 240).is_ok());
+        assert!(insert_post("c3", "far", "9q8yyk", "[\"music\"]", 230).is_ok());
+        let filtered =
+            dating_filter_profiles("selfpk".to_string(), 18, 40, 0, r#"["music"]"#.to_string())
+                .unwrap();
+        let fv: Vec<DatingCardInfo> = serde_json::from_str(&filtered).unwrap();
+        let pubs: Vec<String> = fv.iter().map(|c| c.pubkey.clone()).collect();
+        assert!(pubs.contains(&"cand1".to_string()), "{pubs:?}");
+        assert!(!pubs.contains(&"cand2".to_string()), "{pubs:?}");
+        assert!(pubs.contains(&"far".to_string()), "{pubs:?}");
+
+        let nearby =
+            dating_filter_profiles("selfpk".to_string(), 18, 40, 100, "[]".to_string()).unwrap();
+        let nv: Vec<DatingCardInfo> = serde_json::from_str(&nearby).unwrap();
+        assert!(nv.iter().any(|c| c.pubkey == "cand1"), "{nearby}");
+        assert!(!nv.iter().any(|c| c.pubkey == "far"), "{nearby}");
+
+        for i in 0..55 {
+            assert!(insert_post(
+                &format!("bulk{i}"),
+                &format!("bulk{i}"),
+                "u33dc0",
+                "[]",
+                1000 + i
+            )
+            .is_ok());
+        }
+        let truncated =
+            dating_filter_profiles("selfpk".to_string(), 0, 0, 0, "".to_string()).unwrap();
+        let tv: Vec<DatingCardInfo> = serde_json::from_str(&truncated).unwrap();
+        assert_eq!(tv.len(), 50, "{truncated}");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
+    #[test]
+    fn test_stats_block_report() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let path = crate::ffi::db::tmp_db("dating_stats", "dt");
+        let insert_post = |id: &str, pubkey: &str, images: &str, ts: i64| {
+            super::super::db::db_execute_raw(format!(
+                "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+                 VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"u33dc0\",\"interests\":[],\"images\":{images}}}',{KIND_PROFILE},{ts},'[]','synced',0)"
+            ))
+        };
+        let insert_react = |id: &str, event_id: &str, pubkey: &str, content: &str, ts: i64| {
+            super::super::db::db_execute_raw(format!(
+                "INSERT INTO reactions (id, event_id, pubkey, content, created_at, kind) \
+                 VALUES ('{id}','{event_id}','{pubkey}','{content}',{ts},7)"
+            ))
+        };
+        assert!(insert_post(
+            "own1",
+            "me",
+            r#"["https://x/a.png","https://x/b.png"]"#,
+            400
+        )
+        .is_ok());
+        assert!(insert_post("la1", "likera", "[]", 300).is_ok());
+        assert!(insert_react("r1", "own1", "likera", "+", 300).is_ok());
+        assert!(insert_react("r2", "own1", "likerb", "+", 200).is_ok());
+        assert!(insert_react("r3", "own1", "likerc", "super", 100).is_ok());
+        assert!(insert_react("r4", "la1", "me", "+", 250).is_ok());
+        assert!(super::super::db::db_execute_raw(
+            "INSERT INTO post_views (pubkey, post_id, seen_at) VALUES ('v1','own1',300),('v2','own1',200)"
+                .to_string()
+        )
+        .is_ok());
+
+        let stats = dating_get_stats("me".to_string()).unwrap();
+        let sv: serde_json::Value = serde_json::from_str(&stats).unwrap();
+        assert_eq!(sv["likes_received"], 2);
+        assert_eq!(sv["superlike_received"], 1);
+        assert_eq!(sv["profile_views"], 2);
+        assert_eq!(sv["photo_count"], 2);
+        assert_eq!(sv["matches"], 1);
+        assert_eq!(sv["profile_complete"], true);
+
+        assert!(dating_block_profile("me".to_string(), "badguy".to_string()).unwrap());
+        let blocks = super::super::db::db_query_raw(
+            "SELECT blocked_pubkey FROM blocks WHERE pubkey = 'me'".to_string(),
+        )
+        .unwrap();
+        assert!(blocks.contains("badguy"), "{blocks}");
+        assert!(dating_unblock_profile("me".to_string(), "badguy".to_string()).unwrap());
+        let blocks2 = super::super::db::db_query_raw(
+            "SELECT COUNT(*) AS c FROM blocks WHERE pubkey = 'me'".to_string(),
+        )
+        .unwrap();
+        assert!(blocks2.contains("\"c\":0"), "{blocks2}");
+
+        assert!(
+            dating_report_profile("me".to_string(), "badguy".to_string(), "x".repeat(600)).unwrap()
+        );
+        let reports = super::super::db::db_query_raw(
+            "SELECT reason, tags FROM spam_reports WHERE target_pubkey = 'badguy'".to_string(),
+        )
+        .unwrap();
+        let rv: Vec<serde_json::Value> = serde_json::from_str(&reports).unwrap();
+        assert_eq!(rv.len(), 1);
+        assert_eq!(rv[0]["reason"].as_str().unwrap().len(), 512);
+        assert_eq!(rv[0]["tags"], "[\"dating\"]");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
 }

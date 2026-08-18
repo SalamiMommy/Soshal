@@ -563,4 +563,145 @@ mod tests {
                 .contains("not initialized"));
         }
     }
+
+    #[test]
+    fn test_search_query_and_hashtag_edges() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("qed");
+        insert_post("p1", "pk1", "soshal content", 1, 1000);
+        // Punctuation-only query: FTS sanitizer strips all terms -> empty.
+        assert!(parse_arr(&search_posts("!!!".to_string(), 10).unwrap()).is_empty());
+        assert!(parse_arr(&search_global("!@#$%^".to_string(), 10).unwrap()).is_empty());
+        // Quote escaping + limit clamp.
+        db::db_execute_raw(
+            "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES \
+             ('sos''hal','pk1',100,5),('soshal','pk2',200,3),('rust','pk3',300,1)"
+                .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            search_hashtags("sos'hal".to_string(), 10).unwrap(),
+            vec!["sos'hal".to_string()]
+        );
+        assert_eq!(search_hashtags("sos".to_string(), 0).unwrap().len(), 1);
+        assert_eq!(search_hashtags("sos".to_string(), 200).unwrap().len(), 2);
+        // Cached trending: limit 3 forces recompute (cache holds <=2 tags),
+        // second call hits the 60s TTL after the rows are gone.
+        assert_eq!(
+            search_trending_hashtags(3).unwrap(),
+            vec![
+                "sos'hal".to_string(),
+                "soshal".to_string(),
+                "rust".to_string()
+            ]
+        );
+        db::db_execute_raw("DELETE FROM hashtags".to_string()).unwrap();
+        assert_eq!(
+            search_trending_hashtags(2).unwrap(),
+            vec!["sos'hal".to_string(), "soshal".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_search_index_and_profile_edges() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("idxedge");
+        // Long post content truncated to 4096 + ellipsis.
+        let long = format!("needle{}", "x".repeat(5000));
+        assert!(search_index_post("long1".to_string(), "pk1".to_string(), long, 1).unwrap());
+        let json = db::db_query_raw("SELECT content FROM posts_fts WHERE id = 'long1'".to_string())
+            .unwrap();
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        let content = rows[0]["content"].as_str().unwrap();
+        assert_eq!(content.chars().count(), 4097);
+        assert!(content.ends_with('…'));
+        // Profile index: empty name -> about only; both -> concat.
+        assert!(
+            search_index_profile("pkA".to_string(), String::new(), "about text".to_string())
+                .unwrap()
+        );
+        assert!(search_index_profile(
+            "pkB".to_string(),
+            "name".to_string(),
+            "about text".to_string()
+        )
+        .unwrap());
+        let json =
+            db::db_query_raw("SELECT content FROM posts_fts WHERE id = 'profile:pkA'".to_string())
+                .unwrap();
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(rows[0]["content"], "about text");
+        let json =
+            db::db_query_raw("SELECT content FROM posts_fts WHERE id = 'profile:pkB'".to_string())
+                .unwrap();
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(rows[0]["content"], "name about text");
+        // Batch index: invalid JSON errors; multi-row loop indexes both.
+        let err = search_index_posts("not json".to_string()).unwrap_err();
+        assert!(err.starts_with("invalid rows JSON"), "err: {err}");
+        insert_post("a1", "pk1", "seed", 1, 1000);
+        insert_post("b1", "pk2", "seed", 1, 2000);
+        let batch = r#"[{"id":"a1","pubkey":"pk1","content":"alpha beta","kind":1},{"id":"b1","pubkey":"pk2","content":"gamma delta","kind":1}]"#;
+        assert!(search_index_posts(batch.to_string()).unwrap());
+        let arr = parse_arr(&search_posts("alpha".to_string(), 10).unwrap());
+        assert_eq!(arr.len(), 1, "json: {arr:?}");
+        assert_eq!(arr[0]["id"], "a1");
+        assert_eq!(
+            parse_arr(&search_posts("delta".to_string(), 10).unwrap()).len(),
+            1
+        );
+        // Removing a nonexistent index entry is Ok.
+        assert!(search_remove_indexed("ghost".to_string()).unwrap());
+        // Trending profile about truncated at 160.
+        let about = "x".repeat(200);
+        db::db_execute_raw(format!(
+            "INSERT INTO users (pubkey, npub, name, about, contact_pubkeys) VALUES \
+             ('pk9','npub1pk9','alice','{about}','[\"a\",\"b\",\"c\"]')"
+        ))
+        .unwrap();
+        let arr = parse_arr(&search_trending_profiles(10).unwrap());
+        assert_eq!(arr[0]["id"], "pk9", "json: {arr:?}");
+        assert_eq!(arr[0]["title"], "alice");
+        let desc = arr[0]["description"].as_str().unwrap();
+        assert_eq!(desc.chars().count(), 161);
+        assert!(desc.ends_with('…'));
+        // truncate_preview: >80 chars -> 80 + ellipsis.
+        let t = truncate_preview(&"a".repeat(81), 80);
+        assert_eq!(t.chars().count(), 81);
+        assert!(t.ends_with('…'));
+        assert_eq!(truncate_preview(&"a".repeat(80), 80), "a".repeat(80));
+        assert_eq!(truncate_preview("", 80), "");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_remote_global_error_paths() {
+        let err = search_remote_global("q".to_string(), 10, "not-json".to_string())
+            .await
+            .unwrap_err();
+        assert!(err.contains("invalid relays JSON"), "err: {err}");
+        let err = search_remote_global("q".to_string(), 10, "[]".to_string())
+            .await
+            .unwrap_err();
+        assert_eq!(err, "no relay urls");
+        let json = search_remote_global(
+            String::new(),
+            10,
+            r#"["wss://relay.example.com"]"#.to_string(),
+        )
+        .await
+        .unwrap();
+        assert!(parse_arr(&json).is_empty());
+        let err = search_remote_global(
+            "q".to_string(),
+            10,
+            r#"["wss://localhost:8000"]"#.to_string(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err, "invalid or blocked relay URL: wss://localhost:8000");
+    }
 }

@@ -177,4 +177,101 @@ mod tests {
         assert!(matches!(dup_out[0].1, PlumTreeMessage::Prune { .. }));
         assert!(node.lazy_peers.contains("peer_eager"));
     }
+
+    #[test]
+    fn test_peer_management_self_guard_and_removal() {
+        let mut node = PlumTreeNode::new("self");
+        node.add_peer("self");
+        node.add_peer("peer_a");
+        assert!(!node.eager_peers.contains("self"));
+        assert!(node.eager_peers.contains("peer_a"));
+
+        node.lazy_peers.insert("peer_lazy".to_string());
+        node.remove_peer("peer_a");
+        node.remove_peer("peer_lazy");
+        assert!(!node.eager_peers.contains("peer_a"));
+        assert!(!node.lazy_peers.contains("peer_lazy"));
+    }
+
+    #[test]
+    fn test_ihave_noop_graft_promote_prune_demote_and_graft_cleanup() {
+        let mut node = PlumTreeNode::new("self");
+        node.add_peer("peer_eager");
+        node.lazy_peers.insert("peer_lazy".to_string());
+
+        // IHave for already-seen message -> no-op
+        node.received_messages.insert("seen".to_string());
+        let out = node.handle_incoming(
+            "peer_lazy",
+            PlumTreeMessage::IHave {
+                message_id: "seen".to_string(),
+                round: 1,
+            },
+        );
+        assert!(out.is_empty());
+        assert!(!node.pending_grafts.contains_key("seen"));
+
+        // IHave for message already pending graft -> no-op
+        node.pending_grafts
+            .insert("pending_msg".to_string(), "peer_lazy".to_string());
+        let out = node.handle_incoming(
+            "peer_lazy",
+            PlumTreeMessage::IHave {
+                message_id: "pending_msg".to_string(),
+                round: 1,
+            },
+        );
+        assert!(out.is_empty());
+
+        // Fresh IHave -> Graft + pending entry
+        let out = node.handle_incoming(
+            "peer_lazy",
+            PlumTreeMessage::IHave {
+                message_id: "fresh_msg".to_string(),
+                round: 1,
+            },
+        );
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0].1, PlumTreeMessage::Graft { .. }));
+        assert_eq!(
+            node.pending_grafts.get("fresh_msg").map(String::as_str),
+            Some("peer_lazy")
+        );
+
+        // Graft promotes lazy -> eager
+        let out = node.handle_incoming(
+            "peer_lazy",
+            PlumTreeMessage::Graft {
+                message_id: "fresh_msg".to_string(),
+            },
+        );
+        assert!(out.is_empty());
+        assert!(node.eager_peers.contains("peer_lazy"));
+        assert!(!node.lazy_peers.contains("peer_lazy"));
+
+        // Gossip arrival clears pending graft
+        let out = node.handle_incoming(
+            "peer_lazy",
+            PlumTreeMessage::Gossip {
+                message_id: "fresh_msg".to_string(),
+                payload_json: "{}".into(),
+                round: 1,
+            },
+        );
+        assert!(!node.pending_grafts.contains_key("fresh_msg"));
+        assert!(node.received_messages.contains("fresh_msg"));
+        // sender was promoted to eager, so no eager echo to itself
+        assert!(out.is_empty());
+
+        // Prune demotes eager -> lazy
+        let out = node.handle_incoming(
+            "peer_lazy",
+            PlumTreeMessage::Prune {
+                message_id: "fresh_msg".to_string(),
+            },
+        );
+        assert!(out.is_empty());
+        assert!(!node.eager_peers.contains("peer_lazy"));
+        assert!(node.lazy_peers.contains("peer_lazy"));
+    }
 }

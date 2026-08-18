@@ -218,4 +218,66 @@ mod tests {
         assert_eq!(config.bind_port, AUTO_DISCOVERY_PORT);
         assert_eq!(config.discovery_interval_ms, BEACON_INTERVAL_MS);
     }
+
+    #[test]
+    fn test_disabled_start_noop_and_status_shape() {
+        let dest = ReticulumAddress::from_pubkey("test_pubkey");
+        let config = AutoInterfaceConfig {
+            enabled: false,
+            bind_port: 9999,
+            discovery_interval_ms: 100,
+        };
+        let mut iface = AutoInterface::new(dest, config);
+
+        assert!(iface.start().is_ok());
+        assert!(iface.socket.is_none());
+        assert!(!iface.running.load(Ordering::Relaxed));
+
+        let status = iface.get_status();
+        assert_eq!(status.name, "AutoInterface (Multicast)");
+        assert!(matches!(status.kind, ReticulumInterfaceKind::UdpMulticast));
+        assert_eq!(status.bind_address, "[::]:9999");
+        assert!(!status.active);
+
+        // Fresh disabled instance: still no-op
+        let fresh = AutoInterface::new(
+            ReticulumAddress::from_pubkey("other_pubkey"),
+            AutoInterfaceConfig {
+                enabled: false,
+                bind_port: 4242,
+                discovery_interval_ms: 5000,
+            },
+        );
+        assert!(!fresh.running.load(Ordering::Relaxed));
+        assert!(!fresh.get_status().active);
+    }
+
+    #[test]
+    fn test_beacon_bad_magic_exact_boundary_and_le_metadata() {
+        // Bad magic prefix -> None
+        let mut bad = Vec::new();
+        bad.extend_from_slice(b"XX\0");
+        bad.extend_from_slice(&[0u8; 16]);
+        assert!(AutoInterface::parse_beacon(&bad).is_none());
+
+        // Exact-length boundary (len == magic + 16) -> parses
+        let mut exact = Vec::new();
+        exact.extend_from_slice(BEACON_MAGIC);
+        exact.extend_from_slice(&[7u8; 16]);
+        let parsed = AutoInterface::parse_beacon(&exact).unwrap();
+        assert_eq!(parsed.0, [7u8; 16]);
+
+        // create_beacon metadata is little-endian: version then interval seconds
+        let dest = ReticulumAddress::from_pubkey("test_pubkey");
+        let beacon = AutoInterface::create_beacon(&dest);
+        let magic_len = BEACON_MAGIC.len();
+        assert_eq!(
+            &beacon[magic_len..magic_len + 4],
+            BEACON_VERSION.to_le_bytes()
+        );
+        assert_eq!(
+            &beacon[magic_len + 4..magic_len + 8],
+            (BEACON_INTERVAL_MS as u32 / 1000).to_le_bytes()
+        );
+    }
 }

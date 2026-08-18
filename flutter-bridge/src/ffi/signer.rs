@@ -331,6 +331,7 @@ pub fn signer_nip44_decrypt(payload: String, sender_pubkey: String) -> Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nostr::nips::nip19::ToBech32;
     use std::sync::Mutex;
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());

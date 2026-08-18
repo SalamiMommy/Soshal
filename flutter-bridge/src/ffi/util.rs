@@ -96,4 +96,60 @@ mod tests {
         assert!(tags.iter().any(|t| t == "soshal"));
         assert_eq!(tags.len(), 3);
     }
+
+    #[test]
+    fn test_sha256_known_vector() {
+        assert_eq!(
+            util_sha256_hex(String::new()).unwrap(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn test_base64url_decode_garbage_and_vector() {
+        // Known vector: base64("hello world") = "aGVsbG8gd29ybGQ=", url-form strips '='.
+        assert_eq!(
+            util_base64url_decode("aGVsbG8gd29ybGQ".to_string()).unwrap(),
+            "hello world"
+        );
+        // base64_decode swallows decode failures into an empty string.
+        assert_eq!(util_base64url_decode("!!!".to_string()).unwrap(), "");
+    }
+
+    #[test]
+    fn test_truncate_boundaries() {
+        assert_eq!(util_truncate("hello".to_string(), 10).unwrap(), "hello");
+        assert_eq!(util_truncate("hello".to_string(), 5).unwrap(), "hello");
+        assert_eq!(util_truncate("hello".to_string(), 3).unwrap(), "he…");
+        assert_eq!(util_truncate("hello".to_string(), 0).unwrap(), "");
+    }
+
+    #[test]
+    fn test_tcp_probe() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(tcp_probe("127.0.0.1", port));
+        drop(listener);
+        assert!(!tcp_probe("127.0.0.1", port));
+        // Malformed host falls back to 127.0.0.1:1 (refused).
+        assert!(!tcp_probe("not-an-ip", 9999));
+    }
+
+    #[test]
+    fn test_uuid_like_shape() {
+        let a = uuid_like();
+        let b = uuid_like();
+        assert_eq!(a.len(), 16);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_apply_thread_affinity_both_branches() {
+        // Ok always carries true; real pinning may fail in restricted sandboxes.
+        let perf = util_apply_thread_affinity(true);
+        let eff = util_apply_thread_affinity(false);
+        assert!(perf.as_ref().map_or(true, |v| *v));
+        assert!(eff.as_ref().map_or(true, |v| *v));
+    }
 }

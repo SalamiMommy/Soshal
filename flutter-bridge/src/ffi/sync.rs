@@ -349,4 +349,119 @@ mod tests {
         assert!(rows.contains("unknown"), "rows: {rows}");
         assert!(rows.contains("post"), "rows: {rows}");
     }
+
+    #[test]
+    fn test_sync_enqueue_outbox_and_summary() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("sync-enqueue", "sync");
+        let id = sync_enqueue_outbox(
+            "post".to_string(),
+            r#"{"kind":1,"content":"hi"}"#.to_string(),
+            None,
+        )
+        .unwrap();
+        assert!(!id.is_empty());
+        let v: serde_json::Value =
+            serde_json::from_str(&sync_get_outbox_summary().unwrap()).unwrap();
+        assert_eq!(v["pending_count"], 1);
+        assert_eq!(v["failed_count"], 0);
+        assert_eq!(v["total_count"], 1);
+        let rows = crate::ffi::db::db_query_raw(format!(
+            "SELECT id, action_type, status FROM outbox_queue WHERE id='{id}'"
+        ))
+        .unwrap();
+        assert!(rows.contains("post"), "rows: {rows}");
+        assert!(rows.contains("pending"), "rows: {rows}");
+    }
+
+    #[test]
+    fn test_sync_get_outbox_summary_empty_db() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("sync-summary-empty", "sync");
+        let v: serde_json::Value =
+            serde_json::from_str(&sync_get_outbox_summary().unwrap()).unwrap();
+        assert_eq!(v["pending_count"], 0);
+        assert_eq!(v["failed_count"], 0);
+        assert_eq!(v["total_count"], 0);
+    }
+
+    #[test]
+    fn test_sync_run_epoch_garbage_collection() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("sync-gc", "sync");
+        // No peer clocks → consensus impossible, summary is all zeros.
+        let v: serde_json::Value = serde_json::from_str(
+            &sync_run_epoch_garbage_collection("feed".to_string(), "{}".to_string(), 3600).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(v["domain"], "feed");
+        assert_eq!(v["pruned_tombstones"], 0);
+        // Seed a tombstone at created_at=0; consensus cutoff = 100-3600 → 0.
+        crate::ffi::db::db_execute_raw(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+             VALUES ('gc-tomb','pk','x',1,0,'[]','synced',1)"
+                .to_string(),
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(
+            &sync_run_epoch_garbage_collection(
+                "feed".to_string(),
+                r#"{"peer1":100}"#.to_string(),
+                3600,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(v["epoch_counter"], 1);
+        assert_eq!(v["pruned_tombstones"], 1);
+        let rows =
+            crate::ffi::db::db_query_raw("SELECT id FROM posts WHERE id='gc-tomb'".to_string())
+                .unwrap();
+        assert!(!rows.contains("gc-tomb"), "tombstone not pruned: {rows}");
+    }
+
+    #[tokio::test]
+    async fn test_sync_stop_and_running_no_engine() {
+        // No engine is ever started in tests → STOP stays None.
+        assert!(sync_stop().await.unwrap());
+        assert!(!sync_running().unwrap());
+    }
+
+    #[test]
+    fn test_update_json_dm_happy_path() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("sync-dm", "sync");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let pk = keys.public_key().to_hex();
+        // Self-DM: payload encrypted to own pubkey decrypts with own key.
+        let payload =
+            super::super::signer::signer_nip44_encrypt("hello dm".to_string(), pk.clone()).unwrap();
+        let json = update_json(SyncUpdate::Dm {
+            id: "dm-1".into(),
+            sender: pk.clone(),
+            content: payload,
+            created_at: 1234,
+        })
+        .expect("decryptable DM must emit JSON and persist");
+        assert!(json.contains("\"t\":\"dm\""), "json: {json}");
+        assert!(json.contains("hello dm"), "json: {json}");
+        let rows = crate::ffi::db::db_query_raw(
+            "SELECT id, pubkey FROM messages WHERE id='dm-1'".to_string(),
+        )
+        .unwrap();
+        assert!(rows.contains("dm-1"), "rows: {rows}");
+        super::super::signer::signer_lock().unwrap();
+    }
 }

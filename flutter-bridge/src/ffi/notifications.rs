@@ -669,4 +669,101 @@ mod tests {
                 .contains("not initialized"));
         }
     }
+
+    #[test]
+    fn test_fetch_offset_and_limit_clamped() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("offclamp");
+        for i in 0..501 {
+            insert_notification(
+                &format!("n{i}"),
+                "pk1",
+                "mention",
+                None,
+                "x",
+                4000 - i,
+                false,
+            );
+        }
+        // limit 600 clamps to 500; offset -1 clamps to 0.
+        let json = notifications_fetch("pk1".to_string(), 600, -1).unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 500, "json: {json}");
+        assert_eq!(arr[0]["id"], "n0");
+        assert_eq!(arr[499]["id"], "n499");
+        // limit 0 clamps to 1.
+        let json = notifications_fetch("pk1".to_string(), 0, 0).unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 1, "json: {json}");
+        assert_eq!(arr[0]["id"], "n0");
+        // Negative offset reads from the start.
+        let json = notifications_fetch("pk1".to_string(), 10, -1).unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 10, "json: {json}");
+    }
+
+    #[test]
+    fn test_fetch_by_type_limit_clamped() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("byclamp");
+        insert_notification("n1", "pk1", "like", None, "x", 3000, false);
+        insert_notification("n2", "pk1", "like", None, "x", 2000, false);
+        insert_notification("n3", "pk1", "like", None, "x", 1000, false);
+        insert_notification("n4", "pk1", "mention", None, "x", 500, false);
+        for limit in [0, -5] {
+            let json =
+                notifications_fetch_by_type("pk1".to_string(), "like".to_string(), limit).unwrap();
+            let arr = serde_json::from_str::<serde_json::Value>(&json)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .clone();
+            assert_eq!(arr.len(), 1, "limit {limit}: {json}");
+            assert_eq!(arr[0]["notification_type"], "like");
+        }
+        let json = notifications_fetch_by_type("pk1".to_string(), "like".to_string(), 100).unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 3, "json: {json}");
+    }
+
+    #[test]
+    fn test_unregister_push_requires_active_account() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = soshal_test_util::tmp_root("notif_unreg");
+        let db_path = dir.join("app.db").to_string_lossy().to_string();
+        db::db_init(db_path.clone()).unwrap();
+        // Empty session: no active account.
+        session::session_load(db_path.clone()).unwrap();
+        let err = notifications_unregister_push("pk1".to_string()).unwrap_err();
+        assert_eq!(err, "push token must be registered for the active account");
+        // Wrong account vs the active one.
+        session::session_add_account("pk1".to_string(), "npub1pk1".to_string(), "[]".to_string())
+            .unwrap();
+        let err = notifications_unregister_push("pk2".to_string()).unwrap_err();
+        assert_eq!(err, "push token must be registered for the active account");
+        assert!(notifications_unregister_push("pk1".to_string()).unwrap());
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
