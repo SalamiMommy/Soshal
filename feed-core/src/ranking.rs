@@ -47,21 +47,17 @@ pub fn score_post_with_set(
     let recency_factor = 1.0 / (hours_ago + 1.0).log2();
 
     let hashtag_score = if !post_hashtags.is_empty() && !user_hashtags_set.is_empty() {
-        let folded_tags: Vec<String> = post_hashtags
+        let match_count = post_hashtags
             .iter()
-            .map(|t| {
+            .filter(|t| {
                 if t.is_ascii() {
-                    t.to_ascii_lowercase()
+                    user_hashtags_set.contains(t.to_ascii_lowercase().as_str())
                 } else {
-                    t.to_lowercase()
+                    user_hashtags_set.contains(t.to_lowercase().as_str())
                 }
             })
-            .collect();
-        let match_count = folded_tags
-            .iter()
-            .filter(|t| user_hashtags_set.contains(t.as_str()))
             .count();
-        match_count as f64 / folded_tags.len() as f64
+        match_count as f64 / post_hashtags.len() as f64
     } else {
         0.0
     };

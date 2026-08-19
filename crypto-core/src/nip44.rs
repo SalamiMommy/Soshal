@@ -260,7 +260,7 @@ pub fn decrypt(payload: &str, key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static s
     if decoded.is_empty() {
         return Err("empty payload");
     }
-    if decoded[0] == VERSION_PADDED {
+    if decoded[0] == VERSION_PADDED && decoded.len() >= VERSION_LEN + SALT_LEN + 2 + 32 + 32 {
         // v2 payload: succeed or fail — never fall through to the legacy path.
         return decrypt_spec(&decoded, key);
     }
@@ -291,16 +291,20 @@ fn decrypt_spec(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static
         return Err("decrypt failed");
     }
 
-    let mut plaintext = buffer.to_vec();
+    let mut decoded = decoded.to_vec();
+    let payload_len = decoded.len();
+    let buffer_range = VERSION_LEN + SALT_LEN..payload_len - 32;
+
     use chacha20::cipher::{KeyIvInit, StreamCipher as _};
     let mut cipher = chacha20::ChaCha20::new(
         chacha20::Key::from_slice(&enc_key_bytes),
         chacha20::Nonce::from_slice(&nonce12),
     );
-    cipher.apply_keystream(&mut plaintext);
+    cipher.apply_keystream(&mut decoded[buffer_range.clone()]);
     enc_key_bytes.zeroize();
     nonce12.zeroize();
 
+    let plaintext = decoded[buffer_range].to_vec();
     unpad_in_place(plaintext)
 }
 

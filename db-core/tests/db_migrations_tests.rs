@@ -104,6 +104,7 @@ fn full_chain_reaches_schema_version() {
     migrations::v3_group_thread_reactions(&conn).unwrap();
     migrations::v4_group_password(&conn).unwrap();
     migrations::v5_performance_indexes(&conn).unwrap();
+    migrations::v6_index_cleanup(&conn).unwrap();
     assert_eq!(max_version(&conn), SCHEMA_VERSION);
     assert!(table_exists(&conn, "group_rooms"));
     assert!(table_exists(&conn, "group_threads"));

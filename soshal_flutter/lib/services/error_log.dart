@@ -43,7 +43,17 @@ mixin LastErrorMixin {
 /// [notifyListeners] mid-build and trip the "setState() or
 /// markNeedsBuild() called during build" assertion. Microtasks drain
 /// only after the frame's synchronous pipeline completes, so this is
-/// safe from build/layout/paint.
+/// safe from build/layout/paint. Rapid/burst calls are coalesced into a
+/// single notification per frame.
 mixin DeferredNotify on ChangeNotifier {
-  void notifyDeferred() => scheduleMicrotask(notifyListeners);
+  bool _notifyScheduled = false;
+
+  void notifyDeferred() {
+    if (_notifyScheduled) return;
+    _notifyScheduled = true;
+    scheduleMicrotask(() {
+      _notifyScheduled = false;
+      notifyListeners();
+    });
+  }
 }

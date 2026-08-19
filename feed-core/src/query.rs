@@ -26,23 +26,42 @@ pub fn event_with_tags_from_event(ev: &NostrEvent) -> serde_json::Value {
 /// a given `tags_json` never goes stale; the same posts are re-fetched across
 /// feed pages/threads/refreshes, and this avoids re-parsing + re-serializing
 /// per row per fetch.
-static MEDIA_JSON_CACHE: std::sync::OnceLock<
-    std::sync::RwLock<std::collections::HashMap<String, Option<String>>>,
-> = std::sync::OnceLock::new();
+struct MediaJsonCache {
+    map: std::collections::HashMap<String, Option<String>>,
+    queue: std::collections::VecDeque<String>,
+}
+
+impl Default for MediaJsonCache {
+    fn default() -> Self {
+        Self {
+            map: std::collections::HashMap::with_capacity(MEDIA_JSON_CACHE_CAP),
+            queue: std::collections::VecDeque::with_capacity(MEDIA_JSON_CACHE_CAP),
+        }
+    }
+}
+
+static MEDIA_JSON_CACHE: std::sync::OnceLock<std::sync::RwLock<MediaJsonCache>> =
+    std::sync::OnceLock::new();
 
 const MEDIA_JSON_CACHE_CAP: usize = 1024;
 
 fn cached_media_json(tags_json: &str) -> Option<Option<String>> {
     let cache = MEDIA_JSON_CACHE.get_or_init(Default::default);
-    cache.read().ok()?.get(tags_json).cloned()
+    cache.read().ok()?.map.get(tags_json).cloned()
 }
 
 fn store_media_json(tags_json: &str, parsed: &Option<String>) {
     if let Ok(mut cache) = MEDIA_JSON_CACHE.get_or_init(Default::default).write() {
-        if cache.len() >= MEDIA_JSON_CACHE_CAP {
-            cache.clear();
+        if cache.map.contains_key(tags_json) {
+            return;
         }
-        cache.insert(tags_json.to_string(), parsed.clone());
+        if cache.map.len() >= MEDIA_JSON_CACHE_CAP {
+            if let Some(oldest) = cache.queue.pop_front() {
+                cache.map.remove(&oldest);
+            }
+        }
+        cache.map.insert(tags_json.to_string(), parsed.clone());
+        cache.queue.push_back(tags_json.to_string());
     }
 }
 

@@ -232,6 +232,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
           final post = feedView.display[index];
           return FeedPostCard(
+            key: ValueKey(post.eventId),
             post: post,
             totals: _totals,
             isFirst: index == 0,
@@ -344,6 +345,20 @@ class _FeedPostCardState extends State<FeedPostCard> {
     _preview =
         raw.characters.length > 320 ? '${raw.characters.take(320)}…' : raw;
     _loadTotal();
+  }
+
+  @override
+  void didUpdateWidget(FeedPostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.eventId != widget.post.eventId ||
+        oldWidget.post.content != widget.post.content ||
+        oldWidget.post.liked != widget.post.liked) {
+      _liked = widget.post.liked;
+      final raw = widget.post.content;
+      _preview =
+          raw.characters.length > 320 ? '${raw.characters.take(320)}…' : raw;
+      _loadTotal();
+    }
   }
 
   Future<void> _loadTotal() async {

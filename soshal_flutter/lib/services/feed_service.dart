@@ -41,8 +41,8 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     _pinnedView = List.unmodifiable(_pinned.toList());
   }
 
-  /// Fetch feed events with pagination
-  Future<List<FeedPost>> fetchFeed({int limit = 20, int offset = 0}) async {
+  /// Fetch feed events with pagination (supports cursor or offset)
+  Future<List<FeedPost>> fetchFeed({int limit = 20, int offset = 0, int? cursorCreatedAt}) async {
     try {
       _isLoading = true;
 
@@ -50,11 +50,12 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         'limit': limit,
         'offset': offset,
         'filter_type': 'all',
+        if (cursorCreatedAt != null) 'cursor_created_at': cursorCreatedAt,
       });
       final json = RustLib.instance.api
           .crateFfiFeedFeedFetchEvents(optionsJson: options);
       final newPosts = await _decodePosts(json);
-      if (offset == 0) {
+      if (offset == 0 && cursorCreatedAt == null) {
         _posts = newPosts;
         _ranked = false;
         _rankedPosts = [];
@@ -64,9 +65,6 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         if (_posts.length > 100) {
           _posts = _posts.sublist(_posts.length - 100);
         }
-      }
-      for (final p in newPosts) {
-        _indexPost(p);
       }
       clearLastError();
       _currentOffset = offset;
@@ -94,9 +92,6 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       _posts = await _decodePosts(json);
       _ranked = false;
       _rankedPosts = [];
-      for (final p in _posts) {
-        _indexPost(p);
-      }
       clearLastError();
       _currentOffset = startIndex;
     } catch (e, st) {
@@ -134,8 +129,9 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     if (_loadingMore) return;
     _loadingMore = true;
     try {
+      final lastCreatedAt = _posts.isNotEmpty ? _posts.last.createdAt : null;
       final offset = _currentOffset + limit;
-      await fetchFeed(limit: limit, offset: offset);
+      await fetchFeed(limit: limit, offset: offset, cursorCreatedAt: lastCreatedAt);
     } finally {
       _loadingMore = false;
     }
