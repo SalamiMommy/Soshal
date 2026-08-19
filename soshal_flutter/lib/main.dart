@@ -177,6 +177,7 @@ class _SoshalAppState extends State<SoshalApp> {
         } else if (uri.scheme == 'nostr') {
           await _handleNostrDeepLink(route);
         } else {
+          if (!mounted) return;
           await context.read<AuthService>().handleNostrProtocolRequest(
                 scheme: uri.scheme,
                 host: uri.host,

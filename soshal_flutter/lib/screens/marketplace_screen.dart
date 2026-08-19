@@ -122,7 +122,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                     final picked =
                         await FilePicker.pickFile(type: FileType.image);
                     final path = picked?.path;
-                    if (path == null) return;
+                    if (path == null || !context.mounted) return;
                     final manifest =
                         await context.read<MediaService>().uploadMedia(path);
                     final hash = manifest['blob_hash'] as String? ?? '';

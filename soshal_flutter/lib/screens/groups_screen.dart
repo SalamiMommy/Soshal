@@ -174,7 +174,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                       final picked =
                           await FilePicker.pickFile(type: FileType.image);
                       final path = picked?.path;
-                      if (path == null) return;
+                      if (path == null || !context.mounted) return;
                       final manifest =
                           await context.read<MediaService>().uploadMedia(path);
                       final hash = manifest['blob_hash'] as String? ?? '';
@@ -641,6 +641,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                                   context, g.name);
                                           if (pwd == null) return;
                                         }
+                                        if (!context.mounted) return;
                                         try {
                                           await context
                                               .read<GroupsService>()
@@ -742,10 +743,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                             onPressed: () async {
                                               final pubkey = me;
                                               if (pubkey == null) return;
-                                              final pwd =
-                                                  await showCommunityPasswordDialog(
-                                                      context, g.name);
-                                              if (pwd == null) return;
+                                              String? pwd;
+                                              if (g.isPrivate) {
+                                                pwd =
+                                                    await showCommunityPasswordDialog(
+                                                        context, g.name);
+                                                if (pwd == null) return;
+                                              }
+                                              if (!context.mounted) return;
                                               try {
                                                 await context
                                                     .read<GroupsService>()

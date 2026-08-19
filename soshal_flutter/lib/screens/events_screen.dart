@@ -314,7 +314,7 @@ class _EventsScreenState extends State<EventsScreen> {
                         final picked =
                             await FilePicker.pickFile(type: FileType.image);
                         final path = picked?.path;
-                        if (path == null) return;
+                        if (path == null || !context.mounted) return;
                         final manifest = await context
                             .read<MediaService>()
                             .uploadMedia(path);
@@ -327,9 +327,11 @@ class _EventsScreenState extends State<EventsScreen> {
                           imageUrl = 'blob://$hash';
                         });
                       } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: SelectableText('Photo failed: $e')),
-                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: SelectableText('Photo failed: $e')),
+                          );
+                        }
                       }
                     },
                     icon: const Icon(Icons.image_outlined),
@@ -977,6 +979,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         }
         return;
       }
+      if (!mounted) return;
       await context.read<EventsService>().checkIn(
           widget.eventId, pubkey, location.latitude!, location.longitude!);
       if (mounted) {
