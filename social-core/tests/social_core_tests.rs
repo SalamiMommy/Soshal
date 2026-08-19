@@ -138,7 +138,7 @@ fn interest_overlap_details_counts_and_dedupes() {
     assert_eq!(len_b, 2);
 
     let (common, union, len_a, len_b) = interest_overlap_details(&a, &b, true);
-    assert_eq!(common, vec!["Music", "music"]);
+    assert_eq!(common, vec!["Music"], "common is deduplicated by match key");
     assert_eq!(union, 3);
     assert_eq!(len_a, 2);
     assert_eq!(len_b, 2);
@@ -163,7 +163,11 @@ fn interest_overlap_matches_case_sensitively_by_default() {
     assert_eq!(common, vec!["music"]);
     assert_eq!(union, 2);
     let (common, _) = interest_overlap(&a, &b, true);
-    assert_eq!(common, vec!["Music", "music"]);
+    assert_eq!(
+        common,
+        vec!["Music"],
+        "common is deduplicated by case-insensitive key"
+    );
 }
 
 #[test]
@@ -187,11 +191,12 @@ fn basic_compatibility_empty_defaults_midpoint() {
 }
 
 #[test]
-fn basic_compatibility_duplicate_items_inflate_common_count() {
-    // common iterates `a` per occurrence (not deduped), max uses deduped len.
+fn basic_compatibility_dedupes_duplicate_items() {
+    // common and max both use deduplicated key sets — duplicates don't
+    // inflate the score.
     assert_eq!(
         basic_compatibility(&["a".into(), "a".into()], &["a".into()]),
-        2.0
+        1.0
     );
     assert_eq!(
         basic_compatibility(&["a".into(), "a".into()], &["b".into()]),

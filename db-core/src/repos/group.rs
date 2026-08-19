@@ -1,6 +1,5 @@
 use crate::Database;
 use libsql::params;
-use libsql::params_from_iter;
 
 pub struct GroupRepo<'a> {
     db: &'a Database,
@@ -15,7 +14,7 @@ impl<'a> GroupRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            "SELECT id, name, about, picture, pubkey, created_at, updated_at, access_type, relay, sync_status FROM groups WHERE id = ?1",
+            "SELECT id, name, about, picture, pubkey, created_at, updated_at, access_type, relay, sync_status, password_hash FROM groups WHERE id = ?1",
             params![id],
             Self::map_row,
         )
@@ -25,7 +24,7 @@ impl<'a> GroupRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT g.id, g.name, g.about, g.picture, g.pubkey, g.created_at, g.updated_at, g.access_type, g.relay, g.sync_status FROM groups g JOIN group_members gm ON g.id = gm.group_id WHERE gm.pubkey = ?1 ORDER BY g.updated_at DESC",
+            "SELECT g.id, g.name, g.about, g.picture, g.pubkey, g.created_at, g.updated_at, g.access_type, g.relay, g.sync_status, g.password_hash FROM groups g JOIN group_members gm ON g.id = gm.group_id WHERE gm.pubkey = ?1 ORDER BY g.updated_at DESC",
             params![pubkey],
             Self::map_row,
         )
@@ -35,7 +34,7 @@ impl<'a> GroupRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "INSERT INTO groups (id, name, about, picture, pubkey, created_at, updated_at, access_type, relay, sync_status) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(id) DO UPDATE SET name=excluded.name, about=excluded.about, picture=excluded.picture, updated_at=excluded.updated_at, access_type=excluded.access_type, relay=excluded.relay, sync_status=excluded.sync_status",
+            "INSERT INTO groups (id, name, about, picture, pubkey, created_at, updated_at, access_type, relay, sync_status, password_hash) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(id) DO UPDATE SET name=excluded.name, about=excluded.about, picture=excluded.picture, updated_at=excluded.updated_at, access_type=excluded.access_type, relay=excluded.relay, sync_status=excluded.sync_status, password_hash=excluded.password_hash",
             params![
                 group.id.as_str(),
                 group.name.as_str(),
@@ -47,6 +46,7 @@ impl<'a> GroupRepo<'a> {
                 group.access_type.as_str(),
                 group.relay.as_deref(),
                 group.sync_status.as_str(),
+                group.password_hash.as_deref(),
             ],
         )?;
         Ok(())
@@ -132,16 +132,12 @@ impl<'a> GroupRepo<'a> {
             return Ok(std::collections::HashMap::new());
         }
         let conn = self.db.conn()?;
-        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
-        let sql = format!(
-            "SELECT group_id, COUNT(*) AS c FROM group_members \
-             WHERE group_id IN ({}) GROUP BY group_id",
-            placeholders.join(",")
-        );
+        let json_ids = serde_json::to_string(ids).unwrap_or_else(|_| "[]".to_string());
         crate::query::query(
             &conn,
-            &sql,
-            params_from_iter(ids.iter().map(|s| s.as_str())),
+            "SELECT group_id, COUNT(*) AS c FROM group_members \
+             WHERE group_id IN (SELECT value FROM json_each(?1)) GROUP BY group_id",
+            params![json_ids],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map(|rows| rows.into_iter().collect())
@@ -159,6 +155,7 @@ impl<'a> GroupRepo<'a> {
             access_type: row.get(7)?,
             relay: row.get(8)?,
             sync_status: row.get(9)?,
+            password_hash: row.get(10)?,
         })
     }
 }
@@ -174,6 +171,7 @@ pub struct GroupRow {
     pub access_type: String,
     pub relay: Option<String>,
     pub sync_status: String,
+    pub password_hash: Option<String>,
 }
 
 pub struct GroupMemberRow {

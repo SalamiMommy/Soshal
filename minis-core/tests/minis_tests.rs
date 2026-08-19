@@ -386,7 +386,7 @@ fn mini_manifest_serde_roundtrip() {
 
     let with_icon = MiniManifest {
         icon_url: Some("https://i".into()),
-        ..manifest.clone()
+        ..manifest
     };
     let json = serde_json::to_string(&with_icon).unwrap();
     assert_eq!(

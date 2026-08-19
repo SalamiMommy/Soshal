@@ -44,17 +44,16 @@ fn group_seal_roundtrip() {
 
 #[test]
 fn group_envelope_plain_and_sealed() {
-    let env = group_message_envelope("open group text", None);
+    let env = group_message_envelope("open group text", None).unwrap();
     assert_eq!(env, "open group text");
     let key_hex = hex::encode([0x07u8; 32]);
-    let sealed = group_message_envelope("secret", Some(&key_hex));
+    let sealed = group_message_envelope("secret", Some(&key_hex)).unwrap();
     let v: serde_json::Value = serde_json::from_str(&sealed).unwrap();
     assert_eq!(v["v"], 1);
     let payload = v["payload"].as_str().unwrap();
     assert_eq!(nip44_open_group(payload, &key_hex).unwrap(), "secret");
     let bad = group_message_envelope("secret", Some("zz"));
-    let v: serde_json::Value = serde_json::from_str(&bad).unwrap();
-    assert_eq!(v["payload"], "");
+    assert!(bad.is_err());
 }
 
 #[test]
@@ -279,4 +278,21 @@ fn test_key_distribution_parsing_edge_cases() {
 
     let invalid_json = parse_key_distribution_content(r#"{"groupId":123}"#);
     assert!(!invalid_json.valid);
+}
+
+#[test]
+fn test_access_community_password_hashing_and_verification() {
+    use soshal_groups_core::access::{
+        hash_community_password, is_community_private, verify_community_password,
+    };
+
+    let pass = "ClubSecretPassword!42";
+    let stored = hash_community_password(pass).expect("valid hash");
+    assert!(verify_community_password(pass, &stored));
+    assert!(!verify_community_password("wrongPass", &stored));
+    assert!(!verify_community_password("", &stored));
+
+    assert!(is_community_private("private", false));
+    assert!(is_community_private("open", true));
+    assert!(!is_community_private("open", false));
 }

@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-const MAX_MODERATION_INPUT_LEN: usize = 256 * 1024;
+pub(crate) const MAX_MODERATION_INPUT_LEN: usize = 256 * 1024;
 
 /// Result of evaluating content for moderation.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -291,7 +291,7 @@ pub fn check_text_comprehensive(text: &str, custom_words: &[String]) -> Moderati
         return ModerationVerdict::flag("oversize", 3, Some("input_oversize".to_string()));
     }
 
-    // 1. Zero-tolerance CP / CSAM Filter
+    // 1. CP / CSAM keyword filter (rule-based; no external blocklist)
     let csam_res = crate::csam::check_csam_text(trimmed);
     if csam_res.is_csam {
         return ModerationVerdict::flag("cp", csam_res.severity, csam_res.rule);
@@ -369,14 +369,6 @@ pub fn check_text_ai_json(text: &str) -> String {
     crate::ai_classifier::classify_text_json(text)
 }
 
-/// 2-Tier Hybrid text evaluation (Tier 1 N-Gram -> Tier 2 RoBERTa).
-pub fn check_text_hybrid(
-    text: &str,
-    force_deep_scan: bool,
-) -> crate::hybrid::HybridModerationResult {
-    crate::hybrid::evaluate_text_hybrid(text, force_deep_scan)
-}
-
 /// 2-Tier Hybrid text evaluation returning JSON string.
 pub fn check_text_hybrid_json(text: &str, force_deep_scan: bool) -> String {
     crate::hybrid::evaluate_text_hybrid_json(text, force_deep_scan)
@@ -429,7 +421,7 @@ mod tests {
         short.proof_bytes_b64 = "AAAA".to_string();
         let json = serde_json::to_string(&short).unwrap();
         assert!(!check_zk_trust_proof(&json, "wot_root_123", &[]));
-        let mut invalid = proof.clone();
+        let mut invalid = proof;
         invalid.proof_bytes_b64 = "not base64 !!".to_string();
         let json = serde_json::to_string(&invalid).unwrap();
         assert!(!check_zk_trust_proof(&json, "wot_root_123", &[]));
@@ -450,7 +442,7 @@ mod tests {
         let forged = generate_zk_wot_proof("pubkey_alice", "evil_root", "black_root_456");
         let forged_json = serde_json::to_string(&forged).unwrap();
         assert!(!check_zk_trust_proof(&forged_json, "wot_root_123", &[]));
-        let blacklisted = vec![proof.blacklist_nullifier_hash.clone()];
+        let blacklisted = vec![proof.blacklist_nullifier_hash];
         assert!(!check_zk_trust_proof(&json, "wot_root_123", &blacklisted));
     }
 }

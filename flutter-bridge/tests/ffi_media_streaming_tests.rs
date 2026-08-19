@@ -143,6 +143,7 @@ mod ffi_media_streaming_tests {
         let _ = std::fs::remove_file(&out2);
     }
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn media_upload_blob_file_roundtrip() {
         let _g = crate::test_util::lock();
         let data = unique_bytes();
@@ -162,6 +163,7 @@ mod ffi_media_streaming_tests {
         let _ = std::fs::remove_file(&out);
     }
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn media_upload_blob_file_rejects_ssrf_urls() {
         let _g = crate::test_util::lock();
         for url in [
@@ -231,7 +233,7 @@ mod ffi_media_streaming_tests {
         assert_eq!(arr[0]["id"], id);
         assert_eq!(arr[0]["content"], "hello stories");
         assert!(streaming::streaming_mark_story_viewed(id.clone(), pk.clone()).unwrap());
-        let react = streaming::streaming_story_react(id.clone(), pk, "❤️".to_string());
+        let react = streaming::streaming_story_react(id, pk, "❤️".to_string());
         assert!(react.is_ok());
         signer::signer_lock().unwrap();
         remove_db(&path);
@@ -265,7 +267,7 @@ mod ffi_media_streaming_tests {
         let arr: serde_json::Value = serde_json::from_str(&live).unwrap();
         assert_eq!(arr[0]["id"], id);
         assert_eq!(arr[0]["status"], "live");
-        assert!(streaming::streaming_end_live(id.clone(), pk.clone()).unwrap());
+        assert!(streaming::streaming_end_live(id.clone(), pk).unwrap());
         let ended = streaming::streaming_fetch_live(10).unwrap();
         let arr2: serde_json::Value = serde_json::from_str(&ended).unwrap();
         assert_eq!(arr2[0]["id"], id);

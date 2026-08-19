@@ -59,10 +59,9 @@ impl BlossomClient {
             .send()
             .await
             .map_err(|e| format!("upload failed: {}", e))?;
-        let file: MediaFile = resp
-            .json()
-            .await
-            .map_err(|e| format!("parse failed: {}", e))?;
+        let buf = Self::read_response_capped(resp, MAX_LIST_BYTES, "upload").await?;
+        let file: MediaFile =
+            serde_json::from_slice(&buf).map_err(|e| format!("parse failed: {}", e))?;
         Ok(file)
     }
 
@@ -84,11 +83,39 @@ impl BlossomClient {
             .send()
             .await
             .map_err(|e| format!("upload failed: {}", e))?;
-        let file: MediaFile = resp
-            .json()
-            .await
-            .map_err(|e| format!("parse failed: {}", e))?;
+        let buf = Self::read_response_capped(resp, MAX_LIST_BYTES, "upload").await?;
+        let file: MediaFile =
+            serde_json::from_slice(&buf).map_err(|e| format!("parse failed: {}", e))?;
         Ok(file)
+    }
+
+    async fn read_response_capped(
+        resp: reqwest::Response,
+        max_bytes: usize,
+        op: &str,
+    ) -> Result<Vec<u8>, String> {
+        if let Some(len) = resp.content_length() {
+            if len as usize > max_bytes {
+                return Err(format!("{op} response too large: {len} bytes"));
+            }
+        }
+        let cap = resp
+            .content_length()
+            .map(|l| (l as usize).min(max_bytes))
+            .unwrap_or(64 * 1024);
+        let mut buf = Vec::with_capacity(cap);
+        let mut resp = resp;
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| format!("read failed: {}", e))?
+        {
+            if buf.len() + chunk.len() > max_bytes {
+                return Err(format!("{op} response exceeds size cap"));
+            }
+            buf.extend_from_slice(&chunk);
+        }
+        Ok(buf)
     }
 
     pub async fn download(&self, hash: &str) -> Result<Vec<u8>, String> {

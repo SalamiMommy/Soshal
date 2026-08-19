@@ -160,34 +160,33 @@ impl<'a> PostRepo<'a> {
         tx: &libsql::Transaction,
         posts: &[PostRow],
     ) -> Result<(), crate::error::DbError> {
+        let mut stmt = tx.prepare(POST_UPSERT_SQL).await?;
         for post in posts {
             if limits::row_too_big(&post.content, &post.tags_json) {
                 continue; // relay content too large: skip, never store
             }
-            tx.execute(
-                POST_UPSERT_SQL,
-                params![
-                    post.id.as_str(),
-                    post.pubkey.as_str(),
-                    post.content.as_str(),
-                    post.kind,
-                    post.created_at,
-                    post.tags_json.as_str(),
-                    post.sig.as_deref(),
-                    post.reply_to.as_deref(),
-                    post.root_id.as_deref(),
-                    post.mentioned_pubkeys.as_str(),
-                    post.mentioned_hashtags.as_str(),
-                    post.subject.as_deref(),
-                    post.sync_status.as_str(),
-                    post.is_deleted,
-                    post.scheduled_at,
-                    post.freenet_key.as_deref(),
-                    post.is_freenet_native,
-                    post.rsvp_event_id.as_deref(),
-                ],
-            )
+            stmt.run(params![
+                post.id.as_str(),
+                post.pubkey.as_str(),
+                post.content.as_str(),
+                post.kind,
+                post.created_at,
+                post.tags_json.as_str(),
+                post.sig.as_deref(),
+                post.reply_to.as_deref(),
+                post.root_id.as_deref(),
+                post.mentioned_pubkeys.as_str(),
+                post.mentioned_hashtags.as_str(),
+                post.subject.as_deref(),
+                post.sync_status.as_str(),
+                post.is_deleted,
+                post.scheduled_at,
+                post.freenet_key.as_deref(),
+                post.is_freenet_native,
+                post.rsvp_event_id.as_deref(),
+            ])
             .await?;
+            stmt.reset();
         }
         Ok(())
     }

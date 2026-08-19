@@ -385,7 +385,7 @@ fn filter_height_range() {
     short.height = Some(160.0);
     let mut tall = prof("tall");
     tall.height = Some(190.0);
-    let mut no_height = prof("noheight");
+    let no_height = prof("noheight");
     let mut input = filter_input(vec![short, tall, no_height]);
     input.height_min_cm = Some(170.0);
     input.height_max_cm = Some(185.0);
@@ -462,10 +462,7 @@ fn sort_by_age_height_distance() {
     older.age = Some(35.0);
     let mut younger = prof("younger");
     younger.age = Some(22.0);
-    let age_sorted = sort_dating_profiles(sort_input(
-        vec![older.clone(), younger.clone()],
-        Some("age"),
-    ));
+    let age_sorted = sort_dating_profiles(sort_input(vec![older, younger], Some("age")));
     assert_eq!(age_sorted[0].pubkey, "younger");
     assert_eq!(age_sorted[1].pubkey, "older");
 

@@ -158,15 +158,10 @@ pub fn decompress_json_dict(encoded: &str) -> String {
     }
 }
 
-/// Batch-compresses multiple slices with the bundled zstd dictionary.
-pub fn compress_dict_batch(items: &[&[u8]]) -> Vec<Result<Vec<u8>, String>> {
-    items.iter().map(|item| compress_dict(item)).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::engine::general_purpose;
 
     /// Deterministic LCG stream; incompressible enough to defeat deflate.
     fn incompressible(len: usize) -> Vec<u8> {
@@ -198,7 +193,7 @@ mod tests {
     fn decompress_dict_limited_rejects_truncated_id_and_corrupt_body() {
         for extra in 1..=3 {
             let mut truncated = ZSTD_DICT_MAGIC.to_vec();
-            truncated.extend(std::iter::repeat(0xAB).take(extra));
+            truncated.extend(std::iter::repeat_n(0xAB, extra));
             let err = decompress_dict_limited(&truncated, MAX_DECOMPRESS_BYTES).unwrap_err();
             assert_eq!(err, "truncated dict id");
         }

@@ -14,8 +14,6 @@ blake3 = { workspace = true }
 memmap2 = { workspace = true }
 image = { workspace = true }
 soshal-crypto-core = { path = "../crypto-core" }
-soshal-pqc-core = { path = "../pqc-core" }
-soshal-nostr-core = { path = "../nostr-core" }
 soshal-common-core = { path = "../common-core" }
 thumbhash.workspace = true
 url.workspace = true

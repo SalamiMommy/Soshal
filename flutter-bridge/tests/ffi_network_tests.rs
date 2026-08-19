@@ -96,7 +96,7 @@ mod network_ffi_tests {
             ("a".to_string(), "1".to_string()),
             ("b".to_string(), "2".to_string()),
         ]);
-        let resp = network::network_reconcile_prolly_tree(kv, tree.root_hash.clone()).unwrap();
+        let resp = network::network_reconcile_prolly_tree(kv, tree.root_hash).unwrap();
         assert_eq!(resp, "\"Match\"", "equal roots -> Match");
     }
     #[test]

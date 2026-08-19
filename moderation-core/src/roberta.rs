@@ -1,6 +1,9 @@
-//! RoBERTa Deep Transformer Content Moderation Architecture
+//! RoBERTa-style Content Moderation Architecture (heuristic, NOT a trained model)
 //!
-//! Implements an on-device RoBERTa-style transformer architecture in pure standard Rust:
+//! Implements a RoBERTa-shaped inference pipeline in pure standard Rust, but
+//! the "model" is synthetic: embeddings are hash functions of token ids, no
+//! real trained weights exist. Sufficient for deterministic on-device
+//! heuristic scoring; a genuinely trained transformer is a roadmap item.
 //! - Byte-Pair Encoding (BPE) Tokenizer with special tokens (`<s>`, `</s>`, `<unk>`, `<pad>`).
 //! - Multi-Head Self-Attention (MHSA) encoder with LayerNorm, GELU, and residual connections.
 //! - Pooled CLS classification head predicting 9 hazard categories:

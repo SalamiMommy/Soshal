@@ -260,7 +260,7 @@ pub fn sync_enqueue_outbox(
 #[frb(sync, serialize)]
 pub fn sync_get_outbox_summary() -> Result<String, String> {
     super::db::with_db_result(|db| {
-        let summary = soshal_sync_core::outbox::get_outbox_summary(db)
+        let summary = soshal_sync_core::outbox::summarize_outbox(db)
             .map_err(soshal_db_core::error::DbError::Migration)?;
         Ok(summary)
     })
@@ -342,6 +342,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
     async fn test_publish_or_enqueue_falls_back_to_outbox() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
@@ -360,6 +361,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
     async fn test_publish_or_enqueue_queues_invalid_json() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
@@ -476,7 +478,7 @@ mod tests {
             super::super::signer::signer_nip44_encrypt("hello dm".to_string(), pk.clone()).unwrap();
         let json = update_json(SyncUpdate::Dm {
             id: "dm-1".into(),
-            sender: pk.clone(),
+            sender: pk,
             content: payload,
             created_at: 1234,
         })

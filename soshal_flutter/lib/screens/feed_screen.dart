@@ -340,9 +340,9 @@ class _FeedPostCardState extends State<FeedPostCard> {
   void initState() {
     super.initState();
     _liked = widget.post.liked;
-    _preview = widget.post.content.length > 320
-        ? context.read<FeedService>().truncate(widget.post.content, 320)
-        : widget.post.content;
+    final raw = widget.post.content;
+    _preview =
+        raw.characters.length > 320 ? '${raw.characters.take(320)}…' : raw;
     _loadTotal();
   }
 

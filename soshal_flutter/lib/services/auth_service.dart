@@ -13,12 +13,6 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
 
   KeyPair? get currentKeypair => _currentKeypair;
 
-  /// Clear current keypair from Dart VM heap (e.g. on logout or lock)
-  void clearCurrentKeypair() {
-    _currentKeypair = null;
-    notifyListeners();
-  }
-
   /// Generate a new keypair
   Future<KeyPair> generateKeypair() async {
     try {
@@ -155,26 +149,31 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
 }
 
 /// Key pair produced by the Rust keygen/restore calls.
+/// `secretKey` is only populated during onboarding key generation and is
+/// intentionally absent (null or empty) from mnemonic-restore results so
+/// that the in-process signer holds the secret, not the Dart heap.
 class KeyPair {
   final String publicKey;
-  final String secretKey;
+  final String? secretKey;
 
   KeyPair({
     required this.publicKey,
-    required this.secretKey,
+    this.secretKey,
   });
 
   factory KeyPair.fromJson(Map<String, dynamic> json) {
+    final sk = json.strOrNull('secretKey') ?? json.strOrNull('secret_key');
     return KeyPair(
       publicKey: json.strOrNull('publicKey') ?? json.strOf('public_key'),
-      secretKey: json.strOrNull('secretKey') ?? json.strOf('secret_key'),
+      // Treat empty string the same as absent — don't persist a live key.
+      secretKey: (sk != null && sk.isNotEmpty) ? sk : null,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'public_key': publicKey,
-      'secret_key': secretKey,
+      if (secretKey != null && secretKey!.isNotEmpty) 'secret_key': secretKey,
     };
   }
 }

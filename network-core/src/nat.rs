@@ -210,7 +210,7 @@ pub fn spawn_nat_manager(my_pubkey: String) -> Result<NatHandle, String> {
     let stop = Arc::new(AtomicBool::new(false));
     let (tx, rx) = std::sync::mpsc::sync_channel::<NatCommand>(64);
     let thread_stop = stop.clone();
-    let thread_my_pubkey = my_pubkey.clone();
+    let thread_my_pubkey = my_pubkey;
     std::thread::Builder::new()
         .name("soshal-nat".to_string())
         .spawn(move || {
@@ -681,8 +681,12 @@ mod tests {
             .gather(&pk, &["stun:192.0.2.1:9".to_string()])
             .unwrap();
         let cand = "1 1 udp 2122260223 127.0.0.1 50050 typ host".to_string();
-        handle.add_remote(&pk, "u", "p", &[cand.clone()]).unwrap();
-        handle.add_remote(&pk, "u", "p", &[cand.clone()]).unwrap();
+        handle
+            .add_remote(&pk, "u", "p", std::slice::from_ref(&cand))
+            .unwrap();
+        handle
+            .add_remote(&pk, "u", "p", std::slice::from_ref(&cand))
+            .unwrap();
         handle
             .add_remote(&pk, "u", "p", &[cand.clone(), cand])
             .unwrap();
@@ -729,7 +733,7 @@ mod tests {
             .unwrap();
         let cand = "1 1 udp 2122260223 127.0.0.1 52000 typ host".to_string();
         let err = handle
-            .add_remote(&pk, "", "p", &[cand.clone()])
+            .add_remote(&pk, "", "p", std::slice::from_ref(&cand))
             .unwrap_err();
         assert!(err.contains("set remote credentials failed"), "got {err}");
         let err = handle.add_remote(&pk, "u", "", &[cand]).unwrap_err();

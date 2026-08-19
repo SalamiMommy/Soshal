@@ -467,7 +467,7 @@ mod tests {
         let handle = spawn_swarm_download(SwarmConfig {
             manifest: m.clone(),
             out_path: out.clone(),
-            peers: peers.clone(),
+            peers,
             quic_ports,
             key: [7u8; 32],
             my_pubkey: "ab".repeat(32),

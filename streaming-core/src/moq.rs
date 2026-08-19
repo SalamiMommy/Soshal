@@ -41,13 +41,17 @@ pub fn encode_group_stream_to_writer<W: Write>(
     push_u64(out, group.group_sequence)?;
     push_u32(out, group.objects.len() as u32)?;
     for obj in &group.objects {
-        push_u32(out, obj.header.track_id)?;
-        push_u64(out, obj.header.group_sequence)?;
-        push_u64(out, obj.header.object_sequence)?;
-        out.write_all(&[obj.header.track_type as u8])
+        // Pack the 33-byte per-object header in one write:
+        //   [u32 track_id][u64 group_seq][u64 obj_seq][u8 track_type][u64 timestamp_ms][u32 payload_len]
+        let mut hdr = [0u8; 33];
+        hdr[0..4].copy_from_slice(&obj.header.track_id.to_le_bytes());
+        hdr[4..12].copy_from_slice(&obj.header.group_sequence.to_le_bytes());
+        hdr[12..20].copy_from_slice(&obj.header.object_sequence.to_le_bytes());
+        hdr[20] = obj.header.track_type as u8;
+        hdr[21..29].copy_from_slice(&obj.header.timestamp_ms.to_le_bytes());
+        hdr[29..33].copy_from_slice(&(obj.payload.len() as u32).to_le_bytes());
+        out.write_all(&hdr)
             .map_err(|e| format!("moq write failed: {e}"))?;
-        push_u64(out, obj.header.timestamp_ms)?;
-        push_u32(out, obj.payload.len() as u32)?;
         out.write_all(&obj.payload)
             .map_err(|e| format!("moq write failed: {e}"))?;
     }
@@ -316,7 +320,7 @@ mod tests {
 
         let group = MoqGroup {
             group_sequence: keyframe.header.group_sequence,
-            objects: vec![keyframe.clone(), delta.clone(), audio.clone()],
+            objects: vec![keyframe, delta, audio],
         };
         let wire = encode_group_stream(&group).unwrap();
         let decoded = decode_group_stream(&wire).unwrap();
@@ -410,11 +414,11 @@ mod tests {
         let publisher_pubkey = "pubkey_abc".to_string();
         let subscriber_pubkey = "sub_xyz".to_string();
 
-        let mut publisher = MoqPublisherSession::new(stream_id.clone(), publisher_pubkey.clone());
+        let mut publisher = MoqPublisherSession::new(stream_id.clone(), publisher_pubkey);
         publisher.register_track(1, "video");
         publisher.register_track(2, "audio");
 
-        let subscriber = MoqSubscriberSession::new(stream_id.clone(), subscriber_pubkey.clone());
+        let subscriber = MoqSubscriberSession::new(stream_id, subscriber_pubkey);
 
         // Publisher creates a keyframe
         let keyframe = publisher.create_object(

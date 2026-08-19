@@ -194,7 +194,7 @@ fn test_dating_like_is_sign_only() {
     let fake_id = "a".repeat(64);
     assert!(dating::dating_like(alice.clone(), fake_id.clone()).unwrap());
     assert!(dating::dating_superlike(alice.clone(), fake_id.clone()).unwrap());
-    assert!(dating::dating_unlike(alice.clone(), fake_id.clone()).unwrap());
+    assert!(dating::dating_unlike(alice.clone(), fake_id).unwrap());
     assert!(dating::dating_like(alice.clone(), "short".to_string()).is_err());
     let likes: Vec<serde_json::Value> =
         serde_json::from_str(&dating::dating_fetch_likes(alice.clone()).unwrap()).unwrap();
@@ -289,7 +289,7 @@ fn test_dating_filter_profiles() {
     assert_eq!(by_interest[0]["pubkey"], dave_pk);
     let all: Vec<serde_json::Value> = serde_json::from_str(
         &dating::dating_filter_profiles(
-            alice_pk.clone(),
+            alice_pk,
             0,
             100,
             0,
@@ -327,7 +327,7 @@ fn test_dating_block_unblock() {
     .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["blocked_pubkey"], bob);
-    assert!(dating::dating_unblock_profile(alice.clone(), bob.clone()).unwrap());
+    assert!(dating::dating_unblock_profile(alice.clone(), bob).unwrap());
     let rows: Vec<serde_json::Value> = serde_json::from_str(
         &db::db_query_raw(format!(
             "SELECT blocked_pubkey FROM blocks WHERE pubkey = '{}'",
@@ -347,7 +347,7 @@ fn test_dating_score_and_stats() {
     unlock(&secret);
     let bob = "c".repeat(64);
     assert_eq!(
-        dating::dating_calculate_score(alice.clone(), bob.clone(), "{}".to_string()).unwrap(),
+        dating::dating_calculate_score(alice.clone(), bob, "{}".to_string()).unwrap(),
         0.0
     );
     let _ = create_profile(&alice, "alice", 30, "[\"music\"]");
@@ -359,7 +359,7 @@ fn test_dating_score_and_stats() {
     let score = dating::dating_calculate_score(alice.clone(), bob_pk, "{}".to_string()).unwrap();
     assert!(score >= 0.0);
     let stats: serde_json::Value =
-        serde_json::from_str(&dating::dating_get_stats(alice.clone()).unwrap()).unwrap();
+        serde_json::from_str(&dating::dating_get_stats(alice).unwrap()).unwrap();
     assert_eq!(stats["profile_complete"], true);
     assert_eq!(stats["likes_received"], 0);
     assert_eq!(stats["profile_views"], 0);
@@ -481,7 +481,7 @@ fn test_marketplace_listing_roundtrip() {
             .unwrap();
     assert_eq!(found.len(), 1);
     assert!(marketplace::marketplace_delete_listing(id.clone(), "notseller".to_string()).is_err());
-    assert!(marketplace::marketplace_delete_listing(id.clone(), seller.clone()).unwrap());
+    assert!(marketplace::marketplace_delete_listing(id.clone(), seller).unwrap());
     let deleted: serde_json::Value =
         serde_json::from_str(&marketplace::marketplace_get_listing(id).unwrap()).unwrap();
     assert_eq!(deleted["status"], "active");
@@ -527,7 +527,7 @@ fn test_marketplace_poll_roundtrip() {
         serde_json::from_str(&marketplace::marketplace_poll_get(poll_id.clone()).unwrap()).unwrap();
     assert_eq!(poll["votes"], serde_json::json!([1, 0]));
     assert!(marketplace::marketplace_poll_close(poll_id.clone(), "notowner".to_string()).is_err());
-    assert!(marketplace::marketplace_poll_close(poll_id.clone(), user.clone()).unwrap());
+    assert!(marketplace::marketplace_poll_close(poll_id, user).unwrap());
     cleanup_db(&path);
 }
 #[test]
@@ -572,13 +572,10 @@ fn test_marketplace_order_escrow_lifecycle() {
     )
     .unwrap();
     assert_eq!(seller_orders.len(), 1);
-    assert!(marketplace::marketplace_create_escrow(
-        order_id.clone(),
-        buyer.clone(),
-        seller.clone(),
-        5000
-    )
-    .is_err());
+    assert!(
+        marketplace::marketplace_create_escrow(order_id.clone(), buyer, seller.clone(), 5000)
+            .is_err()
+    );
     assert!(marketplace::marketplace_create_escrow(
         order_id.clone(),
         "".to_string(),
@@ -603,7 +600,7 @@ fn test_marketplace_order_escrow_lifecycle() {
     )
     .unwrap();
     assert_eq!(by_listing["id"], escrow_id);
-    assert!(marketplace::marketplace_delete_listing(listing_id.clone(), seller.clone()).is_err());
+    assert!(marketplace::marketplace_delete_listing(listing_id, seller.clone()).is_err());
     assert!(marketplace::marketplace_release_escrow(escrow_id.clone(), seller.clone()).is_err());
     assert!(marketplace::marketplace_resolve_escrow(
         escrow_id.clone(),
@@ -637,20 +634,16 @@ fn test_marketplace_order_escrow_lifecycle() {
         serde_json::from_str(&marketplace::marketplace_get_escrow(escrow2.clone()).unwrap())
             .unwrap();
     assert_eq!(escrow[0]["status"], "disputed");
-    assert!(marketplace::marketplace_release_escrow(escrow2.clone(), seller.clone()).is_err());
-    let escrow3 = marketplace::marketplace_create_escrow(
-        order_id.clone(),
-        "".to_string(),
-        seller.clone(),
-        5000,
-    )
-    .unwrap();
+    assert!(marketplace::marketplace_release_escrow(escrow2, seller.clone()).is_err());
+    let escrow3 =
+        marketplace::marketplace_create_escrow(order_id, "".to_string(), seller.clone(), 5000)
+            .unwrap();
     assert!(marketplace::marketplace_release_escrow(escrow3.clone(), seller.clone()).is_err());
     db::db_execute_raw(format!(
         "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id='{escrow3}'"
     ))
     .unwrap();
-    assert!(marketplace::marketplace_release_escrow(escrow3.clone(), seller.clone()).unwrap());
+    assert!(marketplace::marketplace_release_escrow(escrow3.clone(), seller).unwrap());
     let escrow: serde_json::Value =
         serde_json::from_str(&marketplace::marketplace_get_escrow(escrow3).unwrap()).unwrap();
     assert_eq!(escrow[0]["status"], "completed");

@@ -21,7 +21,6 @@ webrtc-ice = { workspace = true }
 quinn = { workspace = true }
 rcgen = "0.13"
 rustls = { workspace = true }
-aes-gcm = "0.10"
 tokio-tungstenite = "0.21"
 futures-util = { workspace = true }
 url = { workspace = true }
@@ -35,4 +34,3 @@ soshal-pqc-core = { path = "../pqc-core" }
 workspace = true
 [dev-dependencies]
 soshal-test-util = { path = "../test-util" }
-tokio = { workspace = true }

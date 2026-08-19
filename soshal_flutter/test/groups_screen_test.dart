@@ -186,10 +186,14 @@ void main() {
     final session = SessionService();
     api.stubString('crateFfiSessionSessionLoad', sessionJson);
     await session.loadSession();
+    api.stubString('crateFfiDbDbGetSetting', '300');
     api.stubString('crateFfiGroupsGroupsGetGroupInfo', memberJson);
     api.stubListString('crateFfiGroupsGroupsGetMembers', ['pkA']);
     api.stubString('crateFfiGroupsGroupsMembersWithRoles', '[]');
     api.stubString('crateFfiGroupsGroupsRolesList', '[]');
+    api.stubString('crateFfiGroupsGroupsRoomsList', '[]');
+    api.stubString('crateFfiGroupsGroupsThreadsList', '[]');
+    api.stubString('crateFfiGroupsGroupsVoiceChannelsList', '[]');
     api.stubString('crateFfiGroupsGroupsFetchMessages', msgJson);
     api.stubString('crateFfiGroupsGroupsPostMessage', '{"id":"m2"}');
 
@@ -211,8 +215,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Soshal Devs'), findsOneWidget);
+
+    // Switch to Rooms tab to view and post messages
+    await tester.tap(find.text('Rooms'));
+    await tester.pumpAndSettle();
+
     expect(find.text('welcome'), findsOneWidget);
-    expect(find.textContaining('Chat (1)'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), 'hello group');
     await tester.tap(find.byIcon(Icons.send));
@@ -223,5 +231,71 @@ void main() {
     expect(api.namedArg(inv, 'groupId'), 'g1');
     expect(api.namedArg(inv, 'content'), 'hello group');
     expect(api.callCount('crateFfiGroupsGroupsFetchMessages'), 2);
+  });
+
+  testWidgets('private group renders lock icon and prompts for password on join',
+      (tester) async {
+    const privateGroupJson =
+        '{"id":"g-priv","name":"Secret Club","description":"shh",'
+        '"picture":"","owner":"pk-owner","members":5,"is_member":false,'
+        '"role":"","created_at":0,"is_private":true}';
+
+    api.stubString('crateFfiGroupsGroupsFetchGroups', '[$privateGroupJson]');
+    api.stubBool('crateFfiGroupsGroupsJoin', true);
+
+    await pumpScreen(tester);
+
+    expect(find.text('Secret Club'), findsOneWidget);
+    expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Join'));
+    await tester.pumpAndSettle();
+
+    // Dialog appears
+    expect(find.text('Private Community'), findsOneWidget);
+    expect(find.textContaining('Enter the password to join "Secret Club"'),
+        findsOneWidget);
+
+    // Enter password and submit
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Password'), 'superSecret42');
+    await tester.tap(find.widgetWithText(FilledButton, 'Join'));
+    await tester.pumpAndSettle();
+
+    expect(api.callCount('crateFfiGroupsGroupsJoin'), 1);
+    final inv = api.callsOf('crateFfiGroupsGroupsJoin').single;
+    expect(api.namedArg(inv, 'groupId'), 'g-priv');
+    expect(api.namedArg(inv, 'userPubkey'), 'pk123');
+    expect(api.namedArg(inv, 'password'), 'superSecret42');
+  });
+
+  testWidgets('create private group sends isPrivate and password', (tester) async {
+    api.stubString('crateFfiGroupsGroupsFetchGroups', '[]');
+    api.stubString('crateFfiGroupsGroupsCreate', 'g-created-priv');
+
+    await pumpScreen(tester);
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Name *'), 'Private Lounge');
+
+    // Toggle private switch
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+
+    // Enter password
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Community Password *'), 'myClubPass');
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
+    await tester.pumpAndSettle();
+
+    expect(api.callCount('crateFfiGroupsGroupsCreate'), 1);
+    final inv = api.callsOf('crateFfiGroupsGroupsCreate').single;
+    expect(api.namedArg(inv, 'name'), 'Private Lounge');
+    expect(api.namedArg(inv, 'isPrivate'), isTrue);
+    expect(api.namedArg(inv, 'password'), 'myClubPass');
   });
 }

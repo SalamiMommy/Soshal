@@ -1240,7 +1240,7 @@ mod tests {
             "seller1".to_string(),
         )
         .unwrap());
-        let escrow = marketplace_get_escrow(escrow_id.clone()).unwrap();
+        let escrow = marketplace_get_escrow(escrow_id).unwrap();
         assert!(escrow.contains("\"status\":\"refunded\""), "{escrow}");
 
         let escrow2 =
@@ -1259,7 +1259,7 @@ mod tests {
         )
         .unwrap());
         // Disputed escrows need arbitrator resolution; caller release refused.
-        assert!(marketplace_release_escrow(escrow2.clone(), "seller1".to_string()).is_err());
+        assert!(marketplace_release_escrow(escrow2, "seller1".to_string()).is_err());
 
         // Non-disputed escrow releases only after BOTH parties confirm.
         let escrow4 =
@@ -1271,11 +1271,11 @@ mod tests {
         ))
         .unwrap();
         assert!(marketplace_release_escrow(escrow4.clone(), "seller1".to_string()).unwrap());
-        let escrow = marketplace_get_escrow(escrow4.clone()).unwrap();
+        let escrow = marketplace_get_escrow(escrow4).unwrap();
         assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
 
         let escrow3 =
-            marketplace_create_escrow(order_id.clone(), String::new(), "seller1".to_string(), 5000)
+            marketplace_create_escrow(order_id, String::new(), "seller1".to_string(), 5000)
                 .unwrap();
         assert!(marketplace_resolve_escrow(
             escrow3.clone(),
@@ -1288,7 +1288,7 @@ mod tests {
             marketplace_resolve_escrow(escrow3.clone(), "mediator".to_string(), String::new(),)
                 .unwrap()
         );
-        let escrow = marketplace_get_escrow(escrow3.clone()).unwrap();
+        let escrow = marketplace_get_escrow(escrow3).unwrap();
         assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
         assert!(escrow.contains("resolved by mediator"), "{escrow}");
     }
@@ -1372,7 +1372,7 @@ mod tests {
         assert!(marketplace_poll_close(poll_id.clone(), "other".to_string())
             .unwrap_err()
             .contains("not poll owner"));
-        assert!(marketplace_poll_close(poll_id.clone(), "pk1".to_string()).unwrap());
+        assert!(marketplace_poll_close(poll_id, "pk1".to_string()).unwrap());
         assert!(marketplace_poll_get("nope".to_string())
             .unwrap_err()
             .contains("poll not found"));

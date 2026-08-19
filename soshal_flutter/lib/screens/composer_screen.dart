@@ -96,7 +96,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
               .read<SearchService>()
               .mentions(query, limit: 8)
               .catchError((e) => <SearchResultItem>[]);
-      final detected = context.read<FeedService>().utilExtractHashtags(text);
+      final detected = context.read<FeedService>().extractHashtags(text);
       final extracted = await Future.wait<Object?>([
         Future.value(detected),
         resultsFuture,

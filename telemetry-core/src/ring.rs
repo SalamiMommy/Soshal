@@ -133,8 +133,11 @@ impl SharedRing {
             let kind = self.map[base + 4];
             let payload_len =
                 u32::from_le_bytes(self.map[base + 13..base + 17].try_into().unwrap()) as usize;
-            let payload = if payload_len <= RING_ENTRY_MAX_PAYLOAD {
-                let start = base + RING_ENTRY_HEADER;
+            let start = base + RING_ENTRY_HEADER;
+            let payload = if payload_len <= RING_ENTRY_MAX_PAYLOAD
+                && payload_len <= total.saturating_sub(RING_ENTRY_HEADER)
+                && start.saturating_add(payload_len) <= self.map.len()
+            {
                 self.map[start..start + payload_len].to_vec()
             } else {
                 Vec::new()
@@ -186,7 +189,7 @@ pub fn register_ring(path: &Path, capacity_bytes: usize) -> Result<usize, String
     Ok(addr)
 }
 
-/// Unregisters and drops a ring by its address, releasing the underlying mmap.
+/// Unregister a ring by address.
 pub fn unregister_ring(addr: usize) -> Result<(), String> {
     registry()
         .lock()
@@ -195,10 +198,12 @@ pub fn unregister_ring(addr: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// Clears all registered rings from memory.
+/// Clear all registered rings (e.g. for test cleanup).
 pub fn clear_ring_registry() {
-    if let Ok(mut reg) = registry().lock() {
-        reg.clear();
+    if let Some(r) = RINGS.get() {
+        if let Ok(mut g) = r.lock() {
+            g.clear();
+        }
     }
 }
 
@@ -394,5 +399,31 @@ mod tests {
         assert_eq!(kinds, vec![7, 9]);
         assert_eq!(payloads[0], max_payload);
         assert!(payloads[1].is_empty());
+    }
+
+    #[test]
+    fn test_drain_with_corrupted_payload_len() {
+        let mut ring = SharedRing::init(
+            &soshal_test_util::tmp_path("ring", "ring_corrupt.bin"),
+            64 * 1024,
+        )
+        .unwrap();
+
+        write_entry_bytes(&mut ring, 1, b"valid payload");
+
+        // Corrupt the payload_len in the ring buffer header to be huge (greater than total)
+        let base = RING_HEADER_LEN;
+        // payload_len is at base + 13..base + 17
+        let corrupt_len = (RING_ENTRY_MAX_PAYLOAD as u32) - 1;
+        ring.map[base + 13..base + 17].copy_from_slice(&corrupt_len.to_le_bytes());
+
+        let mut drained = 0;
+        ring.drain(|kind, payload| {
+            drained += 1;
+            assert_eq!(kind, 1);
+            // Must return empty payload rather than panicking on slice index
+            assert!(payload.is_empty());
+        });
+        assert_eq!(drained, 1);
     }
 }

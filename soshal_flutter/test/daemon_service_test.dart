@@ -72,11 +72,27 @@ void main() {
     api.stub('crateFfiDaemonDaemonIsRnsdRunning', (_) {
       throw Exception('native failure');
     });
+    api.stub('crateFfiDaemonDaemonServiceRunning', (_) {
+      throw Exception('native failure');
+    });
+    api.stub('crateFfiDaemonDaemonRequestBatteryExemption', (_) {
+      throw Exception('native failure');
+    });
 
     expect(await DaemonService.startDaemons(), false);
     expect(await DaemonService.stopDaemons(), false);
     expect(await DaemonService.isI2pdRunning(), false);
     expect(await DaemonService.isRnsdRunning(), false);
+    expect(await DaemonService.isServiceRunning(), false);
+    expect(await DaemonService.requestBatteryExemption(), false);
+  });
+
+  test('service running + battery exemption forward bools', () async {
+    api.stubBool('crateFfiDaemonDaemonServiceRunning', true);
+    api.stubBool('crateFfiDaemonDaemonRequestBatteryExemption', true);
+
+    expect(await DaemonService.isServiceRunning(), true);
+    expect(await DaemonService.requestBatteryExemption(), true);
   });
 
   test('startDaemons returns true on success', () async {

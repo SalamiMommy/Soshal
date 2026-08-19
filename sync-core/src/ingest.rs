@@ -659,7 +659,7 @@ mod tests {
             &keys,
             Kind::ZapReceipt,
             "lnbc10n",
-            vec![vec!["p".to_string(), target.clone()]],
+            vec![vec!["p".to_string(), target]],
         );
         handle(&db, &mine, &zap_other, &tx).unwrap();
         let count: i64 = query_first(&db.conn().unwrap(), "SELECT COUNT(*) FROM zaps", (), |r| {

@@ -275,6 +275,218 @@ mod android {
         }
     }
 
+    const DAEMON_SERVICE_CLASS: &str = "com/example/soshal_flutter/DaemonForegroundService";
+
+    /// Start the daemon foreground service (keeps the app process — and the
+    /// i2pd/freenet/rnsd child processes it spawned — alive while
+    /// backgrounded).
+    pub fn daemon_service_start() -> Result<bool, String> {
+        daemon_service_call("start", "(Landroid/content/Context;)Z", &[])
+    }
+
+    /// Stop the daemon foreground service.
+    pub fn daemon_service_stop() -> Result<bool, String> {
+        daemon_service_call("stop", "(Landroid/content/Context;)Z", &[])
+    }
+
+    /// Whether the daemon foreground service is currently started.
+    pub fn daemon_service_running() -> Result<bool, String> {
+        let mut env = attach()?;
+        let class = env
+            .find_class(DAEMON_SERVICE_CLASS)
+            .map_err(|e| e.to_string())?;
+        let value = env
+            .get_static_field(class, "running", "Z")
+            .map_err(|e| e.to_string())?;
+        match value {
+            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+            _ => Err("daemon service running unreadable".to_string()),
+        }
+    }
+
+    fn daemon_service_call(
+        method: &str,
+        sig: &str,
+        args: &[jni::objects::JValue<'_, '_>],
+    ) -> Result<bool, String> {
+        let mut env = attach()?;
+        let activity = activity(&mut env)?;
+        let class = env
+            .find_class(DAEMON_SERVICE_CLASS)
+            .map_err(|e| e.to_string())?;
+        let instance = env
+            .get_static_field(
+                class,
+                "INSTANCE",
+                "Lcom/example/soshal_flutter/DaemonForegroundService;",
+            )
+            .map_err(|e| e.to_string())?;
+        let obj = match instance {
+            jni::objects::JValueOwned::Object(o) if !o.is_null() => o,
+            _ => return Err("DaemonForegroundService.INSTANCE not set".to_string()),
+        };
+        let mut call_args = Vec::with_capacity(args.len() + 1);
+        call_args.push(jni::objects::JValue::Object(&activity));
+        call_args.extend_from_slice(args);
+        match env
+            .call_method(&obj, method, sig, &call_args)
+            .map_err(|e| e.to_string())?
+        {
+            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+            _ => Err(format!("daemon service {method} unreadable")),
+        }
+    }
+
+    const RNSD_RUNNER_CLASS: &str = "com/example/soshal_flutter/RnsdRunner";
+
+    fn rnsd_runner<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, String> {
+        let class = env
+            .find_class(RNSD_RUNNER_CLASS)
+            .map_err(|e| e.to_string())?;
+        let instance = env
+            .get_static_field(class, "INSTANCE", "Lcom/example/soshal_flutter/RnsdRunner;")
+            .map_err(|e| e.to_string())?;
+        match instance {
+            jni::objects::JValueOwned::Object(o) if !o.is_null() => Ok(o),
+            _ => Err("RnsdRunner.INSTANCE not set".to_string()),
+        }
+    }
+
+    /// Start the Reticulum daemon (rnsd) in the Chaquopy Python runtime.
+    /// `config_dir` receives RNS's auto-generated config + identities.
+    pub fn rnsd_start(config_dir: &str) -> Result<bool, String> {
+        let mut env = attach()?;
+        let runner = rnsd_runner(&mut env)?;
+        let activity = activity(&mut env)?;
+        let dir_j = env.new_string(config_dir).map_err(|e| e.to_string())?;
+        match env
+            .call_method(
+                &runner,
+                "start",
+                "(Landroid/content/Context;Ljava/lang/String;)Z",
+                &[
+                    jni::objects::JValue::Object(&activity),
+                    jni::objects::JValue::Object(&dir_j),
+                ],
+            )
+            .map_err(|e| e.to_string())?
+        {
+            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+            _ => Err("rnsd start unreadable".to_string()),
+        }
+    }
+
+    /// Stop the Reticulum daemon.
+    pub fn rnsd_stop() -> Result<bool, String> {
+        let mut env = attach()?;
+        let runner = rnsd_runner(&mut env)?;
+        let activity = activity(&mut env)?;
+        match env
+            .call_method(
+                &runner,
+                "stop",
+                "(Landroid/content/Context;)Z",
+                &[jni::objects::JValue::Object(&activity)],
+            )
+            .map_err(|e| e.to_string())?
+        {
+            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+            _ => Err("rnsd stop unreadable".to_string()),
+        }
+    }
+
+    /// Whether the Reticulum daemon thread is live.
+    pub fn rnsd_running() -> Result<bool, String> {
+        let mut env = attach()?;
+        let runner = rnsd_runner(&mut env)?;
+        match env
+            .call_method(&runner, "isRunning", "()Z", &[])
+            .map_err(|e| e.to_string())?
+        {
+            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+            _ => Err("rnsd running unreadable".to_string()),
+        }
+    }
+
+    /// First entry of Build.SUPPORTED_ABIS (e.g. "arm64-v8a") — used to pick
+    /// the per-ABI daemon binary asset.
+    pub fn supported_abi() -> Result<String, String> {
+        let mut env = attach()?;
+        let class = env
+            .find_class("android/os/Build")
+            .map_err(|e| e.to_string())?;
+        let array = env
+            .get_static_field(class, "SUPPORTED_ABIS", "[Ljava/lang/String;")
+            .map_err(|e| e.to_string())?;
+        let arr = array.l().map_err(|e| e.to_string())?;
+        if arr.is_null() {
+            return Err("SUPPORTED_ABIS null".to_string());
+        }
+        let first = env
+            .get_object_array_element(&arr, 0)
+            .map_err(|e| e.to_string())?;
+        let jstr = jni::objects::JString::from(first);
+        let s = env.get_string(&jstr).map_err(|e| e.to_string())?;
+        Ok(s.into())
+    }
+
+    /// Fire the "ignore battery optimizations" request dialog.
+    pub fn request_ignore_battery_optimizations() -> Result<(), String> {
+        let mut env = attach()?;
+        let activity = activity(&mut env)?;
+        let pkg = {
+            let value = env
+                .call_method(&activity, "getPackageName", "()Ljava/lang/String;", &[])
+                .map_err(|e| e.to_string())?;
+            l_string(value)?
+        };
+        let action = env
+            .new_string("android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS")
+            .map_err(|e| e.to_string())?;
+        let intent = env
+            .new_object(
+                "android/content/Intent",
+                "(Ljava/lang/String;)V",
+                &[jni::objects::JValue::Object(&action)],
+            )
+            .map_err(|e| e.to_string())?;
+        let uri_spec = env
+            .new_string(format!("package:{pkg}"))
+            .map_err(|e| e.to_string())?;
+        let uri = env
+            .call_static_method(
+                "android/net/Uri",
+                "parse",
+                "(Ljava/lang/String;)Landroid/net/Uri;",
+                &[jni::objects::JValue::Object(&uri_spec)],
+            )
+            .map_err(|e| e.to_string())?
+            .l()
+            .map_err(|e| e.to_string())?;
+        env.call_method(
+            &intent,
+            "setData",
+            "(Landroid/net/Uri;)Landroid/content/Intent;",
+            &[jni::objects::JValue::Object(&uri)],
+        )
+        .map_err(|e| e.to_string())?;
+        env.call_method(
+            &intent,
+            "addFlags",
+            "(I)Landroid/content/Intent;",
+            &[jni::objects::JValue::Int(0x1000_0000)], // FLAG_ACTIVITY_NEW_TASK
+        )
+        .map_err(|e| e.to_string())?;
+        env.call_method(
+            &activity,
+            "startActivity",
+            "(Landroid/content/Intent;)V",
+            &[jni::objects::JValue::Object(&intent)],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Open the OS app-settings page for this app.
     pub fn open_app_settings() -> Result<(), String> {
         let mut env = attach()?;
@@ -591,6 +803,38 @@ mod android {
         Err("platform bridge unavailable off-Android".to_string())
     }
 
+    pub fn daemon_service_start() -> Result<bool, String> {
+        Ok(true) // no-op on desktop: daemons run while the app runs
+    }
+
+    pub fn daemon_service_stop() -> Result<bool, String> {
+        Ok(true)
+    }
+
+    pub fn daemon_service_running() -> Result<bool, String> {
+        Ok(false)
+    }
+
+    pub fn supported_abi() -> Result<String, String> {
+        Err("platform bridge unavailable off-Android".to_string())
+    }
+
+    pub fn rnsd_start(_config_dir: &str) -> Result<bool, String> {
+        Err("platform bridge unavailable off-Android".to_string())
+    }
+
+    pub fn rnsd_stop() -> Result<bool, String> {
+        Err("platform bridge unavailable off-Android".to_string())
+    }
+
+    pub fn rnsd_running() -> Result<bool, String> {
+        Ok(false)
+    }
+
+    pub fn request_ignore_battery_optimizations() -> Result<(), String> {
+        Err("platform bridge unavailable off-Android".to_string())
+    }
+
     pub fn location_enabled() -> Result<bool, String> {
         Err("platform bridge unavailable off-Android".to_string())
     }
@@ -610,8 +854,10 @@ mod android {
 
 #[allow(unused_imports)] // host: consumed only by cfg(android) code
 pub use android::{
-    battery_state, cellular_connection, files_dir, live_recorder_start, live_recorder_stop,
+    battery_state, cellular_connection, daemon_service_running, daemon_service_start,
+    daemon_service_stop, files_dir, live_recorder_start, live_recorder_stop,
     live_recorder_write_audio, live_recorder_write_video, location_enabled, open_app_settings,
-    permission_granted, power_save_mode, read_asset, request_permissions, sdk_int,
-    should_show_rationale,
+    permission_granted, power_save_mode, read_asset, request_ignore_battery_optimizations,
+    request_permissions, rnsd_running, rnsd_start, rnsd_stop, sdk_int, should_show_rationale,
+    supported_abi,
 };

@@ -171,12 +171,6 @@ impl PqcLinkCrypto {
         self.get(peer).ok().map(|s| s.current_pk.clone())
     }
 
-    /// Updates the peer's live hybrid public key (e.g. after a rotation
-    /// observed in a received header).
-    pub fn set_peer_pk(&self, peer: &str, peer_pk: &str) -> Result<(), String> {
-        self.complete_handshake(peer, peer_pk)
-    }
-
     /// Idempotent session bootstrap: creates the session if missing, then
     /// pins the peer's public key. Safe to call before every encrypt.
     pub fn ensure_session(&self, peer: &str, context: &str, peer_pk: &str) -> Result<(), String> {
@@ -366,7 +360,7 @@ mod tests {
             "replay must fail"
         );
 
-        let mut tampered = cipher.clone();
+        let mut tampered = cipher;
         let last = tampered.len() - 1;
         tampered[last] ^= 0x01;
         assert!(

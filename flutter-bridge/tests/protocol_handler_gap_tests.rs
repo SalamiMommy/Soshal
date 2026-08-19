@@ -10,7 +10,6 @@ mod protocol_handler_gap_tests {
     use soshal_flutter_bridge::*;
     use std::fs;
     use std::path::PathBuf;
-    use std::sync::Mutex;
     fn cache_file(name: &str) -> PathBuf {
         let dir = dirs::cache_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -98,7 +97,7 @@ mod protocol_handler_gap_tests {
             let bytes = protocol_handler::protocol_handle_request(
                 "app".into(),
                 "avatar".into(),
-                "/a".repeat(64).into(),
+                "/a".repeat(64),
             )
             .await
             .unwrap();
@@ -109,7 +108,7 @@ mod protocol_handler_gap_tests {
             let meta = protocol_handler::protocol_get_metadata(
                 "app".into(),
                 "avatar".into(),
-                "/a".repeat(64).into(),
+                "/a".repeat(64),
             )
             .await
             .unwrap();

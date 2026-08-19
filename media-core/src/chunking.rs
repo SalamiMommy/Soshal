@@ -126,13 +126,10 @@ pub fn chunk_reader_with_data_params<R: std::io::Read>(
     let mut blob_hasher = blake3::Hasher::new();
     for item in chunker {
         let chunk = item.map_err(|e| format!("FastCDC chunking failed: {e}"))?;
-        let mut chunk_hasher = blake3::Hasher::new();
-        for block in chunk.data.chunks(16384) {
-            blob_hasher.update(block);
-            chunk_hasher.update(block);
-        }
+        blob_hasher.update(&chunk.data);
+        let chunk_hash = blake3::hash(&chunk.data).to_hex().to_string();
         let cref = ChunkRef {
-            blake3: chunk_hasher.finalize().to_hex().to_string(),
+            blake3: chunk_hash,
             offset: chunk.offset,
             len: chunk.data.len(),
         };
@@ -164,13 +161,10 @@ pub fn chunk_reader<R: std::io::Read>(reader: R) -> Result<ChunkManifest, String
     let mut blob_hasher = blake3::Hasher::new();
     for item in chunker {
         let chunk = item.map_err(|e| format!("FastCDC chunking failed: {e}"))?;
-        let mut chunk_hasher = blake3::Hasher::new();
-        for block in chunk.data.chunks(16384) {
-            blob_hasher.update(block);
-            chunk_hasher.update(block);
-        }
+        blob_hasher.update(&chunk.data);
+        let chunk_hash = blake3::hash(&chunk.data).to_hex().to_string();
         chunks.push(ChunkRef {
-            blake3: chunk_hasher.finalize().to_hex().to_string(),
+            blake3: chunk_hash,
             offset: chunk.offset,
             len: chunk.data.len(),
         });
@@ -202,13 +196,10 @@ where
     let mut blob_hasher = blake3::Hasher::new();
     for item in chunker {
         let chunk = item.map_err(|e| format!("FastCDC chunking failed: {e}"))?;
-        let mut chunk_hasher = blake3::Hasher::new();
-        for block in chunk.data.chunks(16384) {
-            blob_hasher.update(block);
-            chunk_hasher.update(block);
-        }
+        blob_hasher.update(&chunk.data);
+        let chunk_hash = blake3::hash(&chunk.data).to_hex().to_string();
         let cref = ChunkRef {
-            blake3: chunk_hasher.finalize().to_hex().to_string(),
+            blake3: chunk_hash,
             offset: chunk.offset,
             len: chunk.data.len(),
         };

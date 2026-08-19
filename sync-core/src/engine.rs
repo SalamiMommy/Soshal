@@ -95,19 +95,34 @@ async fn replay_outbox(db: &Database, client: &Client) {
                 Ok(_) => completed.push(item.id.clone()),
                 Err(e) => {
                     eprintln!("sync engine: outbox send {}: {e}", item.id);
-                    let _ =
-                        crate::outbox::mark_outbox_item_failed(db, &item.id, item.retry_count, now);
+                    let _ = crate::outbox::mark_outbox_item_failed(
+                        db,
+                        &item.id,
+                        item.retry_count + 1,
+                        retry_at(now, item.retry_count + 1),
+                    );
                 }
             },
             Err(e) => {
                 eprintln!("sync engine: outbox parse {}: {e}", item.id);
-                let _ = crate::outbox::mark_outbox_item_failed(db, &item.id, item.retry_count, now);
+                let _ = crate::outbox::mark_outbox_item_failed(
+                    db,
+                    &item.id,
+                    item.retry_count + 1,
+                    retry_at(now, item.retry_count + 1),
+                );
             }
         }
     }
     if !completed.is_empty() {
         let _ = crate::outbox::mark_outbox_items_completed(db, &completed);
     }
+}
+
+/// Exponential retry delay (seconds) for outbox failures, capped at 256 s.
+fn retry_at(now_secs: i64, retry_count: i32) -> i64 {
+    let shift = retry_count.clamp(0, 8) as u32;
+    now_secs + (1i64 << shift)
 }
 
 fn ingest_batch(

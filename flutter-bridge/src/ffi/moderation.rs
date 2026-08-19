@@ -286,54 +286,33 @@ pub fn moderation_compute_pdq_hash(image_bytes: Vec<u8>) -> Result<String, Strin
 }
 
 /// Create a FROST threshold jury case for community moderation.
+///
+/// NOTE: Real FROST multi-party threshold signing is a roadmap item.
+/// This function returns an explicit error rather than running a
+/// non-cryptographic simulation over FFI.
 #[frb(sync, serialize)]
 pub fn moderation_create_jury_case(
-    case_id: String,
-    target_pubkey: String,
-    reason: String,
-    threshold: u32,
-    total_jurors: u32,
-    group_pubkey: String,
+    _case_id: String,
+    _target_pubkey: String,
+    _reason: String,
+    _threshold: u32,
+    _total_jurors: u32,
+    _group_pubkey: String,
 ) -> Result<String, String> {
-    let case = soshal_moderation_core::jury::ModerationJuryCase::new(
-        case_id,
-        target_pubkey,
-        None,
-        reason,
-        threshold,
-        total_jurors,
-        group_pubkey,
-    );
-    serde_json::to_string(&case)
-        .map_err(|e| format!("json encode error: {e}"))
-        .into()
+    Err("FROST jury voting unavailable (roadmap)".to_string())
 }
 
 /// Submit a juror's partial signature vote to a moderation jury case.
+///
+/// NOTE: Real FROST multi-party threshold signing is a roadmap item.
+/// This function returns an explicit error rather than running a
+/// non-cryptographic simulation over FFI.
 #[frb(sync, serialize)]
 pub fn moderation_submit_jury_vote(
-    case_json: String,
-    vote_share_json: String,
+    _case_json: String,
+    _vote_share_json: String,
 ) -> Result<String, String> {
-    let mut case: soshal_moderation_core::jury::ModerationJuryCase =
-        serde_json::from_str(&case_json).map_err(|e| format!("invalid case json: {e}"))?;
-    let vote_share: soshal_crypto_core::frost::FrostSignatureShare =
-        serde_json::from_str(&vote_share_json)
-            .map_err(|e| format!("invalid vote share json: {e}"))?;
-
-    let is_threshold_reached = case.cast_vote(vote_share)?;
-    let verdict_sig = if is_threshold_reached {
-        Some(case.finalize_verdict()?)
-    } else {
-        None
-    };
-
-    super::util::json_ok(serde_json::json!({
-        "case_id": case.case_id,
-        "votes_count": case.votes_collected.len(),
-        "threshold_reached": is_threshold_reached,
-        "verdict_signature": verdict_sig,
-    }))
+    Err("FROST jury voting unavailable (roadmap)".to_string())
 }
 
 #[cfg(test)]

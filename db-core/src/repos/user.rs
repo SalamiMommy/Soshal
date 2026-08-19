@@ -79,27 +79,26 @@ impl<'a> UserRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
             let sql = "INSERT INTO users (pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14, CASE WHEN json_valid(?13) THEN json_array_length(?13) ELSE 0 END) ON CONFLICT(pubkey) DO UPDATE SET name=excluded.name, display_name=excluded.display_name, about=excluded.about, picture=excluded.picture, banner=excluded.banner, nip05=excluded.nip05, lud16=excluded.lud16, updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, contact_pubkeys=excluded.contact_pubkeys, relay_list=excluded.relay_list, follower_count=CASE WHEN json_valid(excluded.contact_pubkeys) THEN json_array_length(excluded.contact_pubkeys) ELSE 0 END";
+            let mut stmt = tx.prepare(sql).await?;
             for user in users {
-                tx.execute(
-                    sql,
-                    params![
-                        user.pubkey.as_str(),
-                        user.npub.as_str(),
-                        user.name.as_deref(),
-                        user.display_name.as_deref(),
-                        user.about.as_deref(),
-                        user.picture.as_deref(),
-                        user.banner.as_deref(),
-                        user.nip05.as_deref(),
-                        user.lud16.as_deref(),
-                        user.created_at,
-                        user.updated_at,
-                        user.metadata_json.as_deref(),
-                        user.contact_pubkeys.as_str(),
-                        user.relay_list.as_str(),
-                    ],
-                )
+                stmt.run(params![
+                    user.pubkey.as_str(),
+                    user.npub.as_str(),
+                    user.name.as_deref(),
+                    user.display_name.as_deref(),
+                    user.about.as_deref(),
+                    user.picture.as_deref(),
+                    user.banner.as_deref(),
+                    user.nip05.as_deref(),
+                    user.lud16.as_deref(),
+                    user.created_at,
+                    user.updated_at,
+                    user.metadata_json.as_deref(),
+                    user.contact_pubkeys.as_str(),
+                    user.relay_list.as_str(),
+                ])
                 .await?;
+                stmt.reset();
             }
             tx.commit().await?;
             Ok(())

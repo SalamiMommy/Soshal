@@ -124,7 +124,7 @@ mod bridge_gap_tests {
         let err = headless::background_sync_task(missing).unwrap_err();
         assert!(err.contains("Failed to open DB"), "{err}");
         let db = crate::test_util::init_db("bridge_gap", "headless");
-        assert_eq!(headless::background_sync_task(db.clone()).unwrap(), 0);
+        assert_eq!(headless::background_sync_task(db).unwrap(), 0);
         let _ = db;
     }
     #[test]
@@ -143,12 +143,9 @@ mod bridge_gap_tests {
         let pv: serde_json::Value = serde_json::from_str(&paged).unwrap();
         assert_eq!(pv.as_array().unwrap().len(), 1);
         assert!(bookmarks::bookmarks_delete("bm:evt1".into()).unwrap());
-        assert_eq!(
-            bookmarks::bookmarks_list(pk.clone(), 10, 0)
-                .unwrap()
-                .contains("evt2"),
-            true
-        );
+        assert!(bookmarks::bookmarks_list(pk, 10, 0)
+            .unwrap()
+            .contains("evt2"));
         let empty = bookmarks::bookmarks_resolve_post("nope".into()).unwrap();
         assert_eq!(empty, "");
         let (other, _) = gen_keys();

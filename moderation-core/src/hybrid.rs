@@ -79,7 +79,8 @@ pub fn evaluate_text_hybrid(text: &str, force_deep_scan: bool) -> HybridModerati
         };
     }
 
-    // Escalate to Tier 2: RoBERTa Deep Transformer
+    // Escalate to Tier 2: heuristic embedding model (synthetic weights; real
+    // ML transformer is a roadmap item — see roberta.rs module docs).
     let t2 = classify_text_roberta(text);
 
     // Ensemble verdicts
@@ -178,12 +179,14 @@ mod tests {
     }
 
     #[test]
-    fn test_hybrid_media_pdq_sentinel_match() {
-        // Synthetic sentinel buffer matching PDQ blocklist
+    fn test_hybrid_media_sentinel_buffer_does_not_match() {
+        // 32 raw bytes can't form a PDQ hash (needs >= 64x64 luma); the
+        // sentinel hex is a blocklist entry, not an image. Verify the
+        // pipeline treats it as an unmatchable tiny buffer.
         let sentinel_csam_hex = "f0f0f0f0f0f0f0f0a5a5a5a5a5a5a5a5123456789abcdef0123456789abcdef0";
         let raw_bytes = hex::decode(sentinel_csam_hex).unwrap();
 
         let res = evaluate_media_hybrid(&raw_bytes, "image/jpeg", &[]);
-        assert!(res.passed || !res.passed); // verifies pipeline execution
+        assert!(res.passed);
     }
 }

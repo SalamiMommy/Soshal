@@ -93,7 +93,7 @@ mod tests {
         let good = text_note(&keys, "relay payload", vec![]).unwrap();
         assert!(good.verify().is_ok());
         assert!(verify_event(&good));
-        let mut forged = good.clone();
+        let mut forged = good;
         forged.content = "tampered".to_string();
         forged.sig = Signature::from_slice(&[0u8; 64]).unwrap();
         forged.id = EventId::compute(

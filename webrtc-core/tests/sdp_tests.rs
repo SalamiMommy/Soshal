@@ -329,6 +329,25 @@ fn redact_private_ips_handles_ipv6_and_mixed_text() {
 }
 
 #[test]
+fn redact_private_ips_handles_ports_and_brackets() {
+    let out = redact_private_ips("connected to 192.168.1.50:8080 or 10.0.0.1:9000");
+    assert!(!out.contains("192.168.1.50"));
+    assert!(!out.contains("10.0.0.1"));
+    assert!(out.contains("0.0.0.0"));
+
+    let out_v6 = redact_private_ips("endpoint [fe80::1]:5000");
+    assert!(!out_v6.contains("fe80::1"));
+    assert!(out_v6.contains("0.0.0.0"));
+
+    let out_hex = redact_private_ips("abc[fe80::1]:5000");
+    assert!(
+        !out_hex.contains("fe80::1"),
+        "hex prefix before bracket must not bypass redaction"
+    );
+    assert!(out_hex.contains("0.0.0.0"));
+}
+
+#[test]
 fn ice_config_public_keeps_stun_servers() {
     let cfg = ice_config("public", "stun:stun.l.google.com:19302");
     assert_eq!(cfg["iceTransportPolicy"], "all");

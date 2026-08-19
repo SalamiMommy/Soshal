@@ -18,14 +18,6 @@ pub struct FrostKeyShare {
     pub group_pubkey_hex: String,
 }
 
-/// Round 1 Nonce Commitment issued by a juror.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FrostNonceCommitment {
-    pub participant_id: u32,
-    pub hiding_commitment_hex: String,
-    pub binding_commitment_hex: String,
-}
-
 /// Round 2 Partial Signature Share issued by a juror.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrostSignatureShare {

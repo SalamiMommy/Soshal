@@ -73,6 +73,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
   Map<String, bool> _daemonStatus = {};
   bool? _i2pdRunning;
   bool? _rnsdRunning;
+  bool? _serviceRunning;
   String? _daemonInfo;
 
   @override
@@ -545,12 +546,14 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
       final status = await DaemonService.getDaemonStatus();
       final i2pd = await DaemonService.isI2pdRunning();
       final rnsd = await DaemonService.isRnsdRunning();
+      final service = await DaemonService.isServiceRunning();
       if (mounted) {
         setState(() {
           _daemonsAvailable = available;
           _daemonStatus = status;
           _i2pdRunning = i2pd;
           _rnsdRunning = rnsd;
+          _serviceRunning = service;
           _daemonInfo = null;
         });
       }
@@ -559,6 +562,19 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
       if (mounted) setState(() => _daemonInfo = 'Daemon check failed: $e');
     }
     if (mounted) setState(() => _daemonBusy = false);
+  }
+
+  Future<void> _batteryExemption() async {
+    setState(() => _daemonBusy = true);
+    final ok = await DaemonService.requestBatteryExemption();
+    if (mounted) {
+      setState(() {
+        _daemonInfo = ok
+            ? 'Battery exemption dialog opened (Android)'
+            : 'Battery exemption unavailable (non-Android?)';
+        _daemonBusy = false;
+      });
+    }
   }
 
   Future<void> _daemonsExtract() async {
@@ -824,6 +840,27 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                   : _daemonsAvailable!
                       ? 'yes'
                       : 'no'),
+            ),
+            ListTile(
+              dense: true,
+              title: const Text('Background service'),
+              subtitle: const Text('keeps daemons alive while app is closed '
+                  '(Android foreground service)'),
+              trailing: Text(_serviceRunning == null
+                  ? 'unknown'
+                  : _serviceRunning!
+                      ? 'active'
+                      : 'off (desktop)'),
+            ),
+            ListTile(
+              dense: true,
+              title: const Text('Battery exemption'),
+              subtitle: const Text('stops OEM battery managers killing the '
+                  'service (Android)'),
+              trailing: TextButton(
+                onPressed: _daemonBusy ? null : _batteryExemption,
+                child: const Text('Request'),
+              ),
             ),
             ListTile(
               dense: true,

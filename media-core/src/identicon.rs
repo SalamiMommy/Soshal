@@ -3,7 +3,7 @@
 //! Renders a 5x5 mirrored grid (classic identicon style) as a PNG using only
 //! std FNV-1a hashing and the `image` crate — no randomness, no extra deps.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::Cursor;
 use std::sync::{Mutex, OnceLock};
 
@@ -25,11 +25,14 @@ const CELL: u32 = 40;
 /// Border thickness inside each cell, in pixels.
 const BORDER: u32 = 4;
 
-const CACHE_CAP: usize = 128;
+const CACHE_CAP: usize = 256;
 
-type AvatarCache = VecDeque<(String, Vec<u8>)>;
+struct LruAvatarCache {
+    map: HashMap<String, Vec<u8>>,
+    order: VecDeque<String>,
+}
 
-static AVATAR_CACHE: OnceLock<Mutex<AvatarCache>> = OnceLock::new();
+static AVATAR_CACHE: OnceLock<Mutex<LruAvatarCache>> = OnceLock::new();
 
 /// FNV-1a 64-bit hash over seed bytes (std only).
 fn fnv1a(seed: &str) -> u64 {
@@ -51,34 +54,58 @@ fn colors(hash: u64) -> ([u8; 3], [u8; 3]) {
 
 /// Deterministic avatar PNG bytes for a seed (pubkey). Same seed → same bytes.
 pub fn identicon_png(seed: &str) -> Vec<u8> {
-    let cache = AVATAR_CACHE.get_or_init(|| Mutex::new(VecDeque::new()));
+    let cache = AVATAR_CACHE.get_or_init(|| {
+        Mutex::new(LruAvatarCache {
+            map: HashMap::new(),
+            order: VecDeque::new(),
+        })
+    });
     {
-        let mut guard = cache.lock().unwrap();
-        if let Some(pos) = guard.iter().position(|(k, _)| k == seed) {
-            let entry = guard.remove(pos).expect("position from iter");
-            let png = entry.1.clone();
-            guard.push_back(entry);
-            return png;
+        let guard = cache.lock().unwrap();
+        if let Some(png) = guard.map.get(seed) {
+            return png.clone();
         }
     }
     let hash = fnv1a(seed);
     let (fg, bg) = colors(hash);
-    let mut img = image::RgbaImage::new(SIZE, SIZE);
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let (cx, cy) = ((x / CELL) as usize, (y / CELL) as usize);
-            // Mirror: derive the right 2 columns from the left 3.
-            let cx_m = cx.min(GRID - 1 - cx);
+
+    // Precompute 5x5 cell grid fill state once
+    let mut grid_filled = [[false; GRID]; GRID];
+    for (cx, row) in grid_filled.iter_mut().enumerate() {
+        let cx_m = cx.min(GRID - 1 - cx);
+        for (cy, cell) in row.iter_mut().enumerate() {
             let bit = (cx_m * GRID + cy) % 64;
-            let filled = (hash >> bit) & 1 == 1;
-            let in_cell = x % CELL >= BORDER
-                && x % CELL < CELL - BORDER
-                && y % CELL >= BORDER
-                && y % CELL < CELL - BORDER;
-            let color = if in_cell && filled { fg } else { bg };
-            img.put_pixel(x, y, image::Rgba([color[0], color[1], color[2], 255]));
+            *cell = (hash >> bit) & 1 == 1;
         }
     }
+
+    let fg_rgba = [fg[0], fg[1], fg[2], 255];
+    let bg_rgba = [bg[0], bg[1], bg[2], 255];
+
+    let mut raw_pixels = vec![0u8; (SIZE * SIZE * 4) as usize];
+    for y in 0..SIZE {
+        let cy = (y / CELL) as usize;
+        let in_cell_y = (y % CELL >= BORDER) && (y % CELL < CELL - BORDER);
+        let row_offset = (y * SIZE * 4) as usize;
+
+        for x in 0..SIZE {
+            let cx = (x / CELL) as usize;
+            let in_cell_x = (x % CELL >= BORDER) && (x % CELL < CELL - BORDER);
+            let px_offset = row_offset + (x * 4) as usize;
+
+            let color = if in_cell_x && in_cell_y && grid_filled[cx][cy] {
+                fg_rgba
+            } else {
+                bg_rgba
+            };
+
+            raw_pixels[px_offset..px_offset + 4].copy_from_slice(&color);
+        }
+    }
+
+    let img = image::RgbaImage::from_raw(SIZE, SIZE, raw_pixels)
+        .unwrap_or_else(|| image::RgbaImage::new(SIZE, SIZE));
+
     let mut cursor = Cursor::new(Vec::new());
     let png =
         match image::DynamicImage::ImageRgba8(img).write_to(&mut cursor, image::ImageFormat::Png) {
@@ -87,10 +114,15 @@ pub fn identicon_png(seed: &str) -> Vec<u8> {
         };
     {
         let mut guard = cache.lock().unwrap();
-        if guard.len() >= CACHE_CAP {
-            guard.pop_front();
+        if !guard.map.contains_key(seed) {
+            if guard.order.len() >= CACHE_CAP {
+                if let Some(oldest) = guard.order.pop_front() {
+                    guard.map.remove(&oldest);
+                }
+            }
+            guard.order.push_back(seed.to_string());
+            guard.map.insert(seed.to_string(), png.clone());
         }
-        guard.push_back((seed.to_string(), png.clone()));
     }
     png
 }

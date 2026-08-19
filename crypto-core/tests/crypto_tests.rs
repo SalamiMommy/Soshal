@@ -7,7 +7,7 @@ use soshal_crypto_core::base64::{
 use soshal_crypto_core::base64url::{from_base64url, to_base64url};
 use soshal_crypto_core::hash::{hkdf_sha256, hmac_sha256, sha256, sha256_hex};
 use soshal_crypto_core::key_derivation::derive_db_key;
-use soshal_crypto_core::nip44::{decrypt, encrypt, encrypt_padded, pad, unpad, SALT_LEN};
+use soshal_crypto_core::nip44::{decrypt, encrypt, encrypt_padded, pad, unpad};
 use soshal_crypto_core::pqc::{dsa, hybrid, kem};
 use soshal_crypto_core::zk_trust::{generate_zk_wot_proof, verify_zk_wot_proof};
 
@@ -133,7 +133,7 @@ fn nip44_adversarial_tests() {
     cut_mid.drain(20..30);
     assert!(decrypt(&base64_encode_bytes(&cut_mid), &key).is_err());
 
-    let mut bad_ct = bytes.clone();
+    let mut bad_ct = bytes;
     let mid = bad_ct.len() / 2;
     bad_ct[mid..mid + 4].copy_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
     assert!(decrypt(&base64_encode_bytes(&bad_ct), &key).is_err());
@@ -374,7 +374,7 @@ fn zk_trust_tests() {
     bad_b64.proof_bytes_b64 = "not base64!!!".into();
     assert!(!verify_zk_wot_proof(&bad_b64, "wot_root_abc", &[]));
 
-    let mut bad_len = proof.clone();
+    let mut bad_len = proof;
     bad_len.proof_bytes_b64 = base64_encode_bytes(&[0u8; 16]);
     assert!(!verify_zk_wot_proof(&bad_len, "wot_root_abc", &[]));
 }
@@ -400,6 +400,7 @@ fn base64url_padding_tests() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn pqc_error_paths_and_seed_determinism() {
     use soshal_crypto_core::pqc::{dsa, hybrid, kem};
     // Malformed keys/ciphertexts must fail, not panic.
@@ -429,7 +430,7 @@ fn pqc_error_paths_and_seed_determinism() {
     let (pk_b, sk_b) = dsa::keypair_from_seed(&seed).unwrap();
     assert_eq!(pk_a, pk_b);
     assert_eq!(sk_a, sk_b);
-    let sig = dsa::sign(&sk_a.clone().try_into().unwrap(), b"msg").unwrap();
+    let sig = dsa::sign(&sk_a.try_into().unwrap(), b"msg").unwrap();
     assert_eq!(sig.len(), dsa::SIGNATURE_LEN);
     dsa::verify(&pk_a, b"msg", &sig).unwrap();
     assert!(dsa::verify(&pk_a, b"other", &sig).is_err());

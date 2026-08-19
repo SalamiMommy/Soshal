@@ -27,13 +27,13 @@ pub fn nip44_open_group(payload: &str, key_hex: &str) -> Result<String, String> 
 
 /// Group message envelope: `{"v":1,"payload":<nip44 ciphertext>}` when the
 /// group has a shared key; plaintext otherwise (open groups).
-pub fn group_message_envelope(content: &str, key_hex: Option<&str>) -> String {
+pub fn group_message_envelope(content: &str, key_hex: Option<&str>) -> Result<String, String> {
     match key_hex {
         Some(k) => {
-            let payload = nip44_seal_group(content, k).unwrap_or_default();
-            format!(r#"{{"v":1,"payload":"{}"}}"#, payload)
+            let payload = nip44_seal_group(content, k)?;
+            Ok(format!(r#"{{"v":1,"payload":"{}"}}"#, payload))
         }
-        None => content.to_string(),
+        None => Ok(content.to_string()),
     }
 }
 
@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn sealed_envelope_roundtrip() {
         let key_hex = hex::encode([0x44u8; 32]);
-        let env = group_message_envelope("secret", Some(&key_hex));
+        let env = group_message_envelope("secret", Some(&key_hex)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&env).unwrap();
         assert_eq!(v["v"], 1);
         let payload = v["payload"].as_str().unwrap();

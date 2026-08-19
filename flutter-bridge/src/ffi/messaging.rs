@@ -237,12 +237,59 @@ pub fn messaging_send_group_dm(
     if content.is_empty() {
         return Err("message must not be empty".to_string()).into();
     }
-    let _participants: Vec<String> = serde_json::from_str(&participant_pubkeys_json)
+    let participants: Vec<String> = serde_json::from_str(&participant_pubkeys_json)
         .map_err(|e| format!("invalid participants JSON: {e}"))?;
     let payload = serde_json::json!({ "text": content, "groupId": group_id }).to_string();
-    let mut builder = EventBuilder::new(Kind::EncryptedDirectMessage, payload);
+
+    // Check if a group key exists in local DB
+    let sealed_payload = super::db::with_db_result(|db| {
+        let repo = soshal_db_core::repos::group::GroupRepo::new(db);
+        let key = repo.get_shared_key(&group_id)?;
+        Ok(match key {
+            Some(k) => {
+                let k = match k.strip_prefix("seal1:") {
+                    Some(sealed) => {
+                        let plain = soshal_crypto_core::at_rest::open_at_rest(
+                            &super::signer::signer_at_rest_key()
+                                .map_err(soshal_db_core::error::DbError::Migration)?,
+                            sealed,
+                        )
+                        .map_err(soshal_db_core::error::DbError::Migration)?;
+                        hex::encode(plain)
+                    }
+                    None => k,
+                };
+                Some(
+                    soshal_groups_core::group_enc::seal::group_message_envelope(&payload, Some(&k))
+                        .map_err(soshal_db_core::error::DbError::Migration)?,
+                )
+            }
+            None => None,
+        })
+    })?;
+
+    // Sealed path tags only the group; p-tagging every participant would
+    // leak the full participant list to relays. The unsealed fallback tags
+    // the single NIP-44 recipient so the relay can route it.
+    let fallback_recipient = participants.first().cloned();
+    let event_content = if let Some(sp) = sealed_payload.clone() {
+        sp
+    } else if let Some(first_peer) = fallback_recipient.clone() {
+        super::signer::signer_nip44_encrypt(payload, first_peer)?
+    } else {
+        soshal_groups_core::group_enc::seal::group_message_envelope(&payload, None)?
+    };
+
+    let mut builder = EventBuilder::new(Kind::EncryptedDirectMessage, event_content);
     if let Ok(tag) = nostr::event::Tag::parse(vec!["g".to_string(), group_id]) {
         builder = builder.tag(tag);
+    }
+    if sealed_payload.is_none() {
+        if let Some(peer) = fallback_recipient {
+            if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), peer]) {
+                builder = builder.tag(tag);
+            }
+        }
     }
     super::signer::sign_builder(builder)
 }

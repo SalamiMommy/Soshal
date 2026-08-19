@@ -234,17 +234,6 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  /// Extract hashtags from draft content (util-core variant, sync FFI).
-  List<String> utilExtractHashtags(String text) {
-    try {
-      return RustLib.instance.api.crateFfiUtilUtilExtractHashtags(text: text);
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      return const [];
-    }
-  }
-
   /// Publish a reply to an event
   Future<String> publishReply(
     String content,

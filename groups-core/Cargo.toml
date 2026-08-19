@@ -11,6 +11,9 @@ soshal-crypto-core = { path = "../crypto-core" }
 soshal-nostr-core = { path = "../nostr-core" }
 soshal-common-core = { path = "../common-core" }
 zeroize = { workspace = true }
+pbkdf2 = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
 
 [lints]
 workspace = true

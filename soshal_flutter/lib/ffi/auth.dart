@@ -24,7 +24,9 @@ String authGenerateMnemonic() =>
 bool authValidateMnemonic({required String mnemonic}) =>
     RustLib.instance.api.crateFfiAuthAuthValidateMnemonic(mnemonic: mnemonic);
 
-/// Restore a keypair from a BIP-39 mnemonic and unlock the in-process signer
+/// Restore a keypair from a BIP-39 mnemonic and unlock the in-process signer.
+/// The secret key is NOT returned across FFI — the signer is already unlocked
+/// in-process. Only the hex public key is returned.
 Future<String> authRestoreFromMnemonic(
         {required String mnemonic, required String passphrase}) =>
     RustLib.instance.api.crateFfiAuthAuthRestoreFromMnemonic(

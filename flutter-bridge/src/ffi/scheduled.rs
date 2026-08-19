@@ -199,7 +199,7 @@ mod tests {
         let _p = tmp_db("delete");
         let at = soshal_common_core::format::now_secs() + 3600;
         let id = scheduled_create("pk1".to_string(), "draft".to_string(), at, vec![]).unwrap();
-        assert!(scheduled_delete(id.clone()).unwrap());
+        assert!(scheduled_delete(id).unwrap());
         let arr = parse_arr(&scheduled_list("pk1".to_string()).unwrap());
         assert!(arr.is_empty(), "json: {arr:?}");
     }

@@ -94,6 +94,28 @@ class DaemonService {
     }
   }
 
+  /// Whether the daemon foreground service is active (Android; false
+  /// off-Android — daemons run with the app there).
+  static Future<bool> isServiceRunning() async {
+    try {
+      return ffi_daemon.daemonServiceRunning();
+    } catch (e) {
+      debugPrint('Failed to check daemon service: $e');
+      return false;
+    }
+  }
+
+  /// Fire the OS "ignore battery optimizations" dialog, so OEM battery
+  /// managers don't kill the foreground service (Android; false elsewhere).
+  static Future<bool> requestBatteryExemption() async {
+    try {
+      return ffi_daemon.daemonRequestBatteryExemption();
+    } catch (e) {
+      debugPrint('Failed to request battery exemption: $e');
+      return false;
+    }
+  }
+
   /// Daemon names
   static const String i2pd = 'i2pd';
   static const String freenet = 'freenet';

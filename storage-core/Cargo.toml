@@ -6,12 +6,8 @@ edition = "2021"
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-soshal-content-core = { path = "../content-core" }
 soshal-common-core = { path = "../common-core" }
-soshal-crypto-core = { path = "../crypto-core" }
-soshal-pqc-core = { path = "../pqc-core" }
 hex = { workspace = true }
-soshal-db-core = { path = "../db-core" }
 ring = { workspace = true }
 zeroize = { workspace = true }
 raptorq = "1.8"

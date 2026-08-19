@@ -104,7 +104,7 @@ impl<'a> MessageRepo<'a> {
             let sql = "INSERT INTO messages (id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted";
             // libsql quirk: re-executing a prepared UPSERT statement inside a
             // transaction silently no-ops on conflict; execute per row instead.
-            let mut convs: Vec<(&str, i64)> = Vec::new();
+            let mut convs: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
             for msg in messages {
                 if crate::repos::limits::row_too_big(&msg.content, &msg.tags_json) {
                     continue; // relay content too large: skip, never store
@@ -125,7 +125,10 @@ impl<'a> MessageRepo<'a> {
                 )
                 .await?;
                 if msg.conversation_id.starts_with("conv:") {
-                    convs.push((msg.conversation_id.as_str(), msg.created_at));
+                    convs
+                        .entry(msg.conversation_id.as_str())
+                        .and_modify(|ts| *ts = (*ts).max(msg.created_at))
+                        .or_insert(msg.created_at);
                 }
             }
             for (conv_id, at) in convs {

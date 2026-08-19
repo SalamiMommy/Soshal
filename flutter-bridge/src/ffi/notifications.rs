@@ -466,7 +466,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("app.db").to_string_lossy().to_string();
-        session::session_load(db_path.clone()).unwrap();
+        session::session_load(db_path).unwrap();
         session::session_add_account("pk1".to_string(), "npub1pk1".to_string(), "[]".to_string())
             .unwrap();
         // Wrong account for the active session.
@@ -620,7 +620,7 @@ mod tests {
         let reloaded = session::session_load(db_path.clone()).unwrap();
         assert!(reloaded.contains("tok123"));
         assert!(notifications_unregister_push("pk1".to_string()).unwrap());
-        let reloaded = session::session_load(db_path.clone()).unwrap();
+        let reloaded = session::session_load(db_path).unwrap();
         assert!(!reloaded.contains("tok123"));
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -728,7 +728,7 @@ mod tests {
         let db_path = dir.join("app.db").to_string_lossy().to_string();
         db::db_init(db_path.clone()).unwrap();
         // Empty session: no active account.
-        session::session_load(db_path.clone()).unwrap();
+        session::session_load(db_path).unwrap();
         let err = notifications_unregister_push("pk1".to_string()).unwrap_err();
         assert_eq!(err, "push token must be registered for the active account");
         // Wrong account vs the active one.

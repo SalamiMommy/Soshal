@@ -74,10 +74,7 @@ fn xor_distance_is_symmetric_and_unique() {
     assert_ne!(d1, [0u8; 32]);
     let c: NodeId = [0x00; 32];
     let d3 = xor_distance(&a, &c);
-    assert_eq!(d3[0], 0xAA);
-    for i in 1..32 {
-        assert_eq!(d3[i], 0xAA);
-    }
+    assert_eq!(d3, [0xAA; 32]);
 }
 
 #[test]

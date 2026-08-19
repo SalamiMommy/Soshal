@@ -82,12 +82,13 @@ impl ZkRollupEngine {
 
         // Verify commitment binding:
         // Hash(genesis_root || final_state_root || operation_count) must match proof tag
-        let mut input = Vec::new();
-        input.extend_from_slice(rollup.thread_id.as_bytes());
-        input.extend_from_slice(rollup.genesis_root.as_bytes());
-        input.extend_from_slice(rollup.final_state_root.as_bytes());
-        input.extend_from_slice(&rollup.operation_count.to_le_bytes());
-        let expected_digest = soshal_crypto_core::hash::sha256(&input);
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(rollup.thread_id.as_bytes());
+        hasher.update(rollup.genesis_root.as_bytes());
+        hasher.update(rollup.final_state_root.as_bytes());
+        hasher.update(rollup.operation_count.to_le_bytes());
+        let expected_digest = hasher.finalize();
 
         // Commitment check: first 32 bytes must contain the expected digest
         let is_valid = proof_bytes.len() >= 32 && proof_bytes[0..32] == expected_digest[..];
@@ -121,29 +122,64 @@ impl ZkRollupEngine {
         }
 
         block_on(async {
-            // Ensure transactional update of final state root in SQLite
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS zk_state_rollups (
-                    thread_id TEXT PRIMARY KEY,
-                    final_state_root TEXT NOT NULL,
-                    operation_count INTEGER NOT NULL,
-                    verified_at INTEGER NOT NULL
-                )",
-                (),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-
             let now = soshal_common_core::format::now_secs();
 
+            if rollup.operation_count > i64::MAX as u64 {
+                return Err("operation count exceeds i64 range".to_string());
+            }
+
+            // Anchor check: a rollup for a thread must agree with the
+            // stored genesis and never regress the operation count —
+            // otherwise a forged self-consistent commitment (no anchor to
+            // prior state) could overwrite or downgrade thread state.
+            let existing: Option<(String, i64)> = {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT genesis_root, operation_count FROM zk_state_rollups WHERE thread_id = ?1",
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let mut rows = stmt
+                    .query(params![rollup.thread_id.as_str()])
+                    .await
+                    .map_err(|e| e.to_string())?;
+                match rows.next().await.map_err(|e| e.to_string())? {
+                    Some(row) => Some((
+                        row.get(0).map_err(|e| e.to_string())?,
+                        row.get(1).map_err(|e| e.to_string())?,
+                    )),
+                    None => None,
+                }
+            };
+            if let Some((stored_genesis, stored_ops)) = existing {
+                if stored_genesis != rollup.genesis_root {
+                    return Err(format!(
+                        "rollup genesis mismatch for {}: stored {} vs proposed {}",
+                        rollup.thread_id, stored_genesis, rollup.genesis_root
+                    ));
+                }
+                if rollup.operation_count < stored_ops as u64 {
+                    return Err(format!(
+                        "rollup operation count regression for {}: stored {stored_ops} vs proposed {}",
+                        rollup.thread_id, rollup.operation_count
+                    ));
+                }
+            }
+
             conn.execute(
-                "INSERT INTO zk_state_rollups (thread_id, final_state_root, operation_count, verified_at)
-                 VALUES (?1, ?2, ?3, ?4)
+                "INSERT INTO zk_state_rollups (thread_id, genesis_root, final_state_root, operation_count, verified_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(thread_id) DO UPDATE SET
                     final_state_root = excluded.final_state_root,
                     operation_count = excluded.operation_count,
                     verified_at = excluded.verified_at",
-                params![rollup.thread_id.as_str(), rollup.final_state_root.as_str(), rollup.operation_count as i64, now],
+                params![
+                    rollup.thread_id.as_str(),
+                    rollup.genesis_root.as_str(),
+                    rollup.final_state_root.as_str(),
+                    rollup.operation_count as i64,
+                    now
+                ],
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -248,6 +284,39 @@ mod tests {
         assert!(ZkRollupEngine::new()
             .apply_rollup_to_db(&conn, &rollup)
             .is_err());
+    }
+
+    #[test]
+    fn apply_rollup_to_db_rejects_genesis_and_regression() {
+        let db = soshal_test_util::test_db();
+        let conn = db.conn().unwrap();
+        let engine = ZkRollupEngine::new();
+        assert!(engine
+            .apply_rollup_to_db(&conn, &valid_rollup("t6", 5))
+            .unwrap());
+
+        let mut forged_genesis = valid_rollup("t6", 6);
+        forged_genesis.genesis_root =
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string();
+        // Recompute the commitment so the rollup is self-consistent; only the
+        // anchor check (genesis vs stored row) may reject it.
+        {
+            use sha2::{Digest, Sha256};
+            let mut h = Sha256::new();
+            h.update(forged_genesis.thread_id.as_bytes());
+            h.update(forged_genesis.genesis_root.as_bytes());
+            h.update(forged_genesis.final_state_root.as_bytes());
+            h.update(&forged_genesis.operation_count.to_le_bytes());
+            forged_genesis.proof_bytes_hex = hex::encode(h.finalize());
+        }
+        let res = engine.apply_rollup_to_db(&conn, &forged_genesis);
+        assert!(res.is_err(), "genesis mismatch must reject");
+        assert!(res.unwrap_err().contains("genesis"));
+
+        let regressed = valid_rollup("t6", 3);
+        let res = engine.apply_rollup_to_db(&conn, &regressed);
+        assert!(res.is_err(), "operation count regression must reject");
+        assert!(res.unwrap_err().contains("regression"));
     }
 
     #[test]

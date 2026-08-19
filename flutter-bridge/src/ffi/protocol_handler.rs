@@ -412,6 +412,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
     async fn test_handle_avatar_falls_back_to_identicon_on_invalid_picture_url() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()

@@ -22,6 +22,7 @@ pub struct GroupInfo {
     pub is_member: bool,
     pub role: String,
     pub created_at: u64,
+    pub is_private: bool,
 }
 
 fn row_to_group(row: &soshal_db_core::repos::group::GroupRow, viewer: Option<&str>) -> GroupInfo {
@@ -39,17 +40,16 @@ fn row_to_group(row: &soshal_db_core::repos::group::GroupRow, viewer: Option<&st
             "member".to_string()
         },
         created_at: row.created_at.max(0) as u64,
+        is_private: row.access_type == "private" || row.password_hash.is_some(),
     }
 }
 
 fn member_count(group_id: &str) -> i32 {
-    super::db::db_query_raw(format!(
-        "SELECT COUNT(*) AS c FROM group_members WHERE group_id = '{}'",
-        group_id.replace('\'', "''")
-    ))
-    .ok()
-    .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(&json).ok())
-    .and_then(|rows| rows.first().and_then(|r| r["c"].as_i64()))
+    super::db::with_db_result(|db| {
+        let repo = GroupRepo::new(db);
+        let counts = repo.member_count_many(&[group_id.to_string()])?;
+        Ok(counts.get(group_id).copied().unwrap_or(0))
+    })
     .unwrap_or(0) as i32
 }
 
@@ -101,11 +101,39 @@ pub fn groups_get_members(group_id: String) -> Result<Vec<String>, String> {
 }
 
 /// Join a group: insert the local membership row (admin approval flows stay
-/// relay-side; the local row records intent).
+/// relay-side; the local row records intent). For private groups, verifies
+/// the provided password before joining.
 #[frb(sync, serialize)]
-pub fn groups_join(group_id: String, user_pubkey: String) -> Result<bool, String> {
+pub fn groups_join(
+    group_id: String,
+    user_pubkey: String,
+    password: Option<String>,
+) -> Result<bool, String> {
     super::db::with_db_result(|db| {
-        GroupRepo::new(db).add_member(
+        let repo = GroupRepo::new(db);
+        let group = repo
+            .get_by_id(&group_id)?
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
+        if group.access_type == "private" || group.password_hash.is_some() {
+            let stored_hash = group.password_hash.as_deref().unwrap_or("");
+            if stored_hash.is_empty() {
+                return Err(soshal_db_core::error::DbError::Oversized(
+                    "private community has no password on record; cannot verify access".to_string(),
+                ));
+            }
+            let candidate = password.as_deref().unwrap_or("").trim();
+            if candidate.is_empty() {
+                return Err(soshal_db_core::error::DbError::Oversized(
+                    "password required for private community".to_string(),
+                ));
+            }
+            if !soshal_groups_core::access::verify_community_password(candidate, stored_hash) {
+                return Err(soshal_db_core::error::DbError::Oversized(
+                    "incorrect community password".to_string(),
+                ));
+            }
+        }
+        repo.add_member(
             &group_id,
             &user_pubkey,
             "member",
@@ -151,6 +179,7 @@ pub fn groups_post_message(
                     None => k,
                 };
                 group_message_envelope(&content, Some(&k))
+                    .map_err(soshal_db_core::error::DbError::Migration)?
             }
             None => content,
         })
@@ -695,7 +724,19 @@ pub fn groups_create(
     description: String,
     picture_url: String,
     creator_pubkey: String,
+    is_private: bool,
+    password: Option<String>,
 ) -> Result<String, String> {
+    let password_hash = if is_private {
+        let pwd = password.as_deref().unwrap_or("").trim();
+        if pwd.is_empty() {
+            return Err("password required for private community".to_string());
+        }
+        Some(soshal_groups_core::access::hash_community_password(pwd)?)
+    } else {
+        None
+    };
+    let access_type = if is_private { "private" } else { "open" }.to_string();
     let now = soshal_common_core::format::now_secs();
     let row = soshal_db_core::repos::group::GroupRow {
         id: group_id.clone(),
@@ -713,9 +754,10 @@ pub fn groups_create(
         pubkey: creator_pubkey.clone(),
         created_at: now,
         updated_at: now,
-        access_type: "open".to_string(),
+        access_type,
         relay: None,
         sync_status: "local".to_string(),
+        password_hash,
     };
     super::db::with_db_result(|db| {
         GroupRepo::new(db).upsert(&row)?;
@@ -723,6 +765,77 @@ pub fn groups_create(
         Ok(())
     })?;
     groups_get_group_info(group_id)
+}
+
+/// Change or remove group password and update private/open access type (owner only).
+#[frb(sync, serialize)]
+pub fn groups_set_password(
+    group_id: String,
+    new_password: Option<String>,
+    actor_pubkey: String,
+) -> Result<bool, String> {
+    require_owner(&group_id, &actor_pubkey)?;
+    let (access_type, password_hash) = match new_password {
+        Some(p) if !p.trim().is_empty() => {
+            let h = soshal_groups_core::access::hash_community_password(p.trim())?;
+            ("private".to_string(), Some(h))
+        }
+        _ => ("open".to_string(), None),
+    };
+    super::db::with_db_result(|db| {
+        let repo = GroupRepo::new(db);
+        let mut group = repo
+            .get_by_id(&group_id)?
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
+        group.access_type = access_type;
+        group.password_hash = password_hash;
+        group.updated_at = soshal_common_core::format::now_secs();
+        repo.upsert(&group)?;
+        Ok(true)
+    })
+}
+
+/// Test whether candidate password matches the group's password hash.
+/// Rate-limited per group (5 attempts / 30 s) so the FFI surface cannot be
+/// used as an offline-style guess oracle.
+#[frb(sync, serialize)]
+pub fn groups_verify_password(group_id: String, password: String) -> Result<bool, String> {
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex};
+    static ATTEMPTS: LazyLock<Mutex<HashMap<String, (u32, i64)>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    const MAX_ATTEMPTS: u32 = 5;
+    const WINDOW_SECS: i64 = 30;
+
+    let now = soshal_common_core::format::now_secs();
+    let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+    let entry = attempts.entry(group_id.clone()).or_insert((0, now));
+    if entry.1 + WINDOW_SECS < now {
+        *entry = (0, now);
+    }
+    if entry.0 >= MAX_ATTEMPTS {
+        return Err(format!(
+            "too many password attempts for this group; retry in {}s",
+            entry.1 + WINDOW_SECS - now
+        ));
+    }
+    entry.0 += 1;
+    drop(attempts);
+
+    super::db::with_db_result(|db| {
+        let repo = GroupRepo::new(db);
+        let group = repo
+            .get_by_id(&group_id)?
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
+        let stored = group.password_hash.as_deref().unwrap_or("");
+        if stored.is_empty() {
+            return Ok(true);
+        }
+        Ok(soshal_groups_core::access::verify_community_password(
+            password.trim(),
+            stored,
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -772,6 +885,8 @@ mod tests {
             "a test group".to_string(),
             String::new(),
             owner.to_string(),
+            false,
+            None,
         )
         .unwrap();
     }
@@ -792,6 +907,8 @@ mod tests {
             "a test group".to_string(),
             "https://example.com/pic.png".to_string(),
             owner.clone(),
+            false,
+            None,
         )
         .unwrap();
         let v: serde_json::Value = serde_json::from_str(&info).unwrap();
@@ -799,6 +916,7 @@ mod tests {
         assert_eq!(v["owner"], owner);
         assert_eq!(v["role"], "owner");
         assert_eq!(v["members"], 1);
+        assert_eq!(v["is_private"], false);
 
         let list = groups_fetch_groups(owner).unwrap();
         assert!(list.contains("\"g1\""));
@@ -828,7 +946,7 @@ mod tests {
         create_group("g2", &owner);
         insert_user(&member);
 
-        assert!(groups_join("g2".to_string(), member.clone()).unwrap());
+        assert!(groups_join("g2".to_string(), member.clone(), None).unwrap());
 
         let members = groups_get_members("g2".to_string()).unwrap();
         assert_eq!(members.len(), 2);
@@ -854,7 +972,7 @@ mod tests {
         let member = "b".repeat(64);
         create_group("g3", &owner);
         insert_user(&member);
-        groups_join("g3".to_string(), member.clone()).unwrap();
+        groups_join("g3".to_string(), member.clone(), None).unwrap();
 
         let denied = groups_set_member_role(
             "g3".to_string(),
@@ -876,7 +994,7 @@ mod tests {
 
         let denied = groups_remove_member("g3".to_string(), member.clone(), member.clone());
         assert!(denied.unwrap_err().contains("only the group owner"));
-        assert!(groups_remove_member("g3".to_string(), member.clone(), owner).unwrap());
+        assert!(groups_remove_member("g3".to_string(), member, owner).unwrap());
 
         let members = groups_get_members("g3".to_string()).unwrap();
         assert_eq!(members.len(), 1);
@@ -1062,9 +1180,9 @@ mod tests {
 
         let denied = groups_rooms_delete(room_id.clone(), "b".repeat(64));
         assert!(denied.unwrap_err().contains("only the group owner"));
-        assert!(groups_rooms_delete(room_id.clone(), owner.clone()).unwrap());
+        assert!(groups_rooms_delete(room_id.clone(), owner).unwrap());
         assert_eq!(groups_rooms_list("g6".to_string()).unwrap(), "[]");
-        let orphan = groups_fetch_messages("g6".to_string(), room_id.clone(), 10, 0).unwrap();
+        let orphan = groups_fetch_messages("g6".to_string(), room_id, 10, 0).unwrap();
         assert_eq!(orphan, "[]");
 
         super::super::signer::signer_lock().unwrap();
@@ -1103,7 +1221,7 @@ mod tests {
         .unwrap();
         let nested = groups_threads_reply(
             thread_id.clone(),
-            reply_id.clone(),
+            reply_id,
             "nested reply".to_string(),
             member.clone(),
         )
@@ -1119,14 +1237,14 @@ mod tests {
         assert!(list.contains("\"reply_count\":2"));
         assert!(list.contains("\"reaction_count\":0"));
 
-        let denied = groups_threads_pin(thread_id.clone(), true, member.clone());
+        let denied = groups_threads_pin(thread_id.clone(), true, member);
         assert!(denied.unwrap_err().contains("only the group owner"));
         assert!(groups_threads_pin(thread_id.clone(), true, owner.clone()).unwrap());
         let pinned = groups_threads_list("g7".to_string(), "newest".to_string()).unwrap();
         assert!(pinned.contains("\"is_pinned\":true"));
 
-        assert!(groups_threads_delete(thread_id.clone(), owner.clone()).unwrap());
-        assert_eq!(groups_threads_replies(thread_id.clone()).unwrap(), "[]");
+        assert!(groups_threads_delete(thread_id.clone(), owner).unwrap());
+        assert_eq!(groups_threads_replies(thread_id).unwrap(), "[]");
         assert_eq!(
             groups_threads_list("g7".to_string(), "newest".to_string()).unwrap(),
             "[]"
@@ -1155,11 +1273,11 @@ mod tests {
         .unwrap();
         // Distinct timestamps so the newest sort has a deterministic order.
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        let fresh = groups_threads_create(
+        let _fresh = groups_threads_create(
             "g9".to_string(),
             "Fresh quiet thread".to_string(),
             "".to_string(),
-            owner.clone(),
+            owner,
         )
         .unwrap();
 
@@ -1201,10 +1319,7 @@ mod tests {
             member.clone(),
         )
         .unwrap();
-        assert!(
-            groups_threads_react(old.clone(), rpl.clone(), other.clone(), "🔥".to_string(),)
-                .unwrap()
-        );
+        assert!(groups_threads_react(old.clone(), rpl.clone(), other, "🔥".to_string(),).unwrap());
         let summary = groups_threads_reactions(old.clone(), member.clone()).unwrap();
         assert!(summary.contains(&format!("\"reply_id\":\"{}\"", rpl)));
         assert!(summary.contains("\"emoji\":\"🔥\""));
@@ -1214,10 +1329,7 @@ mod tests {
             groups_threads_react(old.clone(), String::new(), member.clone(), String::new())
                 .is_err()
         );
-        assert!(
-            groups_threads_react(old.clone(), String::new(), member.clone(), "x".repeat(20))
-                .is_err()
-        );
+        assert!(groups_threads_react(old, String::new(), member, "x".repeat(20)).is_err());
 
         // Popular sort ranks the engaged old thread above the fresh quiet one
         // (pinned state equal, so pure hot score decides).
@@ -1266,10 +1378,10 @@ mod tests {
         let presence = groups_voice_presence(ch.clone()).unwrap();
         assert!(!presence.contains(&format!("\"pubkey\":\"{}\"", member)));
 
-        assert!(groups_voice_channels_delete(ch.clone(), member.clone()).is_err());
-        assert!(groups_voice_channels_delete(ch.clone(), owner.clone()).unwrap());
+        assert!(groups_voice_channels_delete(ch.clone(), member).is_err());
+        assert!(groups_voice_channels_delete(ch.clone(), owner).unwrap());
         assert_eq!(groups_voice_channels_list("g8".to_string()).unwrap(), "[]");
-        assert_eq!(groups_voice_presence(ch.clone()).unwrap(), "[]");
+        assert_eq!(groups_voice_presence(ch).unwrap(), "[]");
     }
 
     #[test]
@@ -1282,7 +1394,7 @@ mod tests {
         assert!(groups_rooms_delete("nope".to_string(), owner.clone()).is_err());
         assert!(groups_threads_delete("nope".to_string(), owner.clone()).is_err());
         assert!(groups_threads_pin("nope".to_string(), true, owner.clone()).is_err());
-        assert!(groups_voice_channels_delete("nope".to_string(), owner.clone()).is_err());
+        assert!(groups_voice_channels_delete("nope".to_string(), owner).is_err());
     }
 
     #[test]
@@ -1296,5 +1408,118 @@ mod tests {
         let _db = TestDb::init("msg_locked");
         super::super::signer::signer_lock().unwrap();
         assert!(groups_post_message("g5".to_string(), String::new(), "hi".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_private_group_password_flow() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("private_pwd");
+        let owner = "a".repeat(64);
+        let member = "b".repeat(64);
+        insert_user(&owner);
+        insert_user(&member);
+
+        // Missing password for private group fails
+        assert!(groups_create(
+            "priv1".to_string(),
+            "Secret Society".to_string(),
+            "Top secret".to_string(),
+            "".to_string(),
+            owner.clone(),
+            true,
+            None,
+        )
+        .is_err());
+
+        // Create private group with password
+        let created_json = groups_create(
+            "priv1".to_string(),
+            "Secret Society".to_string(),
+            "Top secret".to_string(),
+            "".to_string(),
+            owner,
+            true,
+            Some("OpenSesame123".to_string()),
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&created_json).unwrap();
+        assert_eq!(v["is_private"], true);
+
+        // Joining without password fails
+        let no_pwd_err = groups_join("priv1".to_string(), member.clone(), None);
+        assert!(no_pwd_err.is_err());
+        assert!(no_pwd_err.unwrap_err().contains("password required"));
+
+        // Joining with wrong password fails
+        let wrong_pwd_err = groups_join(
+            "priv1".to_string(),
+            member.clone(),
+            Some("wrongpwd".to_string()),
+        );
+        assert!(wrong_pwd_err.is_err());
+        assert!(wrong_pwd_err
+            .unwrap_err()
+            .contains("incorrect community password"));
+
+        // Joining with correct password succeeds
+        assert!(groups_join(
+            "priv1".to_string(),
+            member.clone(),
+            Some("OpenSesame123".to_string()),
+        )
+        .unwrap());
+
+        let members = groups_get_members("priv1".to_string()).unwrap();
+        assert_eq!(members.len(), 2);
+        assert!(members.contains(&member));
+    }
+
+    #[test]
+    fn test_set_password_and_verify() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("set_pwd");
+        let owner = "a".repeat(64);
+        let non_owner = "b".repeat(64);
+        insert_user(&owner);
+        insert_user(&non_owner);
+        create_group("pub_grp", &owner);
+
+        let info: serde_json::Value =
+            serde_json::from_str(&groups_get_group_info("pub_grp".to_string()).unwrap()).unwrap();
+        assert_eq!(info["is_private"], false);
+
+        // Non-owner cannot set password
+        assert!(groups_set_password(
+            "pub_grp".to_string(),
+            Some("NewSecret99".to_string()),
+            non_owner,
+        )
+        .is_err());
+
+        // Owner sets password -> becomes private
+        assert!(groups_set_password(
+            "pub_grp".to_string(),
+            Some("NewSecret99".to_string()),
+            owner.clone(),
+        )
+        .unwrap());
+
+        let info2: serde_json::Value =
+            serde_json::from_str(&groups_get_group_info("pub_grp".to_string()).unwrap()).unwrap();
+        assert_eq!(info2["is_private"], true);
+
+        // Verify password
+        assert!(groups_verify_password("pub_grp".to_string(), "NewSecret99".to_string()).unwrap());
+        assert!(!groups_verify_password("pub_grp".to_string(), "wrong".to_string()).unwrap());
+
+        // Owner clears password -> becomes open
+        assert!(groups_set_password("pub_grp".to_string(), None, owner).unwrap());
+        let info3: serde_json::Value =
+            serde_json::from_str(&groups_get_group_info("pub_grp".to_string()).unwrap()).unwrap();
+        assert_eq!(info3["is_private"], false);
     }
 }

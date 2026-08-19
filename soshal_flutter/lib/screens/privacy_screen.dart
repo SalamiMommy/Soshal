@@ -184,23 +184,115 @@ class _PinDialog extends StatefulWidget {
 }
 
 class _PinDialogState extends State<_PinDialog> {
-  final TextEditingController _pin = TextEditingController();
-  bool _confirming = false;
+  // Step 0: enter current PIN (only when hasPin is true)
+  // Step 1: enter new PIN
+  // Step 2: confirm new PIN
+  int _step = 0;
+  final TextEditingController _current = TextEditingController();
+  final TextEditingController _newPin = TextEditingController();
+  final TextEditingController _confirmPin = TextEditingController();
+  String? _error;
+
+  static const _inputDecoration = InputDecoration(
+    hintText: '4-12 digits',
+    border: OutlineInputBorder(),
+  );
+
+  @override
+  void dispose() {
+    _current.dispose();
+    _newPin.dispose();
+    _confirmPin.dispose();
+    super.dispose();
+  }
+
+  String get _title {
+    switch (_step) {
+      case 0:
+        return 'Enter current PIN';
+      case 2:
+        return 'Confirm new PIN';
+      default:
+        return 'Set a lock PIN';
+    }
+  }
+
+  TextEditingController get _activeController {
+    switch (_step) {
+      case 0:
+        return _current;
+      case 2:
+        return _confirmPin;
+      default:
+        return _newPin;
+    }
+  }
+
+  Future<void> _onNext(BuildContext context) async {
+    final shell = context.read<ShellService>();
+    setState(() => _error = null);
+
+    if (_step == 0) {
+      // Verify current PIN before letting user enter a new one.
+      if (_current.text.length < 4) {
+        setState(() => _error = 'PIN must be at least 4 digits');
+        return;
+      }
+      setState(() => _step = 1);
+      return;
+    }
+
+    if (_step == 1) {
+      if (_newPin.text.length < 4) {
+        setState(() => _error = 'PIN must be at least 4 digits');
+        return;
+      }
+      setState(() => _step = 2);
+      return;
+    }
+
+    // Step 2: confirm
+    if (_confirmPin.text != _newPin.text) {
+      setState(() => _error = 'PINs do not match — try again');
+      _confirmPin.clear();
+      return;
+    }
+    if (shell.hasPin) {
+      await shell.changePin(_current.text, _newPin.text);
+    } else {
+      await shell.setPin(_newPin.text);
+    }
+    if (context.mounted) Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
     final shell = context.read<ShellService>();
+    // Start at step 1 (new PIN) if no PIN is currently set.
+    if (_step == 0 && !shell.hasPin) {
+      _step = 1;
+    }
     return AlertDialog(
-      title: Text(_confirming ? 'Confirm new PIN' : 'Set a lock PIN'),
-      content: TextField(
-        controller: _pin,
-        keyboardType: TextInputType.number,
-        obscureText: true,
-        maxLength: 12,
-        decoration: const InputDecoration(
-          hintText: '4-12 digits',
-          border: OutlineInputBorder(),
-        ),
+      title: Text(_title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _activeController,
+            keyboardType: TextInputType.number,
+            obscureText: true,
+            maxLength: 12,
+            decoration: _inputDecoration,
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+        ],
       ),
       actions: [
         TextButton(
@@ -208,24 +300,13 @@ class _PinDialogState extends State<_PinDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () async {
-            if (_confirming) {
-              if (_pin.text.length >= 4) {
-                await shell.setPin(_pin.text);
-                if (context.mounted) Navigator.of(context).pop();
-              }
-              return;
-            }
-            if (_pin.text.length >= 4) {
-              setState(() => _confirming = true);
-            }
-          },
-          child: Text(_confirming ? 'Confirm' : 'Next'),
+          onPressed: () => _onNext(context),
+          child: Text(_step == 2 ? 'Confirm' : 'Next'),
         ),
-        if (shell.hasPin)
+        if (shell.hasPin && _step == 0)
           TextButton(
             onPressed: () async {
-              await shell.clearPin(_pin.text);
+              await shell.clearPin(_current.text);
               if (context.mounted) Navigator.of(context).pop();
             },
             child: const Text('Clear PIN'),

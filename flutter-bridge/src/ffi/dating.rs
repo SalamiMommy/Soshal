@@ -132,7 +132,7 @@ fn opt_str(s: &str) -> Option<String> {
 
 fn validate_enum(field: &str, value: &str, allowed: &[&str]) -> Result<(), String> {
     if !value.trim().is_empty() && !allowed.contains(&value.trim()) {
-        return Err(format!("invalid {field}: {value}").to_string());
+        return Err(format!("invalid {field}: {value}"));
     }
     Ok(())
 }
@@ -158,7 +158,7 @@ fn resolve_location(location: &str) -> Result<String, String> {
             .ok_or_else(|| "invalid coordinates (lat -90..=90, lon -180..=180)".to_string());
     }
     if !soshal_spatial_core::geohash::is_valid_geohash(trimmed) {
-        return Err(format!("invalid geohash: {trimmed}").to_string());
+        return Err(format!("invalid geohash: {trimmed}"));
     }
     Ok(trimmed.to_string())
 }
@@ -180,7 +180,7 @@ fn validate_attributes(
     validate_enum("gender", gender, &GENDERS)?;
     validate_enum("seeking", seeking, &SEEKING)?;
     if height_cm > 0 && !(100..=250).contains(&height_cm) {
-        return Err(format!("height must be 100..=250 cm, got {height_cm}").to_string());
+        return Err(format!("height must be 100..=250 cm, got {height_cm}"));
     }
     validate_enum("bodyType", body_type, &BODY_TYPES)?;
     validate_enum("smoking", smoking, &SMOKING)?;
@@ -193,7 +193,9 @@ fn validate_attributes(
     validate_enum("politics", politics, &POLITICS)?;
     validate_enum("education", education, &EDUCATION)?;
     if !(0..=500).contains(&max_distance_km) {
-        return Err(format!("maxDistanceKm must be 0..=500, got {max_distance_km}").to_string());
+        return Err(format!(
+            "maxDistanceKm must be 0..=500, got {max_distance_km}"
+        ));
     }
     Ok(())
 }
@@ -1255,7 +1257,7 @@ mod tests {
         assert_eq!(content_v["maxDistanceKm"], 100.0);
 
         let card: DatingCardInfo =
-            serde_json::from_str(&dating_get_profile(event_id.clone()).unwrap()).unwrap();
+            serde_json::from_str(&dating_get_profile(event_id).unwrap()).unwrap();
         assert_eq!(card.name, "alice");
         assert_eq!(card.age, 30);
         assert_eq!(card.location, "gcpuvpmm2");

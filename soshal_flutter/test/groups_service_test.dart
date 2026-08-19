@@ -97,6 +97,8 @@ void main() {
         'desc',
         'https://x/p.png',
         'pk-me',
+        isPrivate: true,
+        password: 'secretPassword123',
       );
       expect(id, 'g-9');
       final inv = api.callsOf('crateFfiGroupsGroupsCreate').single;
@@ -105,21 +107,41 @@ void main() {
       expect(api.namedArg(inv, 'description'), 'desc');
       expect(api.namedArg(inv, 'pictureUrl'), 'https://x/p.png');
       expect(api.namedArg(inv, 'creatorPubkey'), 'pk-me');
+      expect(api.namedArg(inv, 'isPrivate'), isTrue);
+      expect(api.namedArg(inv, 'password'), 'secretPassword123');
     });
 
-    test('join and leave pass groupId and pubkey', () async {
+    test('join and leave pass groupId and pubkey and optional password', () async {
       final groups = GroupsService();
       api.stubBool('crateFfiGroupsGroupsJoin', true);
       api.stubBool('crateFfiGroupsGroupsLeave', true);
 
-      expect(await groups.join('g-1', 'pk-me'), isTrue);
+      expect(await groups.join('g-1', 'pk-me', password: 'myPassword'), isTrue);
       expect(await groups.leave('g-1', 'pk-me'), isTrue);
       final joinInv = api.callsOf('crateFfiGroupsGroupsJoin').single;
       expect(api.namedArg(joinInv, 'groupId'), 'g-1');
       expect(api.namedArg(joinInv, 'userPubkey'), 'pk-me');
+      expect(api.namedArg(joinInv, 'password'), 'myPassword');
       final leaveInv = api.callsOf('crateFfiGroupsGroupsLeave').single;
       expect(api.namedArg(leaveInv, 'groupId'), 'g-1');
       expect(api.namedArg(leaveInv, 'userPubkey'), 'pk-me');
+    });
+
+    test('setPassword and verifyPassword pass args to bridge', () async {
+      final groups = GroupsService();
+      api.stubBool('crateFfiGroupsGroupsSetPassword', true);
+      api.stubBool('crateFfiGroupsGroupsVerifyPassword', true);
+
+      expect(await groups.setPassword('g-1', 'newPass', 'pk-me'), isTrue);
+      expect(await groups.verifyPassword('g-1', 'newPass'), isTrue);
+      final setInv = api.callsOf('crateFfiGroupsGroupsSetPassword').single;
+      expect(api.namedArg(setInv, 'groupId'), 'g-1');
+      expect(api.namedArg(setInv, 'newPassword'), 'newPass');
+      expect(api.namedArg(setInv, 'actorPubkey'), 'pk-me');
+
+      final verifyInv = api.callsOf('crateFfiGroupsGroupsVerifyPassword').single;
+      expect(api.namedArg(verifyInv, 'groupId'), 'g-1');
+      expect(api.namedArg(verifyInv, 'password'), 'newPass');
     });
 
     test('getMembers populates member list state', () async {

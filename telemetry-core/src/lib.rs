@@ -598,7 +598,7 @@ mod tests {
         };
         let kp = key_sidecar_path(&p);
         {
-            let mut kf = OpenOptions::new().write(true).open(&kp).unwrap();
+            let kf = OpenOptions::new().write(true).open(&kp).unwrap();
             kf.set_len(16).unwrap();
         }
         let mut r = Recorder::init(&p, 64 * 1024).unwrap();

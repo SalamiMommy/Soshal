@@ -596,7 +596,7 @@ mod tests {
 
         let mut node_b = ReticulumNode::new("test_pubkey_bcast_b");
         node_b.start_udp_transport("127.0.0.1:0").unwrap();
-        let b_addr = bound_addr(&node_b);
+        let _b_addr = bound_addr(&node_b);
 
         node_b.send_data_to(a_addr, vec![]).unwrap();
         poll_until(|| node_a.peers_count() >= 1, "A to learn B");

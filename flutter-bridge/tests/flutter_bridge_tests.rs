@@ -97,7 +97,7 @@ mod integration_tests {
         )
         .unwrap();
         assert!(!restored_kp.public_key.is_empty());
-        let npub = auth::auth_npub_encode(restored_kp.public_key.clone()).unwrap();
+        let npub = auth::auth_npub_encode(restored_kp.public_key).unwrap();
         assert!(npub.starts_with("npub1"));
     }
     #[test]
@@ -159,6 +159,7 @@ mod integration_tests {
     }
     #[test]
     fn test_p2p_lan_server_requires_unlocked_signer() {
+        let _t = soshal_test_util::test_lock();
         let _g = P2P_TEST_LOCK.lock().unwrap();
         let _ = p2p::p2p_lan_server_stop();
         signer::signer_lock().unwrap();
@@ -174,6 +175,7 @@ mod integration_tests {
     }
     #[test]
     fn test_p2p_lan_swarm_loopback_roundtrip() {
+        let _t = soshal_test_util::test_lock();
         let _g = P2P_TEST_LOCK.lock().unwrap();
         let _ = p2p::p2p_stop_all();
         let keys = soshal_nostr_core::keys::generate_keys();
@@ -191,7 +193,7 @@ mod integration_tests {
         std::fs::create_dir_all(&out_dir).unwrap();
         let out = out_dir.join("blob.bin");
         let id = p2p::p2p_swarm_download(
-            manifest_json.clone(),
+            manifest_json,
             format!("[\"127.0.0.1:{port}\"]"),
             "[null]".to_string(),
             out.to_string_lossy().to_string(),
@@ -232,6 +234,7 @@ mod integration_tests {
         (pk, secret)
     }
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_signer_locked_error_paths() {
         let _t = soshal_test_util::test_lock();
         let _p = P2P_TEST_LOCK.lock().unwrap();
@@ -352,6 +355,7 @@ mod integration_tests {
         signer::signer_lock().unwrap();
     }
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_signer_keyring_save_unlock_remove() {
         let _t = soshal_test_util::test_lock();
         let _p = P2P_TEST_LOCK.lock().unwrap();

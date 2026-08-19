@@ -16,10 +16,8 @@ fn spawn_mock_sam() -> (u16, std::thread::JoinHandle<()>) {
     let handle = std::thread::spawn(move || {
         let data_port = data_port;
         std::thread::spawn(move || {
-            for conn in data_listener.incoming() {
-                if let Ok(_conn) = conn {
-                    std::thread::sleep(std::time::Duration::from_secs(30));
-                }
+            for _conn in data_listener.incoming().flatten() {
+                std::thread::sleep(std::time::Duration::from_secs(30));
             }
         });
         for stream in listener.incoming() {

@@ -613,7 +613,7 @@ mod tests {
     fn test_row_to_profile_follow_state() {
         let pk = "a".repeat(64);
         let row = UserRow {
-            pubkey: pk.clone(),
+            pubkey: pk,
             npub: "npub1abc".into(),
             name: Some("Alice".into()),
             display_name: None,
@@ -633,7 +633,7 @@ mod tests {
         assert!(!p.is_following);
         let bad = UserRow {
             contact_pubkeys: "not-json".into(),
-            ..row.clone()
+            ..row
         };
         assert_eq!(row_to_profile(&bad).following, 0);
     }
@@ -697,17 +697,14 @@ mod tests {
             .unwrap();
         }
         assert_eq!(
-            identity_get_wot_status(target.clone(), me.clone()).unwrap(),
+            identity_get_wot_status(target, me.clone()).unwrap(),
             "warning"
         );
         assert_eq!(
-            identity_get_wot_status(friend.clone(), me.clone()).unwrap(),
+            identity_get_wot_status(friend, me.clone()).unwrap(),
             "trusted"
         );
-        assert_eq!(
-            identity_get_wot_status(stranger.clone(), me.clone()).unwrap(),
-            "unknown"
-        );
+        assert_eq!(identity_get_wot_status(stranger, me).unwrap(), "unknown");
     }
 
     #[test]
@@ -721,7 +718,7 @@ mod tests {
             identity_store_profile(format!(r#"{{"pubkey":"{pk}","content":"not json"}}"#)).unwrap()
         );
         let v: serde_json::Value =
-            serde_json::from_str(&identity_get_profile(pk.clone()).unwrap()).unwrap();
+            serde_json::from_str(&identity_get_profile(pk).unwrap()).unwrap();
         for k in [
             "name",
             "display_name",
@@ -735,7 +732,7 @@ mod tests {
         let pk2 = "f".repeat(64);
         assert!(identity_store_profile(format!(r#"{{"pubkey":"{pk2}","content":""}}"#)).unwrap());
         let v: serde_json::Value =
-            serde_json::from_str(&identity_get_profile(pk2.clone()).unwrap()).unwrap();
+            serde_json::from_str(&identity_get_profile(pk2).unwrap()).unwrap();
         assert_eq!(v["name"], "");
     }
 
@@ -788,7 +785,7 @@ mod tests {
             assert!(!err.contains("signer locked"), "{err}");
         }
         let follows: Vec<String> =
-            serde_json::from_str(&identity_fetch_follows(me.clone()).unwrap()).unwrap();
+            serde_json::from_str(&identity_fetch_follows(me).unwrap()).unwrap();
         assert_eq!(follows.len(), 1);
         assert_eq!(follows[0], target);
         super::super::signer::signer_lock().unwrap();
@@ -814,7 +811,7 @@ mod tests {
             "UPDATE users SET contact_pubkeys='not-json' WHERE pubkey='{pk}'"
         ))
         .unwrap();
-        assert_eq!(identity_fetch_follows(pk.clone()).unwrap(), "[]");
+        assert_eq!(identity_fetch_follows(pk).unwrap(), "[]");
         assert_eq!(identity_fetch_follows("9".repeat(64)).unwrap(), "[]");
     }
 

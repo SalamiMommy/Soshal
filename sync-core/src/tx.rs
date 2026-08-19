@@ -149,21 +149,24 @@ fn reverse_topological(
 ) -> Result<Vec<String>, String> {
     let mut order = Vec::new();
     let mut visited = std::collections::HashSet::new();
+    let mut in_progress = std::collections::HashSet::new();
     let mut stack: Vec<(String, bool)> = closure.iter().map(|n| (n.clone(), false)).collect();
     while let Some((node, expanded)) = stack.pop() {
         if expanded {
+            in_progress.remove(&node);
             if visited.insert(node.clone()) {
                 order.push(node);
             }
             continue;
         }
-        if visited.contains(&node) {
+        if visited.contains(&node) || in_progress.contains(&node) {
             continue;
         }
+        in_progress.insert(node.clone());
         stack.push((node.clone(), true));
         if let Some(children) = adj.get(&node) {
             for c in children {
-                if closure.contains(c) {
+                if closure.contains(c) && !visited.contains(c) && !in_progress.contains(c) {
                     stack.push((c.clone(), false));
                 }
             }

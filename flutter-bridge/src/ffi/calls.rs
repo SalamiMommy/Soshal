@@ -43,8 +43,10 @@ pub async fn calls_send_signal(
         content["media_type"] = serde_json::json!(m);
     }
     let content_str = serde_json::to_string(&content).map_err(|e| format!("serialize: {e}"))?;
+    let encrypted_content =
+        super::signer::signer_nip44_encrypt(content_str, target_pubkey.clone())?;
     let mut builder =
-        nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(kind), content_str);
+        nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(kind), encrypted_content);
     for tag in [
         vec!["p".to_string(), target_pubkey],
         vec!["call".to_string(), call_id],
@@ -100,10 +102,17 @@ pub async fn calls_fetch_signals(my_pubkey: String) -> Result<String, String> {
         if now.saturating_sub(created) > 300 {
             continue; // ignore stale signals (>5 min)
         }
+        let content_str =
+            match super::signer::signer_nip44_decrypt(e.content.clone(), e.pubkey.to_string()) {
+                Ok(decrypted) => decrypted,
+                // Skip undecryptable signals instead of surfacing raw (possibly
+                // garbage) content as plaintext to the caller.
+                Err(_) => continue,
+            };
         out.push(serde_json::json!({
             "id": e.id.to_hex(),
             "pubkey": e.pubkey.to_string(),
-            "content": e.content,
+            "content": content_str,
             "created_at": created,
             "kind": e.kind.as_u16(),
             "p_tags": p_tags,

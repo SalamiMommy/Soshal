@@ -3,7 +3,7 @@
 
 use soshal_sync_core::outbox::{
     compress_payload, decompress_payload, enqueue_outbox_item, fetch_pending_outbox_items,
-    get_outbox_summary, mark_outbox_item_failed, mark_outbox_items_completed,
+    mark_outbox_item_failed, mark_outbox_items_completed, summarize_outbox,
 };
 use soshal_sync_core::prolly_sync::{ProllySyncMessage, ProllySyncSession};
 use soshal_sync_core::prolly_tree::{ProllyTree, GEAR_MASK};
@@ -14,10 +14,17 @@ fn outbox_payload_compress_roundtrips() {
     assert_eq!(compress_payload(small), "{}");
     let big = format!("{{\"data\":\"{}\"}}", "x".repeat(600));
     let compressed = compress_payload(&big);
-    assert!(compressed.starts_with("__zstd__:"), "big payloads compress");
+    assert!(
+        compressed.starts_with("__zstd_b64__:"),
+        "big payloads compress"
+    );
     assert_eq!(decompress_payload(&compressed), big);
-    assert_eq!(decompress_payload("__zstd__:deadbeef"), "__zstd__:deadbeef");
+    assert_eq!(
+        decompress_payload("__zstd_b64__:deadbeef"),
+        "__zstd_b64__:deadbeef"
+    );
     assert_eq!(decompress_payload("plain"), "plain");
+    // Legacy hex form still decodes.
     let short_magic = format!("__zstd__:{}", hex::encode(b"Zst"));
     assert_eq!(decompress_payload(&short_magic), short_magic);
 }
@@ -26,7 +33,7 @@ fn outbox_payload_compress_roundtrips() {
 fn outbox_failure_backoff_and_exhaustion() {
     let db = soshal_test_util::test_db();
     enqueue_outbox_item(&db, "f1", "post", "{}", None, 0).unwrap();
-    mark_outbox_item_failed(&db, "f1", 0, 100).unwrap();
+    mark_outbox_item_failed(&db, "f1", 1, 102).unwrap();
     let pending = fetch_pending_outbox_items(&db, 100, 10).unwrap();
     assert_eq!(pending.len(), 0, "next_retry_at moved into the future");
     let retried = fetch_pending_outbox_items(&db, 100 + 3, 10).unwrap();
@@ -36,7 +43,8 @@ fn outbox_failure_backoff_and_exhaustion() {
     for i in 1..10 {
         mark_outbox_item_failed(&db, "f1", i, 1000).unwrap();
     }
-    let summary = get_outbox_summary(&db).unwrap();
+    mark_outbox_item_failed(&db, "f1", 10, 1000).unwrap();
+    let summary = summarize_outbox(&db).unwrap();
     assert_eq!(summary.pending_count, 0);
     assert_eq!(summary.failed_count, 1);
     let cap = fetch_pending_outbox_items(&db, 1000 + 3600, 10).unwrap();
@@ -57,7 +65,7 @@ fn outbox_batch_complete_and_limit() {
     let remaining = fetch_pending_outbox_items(&db, 100, 10).unwrap();
     assert_eq!(remaining.len(), 2);
     assert_eq!(remaining[0].id, "b2");
-    let summary = get_outbox_summary(&db).unwrap();
+    let summary = summarize_outbox(&db).unwrap();
     assert_eq!(summary.total_count, 4);
     assert_eq!(summary.pending_count, 2);
 }

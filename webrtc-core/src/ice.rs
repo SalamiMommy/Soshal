@@ -1,32 +1,56 @@
 use serde::Deserialize;
 use soshal_common_core::json_util::{json_in, json_out};
 
+fn check_word_private_ip(word: &str) -> bool {
+    if word.is_empty() {
+        return false;
+    }
+    if let Ok(sa) = word.parse::<std::net::SocketAddr>() {
+        let ip_str = sa.ip().to_string();
+        if is_private_ip(&ip_str) || is_private_ipv6(&ip_str) {
+            return true;
+        }
+    }
+    if let Some(start) = word.find('[') {
+        if let Some(rest) = word.get(start + 1..) {
+            if let Some((host, _rest)) = rest.split_once(']') {
+                if is_private_ipv6(host) {
+                    return true;
+                }
+            }
+        }
+    }
+    let clean = word.trim_matches(|c| c == '[' || c == ']');
+    if clean.is_empty() {
+        return false;
+    }
+    if is_private_ip(clean) || is_private_ipv6(clean) {
+        return true;
+    }
+    if let Some((host, _port)) = clean.split_once(':') {
+        if is_private_ip(host) || is_private_ipv6(host) {
+            return true;
+        }
+    }
+    false
+}
+
 fn has_private_ip(s: &str) -> bool {
     let mut word = String::new();
     for c in s.chars() {
-        if c.is_ascii_hexdigit() || c == '.' || c == ':' {
+        if c.is_ascii_hexdigit() || c == '.' || c == ':' || c == '[' || c == ']' {
             word.push(c);
         } else {
             if !word.is_empty() {
-                if word.contains(':') {
-                    if is_private_ipv6(&word) {
-                        return true;
-                    }
-                } else if is_private_ip(&word) {
+                if check_word_private_ip(&word) {
                     return true;
                 }
                 word.clear();
             }
         }
     }
-    if !word.is_empty() {
-        if word.contains(':') {
-            if is_private_ipv6(&word) {
-                return true;
-            }
-        } else if is_private_ip(&word) {
-            return true;
-        }
+    if !word.is_empty() && check_word_private_ip(&word) {
+        return true;
     }
     false
 }
@@ -63,7 +87,7 @@ pub fn redact_private_ips(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut word = String::new();
     for c in s.chars() {
-        if c.is_ascii_hexdigit() || c == '.' || c == ':' {
+        if c.is_ascii_hexdigit() || c == '.' || c == ':' || c == '[' || c == ']' {
             word.push(c);
         } else {
             push_redacted_word(&mut word, &mut out);
@@ -76,8 +100,7 @@ pub fn redact_private_ips(s: &str) -> String {
 
 fn push_redacted_word(word: &mut String, out: &mut String) {
     if !word.is_empty() {
-        let is_ip = word.contains('.') || word.contains(':');
-        if is_ip && (is_private_ip(word) || is_private_ipv6(word)) {
+        if check_word_private_ip(word) {
             out.push_str("0.0.0.0");
         } else {
             out.push_str(word);

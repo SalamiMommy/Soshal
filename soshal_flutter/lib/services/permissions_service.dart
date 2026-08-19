@@ -136,6 +136,35 @@ class PermissionsService {
     }
   }
 
+  /// Request POST_NOTIFICATIONS (Android 13+; the daemon foreground
+  /// service notification needs it to be visible — the service itself runs
+  /// regardless). No-op granted on older platforms.
+  static Future<PermissionResult> ensureNotifications() async {
+    if (!_isAndroid) return const PermissionResult.granted();
+    try {
+      if (ffi.permissionsNotificationsGranted()) {
+        return const PermissionResult.granted();
+      }
+      if (!ffi.permissionsNotificationsRequest()) {
+        return const PermissionResult.denied(
+            'Notification permission request unavailable');
+      }
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(debugPollDelay);
+        if (ffi.permissionsNotificationsGranted()) {
+          return const PermissionResult.granted();
+        }
+      }
+      if (ffi.permissionsNotificationsPermanentlyDenied()) {
+        return PermissionResult.denied(
+            'Notification permission permanently denied$_androidSettingsHint');
+      }
+      return const PermissionResult.denied('Notification permission denied');
+    } catch (e) {
+      return PermissionResult.denied('Notification permission failed: $e');
+    }
+  }
+
   /// Request location access (Rust dialog on Android; portal grants on
   /// demand on Linux, so no static prompt here).
   static Future<PermissionResult> ensureLocation() async {

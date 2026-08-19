@@ -411,7 +411,8 @@ class _ModerationScreenState extends State<ModerationScreen> {
             ],
           ),
           Text(
-            'Tier 1 (N-Gram Subword) + Tier 2 (RoBERTa Transformer & Meta PDQ Image Hash)',
+            'Tier 1 (N-Gram Subword) + Tier 2 (heuristic embeddings & perceptual image hash; '
+            'real ML model on roadmap)',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),

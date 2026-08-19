@@ -1,5 +1,5 @@
 use soshal_telemetry_core::ring::{
-    ffi_advance_head, ffi_drain, ffi_pending, register_ring, DrainedEntry,
+    ffi_advance_head, ffi_drain, ffi_pending, register_ring, unregister_ring, DrainedEntry,
 };
 use soshal_telemetry_core::{RecordKind, Recorder, DUMP_MAGIC};
 
@@ -89,6 +89,7 @@ fn ring_register_capacity_and_head() {
     assert!(ffi_advance_head(addr, 0).is_ok());
     let entries = ffi_drain(addr).unwrap();
     assert!(entries.is_empty());
+    unregister_ring(addr).unwrap();
 }
 
 #[test]
@@ -107,6 +108,7 @@ fn ring_head_rewind_and_capacity_errors() {
     let cap = 64 * 1024;
     assert!(ffi_advance_head(addr, 100 + cap as u64 + 1).is_err());
     assert_eq!(ffi_pending(addr).unwrap(), 100);
+    unregister_ring(addr).unwrap();
 }
 
 #[test]
@@ -124,6 +126,7 @@ fn ring_ffi_drain_returns_entries() {
     assert_eq!(ffi_pending(addr).unwrap(), 0);
     assert!(ffi_drain(addr).unwrap().is_empty());
     assert!(base > 0);
+    unregister_ring(addr).unwrap();
 }
 
 fn write_entry(p: &std::path::Path, _addr: usize, total: usize, kind: u8, payload: &[u8]) {

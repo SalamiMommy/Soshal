@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1019245445;
+  int get rustContentHash => 656990166;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -251,6 +251,10 @@ abstract class RustLibApi extends BaseApi {
   bool crateFfiDaemonDaemonIsI2PdRunning();
 
   bool crateFfiDaemonDaemonIsRnsdRunning();
+
+  bool crateFfiDaemonDaemonRequestBatteryExemption();
+
+  bool crateFfiDaemonDaemonServiceRunning();
 
   bool crateFfiDaemonDaemonStartDaemons();
 
@@ -546,7 +550,9 @@ abstract class RustLibApi extends BaseApi {
       required String name,
       required String description,
       required String pictureUrl,
-      required String creatorPubkey});
+      required String creatorPubkey,
+      required bool isPrivate,
+      String? password});
 
   String crateFfiGroupsGroupsFetchGroups({required String userPubkey});
 
@@ -561,7 +567,7 @@ abstract class RustLibApi extends BaseApi {
   List<String> crateFfiGroupsGroupsGetMembers({required String groupId});
 
   bool crateFfiGroupsGroupsJoin(
-      {required String groupId, required String userPubkey});
+      {required String groupId, required String userPubkey, String? password});
 
   bool crateFfiGroupsGroupsLeave(
       {required String groupId, required String userPubkey});
@@ -618,6 +624,11 @@ abstract class RustLibApi extends BaseApi {
       required String role,
       required String adminPubkey});
 
+  bool crateFfiGroupsGroupsSetPassword(
+      {required String groupId,
+      String? newPassword,
+      required String actorPubkey});
+
   String crateFfiGroupsGroupsThreadsCreate(
       {required String groupId,
       required String title,
@@ -649,6 +660,9 @@ abstract class RustLibApi extends BaseApi {
       required String parentId,
       required String content,
       required String author});
+
+  bool crateFfiGroupsGroupsVerifyPassword(
+      {required String groupId, required String password});
 
   String crateFfiGroupsGroupsVoiceChannelsCreate(
       {required String groupId, required String name, required String creator});
@@ -1222,9 +1236,18 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiPermissionsPermissionsLocationRequest();
 
+  bool crateFfiPermissionsPermissionsNotificationsGranted();
+
+  bool crateFfiPermissionsPermissionsNotificationsPermanentlyDenied();
+
+  bool crateFfiPermissionsPermissionsNotificationsRequest();
+
   bool crateFfiPermissionsPermissionsOpenSettings();
 
   String crateFfiPermissionsPermissionsPlatformCurrent();
+
+  Future<bool> crateFfiPinPinChange(
+      {required String oldPin, required String newPin});
 
   bool crateFfiPinPinClear({required String pin});
 
@@ -3139,6 +3162,56 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiDaemonDaemonIsRnsdRunningConstMeta =>
       const TaskConstMeta(
         debugName: "daemon_is_rnsd_running",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiDaemonDaemonRequestBatteryExemption() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__daemon__daemon_request_battery_exemption(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDaemonDaemonRequestBatteryExemptionConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDaemonDaemonRequestBatteryExemptionConstMeta =>
+      const TaskConstMeta(
+        debugName: "daemon_request_battery_exemption",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiDaemonDaemonServiceRunning() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__daemon__daemon_service_running(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDaemonDaemonServiceRunningConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDaemonDaemonServiceRunningConstMeta =>
+      const TaskConstMeta(
+        debugName: "daemon_service_running",
         argNames: [],
       );
 
@@ -5644,7 +5717,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       required String name,
       required String description,
       required String pictureUrl,
-      required String creatorPubkey}) {
+      required String creatorPubkey,
+      required bool isPrivate,
+      String? password}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
@@ -5653,6 +5728,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(description, serializer);
         sse_encode_String(pictureUrl, serializer);
         sse_encode_String(creatorPubkey, serializer);
+        sse_encode_bool(isPrivate, serializer);
+        sse_encode_opt_String(password, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__groups__groups_create(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -5662,7 +5739,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiGroupsGroupsCreateConstMeta,
-      argValues: [groupId, name, description, pictureUrl, creatorPubkey],
+      argValues: [
+        groupId,
+        name,
+        description,
+        pictureUrl,
+        creatorPubkey,
+        isPrivate,
+        password
+      ],
       apiImpl: this,
     ));
   }
@@ -5674,7 +5759,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "name",
           "description",
           "pictureUrl",
-          "creatorPubkey"
+          "creatorPubkey",
+          "isPrivate",
+          "password"
         ],
       );
 
@@ -5791,12 +5878,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   bool crateFfiGroupsGroupsJoin(
-      {required String groupId, required String userPubkey}) {
+      {required String groupId, required String userPubkey, String? password}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(groupId, serializer);
         sse_encode_String(userPubkey, serializer);
+        sse_encode_opt_String(password, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__groups__groups_join(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -5806,14 +5894,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiGroupsGroupsJoinConstMeta,
-      argValues: [groupId, userPubkey],
+      argValues: [groupId, userPubkey, password],
       apiImpl: this,
     ));
   }
 
   TaskConstMeta get kCrateFfiGroupsGroupsJoinConstMeta => const TaskConstMeta(
         debugName: "groups_join",
-        argNames: ["groupId", "userPubkey"],
+        argNames: ["groupId", "userPubkey", "password"],
       );
 
   @override
@@ -6199,6 +6287,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateFfiGroupsGroupsSetPassword(
+      {required String groupId,
+      String? newPassword,
+      required String actorPubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(groupId, serializer);
+        sse_encode_opt_String(newPassword, serializer);
+        sse_encode_String(actorPubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_set_password(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsSetPasswordConstMeta,
+      argValues: [groupId, newPassword, actorPubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsSetPasswordConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_set_password",
+        argNames: ["groupId", "newPassword", "actorPubkey"],
+      );
+
+  @override
   String crateFfiGroupsGroupsThreadsCreate(
       {required String groupId,
       required String title,
@@ -6434,6 +6553,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "groups_threads_reply",
         argNames: ["threadId", "parentId", "content", "author"],
+      );
+
+  @override
+  bool crateFfiGroupsGroupsVerifyPassword(
+      {required String groupId, required String password}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(groupId, serializer);
+        sse_encode_String(password, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_verify_password(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsVerifyPasswordConstMeta,
+      argValues: [groupId, password],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsVerifyPasswordConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_verify_password",
+        argNames: ["groupId", "password"],
       );
 
   @override
@@ -11556,6 +11703,88 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateFfiPermissionsPermissionsNotificationsGranted() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__permissions__permissions_notifications_granted(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiPermissionsPermissionsNotificationsGrantedConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiPermissionsPermissionsNotificationsGrantedConstMeta =>
+          const TaskConstMeta(
+            debugName: "permissions_notifications_granted",
+            argNames: [],
+          );
+
+  @override
+  bool crateFfiPermissionsPermissionsNotificationsPermanentlyDenied() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__permissions__permissions_notifications_permanently_denied(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta:
+          kCrateFfiPermissionsPermissionsNotificationsPermanentlyDeniedConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiPermissionsPermissionsNotificationsPermanentlyDeniedConstMeta =>
+          const TaskConstMeta(
+            debugName: "permissions_notifications_permanently_denied",
+            argNames: [],
+          );
+
+  @override
+  bool crateFfiPermissionsPermissionsNotificationsRequest() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__permissions__permissions_notifications_request(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiPermissionsPermissionsNotificationsRequestConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiPermissionsPermissionsNotificationsRequestConstMeta =>
+          const TaskConstMeta(
+            debugName: "permissions_notifications_request",
+            argNames: [],
+          );
+
+  @override
   bool crateFfiPermissionsPermissionsOpenSettings() {
     return handler.executeSync(SyncTask(
       callFfi: () {
@@ -11603,6 +11832,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "permissions_platform_current",
         argNames: [],
+      );
+
+  @override
+  Future<bool> crateFfiPinPinChange(
+      {required String oldPin, required String newPin}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(oldPin, serializer);
+        sse_encode_String(newPin, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__pin__pin_change(
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiPinPinChangeConstMeta,
+      argValues: [oldPin, newPin],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiPinPinChangeConstMeta => const TaskConstMeta(
+        debugName: "pin_change",
+        argNames: ["oldPin", "newPin"],
       );
 
   @override

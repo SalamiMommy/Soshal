@@ -39,20 +39,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aes-gcm"
-version = "0.10.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "831010a0f742e1209b3bcea8fab6a8e149051ba6099432c8cb2cc117dec3ead1"
-dependencies = [
- "aead",
- "aes",
- "cipher",
- "ctr",
- "ghash",
- "subtle",
-]
-
-[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1004,15 +990,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ctr"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0369ee1ad671834580515889b80f2ea915f23b8be8d0daa4bbaf2ac5c7590835"
-dependencies = [
- "cipher",
-]
-
-[[package]]
 name = "ctutils"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1717,16 +1694,6 @@ dependencies = [
  "r-efi 6.0.0",
  "rand_core 0.10.1",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "ghash"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0d8a4362ccb29cb0b265253fb0a2728f592895ee6854fd9bc13f2ffda266ff1"
-dependencies = [
- "opaque-debug",
- "polyval",
 ]
 
 [[package]]
@@ -3278,18 +3245,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "polyval"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d1fe60d06143b2430aa532c94cfe9e29783047f06c0d7fd359a9a51b729fa25"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.2.17",
- "opaque-debug",
- "universal-hash",
-]
-
-[[package]]
 name = "portable-atomic"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4275,6 +4230,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "subtle",
  "url",
 ]
 
@@ -4399,13 +4355,10 @@ dependencies = [
  "soshal-layout-core",
  "soshal-marketplace-core",
  "soshal-media-core",
- "soshal-messaging-core",
  "soshal-minis-core",
  "soshal-moderation-core",
  "soshal-network-core",
  "soshal-nostr-core",
- "soshal-notification-core",
- "soshal-pqc-core",
  "soshal-relay-core",
  "soshal-search-core",
  "soshal-social-core",
@@ -4427,8 +4380,11 @@ name = "soshal-groups-core"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "pbkdf2",
+ "rand 0.8.7",
  "serde",
  "serde_json",
+ "sha2",
  "soshal-common-core",
  "soshal-crypto-core",
  "soshal-nostr-core",
@@ -4496,8 +4452,6 @@ dependencies = [
  "serde_json",
  "soshal-common-core",
  "soshal-crypto-core",
- "soshal-nostr-core",
- "soshal-pqc-core",
  "soshal-test-util",
  "thumbhash",
  "tokio",
@@ -4542,7 +4496,6 @@ dependencies = [
 name = "soshal-network-core"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "base64 0.22.1",
  "blake3",
  "futures-util",
@@ -4669,10 +4622,6 @@ dependencies = [
  "serde",
  "serde_json",
  "soshal-common-core",
- "soshal-content-core",
- "soshal-crypto-core",
- "soshal-db-core",
- "soshal-pqc-core",
  "zeroize",
 ]
 

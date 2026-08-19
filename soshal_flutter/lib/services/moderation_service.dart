@@ -133,7 +133,8 @@ class RobertaResult {
       primaryCategory: json['primary_category'] as String?,
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0.0,
       scores: json['scores'] is Map<String, dynamic>
-          ? RobertaCategoryScores.fromJson(json['scores'] as Map<String, dynamic>)
+          ? RobertaCategoryScores.fromJson(
+              json['scores'] as Map<String, dynamic>)
           : const RobertaCategoryScores(),
       tokenCount: (json['token_count'] as num?)?.toInt() ?? 0,
       detectedSignals: (json['detected_signals'] as List<dynamic>?)
@@ -174,7 +175,8 @@ class HybridModerationResult {
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0.0,
       tierEvaluated: json['tier_evaluated'] as String? ?? 'Tier1Fast',
       tier1Result: json['tier1_result'] is Map<String, dynamic>
-          ? AiModerationResult.fromJson(json['tier1_result'] as Map<String, dynamic>)
+          ? AiModerationResult.fromJson(
+              json['tier1_result'] as Map<String, dynamic>)
           : const AiModerationResult(isFlagged: false),
       tier2RobertaResult: json['tier2_roberta_result'] is Map<String, dynamic>
           ? RobertaResult.fromJson(
@@ -540,12 +542,12 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
-  /// 2-Tier Hybrid text evaluation (Tier 1 N-Gram -> Tier 2 RoBERTa Deep Transformer).
+  /// 2-Tier Hybrid text evaluation (Tier 1 N-Gram -> Tier 2 heuristic embeddings; real ML model on roadmap).
   Future<HybridModerationResult> hybridClassifyText(String content,
       {bool forceDeepScan = false}) async {
     try {
-      final json = RustLib.instance.api
-          .crateFfiModerationModerationHybridClassifyText(
+      final json =
+          RustLib.instance.api.crateFfiModerationModerationHybridClassifyText(
         content: content,
         forceDeepScan: forceDeepScan,
       );
@@ -555,24 +557,6 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
     } catch (e, st) {
       setLastError(e, st);
       return HybridModerationResult.clean();
-    }
-  }
-
-  /// 2-Tier Hybrid media evaluation (Chrominance/Skin-tone -> Meta PDQ Perceptual Hash).
-  Future<HybridMediaResult> hybridClassifyMedia(
-      Uint8List imageBytes, String mimeType) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiModerationModerationHybridClassifyMedia(
-        imageBytes: imageBytes,
-        mimeType: mimeType,
-      );
-      final map = jsonDecode(json) as Map<String, dynamic>;
-      clearLastError();
-      return HybridMediaResult.fromJson(map);
-    } catch (e, st) {
-      setLastError(e, st);
-      return HybridMediaResult.pass();
     }
   }
 

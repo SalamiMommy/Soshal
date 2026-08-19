@@ -21,14 +21,11 @@ soshal-relay-core = { path = "../relay-core" }
 soshal-storage-core = { path = "../storage-core" }
 soshal-feed-core = { path = "../feed-core" }
 soshal-groups-core = { path = "../groups-core" }
-soshal-messaging-core = { path = "../messaging-core" }
 soshal-social-core = { path = "../social-core" }
 soshal-events-core = { path = "../events-core" }
 soshal-marketplace-core = { path = "../marketplace-core" }
-soshal-pqc-core = { path = "../pqc-core" }
 soshal-dating-core = { path = "../dating-core" }
 soshal-search-core = { path = "../search-core" }
-soshal-notification-core = { path = "../notification-core" }
 soshal-moderation-core = { path = "../moderation-core" }
 soshal-analytics-core = { path = "../analytics-core" }
 soshal-webrtc-core = { path = "../webrtc-core" }

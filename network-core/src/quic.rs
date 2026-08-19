@@ -655,22 +655,23 @@ async fn serve_stream(
     store: ChunkStore,
 ) {
     // Auth: exactly like the TCP transport, the client must open with the
-    // HMAC'd beacon line; anything else gets a refused stream.
-    match auth_stream(&mut recv, &key).await {
-        Ok(()) if !global_power_scheduler().mode().paused() => {}
+    // HMAC'd beacon line; anything else gets a refused stream. Bytes past
+    // the newline (coalesced request frame) come back for the frame reads.
+    let mut leftover = match auth_stream(&mut recv, &key).await {
+        Ok(l) if !global_power_scheduler().mode().paused() => l,
         _ => {
             let _ = send.write_all(b"ERR\n").await;
             let _ = send.finish();
             return;
         }
-    }
+    };
 
     // Request frame: [u32 len][JSON LanChunkRequest], same as TCP.
     let mut len_buf = [0u8; 4];
     if !matches!(
         tokio::time::timeout(
             STREAM_EXCHANGE_TIMEOUT,
-            read_exact_async(&mut recv, &mut len_buf)
+            read_exact_with_leftover(&mut recv, &mut leftover, &mut len_buf)
         )
         .await,
         Ok(Ok(()))
@@ -687,7 +688,7 @@ async fn serve_stream(
     if !matches!(
         tokio::time::timeout(
             STREAM_EXCHANGE_TIMEOUT,
-            read_exact_async(&mut recv, &mut req_bytes)
+            read_exact_with_leftover(&mut recv, &mut leftover, &mut req_bytes)
         )
         .await,
         Ok(Ok(()))
@@ -853,18 +854,21 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
     let _ = send.finish();
 }
 
-async fn auth_stream(recv: &mut quinn::RecvStream, key: &[u8; 32]) -> Result<(), String> {
+async fn auth_stream(recv: &mut quinn::RecvStream, key: &[u8; 32]) -> Result<Vec<u8>, String> {
     let mut line = Vec::with_capacity(128);
-    let mut byte = [0u8; 1];
+    let mut leftover = Vec::new();
+    let mut buf = [0u8; 128];
     tokio::time::timeout(AUTH_TIMEOUT, async {
         loop {
-            match recv.read(&mut byte).await {
+            match recv.read(&mut buf).await {
                 Ok(None) => return Err("eof during handshake".to_string()),
-                Ok(Some(_)) => {
-                    if byte[0] == b'\n' {
+                Ok(Some(n)) => {
+                    if let Some(pos) = buf[..n].iter().position(|&b| b == b'\n') {
+                        line.extend_from_slice(&buf[..pos]);
+                        leftover.extend_from_slice(&buf[pos + 1..n]);
                         break;
                     }
-                    line.push(byte[0]);
+                    line.extend_from_slice(&buf[..n]);
                     if line.len() > 512 {
                         return Err("handshake line too long".to_string());
                     }
@@ -885,7 +889,21 @@ async fn auth_stream(recv: &mut quinn::RecvStream, key: &[u8; 32]) -> Result<(),
         }
     })
     .await
-    .map_err(|_| "auth handshake timed out".to_string())?
+    .map_err(|_| "auth handshake timed out".to_string())??;
+    Ok(leftover)
+}
+
+/// `read_exact_async`, but first drains bytes already read (coalesced with
+/// the auth beacon) before touching the stream.
+async fn read_exact_with_leftover(
+    recv: &mut quinn::RecvStream,
+    leftover: &mut Vec<u8>,
+    buf: &mut [u8],
+) -> Result<(), String> {
+    let take = leftover.len().min(buf.len());
+    buf[..take].copy_from_slice(&leftover[..take]);
+    leftover.drain(..take);
+    read_exact_async(recv, &mut buf[take..]).await
 }
 
 async fn read_exact_async(recv: &mut quinn::RecvStream, buf: &mut [u8]) -> Result<(), String> {
@@ -905,10 +923,15 @@ async fn write_stream_frame(
     kind: ResponseKind,
     payload: &[u8],
 ) -> Result<(), String> {
-    send.write_all(&[kind as u8])
-        .await
-        .map_err(|e| format!("stream write: {e}"))?;
-    send.write_all(&(payload.len() as u32).to_le_bytes())
+    let len_bytes = (payload.len() as u32).to_le_bytes();
+    let header = [
+        kind as u8,
+        len_bytes[0],
+        len_bytes[1],
+        len_bytes[2],
+        len_bytes[3],
+    ];
+    send.write_all(&header)
         .await
         .map_err(|e| format!("stream write: {e}"))?;
     send.write_all(payload)
@@ -1344,7 +1367,7 @@ mod stream_tests {
     #[test]
     fn quic_stream_refuses_bad_mac() {
         let root = soshal_test_util::tmp_root("quic");
-        let server = start_quic_stream_server_with_store([7u8; 32], root.clone()).unwrap();
+        let server = start_quic_stream_server_with_store([7u8; 32], root).unwrap();
         // Client uses the wrong derivation key; HMAC must fail server-side.
         let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
         let err = fetch_quic_chunk(

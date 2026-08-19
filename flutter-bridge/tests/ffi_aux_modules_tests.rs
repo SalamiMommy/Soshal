@@ -156,7 +156,7 @@ mod ffi_aux_modules_tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = format!("{dir}/app.db");
-        session::session_load(db_path.clone()).unwrap();
+        session::session_load(db_path).unwrap();
         session::session_add_account(
             "spk1".to_string(),
             "npub1spk1".to_string(),
@@ -194,7 +194,7 @@ mod ffi_aux_modules_tests {
         let db_path = format!("{dir}/app.db");
         let data = r#"{"active_pubkey":"spk1","accounts":[{"pubkey":"spk1","npub":"npub1spk1","last_used":1,"relay_list":[]}]}"#;
         assert!(session::session_save(db_path.clone(), data.to_string()).unwrap());
-        let loaded = session::session_load(db_path.clone()).unwrap();
+        let loaded = session::session_load(db_path).unwrap();
         assert!(loaded.contains("\"active_pubkey\":\"spk1\""));
         let active = session::session_get_active().unwrap();
         assert!(active.contains("\"pubkey\":\"spk1\""));
@@ -223,7 +223,7 @@ mod ffi_aux_modules_tests {
         let reloaded = session::session_load(db_path.clone()).unwrap();
         assert!(reloaded.contains("aux_tok"));
         assert!(session::session_register_push_token(String::new()).unwrap());
-        let reloaded = session::session_load(db_path.clone()).unwrap();
+        let reloaded = session::session_load(db_path).unwrap();
         assert!(!reloaded.contains("aux_tok"));
         std::fs::remove_dir_all(&dir).ok();
     }

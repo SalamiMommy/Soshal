@@ -120,15 +120,53 @@ ensure_i2pd() {
     "$DAEMONS_CACHE/i2pd-android.zip" "$DAEMONS_CACHE/i2pd" "i2pd-aarch64"
 }
 
-# Freenet has no official Android daemon binary: freenet-core publishes no
-# node build for Android, and the freenet-mobile APK ships the incompatible
-# legacy fred/JVM stack. Bundled as an honest stub; the WS backend
-# (ws://127.0.0.1:8888) stays dormant until a real binary exists.
+# Freenet has no official Android daemon binary: the legacy fred/JVM stack
+# can't run on Android and freenet-core (the Rust node) publishes no android
+# release assets. Cross-build freenet-core's `freenet` node for arm64 with
+# the NDK here; any failure degrades to an honest stub.
+FREENET_VERSION="${FREENET_VERSION:-0.2.106}"
+FREENET_SRC="$TARGETS_DIR/freenet-core"
+FREENET_TARGETS="$TARGETS_DIR/freenet-targets"
+FREENET_BIN="$DAEMONS_CACHE/freenet/freenet"
+
 ensure_freenet() {
   local cache_dir="$DAEMONS_CACHE/freenet"
   mkdir -p "$cache_dir"
-  create_stub "$cache_dir/freenet" "Freenet daemon: no official Android binary - not bundled in APK"
-  echo "  freenet: stub prepared (no official Android binary)"
+  if [[ -f "$FREENET_BIN" ]] && [[ $(stat -c%s "$FREENET_BIN") -gt 100000 ]]; then
+    echo "  freenet: cached arm64 binary present"
+    return 0
+  fi
+  # freenet-core pins rust 1.94.0 in rust-toolchain.toml, which lists only
+  # wasm/musl targets — add the android std explicitly.
+  if ! rustup target list --installed --toolchain 1.94.0 2>/dev/null | grep -q '^aarch64-linux-android$'; then
+    rustup target add aarch64-linux-android --toolchain 1.94.0 >/dev/null 2>&1 || true
+  fi
+  if [[ ! -d "$FREENET_SRC/.git" ]]; then
+    git clone --depth 1 --branch "v$FREENET_VERSION" \
+      https://github.com/freenet/freenet-core "$FREENET_SRC" >/dev/null 2>&1 || {
+        create_stub "$FREENET_BIN" "Freenet daemon: freenet-core clone failed"
+        echo "  freenet: stub (clone failed)"
+        return 0
+      }
+  else
+    ( cd "$FREENET_SRC" && git fetch --depth 1 origin "v$FREENET_VERSION" >/dev/null 2>&1 && git checkout -q FETCH_HEAD ) || true
+  fi
+  echo "  freenet: cross-building arm64 node (freenet-core v$FREENET_VERSION; first run ~30min)"
+  if ( cd "$FREENET_SRC" && \
+       CARGO_TARGET_DIR="$FREENET_TARGETS" \
+       CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android21-clang" \
+       RUSTFLAGS="-C linker=$NDK_BIN/aarch64-linux-android21-clang" \
+       cargo build -p freenet --release --target aarch64-linux-android ) \
+       > "$TARGETS_DIR/freenet-build.log" 2>&1; then
+    cp "$FREENET_TARGETS/aarch64-linux-android/release/freenet" "$FREENET_BIN"
+    chmod +x "$FREENET_BIN"
+    "$NDK_BIN/llvm-strip" "$FREENET_BIN" 2>/dev/null || true
+    echo "  freenet: arm64 binary built ($(stat -c%s "$FREENET_BIN")B)"
+  else
+    tail -5 "$TARGETS_DIR/freenet-build.log" >&2 || true
+    create_stub "$FREENET_BIN" "Freenet daemon: cross-build failed"
+    echo "  freenet: stub (cross-build failed)"
+  fi
 }
 
 # Build Reticulum daemon for Android (use Python-for-Android approach)
@@ -148,14 +186,24 @@ bundle_daemons() {
   echo "  bundling: networking daemons"
   mkdir -p "$ASSETS_DIR"
 
-  if [[ -f "$DAEMONS_CACHE/i2pd/i2pd-aarch64" ]] &&
-     [[ $(stat -c%s "$DAEMONS_CACHE/i2pd/i2pd-aarch64") -gt 100000 ]]; then
-    cp "$DAEMONS_CACHE/i2pd/i2pd-aarch64" "$ASSETS_DIR/i2pd"
-    echo "  i2pd: arm64 binary bundled"
-  else
-    # Create stub if download failed
-    create_stub "$ASSETS_DIR/i2pd" "I2P daemon not available - download failed"
-  fi
+  # i2pd ships per-arch statics in one zip: map them onto the Android ABI
+  # dirs so the bridge picks the right binary at runtime via
+  # Build.SUPPORTED_ABIS[0] (assets/daemons/<abi>/i2pd).
+  local -A I2PD_BIN=( [arm64-v8a]=i2pd-aarch64 [x86_64]=i2pd-x86_64 [armeabi-v7a]=i2pd-armv7l )
+  local abi bin
+  for abi in arm64-v8a x86_64 armeabi-v7a; do
+    bin="${I2PD_BIN[$abi]}"
+    if [[ -f "$DAEMONS_CACHE/i2pd/$bin" ]] &&
+       [[ $(stat -c%s "$DAEMONS_CACHE/i2pd/$bin") -gt 100000 ]]; then
+      mkdir -p "$ASSETS_DIR/$abi"
+      cp "$DAEMONS_CACHE/i2pd/$bin" "$ASSETS_DIR/$abi/i2pd"
+      echo "  i2pd: $abi binary bundled"
+    else
+      # Create stub if download failed (only reachable on non-arm64 ABIs;
+      # the aarch64 build is verified separately below).
+      create_stub "$ASSETS_DIR/$abi/i2pd" "I2P daemon not available - download failed"
+    fi
+  done
 
   if [[ -f "$DAEMONS_CACHE/freenet/freenet" ]] &&
      [[ $(stat -c%s "$DAEMONS_CACHE/freenet/freenet") -gt 100000 ]]; then
@@ -276,8 +324,13 @@ if [[ "$BRIDGE_COUNT" -lt 3 ]]; then
 fi
 echo "  verifying: networking daemons"
 unzip -l "$OUT" | grep "assets/daemons/" || echo "  warning: daemons not found in APK"
-I2PD_SIZE="$(unzip -l "$OUT" | grep 'assets/daemons/i2pd' | awk '{print $1}' || true)"
+I2PD_SIZE="$(unzip -l "$OUT" | grep 'assets/daemons/arm64-v8a/i2pd' | awk '{print $1}' || true)"
 if [[ -n "$I2PD_SIZE" && "$I2PD_SIZE" -lt 100000 ]]; then
-  echo "  WARNING: assets/daemons/i2pd is ${I2PD_SIZE}B (stub, not a real binary)" >&2
+  echo "  WARNING: assets/daemons/arm64-v8a/i2pd is ${I2PD_SIZE}B (stub, not a real binary)" >&2
+fi
+echo "  verifying: python runtime (rnsd via Chaquopy)"
+PYTHON_COUNT="$(unzip -l "$OUT" | grep -c 'lib/.*/libpython' || true)"
+if [[ "$PYTHON_COUNT" -eq 0 ]]; then
+  echo "  WARNING: no libpython in APK — rnsd (Chaquopy) missing" >&2
 fi
 echo "== Done: $OUT =="

@@ -846,6 +846,7 @@ pub fn network_reticulum_announce(_pubkey: String) -> Result<bool, String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::await_holding_lock)]
 mod tests {
     #[test]
     fn test_validate_relay_urls_rejected() {

@@ -42,13 +42,21 @@ impl<'a> SearchIndexRepo<'a> {
         // the posts rowid (matching the posts_ai trigger), everything else
         // gets a deterministic negative rowid. Auto-assigned rowids collide
         // with trigger inserts and surface as bare `constraint failed`.
-        for row in rows {
-            let neg = negative_rowid(&row.id);
-            tx.execute(
+        let mut stmt = tx
+            .prepare(
                 "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content) SELECT COALESCE((SELECT rowid FROM posts WHERE id = ?1), ?2), ?1, ?3, ?4",
-                params![row.id.as_str(), neg, row.pubkey.as_str(), row.content.as_str()],
             )
             .await?;
+        for row in rows {
+            let neg = negative_rowid(&row.id);
+            stmt.run(params![
+                row.id.as_str(),
+                neg,
+                row.pubkey.as_str(),
+                row.content.as_str(),
+            ])
+            .await?;
+            stmt.reset();
         }
         Ok(())
     }

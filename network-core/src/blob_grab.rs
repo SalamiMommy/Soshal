@@ -219,7 +219,7 @@ mod tests {
             .collect();
         let manifest = seeder.store_reader(std::io::Cursor::new(&data)).unwrap();
         seeder.save_manifest(&manifest).unwrap();
-        let blob_hash = manifest.blob_hash.clone();
+        let blob_hash = manifest.blob_hash;
 
         let key = [9u8; 32];
         let tcp = crate::lan_transport::start_lan_server_with_store(key, root.clone()).unwrap();

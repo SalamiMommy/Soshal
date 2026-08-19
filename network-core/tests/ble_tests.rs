@@ -68,7 +68,7 @@ fn reassemble_rejects_gaps_dupes_and_mismatched_counts() {
         None
     );
     assert_eq!(reassemble_chunks(&[]), None);
-    let mut swapped = chunks.clone();
+    let mut swapped = chunks;
     let last = swapped.len() - 1;
     swapped.swap(0, last);
     assert_eq!(

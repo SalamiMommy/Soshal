@@ -184,7 +184,7 @@ mod ffi_coverage_tests {
         let mine = events::events_fetch_user_events(pk.clone(), 5).unwrap();
         let arr: serde_json::Value = serde_json::from_str(&mine).unwrap();
         assert_eq!(arr.as_array().unwrap().len(), 1);
-        assert!(events::events_check_in(event_id.clone(), pk.clone(), 37.5, -122.4).unwrap());
+        assert!(events::events_check_in(event_id.clone(), pk, 37.5, -122.4).unwrap());
         let attendees = events::events_get_attendees(event_id).unwrap();
         assert!(attendees.is_empty(), "check-in is not an RSVP");
         crate::test_util::cleanup(&path);
@@ -280,7 +280,7 @@ mod ffi_coverage_tests {
         let dms = messaging::messaging_fetch_dms("peer_a".into(), 50).unwrap();
         let v: serde_json::Value = serde_json::from_str(&dms).unwrap();
         assert_eq!(v.as_array().unwrap().len(), 1);
-        let conversations = messaging::messaging_fetch_conversations(pk.clone()).unwrap();
+        let conversations = messaging::messaging_fetch_conversations(pk).unwrap();
         assert!(
             conversations.contains(&"peer_a".to_string()),
             "got {conversations:?}"
@@ -296,9 +296,12 @@ mod ffi_coverage_tests {
         let e = messaging::messaging_send_group_dm(String::new(), "g1".into(), "[]".into())
             .unwrap_err();
         assert_eq!(e, "message must not be empty");
-        let out =
-            messaging::messaging_send_group_dm("hello".into(), "g1".into(), r#"["pk1"]"#.into())
-                .unwrap();
+        let out = messaging::messaging_send_group_dm(
+            "hello".into(),
+            "g1".into(),
+            format!(r#"["{}"]"#, "ab".repeat(32)),
+        )
+        .unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert!(v["id"].is_string(), "signed event expected");
         crate::test_util::cleanup(&path);
@@ -308,8 +311,8 @@ mod ffi_coverage_tests {
         let _g = crate::test_util::lock();
         let pk = unlock_signer();
         let other = "ab".repeat(32);
-        let e = identity::identity_publish_custom_profile(other.clone(), r#"{"name":"x"}"#.into())
-            .unwrap_err();
+        let e =
+            identity::identity_publish_custom_profile(other, r#"{"name":"x"}"#.into()).unwrap_err();
         assert!(e.contains("does not match"), "got {e}");
         let e =
             identity::identity_publish_custom_profile(pk, r#"{"name":"x"}"#.into()).unwrap_err();

@@ -198,7 +198,7 @@ mod ffi_tests {
         let srflx = "a=candidate:1 1 UDP 2130706431 8.8.8.8 54321 typ srflx".to_string();
         assert_eq!(
             webrtc::webrtc_sanitize_sdp(srflx.clone(), false).unwrap(),
-            srflx.clone().replace("\r\n", "")
+            srflx.replace("\r\n", "")
         );
         assert_eq!(webrtc::webrtc_sanitize_sdp(srflx, true).unwrap(), "");
     }

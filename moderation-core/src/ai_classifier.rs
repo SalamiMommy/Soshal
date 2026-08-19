@@ -602,6 +602,16 @@ pub fn classify_text(text: &str) -> AiModerationResult {
     if trimmed.is_empty() {
         return AiModerationResult::clean();
     }
+    if trimmed.len() > crate::check::MAX_MODERATION_INPUT_LEN {
+        return AiModerationResult {
+            is_flagged: true,
+            primary_category: Some("oversize".to_string()),
+            confidence: 1.0,
+            scores: AiCategoryScores::default(),
+            detected_reasons: vec!["input_oversize".to_string()],
+            evasion_score: 1.0,
+        };
+    }
 
     let evasion_score = calculate_evasion_score(trimmed);
     let variants = crate::normalize::generate_normalized_variants(trimmed);

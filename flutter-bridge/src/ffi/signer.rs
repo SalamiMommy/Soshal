@@ -20,12 +20,18 @@ static SIGNER: Mutex<Option<Keys>> = Mutex::new(None);
 /// Derived keys cached from the unlocked secret (LAN handshake key + at-rest
 /// key). Cleared on every unlock/lock so the cache can never outlive the
 /// identity it was derived from.
-static DERIVED: Mutex<Option<([u8; 32], [u8; 32])>> = Mutex::new(None);
+static LAN_KEY_CACHE: Mutex<Option<[u8; 32]>> = Mutex::new(None);
+static AT_REST_KEY_CACHE: Mutex<Option<[u8; 32]>> = Mutex::new(None);
 
 fn clear_derived_cache() {
-    if let Ok(mut guard) = DERIVED.lock() {
-        if let Some((lan, rest)) = guard.as_mut() {
+    if let Ok(mut guard) = LAN_KEY_CACHE.lock() {
+        if let Some(lan) = guard.as_mut() {
             lan.fill(0);
+        }
+        *guard = None;
+    }
+    if let Ok(mut guard) = AT_REST_KEY_CACHE.lock() {
+        if let Some(rest) = guard.as_mut() {
             rest.fill(0);
         }
         *guard = None;
@@ -42,15 +48,23 @@ fn keychain_user(pubkey: &str) -> String {
     format!("nsec-{pubkey}")
 }
 
+use zeroize::Zeroize;
+
 /// Unlock the signer with an nsec (or hex secret key). Accepts BOTH bech32
 /// `nsec1...` and 64-char hex input via `Keys::parse`.
 ///
 /// Returns the hex public key of the unlocked identity.
 #[frb(sync, serialize)]
-pub fn signer_unlock(secret: String) -> Result<String, String> {
+pub fn signer_unlock(mut secret: String) -> Result<String, String> {
     let keys = match Keys::parse(&secret) {
-        Ok(k) => k,
-        Err(e) => return Err(format!("invalid secret key: {e}")).into(),
+        Ok(k) => {
+            secret.zeroize();
+            k
+        }
+        Err(e) => {
+            secret.zeroize();
+            return Err(format!("invalid secret key: {e}")).into();
+        }
     };
     let pk = keys.public_key().to_hex();
     clear_derived_cache();
@@ -119,13 +133,19 @@ pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> 
         Ok(e) => e,
         Err(e) => return Err(format!("keychain unavailable: {e}")).into(),
     };
-    let secret = match entry.get_password() {
+    let mut secret = match entry.get_password() {
         Ok(s) => s,
         Err(e) => return Err(format!("no stored key: {e}")).into(),
     };
     let keys = match Keys::parse(&secret) {
-        Ok(k) => k,
-        Err(e) => return Err(format!("stored key invalid: {e}")).into(),
+        Ok(k) => {
+            secret.zeroize();
+            k
+        }
+        Err(e) => {
+            secret.zeroize();
+            return Err(format!("stored key invalid: {e}")).into();
+        }
     };
     if keys.public_key().to_hex() != pubkey {
         return Err("stored key does not match pubkey".to_string()).into();
@@ -155,8 +175,8 @@ pub fn signer_remove_from_keyring(pubkey: String) -> Result<bool, String> {
 /// used by the P2P module for beacon MACs and chunk handshakes. Derived inside
 /// the signer so key bytes never cross FFI.
 pub(crate) fn lan_key() -> Result<[u8; 32], String> {
-    if let Ok(cache) = DERIVED.lock() {
-        if let Some((lan, _)) = cache.as_ref() {
+    if let Ok(cache) = LAN_KEY_CACHE.lock() {
+        if let Some(lan) = cache.as_ref() {
             return Ok(*lan);
         }
     }
@@ -182,10 +202,8 @@ pub(crate) fn lan_key() -> Result<[u8; 32], String> {
     for b in derived.iter_mut() {
         *b = 0;
     }
-    if let Ok(mut cache) = DERIVED.lock() {
-        if cache.is_none() {
-            *cache = Some((out, [0u8; 32]));
-        }
+    if let Ok(mut cache) = LAN_KEY_CACHE.lock() {
+        *cache = Some(out);
     }
     Ok(out)
 }
@@ -193,11 +211,9 @@ pub(crate) fn lan_key() -> Result<[u8; 32], String> {
 /// Identity-derived at-rest encryption key (HKDF from the unlocked secret),
 /// used by domain modules to seal key material persisted in SQLite.
 pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
-    if let Ok(cache) = DERIVED.lock() {
-        if let Some((_, rest)) = cache.as_ref() {
-            if *rest != [0u8; 32] {
-                return Ok(*rest);
-            }
+    if let Ok(cache) = AT_REST_KEY_CACHE.lock() {
+        if let Some(rest) = cache.as_ref() {
+            return Ok(*rest);
         }
     }
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
@@ -210,11 +226,8 @@ pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
         hex::decode(&*secret_hex).map_err(|e| format!("secret decode: {e}"))?,
     );
     let rest = soshal_crypto_core::at_rest::at_rest_key(&secret)?;
-    if let Ok(mut cache) = DERIVED.lock() {
-        match cache.as_mut() {
-            Some((_lan, slot)) => *slot = rest,
-            None => *cache = Some(([0u8; 32], rest)),
-        }
+    if let Ok(mut cache) = AT_REST_KEY_CACHE.lock() {
+        *cache = Some(rest);
     }
     Ok(rest)
 }
@@ -397,6 +410,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_keyring_save_unlock_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
@@ -423,6 +437,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_keyring_remove() {
         let _g = TEST_LOCK.lock().unwrap();
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
@@ -491,6 +506,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_keyring_validation() {
         let _g = TEST_LOCK.lock().unwrap();
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
@@ -509,9 +525,8 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, "pubkey does not match unlocked signer");
 
-        match signer_remove_from_keyring(other.public_key().to_hex()) {
-            Ok(removed) => assert!(!removed, "missing keychain entry must not report removal"),
-            Err(_) => {} // headless CI: keychain backend absent
+        if let Ok(removed) = signer_remove_from_keyring(other.public_key().to_hex()) {
+            assert!(!removed, "missing keychain entry must not report removal");
         }
 
         if signer_save_to_keyring(pk_hex.clone()).await.is_ok() {

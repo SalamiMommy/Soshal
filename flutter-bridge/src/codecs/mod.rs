@@ -92,9 +92,6 @@ impl CodecState {
     }
 
     pub fn release_audio(&mut self) {
-        if let Some(t) = self.capture_thread.take() {
-            let _ = t.join();
-        }
         #[cfg(target_os = "android")]
         unsafe {
             use ndk::*;

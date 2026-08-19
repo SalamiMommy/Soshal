@@ -377,25 +377,6 @@ impl I2PSessionManager {
             None => Err("i2p session not running".to_string()),
         }
     }
-
-    /// Opens an outbound stream with a hybrid PQC ratchet handshake. The
-    /// returned codec must drive the handshake (outbound first) before any
-    /// encrypted payload flows.
-    pub fn connect_to_destination_pqc(
-        &self,
-        destination: &str,
-    ) -> Result<(std::net::TcpStream, I2PStreamCodec), String> {
-        let stream = self.connect_to_destination(destination)?;
-        Ok((stream, I2PStreamCodec::new(destination)))
-    }
-
-    /// Accepts an inbound stream and pairs it with a hybrid PQC ratchet
-    /// codec (the peer drives the handshake; we answer on accept).
-    pub fn accept_connection_pqc(&self) -> Result<(std::net::TcpStream, I2PStreamCodec), String> {
-        let stream = self.accept_connection()?;
-        let codec = I2PStreamCodec::new("inbound");
-        Ok((stream, codec))
-    }
 }
 
 impl Default for I2PSessionManager {

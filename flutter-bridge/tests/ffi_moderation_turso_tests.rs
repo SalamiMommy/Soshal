@@ -152,7 +152,7 @@ mod ffi_tests {
         .unwrap();
         assert!(listed.is_empty());
         let id = rows[0]["id"].as_str().unwrap().to_string();
-        assert!(moderation::moderation_delete_report(id.clone()).unwrap());
+        assert!(moderation::moderation_delete_report(id).unwrap());
         let gone: Vec<serde_json::Value> = serde_json::from_str(
             &db::db_query_raw("SELECT id FROM spam_reports".to_string()).unwrap(),
         )
@@ -169,20 +169,21 @@ mod ffi_tests {
             2,
             3,
             "group_pk".to_string(),
-        )
-        .unwrap();
-        assert!(case.contains("case_x"));
+        );
+        let err = case.unwrap_err();
+        assert!(err.contains("unavailable"), "got {err}");
         let vote = r#"{"participant_id":1,"sig_share_hex":"abcd"}"#;
-        let out = moderation::moderation_submit_jury_vote(case.clone(), vote.to_string()).unwrap();
-        assert!(out.contains(r#""threshold_reached":false"#));
-        let again =
-            moderation::moderation_submit_jury_vote(case.clone(), vote.to_string()).unwrap();
-        assert!(again.contains(r#""votes_count":1"#));
+        let out = moderation::moderation_submit_jury_vote("case_x".to_string(), vote.to_string());
+        assert!(out.is_err(), "FROST gate must reject votes");
         assert!(
             moderation::moderation_submit_jury_vote("bad case".to_string(), vote.to_string())
                 .is_err()
         );
-        assert!(moderation::moderation_submit_jury_vote(case, "not json".to_string()).is_err());
+        assert!(moderation::moderation_submit_jury_vote(
+            "case_x".to_string(),
+            "not json".to_string()
+        )
+        .is_err());
     }
     #[test]
     fn test_jury_vote_reaches_threshold() {
@@ -193,12 +194,8 @@ mod ffi_tests {
             1,
             3,
             "group_pk".to_string(),
-        )
-        .unwrap();
-        let vote = r#"{"participant_id":1,"sig_share_hex":"abcd"}"#;
-        let out = moderation::moderation_submit_jury_vote(case, vote.to_string()).unwrap();
-        assert!(out.contains(r#""threshold_reached":true"#));
-        assert!(!out.contains(r#""verdict_signature":null"#));
+        );
+        assert!(case.is_err(), "FROST gate must reject case creation");
     }
     #[test]
     fn test_turso_configure_and_status() {

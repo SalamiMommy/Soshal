@@ -230,7 +230,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let (dir, db_path) = tmp_session_dir("addlist");
-        session_load(db_path.clone()).unwrap();
+        session_load(db_path).unwrap();
         assert_eq!(session_get_active().unwrap(), "null");
         session_add_account(
             "pk1".to_string(),
@@ -260,7 +260,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let (dir, db_path) = tmp_session_dir("switch");
-        session_load(db_path.clone()).unwrap();
+        session_load(db_path).unwrap();
         session_add_account("pk1".to_string(), "npub1pk1".to_string(), "[]".to_string()).unwrap();
         session_add_account("pk2".to_string(), "npub1pk2".to_string(), "[]".to_string()).unwrap();
         assert!(session_switch_account("pk2".to_string()).unwrap());
@@ -287,7 +287,7 @@ mod tests {
         );
         let active = session_get_active().unwrap();
         assert!(active.contains("wss://relay.a"), "active: {active}");
-        let err = session_save(db_path.clone(), "not json".to_string()).unwrap_err();
+        let err = session_save(db_path, "not json".to_string()).unwrap_err();
         assert!(err.contains("Invalid session JSON"));
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -305,7 +305,7 @@ mod tests {
         let reloaded = session_load(db_path.clone()).unwrap();
         assert!(reloaded.contains("tok123"), "reloaded: {reloaded}");
         assert!(session_register_push_token(String::new()).unwrap());
-        let reloaded = session_load(db_path.clone()).unwrap();
+        let reloaded = session_load(db_path).unwrap();
         assert!(!reloaded.contains("tok123"), "reloaded: {reloaded}");
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -316,7 +316,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let (dir, db_path) = tmp_session_dir("pushnone");
-        session_load(db_path.clone()).unwrap();
+        session_load(db_path).unwrap();
         let err = session_register_push_token("tok".to_string()).unwrap_err();
         assert!(err.contains("No active account"));
         std::fs::remove_dir_all(&dir).ok();

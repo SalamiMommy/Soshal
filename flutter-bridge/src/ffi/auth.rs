@@ -44,30 +44,36 @@ pub fn auth_validate_mnemonic(mnemonic: String) -> Result<bool, String> {
     Ok(validate_mnemonic(&mnemonic)).into()
 }
 
-/// Restore a keypair from a BIP-39 mnemonic and unlock the in-process signer
+/// Restore a keypair from a BIP-39 mnemonic and unlock the in-process signer.
+/// The secret key is NOT returned across FFI — the signer is already unlocked
+/// in-process. Only the hex public key is returned.
 #[frb(serialize)]
 pub async fn auth_restore_from_mnemonic(
-    mnemonic: String,
-    passphrase: String,
+    mut mnemonic: String,
+    mut passphrase: String,
 ) -> Result<String, String> {
-    let mut keys = restore_from_mnemonic(&mnemonic, &passphrase).map_err(super::util::to_err)?;
+    let res = restore_from_mnemonic(&mnemonic, &passphrase);
+    mnemonic.zeroize();
+    passphrase.zeroize();
+    let mut keys = res.map_err(super::util::to_err)?;
     let nsec = Zeroizing::new(keys.private_key_hex.clone());
     let pk = super::signer::signer_unlock((*nsec).clone())?;
-    let result = super::util::json_ok(KeyPairResult {
-        public_key: pk,
-        secret_key: nsec,
-    });
     keys.private_key_hex.zeroize();
-    result
+    // Return only the public key; the signer now holds the unlocked identity.
+    super::util::json_ok(KeyPairResult {
+        public_key: pk,
+        secret_key: Zeroizing::new(String::new()),
+    })
 }
 
 /// Get public key from nsec (bech32 encoded secret key)
 #[frb(sync, serialize)]
-pub fn auth_public_key_from_nsec(nsec: String) -> Result<String, String> {
-    from_nsec(&nsec)
+pub fn auth_public_key_from_nsec(mut nsec: String) -> Result<String, String> {
+    let res = from_nsec(&nsec)
         .map_err(super::util::to_err)
-        .map(|keys| keys.public_key().to_string())
-        .into()
+        .map(|keys| keys.public_key().to_string());
+    nsec.zeroize();
+    res.into()
 }
 
 /// Encode public key as npub (bech32)

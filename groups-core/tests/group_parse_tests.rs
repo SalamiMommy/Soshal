@@ -68,7 +68,7 @@ fn posts_extract_imeta_videos() {
 
 #[test]
 fn posts_reject_oversize_and_malformed() {
-    let big_tags: Vec<Vec<String>> = (0..100_001).map(|i| tag(&["d", "g"])).collect();
+    let big_tags: Vec<Vec<String>> = (0..100_001).map(|_| tag(&["d", "g"])).collect();
     let input = json!({ "events": [post_event("e1", "", big_tags, 1.0)], "group_id": "g" });
     assert_eq!(parse_group_posts_json(&input.to_string()), "[]");
     assert_eq!(parse_group_posts_json("not json"), "[]");

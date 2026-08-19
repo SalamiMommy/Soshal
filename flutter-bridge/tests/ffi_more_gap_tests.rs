@@ -36,9 +36,7 @@ mod ffi_more_gap_tests {
         assert!(posts.contains("hello nostr world"), "{posts}");
         let none = search::search_posts("zzz".into(), 10).unwrap();
         assert_eq!(none, "[]");
-        assert!(
-            search::search_index_profile(pk.clone(), "Alice Smith".into(), "bio".into()).unwrap()
-        );
+        assert!(search::search_index_profile(pk, "Alice Smith".into(), "bio".into()).unwrap());
         let profiles = search::search_profiles("alice".into(), 10).unwrap();
         assert!(profiles.contains("Alice Smith"), "{profiles}");
         let global = search::search_global("nostr".into(), 10).unwrap();
@@ -79,7 +77,7 @@ mod ffi_more_gap_tests {
             "dm".into(),
             "https://example.com/v.mp4".into(),
             "video".into(),
-            sender.clone(),
+            sender,
             recipient.clone(),
             3,
             1700000000,
@@ -87,7 +85,7 @@ mod ffi_more_gap_tests {
         .unwrap();
         let got = ephemeral::ephemeral_get(id.clone()).unwrap();
         assert!(got.contains("\"state\":\"pending\""), "{got}");
-        let pending = ephemeral::ephemeral_list_pending(recipient.clone()).unwrap();
+        let pending = ephemeral::ephemeral_list_pending(recipient).unwrap();
         assert!(pending.contains(&id), "{pending}");
         let viewed = ephemeral::ephemeral_view(id.clone()).unwrap();
         assert!(viewed.contains("\"current_views\":1"), "{viewed}");
@@ -196,7 +194,7 @@ mod ffi_more_gap_tests {
         let v: serde_json::Value = serde_json::from_str(&summary).unwrap();
         assert_eq!(v["pending_count"], 2, "{summary}");
         assert_ne!(id, id2);
-        assert_eq!(sync::sync_running().unwrap(), false);
+        assert!(!sync::sync_running().unwrap());
         let _ = sync::sync_running().unwrap();
         let _ = db;
     }

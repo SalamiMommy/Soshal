@@ -219,14 +219,16 @@ unsafe fn drain_encoder(codec: *mut AMediaCodec, width: i32, height: i32) -> Vec
         }
         let mut size = 0usize;
         let buf = AMediaCodec_getOutputBuffer(codec, idx as usize, &mut size);
-        if !buf.is_null() && info.size > 0 {
+        if !buf.is_null()
+            && info.size > 0
+            && info.offset >= 0
+            && (info.offset as usize).saturating_add(info.size as usize) <= size
+        {
             let payload =
                 std::slice::from_raw_parts(buf.offset(info.offset as isize), info.size as usize);
             let is_key = info.flags & AMEDIACODEC_BUFFER_FLAG_KEY_FRAME != 0;
             let is_config = info.flags & AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG != 0;
-            if let Ok(()) = super::dvr_write_video(payload, is_key, is_config, width, height) {
-                // mirrored to DVR; failure ignored (recording may be off)
-            }
+            let _ = super::dvr_write_video(payload, is_key, is_config, width, height);
             let flag: u8 = if is_key { 1 } else { 0 };
             let mut tagged = Vec::with_capacity(payload.len() + 1);
             tagged.push(flag);
@@ -317,6 +319,9 @@ unsafe fn image_to_jpeg(image: *mut AImage) -> Result<Vec<u8>, String> {
     AImage_getPlanePixelStride(image, 2, &mut v_ps);
     if y.is_null() || u.is_null() || v.is_null() || y_ps <= 0 || u_ps <= 0 || v_ps <= 0 {
         return Err("plane data".to_string());
+    }
+    if y_len <= 0 || u_len <= 0 || v_len <= 0 {
+        return Err("plane lengths invalid".to_string());
     }
 
     let mut rgb = image::RgbImage::new(w as u32, h as u32);

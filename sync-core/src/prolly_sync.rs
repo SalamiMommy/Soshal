@@ -138,7 +138,7 @@ mod tests {
 
         // Send root exchange from peer holding tree2
         let resp = session.handle_message(ProllySyncMessage::RootExchange {
-            root_hash: tree2.root_hash.clone(),
+            root_hash: tree2.root_hash,
         });
 
         assert!(matches!(

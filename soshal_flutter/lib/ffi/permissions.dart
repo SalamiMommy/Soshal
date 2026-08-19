@@ -30,6 +30,20 @@ bool permissionsCameraMicPermanentlyDenied() => RustLib.instance.api
 bool permissionsOpenSettings() =>
     RustLib.instance.api.crateFfiPermissionsPermissionsOpenSettings();
 
+/// POST_NOTIFICATIONS granted (Android 13+; the daemon foreground service
+/// notification needs it to be visible, though the service still runs).
+/// JNI failure reports false (fail closed — never assume granted).
+bool permissionsNotificationsGranted() =>
+    RustLib.instance.api.crateFfiPermissionsPermissionsNotificationsGranted();
+
+/// Fire the POST_NOTIFICATIONS dialog. Result polled via `*_granted`.
+bool permissionsNotificationsRequest() =>
+    RustLib.instance.api.crateFfiPermissionsPermissionsNotificationsRequest();
+
+/// Denied with "don't ask again" (no rationale would be shown).
+bool permissionsNotificationsPermanentlyDenied() => RustLib.instance.api
+    .crateFfiPermissionsPermissionsNotificationsPermanentlyDenied();
+
 /// Fine location granted.
 bool permissionsLocationGranted() =>
     RustLib.instance.api.crateFfiPermissionsPermissionsLocationGranted();

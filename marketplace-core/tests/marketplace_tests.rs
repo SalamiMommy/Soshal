@@ -276,7 +276,7 @@ fn parse_calendar_event_rejects_missing_invalid_start() {
     });
     assert_eq!(parse_calendar_event_json(&input.to_string()), "null");
 
-    let mut input2 = input.clone();
+    let mut input2 = input;
     input2["tags"] = serde_json::json!([["start", "notanumber"]]);
     assert_eq!(parse_calendar_event_json(&input2.to_string()), "null");
 }

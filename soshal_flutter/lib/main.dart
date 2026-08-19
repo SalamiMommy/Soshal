@@ -47,6 +47,7 @@ import 'services/chatrandom_service.dart';
 import 'services/daemon_service.dart';
 import 'services/media_service.dart';
 import 'services/mesh_service.dart';
+import 'services/permissions_service.dart';
 import 'services/profile_service.dart';
 import 'utils/format.dart';
 
@@ -136,6 +137,10 @@ class _SoshalAppState extends State<SoshalApp> {
       // desktop (no bundled assets) and when already running.
       try {
         unawaited(DaemonService.startDaemons());
+        // Android 13+: foreground-service notification needs the runtime
+        // permission to be visible (service runs regardless). Fire once on
+        // startup when the daemons are coming up.
+        unawaited(PermissionsService.ensureNotifications());
       } catch (e) {
         debugPrint('Error autolaunching daemons: $e');
       }

@@ -115,15 +115,6 @@ pub fn check_media_buffer_ai_json(bytes: &[u8], mime_type: &str, tags: &[String]
     crate::ai_media::classify_media_buffer_json(bytes, mime_type, tags)
 }
 
-/// 2-Tier Hybrid media evaluation (Chrominance/Skin-tone -> Meta PDQ Perceptual Hash).
-pub fn check_media_hybrid(
-    bytes: &[u8],
-    mime_type: &str,
-    tags: &[String],
-) -> crate::hybrid::HybridMediaResult {
-    crate::hybrid::evaluate_media_hybrid(bytes, mime_type, tags)
-}
-
 /// 2-Tier Hybrid media evaluation returning JSON string.
 pub fn check_media_hybrid_json(bytes: &[u8], mime_type: &str, tags: &[String]) -> String {
     crate::hybrid::evaluate_media_hybrid_json(bytes, mime_type, tags)

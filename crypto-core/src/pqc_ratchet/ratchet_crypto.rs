@@ -15,7 +15,6 @@ pub const INIT_SALT: &[u8] = b"soshal-ratchet-v3-init";
 pub const CHAIN_SALT: &[u8] = b"soshal-ratchet-v3-chain";
 pub const ROOT_INFO: &[u8] = b"soshal-ratchet-v3:root";
 pub const CHAIN_INFO: &[u8] = b"soshal-ratchet-v3:chain";
-pub const MSG_INFO: &[u8] = b"soshal-ratchet-v3:msg";
 pub const MAX_INPUT_LEN: usize = 64 * 1024;
 
 /// Raw deflate of the serialized JSON — no base64, no "z:" prefix.

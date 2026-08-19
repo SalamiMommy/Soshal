@@ -103,7 +103,7 @@ fn bookmark_upsert_in_conflict_updates_event_id() {
     };
     repo.upsert(&row).unwrap();
     let conn = db.conn().unwrap();
-    let mut replaced = row.clone();
+    let mut replaced = row;
     replaced.event_id = "ev2".into();
     soshal_db_core::query::with_tx(&conn, |tx| {
         let r = &repo;
@@ -277,6 +277,7 @@ fn group_row(id: &str, pubkey: &str, updated_at: i64) -> GroupRow {
         access_type: "public".into(),
         relay: None,
         sync_status: "synced".into(),
+        password_hash: None,
     }
 }
 
@@ -594,7 +595,7 @@ fn relay_upsert_in_conflict_updates_fields() {
     };
     repo.upsert(&row).unwrap();
     let conn = db.conn().unwrap();
-    let mut replaced = row.clone();
+    let mut replaced = row;
     replaced.name = Some("second".into());
     replaced.read_enabled = false;
     soshal_db_core::query::with_tx(&conn, |tx| {

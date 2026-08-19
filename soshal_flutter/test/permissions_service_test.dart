@@ -107,6 +107,45 @@ void main() {
       expect(result.reason, contains('permanently denied'));
     });
 
+    test('ensureNotifications granted when already granted', () async {
+      api.stubBool('crateFfiPermissionsPermissionsNotificationsGranted', true);
+
+      final result = await PermissionsService.ensureNotifications();
+      expect(result.granted, isTrue);
+      expect(
+        api.callCount('crateFfiPermissionsPermissionsNotificationsRequest'),
+        0,
+      );
+    });
+
+    test('ensureNotifications requests then polls until granted', () async {
+      api.stub('crateFfiPermissionsPermissionsNotificationsGranted', (_) {
+        return api.callCount(
+                'crateFfiPermissionsPermissionsNotificationsGranted') >
+            1;
+      });
+      api.stubBool('crateFfiPermissionsPermissionsNotificationsRequest', true);
+
+      final result = await PermissionsService.ensureNotifications();
+      expect(result.granted, isTrue);
+      expect(
+        api.callCount('crateFfiPermissionsPermissionsNotificationsRequest'),
+        1,
+      );
+    });
+
+    test('ensureNotifications denied with reason when still denied', () async {
+      api.stubBool('crateFfiPermissionsPermissionsNotificationsGranted', false);
+      api.stubBool('crateFfiPermissionsPermissionsNotificationsRequest', true);
+      api.stubBool(
+          'crateFfiPermissionsPermissionsNotificationsPermanentlyDenied',
+          false);
+
+      final result = await PermissionsService.ensureNotifications();
+      expect(result.granted, isFalse);
+      expect(result.reason, contains('Notification permission denied'));
+    });
+
     test('isPermanentlyDenied mirrors FFI state', () async {
       api.stubBool(
           'crateFfiPermissionsPermissionsCameraMicPermanentlyDenied', true);
@@ -162,6 +201,11 @@ void main() {
       final result = await PermissionsService.ensureCameraMic();
       expect(result.granted, isFalse);
       expect(result.reason, contains('Linux'));
+    });
+
+    test('ensureNotifications no-op granted off-Android', () async {
+      final result = await PermissionsService.ensureNotifications();
+      expect(result.granted, isTrue);
     });
 
     test('currentPosition reads portal fix coords', () async {

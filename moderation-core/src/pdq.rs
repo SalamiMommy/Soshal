@@ -1,12 +1,15 @@
 //! Meta PDQ 256-bit Perceptual Image Hashing
 //!
-//! Implements Meta's ThreatExchange PDQ algorithm for visual similarity matching
-//! and zero-tolerance CSAM / violent media deduplication:
+//! Implements Meta's ThreatExchange PDQ algorithm for visual similarity matching:
 //! 1. Grayscale luma downsampling to 64x64.
 //! 2. 2D Discrete Cosine Transform (DCT-II).
 //! 3. 16x16 frequency coefficient extraction (256 bits).
 //! 4. Median thresholding binarization into a 256-bit perceptual hash (32 bytes).
 //! 5. Bitwise Hamming distance matching (threshold <= 31 bit diffs).
+//!
+//! The blocklist currently holds synthetic sentinel hashes only — no real
+//! ThreatExchange CSAM hashes are bundled. Real blocklist ingestion is a
+//! roadmap item; threat matching is therefore demonstrative, not protective.
 
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
@@ -70,6 +73,10 @@ pub fn compute_pdq_hash(image_bytes: &[u8]) -> Option<([u8; 32], u32)> {
 
     // Fallback: if raw RGB or grayscale buffer is provided
     let len = image_bytes.len();
+    const MAX_RAW_BYTES: usize = 64 * 1024 * 1024;
+    if len > MAX_RAW_BYTES {
+        return None;
+    }
     if len >= 64 * 64 * 3 {
         // Assume RGB
         let dim = (len / 3) as f32;

@@ -378,11 +378,8 @@ mod tests {
         ))
         .unwrap_err();
         assert!(err.contains("Invalid media URL"), "{err}");
-        let err = soshal_db_core::block_on(media_fetch(
-            "https://example.com".to_string(),
-            cache.clone(),
-        ))
-        .unwrap_err();
+        let err = soshal_db_core::block_on(media_fetch("https://example.com".to_string(), cache))
+            .unwrap_err();
         assert!(err.contains("must point to a blob path"), "{err}");
     }
 
@@ -396,7 +393,7 @@ mod tests {
         assert!(m.is_valid());
         let same = chunk_bytes(&data).unwrap();
         assert_eq!(same.blob_hash, m.blob_hash);
-        let mut tampered = m.clone();
+        let mut tampered = m;
         tampered.chunks[0].len += 1;
         assert!(!tampered.is_valid());
         let empty = chunk_bytes(&[]).unwrap();

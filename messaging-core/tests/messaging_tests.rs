@@ -29,7 +29,7 @@ fn unwrap_rejects_wrong_key() {
 #[test]
 fn unwrap_rejects_tampered_ciphertext() {
     let wrapped = wrap_message(b"hello", &soshal_test_util::fill_key()).unwrap();
-    let mut ct = wrapped.ciphertext.clone();
+    let mut ct = wrapped.ciphertext;
     let last = ct.pop().unwrap();
     ct.push(if last == 'A' { 'B' } else { 'A' });
     assert!(unwrap_message(&ct, &soshal_test_util::fill_key()).is_err());

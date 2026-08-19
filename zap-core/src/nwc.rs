@@ -293,7 +293,7 @@ mod tests {
         let err = resp.error.clone().unwrap();
         assert_eq!(err.code, ErrorCode::InsufficientBalance);
         assert_eq!(err.message, "wallet empty");
-        assert!(resp.clone().to_pay_invoice().is_err());
+        assert!(resp.to_pay_invoice().is_err());
         assert!(Response::from_json(r#"{"result_type":"bogus_method","result":{}}"#).is_err());
     }
 

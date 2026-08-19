@@ -15,9 +15,9 @@ fn wot_cache_invalidation_serves_fresh_partitions() {
         pubkey: self_pk.to_string(),
         contacts: contacts.clone(),
     }];
-    for i in 0..65 {
+    for contact in &contacts {
         users.push(WotUser {
-            pubkey: contacts[i].clone(),
+            pubkey: contact.clone(),
             contacts: vec![self_pk.to_string()],
         });
     }

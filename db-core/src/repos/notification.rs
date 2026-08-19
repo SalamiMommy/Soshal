@@ -45,24 +45,23 @@ impl<'a> NotificationRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
             let sql = "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read=excluded.is_read";
+            let mut stmt = tx.prepare(sql).await?;
             for n in notifications {
                 if crate::repos::limits::notification_too_big(n.content.as_deref().unwrap_or("")) {
                     continue; // oversized notification payload: skip
                 }
-                tx.execute(
-                    sql,
-                    params![
-                        n.id.as_str(),
-                        n.pubkey.as_str(),
-                        n.type_.as_str(),
-                        n.event_id.as_deref(),
-                        n.from_pubkey.as_deref(),
-                        n.content.as_deref(),
-                        n.created_at,
-                        n.is_read,
-                    ],
-                )
+                stmt.run(params![
+                    n.id.as_str(),
+                    n.pubkey.as_str(),
+                    n.type_.as_str(),
+                    n.event_id.as_deref(),
+                    n.from_pubkey.as_deref(),
+                    n.content.as_deref(),
+                    n.created_at,
+                    n.is_read,
+                ])
                 .await?;
+                stmt.reset();
             }
             tx.commit().await?;
             Ok(())

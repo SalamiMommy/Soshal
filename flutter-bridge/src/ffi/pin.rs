@@ -22,16 +22,46 @@ fn with_repo<T>(
     })
 }
 
-/// Set (or reset) the lock PIN. Must be 4-12 digits.
+/// Set the lock PIN for the first time. Must be 4-12 digits.
+/// Only succeeds when no PIN is currently configured. To change an existing
+/// PIN, use `pin_change` which requires the current PIN for authentication.
 #[frb(serialize)]
 pub async fn pin_set(pin: String) -> Result<bool, String> {
     if !pin.chars().all(|c| c.is_ascii_digit()) || !(4..=12).contains(&pin.len()) {
         return Err("PIN must be 4-12 digits".to_string());
     }
+    // Guard against unauthenticated overwrite of an existing PIN.
+    if pin_has()? {
+        return Err(
+            "a PIN is already set; use pin_change to update it with your current PIN".to_string(),
+        );
+    }
     let mut salt = [0u8; PIN_SALT_BYTES];
     getrandom::fill(&mut salt).map_err(|e| format!("rng: {e}"))?;
     let salt_hex = hex::encode(salt);
     let hash = derive_pin_hash(&pin, &salt_hex, PIN_ITERATIONS, PIN_DK_LEN)?;
+    with_repo(|r| {
+        r.set(PIN_HASH_KEY, &format!("{salt_hex}:{hash}"))
+            .map_err(super::util::to_err)?;
+        r.set("pin_permanently_locked", "false")
+            .map_err(super::util::to_err)
+    })?;
+    Ok(true)
+}
+
+/// Change the lock PIN. Requires the current PIN for authentication (full
+/// lockout enforcement applies). `new_pin` must be 4-12 digits.
+#[frb(serialize)]
+pub async fn pin_change(old_pin: String, new_pin: String) -> Result<bool, String> {
+    if !new_pin.chars().all(|c| c.is_ascii_digit()) || !(4..=12).contains(&new_pin.len()) {
+        return Err("new PIN must be 4-12 digits".to_string());
+    }
+    // Require current PIN verification (includes lockout).
+    check_pin_with_lockout(&old_pin)?;
+    let mut salt = [0u8; PIN_SALT_BYTES];
+    getrandom::fill(&mut salt).map_err(|e| format!("rng: {e}"))?;
+    let salt_hex = hex::encode(salt);
+    let hash = derive_pin_hash(&new_pin, &salt_hex, PIN_ITERATIONS, PIN_DK_LEN)?;
     with_repo(|r| {
         r.set(PIN_HASH_KEY, &format!("{salt_hex}:{hash}"))
             .map_err(super::util::to_err)?;
@@ -152,11 +182,10 @@ pub fn pin_lockout_state() -> Result<String, String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::await_holding_lock)]
 mod tests {
     use super::*;
     use soshal_identity_core::security::PIN_HARD_LIMIT;
-
-    static PIN_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn fresh_db() -> String {
         let path = soshal_test_util::tmp_path("pin", "pin.db");
@@ -171,7 +200,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_set_rejects_invalid_pins() {
-        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
         for bad in ["123", "1234567890123", "12a4", "", " 12 "] {
             let e = pin_set(bad.to_string()).await.unwrap_err();
@@ -181,7 +212,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_set_has_verify_roundtrip() {
-        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
         assert!(!pin_has().unwrap());
         assert!(pin_set("2468".to_string()).await.unwrap());
@@ -191,8 +224,44 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn pin_set_rejects_overwrite_without_pin_change() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = fresh_db();
+        assert!(pin_set("1234".to_string()).await.unwrap());
+        // Direct overwrite via pin_set must be rejected when a PIN already exists.
+        let e = pin_set("5678".to_string()).await.unwrap_err();
+        assert!(
+            e.contains("pin_change"),
+            "expected redirect to pin_change, got: {e}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn pin_change_requires_correct_old_pin() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = fresh_db();
+        assert!(pin_set("1234".to_string()).await.unwrap());
+        // Wrong old PIN → rejected
+        let e = pin_change("0000".to_string(), "5678".to_string())
+            .await
+            .unwrap_err();
+        assert!(e.contains("incorrect PIN"), "got: {e}");
+        // Correct old PIN → accepted
+        assert!(pin_change("1234".to_string(), "5678".to_string())
+            .await
+            .unwrap());
+        assert!(pin_verify("5678".to_string()).await.unwrap());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_lockout_after_three_failures() {
-        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
         assert!(pin_set("1357".to_string()).await.unwrap());
         for _ in 0..3 {
@@ -212,7 +281,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_permanent_lock_after_hard_limit() {
-        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
         assert!(pin_set("1357".to_string()).await.unwrap());
         for _ in 0..PIN_HARD_LIMIT {
@@ -229,7 +300,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_clear_requires_current_pin() {
-        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
         assert!(pin_set("97531".to_string()).await.unwrap());
         assert!(pin_clear("0000".to_string()).is_err(), "wrong PIN rejected");
@@ -240,8 +313,11 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[allow(clippy::await_holding_lock)]
     async fn pin_corrupt_storage_detected() {
-        let _g = PIN_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let p = fresh_db();
         super::super::db::db_query_raw(
             "INSERT INTO settings (key, value) VALUES ('pin_hash', 'garbage') \

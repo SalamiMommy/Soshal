@@ -19,6 +19,72 @@ class GroupsScreen extends StatefulWidget {
   State<GroupsScreen> createState() => _GroupsScreenState();
 }
 
+Future<String?> showCommunityPasswordDialog(
+    BuildContext context, String groupName) async {
+  final controller = TextEditingController();
+  var obscure = true;
+  return showDialog<String>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.lock_outline, color: Colors.amber, size: 24),
+            const SizedBox(width: 8),
+            const Flexible(child: Text('Private Community')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Enter the password to join "$groupName":',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              obscureText: obscure,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                prefixIcon: const Icon(Icons.key_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(obscure
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined),
+                  onPressed: () => setDialogState(() => obscure = !obscure),
+                ),
+              ),
+              onSubmitted: (val) {
+                if (val.trim().isNotEmpty) {
+                  Navigator.pop(context, val.trim());
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final pwd = controller.text.trim();
+              if (pwd.isNotEmpty) {
+                Navigator.pop(context, pwd);
+              }
+            },
+            child: const Text('Join'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class _GroupsScreenState extends State<GroupsScreen> {
   bool _loading = true;
 
@@ -51,7 +117,12 @@ class _GroupsScreenState extends State<GroupsScreen> {
       if (g.isMember) {
         await api.leave(g.id, pubkey);
       } else {
-        await api.join(g.id, pubkey);
+        String? pwd;
+        if (g.isPrivate) {
+          pwd = await showCommunityPasswordDialog(context, g.name);
+          if (pwd == null) return;
+        }
+        await api.join(g.id, pubkey, password: pwd);
       }
       await _load();
     } catch (e) {
@@ -66,67 +137,113 @@ class _GroupsScreenState extends State<GroupsScreen> {
     final name = TextEditingController();
     final desc = TextEditingController();
     final pic = TextEditingController();
+    final password = TextEditingController();
+    var isPrivate = false;
+    var obscure = true;
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create group'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: name,
-              decoration: const InputDecoration(labelText: 'Name *'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Create group'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: name,
+                  decoration: const InputDecoration(labelText: 'Name *'),
+                ),
+                TextField(
+                  controller: desc,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'About'),
+                ),
+                TextField(
+                  controller: pic,
+                  decoration: const InputDecoration(
+                    labelText: 'Picture',
+                    hintText: 'pick from device or paste a URL',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    try {
+                      final picked =
+                          await FilePicker.pickFile(type: FileType.image);
+                      final path = picked?.path;
+                      if (path == null) return;
+                      final manifest =
+                          await context.read<MediaService>().uploadMedia(path);
+                      final hash = manifest['blob_hash'] as String? ?? '';
+                      if (hash.length != 64) {
+                        throw Exception('Bad upload manifest');
+                      }
+                      pic.text = 'n$hash';
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: SelectableText('Upload error: $e')));
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('Pick image from device'),
+                ),
+                const SizedBox(height: 12),
+                const Divider(),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Private community'),
+                  subtitle: const Text('Require a password to get in'),
+                  value: isPrivate,
+                  onChanged: (v) => setDialogState(() => isPrivate = v),
+                ),
+                if (isPrivate) ...[
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: password,
+                    obscureText: obscure,
+                    decoration: InputDecoration(
+                      labelText: 'Community Password *',
+                      helperText: 'Min. 8 characters required to join',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscure
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined),
+                        onPressed: () =>
+                            setDialogState(() => obscure = !obscure),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
-            TextField(
-              controller: desc,
-              maxLines: 2,
-              decoration: const InputDecoration(labelText: 'About'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
             ),
-            TextField(
-              controller: pic,
-              decoration: const InputDecoration(
-                labelText: 'Picture',
-                hintText: 'pick from device or paste a URL',
-              ),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () async {
-                try {
-                  final picked =
-                      await FilePicker.pickFile(type: FileType.image);
-                  final path = picked?.path;
-                  if (path == null) return;
-                  final manifest =
-                      await context.read<MediaService>().uploadMedia(path);
-                  final hash = manifest['blob_hash'] as String? ?? '';
-                  if (hash.length != 64) {
-                    throw Exception('Bad upload manifest');
-                  }
-                  pic.text = 'n$hash';
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: SelectableText('Upload error: $e')));
-                  }
+            FilledButton(
+              onPressed: () {
+                if (isPrivate && password.text.trim().length < 8) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Password must be at least 8 characters'),
+                    ),
+                  );
+                  return;
                 }
+                Navigator.pop(context, true);
               },
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-              label: const Text('Pick image from device'),
+              child: const Text('Create'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Create'),
-          ),
-        ],
       ),
     );
 
@@ -144,6 +261,8 @@ class _GroupsScreenState extends State<GroupsScreen> {
               desc.text.trim(),
               pic.text.trim(),
               pubkey,
+              isPrivate: isPrivate,
+              password: isPrivate ? password.text.trim() : null,
             );
         await _load();
       } catch (e) {
@@ -197,7 +316,24 @@ class _GroupsScreenState extends State<GroupsScreen> {
                                     ? '?'
                                     : g.name[0].toUpperCase()),
                               ),
-                        title: Text(g.name),
+                        title: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                g.name,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (g.isPrivate) ...[
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.lock_outline,
+                                size: 16,
+                                color: Colors.amber,
+                              ),
+                            ],
+                          ],
+                        ),
                         subtitle: Text(
                           '${g.members} members${g.role.isNotEmpty ? ' · ${g.role}' : ''}',
                         ),
@@ -468,13 +604,27 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                               Row(
                                 children: [
                                   Expanded(
-                                    child: Text(
-                                      g.name,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                    child: Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            g.name,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (g.isPrivate) ...[
+                                          const SizedBox(width: 6),
+                                          const Icon(
+                                            Icons.lock_outline,
+                                            size: 18,
+                                            color: Colors.amber,
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ),
                                   if (!g.isMember)
@@ -482,10 +632,27 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                       onPressed: () async {
                                         final pubkey = me;
                                         if (pubkey == null) return;
-                                        await context
-                                            .read<GroupsService>()
-                                            .join(widget.groupId, pubkey);
-                                        await _load();
+                                        String? pwd;
+                                        if (g.isPrivate) {
+                                          pwd =
+                                              await showCommunityPasswordDialog(
+                                                  context, g.name);
+                                          if (pwd == null) return;
+                                        }
+                                        try {
+                                          await context
+                                              .read<GroupsService>()
+                                              .join(widget.groupId, pubkey,
+                                                  password: pwd);
+                                          await _load();
+                                        } catch (e) {
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(SnackBar(
+                                                    content: SelectableText(
+                                                        'Join failed: $e')));
+                                          }
+                                        }
                                       },
                                       child: const Text('Join'),
                                     )
@@ -520,9 +687,88 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                           ),
                         ),
                         Expanded(
-                          child: wide
-                              ? _desktop(tabs, context)
-                              : _mobile(tabs, context),
+                          child: (g.isPrivate && !g.isMember)
+                              ? Center(
+                                  child: SingleChildScrollView(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Container(
+                                      constraints:
+                                          const BoxConstraints(maxWidth: 420),
+                                      padding: const EdgeInsets.all(24),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: Colors.amber
+                                              .withValues(alpha: 0.5),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.lock_outline,
+                                              size: 52, color: Colors.amber),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            'Private Community',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleLarge
+                                                ?.copyWith(
+                                                    fontWeight:
+                                                        FontWeight.bold),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'This community is password-protected. Join with the correct password to access channels, rooms, and discussions.',
+                                            textAlign: TextAlign.center,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                    color: Theme.of(context)
+                                                        .hintColor),
+                                          ),
+                                          const SizedBox(height: 20),
+                                          FilledButton.icon(
+                                            icon:
+                                                const Icon(Icons.key_outlined),
+                                            label: const Text(
+                                                'Enter Password to Join'),
+                                            onPressed: () async {
+                                              final pubkey = me;
+                                              if (pubkey == null) return;
+                                              final pwd =
+                                                  await showCommunityPasswordDialog(
+                                                      context, g.name);
+                                              if (pwd == null) return;
+                                              try {
+                                                await context
+                                                    .read<GroupsService>()
+                                                    .join(
+                                                        widget.groupId, pubkey,
+                                                        password: pwd);
+                                                await _load();
+                                              } catch (e) {
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(SnackBar(
+                                                          content: SelectableText(
+                                                              'Join failed: $e')));
+                                                }
+                                              }
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : wide
+                                  ? _desktop(tabs, context)
+                                  : _mobile(tabs, context),
                         ),
                       ],
                     );

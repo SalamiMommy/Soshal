@@ -11,6 +11,7 @@ use flutter_rust_bridge::frb;
 const CAMERA: &str = "android.permission.CAMERA";
 const MIC: &str = "android.permission.RECORD_AUDIO";
 const FINE_LOCATION: &str = "android.permission.ACCESS_FINE_LOCATION";
+const NOTIFICATIONS: &str = "android.permission.POST_NOTIFICATIONS";
 
 /// Host platform name: "android", "linux", or "other".
 #[frb(sync, serialize)]
@@ -57,6 +58,27 @@ pub fn permissions_camera_mic_permanently_denied() -> bool {
 #[frb(sync, serialize)]
 pub fn permissions_open_settings() -> bool {
     crate::platform::open_app_settings().is_ok()
+}
+
+/// POST_NOTIFICATIONS granted (Android 13+; the daemon foreground service
+/// notification needs it to be visible, though the service still runs).
+/// JNI failure reports false (fail closed — never assume granted).
+#[frb(sync, serialize)]
+pub fn permissions_notifications_granted() -> bool {
+    crate::platform::permission_granted(NOTIFICATIONS).unwrap_or(false)
+}
+
+/// Fire the POST_NOTIFICATIONS dialog. Result polled via `*_granted`.
+#[frb(sync, serialize)]
+pub fn permissions_notifications_request() -> bool {
+    crate::platform::request_permissions(&[NOTIFICATIONS]).is_ok()
+}
+
+/// Denied with "don't ask again" (no rationale would be shown).
+#[frb(sync, serialize)]
+pub fn permissions_notifications_permanently_denied() -> bool {
+    let denied = !crate::platform::permission_granted(NOTIFICATIONS).unwrap_or(false);
+    denied && !crate::platform::should_show_rationale(NOTIFICATIONS).unwrap_or(false)
 }
 
 /// Fine location granted.

@@ -536,6 +536,7 @@ fn test_group_crud_and_membership() {
         access_type: "open".into(),
         relay: Some("wss://relay.example.com".into()),
         sync_status: "synced".into(),
+        password_hash: None,
     };
 
     repo.upsert(&group).unwrap();
@@ -546,6 +547,31 @@ fn test_group_crud_and_membership() {
         .unwrap();
     let members = repo.get_members("grp_100").unwrap();
     assert_eq!(members.len(), 1);
+}
+
+#[test]
+fn test_group_private_password_hash() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = GroupRepo::new(&db);
+    let group = GroupRow {
+        id: "grp_private".into(),
+        name: "Private VIP Lounge".into(),
+        about: Some("Secret talk".into()),
+        picture: None,
+        pubkey: "vip_owner".into(),
+        created_at: 1000,
+        updated_at: 1000,
+        access_type: "private".into(),
+        relay: None,
+        sync_status: "synced".into(),
+        password_hash: Some("11223344:aabbccdd".into()),
+    };
+
+    repo.upsert(&group).unwrap();
+    let found = repo.get_by_id("grp_private").unwrap().unwrap();
+    assert_eq!(found.access_type, "private");
+    assert_eq!(found.password_hash.as_deref(), Some("11223344:aabbccdd"));
 }
 
 #[test]

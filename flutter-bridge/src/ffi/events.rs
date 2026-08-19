@@ -660,7 +660,7 @@ mod tests {
         assert!(events_check_in(event_id.clone(), pk.clone(), 0.0, 0.0).unwrap());
 
         let mine: Vec<serde_json::Value> =
-            serde_json::from_str(&events_fetch_user_events(pk.clone(), 10).unwrap()).unwrap();
+            serde_json::from_str(&events_fetch_user_events(pk, 10).unwrap()).unwrap();
         assert_eq!(mine.len(), 1);
         assert_eq!(mine[0]["id"].as_str().unwrap(), event_id);
 
@@ -673,8 +673,8 @@ mod tests {
         .unwrap();
         assert!(scored.contains("e1"));
 
-        let rid = events_reminder_upsert(String::new(), event_id.clone(), "remind".into(), 123, 30)
-            .unwrap();
+        let rid =
+            events_reminder_upsert(String::new(), event_id, "remind".into(), 123, 30).unwrap();
         assert!(!rid.is_empty());
         assert!(events_reminders_list().unwrap().contains(&rid));
         assert!(events_reminder_delete(rid.clone()).unwrap());

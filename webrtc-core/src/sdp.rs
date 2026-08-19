@@ -156,7 +156,7 @@ pub fn configure_opus_audio_sdp(sdp: &str, high_fidelity: bool) -> String {
     if sdp.len() > MAX_FFI_LEN {
         return sdp.to_string();
     }
-    let raw_lines: Vec<&str> = sdp.split("\r\n").collect();
+    let raw_lines: Vec<&str> = sdp.lines().collect();
     if raw_lines.len() > MAX_LINES {
         return sdp.to_string();
     }

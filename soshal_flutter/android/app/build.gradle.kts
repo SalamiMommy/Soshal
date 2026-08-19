@@ -2,6 +2,9 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Python runtime for the Reticulum daemon (rnsd) — RNS is pure Python
+    // with no official Android binary. Packaged per-ABI into the APK.
+    id("com.chaquo.python")
 }
 
 android {
@@ -24,6 +27,11 @@ android {
         // cannot load it.
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
+        // Matches the Rust bridge ABIs so Chaquopy packages libpython for
+        // every APK variant (and only those).
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64", "armeabi-v7a")
+        }
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
         // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
@@ -52,4 +60,15 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+// Reticulum daemon (rnsd) Python stack. rnspure = rns without the hard
+// pip deps (cryptography/pyserial); RNS loads them only when available and
+// falls back to its built-in primitives otherwise — right for Android.
+chaquopy {
+    defaultConfig {
+        pip {
+            install("rnspure==1.4.2")
+        }
+    }
 }

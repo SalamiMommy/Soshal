@@ -9,12 +9,6 @@ mod test_util;
 #[cfg(test)]
 mod identity_gap_tests {
     use soshal_flutter_bridge::*;
-    fn unlock_signer() -> String {
-        let keys = soshal_nostr_core::keys::generate_keys();
-        let pk = keys.public_key().to_hex();
-        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-        pk
-    }
     fn kind0_json(pubkey: &str, name: &str) -> String {
         format!(
             r#"{{"pubkey":"{pubkey}","content":"{{\"name\":\"{name}\",\"display_name\":\"{name} d\",\"about\":\"bio\",\"picture\":\"https://example.com/p.png\",\"banner\":\"https://example.com/b.png\",\"nip05\":\"{name}@example.com\"}}","created_at":1700000000}}"#
@@ -40,7 +34,7 @@ mod identity_gap_tests {
         assert!(self_profile.contains("\"name\":\"alice\""));
         let hits = identity::identity_search_users("ali".into(), 10).unwrap();
         assert!(hits.contains("\"name\":\"alice\""), "{hits}");
-        let follows = identity::identity_fetch_follows(pk.clone()).unwrap();
+        let follows = identity::identity_fetch_follows(pk).unwrap();
         assert_eq!(follows, "[]");
         let _ = identity::identity_fetch_follows("b".repeat(64)).unwrap();
         let bad = identity::identity_store_profile(r#"{"content":"{}"}"#.into()).unwrap_err();
@@ -70,11 +64,11 @@ mod identity_gap_tests {
         let low = identity::identity_get_trust_score(me.clone(), stranger.clone()).unwrap();
         assert!(low < 0.5, "no path should score low: {low}");
         assert_eq!(
-            identity::identity_get_wot_status(friend.clone(), me.clone()).unwrap(),
+            identity::identity_get_wot_status(friend, me.clone()).unwrap(),
             "trusted"
         );
         assert_eq!(
-            identity::identity_get_wot_status(stranger.clone(), me.clone()).unwrap(),
+            identity::identity_get_wot_status(stranger, me).unwrap(),
             "unknown"
         );
         let _ = db;
@@ -85,13 +79,13 @@ mod identity_gap_tests {
         let db = crate::test_util::init_db("identity_gap", "blocks");
         let me = "a".repeat(64);
         let target = "b".repeat(64);
-        assert!(identity::identity_is_blocked(me.clone(), target.clone()).unwrap() == false);
+        assert!(!identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
         assert!(moderation::moderation_block_user(me.clone(), target.clone()).unwrap());
         assert!(identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
         let list = identity::identity_get_blocked_users(me.clone()).unwrap();
         assert_eq!(list, vec![target.clone()]);
         assert!(moderation::moderation_unblock_user(me.clone(), target.clone()).unwrap());
-        assert!(identity::identity_is_blocked(me.clone(), target.clone()).unwrap() == false);
+        assert!(!identity::identity_is_blocked(me, target).unwrap());
         let _ = db;
     }
     #[test]
@@ -148,7 +142,6 @@ mod identity_gap_tests {
         let _g = crate::test_util::lock();
         let db = crate::test_util::init_db("identity_gap", "publish");
         let keys = soshal_nostr_core::keys::generate_keys();
-        let pk = keys.public_key().to_hex();
         signer::signer_lock().unwrap();
         let locked = identity::identity_publish_relay_list(vec!["wss://relay.example.com".into()])
             .unwrap_err();
@@ -175,7 +168,7 @@ mod identity_gap_tests {
             no_client.contains("relay client not initialized"),
             "{no_client}"
         );
-        let no_client = identity::identity_unfollow_user(target.clone()).unwrap_err();
+        let no_client = identity::identity_unfollow_user(target).unwrap_err();
         assert!(
             no_client.contains("relay client not initialized"),
             "{no_client}"

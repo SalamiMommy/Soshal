@@ -16,7 +16,7 @@ use soshal_sync_core::epoch_gc::EpochGarbageCollector;
 use soshal_sync_core::gossip::GossipSyncBridge;
 use soshal_sync_core::ingest::{handle, handle_batch, set_watermark, watermark, watermark_key};
 use soshal_sync_core::outbox::{
-    enqueue_outbox_item, fetch_pending_outbox_items, get_outbox_summary, mark_outbox_item_completed,
+    enqueue_outbox_item, fetch_pending_outbox_items, mark_outbox_item_completed, summarize_outbox,
 };
 use soshal_sync_core::revert::{revert, KIND_LIKE, KIND_POST, KIND_PROFILE};
 use soshal_sync_core::tx::{tx_begin, tx_link, tx_mark_applied, tx_statuses, STATUS_APPLIED};
@@ -135,18 +135,18 @@ fn ingest_zap_receipt_creates_zap_row() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let recipient = Keys::generate();
+    let my_pubkey = recipient.public_key().to_hex();
     let event = soshal_test_util::signed_event_tagged(
         &keys,
         Kind::ZapReceipt,
-        "thanks!",
+        "lnbc210u",
         vec![
-            vec!["p".to_string(), recipient.public_key().to_hex()],
+            vec!["p".to_string(), my_pubkey.clone()],
             vec!["e".to_string(), "target-id".to_string()],
-            vec!["amount".to_string(), "21000".to_string()],
         ],
     );
     let (tx, _rx) = channel();
-    handle(&db, "", &event, &tx).unwrap();
+    handle(&db, &my_pubkey, &event, &tx).unwrap();
     assert_eq!(ZapRepo::new(&db).sum_by_event("target-id").unwrap(), 21000);
 }
 
@@ -697,7 +697,7 @@ fn outbox_enqueue_pending_count_and_complete() {
     )
     .unwrap();
 
-    let summary = get_outbox_summary(&db).unwrap();
+    let summary = summarize_outbox(&db).unwrap();
     assert_eq!(summary.pending_count, 2);
     assert_eq!(summary.failed_count, 0);
     assert_eq!(summary.total_count, 2);
@@ -711,7 +711,7 @@ fn outbox_enqueue_pending_count_and_complete() {
     assert_eq!(pending[1].payload_json, r#"{"path":"x"}"#);
 
     mark_outbox_item_completed(&db, "o1").unwrap();
-    let after = get_outbox_summary(&db).unwrap();
+    let after = summarize_outbox(&db).unwrap();
     assert_eq!(after.pending_count, 1);
     assert_eq!(after.total_count, 2);
 

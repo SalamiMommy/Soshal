@@ -276,9 +276,16 @@ fn read_exact_limited(reader: &mut impl Read, buf: &mut [u8]) -> Result<(), Stri
 }
 
 fn write_frame(writer: &mut impl Write, kind: ResponseKind, payload: &[u8]) -> Result<(), String> {
+    let len_bytes = (payload.len() as u32).to_le_bytes();
+    let header = [
+        kind as u8,
+        len_bytes[0],
+        len_bytes[1],
+        len_bytes[2],
+        len_bytes[3],
+    ];
     writer
-        .write_all(&[kind as u8])
-        .and_then(|_| writer.write_all(&(payload.len() as u32).to_le_bytes()))
+        .write_all(&header)
         .and_then(|_| writer.write_all(payload))
         .map_err(|e| format!("write: {e}"))
 }
@@ -312,10 +319,11 @@ fn serve_range_zero_copy(
     else {
         return false;
     };
-    // Verify the chunk bytes before serving them (hostile chunk = refused).
     let Ok(file) = std::fs::File::open(store.chunk_path(&chunk.blake3)) else {
         return false;
     };
+    // BLAKE3-verify the chunk bytes before serving them: a hostile or
+    // corrupted chunk file must never be streamed out unverified.
     let mut verified = Vec::new();
     if (&file).read_to_end(&mut verified).is_err()
         || blake3::hash(&verified).to_hex().as_str() != chunk.blake3
@@ -325,11 +333,14 @@ fn serve_range_zero_copy(
     // Header first: [kind=ok][u32 len = req.length]; body bytes follow via
     // sendfile. The length prefix must match what sendfile then pipes out.
     let len_bytes = (req.length as u32).to_le_bytes();
-    if writer
-        .write_all(&[ResponseKind::Ok as u8][..])
-        .and_then(|_| writer.write_all(&len_bytes))
-        .is_err()
-    {
+    let header = [
+        ResponseKind::Ok as u8,
+        len_bytes[0],
+        len_bytes[1],
+        len_bytes[2],
+        len_bytes[3],
+    ];
+    if writer.write_all(&header).is_err() {
         return false;
     }
     let mut sent = 0usize;
@@ -750,7 +761,7 @@ pub(crate) mod tests {
             },
             LanChunkRequest {
                 length: MAX_FRAME_BYTES + 1,
-                ..base.clone()
+                ..base
             },
         ] {
             assert_eq!(

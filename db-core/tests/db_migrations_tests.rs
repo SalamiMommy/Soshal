@@ -102,6 +102,8 @@ fn full_chain_reaches_schema_version() {
     migrations::v1_create_tables(&conn).unwrap();
     migrations::v2_group_channels(&conn).unwrap();
     migrations::v3_group_thread_reactions(&conn).unwrap();
+    migrations::v4_group_password(&conn).unwrap();
+    migrations::v5_performance_indexes(&conn).unwrap();
     assert_eq!(max_version(&conn), SCHEMA_VERSION);
     assert!(table_exists(&conn, "group_rooms"));
     assert!(table_exists(&conn, "group_threads"));
@@ -109,7 +111,10 @@ fn full_chain_reaches_schema_version() {
     assert!(table_exists(&conn, "group_thread_reactions"));
     assert!(table_exists(&conn, "group_voice_channels"));
     assert!(table_exists(&conn, "group_voice_presence"));
+    assert!(table_exists(&conn, "zk_state_rollups"));
     assert!(column_exists(&conn, "group_messages", "room_id"));
+    assert!(column_exists(&conn, "groups", "password_hash"));
+    assert!(column_exists(&conn, "zk_state_rollups", "genesis_root"));
 }
 
 /// Legacy pre-squash database: the four tables that gained columns via ALTER

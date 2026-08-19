@@ -18,6 +18,7 @@ const CHUNK_FRAMES: i32 = 3840; // 40 ms at 48 kHz mono
 
 /// Doubles as mic enable: capture thread idles when false, records when true.
 static MIC_ENABLED: AtomicBool = AtomicBool::new(false);
+static CAPTURE_STOP: AtomicBool = AtomicBool::new(false);
 
 /// True only on Android ≥ 26 (AAudio + AImage gate).
 pub fn is_supported() -> bool {
@@ -31,6 +32,21 @@ pub fn is_supported() -> bool {
     }
 }
 
+/// Release all audio resources and join capture thread safely without deadlocking.
+pub fn release_audio_all() {
+    CAPTURE_STOP.store(true, Ordering::SeqCst);
+    MIC_ENABLED.store(false, Ordering::SeqCst);
+    let join_thread = {
+        let mut s = state();
+        s.capture_thread.take()
+    };
+    if let Some(t) = join_thread {
+        let _ = t.join();
+    }
+    let mut s = state();
+    s.release_audio();
+}
+
 /// Start mic + AAC-LC encoder + capture thread. Caller must
 /// `set_mic_enable(true)` before audio flows.
 pub fn init_encode() -> bool {
@@ -39,8 +55,9 @@ pub fn init_encode() -> bool {
         if !super::sdk_gate() {
             return false;
         }
+        release_audio_all();
+        CAPTURE_STOP.store(false, Ordering::SeqCst);
         let mut s = state();
-        s.release_audio();
 
         unsafe {
             // AAC-LC encoder (config blob is drained first by MediaCodec).
@@ -232,7 +249,11 @@ pub fn feed_aac(blob: &[u8]) -> bool {
                 }
                 let mut out_size = 0usize;
                 let out_buf = AMediaCodec_getOutputBuffer(codec, out_idx as usize, &mut out_size);
-                if !out_buf.is_null() && info.size > 0 {
+                if !out_buf.is_null()
+                    && info.size > 0
+                    && info.offset >= 0
+                    && (info.offset as usize).saturating_add(info.size as usize) <= out_size
+                {
                     let pcm = std::slice::from_raw_parts(
                         out_buf.offset(info.offset as isize),
                         info.size as usize,
@@ -259,9 +280,7 @@ pub fn feed_aac(blob: &[u8]) -> bool {
 
 /// Stop mic, codecs, playback; release everything.
 pub fn release() -> bool {
-    MIC_ENABLED.store(false, Ordering::Relaxed);
-    let mut s = state();
-    s.release_audio();
+    release_audio_all();
     true
 }
 
@@ -271,6 +290,9 @@ pub fn release() -> bool {
 fn capture_loop() {
     let mut chunk = vec![0i16; CHUNK_FRAMES as usize];
     loop {
+        if CAPTURE_STOP.load(Ordering::SeqCst) {
+            break;
+        }
         let (codec, mic) = {
             let s = state();
             (
@@ -345,7 +367,11 @@ unsafe fn drain_audio_encoder(codec: *mut AMediaCodec) {
         }
         let mut size = 0usize;
         let buf = AMediaCodec_getOutputBuffer(codec, idx as usize, &mut size);
-        if !buf.is_null() && info.size > 0 {
+        if !buf.is_null()
+            && info.size > 0
+            && info.offset >= 0
+            && (info.offset as usize).saturating_add(info.size as usize) <= size
+        {
             let aac =
                 std::slice::from_raw_parts(buf.offset(info.offset as isize), info.size as usize);
             let is_config = info.flags & AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG != 0;
@@ -355,6 +381,11 @@ unsafe fn drain_audio_encoder(codec: *mut AMediaCodec) {
             tagged.push(tag);
             tagged.extend_from_slice(aac);
             let mut s = state();
+            // Bound the queue to prevent unbounded memory growth under backpressure.
+            const MAX_AUDIO_QUEUE: usize = 128;
+            if s.audio_queue.len() >= MAX_AUDIO_QUEUE {
+                s.audio_queue.pop_front(); // drop oldest frame
+            }
             s.audio_queue.push_back(tagged);
         }
         AMediaCodec_releaseOutputBuffer(codec, idx as usize, 0);

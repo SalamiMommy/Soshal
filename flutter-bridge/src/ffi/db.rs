@@ -107,6 +107,23 @@ pub fn db_init(db_path: String) -> Result<String, String> {
     if let Err(e) = db.migrate() {
         return Err(format!("migration failed: {e}")).into();
     }
+    // Clean up old DB instance and its temp files if any
+    let old_path = DB_PATH.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let old_db = DB.lock().unwrap_or_else(|e| e.into_inner()).take();
+    drop(old_db);
+    if let Some(ref p) = old_path {
+        let temp = std::env::temp_dir().to_string_lossy().to_string();
+        let own_file = std::path::Path::new(p)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .map(|f| f.starts_with("soshal_") && f.ends_with(".db"))
+            .unwrap_or(false);
+        if own_file && p.starts_with(&temp) {
+            let _ = std::fs::remove_file(p);
+            let _ = std::fs::remove_file(format!("{p}-wal"));
+            let _ = std::fs::remove_file(format!("{p}-shm"));
+        }
+    }
     *DB_PATH.lock().unwrap_or_else(|e| e.into_inner()) = Some(db_path.clone());
     *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
     Ok(db_path).into()

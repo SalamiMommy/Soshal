@@ -156,7 +156,7 @@ fn restore_from_mnemonic_rejects_invalid() {
     assert!(restore_from_mnemonic("abandon abandon abandon", "").is_err());
     let phrase = generate_mnemonic().unwrap();
     let mut words: Vec<&str> = phrase.split_whitespace().collect();
-    words[0] = "zebra";
+    words[0] = "notabip39word";
     assert!(restore_from_mnemonic(&words.join(" "), "").is_err());
 }
 

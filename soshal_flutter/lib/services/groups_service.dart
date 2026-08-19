@@ -54,10 +54,6 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   bool reacted(String targetId, String emoji, String pubkey) => _reactions
       .any((r) => r.matches(targetId) && r.emoji == emoji && r.reacted);
 
-  int reactionCountFor(String targetId) => _reactions
-      .where((r) => r.matches(targetId))
-      .fold(0, (sum, r) => sum + r.count);
-
   Future<List<SoshalGroup>> fetchGroups(String userPubkey) async {
     try {
       final json = RustLib.instance.api.crateFfiGroupsGroupsFetchGroups(
@@ -105,11 +101,13 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  Future<bool> join(String groupId, String userPubkey) async {
+  Future<bool> join(String groupId, String userPubkey,
+      {String? password}) async {
     try {
       final ok = RustLib.instance.api.crateFfiGroupsGroupsJoin(
         groupId: groupId,
         userPubkey: userPubkey,
+        password: password,
       );
       clearLastError();
       notifyDeferred();
@@ -117,6 +115,41 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> setPassword(
+    String groupId,
+    String? newPassword,
+    String actorPubkey,
+  ) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiGroupsGroupsSetPassword(
+        groupId: groupId,
+        newPassword: newPassword,
+        actorPubkey: actorPubkey,
+      );
+      clearLastError();
+      notifyDeferred();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> verifyPassword(String groupId, String password) async {
+    try {
+      final ok = RustLib.instance.api.crateFfiGroupsGroupsVerifyPassword(
+        groupId: groupId,
+        password: password,
+      );
+      clearLastError();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
       rethrow;
     }
   }
@@ -180,8 +213,10 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     String name,
     String description,
     String pictureUrl,
-    String creatorPubkey,
-  ) async {
+    String creatorPubkey, {
+    bool isPrivate = false,
+    String? password,
+  }) async {
     try {
       final id = RustLib.instance.api.crateFfiGroupsGroupsCreate(
         groupId: groupId,
@@ -189,6 +224,8 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         description: description,
         pictureUrl: pictureUrl,
         creatorPubkey: creatorPubkey,
+        isPrivate: isPrivate,
+        password: password,
       );
       clearLastError();
       return id;
@@ -697,6 +734,7 @@ class SoshalGroup {
   final bool isMember;
   final String role;
   final int createdAt;
+  final bool isPrivate;
 
   SoshalGroup({
     required this.id,
@@ -708,6 +746,7 @@ class SoshalGroup {
     required this.isMember,
     required this.role,
     required this.createdAt,
+    this.isPrivate = false,
   });
 
   factory SoshalGroup.fromJson(Map<String, dynamic> json) {
@@ -723,6 +762,8 @@ class SoshalGroup {
       isMember: isMember,
       role: json.strOrNull('role') ?? (isMember ? 'member' : ''),
       createdAt: json.intOf('created_at'),
+      isPrivate:
+          json.boolOf('is_private') || json.strOf('access_type') == 'private',
     );
   }
 }

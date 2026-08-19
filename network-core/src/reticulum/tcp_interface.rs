@@ -109,7 +109,7 @@ impl TcpServerInterface {
         let max_conn = self.config.max_connections;
 
         let listener_arc = Arc::new(listener);
-        let listener_clone = listener_arc.clone();
+        let listener_clone = listener_arc;
 
         // Set running BEFORE spawning: the accept loop exits immediately
         // when the flag is false, so spawning first races the store below

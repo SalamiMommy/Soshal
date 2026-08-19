@@ -487,18 +487,178 @@ class _GroupSidebarState extends State<GroupSidebar> {
     );
   }
 
+  Future<void> _editPasswordDialog(bool isPrivate) async {
+    final passwordController = TextEditingController();
+    var obscure = true;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(isPrivate
+              ? 'Change Community Password'
+              : 'Set Community Password'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isPrivate
+                    ? 'Enter a new password or leave blank to make the community public.'
+                    : 'Setting a password will make this community private. Members will need this password to join.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordController,
+                obscureText: obscure,
+                decoration: InputDecoration(
+                  labelText: 'New Password',
+                  helperText: isPrivate
+                      ? 'Min. 8 chars (leave empty to make public)'
+                      : 'Min. 8 characters',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () => setDialogState(() => obscure = !obscure),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final pwd = passwordController.text.trim();
+                if (pwd.isNotEmpty && pwd.length < 8) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Password must be at least 8 characters'),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(context, true);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final pubkey = widget.me;
+        if (pubkey == null) return;
+        final pwd = passwordController.text.trim();
+        await context.read<GroupsService>().setPassword(
+              widget.groupId,
+              pwd.isEmpty ? null : pwd,
+              pubkey,
+            );
+        widget.onChanged();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(pwd.isEmpty
+                  ? 'Community is now open (password removed)'
+                  : 'Community password updated'),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Error: $e')),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final api = context.watch<GroupsService>();
+    final group = api.current;
+    final isPrivate = group?.isPrivate ?? false;
+
     return ListView(
       children: [
+        if (widget.isOwner) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.security_outlined, size: 18),
+                const SizedBox(width: 8),
+                Text('Privacy & Access',
+                    style: Theme.of(context).textTheme.titleSmall),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        isPrivate ? Icons.lock_outline : Icons.public_outlined,
+                        size: 16,
+                        color: isPrivate ? Colors.amber : Colors.green,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          isPrivate
+                              ? 'Private (Password protected)'
+                              : 'Public (Open to all)',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 13),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _editPasswordDialog(isPrivate),
+                    icon: Icon(
+                        isPrivate ? Icons.edit_outlined : Icons.lock_outline,
+                        size: 16),
+                    label: Text(isPrivate
+                        ? 'Change / Remove Password'
+                        : 'Set Password (Make Private)'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Divider(),
+        ],
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
-              Text('Roles (${api.roles.length})',
-                  style: Theme.of(context).textTheme.titleSmall),
-              const Spacer(),
+              Expanded(
+                child: Text('Roles (${api.roles.length})',
+                    style: Theme.of(context).textTheme.titleSmall,
+                    overflow: TextOverflow.ellipsis),
+              ),
               if (widget.isOwner)
                 TextButton.icon(
                   onPressed: () => _editRoleDialog(),

@@ -99,7 +99,6 @@ class ShellService extends ChangeNotifier {
 
   bool _locked = false;
   bool get locked => _locked;
-  bool get unlockPending => _unlockPending;
   bool _unlockPending = false;
   String? _unlockError;
   String? get unlockError => _unlockError;
@@ -109,8 +108,6 @@ class ShellService extends ChangeNotifier {
   int get lockoutRemaining => _lockoutRemaining;
   bool _permanentLocked = false;
   bool get permanentLocked => _permanentLocked;
-  final bool _biometricAvailable = false;
-  bool get biometricAvailable => _biometricAvailable;
 
   bool _hasPin = false;
   bool get hasPin => _hasPin;
@@ -210,8 +207,6 @@ class ShellService extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get itemVisible => _items.isNotEmpty;
-
   void beginRearrange() {
     _rearranging = true;
     notifyListeners();
@@ -306,13 +301,27 @@ class ShellService extends ChangeNotifier {
 
   Future<bool> setPin(String pin) async {
     try {
-      RustLib.instance.api.crateFfiPinPinSet(pin: pin);
+      await RustLib.instance.api.crateFfiPinPinSet(pin: pin);
       _hasPin = true;
       notifyListeners();
       return true;
     } catch (e) {
       debugPrint('set pin: $e');
-      return false;
+      rethrow;
+    }
+  }
+
+  /// Change an existing PIN. Requires the current PIN for authentication.
+  Future<bool> changePin(String oldPin, String newPin) async {
+    try {
+      await RustLib.instance.api
+          .crateFfiPinPinChange(oldPin: oldPin, newPin: newPin);
+      _hasPin = true;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('change pin: $e');
+      rethrow;
     }
   }
 

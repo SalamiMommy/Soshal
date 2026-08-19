@@ -162,22 +162,6 @@ fn encode_frame(payload: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Decodes one frame, rejecting zero/oversized lengths and truncation.
-#[allow(dead_code)]
-fn decode_frame(data: &[u8]) -> Option<Vec<u8>> {
-    if data.len() < 4 {
-        return None;
-    }
-    let len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
-    if len == 0 || len > MAX_ENVELOPE_BYTES {
-        return None;
-    }
-    if data.len() < 4 + len {
-        return None;
-    }
-    Some(data[4..4 + len].to_vec())
-}
-
 /// Reads one frame from a stream.
 fn read_frame(stream: &mut TcpStream) -> Result<Vec<u8>, String> {
     let mut len_buf = [0u8; 4];
@@ -210,23 +194,20 @@ fn reader_loop(stream: TcpStream, received: Arc<Mutex<VecDeque<Vec<u8>>>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write as _;
+    use std::io::Write;
     use std::net::TcpListener;
 
     #[test]
-    fn test_frame_codec_roundtrip() {
+    fn test_encode_and_read_frame() {
         let payload = b"hello i2p".to_vec();
         let frame = encode_frame(&payload);
-        assert_eq!(decode_frame(&frame), Some(payload));
-
-        let mut oversized = Vec::new();
-        oversized.extend_from_slice(&(MAX_ENVELOPE_BYTES as u32 + 1).to_le_bytes());
-        oversized.extend_from_slice(&[0u8; 8]);
-        assert_eq!(decode_frame(&oversized), None);
-
-        assert_eq!(decode_frame(&frame[..frame.len() - 1]), None);
-        assert_eq!(decode_frame(&0u32.to_le_bytes()), None);
-        assert_eq!(decode_frame(&[0u8; 2]), None);
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        let mut client = TcpStream::connect(addr).expect("connect");
+        let (mut server, _) = listener.accept().expect("accept");
+        client.write_all(&frame).expect("write frame");
+        let read = read_frame(&mut server).expect("read frame");
+        assert_eq!(read, payload);
     }
 
     #[test]
