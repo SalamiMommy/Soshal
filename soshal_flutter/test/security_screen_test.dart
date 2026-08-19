@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/security_screen.dart';
 import 'package:soshal_flutter/services/auth_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
+import 'package:soshal_flutter/services/settings_service.dart';
 import 'package:soshal_flutter/services/shell_service.dart';
 import 'package:soshal_flutter/services/signer_service.dart';
 
@@ -18,6 +19,8 @@ void main() {
   setUp(() {
     api.handlers.clear();
     api.calls.clear();
+    api.stubString('crateFfiDbDbGetSetting', '');
+    api.stubBool('crateFfiDbDbSetSetting', true);
   });
 
   const sessionJson =
@@ -42,6 +45,7 @@ void main() {
             value: shell ?? ShellService(),
           ),
           ChangeNotifierProvider(create: (_) => AuthService()),
+          ChangeNotifierProvider(create: (_) => SettingsService()),
         ],
         child: const MaterialApp(home: SecurityScreen()),
       ),
@@ -111,6 +115,7 @@ void main() {
       (tester) async {
     api.stubString('crateFfiSignerSignerPubkey', 'pk123');
     api.stubBool('crateFfiSignerSignerIsLocked', false);
+    api.stubString('crateFfiDbDbGetSetting', 'true');
     api.stubBool('crateFfiSignerSignerSaveToKeyring', true);
     api.stubBool('crateFfiSignerSignerUnlockFromKeyring', true);
     api.stubBool('crateFfiSignerSignerRemoveFromKeyring', true);

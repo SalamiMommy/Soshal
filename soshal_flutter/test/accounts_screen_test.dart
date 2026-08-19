@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/accounts_screen.dart';
 import 'package:soshal_flutter/services/session_service.dart';
+import 'package:soshal_flutter/services/signer_service.dart';
 
 import 'helpers/test_env.dart';
 
@@ -16,6 +17,9 @@ void main() {
   setUp(() {
     api.handlers.clear();
     api.calls.clear();
+    api.stubBool('crateFfiSignerSignerLock', true);
+    api.stubBool('crateFfiSignerSignerUnlockFromKeyring', true);
+    api.stubBool('crateFfiSignerSignerIsLocked', false);
   });
 
   const twoAccountsJson =
@@ -57,6 +61,7 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider<SessionService>.value(value: s),
+          ChangeNotifierProvider(create: (_) => SignerService()),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/settings_screen.dart';
 import 'package:soshal_flutter/services/network_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
+import 'package:soshal_flutter/services/settings_service.dart';
 import 'package:soshal_flutter/services/zap_service.dart';
 
 import 'helpers/test_env.dart';
@@ -18,6 +19,8 @@ void main() {
   setUp(() {
     api.handlers.clear();
     api.calls.clear();
+    api.stubString('crateFfiDbDbGetSetting', '');
+    api.stubBool('crateFfiDbDbSetSetting', true);
   });
 
   const sessionJson =
@@ -70,6 +73,7 @@ void main() {
             value: zap ?? ZapService(),
           ),
           ChangeNotifierProvider(create: (_) => NetworkService()),
+          ChangeNotifierProvider(create: (_) => SettingsService()),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),

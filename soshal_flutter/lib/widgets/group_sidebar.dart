@@ -553,6 +553,7 @@ class _GroupSidebarState extends State<GroupSidebar> {
     );
 
     if (confirmed == true) {
+      if (!mounted) return;
       try {
         final pubkey = widget.me;
         if (pubkey == null) return;

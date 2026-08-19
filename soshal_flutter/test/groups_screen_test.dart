@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/groups_screen.dart';
 import 'package:soshal_flutter/services/groups_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
+import 'package:soshal_flutter/services/settings_service.dart';
 
 import 'helpers/test_env.dart';
 
@@ -17,6 +18,8 @@ void main() {
   setUp(() {
     api.handlers.clear();
     api.calls.clear();
+    api.stubString('crateFfiDbDbGetSetting', '');
+    api.stubBool('crateFfiDbDbSetSetting', true);
   });
 
   const sessionJson =
@@ -206,6 +209,7 @@ void main() {
         providers: [
           ChangeNotifierProvider<SessionService>.value(value: session),
           ChangeNotifierProvider(create: (_) => GroupsService()),
+          ChangeNotifierProvider(create: (_) => SettingsService()),
         ],
         child: const MaterialApp(
           home: GroupDetailScreen(groupId: 'g1'),

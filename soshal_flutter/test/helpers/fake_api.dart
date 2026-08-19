@@ -272,8 +272,16 @@ class FakeApi extends RustLibApi {
       _asyncCall<ImpellerFrameBufferInfo>('crateFfiRasterRasterAllocateFrameBuffer', [], {#width: width, #height: height});
 
   @override
-  Future<bool> crateFfiRasterRasterSignalImpellerFrameReady({required PlatformInt64 textureId, required BigInt frameTimestampNs}) =>
-      _asyncCall<bool>('crateFfiRasterRasterSignalImpellerFrameReady', [], {#textureId: textureId, #frameTimestampNs: frameTimestampNs});
+  Future<bool> crateFfiRasterRasterReleaseFrameBuffer({required BigInt ptrAddr}) =>
+      _asyncCall<bool>('crateFfiRasterRasterReleaseFrameBuffer', [], {#ptrAddr: ptrAddr});
+
+  @override
+  Future<String> crateFfiGuestbookGuestbookAdd({required String profilePubkey, required String content}) =>
+      _asyncCall<String>('crateFfiGuestbookGuestbookAdd', [], {#profilePubkey: profilePubkey, #content: content});
+
+  @override
+  Future<String> crateFfiGuestbookGuestbookApprove({required String entryId, required bool approved}) =>
+      _asyncCall<String>('crateFfiGuestbookGuestbookApprove', [], {#entryId: entryId, #approved: approved});
 
   @override
   Future<String> crateFfiSearchSearchRemoteGlobal({required String query, required BigInt limit, required String relaysJson}) =>

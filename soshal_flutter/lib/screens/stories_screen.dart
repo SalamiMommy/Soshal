@@ -126,7 +126,7 @@ class _StoriesScreenState extends State<StoriesScreen> {
                           final picked =
                               await FilePicker.pickFile(type: FileType.image);
                           final path = picked?.path;
-                          if (path == null) return;
+                          if (path == null || !context.mounted) return;
                           setDialogState(() => uploading = true);
                           final manifest = await context
                               .read<MediaService>()

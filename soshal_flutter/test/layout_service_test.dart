@@ -101,7 +101,7 @@ void main() {
       expect(layout.heights, {'b': 0.0, 'c': 0.0});
     });
 
-    test('extentFor maps index to post height, footer to null', () async {
+    test('extentFor maps index to post height, footer and fallback extents', () async {
       final layout = LayoutService();
       api.stubString(
         'crateFfiFeedFeedComputeCardLayouts',
@@ -110,10 +110,10 @@ void main() {
       final posts = [post('a')];
       await layout.refresh(posts);
       expect(layout.extentFor(0, posts), 100.0);
-      expect(layout.extentFor(1, posts), isNull,
-          reason: 'index beyond posts maps to null');
-      expect(layout.extentFor(0, [post('zzz')]), isNull,
-          reason: 'no height for unknown id');
+      expect(layout.extentFor(1, posts), 56.0,
+          reason: 'index beyond posts maps to footer extent (56.0)');
+      expect(layout.extentFor(0, [post('zzz')]), 180.0,
+          reason: 'fallback card extent for unknown id (180.0)');
     });
 
     test('refresh params win over updateViewMetrics', () async {
