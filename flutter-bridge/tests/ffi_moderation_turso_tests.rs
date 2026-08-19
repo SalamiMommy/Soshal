@@ -225,10 +225,10 @@ mod ffi_tests {
             turso::db_turso_configure("https://sync.turso.io".to_string(), "tok".to_string())
                 .is_ok()
         );
-        let synced = turso::db_turso_sync().unwrap();
-        assert!(synced.contains("Turso sync complete: target https://sync.turso.io"));
+        let err = turso::db_turso_sync().unwrap_err();
+        assert!(err.contains("unavailable (roadmap)"), "{err}");
         let after = turso::db_turso_status().unwrap();
-        assert!(after.contains(r#""status":"synced""#));
+        assert!(after.contains(r#""status":"error""#));
         crate::test_util::cleanup(&path);
     }
 

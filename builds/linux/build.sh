@@ -54,7 +54,7 @@ echo "  flutter: build linux --debug"
 # ($ORIGIN/lib rpath), so the whole bundle layout is preserved under
 # usr/bin/<app>/.
 BUNDLE="build/linux/x64/debug/bundle"
-STAGE="/tmp/opencode/appimage-debug"
+STAGE="$SOSHAL_TARGETS_DIR/appimage-stage"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
 cp -r "$BUNDLE" "$STAGE/app"
@@ -71,11 +71,14 @@ INSTALL_BIN="$STAGE/usr/bin"
 mkdir -p "$INSTALL_BIN"
 mv "$STAGE/app" "$INSTALL_BIN/soshal_flutter"
 
-# Bundle rnsd daemon if available
-if [[ -x "$RNSD_BIN" ]]; then
+# Bundle rnsd daemon if available. Real binaries are >100KB; anything smaller
+# is a stub/error placeholder and is never bundled as a real daemon.
+if [[ -x "$RNSD_BIN" ]] && [[ $(stat -c%s "$RNSD_BIN") -gt 100000 ]]; then
   mkdir -p "$STAGE/usr/bin/daemons"
   cp "$RNSD_BIN" "$STAGE/usr/bin/daemons/rnsd"
-  echo "  rnsd: bundled to usr/bin/daemons/"
+  echo "  rnsd: bundled to usr/bin/daemons/ ($(stat -c%s "$RNSD_BIN")B)"
+elif [[ -x "$RNSD_BIN" ]]; then
+  echo "  WARNING: rnsd is $(stat -c%s "$RNSD_BIN")B (stub, not a real binary) — not bundled" >&2
 fi
 
 cat > "$STAGE/soshal_flutter.desktop" <<EOF

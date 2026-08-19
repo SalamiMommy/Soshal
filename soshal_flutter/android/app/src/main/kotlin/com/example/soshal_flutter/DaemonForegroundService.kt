@@ -34,7 +34,6 @@ object DaemonForegroundService {
 
     @Volatile
     var running: Boolean = false
-        private set
 
     fun start(context: Context): Boolean {
         val intent = Intent(context, DaemonServiceInstance::class.java)
@@ -52,7 +51,7 @@ object DaemonForegroundService {
         return true
     }
 
-    private fun notification(context: Context): Notification {
+    internal fun notification(context: Context): Notification {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -82,7 +81,7 @@ object DaemonForegroundService {
         return builder.build()
     }
 
-    private fun startForegroundCompat(service: Service, notification: Notification) {
+    internal fun startForegroundCompat(service: Service, notification: Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             service.startForeground(
                 NOTIFICATION_ID,

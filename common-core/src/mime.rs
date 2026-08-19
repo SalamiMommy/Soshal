@@ -18,19 +18,17 @@ const MAGIC_PATTERNS: &[(&[u8], &str)] = &[
     (&[0x66, 0x4c, 0x61, 0x43], "audio/flac"), // fLaC
 ];
 
-/// Sniffs MIME type from raw bytes header (first 12 bytes max).
-/// Falls back to the `fallback` param for image/video/audio, otherwise
-/// returns `application/octet-stream`.
-pub fn sniff_mime_type(bytes: &[u8], fallback: &str) -> String {
+/// Sniffs MIME type from raw bytes header (first 12 bytes max) as a borrowed string slice.
+pub fn sniff_mime_type_str<'a>(bytes: &[u8], fallback: &'a str) -> &'a str {
     if bytes.is_empty() {
-        return "application/octet-stream".to_string();
+        return "application/octet-stream";
     }
     let header_len = bytes.len().min(MAX_HEADER_BYTES);
     let header = &bytes[..header_len];
 
     for &(magic, mime) in MAGIC_PATTERNS {
         if header.starts_with(magic) {
-            return mime.to_string();
+            return mime;
         }
     }
 
@@ -40,24 +38,24 @@ pub fn sniff_mime_type(bytes: &[u8], fallback: &str) -> String {
         && header[8..12] == [0x57, 0x45, 0x42, 0x50]
     // WEBP
     {
-        return "image/webp".to_string();
+        return "image/webp";
     }
 
     // Check MP4 (....ftyp)
     if header.len() >= 8 && &header[4..8] == b"ftyp" {
-        return "video/mp4".to_string();
+        return "video/mp4";
     }
 
     // Check WebM (matroska)
     if header.len() >= 4 && header[0..4] == [0x1a, 0x45, 0xdf, 0xa3] {
-        return "video/webm".to_string();
+        return "video/webm";
     }
 
     // Check QuickTime (moov or mdat at offset 4)
     if header.len() >= 8 {
         let fourcc = &header[4..8];
         if fourcc == b"moov" || fourcc == b"mdat" {
-            return "video/quicktime".to_string();
+            return "video/quicktime";
         }
     }
 
@@ -67,17 +65,24 @@ pub fn sniff_mime_type(bytes: &[u8], fallback: &str) -> String {
         && header[8..12] == [0x57, 0x41, 0x56, 0x45]
     // WAVE
     {
-        return "audio/wav".to_string();
+        return "audio/wav";
     }
 
     // Fallback validation
     if let Some(cat) = fallback.split('/').next() {
         if (cat == "image" || cat == "video" || cat == "audio") && bytes.len() >= 4 {
-            return fallback.to_string();
+            return fallback;
         }
     }
 
-    "application/octet-stream".to_string()
+    "application/octet-stream"
+}
+
+/// Sniffs MIME type from raw bytes header (first 12 bytes max).
+/// Falls back to the `fallback` param for image/video/audio, otherwise
+/// returns `application/octet-stream`.
+pub fn sniff_mime_type(bytes: &[u8], fallback: &str) -> String {
+    sniff_mime_type_str(bytes, fallback).to_string()
 }
 
 /// Input for sniff_mime_type_wasm.
@@ -100,39 +105,70 @@ pub fn sniff_mime_type_json(input: &str) -> String {
 
 // ─── Extension-based detection ────────────────────────────────────────
 
+/// Resolves a MIME type from a file extension as a static string slice.
+pub fn detect_mime_type_str(filename: &str) -> &'static str {
+    let ext = filename.rsplit('.').next().unwrap_or("");
+
+    if ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg") {
+        "image/jpeg"
+    } else if ext.eq_ignore_ascii_case("png") {
+        "image/png"
+    } else if ext.eq_ignore_ascii_case("gif") {
+        "image/gif"
+    } else if ext.eq_ignore_ascii_case("webp") {
+        "image/webp"
+    } else if ext.eq_ignore_ascii_case("svg") {
+        "image/svg+xml"
+    } else if ext.eq_ignore_ascii_case("avif") {
+        "image/avif"
+    } else if ext.eq_ignore_ascii_case("heic") || ext.eq_ignore_ascii_case("heif") {
+        "image/heic"
+    } else if ext.eq_ignore_ascii_case("bmp") {
+        "image/bmp"
+    } else if ext.eq_ignore_ascii_case("ico") {
+        "image/x-icon"
+    } else if ext.eq_ignore_ascii_case("mp4") {
+        "video/mp4"
+    } else if ext.eq_ignore_ascii_case("webm") {
+        "video/webm"
+    } else if ext.eq_ignore_ascii_case("mov") {
+        "video/quicktime"
+    } else if ext.eq_ignore_ascii_case("avi") {
+        "video/x-msvideo"
+    } else if ext.eq_ignore_ascii_case("mkv") {
+        "video/x-matroska"
+    } else if ext.eq_ignore_ascii_case("ogg") {
+        "video/ogg"
+    } else if ext.eq_ignore_ascii_case("mp3") {
+        "audio/mpeg"
+    } else if ext.eq_ignore_ascii_case("wav") {
+        "audio/wav"
+    } else if ext.eq_ignore_ascii_case("flac") {
+        "audio/flac"
+    } else if ext.eq_ignore_ascii_case("aac") {
+        "audio/aac"
+    } else if ext.eq_ignore_ascii_case("m4a") {
+        "audio/mp4"
+    } else if ext.eq_ignore_ascii_case("opus") {
+        "audio/opus"
+    } else if ext.eq_ignore_ascii_case("wma") {
+        "audio/x-ms-wma"
+    } else if ext.eq_ignore_ascii_case("pdf") {
+        "application/pdf"
+    } else if ext.eq_ignore_ascii_case("json") {
+        "application/json"
+    } else if ext.eq_ignore_ascii_case("txt") {
+        "text/plain"
+    } else if ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm") {
+        "text/html"
+    } else {
+        ""
+    }
+}
+
 /// Resolves a MIME type from a file extension.
 pub fn detect_mime_type(filename: &str) -> String {
-    let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
-
-    match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg".to_string(),
-        "png" => "image/png".to_string(),
-        "gif" => "image/gif".to_string(),
-        "webp" => "image/webp".to_string(),
-        "svg" => "image/svg+xml".to_string(),
-        "avif" => "image/avif".to_string(),
-        "heic" | "heif" => "image/heic".to_string(),
-        "bmp" => "image/bmp".to_string(),
-        "ico" => "image/x-icon".to_string(),
-        "mp4" => "video/mp4".to_string(),
-        "webm" => "video/webm".to_string(),
-        "mov" => "video/quicktime".to_string(),
-        "avi" => "video/x-msvideo".to_string(),
-        "mkv" => "video/x-matroska".to_string(),
-        "ogg" => "video/ogg".to_string(),
-        "mp3" => "audio/mpeg".to_string(),
-        "wav" => "audio/wav".to_string(),
-        "flac" => "audio/flac".to_string(),
-        "aac" => "audio/aac".to_string(),
-        "m4a" => "audio/mp4".to_string(),
-        "opus" => "audio/opus".to_string(),
-        "wma" => "audio/x-ms-wma".to_string(),
-        "pdf" => "application/pdf".to_string(),
-        "json" => "application/json".to_string(),
-        "txt" => "text/plain".to_string(),
-        "html" | "htm" => "text/html".to_string(),
-        _ => String::new(),
-    }
+    detect_mime_type_str(filename).to_string()
 }
 
 #[cfg(test)]

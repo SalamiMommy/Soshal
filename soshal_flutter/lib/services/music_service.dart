@@ -180,8 +180,10 @@ class MusicTrack {
 }
 
 /// Resolves a track's audio to a playable URL: local CAS blob first, then
-/// LAN peer fetch, then the original URL as fallback (blob-first, URL
-/// fallback). Returns null when nothing is reachable.
+/// LAN peer fetch, then an http(s) URL as fallback (blob-first, URL
+/// fallback). `blob://` references are never returned — they are only
+/// meaningful to the chunk store, not to the media player. Returns null
+/// when nothing reachable is available.
 Future<String?> resolveTrackPlaybackUrl(
   MusicTrack track,
   MediaService media,
@@ -198,7 +200,13 @@ Future<String?> resolveTrackPlaybackUrl(
       }
     }
   }
-  return track.audioUrl.isNotEmpty ? track.audioUrl : null;
+  final url = track.audioUrl;
+  if (url.isNotEmpty &&
+      !url.startsWith('blob://') &&
+      (url.startsWith('http://') || url.startsWith('https://'))) {
+    return url;
+  }
+  return null;
 }
 
 /// A comment on a track (kind 1 with `E` tag), serialized via `mini_event_out`.

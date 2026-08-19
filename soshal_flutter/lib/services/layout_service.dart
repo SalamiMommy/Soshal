@@ -203,4 +203,8 @@ class LayoutService extends ChangeNotifier {
         textureId: PlatformInt64Util.from(textureId),
         frameTimestampNs: frameTimestampNs,
       );
+
+  Future<bool> releaseRasterFrameBuffer({required BigInt ptrAddr}) =>
+      RustLib.instance.api
+          .crateFfiRasterRasterReleaseFrameBuffer(ptrAddr: ptrAddr);
 }

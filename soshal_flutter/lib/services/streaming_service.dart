@@ -314,6 +314,15 @@ class StreamingService extends ChangeNotifier
     }
   }
 
+  /// Best-effort teardown of a MoQ viewer subscription. network-core keeps no
+  /// per-subscriber registry and exposes no unsubscribe FFI — the fetch is
+  /// per-window, so this only clears local state so a retry re-subscribes
+  /// cleanly.
+  Future<void> stopMoqStream() async {
+    clearLastError();
+    notifyDeferred();
+  }
+
   /// Encode a `MoqGroup` (JSON map) into on-stream binary framing.
   Uint8List encodeMoqGroup(Map<String, dynamic> group) {
     return moq.p2PMoqEncodeGroup(groupJson: jsonEncode(group));

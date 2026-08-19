@@ -2,10 +2,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../ffi/db.dart' as db_ffi;
 import '../services/groups_service.dart';
 import '../services/media_service.dart';
 import '../services/session_service.dart';
+import '../services/settings_service.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/group_sidebar.dart';
 import '../widgets/group_tabs.dart';
@@ -381,8 +381,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   @override
   void initState() {
     super.initState();
-    final saved = db_ffi.dbGetSetting(key: _widthSetting);
-    if (saved != null) {
+    final saved = context.read<SettingsService>().getSetting(_widthSetting);
+    if (saved.isNotEmpty) {
       final parsed = double.tryParse(saved);
       if (parsed != null) {
         _sidebarWidth = parsed.clamp(_minSidebar, _maxSidebar);
@@ -432,7 +432,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   }
 
   void _persistWidth() {
-    db_ffi.dbSetSetting(key: _widthSetting, value: '${_sidebarWidth.round()}');
+    context
+        .read<SettingsService>()
+        .setSetting(_widthSetting, '${_sidebarWidth.round()}');
   }
 
   Widget _resizeHandle() {

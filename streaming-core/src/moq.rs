@@ -255,7 +255,12 @@ pub struct MoqSubscriberSession {
     pub stream_id: String,
     pub subscriber_pubkey: String,
     received_objects: Arc<Mutex<Vec<MoqObject>>>,
+    received_bytes: Arc<Mutex<u64>>,
 }
+
+/// Aggregate byte budget for buffered subscriber objects. 1000 objects × up to
+/// 8 MiB payloads would otherwise permit ~8 GiB buffering from a hostile peer.
+const MAX_SUBSCRIBER_BUFFER_BYTES: u64 = 64 * 1024 * 1024;
 
 impl MoqSubscriberSession {
     pub fn new(stream_id: String, subscriber_pubkey: String) -> Self {
@@ -263,21 +268,34 @@ impl MoqSubscriberSession {
             stream_id,
             subscriber_pubkey,
             received_objects: Arc::new(Mutex::new(Vec::new())),
+            received_bytes: Arc::new(Mutex::new(0)),
         }
     }
 
     pub fn push_incoming_object(&self, object: MoqObject) {
+        let object_len = object.payload.len() as u64;
         if let Ok(mut lock) = self.received_objects.lock() {
-            lock.push(object);
-            if lock.len() > 1000 {
-                lock.drain(0..500);
+            if let Ok(mut bytes) = self.received_bytes.lock() {
+                *bytes += object_len;
+                lock.push(object);
+                while lock.len() > 1000 || *bytes > MAX_SUBSCRIBER_BUFFER_BYTES {
+                    if lock.is_empty() {
+                        break;
+                    }
+                    let dropped = lock.remove(0);
+                    *bytes = bytes.saturating_sub(dropped.payload.len() as u64);
+                }
             }
         }
     }
 
     pub fn drain_pending_objects(&self) -> Vec<MoqObject> {
         if let Ok(mut lock) = self.received_objects.lock() {
-            std::mem::take(&mut *lock)
+            let taken = std::mem::take(&mut *lock);
+            if let Ok(mut bytes) = self.received_bytes.lock() {
+                *bytes = 0;
+            }
+            taken
         } else {
             Vec::new()
         }

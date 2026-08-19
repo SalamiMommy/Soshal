@@ -42,7 +42,8 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   }
 
   /// Fetch feed events with pagination (supports cursor or offset)
-  Future<List<FeedPost>> fetchFeed({int limit = 20, int offset = 0, int? cursorCreatedAt}) async {
+  Future<List<FeedPost>> fetchFeed(
+      {int limit = 20, int offset = 0, int? cursorCreatedAt}) async {
     try {
       _isLoading = true;
 
@@ -131,7 +132,8 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     try {
       final lastCreatedAt = _posts.isNotEmpty ? _posts.last.createdAt : null;
       final offset = _currentOffset + limit;
-      await fetchFeed(limit: limit, offset: offset, cursorCreatedAt: lastCreatedAt);
+      await fetchFeed(
+          limit: limit, offset: offset, cursorCreatedAt: lastCreatedAt);
     } finally {
       _loadingMore = false;
     }

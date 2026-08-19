@@ -31,7 +31,7 @@ class RustNativeImage extends StatefulWidget {
 
 class _RustNativeImageState extends State<RustNativeImage> {
   static final Map<String, ui.Image> _imageCache = {};
-  static const int _maxCacheSize = 50;
+  static const int _maxCacheSize = 16;
 
   ui.Image? _decodedImage;
   bool _isFromCache = false;
@@ -99,8 +99,7 @@ class _RustNativeImageState extends State<RustNativeImage> {
 
       if (_imageCache.length >= _maxCacheSize) {
         final oldestKey = _imageCache.keys.first;
-        final oldImg = _imageCache.remove(oldestKey);
-        oldImg?.dispose();
+        _imageCache.remove(oldestKey);
       }
       _imageCache[cacheKey] = frameInfo.image;
 

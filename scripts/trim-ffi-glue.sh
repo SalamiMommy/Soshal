@@ -2,7 +2,8 @@
 # Post-frb-regen cleanup: drop the 41 never-imported generated glue files
 # from lib/ffi/ and their import lines from frb_generated.dart.
 # Run AFTER flutter_rust_bridge_codegen generate + io.dart corruption fix.
-# Keep-list: auth db media network p2p session (imported by app code).
+# Keep-list (13): audio auth content daemon db h264 media network p2p
+# permissions power raster session (imported by app code).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DIR=soshal_flutter/lib/ffi

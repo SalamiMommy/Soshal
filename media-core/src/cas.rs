@@ -970,7 +970,7 @@ mod tests {
         assert!(!store.contains("../../../evil"));
 
         // Invalid manifest hash must fail to save
-        let mut manifest = ChunkManifest {
+        let manifest = ChunkManifest {
             blob_hash: "../../../evil".to_string(),
             total_size: 10,
             chunks: vec![],

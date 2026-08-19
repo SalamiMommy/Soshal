@@ -27,7 +27,8 @@ object RnsdRunner {
         if (running) return true
         try {
             if (py == null) {
-                py = Python.start(AndroidPlatform(context))
+                Python.start(AndroidPlatform(context))
+                py = Python.getInstance()
             }
             thread = Thread {
                 try {

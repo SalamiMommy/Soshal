@@ -306,7 +306,7 @@ mod tests {
             h.update(forged_genesis.thread_id.as_bytes());
             h.update(forged_genesis.genesis_root.as_bytes());
             h.update(forged_genesis.final_state_root.as_bytes());
-            h.update(&forged_genesis.operation_count.to_le_bytes());
+            h.update(forged_genesis.operation_count.to_le_bytes());
             forged_genesis.commitment_hex = hex::encode(h.finalize());
         }
         let res = engine.apply_rollup_to_db(&conn, &forged_genesis);
@@ -340,7 +340,7 @@ mod tests {
             h.update(different.thread_id.as_bytes());
             h.update(different.genesis_root.as_bytes());
             h.update(different.final_state_root.as_bytes());
-            h.update(&different.operation_count.to_le_bytes());
+            h.update(different.operation_count.to_le_bytes());
             different.commitment_hex = hex::encode(h.finalize());
         }
         let res = engine.apply_rollup_to_db(&conn, &different);

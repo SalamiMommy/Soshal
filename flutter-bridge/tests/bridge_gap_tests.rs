@@ -118,13 +118,17 @@ mod bridge_gap_tests {
     #[test]
     fn background_sync_task_guards() {
         let _g = crate::test_util::lock();
-        let err = headless::background_sync_task(String::new()).unwrap_err();
+        let err =
+            soshal_db_core::block_on(headless::background_sync_task(String::new())).unwrap_err();
         assert!(err.contains("empty"), "{err}");
         let missing = "/nonexistent/soshal/sync.db".to_string();
-        let err = headless::background_sync_task(missing).unwrap_err();
+        let err = soshal_db_core::block_on(headless::background_sync_task(missing)).unwrap_err();
         assert!(err.contains("Failed to open DB"), "{err}");
         let db = crate::test_util::init_db("bridge_gap", "headless");
-        assert_eq!(headless::background_sync_task(db).unwrap(), 0);
+        assert_eq!(
+            soshal_db_core::block_on(headless::background_sync_task(db)).unwrap(),
+            0
+        );
         let _ = db;
     }
     #[test]

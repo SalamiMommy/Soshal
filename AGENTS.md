@@ -41,7 +41,7 @@ Soshal/
 │   ├── android/build.sh            # 3-ABI bridge + flutter build apk [--release]
 │   ├── linux/build.sh              # host bridge + flutter build linux --debug (terminal output)
 │   └── README.md
-└── Cargo.toml               # Workspace root, 31 members (flutter-bridge + 30 cores)
+└── Cargo.toml               # Workspace root, 33 members (flutter-bridge + 31 cores + test-util)
 ```
 
 ## Commands

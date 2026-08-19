@@ -77,8 +77,16 @@ class _MusicloudUserScreenState extends State<MusicloudUserScreen> {
                     );
                     return;
                   }
-                  await shell.playAudio(url, track.title);
+                  final ok = await shell.playAudio(url, track.title);
                   if (!sheetContext.mounted) return;
+                  if (!ok) {
+                    ScaffoldMessenger.of(sheetContext).showSnackBar(
+                      const SnackBar(
+                          content: Text(
+                              'Playback failed — check the audio output and try again.')),
+                    );
+                    return;
+                  }
                   Navigator.of(sheetContext).pop();
                 },
                 icon: const Icon(Icons.play_circle_outline),

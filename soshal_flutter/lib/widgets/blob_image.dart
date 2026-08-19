@@ -37,6 +37,7 @@ class _BlobImageState extends State<BlobImage> {
   String? _path;
   bool _isUrl = false;
   bool _failed = false;
+  int _generation = 0;
 
   static final _hashRe = RegExp(r'^[0-9a-f]{64}$');
 
@@ -67,6 +68,7 @@ class _BlobImageState extends State<BlobImage> {
   void didUpdateWidget(BlobImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.source != widget.source) {
+      _generation++;
       _path = null;
       _isUrl = false;
       _failed = false;
@@ -77,6 +79,7 @@ class _BlobImageState extends State<BlobImage> {
   }
 
   Future<void> _resolve() async {
+    final gen = _generation;
     final src = widget.source.trim();
     if (src.isEmpty) {
       setState(() => _failed = true);
@@ -95,7 +98,7 @@ class _BlobImageState extends State<BlobImage> {
     final media = context.read<MediaService>();
     final p2p = context.read<P2pService>();
     final path = await resolveBlobPath(media, p2p, hash);
-    if (!mounted) return;
+    if (!mounted || gen != _generation) return;
     if (path == null) {
       setState(() => _failed = true);
     } else {

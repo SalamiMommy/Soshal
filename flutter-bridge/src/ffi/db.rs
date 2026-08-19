@@ -505,12 +505,16 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
     drop(f);
     *DB.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let bak = format!("{dst}.bak");
-    if let Err(e) = std::fs::copy(&dst, &bak) {
-        // re-open the original db so the app stays usable
-        if let Ok(db) = Database::open(&dst) {
-            *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+    // Preserve the current live DB as .bak for rollback — but only when it
+    // actually exists (restoring onto a deleted/never-created DB is valid).
+    if std::path::Path::new(&dst).exists() {
+        if let Err(e) = std::fs::copy(&dst, &bak) {
+            // re-open the original db so the app stays usable
+            if let Ok(db) = Database::open(&dst) {
+                *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+            }
+            return Err(format!("backup copy failed: {e}"));
         }
-        return Err(format!("backup copy failed: {e}"));
     }
     if let Err(e) = std::fs::copy(&backup_path, &dst) {
         // re-open the original db so the app stays usable

@@ -135,16 +135,20 @@ impl Database {
         };
         drop(config_guard);
 
-        self.inner.turso_state.set_syncing();
-
+        // Honest behavior: remote replica sync is not implemented (roadmap).
+        // Do the harmless local WAL checkpoint, then fail explicitly instead
+        // of reporting a fake "sync complete" for a transfer that never
+        // happened.
         if let Ok(conn) = self.conn() {
             let _ = block_on(conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);"));
         }
 
-        let now = soshal_common_core::format::now_secs() as u64;
-
-        self.inner.turso_state.set_synced(now);
-        Ok(format!("Turso sync complete: target {}", config.url))
+        let err_msg = format!(
+            "Turso remote replication unavailable (roadmap): local checkpoint only (target {})",
+            config.url
+        );
+        self.inner.turso_state.set_error(&err_msg);
+        Err(error::DbError::TursoSync(err_msg))
     }
 
     /// Get current Turso replication sync status.

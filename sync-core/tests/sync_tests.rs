@@ -20,7 +20,7 @@ use soshal_sync_core::outbox::{
 };
 use soshal_sync_core::revert::{revert, KIND_LIKE, KIND_POST, KIND_PROFILE};
 use soshal_sync_core::tx::{tx_begin, tx_link, tx_mark_applied, tx_statuses, STATUS_APPLIED};
-use soshal_sync_core::zk_rollup::{ZkCrdtRollup, ZkProofType, ZkRollupEngine};
+use soshal_sync_core::zk_rollup::{CommitmentRollup, RollupEngine};
 use soshal_sync_core::{SyncUpdate, WM_DM, WM_FEED, WM_META};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -587,19 +587,18 @@ fn epoch_gc_is_noop_without_peer_clocks() {
     assert_eq!(summary.bytes_reclaimed, 0);
 }
 
-fn rollup(thread_id: &str, ops: u64, genesis: &str, final_state: &str) -> ZkCrdtRollup {
+fn rollup(thread_id: &str, ops: u64, genesis: &str, final_state: &str) -> CommitmentRollup {
     let mut hasher = Sha256::new();
     hasher.update(thread_id.as_bytes());
     hasher.update(genesis.as_bytes());
     hasher.update(final_state.as_bytes());
     hasher.update(ops.to_le_bytes());
-    ZkCrdtRollup {
+    CommitmentRollup {
         thread_id: thread_id.to_string(),
         genesis_root: genesis.to_string(),
         final_state_root: final_state.to_string(),
         operation_count: ops,
-        proof_bytes_hex: hex::encode(hasher.finalize()),
-        proof_type: ZkProofType::RiscZeroStark,
+        commitment_hex: hex::encode(hasher.finalize()),
     }
 }
 
@@ -607,7 +606,7 @@ fn rollup(thread_id: &str, ops: u64, genesis: &str, final_state: &str) -> ZkCrdt
 fn zk_rollup_valid_commitment_verifies_and_tampered_rejected() {
     let genesis = "g".repeat(64);
     let final_state = "f".repeat(64);
-    let engine = ZkRollupEngine::new();
+    let engine = RollupEngine::new();
 
     let ok = engine.verify_rollup(&rollup("zr1", 42, &genesis, &final_state));
     assert!(ok.verified);
@@ -615,7 +614,7 @@ fn zk_rollup_valid_commitment_verifies_and_tampered_rejected() {
     assert_eq!(ok.error_msg, None);
 
     let mut tampered_proof = rollup("zr2", 7, &genesis, &final_state);
-    tampered_proof.proof_bytes_hex = hex::encode([0u8; 32]);
+    tampered_proof.commitment_hex = hex::encode([0u8; 32]);
     let bad = engine.verify_rollup(&tampered_proof);
     assert!(!bad.verified);
     assert_eq!(bad.verified_operations, 0);
@@ -632,7 +631,7 @@ fn zk_rollup_apply_writes_upserts_and_rejects_tampered() {
     let conn = db.conn().unwrap();
     let genesis = "g".repeat(64);
     let final_state = "f".repeat(64);
-    let engine = ZkRollupEngine::new();
+    let engine = RollupEngine::new();
 
     assert!(engine
         .apply_rollup_to_db(&conn, &rollup("thread_1", 5, &genesis, &final_state))
@@ -662,7 +661,7 @@ fn zk_rollup_apply_writes_upserts_and_rejects_tampered() {
     assert_eq!(ops2, 9);
 
     let mut tampered = rollup("thread_2", 1, &genesis, &final_state);
-    tampered.proof_bytes_hex = hex::encode([0u8; 32]);
+    tampered.commitment_hex = hex::encode([0u8; 32]);
     let err = engine.apply_rollup_to_db(&conn, &tampered).unwrap_err();
     assert_eq!(err, "Rollup commitment mismatch");
 }

@@ -181,12 +181,17 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
       );
       return;
     }
-    await shell.playAudio(url, track.title);
+    final ok = await shell.playAudio(url, track.title);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: SelectableText('Playing — ${track.title}'),
-      ),
+      ok
+          ? SnackBar(
+              content: SelectableText('Playing — ${track.title}'),
+            )
+          : const SnackBar(
+              content: Text(
+                  'Playback failed — check the audio output and try again.'),
+            ),
     );
   }
 

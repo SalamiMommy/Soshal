@@ -42,7 +42,10 @@ mod ffi_aux_modules_tests {
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
-        assert_eq!(headless::background_sync_task(path.clone()).unwrap(), 0);
+        assert_eq!(
+            soshal_db_core::block_on(headless::background_sync_task(path.clone())).unwrap(),
+            0
+        );
         let db = soshal_db_core::Database::open(&path).unwrap();
         let conn = db.conn().unwrap();
         let max: i64 = soshal_db_core::block_on(async {
@@ -57,7 +60,8 @@ mod ffi_aux_modules_tests {
     }
     #[test]
     fn headless_ffi_empty_path_error() {
-        let e = headless::background_sync_task(String::new()).unwrap_err();
+        let e =
+            soshal_db_core::block_on(headless::background_sync_task(String::new())).unwrap_err();
         assert_eq!(e, "Database path cannot be empty");
     }
     #[tokio::test]

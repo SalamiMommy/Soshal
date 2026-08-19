@@ -77,47 +77,29 @@ pub async fn analytics_slm_classify_post(text: String) -> Result<String, String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soshal_analytics_core::slm::{SlmClassification, SlmEmbedding};
 
     #[tokio::test]
-    async fn test_slm_embedding_fixed_dim() {
-        let json = analytics_slm_generate_embedding("Soshal P2P mesh network".to_string())
+    async fn test_slm_embedding_unavailable() {
+        let err = analytics_slm_generate_embedding("Soshal P2P mesh network".to_string())
             .await
-            .unwrap();
-        let embedding: SlmEmbedding = serde_json::from_str(&json).unwrap();
-        assert_eq!(embedding.vector.len(), 384);
-        assert_eq!(embedding.dimension, 384);
+            .unwrap_err();
+        assert!(err.contains("unavailable"), "{err}");
     }
 
     #[tokio::test]
-    async fn test_slm_embedding_deterministic() {
-        let a = analytics_slm_generate_embedding("Soshal P2P mesh network".to_string())
+    async fn test_slm_embedding_unavailable_message() {
+        let err = analytics_slm_generate_embedding("Soshal P2P mesh network".to_string())
             .await
-            .unwrap();
-        let b = analytics_slm_generate_embedding("Soshal P2P mesh network".to_string())
-            .await
-            .unwrap();
-        assert_eq!(a, b);
+            .unwrap_err();
+        assert!(err.contains("(roadmap)"), "{err}");
     }
 
     #[tokio::test]
-    async fn test_slm_classify_spam_vs_clean() {
-        let spam: SlmClassification = serde_json::from_str(
-            &analytics_slm_classify_post("claim free crypto now!!!".to_string())
-                .await
-                .unwrap(),
-        )
-        .unwrap();
-        assert!(spam.is_spam);
-        assert_eq!(spam.label, "spam");
-
-        let clean: SlmClassification = serde_json::from_str(
-            &analytics_slm_classify_post("this is a great post about hiking".to_string())
-                .await
-                .unwrap(),
-        )
-        .unwrap();
-        assert!(!clean.is_spam);
+    async fn test_slm_classify_unavailable() {
+        let err = analytics_slm_classify_post("claim free crypto now!!!".to_string())
+            .await
+            .unwrap_err();
+        assert!(err.contains("unavailable"), "{err}");
     }
 
     #[test]

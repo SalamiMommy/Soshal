@@ -299,10 +299,10 @@ done
 
 cd "$PROJECT_ROOT/soshal_flutter"
 if [[ "$MODE" == "release" ]]; then
-  "$FLUTTER_BIN" build apk --release --split-per-abi
+  "$FLUTTER_BIN" build apk --release
   OUT="$SCRIPT_DIR/$OUT_NAME"
   rm -f "$OUT"
-  cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "$OUT" || cp build/app/outputs/flutter-apk/app-release.apk "$OUT"
+  cp "build/app/outputs/flutter-apk/app-release.apk" "$OUT"
 else
   "$FLUTTER_BIN" build apk --debug
   OUT="$SCRIPT_DIR/$OUT_NAME"
@@ -312,15 +312,17 @@ fi
 
 echo "  bundling: $OUT"
 echo "  verifying: bridge libraries (expect 3 ABIs)"
-BRIDGE_COUNT="$(unzip -l "$OUT" | grep -c 'lib/arm64-v8a/\|lib/x86_64/\|lib/armeabi-v7a/' || true)"
+BRIDGE_ABIS="$(unzip -l "$OUT" | grep -o 'lib/[^/]*/libsoshal_flutter_bridge.so' | cut -d/ -f2 | sort -u)"
+BRIDGE_COUNT="$(printf '%s\n' "$BRIDGE_ABIS" | grep -c . || true)"
 BRIDGE_MATCHES="$(unzip -l "$OUT" | grep 'libsoshal_flutter_bridge.so' || true)"
 if [[ -z "$BRIDGE_MATCHES" ]]; then
   echo "  ERROR: no libsoshal_flutter_bridge.so in APK" >&2
   exit 1
 fi
 if [[ "$BRIDGE_COUNT" -lt 3 ]]; then
-  echo "  WARNING: expected 3 ABI lib dirs, found $BRIDGE_COUNT:" >&2
+  echo "  ERROR: expected 3 ABI lib dirs, found $BRIDGE_COUNT ($(printf '%s ' $BRIDGE_ABIS)):" >&2
   unzip -l "$OUT" | grep 'libsoshal_flutter_bridge.so' >&2 || true
+  exit 1
 fi
 echo "  verifying: networking daemons"
 unzip -l "$OUT" | grep "assets/daemons/" || echo "  warning: daemons not found in APK"

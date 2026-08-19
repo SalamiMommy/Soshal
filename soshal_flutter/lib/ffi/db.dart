@@ -36,7 +36,7 @@ String dbForceMigrate() => RustLib.instance.api.crateFfiDbDbForceMigrate();
 String dbQueryRaw({required String sql}) =>
     RustLib.instance.api.crateFfiDbDbQueryRaw(sql: sql);
 
-/// Internal helper: raw SELECT with bound ?N parameters (Vec<String>),
+/// Internal helper: raw SELECT with bound ?N parameters (`Vec<String>`),
 /// rows as a JSON array of objects. Not an FFI surface.
 Future<String> dbQueryParams(
         {required String sql, required List<String> params}) =>

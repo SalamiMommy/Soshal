@@ -2,11 +2,13 @@
 
 /// Extracts the file extension from a URL path.
 pub fn get_extension(url_str: &str) -> String {
-    let path = if let Ok(parsed) = url::Url::parse(url_str) {
-        parsed.path().to_string()
-    } else {
-        let cleaned = url_str.split('?').next().unwrap_or(url_str);
-        cleaned.split('#').next().unwrap_or(cleaned).to_string()
+    let parsed_url = url::Url::parse(url_str).ok();
+    let path: &str = match parsed_url.as_ref() {
+        Some(u) => u.path(),
+        None => {
+            let cleaned = url_str.split('?').next().unwrap_or(url_str);
+            cleaned.split('#').next().unwrap_or(cleaned)
+        }
     };
     if let Some(last_dot) = path.rfind('.') {
         let ext: String = path[last_dot + 1..]

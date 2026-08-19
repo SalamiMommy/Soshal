@@ -124,6 +124,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   }
 
   Future<void> _onFrame(CameraImage image) async {
+    if (!mounted) return;
     final now = DateTime.now();
     final last = _lastFrameAt;
     if (last != null && now.difference(last) < _frameInterval) return;
@@ -341,6 +342,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   void dispose() {
     _audioTimer?.cancel();
     _camera?.dispose();
+    unawaited(context.read<StreamingService>().stopMoqBroadcast());
     H264Codec.stopRecord();
     H264Codec.release();
     AudioCodec.release();
@@ -438,19 +440,27 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
                                 label: const Text('Go live'),
                               ),
                               const SizedBox(width: 12),
-                              IconButton(
-                                tooltip: _micOn
-                                    ? 'Mute microphone'
-                                    : 'Enable microphone (AAC)',
-                                onPressed: _broadcasting
-                                    ? () => _toggleMic(
-                                        context.read<StreamingService>())
-                                    : null,
-                                icon: Icon(
-                                  _micOn ? Icons.mic : Icons.mic_off,
-                                  color: _micOn ? Colors.red.shade600 : null,
+                              if (_micDeniedReason != null)
+                                IconButton(
+                                  tooltip: 'Mic denied — open app settings',
+                                  onPressed: () =>
+                                      PermissionsService.openSettings(),
+                                  icon: const Icon(Icons.settings),
+                                )
+                              else
+                                IconButton(
+                                  tooltip: _micOn
+                                      ? 'Mute microphone'
+                                      : 'Enable microphone (AAC)',
+                                  onPressed: _broadcasting
+                                      ? () => _toggleMic(
+                                          context.read<StreamingService>())
+                                      : null,
+                                  icon: Icon(
+                                    _micOn ? Icons.mic : Icons.mic_off,
+                                    color: _micOn ? Colors.red.shade600 : null,
+                                  ),
                                 ),
-                              ),
                               IconButton(
                                 tooltip: _recording
                                     ? 'Stop recording'
@@ -470,6 +480,32 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
                                   style: const TextStyle(fontSize: 12),
                                 ),
                             ],
+                          ),
+                          ValueListenableBuilder<String?>(
+                            valueListenable: AudioCodec.error,
+                            builder: (_, err, __) => err == null
+                                ? const SizedBox.shrink()
+                                : Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      'Audio error: $err',
+                                      style:
+                                          TextStyle(color: Colors.red.shade600),
+                                    ),
+                                  ),
+                          ),
+                          ValueListenableBuilder<String?>(
+                            valueListenable: H264Codec.error,
+                            builder: (_, err, __) => err == null
+                                ? const SizedBox.shrink()
+                                : Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      'Encoder error: $err',
+                                      style:
+                                          TextStyle(color: Colors.red.shade600),
+                                    ),
+                                  ),
                           ),
                         ],
                       ),

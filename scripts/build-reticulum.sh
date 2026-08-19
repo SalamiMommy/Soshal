@@ -59,7 +59,7 @@ python3 -m venv "$BUILD_DIR/venv"
 source "$BUILD_DIR/venv/bin/activate"
 
 echo "Installing rns wheel and PyInstaller..."
-$PIP_CMD install "$RNS_WHEEL" pyinstaller 2>&1 | tail -5 || {
+"$BUILD_DIR/venv/bin/pip" install "$RNS_WHEEL" pyinstaller 2>&1 | tail -5 || {
     echo "Failed to install rns or PyInstaller"
     create_stub "" "Reticulum daemon stub - install failed"
     exit 0

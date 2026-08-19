@@ -16,22 +16,22 @@ pub fn extract_imeta_video_urls(tags: &[Vec<String>]) -> Vec<String> {
         if tag.is_empty() || tag[0] != "imeta" {
             continue;
         }
-        let mut url_val: Option<String> = None;
-        let mut m_val: Option<String> = None;
+        let mut url_val: Option<&str> = None;
+        let mut m_val: Option<&str> = None;
         for entry in tag {
             if let Some(rest) = entry.strip_prefix("url=") {
                 if rest.len() <= MAX_PREVIEW_URL_LENGTH {
-                    url_val = Some(rest.to_string());
+                    url_val = Some(rest);
                 }
             } else if let Some(rest) = entry.strip_prefix("m=") {
                 if rest.len() <= 100 {
-                    m_val = Some(rest.to_string());
+                    m_val = Some(rest);
                 }
             }
         }
         if let (Some(url), Some(m)) = (url_val, m_val) {
             if m.contains("video") || m.contains("gif") {
-                videos.push(url);
+                videos.push(url.to_string());
             }
         }
     }

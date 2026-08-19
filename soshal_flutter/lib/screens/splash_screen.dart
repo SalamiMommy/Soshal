@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../services/ffi_bridge.dart';
 import '../services/session_service.dart';
 import '../services/settings_service.dart';
 import '../services/shell_service.dart';
@@ -29,13 +28,6 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _initializeApp() async {
     try {
-      // Initialize FFI bridge
-      await FfiBridge.init();
-      // Wait for the shared DB (migrations) before any service touches it:
-      // the app root initializes it on the same future, so this is
-      // idempotent — gates loadSession on db_init, no "database not
-      // initialized" race.
-      await FfiBridge.ensureDatabaseInitialized();
       if (!mounted) return;
 
       // Load session

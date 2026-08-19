@@ -28,6 +28,16 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// Drop the transient onboarding nsec from the Dart heap. The keypair
+  /// keeps its public key; only the secret is cleared. Called once the
+  /// backup-display dialog closes — the secret is never needed afterward.
+  void clearSecretKey() {
+    final kp = _currentKeypair;
+    if (kp == null || kp.secretKey == null) return;
+    _currentKeypair = KeyPair(publicKey: kp.publicKey);
+    notifyListeners();
+  }
+
   /// Generate a new BIP-39 mnemonic phrase
   Future<String> generateMnemonic() async {
     try {

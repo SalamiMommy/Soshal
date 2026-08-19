@@ -1,70 +1,67 @@
 use serde::{Deserialize, Serialize};
 
-use soshal_common_core::json_util::{json_in, json_out};
+use soshal_common_core::json_util::{json_in_borrow, json_out};
+
+use std::borrow::Cow;
 
 #[derive(Deserialize)]
-struct BuildRumorEnvelopeInput {
+struct BuildRumorEnvelopeInput<'a> {
     #[serde(rename = "pqcCt")]
-    pqc_ct: String,
-    rumor: String,
+    pqc_ct: Cow<'a, str>,
+    rumor: Cow<'a, str>,
 }
 
 #[derive(Serialize)]
-struct RumorEnvelopeOutput {
+struct RumorEnvelopeOutput<'a> {
     #[serde(rename = "pqc_ct")]
-    pqc_ct: String,
-    rumor: String,
-}
-
-fn build_rumor_envelope(pqc_ct: String, rumor: String) -> RumorEnvelopeOutput {
-    RumorEnvelopeOutput { pqc_ct, rumor }
+    pqc_ct: &'a str,
+    rumor: &'a str,
 }
 
 pub fn build_rumor_envelope_json(input: &str) -> String {
-    let Some(input) = json_in::<Option<BuildRumorEnvelopeInput>>(input, None) else {
+    let Some(input) = json_in_borrow::<BuildRumorEnvelopeInput>(input) else {
         return String::new();
     };
-    let out = build_rumor_envelope(input.pqc_ct, input.rumor);
+    let out = RumorEnvelopeOutput {
+        pqc_ct: &input.pqc_ct,
+        rumor: &input.rumor,
+    };
     json_out(&out, "")
 }
 
 #[derive(Deserialize)]
-struct BuildSealEnvelopeInput {
+struct BuildSealEnvelopeInput<'a> {
     #[serde(rename = "pqcCt")]
-    pqc_ct: String,
+    pqc_ct: Cow<'a, str>,
     #[serde(rename = "rumorJson")]
-    rumor_json: String,
+    rumor_json: Cow<'a, str>,
     #[serde(rename = "dsaPublicKey")]
-    dsa_public_key: String,
+    dsa_public_key: Cow<'a, str>,
     #[serde(rename = "peerDsaPublicKey")]
-    peer_dsa_public_key: Option<String>,
+    peer_dsa_public_key: Option<Cow<'a, str>>,
 }
 
 #[derive(Serialize)]
-struct SealEnvelopeOutput {
+struct SealEnvelopeOutput<'a> {
     #[serde(rename = "pqc_ct")]
-    pqc_ct: String,
-    rumor: String,
+    pqc_ct: &'a str,
+    rumor: &'a str,
     #[serde(rename = "pqc_pk")]
-    pqc_pk: String,
+    pqc_pk: &'a str,
     #[serde(rename = "pqc_pk_peer", skip_serializing_if = "Option::is_none")]
-    pqc_pk_peer: Option<String>,
-}
-
-fn build_seal_envelope(input: BuildSealEnvelopeInput) -> SealEnvelopeOutput {
-    SealEnvelopeOutput {
-        pqc_ct: input.pqc_ct,
-        rumor: input.rumor_json,
-        pqc_pk: input.dsa_public_key,
-        pqc_pk_peer: input.peer_dsa_public_key,
-    }
+    pqc_pk_peer: Option<&'a str>,
 }
 
 pub fn build_seal_envelope_json(input: &str) -> String {
-    let Some(input) = json_in::<Option<BuildSealEnvelopeInput>>(input, None) else {
+    let Some(input) = json_in_borrow::<BuildSealEnvelopeInput>(input) else {
         return String::new();
     };
-    let out = build_seal_envelope(input);
+    let out = SealEnvelopeOutput {
+        pqc_ct: &input.pqc_ct,
+        rumor: &input.rumor_json,
+        pqc_pk: &input.dsa_public_key,
+        pqc_pk_peer: input.peer_dsa_public_key.as_deref(),
+    };
     json_out(&out, "")
 }
 

@@ -254,7 +254,7 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
   Future<int> runBackgroundSync() async {
     try {
       final dbPath = await FfiBridge.getDbPath();
-      return RustLib.instance.api
+      return await RustLib.instance.api
           .crateFfiHeadlessBackgroundSyncTask(dbPath: dbPath);
     } catch (e, st) {
       setLastError(e, st);

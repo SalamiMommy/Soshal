@@ -53,8 +53,11 @@ fn discover_by_interest(input: DiscoverByInterestInput) -> Vec<DiscoverResultOut
     // per tag (O(content x tags) worst case).
     let matcher =
         aho_corasick::AhoCorasick::new(&lower_tags).expect("empty patterns are pre-filtered");
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(input.events.len().min(input.limit));
     for event in &input.events {
+        if results.len() >= input.limit {
+            break;
+        }
         if event.content.len() > 64 * 1024 {
             continue;
         }
@@ -63,10 +66,13 @@ fn discover_by_interest(input: DiscoverByInterestInput) -> Vec<DiscoverResultOut
         }
         let lower_content = event.content.to_lowercase();
         let mut matched: Vec<&str> = Vec::new();
-        let mut seen: HashSet<usize> = HashSet::new();
+        let mut seen_mask = [0u64; 2];
         for m in matcher.find_iter(&lower_content) {
             let idx = m.pattern().as_usize();
-            if seen.insert(idx) {
+            let word = idx / 64;
+            let bit = 1u64 << (idx % 64);
+            if word < 2 && (seen_mask[word] & bit) == 0 {
+                seen_mask[word] |= bit;
                 matched.push(lower_tags[idx].as_str());
             }
         }
@@ -79,7 +85,6 @@ fn discover_by_interest(input: DiscoverByInterestInput) -> Vec<DiscoverResultOut
             });
         }
     }
-    results.truncate(input.limit);
     results
 }
 

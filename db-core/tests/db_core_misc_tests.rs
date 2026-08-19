@@ -103,20 +103,19 @@ fn sync_turso_without_config_errors() {
 }
 
 #[test]
-fn sync_turso_with_config_succeeds() {
+fn sync_turso_honest_unavailable_with_config() {
     let db = migrated_db();
     db.configure_turso("libsql://example.turso.io", "tok_123")
         .unwrap();
-    let out = db.sync_turso().unwrap();
+    let err = db.sync_turso().unwrap_err();
     assert!(
-        out.contains("Turso sync complete"),
-        "unexpected output: {out}"
+        err.to_string().contains("unavailable (roadmap)"),
+        "unexpected error: {err}"
     );
-    assert!(out.contains("libsql://example.turso.io"));
+    assert!(err.to_string().contains("libsql://example.turso.io"));
     let status = db.turso_status();
-    assert_eq!(status.status, "synced");
-    assert!(status.last_synced_at.is_some());
-    assert!(status.last_error.is_none());
+    assert_eq!(status.status, "error");
+    assert!(status.last_error.is_some());
     assert!(status.configured);
 }
 

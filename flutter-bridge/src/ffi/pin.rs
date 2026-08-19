@@ -90,6 +90,40 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
             .map(|v| v == "true")
             .unwrap_or(false))
     })?;
+    let mut state: PinLockoutState = with_repo(|r| {
+        Ok(r.get("pin_lockout_state")
+            .map_err(super::util::to_err)?
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default())
+    })?;
+
+    // Fast-path: if already permanently locked or within active lockout window,
+    // apply attempt counter progression without computing expensive 600k PBKDF2 iterations.
+    let is_locked = permanent
+        || state
+            .lockout_until
+            .map(|until| now < until)
+            .unwrap_or(false);
+    if is_locked {
+        let verdict = apply_pin_attempt(&mut state, now, false, permanent);
+        with_repo(|r| {
+            let _ = r.set(
+                "pin_lockout_state",
+                &serde_json::to_string(&state).unwrap_or_default(),
+            );
+            if matches!(verdict, PinVerdict::PermanentlyLocked) {
+                let _ = r.set("pin_permanently_locked", "true");
+            }
+            Ok(())
+        })?;
+        return match verdict {
+            PinVerdict::PermanentlyLocked => {
+                Err("account permanently locked after too many failed PIN attempts".into())
+            }
+            _ => Err("too many incorrect PIN attempts; try again later".into()),
+        };
+    }
+
     let stored = with_repo(|r| r.get(PIN_HASH_KEY).map_err(super::util::to_err))?;
     let stored = stored
         .filter(|v| !v.is_empty())
@@ -101,11 +135,6 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
     let ok = constant_time_equal(&candidate, expected);
 
     with_repo(|r| {
-        let mut state: PinLockoutState = r
-            .get("pin_lockout_state")
-            .map_err(super::util::to_err)?
-            .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default();
         let verdict = apply_pin_attempt(&mut state, now, ok, permanent);
         let persist = || {
             let _ = r.set(
@@ -144,9 +173,10 @@ pub async fn pin_verify(pin: String) -> Result<bool, String> {
     Ok(check_pin_with_lockout(&pin).is_ok())
 }
 
-/// Clear the PIN after verifying the current one.
-#[frb(sync, serialize)]
-pub fn pin_clear(pin: String) -> Result<bool, String> {
+/// Clear the PIN after verifying the current one. Async: the lockout check
+/// runs a 600k-iteration PBKDF2 (~0.3-1 s) and must not block the Dart isolate.
+#[frb(serialize)]
+pub async fn pin_clear(pin: String) -> Result<bool, String> {
     check_pin_with_lockout(&pin)?;
     with_repo(|r| {
         r.set(PIN_HASH_KEY, "").map_err(super::util::to_err)?;
@@ -305,9 +335,12 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = fresh_db();
         assert!(pin_set("97531".to_string()).await.unwrap());
-        assert!(pin_clear("0000".to_string()).is_err(), "wrong PIN rejected");
+        assert!(
+            pin_clear("0000".to_string()).await.is_err(),
+            "wrong PIN rejected"
+        );
         assert!(pin_has().unwrap());
-        assert!(pin_clear("97531".to_string()).unwrap());
+        assert!(pin_clear("97531".to_string()).await.unwrap());
         assert!(!pin_has().unwrap());
         assert!(!pin_verify("97531".to_string()).await.unwrap());
     }

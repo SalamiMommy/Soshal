@@ -2,7 +2,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/dating_service.dart';
+import '../services/events_service.dart';
 import '../services/media_service.dart';
+import '../services/permissions_service.dart';
 import '../services/session_service.dart';
 import '../widgets/blob_image.dart';
 
@@ -146,6 +148,34 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
       debugPrint('dating me load: $e');
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _useMyLocation() async {
+    final events = context.read<EventsService>();
+    try {
+      final location = await PermissionsService.currentPosition();
+      if (!location.ok) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Location unavailable: ${location.error}')));
+        }
+        return;
+      }
+      final geohash = events.encodeGeohash(
+          lat: location.latitude!, lon: location.longitude!);
+      if (!mounted) return;
+      setState(() => _location.text = geohash);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Geohash: $geohash '
+              '(${location.latitude!.toStringAsFixed(4)}, '
+              '${location.longitude!.toStringAsFixed(4)})')));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Location failed: $e')));
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -386,10 +416,15 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: _location,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Location',
               hintText: 'lat,lon or geohash (required)',
               helperText: 'e.g. 51.5007,-0.1246 or a geohash string',
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.my_location),
+                tooltip: 'Locate me — calculate geohash',
+                onPressed: _useMyLocation,
+              ),
             ),
           ),
           const SizedBox(height: 12),

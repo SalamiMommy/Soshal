@@ -3,6 +3,7 @@
 //! DB-key derivation. Pure logic only — no network, no FFI.
 
 use std::sync::Arc;
+use zeroize::Zeroizing;
 
 use nostr::event::{EventBuilder, FinalizeUnsignedEvent};
 use nostr::key::Keys;
@@ -163,7 +164,7 @@ fn restore_from_mnemonic_rejects_invalid() {
 #[test]
 fn mnemonic_result_fields_public() {
     let r = MnemonicResult {
-        private_key_hex: "a".repeat(64),
+        private_key_hex: Zeroizing::new("a".repeat(64)),
         public_key_hex: "b".repeat(64),
     };
     assert_eq!(r.private_key_hex.len(), 64);

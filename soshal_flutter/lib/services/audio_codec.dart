@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import '../ffi/audio.dart' as ffi_audio;
 
@@ -15,6 +15,10 @@ class AudioCodec {
   AudioCodec._();
 
   static bool? _supported;
+
+  /// Set when a real FFI call fails; cleared on the next successful call.
+  /// Off-Android never sets this (no-op paths don't reach the bridge).
+  static final ValueNotifier<String?> error = ValueNotifier<String?>(null);
 
   /// True only on Android ≥ 26 with the native bridge available.
   static Future<bool> isSupported() async {
@@ -52,8 +56,11 @@ class AudioCodec {
   /// Drain queued AAC blobs: `[2, ...config]` or `[1, ...frame]`.
   static Future<List<Uint8List>> drainAudio() async {
     try {
-      return ffi_audio.audioDrain();
-    } catch (_) {
+      final blobs = ffi_audio.audioDrain();
+      error.value = null;
+      return blobs;
+    } catch (e) {
+      error.value = 'audio drain failed: $e';
       return const [];
     }
   }
@@ -72,8 +79,9 @@ class AudioCodec {
     try {
       final bytes = aac is Uint8List ? aac : Uint8List.fromList(aac);
       ffi_audio.audioFeedAac(blob: bytes);
-    } catch (_) {
-      // bridge missing
+      error.value = null;
+    } catch (e) {
+      error.value = 'audio feed failed: $e';
     }
   }
 

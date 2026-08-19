@@ -28,7 +28,7 @@ fail() {
 }
 
 # 1. MethodChannel construction (all platform channels must be Rust-side).
-HITS=$(grep -rn "MethodChannel(" "$LIB" --include='*.dart' || true)
+HITS=$(grep -rnE "MethodChannel[[:space:]]*\(" "$LIB" --include='*.dart' --exclude-dir=ffi || true)
 [ -n "$HITS" ] && { echo "$HITS"; fail "MethodChannel usage in lib/ — platform channels must live in Rust"; }
 
 # 2. Removed plugin platform services must not come back.

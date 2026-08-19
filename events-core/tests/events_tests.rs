@@ -21,7 +21,7 @@ fn test_buffer_early() {
 #[test]
 fn test_exact_boundaries_and_zero_buffer() {
     assert!(can_checkin(1000, 2000, 1000, 0));
-    assert!(can_checkin(1000, 2000, 2000, 0));
+    assert!(!can_checkin(1000, 2000, 2000, 0));
     assert!(!can_checkin(1000, 2000, 999, 0));
     assert!(!can_checkin(1000, 2000, 2001, 0));
 }

@@ -722,6 +722,8 @@ class _SecurityScreenState extends State<SecurityScreen> {
         },
       ),
     );
+    // Secret shown once in the dialog; drop it from the service heap now.
+    auth.clearSecretKey();
   }
 
   Future<void> _derivePubkeyDialog() async {

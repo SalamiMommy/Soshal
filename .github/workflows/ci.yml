@@ -31,7 +31,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Docs (deny warnings)
         run: cargo doc --workspace --no-deps -- -D warnings
-      - run: cargo install cargo-audit --locked
+      - run: cargo install cargo-audit --version 0.22.2 --locked
       - run: cargo audit
 
   coverage:
@@ -48,7 +48,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --locked
+        run: cargo install cargo-llvm-cov --version 0.8.7 --locked
       - name: Coverage gate
         run: cargo llvm-cov --workspace --lcov --output-path lcov.info --ignore-filename-regex frb_generated --fail-under-lines 80
 

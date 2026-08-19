@@ -1,11 +1,20 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../services/friends_service.dart';
+import '../services/media_service.dart';
+import '../services/messaging_service.dart';
+import '../services/p2p_service.dart';
 import '../services/profile_service.dart';
 import '../services/session_service.dart';
+import '../services/shell_service.dart';
+import '../utils/blob_resolver.dart';
+import '../utils/format.dart';
+import '../widgets/blob_image.dart';
 
 /// ProfileRendererScreen. Displays custom profile widgets with optional
 /// drag-and-drop layout editing mode.
@@ -26,6 +35,7 @@ class ProfileRendererScreen extends StatefulWidget {
 class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
   List<CustomProfileNode> _nodes = [];
   List<CustomProfileNode> _localNodes = [];
+  String _themeId = 'default';
   bool _loading = true;
   bool _editMode = false;
   bool _saving = false;
@@ -43,16 +53,21 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
       final profileData = context
           .read<ProfileService>()
           .getCustomProfileNodes(pubkey: widget.pubkey);
-      if (profileData.isNotEmpty) {
+      if (profileData.isNotEmpty && profileData != '[]') {
         try {
-          final List<dynamic> nodesList =
-              jsonDecode(profileData) as List<dynamic>;
-          final loadedNodes = nodesList
-              .map((e) => CustomProfileNode.fromJson(e as Map<String, dynamic>))
-              .toList();
+          final decoded = jsonDecode(profileData);
+          final loadedNodes = decoded is List
+              ? decoded
+                  .map((e) =>
+                      CustomProfileNode.fromJson(e as Map<String, dynamic>))
+                  .toList()
+              : CustomProfile.fromJson(decoded as Map<String, dynamic>).nodes;
           setState(() {
             _nodes = loadedNodes;
             _localNodes = loadedNodes;
+            _themeId = decoded is Map<String, dynamic>
+                ? (decoded['themeId'] as String? ?? 'default')
+                : _themeId;
           });
         } catch (e) {
           debugPrint('Failed to parse profile data: $e');
@@ -77,20 +92,17 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
     });
   }
 
-  void _handleDragEnd(List<CustomProfileNode> reordered) {
-    setState(() => _localNodes = reordered);
-  }
-
   void _handleNudgeNode(String nodeId, double dx, double dy) {
     setState(() {
       _localNodes = _localNodes.map((node) {
         if (node.id == nodeId) {
           final currentOffsetX = node.styles.offsetX ?? 0;
           final currentOffsetY = node.styles.offsetY ?? 0;
+          double snap(double v) => (v / 8).roundToDouble() * 8;
           return node.copyWith(
             styles: node.styles.copyWith(
-              offsetX: currentOffsetX + dx,
-              offsetY: currentOffsetY + dy,
+              offsetX: snap(currentOffsetX + dx),
+              offsetY: snap(currentOffsetY + dy),
             ),
           );
         }
@@ -120,7 +132,7 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
   Future<void> _handleSaveReorder() async {
     setState(() => _saving = true);
     try {
-      final profile = CustomProfile(themeId: 'default', nodes: _localNodes);
+      final profile = CustomProfile(themeId: _themeId, nodes: _localNodes);
       context.read<ProfileService>().saveCustomProfile(
             pubkey: widget.pubkey,
             profileJson: jsonEncode(profile.toJson()),
@@ -219,7 +231,7 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
                 border: Border.all(color: theme.colorScheme.primary),
               ),
               child: Text(
-                '⠿ Drag to reorder | ▲▼◀▶ Nudge offsets | ↔ Resize width',
+                '⠿ Drag widget body to move (8px snap) | ▲▼◀▶ Nudge | ↔ Resize',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.primary,
                   fontWeight: FontWeight.bold,
@@ -239,20 +251,14 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
                         textAlign: TextAlign.center,
                       ),
                     )
-                  : ReorderableListView.builder(
+                  : ListView.builder(
                       itemCount: _localNodes.length,
-                      onReorderItem: (oldIndex, newIndex) {
-                        final reordered =
-                            List<CustomProfileNode>.from(_localNodes);
-                        final item = reordered.removeAt(oldIndex);
-                        reordered.insert(newIndex, item);
-                        _handleDragEnd(reordered);
-                      },
                       itemBuilder: (context, index) {
                         final node = _localNodes[index];
                         return _EditableWidgetCard(
                           key: ValueKey(node.id),
                           node: node,
+                          pubkey: widget.pubkey,
                           onNudge: _handleNudgeNode,
                           onResize: _handleResizeNodeWidth,
                           onDelete: _handleDeleteWidget,
@@ -302,6 +308,7 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
             const SizedBox(height: 16),
             if (_nodes.isEmpty) ...[
               const DefaultPostHistoryWidget(),
+              _GuestbookWidget(pubkey: widget.pubkey),
               if (isMine)
                 Padding(
                   padding: const EdgeInsets.all(16.0),
@@ -311,11 +318,12 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
                   ),
                 ),
             ] else ...[
-              for (final node in _nodes) _WidgetDisplayCard(node: node),
+              for (final node in _nodes)
+                _WidgetDisplayCard(node: node, pubkey: widget.pubkey),
               if (!_nodes.any((n) => n.type == 'post_history'))
                 const DefaultPostHistoryWidget(),
               if (!_nodes.any((n) => n.type == 'guestbook'))
-                const DefaultGuestbookWidget(),
+                _GuestbookWidget(pubkey: widget.pubkey),
             ],
           ],
         ),
@@ -326,6 +334,7 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
 
 class _EditableWidgetCard extends StatelessWidget {
   final CustomProfileNode node;
+  final String pubkey;
   final Function(String, double, double) onNudge;
   final Function(String, String) onResize;
   final Function(String) onDelete;
@@ -333,6 +342,7 @@ class _EditableWidgetCard extends StatelessWidget {
   const _EditableWidgetCard({
     super.key,
     required this.node,
+    required this.pubkey,
     required this.onNudge,
     required this.onResize,
     required this.onDelete,
@@ -357,22 +367,11 @@ class _EditableWidgetCard extends StatelessWidget {
             ),
             child: Row(
               children: [
-                ReorderableDragStartListener(
-                  index: 0,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: theme.colorScheme.outline),
-                    ),
-                    child: Text(
-                      '⠿ Drag',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                Text(
+                  '⠿',
+                  style: TextStyle(
+                    fontSize: 20,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -430,7 +429,23 @@ class _EditableWidgetCard extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.all(16),
-            child: _WidgetRenderer(node: node),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onPanUpdate: (d) => onNudge(node.id, d.delta.dx, d.delta.dy),
+                  child: _WidgetRenderer(node: node, pubkey: pubkey),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'offset: (${(node.styles.offsetX ?? 0).round()}, '
+                  '${(node.styles.offsetY ?? 0).round()})',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -505,25 +520,47 @@ class _WidthButton extends StatelessWidget {
 
 class _WidgetDisplayCard extends StatelessWidget {
   final CustomProfileNode node;
+  final String pubkey;
 
-  const _WidgetDisplayCard({required this.node});
+  const _WidgetDisplayCard({required this.node, required this.pubkey});
 
   @override
   Widget build(BuildContext context) {
+    final offsetX = node.styles.offsetX ?? 0;
+    final offsetY = node.styles.offsetY ?? 0;
+    final width = node.styles.width;
+
+    Widget body = Padding(
+      padding: const EdgeInsets.all(16),
+      child: _WidgetRenderer(node: node, pubkey: pubkey),
+    );
+
+    if (width is String && width.endsWith('%')) {
+      final factor =
+          double.tryParse(width.replaceFirst('%', ''))?.clamp(0.1, 1.0);
+      if (factor != null) {
+        body = FractionallySizedBox(
+          alignment: Alignment.centerLeft,
+          widthFactor: factor,
+          child: body,
+        );
+      }
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: _WidgetRenderer(node: node),
-      ),
+      child: (offsetX != 0 || offsetY != 0)
+          ? Transform.translate(offset: Offset(offsetX, offsetY), child: body)
+          : body,
     );
   }
 }
 
 class _WidgetRenderer extends StatelessWidget {
   final CustomProfileNode node;
+  final String pubkey;
 
-  const _WidgetRenderer({required this.node});
+  const _WidgetRenderer({required this.node, required this.pubkey});
 
   @override
   Widget build(BuildContext context) {
@@ -578,18 +615,13 @@ class _WidgetRenderer extends StatelessWidget {
         );
       case 'friend_grid':
         final props = FriendGridProperties.fromJson(node.properties);
-        return Text('Top ${props.limit} friends');
+        return _FriendGridWidget(pubkey: pubkey, limit: props.limit);
       case 'music_player':
         final props = MusicPlayerProperties.fromJson(node.properties);
         if (props.tracks.isEmpty) {
           return const Text('No tracks');
         }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: props.tracks
-              .map((track) => Text('• ${track.title} - ${track.artist}'))
-              .toList(),
-        );
+        return _MusicPlayerWidget(tracks: props.tracks);
       case 'contact_card':
         final props = ContactCardProperties.fromJson(node.properties);
         return Wrap(
@@ -623,19 +655,7 @@ class _WidgetRenderer extends StatelessWidget {
               .toList(),
         );
       case 'guestbook':
-        final props = GuestbookProperties.fromJson(node.properties);
-        if (props.entries.isEmpty) {
-          return const Text('No guestbook entries');
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: props.entries
-              .map((entry) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Text('${entry.name}: ${entry.content}'),
-                  ))
-              .toList(),
-        );
+        return _GuestbookWidget(pubkey: pubkey);
       case 'profile_links':
         final props = ProfileLinksProperties.fromJson(node.properties);
         return Wrap(
@@ -689,11 +709,106 @@ class DefaultPostHistoryWidget extends StatelessWidget {
   }
 }
 
-class DefaultGuestbookWidget extends StatelessWidget {
-  const DefaultGuestbookWidget({super.key});
+class _GuestbookWidget extends StatefulWidget {
+  final String pubkey;
+
+  const _GuestbookWidget({required this.pubkey});
+
+  @override
+  State<_GuestbookWidget> createState() => _GuestbookWidgetState();
+}
+
+class _GuestbookWidgetState extends State<_GuestbookWidget> {
+  List<GuestbookEntry> _entries = [];
+  bool _loading = true;
+  bool _signing = false;
+  final TextEditingController _content = TextEditingController();
+
+  bool get _isMine =>
+      context.read<SessionService>().activePubkey == widget.pubkey;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _content.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final json = context.read<ProfileService>().guestbookList(
+            profilePubkey: widget.pubkey,
+            limit: 50,
+            onlyApproved: !_isMine,
+          );
+      final list = (jsonDecode(json) as List<dynamic>)
+          .map((e) => GuestbookEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+      if (mounted) setState(() => _entries = list);
+    } catch (e) {
+      debugPrint('guestbook load: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sign() async {
+    final content = _content.text.trim();
+    if (content.isEmpty) return;
+    setState(() => _signing = true);
+    try {
+      await context.read<ProfileService>().guestbookAdd(
+            profilePubkey: widget.pubkey,
+            content: content,
+          );
+      _content.clear();
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Guestbook signed')),
+        );
+      }
+    } catch (e) {
+      debugPrint('guestbook sign: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sign failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _signing = false);
+    }
+  }
+
+  Future<void> _approve(GuestbookEntry entry, bool approved) async {
+    try {
+      await context
+          .read<ProfileService>()
+          .guestbookApprove(entryId: entry.id, approved: approved);
+      await _load();
+    } catch (e) {
+      debugPrint('guestbook approve: $e');
+    }
+  }
+
+  Future<void> _delete(GuestbookEntry entry) async {
+    try {
+      context.read<ProfileService>().guestbookDelete(entryId: entry.id);
+      await _load();
+    } catch (e) {
+      debugPrint('guestbook delete: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Padding(
@@ -705,17 +820,252 @@ class DefaultGuestbookWidget extends StatelessWidget {
               children: [
                 const Text('📖', style: TextStyle(fontSize: 24)),
                 const SizedBox(width: 8),
-                Text(
-                  'Guestbook',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text('Guestbook', style: theme.textTheme.titleMedium),
               ],
             ),
             const SizedBox(height: 8),
-            const Text('Sign the guestbook'),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.all(8),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else if (_entries.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'No entries yet — sign it!',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              )
+            else
+              for (final entry in _entries)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              entry.name.isNotEmpty
+                                  ? entry.name
+                                  : entry.pubkey.substring(0, 12),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          Text(
+                            relativeTime(entry.createdAt),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.4),
+                            ),
+                          ),
+                          if (_isMine) ...[
+                            IconButton(
+                              icon: const Icon(Icons.check, size: 18),
+                              color: entry.approved == true
+                                  ? Colors.green
+                                  : theme.colorScheme.outline,
+                              tooltip: 'Approve',
+                              onPressed: () =>
+                                  _approve(entry, !(entry.approved == true)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              color: theme.colorScheme.error,
+                              tooltip: 'Reject',
+                              onPressed: () => _approve(entry, false),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, size: 18),
+                              color: theme.colorScheme.error,
+                              tooltip: 'Delete',
+                              onPressed: () => _delete(entry),
+                            ),
+                          ],
+                        ],
+                      ),
+                      Text(entry.content),
+                    ],
+                  ),
+                ),
+            const SizedBox(height: 8),
+            if (!_isMine)
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _content,
+                      maxLength: 2000,
+                      decoration: const InputDecoration(
+                        hintText: 'Sign the guestbook…',
+                        isDense: true,
+                        counterText: '',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _signing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : ElevatedButton(
+                          onPressed: _sign,
+                          child: const Text('Sign'),
+                        ),
+                ],
+              ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _FriendGridWidget extends StatefulWidget {
+  final String pubkey;
+  final int limit;
+
+  const _FriendGridWidget({required this.pubkey, required this.limit});
+
+  @override
+  State<_FriendGridWidget> createState() => _FriendGridWidgetState();
+}
+
+class _FriendGridWidgetState extends State<_FriendGridWidget> {
+  List<ProfileInfo> _friends = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final identity = context.read<IdentityService>();
+    final friends = context.read<FriendsService>();
+    try {
+      final json = await friends.fetchFollows(widget.pubkey);
+      final pubkeys = (jsonDecode(json) as List<dynamic>)
+          .map((e) => e as String)
+          .take(widget.limit)
+          .toList();
+      final profiles = <ProfileInfo>[];
+      for (final pk in pubkeys) {
+        try {
+          profiles.add(await identity.getProfile(pk));
+        } catch (_) {}
+      }
+      if (mounted) setState(() => _friends = profiles);
+    } catch (e) {
+      debugPrint('friend grid load: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.all(8),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    if (_friends.isEmpty) {
+      return const Text('No friends yet');
+    }
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      children: [
+        for (final friend in _friends)
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipOval(
+                child: friend.picture.isNotEmpty
+                    ? BlobImage(source: friend.picture, width: 48, height: 48)
+                    : CircleAvatar(
+                        radius: 24,
+                        child: Text(friend.name.isNotEmpty
+                            ? friend.name[0].toUpperCase()
+                            : '?'),
+                      ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                friend.name.isNotEmpty ? friend.name : 'friend',
+                style: Theme.of(context).textTheme.bodySmall,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _MusicPlayerWidget extends StatelessWidget {
+  final List<AudioTrack> tracks;
+
+  const _MusicPlayerWidget({required this.tracks});
+
+  Future<void> _play(BuildContext context, AudioTrack track) async {
+    final shell = context.read<ShellService>();
+    var url = track.url;
+    if (url.startsWith('blob:')) {
+      final hash = url.substring(5);
+      final media = context.read<MediaService>();
+      final p2p = context.read<P2pService>();
+      final path = await resolveBlobPath(media, p2p, hash);
+      if (path == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Audio unavailable — no device has this blob.')),
+          );
+        }
+        return;
+      }
+      await media.startLocalServer();
+      url = media.getLocalUrl(hash);
+    }
+    await shell.playAudio(url, track.title);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final track in tracks)
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.music_note),
+            title: Text(track.title,
+                style: theme.textTheme.bodyMedium,
+                overflow: TextOverflow.ellipsis),
+            subtitle: Text(track.artist,
+                style: theme.textTheme.bodySmall,
+                overflow: TextOverflow.ellipsis),
+            trailing: IconButton(
+              icon: const Icon(Icons.play_circle_outline),
+              tooltip: 'Play',
+              onPressed: () => _play(context, track),
+            ),
+          ),
+      ],
     );
   }
 }

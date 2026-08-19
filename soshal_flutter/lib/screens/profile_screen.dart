@@ -220,11 +220,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                                 const Spacer(),
                                 if (isSelfProfile)
-                                  ElevatedButton(
-                                    onPressed: () {
-                                      context.push('/settings/edit-profile');
-                                    },
-                                    child: const Text('Edit Profile'),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      ElevatedButton(
+                                        onPressed: () {
+                                          context
+                                              .push('/settings/edit-profile');
+                                        },
+                                        child: const Text('Edit Profile'),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      OutlinedButton.icon(
+                                        onPressed: () {
+                                          context.push('/profile-builder');
+                                        },
+                                        icon: const Text('🧩'),
+                                        label: const Text('Customize'),
+                                      ),
+                                    ],
                                   )
                                 else ...[
                                   ElevatedButton(

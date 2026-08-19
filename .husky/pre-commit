@@ -15,7 +15,7 @@ echo "✅ Code format OK"
 
 # 2. Clippy lint
 echo "🔎 Running clippy..."
-if cargo clippy --workspace --quiet 2>&1 | grep -iE "error|deny"; then
+if ! cargo clippy --workspace --all-targets --quiet -- -D warnings; then
     echo "❌ Clippy errors found"
     exit 1
 fi

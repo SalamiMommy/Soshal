@@ -288,10 +288,6 @@ mod tests {
         );
         assert_eq!(decompress_payload(&stored), big);
         // Legacy hex format backward compatibility.
-        let legacy_hex = format!(
-            "__zstd__:{}",
-            hex::encode(zstd::encode_all(big.as_bytes(), 3).unwrap())
-        );
         let mut buf = Vec::new();
         buf.extend_from_slice(ZSTD_MAGIC);
         buf.extend_from_slice(&zstd::encode_all(big.as_bytes(), 3).unwrap());

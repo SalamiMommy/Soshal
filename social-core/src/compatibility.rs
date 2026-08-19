@@ -40,6 +40,9 @@ pub fn interest_overlap_details<'a>(
     // Collect common items (deduplicated by removing from seen_b when found).
     let mut common: Vec<&'a str> = Vec::with_capacity(len_a.min(len_b));
     for s in a {
+        if seen_b.is_empty() {
+            break;
+        }
         let t = norm(s);
         if !t.is_empty() && seen_b.remove(&key(t)) {
             common.push(t);

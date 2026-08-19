@@ -211,6 +211,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
     async fn test_guestbook_add_list_approve_delete() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
@@ -219,17 +220,17 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = crate::ffi::db::tmp_db("guestbook", "gb");
-        let keys = nostr::key::Keys::generate();
-        let me = keys.public_key().to_hex();
-        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let guest = nostr::key::Keys::generate();
+        let owner_keys = nostr::key::Keys::generate();
+        let owner = owner_keys.public_key().to_hex();
+        super::super::signer::signer_unlock(guest.secret_key().to_secret_hex()).unwrap();
 
-        let owner = "f".repeat(64);
         let entry_json_str = guestbook_add(owner.clone(), "nice profile!".to_string())
             .await
             .unwrap();
         let v: serde_json::Value = serde_json::from_str(&entry_json_str).unwrap();
         let entry_id = v["id"].as_str().unwrap().to_string();
-        assert_eq!(v["pubkey"], me);
+        assert_eq!(v["pubkey"], guest.public_key().to_hex());
         assert_eq!(v["approved"], false);
 
         let list = guestbook_list(owner.clone(), 50, false).unwrap();
@@ -240,22 +241,24 @@ mod tests {
         let arr: serde_json::Value = serde_json::from_str(&public).unwrap();
         assert_eq!(arr.as_array().unwrap().len(), 0);
 
+        // Guest cannot approve; only the owner can.
+        assert!(guestbook_approve(entry_id.clone(), true).await.is_err());
+        super::super::signer::signer_lock().unwrap();
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
         let approval = guestbook_approve(entry_id.clone(), true).await.unwrap();
         assert!(approval.contains("approved"));
         let public = guestbook_list(owner.clone(), 50, true).unwrap();
         let arr: serde_json::Value = serde_json::from_str(&public).unwrap();
         assert_eq!(arr.as_array().unwrap().len(), 1);
 
-        // Non-owner cannot approve: re-lock and sign as someone else.
+        // Non-owner cannot delete.
         super::super::signer::signer_lock().unwrap();
-        let other = nostr::key::Keys::generate();
-        super::super::signer::signer_unlock(other.secret_key().to_secret_hex()).unwrap();
-        assert!(guestbook_approve(entry_id.clone(), true).await.is_err());
-
-        // Owner delete works; non-owner delete denied.
+        super::super::signer::signer_unlock(guest.secret_key().to_secret_hex()).unwrap();
         assert!(guestbook_delete(entry_id.clone()).is_err());
+
+        // Owner delete works.
         super::super::signer::signer_lock().unwrap();
-        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
         assert!(guestbook_delete(entry_id.clone()).unwrap());
         let list = guestbook_list(owner, 50, false).unwrap();
         let arr: serde_json::Value = serde_json::from_str(&list).unwrap();
@@ -264,6 +267,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
     async fn test_guestbook_add_rejects_bad_input() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()

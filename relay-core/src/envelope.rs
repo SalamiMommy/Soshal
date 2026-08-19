@@ -54,15 +54,28 @@ impl MeshEnvelope {
         self.hop_count >= MAX_HOP_COUNT
     }
 
+    /// Increments hop_count in place, returning true if successful or false if at ceiling.
+    pub fn increment_hop_in_place(&mut self) -> bool {
+        if self.at_hop_limit() {
+            false
+        } else {
+            self.hop_count += 1;
+            true
+        }
+    }
+
+    /// Consumes the envelope and returns it with hop_count +1, or None at the ceiling.
+    pub fn into_incremented_hop(mut self) -> Option<Self> {
+        if self.increment_hop_in_place() {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     /// Returns a clone with hop_count +1, or None at the ceiling.
     pub fn increment_hop(&self) -> Option<Self> {
-        if self.at_hop_limit() {
-            None
-        } else {
-            let mut next = self.clone();
-            next.hop_count += 1;
-            Some(next)
-        }
+        self.clone().into_incremented_hop()
     }
 
     /// Encodes to wire bytes (little-endian, magic prefixed).

@@ -153,7 +153,17 @@ impl WgpuMeshEngineSession {
 
     /// Render offscreen RGBA pixel frame buffer for Flutter TextureRegistry
     pub fn render_pixel_buffer(&self) -> Vec<u8> {
-        let mut buffer = vec![0u8; (self.width * self.height * 4) as usize];
+        let Some(byte_len) = (self.width as u64)
+            .checked_mul(self.height as u64)
+            .and_then(|v| v.checked_mul(4))
+            .and_then(|v| usize::try_from(v).ok())
+        else {
+            return Vec::new();
+        };
+        if byte_len > 256 * 1024 * 1024 {
+            return Vec::new();
+        }
+        let mut buffer = vec![0u8; byte_len];
         let nodes = self.nodes.lock().unwrap();
 
         // Background color: Dark mesh canvas #0D1117

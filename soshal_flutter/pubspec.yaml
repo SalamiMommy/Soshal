@@ -35,7 +35,6 @@ dev_dependencies:
   plugin_platform_interface: any
   camera_platform_interface: ^2.13.1
   geolocator_platform_interface: ^4.2.8
-  permission_handler_platform_interface: ^4.4.0
 flutter:
   uses-material-design: true
 

@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn response_branch_caps_oversized_messages() {
-        let tree = ProllyTree::build(&vec![("post_1".to_string(), "data1".to_string())]);
+        let tree = ProllyTree::build(&[("post_1".to_string(), "data1".to_string())]);
         let mut session = ProllySyncSession::new(tree);
         let oversized = ProllySyncMessage::ResponseBranch {
             node_hash: "h".to_string(),

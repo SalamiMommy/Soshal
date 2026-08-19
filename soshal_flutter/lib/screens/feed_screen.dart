@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:video_player/video_player.dart';
+import '../ffi/permissions.dart' as ffi;
 import '../services/bookmarks_service.dart';
 import '../services/feed_service.dart';
 import '../services/moderation_service.dart';
@@ -1142,6 +1143,13 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
   /// first, then a LAN crawl of discovered peers) and play from the local
   /// range server. Honest failure: no peers / no local copy = error UI.
   Future<void> _prepare() async {
+    if (ffi.permissionsPlatformCurrent() != 'android') {
+      if (mounted) {
+        setState(() => _error = 'Video playback is not supported on this '
+            'platform (video_player has no Linux implementation yet).');
+      }
+      return;
+    }
     final cached = _resolvedUrlCache[widget.postId];
     var url = cached ?? widget.url;
     if (cached == null) {

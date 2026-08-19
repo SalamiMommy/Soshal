@@ -65,7 +65,7 @@ fi
 echo ""
 echo "3. Checking async runtime consistency..."
 
-if grep -r "async_std\|smol\|embassy" *-core/ Cargo.toml 2>/dev/null | grep -v "^Binary"; then
+if grep -r "async_std\|smol\|embassy" *-core/Cargo.toml 2>/dev/null | grep -v "^Binary"; then
     error "Found non-tokio async runtime in core crates (must use tokio)"
 else
     success "All async code uses tokio (or no async)"
@@ -75,7 +75,7 @@ fi
 echo ""
 echo "4. Checking HTTP client consistency..."
 
-if grep -r "hyper\|actix" *-core/ Cargo.toml 2>/dev/null | grep -v "^Binary"; then
+if grep -r "hyper\|actix" *-core/Cargo.toml 2>/dev/null | grep -v "^Binary"; then
     warning "Found alternative HTTP client (recommended: reqwest only)"
 else
     success "HTTP client is consistent (reqwest or none)"
@@ -85,7 +85,7 @@ fi
 echo ""
 echo "5. Checking crypto library consistency..."
 
-if grep -r "openssl\|md5\|sha1" *-core/ Cargo.toml 2>/dev/null | grep -v "^Binary"; then
+if grep -r "openssl\|md5\|sha1" *-core/Cargo.toml 2>/dev/null | grep -v "^Binary"; then
     error "Found weak or platform-dependent crypto (use ring instead)"
 else
     success "Crypto uses ring or libsodium (safe)"
@@ -118,10 +118,14 @@ echo "8. Checking adapter imports..."
 
 if grep -r "use flutter_rust_bridge" flutter-bridge/src/ffi/*.rs 2>/dev/null | grep -q "frb"; then
     success "Flutter adapter correctly imports flutter_rust_bridge"
+else
+    error "Flutter adapter missing flutter_rust_bridge import"
 fi
 
 if grep -r "use flutter_rust_bridge" flutter-bridge/src/*.rs 2>/dev/null | grep -q "frb"; then
     success "Flutter adapter correctly imports flutter_rust_bridge"
+else
+    error "Flutter adapter missing flutter_rust_bridge import"
 fi
 
 # 9. Compile all cores standalone
@@ -159,7 +163,7 @@ echo "10. Running core crate tests..."
 if cargo test --workspace --quiet 2>/dev/null; then
     success "All core tests pass"
 else
-    warning "Some core tests failed (review output)"
+    error "Some core tests failed (review output)"
 fi
 
 # 11. Check for secrets in code
@@ -176,7 +180,7 @@ fi
 echo ""
 echo "12. Checking serialization consistency..."
 
-if grep -r "bincode\|msgpack\|rmp\|protobuf" *-core/ Cargo.toml 2>/dev/null | grep -v "^Binary"; then
+if grep -r "bincode\|msgpack\|rmp\|protobuf" *-core/Cargo.toml 2>/dev/null | grep -v "^Binary"; then
     warning "Found alternative serialization format (serde_json recommended for cross-platform)"
 else
     success "Serialization is consistent (serde_json or none)"

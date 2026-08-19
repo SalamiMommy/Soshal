@@ -167,6 +167,8 @@ fn attendees_count(event_id: &str) -> i32 {
 /// locally stored event rows; exact haversine, not a coarse box). A SQL-side
 /// bounding-box prefilter on the denormalized event_lat/event_lng columns
 /// keeps the fetch set small and fixes the old fetch-then-filter underfill.
+/// `radius_km <= 0` means "anywhere": no geo filter, zero-coordinate
+/// (location-less) events included.
 #[frb(sync, serialize)]
 pub fn events_fetch_nearby(
     latitude: f64,
@@ -174,7 +176,11 @@ pub fn events_fetch_nearby(
     radius_km: f32,
     limit: i32,
 ) -> Result<String, String> {
-    let radius = radius_km.max(1.0).min(5000.0);
+    if radius_km <= 0.0 {
+        let json = super::db::db_query_raw(event_rows_sql("", limit))?;
+        return super::util::json_ok(events_from_json(json));
+    }
+    let radius = radius_km.min(5000.0);
     let lat_deg = radius as f64 / 110.574;
     let lon_deg = radius as f64 / (111.320 * latitude.to_radians().cos().abs().max(0.01));
     let (lat1, lat2) = (latitude - lat_deg, latitude + lat_deg);
@@ -663,6 +669,15 @@ mod tests {
             serde_json::from_str(&events_fetch_user_events(pk, 10).unwrap()).unwrap();
         assert_eq!(mine.len(), 1);
         assert_eq!(mine[0]["id"].as_str().unwrap(), event_id);
+
+        let anywhere: Vec<serde_json::Value> =
+            serde_json::from_str(&events_fetch_nearby(0.0, 0.0, 0.0, 10).unwrap()).unwrap();
+        assert_eq!(
+            anywhere.len(),
+            1,
+            "radius 0 = anywhere includes zero-coordinate events"
+        );
+        assert_eq!(anywhere[0]["id"].as_str().unwrap(), event_id);
 
         let score = events_interest_score(r#"["nostr"]"#.into(), r#"["nostr"]"#.into()).unwrap();
         assert!(score.contains(':'));

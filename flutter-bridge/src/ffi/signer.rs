@@ -107,15 +107,20 @@ pub fn signer_pubkey() -> Result<String, String> {
 /// Only called explicitly after the user opts into "remember this device".
 #[frb(serialize)]
 pub async fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
-    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
-    let keys = match guard.as_ref() {
-        Some(k) => k,
-        None => return Err("signer locked".to_string()).into(),
+    // Clone the secret under the guard, then release before the blocking
+    // keyring write: keyring may prompt or stall, and holding the global
+    // SIGNER mutex across it would stall every signing call on other threads.
+    let secret = {
+        let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+        let keys = match guard.as_ref() {
+            Some(k) => k,
+            None => return Err("signer locked".to_string()).into(),
+        };
+        if keys.public_key().to_hex() != pubkey {
+            return Err("pubkey does not match unlocked signer".to_string()).into();
+        }
+        zeroize::Zeroizing::new(keys.secret_key().to_secret_hex())
     };
-    if keys.public_key().to_hex() != pubkey {
-        return Err("pubkey does not match unlocked signer".to_string()).into();
-    }
-    let secret = zeroize::Zeroizing::new(keys.secret_key().to_secret_hex());
     let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&pubkey)) {
         Ok(e) => e,
         Err(e) => return Err(format!("keychain unavailable: {e}")).into(),

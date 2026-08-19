@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 656990166;
+  int get rustContentHash => 792852698;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -145,7 +145,7 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiAuthAuthValidateMnemonic({required String mnemonic});
 
-  int crateFfiHeadlessBackgroundSyncTask({required String dbPath});
+  Future<int> crateFfiHeadlessBackgroundSyncTask({required String dbPath});
 
   bool crateFfiBookmarksBookmarksDelete({required String id});
 
@@ -679,6 +679,19 @@ abstract class RustLibApi extends BaseApi {
       {required String channelId, required String pubkey});
 
   String crateFfiGroupsGroupsVoicePresence({required String channelId});
+
+  Future<String> crateFfiGuestbookGuestbookAdd(
+      {required String profilePubkey, required String content});
+
+  Future<String> crateFfiGuestbookGuestbookApprove(
+      {required String entryId, required bool approved});
+
+  bool crateFfiGuestbookGuestbookDelete({required String entryId});
+
+  String crateFfiGuestbookGuestbookList(
+      {required String profilePubkey,
+      required int limit,
+      required bool onlyApproved});
 
   List<Uint8List> crateFfiH264H264FeedDecode({required List<int> nal});
 
@@ -1249,7 +1262,7 @@ abstract class RustLibApi extends BaseApi {
   Future<bool> crateFfiPinPinChange(
       {required String oldPin, required String newPin});
 
-  bool crateFfiPinPinClear({required String pin});
+  Future<bool> crateFfiPinPinClear({required String pin});
 
   bool crateFfiPinPinHas();
 
@@ -1269,6 +1282,9 @@ abstract class RustLibApi extends BaseApi {
 
   Future<ImpellerFrameBufferInfo> crateFfiRasterRasterAllocateFrameBuffer(
       {required int width, required int height});
+
+  Future<bool> crateFfiRasterRasterReleaseFrameBuffer(
+      {required BigInt ptrAddr});
 
   Future<bool> crateFfiRasterRasterSignalImpellerFrameReady(
       {required PlatformInt64 textureId, required BigInt frameTimestampNs});
@@ -1471,6 +1487,8 @@ abstract class RustLibApi extends BaseApi {
       required String streamUrl});
 
   Future<int> crateFfiStreamingStreamingStartLocalServer();
+
+  void crateFfiStreamingStreamingStopLocalServer();
 
   bool crateFfiStreamingStreamingStoryReact(
       {required String storyId, required String pubkey, required String emoji});
@@ -2189,14 +2207,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  int crateFfiHeadlessBackgroundSyncTask({required String dbPath}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<int> crateFfiHeadlessBackgroundSyncTask({required String dbPath}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(dbPath, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__headless__background_sync_task(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_i_32,
@@ -6748,6 +6766,119 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "groups_voice_presence",
         argNames: ["channelId"],
+      );
+
+  @override
+  Future<String> crateFfiGuestbookGuestbookAdd(
+      {required String profilePubkey, required String content}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(profilePubkey, serializer);
+        sse_encode_String(content, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__guestbook__guestbook_add(
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGuestbookGuestbookAddConstMeta,
+      argValues: [profilePubkey, content],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGuestbookGuestbookAddConstMeta =>
+      const TaskConstMeta(
+        debugName: "guestbook_add",
+        argNames: ["profilePubkey", "content"],
+      );
+
+  @override
+  Future<String> crateFfiGuestbookGuestbookApprove(
+      {required String entryId, required bool approved}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(entryId, serializer);
+        sse_encode_bool(approved, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__guestbook__guestbook_approve(
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGuestbookGuestbookApproveConstMeta,
+      argValues: [entryId, approved],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGuestbookGuestbookApproveConstMeta =>
+      const TaskConstMeta(
+        debugName: "guestbook_approve",
+        argNames: ["entryId", "approved"],
+      );
+
+  @override
+  bool crateFfiGuestbookGuestbookDelete({required String entryId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(entryId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__guestbook__guestbook_delete(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGuestbookGuestbookDeleteConstMeta,
+      argValues: [entryId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGuestbookGuestbookDeleteConstMeta =>
+      const TaskConstMeta(
+        debugName: "guestbook_delete",
+        argNames: ["entryId"],
+      );
+
+  @override
+  String crateFfiGuestbookGuestbookList(
+      {required String profilePubkey,
+      required int limit,
+      required bool onlyApproved}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(profilePubkey, serializer);
+        sse_encode_i_32(limit, serializer);
+        sse_encode_bool(onlyApproved, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__guestbook__guestbook_list(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGuestbookGuestbookListConstMeta,
+      argValues: [profilePubkey, limit, onlyApproved],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGuestbookGuestbookListConstMeta =>
+      const TaskConstMeta(
+        debugName: "guestbook_list",
+        argNames: ["profilePubkey", "limit", "onlyApproved"],
       );
 
   @override
@@ -11862,14 +11993,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateFfiPinPinClear({required String pin}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<bool> crateFfiPinPinClear({required String pin}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(pin, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__pin__pin_clear(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_bool,
@@ -12093,6 +12224,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "raster_allocate_frame_buffer",
         argNames: ["width", "height"],
+      );
+
+  @override
+  Future<bool> crateFfiRasterRasterReleaseFrameBuffer(
+      {required BigInt ptrAddr}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_usize(ptrAddr, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__raster__raster_release_frame_buffer(
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiRasterRasterReleaseFrameBufferConstMeta,
+      argValues: [ptrAddr],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiRasterRasterReleaseFrameBufferConstMeta =>
+      const TaskConstMeta(
+        debugName: "raster_release_frame_buffer",
+        argNames: ["ptrAddr"],
       );
 
   @override
@@ -13991,6 +14149,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiStreamingStreamingStartLocalServerConstMeta =>
       const TaskConstMeta(
         debugName: "streaming_start_local_server",
+        argNames: [],
+      );
+
+  @override
+  void crateFfiStreamingStreamingStopLocalServer() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__streaming__streaming_stop_local_server(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_unit,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiStreamingStreamingStopLocalServerConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiStreamingStreamingStopLocalServerConstMeta =>
+      const TaskConstMeta(
+        debugName: "streaming_stop_local_server",
         argNames: [],
       );
 

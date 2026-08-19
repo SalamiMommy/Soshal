@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
 import 'ffi_bridge.dart';
+import 'sync_service.dart';
 
 /// Session Service
 /// Handles multi-account management, session persistence, and keychain
@@ -13,6 +14,12 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
   SessionData? _session;
   String? _activePubkey;
   Future<SessionData>? _loadFuture;
+  SyncService? _sync;
+
+  /// Attach the sync engine (wired from main.dart). Account switches stop
+  /// the old engine before the new account takes over so its events don't
+  /// route into the switched account's feed/DM surfaces.
+  void attachSync(SyncService sync) => _sync = sync;
 
   SessionData? get session => _session;
   String? get activePubkey => _activePubkey;
@@ -153,6 +160,10 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
         throw Exception('Account not found');
       }
 
+      // Stop the old account's sync engine before switching so its events
+      // stop routing into the switched account's feed/DM.
+      await _sync?.stop();
+
       RustLib.instance.api.crateFfiSessionSessionSwitchAccount(
         pubkey: pubkey,
       );
@@ -179,6 +190,8 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
       _session!.accounts.removeWhere((a) => a.pubkey == pubkey);
 
       if (_activePubkey == pubkey) {
+        // Active account removed — stop its sync engine first.
+        await _sync?.stop();
         if (_session!.accounts.isNotEmpty) {
           _activePubkey = _session!.accounts.first.pubkey;
         } else {

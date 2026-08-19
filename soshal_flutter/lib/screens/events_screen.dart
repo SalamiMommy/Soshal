@@ -18,16 +18,17 @@ enum _AudienceMode { all, friends, fof, mine }
 /// Event photo: blob:// hashes resolve via the chunk store; http(s) load
 /// directly. Falls back to an icon when missing or unresolvable.
 class _EventImage extends StatelessWidget {
-  const _EventImage({required this.url, this.height});
+  const _EventImage({required this.url, this.height, this.iconSize = 24});
 
   final String url;
   final double? height;
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
     final trimmed = url.trim();
     if (trimmed.isEmpty) {
-      return const Icon(Icons.event);
+      return Icon(Icons.event, size: iconSize);
     }
     if (trimmed.startsWith('blob://')) {
       final hash = trimmed.substring('blob://'.length);
@@ -39,10 +40,11 @@ class _EventImage extends StatelessWidget {
               File(snap.data!),
               fit: BoxFit.cover,
               height: height,
-              errorBuilder: (_, __, ___) => const Icon(Icons.event),
+              errorBuilder: (_, __, ___) =>
+                  Icon(Icons.event, size: iconSize),
             );
           }
-          return const Icon(Icons.event);
+          return Icon(Icons.event, size: iconSize);
         },
       );
     }
@@ -50,7 +52,7 @@ class _EventImage extends StatelessWidget {
       trimmed,
       fit: BoxFit.cover,
       height: height,
-      errorBuilder: (_, __, ___) => const Icon(Icons.event),
+      errorBuilder: (_, __, ___) => Icon(Icons.event, size: iconSize),
     );
   }
 }
@@ -584,10 +586,12 @@ class _EventsScreenState extends State<EventsScreen> {
     final now = DateTime.now();
     final month = DateTime(now.year, now.month + _monthOffset);
     final today = DateTime(now.year, now.month, now.day);
-    final counts = <DateTime, int>{};
+    final dayEvents = <DateTime, List<SoshalEvent>>{};
     for (final e in events) {
       final day = _eventDay(e);
-      if (day != null) counts[day] = (counts[day] ?? 0) + 1;
+      if (day != null) {
+        (dayEvents[day] ??= []).add(e);
+      }
     }
     final leadingBlanks = month.weekday % 7;
     final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
@@ -649,7 +653,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 if (c == null)
                   const SizedBox.shrink()
                 else
-                  _dayCell(c, today, counts[c] ?? 0),
+                  _dayCell(c, today, dayEvents[c] ?? const []),
             ],
           ),
           if (day != null) ...[
@@ -666,10 +670,11 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  Widget _dayCell(DateTime day, DateTime today, int count) {
+  Widget _dayCell(DateTime day, DateTime today, List<SoshalEvent> dayEvents) {
     final isSelected = _selectedDay == day;
     final isToday = day == today;
     final colorScheme = Theme.of(context).colorScheme;
+    final tiles = dayEvents.take(4).toList();
     return Padding(
       padding: const EdgeInsets.all(2),
       child: InkWell(
@@ -687,23 +692,26 @@ class _EventsScreenState extends State<EventsScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text('${day.day}'),
-              if (count > 0)
+              if (tiles.isNotEmpty)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    for (var i = 0; i < 3 && i < count; i++)
-                      Container(
-                        width: 5,
-                        height: 5,
-                        margin: const EdgeInsets.symmetric(horizontal: 1),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primary,
-                          shape: BoxShape.circle,
+                    for (final e in tiles)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 1),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: _EventImage(
+                                url: e.image, height: 14, iconSize: 12),
+                          ),
                         ),
                       ),
-                    if (count > 3)
+                    if (dayEvents.length > 4)
                       Text(
-                        '+${count - 3}',
+                        '+${dayEvents.length - 4}',
                         style: TextStyle(
                           fontSize: 8,
                           color: colorScheme.primary,

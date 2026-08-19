@@ -2,6 +2,7 @@
 /// Defines the strict, sanitized schema for MySoshal-style profile customization.
 /// Allows deep aesthetic modification without exposing cross-site scripting (XSS)
 /// or remote code execution (RCE).
+// ignore_for_file: invalid_use_of_internal_member
 library;
 
 import 'dart:convert';
@@ -11,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import '../ffi/auth.dart';
 import '../ffi/content.dart' as ffi_content;
 import '../ffi/db.dart' as ffi_db;
+import '../frb_generated.dart';
 import '../utils/json_ext.dart';
 
 const int customProfileKind = 30085;
@@ -913,4 +915,44 @@ class ProfileService extends ChangeNotifier {
   /// Encode a hex public key as bech32 npub (used by QR share).
   String npubEncode({required String publicKey}) =>
       authNpubEncode(publicKey: publicKey);
+
+  /// Sign, store, and relay a guestbook entry for a profile (kind 30080).
+  Future<String> guestbookAdd({
+    required String profilePubkey,
+    required String content,
+  }) async {
+    return RustLib.instance.api.crateFfiGuestbookGuestbookAdd(
+      profilePubkey: profilePubkey,
+      content: content,
+    );
+  }
+
+  /// List guestbook entries for a profile pubkey from the local DB.
+  String guestbookList({
+    required String profilePubkey,
+    required int limit,
+    required bool onlyApproved,
+  }) =>
+      RustLib.instance.api.crateFfiGuestbookGuestbookList(
+        profilePubkey: profilePubkey,
+        limit: limit,
+        onlyApproved: onlyApproved,
+      );
+
+  /// Owner approval/denial of a guestbook entry (kind 30081).
+  Future<String> guestbookApprove({
+    required String entryId,
+    required bool approved,
+  }) async {
+    return RustLib.instance.api.crateFfiGuestbookGuestbookApprove(
+      entryId: entryId,
+      approved: approved,
+    );
+  }
+
+  /// Owner-only local delete of a guestbook entry.
+  bool guestbookDelete({required String entryId}) =>
+      RustLib.instance.api.crateFfiGuestbookGuestbookDelete(
+        entryId: entryId,
+      );
 }

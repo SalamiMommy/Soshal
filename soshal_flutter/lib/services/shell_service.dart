@@ -1,6 +1,5 @@
 import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -327,7 +326,7 @@ class ShellService extends ChangeNotifier {
 
   Future<bool> clearPin(String pin) async {
     try {
-      RustLib.instance.api.crateFfiPinPinClear(pin: pin);
+      await RustLib.instance.api.crateFfiPinPinClear(pin: pin);
       _hasPin = RustLib.instance.api.crateFfiPinPinHas();
       notifyListeners();
       return true;
@@ -367,19 +366,30 @@ class ShellService extends ChangeNotifier {
   AudioPlayer _ensurePlayer() => _audioPlayer ??= AudioPlayer();
 
   /// Plays an audio URL (local blob-server URL or remote fallback) through
-  /// the global audio player.
-  Future<void> playAudio(String url, String title) async {
-    _audioUrl = url;
-    _audioTitle = title;
-    _audioPlaying = true;
-    notifyListeners();
+  /// the global audio player. Returns true when playback actually started;
+  /// false (with `error` populated) when the load/play failed.
+  Future<bool> playAudio(String url, String title,
+      {Duration timeout = const Duration(seconds: 15)}) async {
+    final player = _ensurePlayer();
     try {
-      final player = _ensurePlayer();
       await player.stop();
-      await player.setUrl(url);
-      unawaited(player.play());
+      await player.setUrl(url).timeout(timeout);
+      await player.play().timeout(timeout);
+      _audioUrl = url;
+      _audioTitle = title;
+      _audioPlaying = true;
+      notifyListeners();
+      return true;
     } catch (e) {
       debugPrint('audio play failed: $e');
+      await _audioPlayer?.pause();
+      if (_audioUrl == url || _audioTitle == title) {
+        _audioPlaying = false;
+        _audioUrl = '';
+        _audioTitle = '';
+      }
+      notifyListeners();
+      return false;
     }
   }
 

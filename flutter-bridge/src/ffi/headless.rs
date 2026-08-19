@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 const SYNC_PASS_SECS: u64 = 20;
 
 struct HeadlessCtx {
-    rt: tokio::runtime::Runtime,
+    rt: Arc<tokio::runtime::Runtime>,
     /// Joined relay list this client was built for; a changed list invalidates.
     relays_key: String,
     client: nostr_sdk::client::Client,
@@ -26,17 +26,23 @@ struct HeadlessCtx {
 
 static HEADLESS_CTX: Mutex<Option<HeadlessCtx>> = Mutex::new(None);
 
-#[flutter_rust_bridge::frb(sync, serialize)]
-pub fn background_sync_task(db_path: String) -> Result<i32, String> {
+/// Run a bounded one-shot sync pass against the relay network for the active
+/// account. Async: the pass may take up to SYNC_PASS_SECS and must not block
+/// the Dart isolate.
+#[flutter_rust_bridge::frb(serialize)]
+pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
     if db_path.is_empty() {
         return Err("Database path cannot be empty".to_string());
     }
 
-    let db = soshal_db_core::Database::open(&db_path)
-        .map_err(|e| format!("Failed to open DB for background sync: {}", e))?;
+    let db = match soshal_db_core::Database::open(&db_path) {
+        Ok(db) => db,
+        Err(e) => return Err(format!("Failed to open DB for background sync: {e}")).into(),
+    };
 
-    db.migrate()
-        .map_err(|e| format!("Failed to migrate DB during background sync: {}", e))?;
+    if let Err(e) = db.migrate() {
+        return Err(format!("Failed to migrate DB during background sync: {e}")).into();
+    }
 
     // Load the active account + relay list from session.json (next to the
     // DB file). Headless runs may execute in a separate process, so the
@@ -84,35 +90,42 @@ pub fn background_sync_task(db_path: String) -> Result<i32, String> {
             relays: relays.clone(),
             socks_proxy: None,
         };
-        let client = rt
-            .block_on(build_client(&cfg))
-            .map_err(|e| format!("Failed to build relay client: {e}"))?;
+        let client = match rt.block_on(build_client(&cfg)) {
+            Ok(c) => c,
+            Err(e) => return Err(format!("Failed to build relay client: {e}")).into(),
+        };
         *guard = Some(HeadlessCtx {
-            rt,
+            rt: Arc::new(rt),
             relays_key,
             client,
         });
     }
+    // Clone the warm client + runtime handle, then release the guard BEFORE
+    // the long-running pass: an async fn must not hold a std Mutex guard
+    // across its body (the future would not be Send, and a concurrent call
+    // would block the executor thread).
     let ctx = guard.as_ref().expect("ctx initialized above");
+    let rt = ctx.rt.clone();
+    let client = ctx.client.clone();
+    drop(guard);
 
     // Bounded one-shot pass against the warm client: run the engine, then
     // stop after SYNC_PASS_SECS. Events are ingested + outbox items replayed
     // by the engine loop.
     let (tx, _rx) = tokio::sync::mpsc::channel::<SyncUpdate>(16);
     let stop = Arc::new(AtomicBool::new(false));
-    let client = ctx.client.clone();
     let cfg = SyncConfig {
         db_path,
         my_pubkey: pubkey,
         relays,
         socks_proxy: None,
     };
-    ctx.rt.block_on(async {
+    rt.block_on(async {
         let _ = client.connect().await; // no-op when already connected
         let handle = tokio::spawn(engine_loop_with_client(cfg, tx, stop.clone(), client));
         tokio::time::sleep(std::time::Duration::from_secs(SYNC_PASS_SECS)).await;
         stop.store(true, Ordering::Relaxed);
         let _ = handle.await;
     });
-    Ok(1)
+    Ok(1).into()
 }

@@ -14,6 +14,12 @@ Future<ImpellerFrameBufferInfo> rasterAllocateFrameBuffer(
     RustLib.instance.api
         .crateFfiRasterRasterAllocateFrameBuffer(width: width, height: height);
 
+/// Frees a frame buffer previously returned by `raster_allocate_frame_buffer`.
+/// Unknown or double-released addresses are a safe no-op error.
+Future<bool> rasterReleaseFrameBuffer({required BigInt ptrAddr}) =>
+    RustLib.instance.api
+        .crateFfiRasterRasterReleaseFrameBuffer(ptrAddr: ptrAddr);
+
 /// Pushes frame render signal directly to Impeller raster pipeline.
 Future<bool> rasterSignalImpellerFrameReady(
         {required PlatformInt64 textureId, required BigInt frameTimestampNs}) =>

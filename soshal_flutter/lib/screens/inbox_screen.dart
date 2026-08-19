@@ -315,8 +315,15 @@ class _InboxScreenState extends State<InboxScreen> {
                       avatar: const Icon(Icons.lan_outlined, size: 18),
                       label: const Text('LAN server'),
                       onPressed: () async {
-                        await p2p.start();
-                        if (mounted) setState(() {});
+                        try {
+                          await p2p.start();
+                          if (mounted) setState(() {});
+                        } catch (e) {
+                          if (context.mounted) {
+                            _showSnackBar(
+                                context, 'LAN server start failed: $e');
+                          }
+                        }
                       },
                     )
                   else ...[
@@ -334,8 +341,15 @@ class _InboxScreenState extends State<InboxScreen> {
                       avatar: const Icon(Icons.bolt_outlined, size: 18),
                       label: const Text('QUIC server'),
                       onPressed: () async {
-                        await p2p.startQuicServer();
-                        if (mounted) setState(() {});
+                        try {
+                          await p2p.startQuicServer();
+                          if (mounted) setState(() {});
+                        } catch (e) {
+                          if (context.mounted) {
+                            _showSnackBar(
+                                context, 'QUIC server start failed: $e');
+                          }
+                        }
                       },
                     )
                   else ...[

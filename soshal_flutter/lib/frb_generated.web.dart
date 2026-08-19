@@ -767,13 +767,13 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__auth__auth_validate_mnemonic(
               ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__headless__background_sync_task(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__headless__background_sync_task(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__headless__background_sync_task(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__headless__background_sync_task(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__bookmarks__bookmarks_delete(
@@ -1978,6 +1978,38 @@ class RustLibWire implements BaseWire {
               int rust_vec_len_,
               int data_len_) =>
           wasmModule.wire__crate__ffi__groups__groups_voice_presence(
+              ptr_, rust_vec_len_, data_len_);
+
+  void wire__crate__ffi__guestbook__guestbook_add(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__guestbook__guestbook_add(
+          port_, ptr_, rust_vec_len_, data_len_);
+
+  void wire__crate__ffi__guestbook__guestbook_approve(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__guestbook__guestbook_approve(
+          port_, ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__guestbook__guestbook_delete(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__guestbook__guestbook_delete(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__guestbook__guestbook_list(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__guestbook__guestbook_list(
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
@@ -3451,11 +3483,13 @@ class RustLibWire implements BaseWire {
       wasmModule.wire__crate__ffi__pin__pin_change(
           port_, ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__pin__pin_clear(PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_, int data_len_) =>
-          wasmModule.wire__crate__ffi__pin__pin_clear(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__pin__pin_clear(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__pin__pin_clear(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__pin__pin_has(PlatformGeneralizedUint8ListPtr ptr_,
@@ -3517,6 +3551,14 @@ class RustLibWire implements BaseWire {
           int rust_vec_len_,
           int data_len_) =>
       wasmModule.wire__crate__ffi__raster__raster_allocate_frame_buffer(
+          port_, ptr_, rust_vec_len_, data_len_);
+
+  void wire__crate__ffi__raster__raster_release_frame_buffer(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__raster__raster_release_frame_buffer(
           port_, ptr_, rust_vec_len_, data_len_);
 
   void wire__crate__ffi__raster__raster_signal_impeller_frame_ready(
@@ -4074,6 +4116,14 @@ class RustLibWire implements BaseWire {
           port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__streaming__streaming_stop_local_server(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__streaming__streaming_stop_local_server(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__streaming__streaming_story_react(
               PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_,
@@ -4569,11 +4619,11 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_,
           int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__headless__background_sync_task(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__headless__background_sync_task(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__bookmarks__bookmarks_delete(
@@ -5453,6 +5503,27 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__groups__groups_voice_presence(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external void wire__crate__ffi__guestbook__guestbook_add(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
+
+  external void wire__crate__ffi__guestbook__guestbook_approve(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__guestbook__guestbook_delete(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__guestbook__guestbook_list(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
@@ -6510,9 +6581,8 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
   external void wire__crate__ffi__pin__pin_change(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__pin__pin_clear(PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_, int data_len_);
+  external void wire__crate__ffi__pin__pin_clear(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__pin__pin_has(PlatformGeneralizedUint8ListPtr ptr_,
@@ -6549,6 +6619,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
       int data_len_);
 
   external void wire__crate__ffi__raster__raster_allocate_frame_buffer(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
+
+  external void wire__crate__ffi__raster__raster_release_frame_buffer(
       NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_,
       int rust_vec_len_,
@@ -6967,6 +7043,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
       PlatformGeneralizedUint8ListPtr ptr_,
       int rust_vec_len_,
       int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__streaming__streaming_stop_local_server(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__streaming__streaming_story_react(

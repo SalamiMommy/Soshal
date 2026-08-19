@@ -170,18 +170,38 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
                     BigInt.from(DateTime.now().microsecondsSinceEpoch * 1000),
               );
             } catch (_) {}
+            // The buffer is consumed by the frame signal; release the Rust
+            // allocation so the registry does not grow one entry per frame.
+            try {
+              await _layout.releaseRasterFrameBuffer(ptrAddr: bufferPtr);
+            } catch (_) {}
           }
         } else {
           img.dispose();
         }
       }
     } catch (e) {
-      // Suppress frame loop transient errors gracefully
-    } finally {
+      // Persistent render failure: stop the loop, surface error state.
+      _renderTimer?.cancel();
       if (mounted) {
+        setState(() {
+          _error = 'Mesh render failed: $e';
+        });
+      }
+    } finally {
+      if (mounted && _error == null) {
         _renderTimer ??= Timer(const Duration(milliseconds: 33), _renderTick);
       }
     }
+  }
+
+  void _retry() {
+    setState(() {
+      _error = null;
+      _loading = true;
+      _lastRenderedNodes = null;
+    });
+    _initWgpuSession();
   }
 
   @override
@@ -206,11 +226,14 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
     }
 
     if (_error != null) {
-      return Container(
-        width: widget.width,
-        height: widget.height,
-        color: const Color(0xFF0D1117),
-        child: ErrorStateText('WGPU Compute Error: $_error'),
+      return GestureDetector(
+        onTap: _retry,
+        child: Container(
+          width: widget.width,
+          height: widget.height,
+          color: const Color(0xFF0D1117),
+          child: ErrorStateText('WGPU Compute Error: $_error\nTap to retry'),
+        ),
       );
     }
 

@@ -249,18 +249,10 @@ fn wasm_rank_posts_rejects_wrong_type() {
 }
 
 #[test]
-fn wasm_filter_content_flags_toxic_text() {
+fn wasm_filter_content_unavailable() {
     let plugin = wasm_plugin(WasmComponentType::ContentFilter, "filter_1");
-    let clean = WasmComponentHost::filter_content(&plugin, "Hello safe text").unwrap();
-    assert!(clean.allow);
-    assert_eq!(clean.score, 0.05);
-    assert_eq!(clean.reason, "Clean");
-
-    // Match is case-insensitive (lowercased before check).
-    let toxic = WasmComponentHost::filter_content(&plugin, "bad MALICIOUS_PHISHING link").unwrap();
-    assert!(!toxic.allow);
-    assert_eq!(toxic.score, 0.95);
-    assert_eq!(toxic.reason, "Toxic content flagged by Wasm component");
+    let err = WasmComponentHost::filter_content(&plugin, "Hello safe text").unwrap_err();
+    assert!(err.contains("unavailable"));
 }
 
 #[test]

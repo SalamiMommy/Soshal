@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/backup_service.dart';
 import '../services/error_log.dart';
-import '../services/ffi_bridge.dart';
 import '../services/session_service.dart';
+import '../services/settings_service.dart';
 
 /// Backup screen: account identifiers + recovery guidance.
 class BackupScreen extends StatefulWidget {
@@ -22,7 +22,7 @@ class _BackupScreenState extends State<BackupScreen> {
   @override
   void initState() {
     super.initState();
-    _dbPathFuture = FfiBridge.getDbPath();
+    _dbPathFuture = Future.value(context.read<SettingsService>().dbPath());
     _countsFuture = _counts();
   }
 

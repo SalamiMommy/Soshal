@@ -5,7 +5,7 @@ One command each. The final artifact lands next to its script.
 | Run | Output |
 |-----|--------|
 | `./builds/android/build.sh [--release]` | `builds/android/soshal_flutter[. -release].apk` |
-| `./builds/linux/build.sh` | `builds/linux/soshal_flutter-linux-x64/` (dev bundle) |
+| `./builds/linux/build.sh` | `builds/linux/soshal_flutter-linux-x64.AppImage` (dev AppImage) |
 
 That's it. Each script builds the Rust bridge for the target, wires it into
 the Flutter build, runs `flutter build`, copies the final artifact into its
@@ -28,5 +28,6 @@ Notes:
   (NDK 27 ships only versioned wrappers, and ring/aws-lc-sys/secp256k1-sys
   probe the bare names) plus a static per-ABI libopus for audiopus_sys —
   both cached under `SOSHAL_TARGET_DIR`.
-- Linux dev bundle: run `builds/linux/soshal_flutter-linux-x64/soshal_flutter`;
-  the bridge `.so` is installed into the bundle's `lib/` (rpath `$ORIGIN/lib`).
+- Linux dev AppImage: run `builds/linux/soshal_flutter-linux-x64.AppImage` (add
+  `--appimage-extract-and-run` if FUSE is unavailable); the bridge `.so` is
+  verified inside it after bundling.

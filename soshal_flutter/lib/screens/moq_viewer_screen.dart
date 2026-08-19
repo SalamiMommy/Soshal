@@ -89,6 +89,9 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
           final seq = (group['group_sequence'] as num?)?.toInt();
           if (seq == null || (_lastSeq != null && seq <= _lastSeq!)) continue;
           gotNewGroup = true;
+          // Advance regardless of decode outcome so undecodable groups are
+          // not refetched every window (decoder-not-ready / no frames).
+          _lastSeq = seq;
           final objects = (group['objects'] as List<dynamic>? ?? const []);
           for (final obj in objects) {
             final map = obj as Map<String, dynamic>?;
@@ -115,6 +118,10 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
         }
       } catch (e) {
         if (!mounted || !_running) return;
+        // Drop the subscription flag so the loop re-subscribes after a
+        // dropped QUIC connection instead of error-looping forever.
+        subscribed = false;
+        await api.stopMoqStream();
         setState(() => _error = '$e');
         await Future<void>.delayed(const Duration(seconds: 1));
       }
@@ -189,8 +196,10 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   @override
   void dispose() {
     _running = false;
+    context.read<StreamingService>().stopMoqStream();
     _frameImage?.dispose();
     H264Codec.release();
+    AudioCodec.release();
     super.dispose();
   }
 
@@ -231,16 +240,33 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                  '${_h264DecodeReady ? 'H.264' : 'MoQ JPEG'} · seq $_lastSeq'
-                  '${_subStatus != null ? '\n$_subStatus' : ''}',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(
-                '$_frames frames',
-                style: const TextStyle(color: Colors.grey),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                      '${_h264DecodeReady ? 'H.264' : 'MoQ JPEG'} · seq $_lastSeq'
+                      '${_subStatus != null ? '\n$_subStatus' : ''}',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    '$_frames frames',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+              ValueListenableBuilder<String?>(
+                valueListenable: H264Codec.error,
+                builder: (_, err, __) => err == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Decoder error: $err',
+                          style: TextStyle(color: Colors.red.shade600),
+                        ),
+                      ),
               ),
             ],
           ),

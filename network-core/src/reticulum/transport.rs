@@ -5,6 +5,13 @@ use super::auto_interface::{AutoInterface, AutoInterfaceConfig};
 use super::interface::{ReticulumInterfaceKind, ReticulumInterfaceStatus};
 use super::link::LinkManager;
 use super::packet::{ReticulumPacket, ReticulumPacketType, MAX_HOPS};
+
+/// Cap on tracked UDP peers. The map grows per spoofed source address, so a
+/// flood would otherwise fan out re-broadcasts to every spoofed peer.
+const MAX_PEERS: usize = 4096;
+/// Dedup window for forwarded Data packets (payload hash per source),
+/// preventing mesh amplification via re-broadcast loops.
+const MAX_SEEN_DATA: usize = 4096;
 use super::routing::PathTable;
 use super::tcp_interface::{TcpInterfaceConfig, TcpServerInterface};
 use serde::{Deserialize, Serialize};
@@ -36,6 +43,7 @@ pub struct ReticulumNode {
     pub link_manager: Arc<LinkManager>,
     pub peers: Arc<Mutex<HashSet<SocketAddr>>>,
     pub delivered: Arc<Mutex<VecDeque<Vec<u8>>>>,
+    pub seen_data: Arc<Mutex<VecDeque<String>>>,
     udp_socket: Option<Arc<UdpSocket>>,
     transport_thread: Option<thread::JoinHandle<()>>,
     auto_interface: Option<AutoInterface>,
@@ -57,6 +65,7 @@ impl ReticulumNode {
             link_manager: Arc::new(LinkManager::new()),
             peers: Arc::new(Mutex::new(HashSet::new())),
             delivered: Arc::new(Mutex::new(VecDeque::new())),
+            seen_data: Arc::new(Mutex::new(VecDeque::new())),
             udp_socket: None,
             transport_thread: None,
             auto_interface: None,
@@ -111,6 +120,7 @@ impl ReticulumNode {
         let link_manager = self.link_manager.clone();
         let peers = self.peers.clone();
         let delivered = self.delivered.clone();
+        let seen_data = self.seen_data.clone();
 
         let udp_clone = udp_socket.clone();
         let handle = thread::spawn(move || {
@@ -137,37 +147,53 @@ impl ReticulumNode {
                                     rx_count.lock().unwrap_or_else(|e| e.into_inner());
                                 *rx_guard += 1;
 
-                                peers
-                                    .lock()
-                                    .unwrap_or_else(|e| e.into_inner())
-                                    .insert(src_addr);
+                                {
+                                    let mut peer_guard =
+                                        peers.lock().unwrap_or_else(|e| e.into_inner());
+                                    if peer_guard.len() < MAX_PEERS {
+                                        peer_guard.insert(src_addr);
+                                    }
+                                }
 
                                 if pkt.packet_type == ReticulumPacketType::Data
                                     && pkt.payload.len() <= 262144
                                 {
-                                    if pkt.destination.is_broadcast()
-                                        || pkt.destination == destination
-                                    {
-                                        let mut dq =
-                                            delivered.lock().unwrap_or_else(|e| e.into_inner());
-                                        if dq.len() >= 4096 {
-                                            dq.pop_front();
+                                    // Re-broadcast dedup: skip data already
+                                    // forwarded from this source.
+                                    let mut seen =
+                                        seen_data.lock().unwrap_or_else(|e| e.into_inner());
+                                    let digest = blake3::hash(&pkt.payload).to_hex().to_string();
+                                    if !seen.contains(&digest) {
+                                        if seen.len() >= MAX_SEEN_DATA {
+                                            seen.pop_front();
                                         }
-                                        dq.push_back(pkt.payload.clone());
-                                    }
-                                    if pkt.hops < MAX_HOPS {
-                                        let mut fwd = pkt.clone();
-                                        fwd.increment_hops_in_place();
-                                        let known: Vec<SocketAddr> = peers
-                                            .lock()
-                                            .unwrap_or_else(|e| e.into_inner())
-                                            .iter()
-                                            .copied()
-                                            .filter(|p| *p != src_addr)
-                                            .collect();
-                                        let fwd_bytes = super::slip::slip_encode(&fwd.to_bytes());
-                                        for peer in known {
-                                            let _ = udp_clone.send_to(&fwd_bytes, peer);
+                                        seen.push_back(digest.clone());
+                                        drop(seen);
+                                        if pkt.destination.is_broadcast()
+                                            || pkt.destination == destination
+                                        {
+                                            let mut dq =
+                                                delivered.lock().unwrap_or_else(|e| e.into_inner());
+                                            if dq.len() >= 4096 {
+                                                dq.pop_front();
+                                            }
+                                            dq.push_back(pkt.payload.clone());
+                                        }
+                                        if pkt.hops < MAX_HOPS {
+                                            let mut fwd = pkt.clone();
+                                            fwd.increment_hops_in_place();
+                                            let known: Vec<SocketAddr> = peers
+                                                .lock()
+                                                .unwrap_or_else(|e| e.into_inner())
+                                                .iter()
+                                                .copied()
+                                                .filter(|p| *p != src_addr)
+                                                .collect();
+                                            let fwd_bytes =
+                                                super::slip::slip_encode(&fwd.to_bytes());
+                                            for peer in known {
+                                                let _ = udp_clone.send_to(&fwd_bytes, peer);
+                                            }
                                         }
                                     }
                                 }

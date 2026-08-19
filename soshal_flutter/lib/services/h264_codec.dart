@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import '../ffi/h264.dart' as ffi_h264;
 
@@ -14,6 +14,11 @@ class H264Codec {
   H264Codec._();
 
   static bool? _supported;
+
+  /// Set when a real FFI encode/decode call fails; cleared on the next
+  /// successful call. Off-Android never sets this (callers gate on
+  /// `isSupported()` first, so `const []` stays the legitimate no-op).
+  static final ValueNotifier<String?> error = ValueNotifier<String?>(null);
 
   /// True only when running on Android ≥ 26 AND the native encoder exists.
   static Future<bool> isSupported() async {
@@ -52,8 +57,11 @@ class H264Codec {
   /// each `[flag, ...annexB]` (Uint8List of 1 + N bytes).
   static Future<List<Uint8List>> feedEncode(Uint8List bgra) async {
     try {
-      return ffi_h264.h264FeedEncode(bgra: bgra);
-    } catch (_) {
+      final blobs = ffi_h264.h264FeedEncode(bgra: bgra);
+      error.value = null;
+      return blobs;
+    } catch (e) {
+      error.value = 'h264 encode failed: $e';
       return const [];
     }
   }
@@ -70,8 +78,11 @@ class H264Codec {
   /// Feed one Annex-B NAL blob; returns JPEG frames drained from the decoder.
   static Future<List<Uint8List>> feedDecode(Uint8List nal) async {
     try {
-      return ffi_h264.h264FeedDecode(nal: nal);
-    } catch (_) {
+      final jpegs = ffi_h264.h264FeedDecode(nal: nal);
+      error.value = null;
+      return jpegs;
+    } catch (e) {
+      error.value = 'h264 decode failed: $e';
       return const [];
     }
   }

@@ -352,7 +352,9 @@ class GroupThreadsTab extends StatefulWidget {
 
 class _GroupThreadsTabState extends State<GroupThreadsTab>
     with AutomaticKeepAliveClientMixin {
-  static const List<String> _quickEmojis = ['👍', '❤️', '🔥', '😂'];
+  static const List<String> _quickEmojis = ['👍', '🔥', '😂'];
+  static const List<String> _replyEmojis = ['👍', '❤️', '🔥', '😂'];
+  static const List<String> _allEmojis = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
   String? _openThreadId;
   String _replyParent = '';
@@ -418,14 +420,67 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
     }
   }
 
+  /// Emoji picker bottom sheet (same set as the feed), then toggles the
+  /// chosen emoji on [targetId] (thread id with empty [replyId]).
+  Future<void> _showEmojiPicker(String targetId, String replyId) async {
+    final me = context.read<SessionService>().activePubkey;
+    if (me == null) return;
+    final emoji = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(
+          spacing: 16,
+          runSpacing: 8,
+          children: [
+            for (final e in _allEmojis)
+              IconButton(
+                icon: Text(e, style: const TextStyle(fontSize: 24)),
+                onPressed: () => Navigator.pop(context, e),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (emoji == null || !mounted) return;
+    await _react(targetId, replyId, emoji);
+  }
+
+  /// Heart-like toggle button (feed parity): single-tap ❤️ with count.
+  Widget _heartButton(String targetId, GroupsService api) {
+    final hearts =
+        api.reactionsFor(targetId).where((r) => r.emoji == '❤️').toList();
+    final count = hearts.fold(0, (s, r) => s + r.count);
+    final reacted = hearts.any((r) => r.reacted);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: Icon(
+            reacted ? Icons.favorite : Icons.favorite_border,
+            size: 18,
+            color: reacted ? Colors.red : null,
+          ),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => _react(targetId, '', '❤️'),
+        ),
+        Text('$count',
+            style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      ],
+    );
+  }
+
   /// Emoji chip row for one target (thread id with empty [replyId], else
-  /// reply id). Shows count, highlights when viewer reacted.
-  Widget _reactionRow(String targetId, String replyId, GroupsService api) {
+  /// reply id). Always visible so reactions start from zero; [quick] chips
+  /// toggle directly, the ＋ chip opens the full emoji picker.
+  Widget _reactionRow(String targetId, String replyId, GroupsService api,
+      {List<String> quick = _quickEmojis}) {
     return Wrap(
       spacing: 4,
       runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        for (final emoji in _quickEmojis)
+        for (final emoji in quick)
           Builder(builder: (context) {
             final rs = api
                 .reactionsFor(targetId)
@@ -443,6 +498,12 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
               onSelected: (_) => _react(targetId, replyId, emoji),
             );
           }),
+        ActionChip(
+          label: const Icon(Icons.add_reaction_outlined, size: 16),
+          visualDensity: VisualDensity.compact,
+          tooltip: 'More emoji',
+          onPressed: () => _showEmojiPicker(targetId, replyId),
+        ),
       ],
     );
   }
@@ -646,10 +707,17 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
                     .bodySmall
                     ?.copyWith(color: Theme.of(context).hintColor),
               ),
-              if (api.reactionsFor(t.id).isNotEmpty)
-                Padding(
+              Padding(
                   padding: const EdgeInsets.only(top: 6),
-                  child: _reactionRow(t.id, '', api),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _heartButton(t.id, api),
+                      _reactionRow(t.id, '', api),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -677,10 +745,9 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
             ),
             isThreeLine: true,
           ),
-          if (api.reactionsFor(r.id).isNotEmpty)
-            Padding(
+          Padding(
               padding: const EdgeInsets.only(left: 16, bottom: 4),
-              child: _reactionRow(r.id, r.id, api),
+              child: _reactionRow(r.id, r.id, api, quick: _replyEmojis),
             ),
         ],
       ),
@@ -740,10 +807,17 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
                     .bodySmall
                     ?.copyWith(color: Theme.of(context).hintColor),
               ),
-              if (api.reactionsFor(t.id).isNotEmpty)
-                Padding(
+              Padding(
                   padding: const EdgeInsets.only(top: 6),
-                  child: _reactionRow(t.id, '', api),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _heartButton(t.id, api),
+                      _reactionRow(t.id, '', api),
+                    ],
+                  ),
                 ),
             ],
           ),

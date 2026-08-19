@@ -18,11 +18,8 @@ pub fn parse_lud16_url(lud16: &str) -> Result<(String, String, String), String> 
     Ok((user.to_string(), domain.to_string(), url))
 }
 
-/// Parses lud16 with the strict user-part allowlist used before embedding the
-/// value in a URL path. Without the allowlist a crafted value like
-/// `../admin@domain` produces `https://domain/.well-known/lnurlp/../admin`,
-/// potentially reaching unintended server endpoints.
-pub fn parse_lud16_url_secure(lud16: &str) -> Result<(String, String, String), String> {
+/// Validates and extracts the `(user, domain)` slices of a LUD16 address without allocation.
+pub fn validate_lud16_parts(lud16: &str) -> Result<(&str, &str), String> {
     let (user, domain) = lud16.rsplit_once('@').ok_or("invalid lud16")?;
     if user.is_empty() || domain.is_empty() {
         return Err("invalid lud16".into());
@@ -36,6 +33,15 @@ pub fn parse_lud16_url_secure(lud16: &str) -> Result<(String, String, String), S
     if user.len() > 64 {
         return Err("invalid lud16: user part too long".into());
     }
+    Ok((user, domain))
+}
+
+/// Parses lud16 with the strict user-part allowlist used before embedding the
+/// value in a URL path. Without the allowlist a crafted value like
+/// `../admin@domain` produces `https://domain/.well-known/lnurlp/../admin`,
+/// potentially reaching unintended server endpoints.
+pub fn parse_lud16_url_secure(lud16: &str) -> Result<(String, String, String), String> {
+    let (user, domain) = validate_lud16_parts(lud16)?;
     let url = format!("https://{}/.well-known/lnurlp/{}", domain, user);
     Ok((user.to_string(), domain.to_string(), url))
 }

@@ -161,6 +161,7 @@ class _SoshalAppState extends State<SoshalApp> {
         feed: context.read<FeedService>(),
         messaging: context.read<MessagingService>(),
       );
+      context.read<SessionService>().attachSync(context.read<SyncService>());
       // Tell the Rust network stack we came up on Wi-Fi. Resolves the real
       // local IP + QUIC port; no-ops silently when unavailable.
       await networkService.notifyInterfaceChange();

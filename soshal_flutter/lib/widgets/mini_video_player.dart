@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../ffi/permissions.dart' as ffi;
+
 /// Plays a mini video (local blob-server URL or remote fallback) via
 /// video_player inside a dialog.
 class MiniVideoPlayer extends StatefulWidget {
@@ -19,6 +21,11 @@ class _MiniVideoPlayerState extends State<MiniVideoPlayer> {
   @override
   void initState() {
     super.initState();
+    if (ffi.permissionsPlatformCurrent() != 'android') {
+      _error = 'Video playback is not supported on this platform '
+          '(video_player has no Linux implementation yet).';
+      return;
+    }
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
       ..initialize().then((_) {
         if (!mounted) return;

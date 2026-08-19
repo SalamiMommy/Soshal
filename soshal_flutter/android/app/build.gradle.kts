@@ -4,7 +4,7 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
     // Python runtime for the Reticulum daemon (rnsd) — RNS is pure Python
     // with no official Android binary. Packaged per-ABI into the APK.
-    id("com.chaquo.python")
+    id("com.chaquo.python") version "17.0.0"
 }
 
 android {
