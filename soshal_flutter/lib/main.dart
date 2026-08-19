@@ -126,11 +126,10 @@ class _SoshalAppState extends State<SoshalApp> {
 
   Future<void> _initializeFfiBridge() async {
     try {
-      await FfiBridge.init();
-      // Open the shared settings DB (migrations included) before any
-      // service touches it — shell/theme/settings reads fail otherwise
+      // Init the bridge + shared settings DB (migrations included) before
+      // any service touches it — shell/theme/settings reads fail otherwise
       // ("database not initialized").
-      await FfiBridge.initDatabase();
+      await FfiBridge.ensureDatabaseInitialized();
       if (!mounted) return;
       // Bring up bundled networking daemons (i2pd, freenet, rnsd) so the
       // local transports are live before any screen needs them. No-op on

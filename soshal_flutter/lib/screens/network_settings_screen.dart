@@ -137,8 +137,11 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     } catch (e) {
       debugPrint('i2p start: $e');
       if (mounted) {
+        final hint = e.toString().contains('Connection refused')
+            ? ' — run i2pd (SAM on 7656) first'
+            : '';
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('I2P start: $e')));
+            .showSnackBar(SnackBar(content: Text('I2P start: $e$hint')));
       }
     }
     if (mounted) setState(() => _busy = false);
@@ -323,12 +326,22 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
 
   Future<void> _samConnect() async {
     final service = context.read<NetworkService>();
-    final ok = service.i2pConnect(
-      samHost: _samHost.text.trim(),
-      samPort: int.tryParse(_samPort.text.trim()) ?? 7656,
-    );
-    if (mounted) {
-      setState(() => _samInfo = ok ? 'SAM: connected' : 'SAM: connect failed');
+    try {
+      final ok = service.i2pConnect(
+        samHost: _samHost.text.trim(),
+        samPort: int.tryParse(_samPort.text.trim()) ?? 7656,
+      );
+      if (mounted) {
+        setState(
+            () => _samInfo = ok ? 'SAM: connected' : 'SAM: connect failed');
+      }
+    } catch (e) {
+      debugPrint('sam connect: $e');
+      if (mounted) {
+        setState(() => _samInfo = e.toString().contains('Connection refused')
+            ? 'SAM: no listener on port — run i2pd first'
+            : 'SAM: $e');
+      }
     }
   }
 

@@ -149,22 +149,21 @@ Future<String?> resolveMiniPlaybackUrl(
   P2pService p2p,
 ) async {
   if (mini.blobHash.isNotEmpty) {
+    final local = await media.fetchBlobQuiet(mini.blobHash);
+    if (local != null) {
+      await media.startLocalServer();
+      return media.getLocalUrl(mini.blobHash);
+    }
     try {
-      await media.fetchBlob(mini.blobHash);
+      await media.fetchBlobFromLan(
+        mini.blobHash,
+        peers: p2p.peers,
+        outPath: '${Directory.systemTemp.path}/${mini.blobHash}',
+      );
       await media.startLocalServer();
       return media.getLocalUrl(mini.blobHash);
     } catch (_) {
-      try {
-        await media.fetchBlobFromLan(
-          mini.blobHash,
-          peers: p2p.peers,
-          outPath: '${Directory.systemTemp.path}/${mini.blobHash}',
-        );
-        await media.startLocalServer();
-        return media.getLocalUrl(mini.blobHash);
-      } catch (_) {
-        // Fall through to the URL fallback.
-      }
+      // Fall through to the URL fallback.
     }
   }
   return mini.videoUrl.isNotEmpty ? mini.videoUrl : null;

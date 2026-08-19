@@ -110,6 +110,26 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// Local-only blob fetch that never sets lastError: returns null when the
+  /// blob is absent from the chunk store. For callers with a LAN/URL
+  /// fallback chain (feed, minis, blob_resolver) — a cache miss is expected
+  /// there and must not spam the error log.
+  Future<String?> fetchBlobQuiet(String blobHash, {String? outPath}) async {
+    try {
+      if (outPath == null) {
+        final tempDir = RustLib.instance.api.crateFfiMediaMediaGetCachePath();
+        outPath = '$tempDir/$blobHash';
+      }
+      RustLib.instance.api.crateFfiMediaMediaFetchBlob(
+        blobHash: blobHash,
+        outPath: outPath,
+      );
+      return outPath;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Fetch a blob by hash from the chunk store (local or swarm).
   /// Returns the local file path after download.
   Future<String> fetchBlob(String blobHash, {String? outPath}) {

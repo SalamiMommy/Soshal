@@ -1059,9 +1059,8 @@ Future<String> _resolveBlobUrl(
     final media = context.read<MediaService>();
     final transport = context.read<P2pService>();
     if (media.localServerPort == null) await media.startLocalServer();
-    try {
-      await media.fetchBlob(hash);
-    } catch (_) {
+    final local = await media.fetchBlobQuiet(hash);
+    if (local == null) {
       await media.fetchBlobFromLan(
         hash,
         peers: transport.peers,

@@ -31,6 +31,11 @@ class _SplashScreenState extends State<SplashScreen> {
     try {
       // Initialize FFI bridge
       await FfiBridge.init();
+      // Wait for the shared DB (migrations) before any service touches it:
+      // the app root initializes it on the same future, so this is
+      // idempotent — gates loadSession on db_init, no "database not
+      // initialized" race.
+      await FfiBridge.ensureDatabaseInitialized();
       if (!mounted) return;
 
       // Load session

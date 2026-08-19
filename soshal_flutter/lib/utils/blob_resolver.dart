@@ -9,16 +9,16 @@ Future<String?> resolveBlobPath(
   String hash,
 ) async {
   try {
-    return await media.fetchBlob(hash);
-  } catch (_) {
-    try {
+    final local = await media.fetchBlobQuiet(hash);
+    if (local == null) {
       return await media.fetchBlobFromLan(
         hash,
         peers: p2p.peers,
         outPath: '${Directory.systemTemp.path}/$hash',
       );
-    } catch (_) {
-      return null;
     }
+    return local;
+  } catch (_) {
+    return null;
   }
 }

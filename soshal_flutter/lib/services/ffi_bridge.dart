@@ -50,6 +50,31 @@ class FfiBridge {
     }
   }
 
+  static Future<void>? _dbInitFuture;
+
+  /// Initialize the bridge AND the shared database (migrations included).
+  /// Idempotent under concurrent calls, like [init]: every caller waits on
+  /// the same future, so `db_init` runs exactly once and no caller can touch
+  /// the DB before it is set (the splash/app-root double-init race).
+  static Future<void> ensureDatabaseInitialized() {
+    final existing = _dbInitFuture;
+    if (existing != null) return existing;
+    final future = _doDatabaseInit();
+    _dbInitFuture = future;
+    future.then(
+      (_) {},
+      onError: (_) {
+        _dbInitFuture = null;
+      },
+    );
+    return future;
+  }
+
+  static Future<void> _doDatabaseInit() async {
+    await init();
+    await initDatabase();
+  }
+
   /// Get the database path.
   static Future<String> getDbPath() async {
     final dir = await getApplicationDocumentsDirectory();
