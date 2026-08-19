@@ -5,7 +5,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
+use tokio_tungstenite::{client_async, tungstenite::Message, WebSocketStream};
 
 pub use crate::freenet_contract::StateSummary as ContractSummary;
 use crate::freenet_contract::{RelatedContract, StateSummary};
@@ -21,9 +21,7 @@ use crate::freenet_contract::{RelatedContract, StateSummary};
 pub struct FreenetWebSocketClient {
     url: String,
     auth_token: String,
-    socket: Arc<
-        Mutex<Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>>,
-    >,
+    socket: Arc<Mutex<Option<WebSocketStream<tokio::net::TcpStream>>>>,
     ratchet_peer: Option<(String, String)>,
 }
 
@@ -71,43 +69,81 @@ impl FreenetWebSocketClient {
 
     /// Connects to the Freenet node
     pub async fn connect(&self) -> Result<(), String> {
-        // SSRF guard: reject private IPs, loopback, link-local, and
-        // DNS-rebinding candidates before opening any socket.
-        // Strip query string for the URL check, then reconnect with auth.
-        let base_for_check = self.url.split('?').next().unwrap_or(&self.url);
-        let parsed = url::Url::parse(base_for_check)
-            .map_err(|e| format!("Invalid Freenet WebSocket URL: {e}"))?;
-        match parsed.scheme() {
-            "ws" | "wss" => {}
-            _ => {
-                return Err(format!(
-                    "Freenet WebSocket blocked: invalid scheme '{}', must be ws:// or wss://",
-                    parsed.scheme()
-                ));
-            }
-        }
-        let hostname = parsed.host_str().unwrap_or("");
-        if soshal_common_core::url::is_private_ip_str(hostname)
-            || soshal_common_core::url::is_private_ipv6_str(hostname)
-        {
+        // SSRF guard: full shared policy for ws/wss URLs — rejects private
+        // IPs, loopback, link-local, hex/decimal/alternative-encoded hosts,
+        // DNS-rebinding domains, and raw IP literals outright.
+        if !soshal_common_core::url::is_valid_relay_url(&self.url).0 {
             return Err(format!(
                 "Freenet WebSocket blocked: URL does not pass SSRF policy: {}",
                 self.url
             ));
         }
-        let url_with_auth = if self.auth_token.is_empty() {
-            self.url.clone()
-        } else {
-            format!("{}?auth={}", self.url, self.auth_token)
-        };
+        let parsed = url::Url::parse(&self.url)
+            .map_err(|e| format!("Invalid Freenet WebSocket URL: {e}"))?;
+        if parsed.scheme() != "ws" {
+            return Err(format!(
+                "Freenet WebSocket blocked: scheme '{}' unsupported (TLS not compiled in); use ws://",
+                parsed.scheme()
+            ));
+        }
+        let hostname = parsed.host_str().unwrap_or("").to_string();
+        let port = parsed
+            .port_or_known_default()
+            .ok_or_else(|| "Freenet WebSocket blocked: URL has no port".to_string())?;
 
-        let (ws_stream, _) = connect_async(&url_with_auth)
-            .await
-            .map_err(|e| format!("WebSocket connection failed: {e}"))?;
+        // Resolve the hostname once and verify every address before any
+        // socket is opened; the connect targets only the verified set,
+        // closing the DNS-rebinding window between check and connect.
+        let mut pinned: Vec<std::net::SocketAddr> = Vec::new();
+        match tokio::net::lookup_host((hostname.as_str(), port)).await {
+            Ok(addrs) => {
+                for addr in addrs {
+                    if soshal_common_core::url::is_private_ip_str(&addr.ip().to_string()) {
+                        return Err(format!(
+                            "Freenet WebSocket blocked: URL resolves to an internal address: {}",
+                            addr.ip()
+                        ));
+                    }
+                    pinned.push(addr);
+                }
+            }
+            Err(e) => {
+                return Err(format!(
+                    "Freenet WebSocket blocked: URL does not resolve: {e}"
+                ))
+            }
+        }
+        if pinned.is_empty() {
+            return Err("Freenet WebSocket blocked: URL does not resolve".to_string());
+        }
 
-        let mut socket_guard = self.socket.lock().await;
-        *socket_guard = Some(ws_stream);
-        Ok(())
+        // Auth token travels as a header, never the query string (query
+        // params leak via logs/referrer). Server contract change: the node
+        // must read `X-Freenet-Auth` instead of `?auth=`; header preferred.
+        let mut last_err: Option<String> = None;
+        for addr in &pinned {
+            let mut builder =
+                tokio_tungstenite::tungstenite::http::Request::builder().uri(self.url.as_str());
+            if !self.auth_token.is_empty() {
+                builder = builder.header("X-Freenet-Auth", self.auth_token.as_str());
+            }
+            let request = builder
+                .body(())
+                .map_err(|e| format!("WebSocket request build failed: {e}"))?;
+
+            match tokio::net::TcpStream::connect(addr).await {
+                Ok(stream) => match client_async(request, stream).await {
+                    Ok((ws, _)) => {
+                        let mut socket_guard = self.socket.lock().await;
+                        *socket_guard = Some(ws);
+                        return Ok(());
+                    }
+                    Err(e) => last_err = Some(format!("WebSocket handshake failed: {e}")),
+                },
+                Err(e) => last_err = Some(format!("TCP connect to {addr} failed: {e}")),
+            }
+        }
+        Err(last_err.unwrap_or_else(|| "WebSocket connection failed".to_string()))
     }
 
     /// Disconnects from the Freenet node
@@ -531,5 +567,28 @@ mod tests {
         assert!(serde_json::from_str::<FreenetResponse>("not json").is_err());
         assert!(serde_json::from_str::<FreenetResponse>(r#"{"type":"Nope"}"#).is_err());
         assert!(serde_json::from_str::<FreenetResponse>(r#"{"subscribed":true}"#).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_connect_rejects_ssrf_and_bad_urls() {
+        for bad in [
+            "ws://localhost:8888",
+            "ws://127.0.0.1:8888",
+            "ws://127.1:8888",
+            "ws://0x7f000001:8888",
+            "ws://10.0.0.1:8888",
+            "ws://192.168.1.1:8888",
+            "ws://169.254.169.254:8888",
+            "ws://1.2.3.4.nip.io:8888",
+            "ws://1.2.3.4:8888",
+            "wss://relay.example.com:443",
+            "http://example.com:8888",
+        ] {
+            let client = FreenetWebSocketClient::new(bad.to_string(), "tok".to_string());
+            assert!(
+                client.connect().await.is_err(),
+                "connect should reject {bad}"
+            );
+        }
     }
 }

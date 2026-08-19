@@ -202,7 +202,15 @@ pub fn db_force_migrate() -> Result<String, String> {
         })?;
 
         let _ = block_on(conn.execute("PRAGMA foreign_keys = OFF", ()));
-        for table in tables {
+        for table in tables.iter().filter(|n| {
+            let mut chars = n.chars();
+            match chars.next() {
+                Some(c) if c.is_ascii_alphabetic() || c == '_' => {
+                    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+                }
+                _ => false,
+            }
+        }) {
             let _ = block_on(conn.execute(&format!("DROP TABLE IF EXISTS {}", table), ()));
         }
         let _ = block_on(conn.execute("PRAGMA foreign_keys = ON", ()));
@@ -448,7 +456,7 @@ pub fn db_backup(backup_path: String) -> Result<String, String> {
     }
     with_db(|db| {
         let conn = db.conn()?;
-        let _ = block_on(conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);"));
+        let _ = block_on(conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);"));
         std::fs::copy(&src_path, &backup_path)
             .map_err(|e| DbError::Migration(format!("copy failed: {e}")))?;
         Ok(backup_path.clone())
@@ -496,6 +504,14 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
     }
     drop(f);
     *DB.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    let bak = format!("{dst}.bak");
+    if let Err(e) = std::fs::copy(&dst, &bak) {
+        // re-open the original db so the app stays usable
+        if let Ok(db) = Database::open(&dst) {
+            *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+        }
+        return Err(format!("backup copy failed: {e}"));
+    }
     if let Err(e) = std::fs::copy(&backup_path, &dst) {
         // re-open the original db so the app stays usable
         if let Ok(db) = Database::open(&dst) {
@@ -506,6 +522,12 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
     match Database::open(&dst) {
         Ok(db) => {
             if let Err(e) = db.migrate() {
+                // restore the pre-restore snapshot so old data survives
+                drop(db);
+                let _ = std::fs::copy(&bak, &dst);
+                if let Ok(db) = Database::open(&dst) {
+                    *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+                }
                 return Err(format!("restore migrate failed: {e}"));
             }
             *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);

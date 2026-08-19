@@ -2,7 +2,7 @@
 
 use ring::aead::{BoundKey, UnboundKey, AES_256_GCM, NONCE_LEN};
 use ring::rand::{SecureRandom, SystemRandom};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 pub fn encrypt_blob_at_rest(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, &'static str> {
     let rng = SystemRandom::new();
@@ -30,7 +30,10 @@ pub fn encrypt_blob_at_rest(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>,
 
     let tag = key_handle
         .seal_in_place_separate_tag(ring::aead::Aad::empty(), &mut result[NONCE_LEN..])
-        .map_err(|_| "Encryption failed")?;
+        .map_err(|_| {
+            result.zeroize();
+            "Encryption failed"
+        })?;
 
     result.extend_from_slice(tag.as_ref());
     Ok(result)

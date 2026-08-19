@@ -32,7 +32,7 @@ fn loopback(port: u16) -> SocketAddr {
 #[test]
 fn datagram_channel_local_addr_and_empty_recv() {
     let port = free_udp_port();
-    let ch = spawn_quic_datagram_channel(port, "ab".repeat(32)).unwrap();
+    let ch = spawn_quic_datagram_channel(port, "ab".repeat(32), [42u8; 32]).unwrap();
     assert_eq!(
         ch.local_addr().port(),
         port,
@@ -60,8 +60,11 @@ fn datagram_channel_bidirectional_exchange() {
         attempts += 1;
         let pa = free_udp_port();
         let pb = free_udp_port();
-        let a = spawn_quic_datagram_channel(pa, "aa".repeat(32)).unwrap();
-        let b = spawn_quic_datagram_channel(pb, "bb".repeat(32)).unwrap();
+        // Both channels share one LAN key (same trust model as the stream
+        // path: beacon MACs verify against the receiver's key).
+        let key = [42u8; 32];
+        let a = spawn_quic_datagram_channel(pa, "aa".repeat(32), key).unwrap();
+        let b = spawn_quic_datagram_channel(pb, "bb".repeat(32), key).unwrap();
 
         // The channel thread binds its socket asynchronously (thread spawn +
         // cert generation + bind). Sending before bind → ICMP refused →
@@ -139,7 +142,7 @@ fn datagram_channel_bidirectional_exchange() {
 
 #[test]
 fn datagram_channel_send_to_dead_peer_is_lossy_no_panic() {
-    let ch = spawn_quic_datagram_channel(free_udp_port(), "cc".repeat(32)).unwrap();
+    let ch = spawn_quic_datagram_channel(free_udp_port(), "cc".repeat(32), [42u8; 32]).unwrap();
     // Nothing listens on port 1: connect fails, datagram dropped — but the
     // sync API must return Ok (lossy by design) and never panic.
     let res = ch.send_to(
@@ -160,6 +163,34 @@ fn datagram_channel_send_to_dead_peer_is_lossy_no_panic() {
 // ============================================================================
 // A. quic.rs — stream server lifecycle
 // ============================================================================
+
+#[test]
+fn datagram_channel_drops_unauthenticated_peer() {
+    // Channels with different LAN keys: the peer's beacon MAC fails the
+    // receiver's key, so no micro-event may cross into the app stream.
+    let pa = free_udp_port();
+    let pb = free_udp_port();
+    let a = spawn_quic_datagram_channel(pa, "aa".repeat(32), [1u8; 32]).unwrap();
+    let b = spawn_quic_datagram_channel(pb, "bb".repeat(32), [2u8; 32]).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    a.send_to(
+        loopback(pb),
+        MicroEvent {
+            kind: "typing".to_string(),
+            payload: "sneaky".to_string(),
+        },
+    )
+    .unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    assert!(
+        b.drain_events().is_empty(),
+        "unauthenticated datagrams must never be forwarded"
+    );
+    a.stop();
+    b.stop();
+}
 
 #[test]
 fn stream_server_lifecycle_ephemeral_port_and_idempotent_stop() {

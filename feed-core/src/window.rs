@@ -29,7 +29,11 @@ pub fn fetch_feed_window(
         let mut stmt = conn
             .prepare(
                 "SELECT p.id, p.pubkey, p.content, p.created_at,
-                        COALESCE(u.name, u.display_name), u.picture
+                        COALESCE(u.name, u.display_name), u.picture,
+                        (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
+                        (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.is_deleted = 0),
+                        (SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id),
+                        EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = (SELECT value FROM settings WHERE key = 'active_pubkey'))
                  FROM posts p
                  LEFT JOIN users u ON p.pubkey = u.pubkey
                  WHERE p.kind = 1 AND p.is_deleted = 0
@@ -52,15 +56,19 @@ pub fn fetch_feed_window(
             let created_at: i64 = row.get(3).map_err(|e| e.to_string())?;
             let profile_name: Option<String> = row.get(4).map_err(|e| e.to_string())?;
             let profile_picture: Option<String> = row.get(5).map_err(|e| e.to_string())?;
+            let reactions: i64 = row.get(6).map_err(|e| e.to_string())?;
+            let replies: i64 = row.get(7).map_err(|e| e.to_string())?;
+            let reposts: i64 = row.get(8).map_err(|e| e.to_string())?;
+            let liked: i64 = row.get(9).map_err(|e| e.to_string())?;
             out.push(FeedPostItem {
                 event_id,
                 pubkey,
                 content,
                 created_at,
-                reactions: 0,
-                replies: 0,
-                reposts: 0,
-                liked: false,
+                reactions,
+                replies,
+                reposts,
+                liked: liked != 0,
                 profile_name,
                 profile_picture,
             });

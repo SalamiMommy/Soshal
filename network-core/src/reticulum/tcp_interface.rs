@@ -18,6 +18,9 @@ use std::time::Duration;
 
 const DEFAULT_TCP_PORT: u16 = 4242;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Matches `lan_transport::MAX_FRAME_BYTES`; caps hostile length-prefix
+/// headers (u32 BE) so a 0xFFFFFFFF header cannot trigger a 4 GiB alloc.
+const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
 /// Frame a payload with a u32 BE length prefix. SLIP frames are binary
 /// (0xC0/0xDB are invalid UTF-8), so `read_line`-based framing can never
@@ -38,6 +41,11 @@ fn read_frame(reader: &mut impl Read) -> Result<Vec<u8>, String> {
         .read_exact(&mut len_bytes)
         .map_err(|e| format!("frame header read failed: {e}"))?;
     let len = u32::from_be_bytes(len_bytes) as usize;
+    if len > MAX_FRAME_BYTES {
+        return Err(format!(
+            "frame too large: {len} bytes (max {MAX_FRAME_BYTES})"
+        ));
+    }
     let mut payload = vec![0u8; len];
     reader
         .read_exact(&mut payload)
@@ -117,12 +125,16 @@ impl TcpServerInterface {
         self.running.store(true, Ordering::Relaxed);
 
         let handle = thread::spawn(move || {
-            let mut current_connections = 0usize;
-
             while running.load(Ordering::Relaxed) {
                 match listener_clone.accept() {
                     Ok((stream, peer_addr)) => {
-                        if current_connections >= max_conn {
+                        // Gate + increment on the SHARED counter: the client
+                        // thread decrements it when the connection ends, so
+                        // max_connections frees up after clients disconnect.
+                        let mut current =
+                            active_connections.lock().unwrap_or_else(|e| e.into_inner());
+                        if *current >= max_conn {
+                            drop(current);
                             println!(
                                 "TCP server: max connections reached, rejecting {}",
                                 peer_addr
@@ -130,10 +142,8 @@ impl TcpServerInterface {
                             let _ = stream.shutdown(std::net::Shutdown::Both);
                             continue;
                         }
-
-                        current_connections += 1;
-                        *active_connections.lock().unwrap_or_else(|e| e.into_inner()) =
-                            current_connections;
+                        *current += 1;
+                        drop(current);
 
                         let stream_clone = stream.try_clone().unwrap();
                         let local_dest_clone = local_dest;
@@ -333,6 +343,19 @@ impl TcpClientInterface {
 mod tests {
     use super::*;
     use crate::reticulum::packet::ReticulumPacketType;
+
+    #[test]
+    fn test_read_frame_rejects_oversized_header() {
+        // 0xFFFFFFFF header must error before any allocation
+        let mut reader = std::io::Cursor::new(vec![0xFF, 0xFF, 0xFF, 0xFF]);
+        let err = read_frame(&mut reader).unwrap_err();
+        assert!(err.contains("frame too large"));
+
+        // Boundary: exactly MAX_FRAME_BYTES is accepted (header only, no body)
+        let mut reader = std::io::Cursor::new((MAX_FRAME_BYTES as u32).to_be_bytes().to_vec());
+        let err = read_frame(&mut reader).unwrap_err();
+        assert!(err.contains("frame body read failed"));
+    }
 
     #[test]
     fn test_tcp_config_default() {

@@ -362,7 +362,9 @@ class ShellService extends ChangeNotifier {
 
   // ─── Global audio bar ────────────────────────────────────────────────────
 
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  AudioPlayer? _audioPlayer;
+
+  AudioPlayer _ensurePlayer() => _audioPlayer ??= AudioPlayer();
 
   /// Plays an audio URL (local blob-server URL or remote fallback) through
   /// the global audio player.
@@ -372,9 +374,10 @@ class ShellService extends ChangeNotifier {
     _audioPlaying = true;
     notifyListeners();
     try {
-      await _audioPlayer.stop();
-      await _audioPlayer.setUrl(url);
-      unawaited(_audioPlayer.play());
+      final player = _ensurePlayer();
+      await player.stop();
+      await player.setUrl(url);
+      unawaited(player.play());
     } catch (e) {
       debugPrint('audio play failed: $e');
     }
@@ -382,7 +385,7 @@ class ShellService extends ChangeNotifier {
 
   Future<void> stopAudio() async {
     try {
-      await _audioPlayer.stop();
+      await _audioPlayer?.stop();
     } catch (_) {}
     _audioUrl = '';
     _audioTitle = '';

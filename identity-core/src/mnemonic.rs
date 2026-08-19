@@ -3,13 +3,13 @@ use bip39::Mnemonic;
 use nostr::key::Keys;
 use nostr::key::SecretKey;
 use ring::rand::{SecureRandom, SystemRandom};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 const NOSTR_DERIVATION_PATH: &str = "m/44'/1237'/0'/0/0";
 
 #[derive(Debug)]
 pub struct MnemonicResult {
-    pub private_key_hex: String,
+    pub private_key_hex: Zeroizing<String>,
     pub public_key_hex: String,
 }
 
@@ -61,7 +61,7 @@ pub fn restore_from_mnemonic(phrase: &str, passphrase: &str) -> Result<MnemonicR
     // Only the account key (hex) is handed to the frontend; the mnemonic
     // master seed is zeroized by SeedGuard on every exit path.
     Ok(MnemonicResult {
-        private_key_hex: keys.secret_key().to_secret_hex(),
+        private_key_hex: Zeroizing::new(keys.secret_key().to_secret_hex()),
         public_key_hex: keys.public_key().to_string(),
     })
 }

@@ -107,6 +107,12 @@ impl LinkManager {
         let initiator_pk = std::str::from_utf8(&request_payload[1..])
             .map_err(|_| "link request pk not ascii".to_string())?;
 
+        // Inbound cap: attacker LinkRequest floods must not grow the map
+        // (MAX_PENDING_LINKS only guarded outbound requests before).
+        if links.len() >= MAX_PENDING_LINKS {
+            return Err("Maximum pending links reached".to_string());
+        }
+
         let now = now_secs() as u64;
 
         // Create the ratchet session keyed to the initiator's public key.

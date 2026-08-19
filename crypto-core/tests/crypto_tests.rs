@@ -7,6 +7,7 @@ use soshal_crypto_core::base64::{
 use soshal_crypto_core::base64url::{from_base64url, to_base64url};
 use soshal_crypto_core::hash::{hkdf_sha256, hmac_sha256, sha256, sha256_hex};
 use soshal_crypto_core::key_derivation::derive_db_key;
+#[allow(deprecated)]
 use soshal_crypto_core::nip44::{decrypt, encrypt, encrypt_padded, pad, unpad};
 use soshal_crypto_core::pqc::{dsa, hybrid, kem};
 use soshal_crypto_core::zk_trust::{generate_zk_wot_proof, verify_zk_wot_proof};
@@ -61,6 +62,7 @@ fn key_derivation_test() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn nip44_tests() {
     let key = [0x42u8; 32];
     let plaintext = b"hello nip44";
@@ -112,6 +114,7 @@ fn nip44_spec_interop_with_nostr() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn nip44_adversarial_tests() {
     let key = [0x42u8; 32];
     let wrong_key = [0x00u8; 32];

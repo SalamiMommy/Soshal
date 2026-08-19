@@ -140,7 +140,7 @@ fn spec_derive_keys(
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::RwLock;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// A 32-byte key that is always scrubbed on drop.  Used as both the HashMap
 /// lookup key and the stored conversation key so that eviction automatically
@@ -156,13 +156,16 @@ struct CkCache {
 static CK_CACHE: RwLock<Option<CkCache>> = RwLock::new(None);
 
 /// Derives and caches the NIP-44 v2 conversation key `ck = HMAC-SHA256("nip44-v2", key)`.
-pub fn derive_conversation_key(key: &[u8; KEY_LEN]) -> [u8; KEY_LEN] {
+///
+/// Returned key is wrapped in `Zeroizing` so callers that fail to zeroize it
+/// explicitly still get the bytes scrubbed on drop.
+pub fn derive_conversation_key(key: &[u8; KEY_LEN]) -> Zeroizing<[u8; KEY_LEN]> {
     let lookup = ZeroizeKey(*key);
     {
         let guard = CK_CACHE.read().unwrap_or_else(|e| e.into_inner());
         if let Some(cache) = guard.as_ref() {
             if let Some(ck) = cache.map.get(&lookup) {
-                return ck.0;
+                return Zeroizing::new(ck.0);
             }
         }
     }
@@ -173,7 +176,7 @@ pub fn derive_conversation_key(key: &[u8; KEY_LEN]) -> [u8; KEY_LEN] {
         queue: VecDeque::with_capacity(64),
     });
     if cache.map.contains_key(&lookup) {
-        return ck;
+        return Zeroizing::new(ck);
     }
     if cache.map.len() >= 128 {
         if let Some(oldest) = cache.queue.pop_front() {
@@ -185,7 +188,7 @@ pub fn derive_conversation_key(key: &[u8; KEY_LEN]) -> [u8; KEY_LEN] {
     }
     cache.map.insert(ZeroizeKey(*key), ZeroizeKey(ck));
     cache.queue.push_back(ZeroizeKey(*key));
-    ck
+    Zeroizing::new(ck)
 }
 
 /// Clear and zeroize all cached NIP-44 v2 conversation keys.
@@ -246,13 +249,16 @@ pub fn encrypt(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<String, &'static
 
 /// NIP-44 v2 spec decryption.
 ///
-/// If the version byte is `2` (NIP-44 v2), only `decrypt_spec` is attempted.
-/// A v2-tagged payload that fails AEAD verification returns `Err` immediately
-/// — it is **never** re-interpreted through the legacy path.  Mixing the two
-/// would create an authentication oracle (chosen-ciphertext bypass).
+/// The v2 path is attempted only when the payload is structurally a v2 blob:
+/// `2 ‖ nonce(32) ‖ u16 padded length ‖ padded plaintext ‖ hmac(32)` with the
+/// length field consistent with the total size. A v2-shaped payload that
+/// fails AEAD verification returns `Err` immediately — it is **never**
+/// re-interpreted through the legacy path. Mixing the two would create an
+/// authentication oracle (chosen-ciphertext bypass).
 ///
-/// The legacy path is reserved for payloads whose first byte is **not** 2
-/// (ciphertexts written by pre-v2 versions of this crate).
+/// The legacy path is reserved for everything else, including pre-v2
+/// ciphertexts whose random salt byte happens to be `0x02` (1/256 of legacy
+/// blobs) but whose length does not match the exact v2 layout.
 pub fn decrypt(payload: &str, key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static str> {
     let decoded = general_purpose::STANDARD
         .decode(payload)
@@ -260,11 +266,24 @@ pub fn decrypt(payload: &str, key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static s
     if decoded.is_empty() {
         return Err("empty payload");
     }
-    if decoded[0] == VERSION_PADDED && decoded.len() >= VERSION_LEN + SALT_LEN + 2 + 32 + 32 {
+    if decoded[0] == VERSION_PADDED && is_spec_shape(&decoded) {
         // v2 payload: succeed or fail — never fall through to the legacy path.
         return decrypt_spec(&decoded, key);
     }
     decrypt_legacy(&decoded, key)
+}
+
+/// True when the blob matches the exact NIP-44 v2 length layout:
+/// `2 ‖ nonce(32) ‖ padded(≥32, 32-byte multiples) ‖ hmac(32)` — total is
+/// always `67 + 32k` for k ≥ 1 (min 99). The in-blob length prefix cannot be
+/// inspected here: it lives inside the ciphertext region. Legacy blobs are
+/// `49 + plaintext_len` (any length ≥ 50), so this rejects legacy-shaped data
+/// even when the first salt byte collides with the v2 version byte. Blobs
+/// matching both layouts are genuinely ambiguous and stay on the v2 path —
+/// the AEAD tag decides.
+fn is_spec_shape(decoded: &[u8]) -> bool {
+    const V2_FIXED: usize = VERSION_LEN + SALT_LEN + 2 + 32; // 67
+    decoded.len() >= V2_FIXED + 32 && (decoded.len() - V2_FIXED).is_multiple_of(32)
 }
 
 fn decrypt_spec(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static str> {
@@ -311,6 +330,7 @@ fn decrypt_spec(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static
 /// Legacy encryption format (pre-spec): random salt, then
 /// `salt ‖ version ‖ ciphertext` where the AEAD is ChaCha20-Poly1305 with
 /// the auth key passed as AAD. Kept only for decrypting existing data.
+#[deprecated(note = "legacy emitter, do not use for new data")]
 pub fn encrypt_padded(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static str> {
     let mut salt = [0u8; SALT_LEN];
     getrandom::fill(&mut salt).map_err(|_| "rng failed")?;
@@ -484,6 +504,29 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
+    fn test_legacy_salt_byte_02_routes_to_legacy() {
+        let key = [0x42u8; 32];
+        let mut tested = false;
+        for _ in 0..4096 {
+            let legacy_ct = encrypt_padded(b"legacy stored data", &key).unwrap();
+            // Salt byte naturally colliding with VERSION_PADDED (1/256).
+            if legacy_ct[0] == VERSION_PADDED {
+                // 32 salt + 1 version + 18 plaintext + 16 tag = 67 bytes,
+                // NOT a v2-shaped length — must route to the legacy decoder
+                // even though decoded[0] == VERSION_PADDED.
+                assert_eq!(legacy_ct.len(), 67);
+                let encoded = general_purpose::STANDARD.encode(&legacy_ct);
+                assert_eq!(decrypt(&encoded, &key).unwrap(), b"legacy stored data");
+                tested = true;
+                break;
+            }
+        }
+        assert!(tested, "no salt collision in 4096 tries (1/256 expected)");
+    }
+
+    #[test]
+    #[allow(deprecated)]
     fn test_legacy_decode_path() {
         let key = [0x42u8; 32];
         let legacy_ct = encrypt_padded(b"legacy stored data", &key).unwrap();

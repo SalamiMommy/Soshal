@@ -1,7 +1,6 @@
 //! rustybuzz text measurement: shape real glyphs, wrap with
 //! unicode-linebreak, return exact line/wrap metrics.
 
-use owned_ttf_parser::{AsFaceRef, OwnedFace};
 use rustybuzz::{Direction, Face, UnicodeBuffer};
 use std::sync::OnceLock;
 use unicode_linebreak::{linebreaks, BreakOpportunity};
@@ -26,21 +25,24 @@ struct FaceMetrics {
 
 fn faces() -> &'static FacePair<'static> {
     static FACES: OnceLock<FacePair<'static>> = OnceLock::new();
-    FACES.get_or_init(|| FacePair {
-        regular: Face::from_slice(FONT_REGULAR, 0).expect("Noto Sans regular"),
-        bold: Face::from_slice(FONT_BOLD, 0).expect("Noto Sans bold"),
-        metrics: metrics_of(FONT_REGULAR),
+    FACES.get_or_init(|| {
+        let regular = Face::from_slice(FONT_REGULAR, 0).expect("Noto Sans regular");
+        let bold = Face::from_slice(FONT_BOLD, 0).expect("Noto Sans bold");
+        let metrics = metrics_of(&regular);
+        FacePair {
+            regular,
+            bold,
+            metrics,
+        }
     })
 }
 
-fn metrics_of(data: &[u8]) -> FaceMetrics {
-    let face = OwnedFace::from_vec(data.to_vec(), 0).expect("font parse");
-    let f = face.as_face_ref();
+fn metrics_of(face: &Face) -> FaceMetrics {
     FaceMetrics {
-        units_per_em: f.units_per_em() as f32,
-        ascent: f.ascender() as f32,
-        descent: f.descender() as f32,
-        line_gap: f.line_gap() as f32,
+        units_per_em: face.units_per_em() as f32,
+        ascent: face.ascender() as f32,
+        descent: face.descender() as f32,
+        line_gap: face.line_gap() as f32,
     }
 }
 

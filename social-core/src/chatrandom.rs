@@ -91,9 +91,12 @@ pub fn rank_chatrandom_peers(json_input: &str) -> String {
         .map(|s| s.to_lowercase().trim().to_string())
         .collect();
 
+    let now = soshal_common_core::format::now_secs() as u64;
+
     let mut scored: Vec<ScoredPeer> = input
         .candidates
         .into_iter()
+        .filter(|peer| peer.expires_at == 0 || peer.expires_at >= now)
         .map(|peer| {
             let peer_set: HashSet<String> = peer
                 .interests

@@ -27,7 +27,7 @@ pub struct NotificationItem {
 }
 
 fn row_to_item(
-    row: &NotificationRow,
+    row: NotificationRow,
     users: &std::collections::HashMap<String, (String, String)>,
 ) -> NotificationItem {
     let (name, avatar) = row
@@ -37,13 +37,13 @@ fn row_to_item(
         .cloned()
         .unwrap_or_default();
     NotificationItem {
-        id: row.id.clone(),
-        notification_type: row.type_.clone(),
-        from_pubkey: row.from_pubkey.clone().unwrap_or_default(),
+        id: row.id,
+        notification_type: row.type_,
+        from_pubkey: row.from_pubkey.unwrap_or_default(),
         from_name: name,
         from_avatar: avatar,
-        content_preview: row.content.clone().unwrap_or_default(),
-        event_id: row.event_id.clone(),
+        content_preview: row.content.unwrap_or_default(),
+        event_id: row.event_id,
         created_at: row.created_at.max(0) as u64,
         read: row.is_read,
         action_url: String::new(),
@@ -73,7 +73,7 @@ fn user_names(
         let pic: Option<String> = r.get(2)?;
         Ok((pk, name.unwrap_or_default(), pic.unwrap_or_default()))
     })?;
-    let mut map = std::collections::HashMap::new();
+    let mut map = std::collections::HashMap::with_capacity(rows.len());
     for (pk, name, pic) in rows {
         map.insert(pk, (name, pic));
     }
@@ -91,9 +91,15 @@ fn require_db_rows(
             Some(t) => repo.get_unread_filtered(pubkey, t, limit)?,
             None => repo.get_unread(pubkey, limit)?,
         };
-        let from_pks: Vec<String> = rows.iter().filter_map(|r| r.from_pubkey.clone()).collect();
+        let mut from_pks_set = std::collections::HashSet::new();
+        for r in &rows {
+            if let Some(pk) = &r.from_pubkey {
+                from_pks_set.insert(pk.clone());
+            }
+        }
+        let from_pks: Vec<String> = from_pks_set.into_iter().collect();
         let users = user_names(db, &from_pks)?;
-        Ok(rows.iter().map(|r| row_to_item(r, &users)).collect())
+        Ok(rows.into_iter().map(|r| row_to_item(r, &users)).collect())
     })
 }
 

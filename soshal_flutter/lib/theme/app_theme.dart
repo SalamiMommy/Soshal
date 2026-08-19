@@ -102,7 +102,7 @@ class AppTheme {
         bgConfig.hue, bgConfig.surfSat, bgConfig.elevated, bgConfig.elevAlpha);
     final borderColor = _hsl(bgConfig.hue, isLight ? 15 : 6, bgConfig.border);
 
-    final textPrimary = isLight ? _hsl(210, 20, 18) : _hsl(0, 0, 95);
+    final textPrimary = isLight ? '#000000' : _hsl(0, 0, 95);
     final textSecondary = isLight ? _hsl(210, 12, 42) : _hsl(240, 5, 65);
     final textMuted = isLight ? _hsl(210, 8, 58) : _hsl(240, 4, 45);
 
@@ -174,7 +174,7 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: _parseColor(glassBack),
-          foregroundColor: _parseColor(glassBlueText),
+          foregroundColor: primaryTextColor,
           elevation: 0,
           side: BorderSide(color: _parseColor(glassBackBorder)),
           shape: RoundedRectangleBorder(
@@ -185,13 +185,36 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: _parseColor(glassBack),
-          foregroundColor: _parseColor(glassBlueText),
+          foregroundColor: primaryTextColor,
           elevation: 0,
           side: BorderSide(color: _parseColor(glassBackBorder)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(_borderRadius['md']!),
           ),
         ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: primaryTextColor),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: primaryTextColor,
+          side: BorderSide(color: _parseColor(borderColor)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(_borderRadius['md']!),
+          ),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(foregroundColor: primaryTextColor),
+      ),
+      tabBarTheme: TabBarThemeData(
+        labelColor: primaryTextColor,
+        unselectedLabelColor: secondaryTextColor,
+      ),
+      chipTheme: ChipThemeData(
+        labelStyle: TextStyle(color: primaryTextColor),
+        side: BorderSide(color: _parseColor(borderColor)),
       ),
       textTheme: TextTheme(
         displayLarge: TextStyle(

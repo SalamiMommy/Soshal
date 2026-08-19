@@ -304,6 +304,19 @@ async fn run_manager(
                                         }
                                         match unmarshal_candidate(raw) {
                                             Ok(c) => {
+                                                // P2P is private-IP-only (same gate as
+                                                // lan_transport/quic/mdns): drop remote
+                                                // candidates outside the private scope so a
+                                                // hostile peer can't steer ICE probes at
+                                                // external hosts.
+                                                let addr: std::net::IpAddr =
+                                                    match c.address().parse() {
+                                                        Ok(a) => a,
+                                                        Err(_) => continue,
+                                                    };
+                                                if !crate::lan::is_private_ip(addr) {
+                                                    continue;
+                                                }
                                                 let c: Arc<dyn Candidate + Send + Sync> =
                                                     Arc::new(c);
                                                 if let Err(e) =
@@ -696,6 +709,30 @@ mod tests {
             statuses[0].remote_candidates.len(),
             1,
             "duplicate candidate skipped on second add_remote"
+        );
+        handle.remove(&pk);
+        handle.stop();
+    }
+
+    #[test]
+    fn add_remote_drops_non_private_candidates() {
+        let handle = spawn_nat_manager("eve".repeat(2)).unwrap();
+        let pk = "frank".repeat(2);
+        handle
+            .gather(&pk, &["stun:192.0.2.1:9".to_string()])
+            .unwrap();
+        let public = "1 1 udp 2122260223 8.8.8.8 50060 typ host".to_string();
+        let hostname = "1 1 udp 2122260223 peer.local 50061 typ host".to_string();
+        let private = "1 1 udp 2122260223 127.0.0.1 50062 typ host".to_string();
+        handle
+            .add_remote(&pk, "u", "p", &[public, hostname, private.clone()])
+            .unwrap();
+        let statuses = handle.status();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(
+            statuses[0].remote_candidates,
+            vec![private],
+            "only private-IP candidate added"
         );
         handle.remove(&pk);
         handle.stop();

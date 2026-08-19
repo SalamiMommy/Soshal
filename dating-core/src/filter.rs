@@ -23,14 +23,6 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
         .enumerate()
         .map(|(i, profile)| {
             let is_contact = self_contacts_set.contains(profile.pubkey.as_str());
-            let mutual_friends: Vec<String> = profile
-                .verified_mutual_friends
-                .clone()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|f| self_contacts_set.contains(f.as_str()))
-                .collect();
-
             let passes = (|| -> bool {
                 if input.hide_friends.unwrap_or(false)
                     && self_contacts_set.contains(profile.pubkey.as_str())
@@ -156,6 +148,23 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                 }
                 true
             })();
+
+            let mutual_friends = if passes {
+                profile
+                    .verified_mutual_friends
+                    .as_ref()
+                    .map(|friends| {
+                        friends
+                            .iter()
+                            .filter(|f| self_contacts_set.contains(f.as_str()))
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
             FilteredDatingProfileOut {
                 index: i,
                 passes,

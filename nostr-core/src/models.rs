@@ -2,9 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::sync::RwLock;
 
+/// Cache key = (event id, signature bytes) so a replayed event id with a
+/// forged signature can never be served a cached verification result.
 struct VerifiedCache {
-    set: HashSet<[u8; 32]>,
-    queue: VecDeque<[u8; 32]>,
+    set: HashSet<([u8; 32], [u8; 64])>,
+    queue: VecDeque<([u8; 32], [u8; 64])>,
 }
 
 fn max_cache_capacity() -> usize {
@@ -29,10 +31,10 @@ pub fn clear_verified_cache() {
 
 /// Verifies a Nostr event's Schnorr signature, using an in-memory bounded LRU cache.
 pub fn verify_event(e: &nostr::event::Event) -> bool {
-    let id_bytes = e.id.as_bytes();
+    let key = (*e.id.as_bytes(), *e.sig.as_bytes());
     if let Ok(guard) = VERIFIED_CACHE.read() {
         if let Some(cache) = guard.as_ref() {
-            if cache.set.contains(id_bytes) {
+            if cache.set.contains(&key) {
                 return true;
             }
         }
@@ -44,13 +46,13 @@ pub fn verify_event(e: &nostr::event::Event) -> bool {
                 queue: VecDeque::with_capacity(1024),
             });
             let max_cap = max_cache_capacity();
-            if cache.set.insert(*id_bytes) {
+            if cache.set.insert(key) {
                 if cache.set.len() > max_cap {
                     if let Some(oldest) = cache.queue.pop_front() {
                         cache.set.remove(&oldest);
                     }
                 }
-                cache.queue.push_back(*id_bytes);
+                cache.queue.push_back(key);
             }
         }
         true
@@ -96,12 +98,39 @@ impl From<&nostr::event::Event> for NostrEvent {
     fn from(e: &nostr::event::Event) -> Self {
         let mut tags = Vec::with_capacity(e.tags.len());
         for t in e.tags.iter() {
-            tags.push(t.as_slice().to_vec());
+            let slice = t.as_slice();
+            let mut tag_vec = Vec::with_capacity(slice.len());
+            for s in slice {
+                tag_vec.push(s.clone());
+            }
+            tags.push(tag_vec);
         }
         NostrEvent {
             id: e.id.to_hex(),
             pubkey: e.pubkey.to_string(),
             content: e.content.clone(),
+            tags,
+            created_at: e.created_at.as_secs() as f64,
+            kind: e.kind.as_u16() as u32,
+        }
+    }
+}
+
+impl From<nostr::event::Event> for NostrEvent {
+    fn from(e: nostr::event::Event) -> Self {
+        let mut tags = Vec::with_capacity(e.tags.len());
+        for t in e.tags.iter() {
+            let slice = t.as_slice();
+            let mut tag_vec = Vec::with_capacity(slice.len());
+            for s in slice {
+                tag_vec.push(s.clone());
+            }
+            tags.push(tag_vec);
+        }
+        NostrEvent {
+            id: e.id.to_hex(),
+            pubkey: e.pubkey.to_string(),
+            content: e.content,
             tags,
             created_at: e.created_at.as_secs() as f64,
             kind: e.kind.as_u16() as u32,

@@ -60,7 +60,7 @@ fn process_stories(input: ProcessStoriesInput) -> Vec<ProcessedStoryOut> {
         return Vec::new();
     }
     let now_sec = input.now_sec;
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(input.events.len().min(MAX_POSTS));
     for event in input.events {
         if event.content.len() > 1024 * 1024 {
             continue;
@@ -77,15 +77,16 @@ fn process_stories(input: ProcessStoriesInput) -> Vec<ProcessedStoryOut> {
             Ok(parsed) => (parsed.media.unwrap_or_default(), parsed.text),
             Err(_) => (Vec::new(), None),
         };
-        let media: Vec<MediaItemOut> = content_media
-            .into_iter()
-            .filter(|m| m.url.len() <= MAX_PREVIEW_URL_LENGTH && m.media_type.len() <= 100)
-            .map(|m| MediaItemOut {
-                url: m.url,
-                media_type: m.media_type,
-                duration: m.duration,
-            })
-            .collect();
+        let mut media: Vec<MediaItemOut> = Vec::with_capacity(content_media.len());
+        for m in content_media {
+            if m.url.len() <= MAX_PREVIEW_URL_LENGTH && m.media_type.len() <= 100 {
+                media.push(MediaItemOut {
+                    url: m.url,
+                    media_type: m.media_type,
+                    duration: m.duration,
+                });
+            }
+        }
         let actual_expiry = expires_at.unwrap_or(now_sec + input.expiry_seconds);
         results.push(ProcessedStoryOut {
             id: event.id.clone(),

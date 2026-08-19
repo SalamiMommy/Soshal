@@ -60,9 +60,6 @@ fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
     let mut price_str: Option<&str> = None;
     let mut currency: Option<&str> = None;
     let mut location_geohash: Option<&str> = None;
-    let mut images: Vec<String> = Vec::new();
-    let mut videos: Vec<String> = Vec::new();
-    let mut hashtags: Vec<String> = Vec::new();
 
     for tag in &ev.tags {
         if tag.len() < 2 {
@@ -78,13 +75,7 @@ fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
             "price" if price_str.is_none() => price_str = Some(v),
             "currency" if currency.is_none() => currency = Some(v),
             "location" | "g" if location_geohash.is_none() => location_geohash = Some(v),
-            "image" => images.push(v.clone()),
-            "video" => videos.push(v.clone()),
-            "t" => hashtags.push(v.clone()),
             _ => {}
-        }
-        if images.len() + videos.len() + hashtags.len() > 10_000 {
-            break;
         }
     }
 
@@ -96,6 +87,29 @@ fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
     let currency_str = currency.unwrap_or("USD");
     if currency_str.len() > 16 {
         return None;
+    }
+
+    let mut images: Vec<String> = Vec::new();
+    let mut videos: Vec<String> = Vec::new();
+    let mut hashtags: Vec<String> = Vec::new();
+
+    for tag in &ev.tags {
+        if tag.len() < 2 {
+            continue;
+        }
+        let v = &tag[1];
+        if v.len() > MAX_TAG_VALUE_LEN {
+            continue;
+        }
+        match tag[0].as_str() {
+            "image" => images.push(v.clone()),
+            "video" => videos.push(v.clone()),
+            "t" => hashtags.push(v.clone()),
+            _ => {}
+        }
+        if images.len() + videos.len() + hashtags.len() > 10_000 {
+            break;
+        }
     }
     let currency = currency_str.to_string();
     let d_tag = d_tag

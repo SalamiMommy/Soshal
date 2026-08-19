@@ -12,6 +12,7 @@ import '../services/media_service.dart';
 import '../services/p2p_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../utils/dialog_guard.dart';
 import 'composer_screen.dart';
 import '../services/zap_service.dart';
 import '../services/layout_service.dart';
@@ -420,7 +421,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
                     tooltip: 'Post actions',
                     onSelected: (v) async {
                       if (v != 'delete') return;
-                      final doIt = await showDialog<bool>(
+                      final doIt = await showDialogDeferred<bool>(
                         context: context,
                         builder: (context) => AlertDialog(
                           title: const Text('Delete post?'),
@@ -595,7 +596,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
     final lnurl = TextEditingController();
     final amount = TextEditingController();
     var sending = false;
-    showDialog<void>(
+    showDialogDeferred<void>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -852,7 +853,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
   }
 
   Future<void> _blockUser(String pubkey) async {
-    final doIt = await showDialog<bool>(
+    final doIt = await showDialogDeferred<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Block user?'),
@@ -884,7 +885,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
 
   Future<void> _reportPost(String pubkey) async {
     final reason = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await showDialogDeferred<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Report post'),

@@ -16,7 +16,8 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
     let self_geohash = input.self_profile.location_geohash.clone();
 
     // (result, age, height, distance_km)
-    let mut results: Vec<(SortedProfileOut, Option<f64>, Option<f64>, f64)> = Vec::new();
+    let mut results: Vec<(SortedProfileOut, Option<f64>, Option<f64>, f64)> =
+        Vec::with_capacity(input.profiles.len().min(MAX_PROFILES));
     for profile in &input.profiles {
         let is_contact = self_contacts_set.contains(profile.pubkey.as_str());
         let mutual_friends: Vec<String> = profile

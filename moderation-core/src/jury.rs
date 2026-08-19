@@ -1,12 +1,8 @@
 //! Decentralized Moderation Jury Engine powered by FROST threshold signatures.
 //! Manages jury assignments, voting rounds, and threshold moderation action generation.
 
-use std::collections::HashSet;
-
 use serde::{Deserialize, Serialize};
-use soshal_crypto_core::frost::{
-    FrostSessionManager, FrostSignatureShare, FrostThresholdSignature,
-};
+use soshal_crypto_core::frost::{FrostSignatureShare, FrostThresholdSignature};
 
 /// Hard cap on collected votes to bound growth from spoofed participants.
 const MAX_VOTES_COLLECTED: usize = 100_000;
@@ -22,8 +18,6 @@ pub struct ModerationJuryCase {
     pub total_jurors: u32,
     pub group_pubkey: String,
     pub votes_collected: Vec<FrostSignatureShare>,
-    #[serde(default)]
-    voted_participants: HashSet<u32>,
 }
 
 impl ModerationJuryCase {
@@ -45,42 +39,33 @@ impl ModerationJuryCase {
             total_jurors,
             group_pubkey,
             votes_collected: Vec::new(),
-            voted_participants: HashSet::new(),
         }
     }
 
     /// Submit a juror's FROST partial signature vote share on this case.
-    pub fn cast_vote(&mut self, vote_share: FrostSignatureShare) -> Result<bool, String> {
+    pub fn cast_vote(&mut self, _vote_share: FrostSignatureShare) -> Result<bool, String> {
         if self.votes_collected.len() >= MAX_VOTES_COLLECTED {
             return Err("vote cap reached".to_string());
         }
-        if self.voted_participants.len() != self.votes_collected.len() {
-            self.voted_participants = self
-                .votes_collected
-                .iter()
-                .map(|v| v.participant_id)
-                .collect();
-        }
-        if self.voted_participants.contains(&vote_share.participant_id) {
-            return Err("juror has already voted".to_string());
-        }
-        self.voted_participants.insert(vote_share.participant_id);
-        self.votes_collected.push(vote_share);
-        Ok(self.votes_collected.len() >= self.threshold as usize)
+        // Honest gate: real FROST is bridge-disabled ("non-cryptographic
+        // simulation, disabled"); no share-verification path exists, so a
+        // fabricated participant_id + sig hex cannot be told apart from a real
+        // juror vote. Accepting one would block legitimate votes and stuff the
+        // ballot, so voting is unavailable until real FROST verification lands.
+        Err(
+            "jury voting unavailable (roadmap): FROST share verification not implemented"
+                .to_string(),
+        )
     }
 
     /// Finalize the jury verdict into a single network-wide threshold Schnorr signature event.
     pub fn finalize_verdict(&self) -> Result<FrostThresholdSignature, String> {
-        let action_payload = format!(
-            "MODERATION_ACTION:case={}:target={}:reason={}",
-            self.case_id, self.target_pubkey, self.reason
-        );
-
-        FrostSessionManager::aggregate_signature(
-            &self.votes_collected,
-            self.threshold,
-            &self.group_pubkey,
-            action_payload.as_bytes(),
+        // Honest gate: aggregation is a forgeable string-hash simulation, not
+        // a verifiable threshold Schnorr signature. Emitting it as Ok would
+        // present forged verdicts as cryptographically valid.
+        Err(
+            "jury threshold signature unavailable (roadmap): non-cryptographic simulation, disabled"
+                .to_string(),
         )
     }
 }
@@ -89,8 +74,15 @@ impl ModerationJuryCase {
 mod tests {
     use super::*;
 
+    fn forged_share(participant_id: u32) -> FrostSignatureShare {
+        FrostSignatureShare {
+            participant_id,
+            sig_share_hex: "deadbeef_forged".to_string(),
+        }
+    }
+
     #[test]
-    fn test_jury_moderation_flow() {
+    fn test_jury_voting_unavailable_roadmap() {
         let group_pk = "group_pubkey_1234567890abcdef1234567890abcdef1234567890abcdef12345";
         let mut case = ModerationJuryCase::new(
             "case_001".to_string(),
@@ -102,21 +94,16 @@ mod tests {
             group_pk.to_string(),
         );
 
-        let shares = FrostSessionManager::generate_jury_keys(2, 3, group_pk);
-        let msg = "MODERATION_ACTION:case=case_001:target=spammer_pubkey:reason=Spam behavior";
+        let err = case.cast_vote(forged_share(1)).unwrap_err();
+        assert!(err.contains("unavailable"), "err: {err}");
+        assert!(case.votes_collected.is_empty());
 
-        let vote1 = FrostSessionManager::sign_share(&shares[0], msg.as_bytes()).unwrap();
-        let vote2 = FrostSessionManager::sign_share(&shares[1], msg.as_bytes()).unwrap();
-
-        assert!(!case.cast_vote(vote1).unwrap());
-        assert!(case.cast_vote(vote2).unwrap()); // Reached threshold (2 of 3)
-
-        let verdict = case.finalize_verdict().unwrap();
-        assert_eq!(verdict.group_pubkey_hex, group_pk);
+        let err = case.finalize_verdict().unwrap_err();
+        assert!(err.contains("simulation"), "err: {err}");
     }
 
     #[test]
-    fn test_jury_rejects_duplicate_juror_vote() {
+    fn test_jury_rejects_forged_share() {
         let group_pk = "group_pubkey_1234567890abcdef1234567890abcdef1234567890abcdef12345";
         let mut case = ModerationJuryCase::new(
             "case_002".to_string(),
@@ -128,21 +115,16 @@ mod tests {
             group_pk.to_string(),
         );
 
-        let shares = FrostSessionManager::generate_jury_keys(2, 3, group_pk);
-        let msg = "MODERATION_ACTION:case=case_002:target=spammer_pubkey:reason=Spam behavior";
-        let vote1 = FrostSessionManager::sign_share(&shares[0], msg.as_bytes()).unwrap();
-
-        assert!(!case.cast_vote(vote1.clone()).unwrap());
-        let err = case.cast_vote(vote1.clone()).unwrap_err();
-        assert!(err.contains("already voted"));
-        assert!(case.cast_vote(vote1).is_err());
-        assert_eq!(case.votes_collected.len(), 1);
+        // Fabricated participant_id + sig hex: rejected, nothing stored.
+        let err = case.cast_vote(forged_share(999)).unwrap_err();
+        assert!(err.contains("unavailable"), "err: {err}");
+        assert!(case.votes_collected.is_empty());
     }
 
     #[test]
-    fn test_jury_finalize_rejects_insufficient_shares() {
+    fn test_jury_finalize_rejects_unverifiable_threshold_signature() {
         let group_pk = "group_pubkey_1234567890abcdef1234567890abcdef1234567890abcdef12345";
-        let mut case = ModerationJuryCase::new(
+        let case = ModerationJuryCase::new(
             "case_003".to_string(),
             "spammer_pubkey".to_string(),
             None,
@@ -152,16 +134,8 @@ mod tests {
             group_pk.to_string(),
         );
 
-        let shares = FrostSessionManager::generate_jury_keys(3, 3, group_pk);
-        let msg = "MODERATION_ACTION:case=case_003:target=spammer_pubkey:reason=Spam behavior";
-
-        for share in shares.iter().take(2) {
-            let vote = FrostSessionManager::sign_share(share, msg.as_bytes()).unwrap();
-            assert!(!case.cast_vote(vote).unwrap());
-        }
-
         let err = case.finalize_verdict().unwrap_err();
-        assert!(err.contains("insufficient signature shares"));
-        assert_eq!(case.votes_collected.len(), 2);
+        assert!(err.contains("simulation"), "err: {err}");
+        assert!(case.votes_collected.is_empty());
     }
 }

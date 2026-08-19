@@ -64,20 +64,20 @@ pub fn compute_event_patch(
 pub fn apply_event_patch(old_bytes: &[u8], patch: &EventPatch) -> Result<Vec<u8>, String> {
     if let Some(full) = &patch.full_b64 {
         let bytes = B64.decode(full).map_err(|e| format!("full b64: {e}"))?;
-        return verify_new_id(&bytes, &patch.new_id);
+        return verify_new_id(bytes, &patch.new_id);
     }
     let delta = B64
         .decode(&patch.patch_b64)
         .map_err(|e| format!("patch b64: {e}"))?;
     let new_bytes =
         decoder::decode_all(old_bytes, &delta).map_err(|e| format!("vcdiff apply failed: {e}"))?;
-    verify_new_id(&new_bytes, &patch.new_id)
+    verify_new_id(new_bytes, &patch.new_id)
 }
 
-fn verify_new_id(bytes: &[u8], expected: &str) -> Result<Vec<u8>, String> {
-    let hex = soshal_crypto_core::hash::sha256_hex(bytes);
+fn verify_new_id(bytes: Vec<u8>, expected: &str) -> Result<Vec<u8>, String> {
+    let hex = soshal_crypto_core::hash::sha256_hex(&bytes);
     if hex == expected {
-        Ok(bytes.to_vec())
+        Ok(bytes)
     } else {
         Err(format!(
             "patch result hash mismatch: got {hex}, expected {expected}"

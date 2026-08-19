@@ -75,7 +75,7 @@ fn format_notification_content(notif_type: &str, content: &str, tags: &[Vec<Stri
 // ─── Core logic ────────────────────────────────────────────────────────
 
 pub fn aggregate_notifications(input: AggregateInput) -> Vec<NotificationOutput> {
-    let mut out: Vec<NotificationOutput> = Vec::new();
+    let mut out: Vec<NotificationOutput> = Vec::with_capacity(input.events.len());
     let live_stream_kind = input.live_stream_kind;
 
     let existing_set: std::collections::HashSet<&str> =
@@ -110,7 +110,10 @@ pub fn aggregate_notifications(input: AggregateInput) -> Vec<NotificationOutput>
             continue;
         }
 
-        let event_id = e_tag.unwrap_or(&ev.id).to_string();
+        let event_id = match e_tag {
+            Some(e) => e.to_string(),
+            None => ev.id.clone(),
+        };
         let content = format_notification_content(notif_type, &ev.content, &ev.tags);
 
         out.push(NotificationOutput {

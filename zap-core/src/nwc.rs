@@ -145,6 +145,7 @@ pub async fn nwc_send_request<
     parse_nwc_uri(uri_str)?;
     let uri = nostr::nips::nip47::NostrWalletConnectUri::parse(uri_str)
         .map_err(|e| format!("nwc uri: {}", e))?;
+    let req_method = request.method.clone();
     let event = request
         .to_event(&uri, nostr::nips::nip47::Nip47Ciphers::NIP44V2)
         .map_err(|e| format!("nwc request: {}", e))?;
@@ -178,16 +179,19 @@ pub async fn nwc_send_request<
         .timeout(std::time::Duration::from_secs(15))
         .await
         .map_err(|e| format!("nwc fetch: {}", e))?;
-    let ev = events
+    let response = events
         .into_iter()
-        .find(|e| e.pubkey.to_string() == wallet_pk && e.verify().is_ok())
+        .filter(|e| e.pubkey.to_string() == wallet_pk && e.verify().is_ok())
+        .find_map(|ev| {
+            nostr::nips::nip47::Response::from_event(
+                &uri,
+                &ev,
+                nostr::nips::nip47::Nip47Ciphers::NIP44V2,
+            )
+            .ok()
+            .filter(|r| r.result_type == req_method)
+        })
         .ok_or("nwc: no response within 15s")?;
-    let response = nostr::nips::nip47::Response::from_event(
-        &uri,
-        &ev,
-        nostr::nips::nip47::Nip47Ciphers::NIP44V2,
-    )
-    .map_err(|e| format!("nwc response: {}", e))?;
     serde_json::to_value(&response).map_err(|e| format!("serialize: {}", e))
 }
 

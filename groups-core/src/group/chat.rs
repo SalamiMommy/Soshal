@@ -33,7 +33,7 @@ fn parse_group_chat_messages(input: ParseGroupChatMessagesInput) -> Vec<ParsedGr
             return Vec::new();
         }
     }
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(input.events.len().min(MAX_EVENTS));
     for event in &input.events {
         if event.tags.len() > 100_000 {
             continue;

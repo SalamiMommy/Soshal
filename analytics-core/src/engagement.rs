@@ -19,30 +19,31 @@ pub fn compute_engagement_stats(
     matching.sort_by_key(|b| std::cmp::Reverse(b.created_at));
     matching.truncate(50);
 
-    matching
-        .into_iter()
-        .map(|p| {
-            let text = &p.nostr_event.content;
-            let content: String = if let Some((idx, _)) = text.char_indices().nth(100) {
-                text[..idx].to_string()
-            } else {
-                text.to_string()
-            };
-            EngagementStatOutput {
-                post_id: p.id.clone(),
-                content,
-                created_at: p.created_at,
-                reaction_count: p
-                    .local_stats
-                    .as_ref()
-                    .and_then(|s| s.likes_count)
-                    .unwrap_or(0),
-                repost_count: p
-                    .local_stats
-                    .as_ref()
-                    .and_then(|s| s.reposts_count)
-                    .unwrap_or(0),
-            }
-        })
-        .collect()
+    let mut out = Vec::with_capacity(matching.len());
+    for p in matching {
+        let text = &p.nostr_event.content;
+        let content = if text.len() <= 100 {
+            text.to_string()
+        } else if let Some((idx, _)) = text.char_indices().nth(100) {
+            text[..idx].to_string()
+        } else {
+            text.to_string()
+        };
+        out.push(EngagementStatOutput {
+            post_id: p.id.clone(),
+            content,
+            created_at: p.created_at,
+            reaction_count: p
+                .local_stats
+                .as_ref()
+                .and_then(|s| s.likes_count)
+                .unwrap_or(0),
+            repost_count: p
+                .local_stats
+                .as_ref()
+                .and_then(|s| s.reposts_count)
+                .unwrap_or(0),
+        });
+    }
+    out
 }

@@ -52,14 +52,15 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
                 .await?;
             let mut out = Vec::new();
             while let Some(row) = rows.next().await? {
+                let content: String = row.get(2)?;
                 out.push(SearchResult {
                     id: row.get(0)?,
                     result_type: match row.get::<i64>(3)? {
                         0 => "profile".to_string(),
                         _ => "post".to_string(),
                     },
-                    title: soshal_common_core::format::truncate(&row.get::<String>(2)?, 80),
-                    description: soshal_common_core::format::truncate(&row.get::<String>(2)?, 160),
+                    title: soshal_common_core::format::truncate(&content, 80),
+                    description: soshal_common_core::format::truncate(&content, 160),
                     pubkey: Some(row.get(1)?),
                     score: 1.0,
                     created_at: row.get::<i64>(4)?.max(0) as u64,

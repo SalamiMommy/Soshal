@@ -50,6 +50,15 @@ pub async fn streaming_start_local_server() -> Result<u16, String> {
     Ok(port)
 }
 
+/// Stop the local video micro-server and clear the registered instance.
+#[frb(sync, serialize)]
+pub fn streaming_stop_local_server() -> Result<(), String> {
+    if let Ok(mut lock) = VIDEO_SERVER.lock() {
+        *lock = None;
+    }
+    Ok(())
+}
+
 /// Register a video asset with the local video micro-server and return its localhost URL.
 #[frb(sync, serialize)]
 pub fn streaming_get_video_url(video_id: String, source_path: String) -> Result<String, String> {

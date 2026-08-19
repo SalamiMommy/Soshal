@@ -16,9 +16,10 @@ struct DeletionEventInputBorrow<'a> {
 use std::collections::HashSet;
 
 pub fn extract_deletion_ids(tags: &[Vec<String>]) -> Vec<String> {
-    let mut ids: Vec<String> = Vec::new();
-    let mut seen: HashSet<&str> = HashSet::new();
     let tag_count = tags.len().min(MAX_TAGS);
+    let initial_cap = tag_count.min(MAX_OUTPUT_IDS).min(64);
+    let mut ids: Vec<String> = Vec::with_capacity(initial_cap);
+    let mut seen: HashSet<&str> = HashSet::with_capacity(initial_cap);
     for tag in tags.iter().take(tag_count) {
         if ids.len() >= MAX_OUTPUT_IDS {
             break;
@@ -51,8 +52,9 @@ pub fn extract_deletion_ids_json(input: &str) -> String {
     if input.tags.len() > MAX_TAGS {
         return "[]".to_string();
     }
-    let mut ids: Vec<String> = Vec::new();
-    let mut seen: HashSet<&str> = HashSet::new();
+    let initial_cap = input.tags.len().min(MAX_OUTPUT_IDS).min(64);
+    let mut ids: Vec<String> = Vec::with_capacity(initial_cap);
+    let mut seen: HashSet<&str> = HashSet::with_capacity(initial_cap);
     for tag in input.tags.iter().take(MAX_TAGS) {
         if ids.len() >= MAX_OUTPUT_IDS {
             break;

@@ -87,12 +87,20 @@ impl SanitizedStyles {
             ("margin", &mut self.margin),
             ("borderRadius", &mut self.border_radius),
             ("borderWidth", &mut self.border_width),
-            ("offsetX", &mut self.offset_x),
-            ("offsetY", &mut self.offset_y),
         ] {
             if let Some(n) = v {
                 if !(0.0..=10_000.0).contains(n) {
                     return Err(format!("{name} out of range 0..=10000"));
+                }
+            }
+        }
+        for (name, v) in [
+            ("offsetX", &mut self.offset_x),
+            ("offsetY", &mut self.offset_y),
+        ] {
+            if let Some(n) = v {
+                if !(-2_000.0..=2_000.0).contains(n) {
+                    return Err(format!("{name} out of range -2000..=2000"));
                 }
             }
         }
@@ -517,9 +525,27 @@ fn validate_node(node: &CustomProfileNode) -> Result<(), String> {
             return Err(format!("position {name} out of range 0..=10000"));
         }
     }
+    for (name, v) in [
+        ("offsetX", node.styles.offset_x.unwrap_or(0.0)),
+        ("offsetY", node.styles.offset_y.unwrap_or(0.0)),
+    ] {
+        if !(-2_000.0..=2_000.0).contains(&v) {
+            return Err(format!("{name} out of range -2000..=2000"));
+        }
+    }
     let mut styles = node.styles.clone();
     styles.sanitize()?;
     validate_properties(&node.r#type, &node.properties)
+}
+
+fn check_url(name: &str, url: &str) -> Result<(), String> {
+    if url.len() > 4_000 {
+        return Err(format!("{name} exceeds 4000 chars"));
+    }
+    if !soshal_common_core::url::is_valid_media_url(url) {
+        return Err(format!("{name} is not an allowed public http(s) URL"));
+    }
+    Ok(())
 }
 
 fn validate_properties(node_type: &str, props: &Map<String, Value>) -> Result<(), String> {
@@ -540,6 +566,9 @@ fn validate_properties(node_type: &str, props: &Map<String, Value>) -> Result<()
                 if !(0.0..=100.0).contains(&b) {
                     return Err("backgroundBlur out of range 0..=100".to_string());
                 }
+            }
+            if let Some(u) = &p.background_image_url {
+                check_url("backgroundImageUrl", u)?;
             }
         }
         "text_block" => {
@@ -562,7 +591,7 @@ fn validate_properties(node_type: &str, props: &Map<String, Value>) -> Result<()
                 return Err("invalid layoutType".to_string());
             }
             for item in &p.items {
-                cap("item url", &item.url, 4_000)?;
+                check_url("item url", &item.url)?;
                 cap("item id", &item.id, 128)?;
                 if let Some(c) = &item.caption {
                     cap("caption", c, 500)?;
@@ -589,7 +618,7 @@ fn validate_properties(node_type: &str, props: &Map<String, Value>) -> Result<()
             }
             for t in &p.tracks {
                 cap("track title", &t.title, 200)?;
-                cap("track url", &t.url, 4_000)?;
+                check_url("track url", &t.url)?;
             }
         }
         "contact_card" => {
@@ -617,6 +646,13 @@ fn validate_properties(node_type: &str, props: &Map<String, Value>) -> Result<()
                 .map_err(|e| format!("tab_container properties: {e}"))?;
             if p.tabs.len() > 20 {
                 return Err("too many tabs (max 20)".to_string());
+            }
+            for tab in &p.tabs {
+                cap("tab id", &tab.id, 128)?;
+                cap("tab label", &tab.label, 200)?;
+                for item in &tab.items {
+                    check_url("tab item url", &item.url)?;
+                }
             }
         }
         "guestbook" => {
@@ -857,5 +893,64 @@ mod tests {
     fn container_accepts_empty_properties() {
         let json = r#"{"themeId":"default","nodes":[{"id":"a1","type":"container","styles":{},"position":{"row":0,"column":0,"order":0},"properties":{}}]}"#;
         assert!(parse_and_validate(json).is_ok());
+    }
+
+    #[test]
+    fn rejects_private_media_url() {
+        let bad = valid_profile().replace(
+            r##""text_block","styles":{"textColor":"#fff"},"position":{"row":0,"column":0,"order":0},"properties":{"content":"hello","title":"About"}"##,
+            r#" "media_gallery","styles":{},"position":{"row":0,"column":0,"order":0},"properties":{"items":[{"id":"m1","url":"http://127.0.0.1/x.jpg","type":"image"}],"layoutType":"grid"}"#,
+        );
+        assert!(parse_and_validate(&bad).is_err());
+    }
+
+    #[test]
+    fn rejects_ssrf_private_range_url() {
+        let bad = valid_profile().replace(
+            r##""text_block","styles":{"textColor":"#fff"},"position":{"row":0,"column":0,"order":0},"properties":{"content":"hello","title":"About"}"##,
+            r#" "media_gallery","styles":{},"position":{"row":0,"column":0,"order":0},"properties":{"items":[{"id":"m1","url":"http://192.168.1.1/x.jpg","type":"image"}],"layoutType":"grid"}"#,
+        );
+        assert!(parse_and_validate(&bad).is_err());
+    }
+
+    #[test]
+    fn accepts_public_media_url() {
+        let ok = valid_profile().replace(
+            r##""text_block","styles":{"textColor":"#fff"},"position":{"row":0,"column":0,"order":0},"properties":{"content":"hello","title":"About"}"##,
+            r#" "media_gallery","styles":{},"position":{"row":0,"column":0,"order":0},"properties":{"items":[{"id":"m1","url":"https://cdn.example.com/x.jpg","type":"image"}],"layoutType":"grid"}"#,
+        );
+        assert!(parse_and_validate(&ok).is_ok());
+    }
+
+    #[test]
+    fn rejects_non_http_url() {
+        let bad = valid_profile().replace(
+            r##""text_block","styles":{"textColor":"#fff"},"position":{"row":0,"column":0,"order":0},"properties":{"content":"hello","title":"About"}"##,
+            r#" "media_gallery","styles":{},"position":{"row":0,"column":0,"order":0},"properties":{"items":[{"id":"m1","url":"javascript:alert(1)","type":"image"}],"layoutType":"grid"}"#,
+        );
+        assert!(parse_and_validate(&bad).is_err());
+    }
+
+    #[test]
+    fn rejects_offset_out_of_bounds() {
+        let bad = valid_profile().replace(
+            r##""styles":{"textColor":"#fff"}"##,
+            r##""styles":{"offsetY":5000}"##,
+        );
+        assert!(parse_and_validate(&bad).is_err());
+        let ok = valid_profile().replace(
+            r##""styles":{"textColor":"#fff"}"##,
+            r##""styles":{"offsetY":-2000}"##,
+        );
+        assert!(parse_and_validate(&ok).is_ok());
+    }
+
+    #[test]
+    fn rejects_private_track_url() {
+        let bad = valid_profile().replace(
+            r##""text_block","styles":{"textColor":"#fff"},"position":{"row":0,"column":0,"order":0},"properties":{"content":"hello","title":"About"}"##,
+            r#" "music_player","styles":{},"position":{"row":0,"column":0,"order":0},"properties":{"tracks":[{"id":"t1","title":"x","artist":"y","url":"http://localhost/a.mp3"}]}"#,
+        );
+        assert!(parse_and_validate(&bad).is_err());
     }
 }

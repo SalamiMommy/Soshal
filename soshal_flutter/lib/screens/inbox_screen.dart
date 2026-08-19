@@ -983,11 +983,10 @@ class _InboxScreenState extends State<InboxScreen> {
       body: Column(
         children: [
           Expanded(
-            child: Consumer<MessagingService>(
-              builder: (context, messagingService, child) {
-                final messages =
-                    messagingService.conversations[widget.otherPubkey] ?? [];
-
+            child: Selector<MessagingService, List<DirectMessage>>(
+              selector: (_, svc) =>
+                  svc.conversations[widget.otherPubkey] ?? const [],
+              builder: (context, messages, child) {
                 if (messages.isEmpty) {
                   return const Center(child: Text('No messages yet'));
                 }

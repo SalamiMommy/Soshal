@@ -82,16 +82,27 @@ pub fn identicon_png(seed: &str) -> Vec<u8> {
     let fg_rgba = [fg[0], fg[1], fg[2], 255];
     let bg_rgba = [bg[0], bg[1], bg[2], 255];
 
+    // Precompute coordinate and border lookup tables once for SIZE (200) elements.
+    let mut col_cx = [0usize; SIZE as usize];
+    let mut col_in_cell = [false; SIZE as usize];
+    for (x, (cx_slot, in_cell_slot)) in col_cx.iter_mut().zip(col_in_cell.iter_mut()).enumerate() {
+        let x_u32 = x as u32;
+        *cx_slot = (x_u32 / CELL) as usize;
+        let rem = x_u32 % CELL;
+        *in_cell_slot = (BORDER..CELL - BORDER).contains(&rem);
+    }
+
     let mut raw_pixels = vec![0u8; (SIZE * SIZE * 4) as usize];
     for y in 0..SIZE {
         let cy = (y / CELL) as usize;
-        let in_cell_y = (y % CELL >= BORDER) && (y % CELL < CELL - BORDER);
+        let rem_y = y % CELL;
+        let in_cell_y = (BORDER..CELL - BORDER).contains(&rem_y);
         let row_offset = (y * SIZE * 4) as usize;
 
-        for x in 0..SIZE {
-            let cx = (x / CELL) as usize;
-            let in_cell_x = (x % CELL >= BORDER) && (x % CELL < CELL - BORDER);
-            let px_offset = row_offset + (x * 4) as usize;
+        for x in 0..SIZE as usize {
+            let in_cell_x = col_in_cell[x];
+            let cx = col_cx[x];
+            let px_offset = row_offset + (x * 4);
 
             let color = if in_cell_x && in_cell_y && grid_filled[cx][cy] {
                 fg_rgba

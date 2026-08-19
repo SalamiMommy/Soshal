@@ -234,12 +234,24 @@ pub fn extract_waveform_bytes(data: &[u8], bins: usize) -> Result<Vec<f32>, Stri
 /// Extract waveform peaks from a file on disk. `hint_ext` helps the prober
 /// when the container is ambiguous (e.g. ".m4a").
 pub fn extract_waveform_path(path: &str, bins: usize) -> Result<Vec<f32>, String> {
-    let data = std::fs::read(path).map_err(|e| format!("read {path}: {e}"))?;
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .map(str::to_lowercase);
-    let samples = decode_all(&data, ext.as_deref())?;
+    let mut hint = Hint::new();
+    if let Some(ref e) = ext {
+        hint.with_extension(e);
+    }
+    let file = std::fs::File::open(path).map_err(|e| format!("read {path}: {e}"))?;
+    let reader = std::io::BufReader::new(file);
+    let samples = match decode_reader(reader, &hint) {
+        Ok(s) => s,
+        Err(_) => {
+            // Fallback for raw Opus packets or unusual containers requiring full buffer scan
+            let data = std::fs::read(path).map_err(|e| format!("read {path}: {e}"))?;
+            decode_all(&data, ext.as_deref())?
+        }
+    };
     Ok(peaks(&samples, clamp_bins(bins)))
 }
 

@@ -1,7 +1,7 @@
 //! Zero-Knowledge State Rollup FFI Module
 
 use flutter_rust_bridge::frb;
-use soshal_sync_core::zk_rollup::{verify_zk_rollup_json, ZkCrdtRollup};
+use soshal_sync_core::zk_rollup::{verify_zk_rollup_json, CommitmentRollup};
 
 /// Verify a Zero-Knowledge STARK state rollup proof for feed threads
 #[frb(sync, serialize)]
@@ -12,7 +12,7 @@ pub fn zk_verify_rollup(rollup_json: String) -> Result<String, String> {
 /// Apply a verified ZK state rollup directly to the database cache
 #[frb(sync, serialize)]
 pub fn zk_apply_rollup(db_path: String, rollup_json: String) -> Result<bool, String> {
-    let rollup: ZkCrdtRollup = match serde_json::from_str(&rollup_json) {
+    let rollup: CommitmentRollup = match serde_json::from_str(&rollup_json) {
         Ok(r) => r,
         Err(e) => return Err(format!("Invalid ZK rollup JSON: {}", e)),
     };
@@ -31,13 +31,12 @@ pub fn zk_apply_rollup(db_path: String, rollup_json: String) -> Result<bool, Str
 mod tests {
     use super::*;
     use crate::ffi::db;
-    use soshal_sync_core::zk_rollup::ZkProofType;
 
     fn tmp_db_path(label: &str) -> String {
         db::tmp_db(label, "zk")
     }
 
-    fn valid_rollup(thread_id: &str, ops: u64) -> ZkCrdtRollup {
+    fn valid_rollup(thread_id: &str, ops: u64) -> CommitmentRollup {
         let genesis = "0000000000000000000000000000000000000000000000000000000000000000";
         let final_state = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
         let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
@@ -45,13 +44,12 @@ mod tests {
         ctx.update(genesis.as_bytes());
         ctx.update(final_state.as_bytes());
         ctx.update(&ops.to_le_bytes());
-        ZkCrdtRollup {
+        CommitmentRollup {
             thread_id: thread_id.to_string(),
             genesis_root: genesis.to_string(),
             final_state_root: final_state.to_string(),
             operation_count: ops,
-            proof_bytes_hex: hex::encode(ctx.finish()),
-            proof_type: ZkProofType::RiscZeroStark,
+            commitment_hex: hex::encode(ctx.finish()),
         }
     }
 
@@ -63,7 +61,7 @@ mod tests {
         assert_eq!(out["verified"], true);
 
         let mut tampered = valid_rollup("t2", 2);
-        tampered.proof_bytes_hex = hex::encode([0u8; 32]);
+        tampered.commitment_hex = hex::encode([0u8; 32]);
         let tampered_json = serde_json::to_string(&tampered).unwrap();
         let mismatch: serde_json::Value =
             serde_json::from_str(&zk_verify_rollup(tampered_json).unwrap()).unwrap();
@@ -90,7 +88,7 @@ mod tests {
         assert!(zk_apply_rollup(path.clone(), valid_json).unwrap());
 
         let mut tampered = valid_rollup("b", 1);
-        tampered.proof_bytes_hex = hex::encode([0u8; 32]);
+        tampered.commitment_hex = hex::encode([0u8; 32]);
         let tampered_json = serde_json::to_string(&tampered).unwrap();
         assert_eq!(
             zk_apply_rollup(path.clone(), tampered_json).unwrap_err(),

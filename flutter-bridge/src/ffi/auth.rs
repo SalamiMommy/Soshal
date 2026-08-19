@@ -17,7 +17,7 @@ use zeroize::{Zeroize, Zeroizing};
 pub fn auth_generate_keypair() -> Result<String, String> {
     let keys = generate_keys();
     let nsec = Zeroizing::new(keys.secret_key().to_secret_hex());
-    let pk = super::signer::signer_unlock((*nsec).clone())?;
+    let pk = super::signer::signer_unlock((*nsec).to_string())?;
     super::util::json_ok(KeyPairResult {
         public_key: pk,
         secret_key: nsec,
@@ -57,7 +57,7 @@ pub async fn auth_restore_from_mnemonic(
     passphrase.zeroize();
     let mut keys = res.map_err(super::util::to_err)?;
     let nsec = Zeroizing::new(keys.private_key_hex.clone());
-    let pk = super::signer::signer_unlock((*nsec).clone())?;
+    let pk = super::signer::signer_unlock((*nsec).to_string())?;
     keys.private_key_hex.zeroize();
     // Return only the public key; the signer now holds the unlocked identity.
     super::util::json_ok(KeyPairResult {

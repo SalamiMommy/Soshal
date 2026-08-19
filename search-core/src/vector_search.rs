@@ -8,6 +8,16 @@ pub struct VectorDocument {
     pub embedding: Vec<f32>,
 }
 
+impl VectorDocument {
+    pub fn new(id: String, embedding: Vec<f32>) -> Self {
+        Self { id, embedding }
+    }
+
+    pub fn compute_norm(&self) -> f32 {
+        embedding_norm(&self.embedding)
+    }
+}
+
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
@@ -35,33 +45,31 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
-fn embedding_norm(v: &[f32]) -> f32 {
+pub fn embedding_norm(v: &[f32]) -> f32 {
     v.iter().map(|x| x * x).sum()
 }
 
-fn cosine_similarity_with_norm(a: &[f32], norm_a: f32, b: &[f32]) -> f32 {
+pub fn cosine_similarity_with_norms(a: &[f32], norm_a: f32, b: &[f32], norm_b: f32) -> f32 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
     }
 
-    let mut dot = 0.0f32;
-    let mut norm_b = 0.0f32;
-
-    for (x, y) in a.iter().zip(b.iter()) {
-        dot += x * y;
-        norm_b += y * y;
-    }
-
     if norm_a <= 0.0 || norm_b <= 0.0 {
-        0.0
-    } else {
-        let sim = dot / (norm_a.sqrt() * norm_b.sqrt());
-        if sim.is_finite() {
-            sim.clamp(-1.0, 1.0)
-        } else {
-            0.0
-        }
+        return 0.0;
     }
+
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let sim = dot / (norm_a.sqrt() * norm_b.sqrt());
+    if sim.is_finite() {
+        sim.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+pub fn cosine_similarity_with_norm(a: &[f32], norm_a: f32, b: &[f32]) -> f32 {
+    let norm_b = embedding_norm(b);
+    cosine_similarity_with_norms(a, norm_a, b, norm_b)
 }
 
 pub fn rank_vector_documents(
@@ -74,9 +82,10 @@ pub fn rank_vector_documents(
         .iter()
         .enumerate()
         .map(|(idx, doc)| {
+            let doc_norm = doc.compute_norm();
             (
                 idx,
-                cosine_similarity_with_norm(query_embedding, query_norm, &doc.embedding),
+                cosine_similarity_with_norms(query_embedding, query_norm, &doc.embedding, doc_norm),
             )
         })
         .collect();

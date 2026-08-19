@@ -52,6 +52,9 @@ pub fn crypto_hkdf_expand(
     info: Vec<u8>,
     len: usize,
 ) -> Result<String, String> {
+    if len > 64 * 1024 {
+        return Err("len must be <= 65536".to_string()).into();
+    }
     let okm = hash::hkdf_sha256(&ikm, &salt, &info, len).map_err(super::util::to_err)?;
     Ok(hex::encode(okm)).into()
 }

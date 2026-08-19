@@ -22,6 +22,7 @@ use std::sync::{LazyLock, Mutex};
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
+use soshal_common_core::format::now_secs;
 use soshal_crypto_core::pqc_ratchet::{
     decrypt_ratchet, encrypt_ratchet, init_state, HeaderOutput, RatchetOutput,
 };
@@ -40,9 +41,16 @@ pub const MAX_LINK_FRAME: usize = 96 * 1024;
 /// 64 KiB, so 48 KiB keeps every frame inside the cap.
 pub const MAX_LINK_PAYLOAD: usize = 48 * 1024;
 
+/// Cap on in-memory ratchet sessions (bounds attacker-driven memory).
+pub const MAX_SESSIONS: usize = 256;
+/// Keygen budget per source peer per window (bounds PQC keygen CPU).
+const MAX_KEYGEN_PER_SOURCE: u32 = 4;
+const KEYGEN_WINDOW_SECS: u64 = 60;
+
 /// Per-peer ratchet session state kept in memory for the link lifetime.
 pub struct PqcLinkCrypto {
     states: Mutex<HashMap<String, RatchetOutput>>,
+    keygens: Mutex<HashMap<String, (u32, u64)>>, // peer -> (count, window start)
 }
 
 impl Default for PqcLinkCrypto {
@@ -55,7 +63,28 @@ impl PqcLinkCrypto {
     pub fn new() -> Self {
         Self {
             states: Mutex::new(HashMap::new()),
+            keygens: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn at_session_capacity(&self) -> bool {
+        self.states.lock().unwrap_or_else(|e| e.into_inner()).len() >= MAX_SESSIONS
+    }
+
+    /// Consumes one keygen budget slot for a source peer. Returns false when
+    /// the per-source budget in the current window is exhausted.
+    fn keygen_budget(&self, peer: &str) -> bool {
+        let now = now_secs() as u64;
+        let mut keygens = self.keygens.lock().unwrap_or_else(|e| e.into_inner());
+        let entry = keygens.entry(peer.to_string()).or_insert((0, now));
+        if now - entry.1 >= KEYGEN_WINDOW_SECS {
+            *entry = (0, now);
+        }
+        if entry.0 >= MAX_KEYGEN_PER_SOURCE {
+            return false;
+        }
+        entry.0 += 1;
+        true
     }
 
     fn get(&self, peer: &str) -> Result<RatchetOutput, String> {
@@ -120,6 +149,12 @@ impl PqcLinkCrypto {
         if self.has_session(state_key) {
             return Err("ratchet session already exists for peer".to_string());
         }
+        if self.at_session_capacity() {
+            return Err("ratchet session limit reached".to_string());
+        }
+        if !self.keygen_budget(state_key) {
+            return Err("handshake keygen rate limited".to_string());
+        }
         let (pk, sk) = hybrid_keygen().map_err(|e| format!("hybrid keygen failed: {e}"))?;
         let state = init_state(peer_pk, context, &sk, &pk);
         self.put(state_key, state);
@@ -140,6 +175,12 @@ impl PqcLinkCrypto {
         }
         if self.has_session(peer) {
             return Err("ratchet session already exists for peer".to_string());
+        }
+        if self.at_session_capacity() {
+            return Err("ratchet session limit reached".to_string());
+        }
+        if !self.keygen_budget(peer) {
+            return Err("handshake keygen rate limited".to_string());
         }
         let (pk, sk) = hybrid_keygen().map_err(|e| format!("hybrid keygen failed: {e}"))?;
         let state = init_state(peer_pk, context, &sk, &pk);
@@ -239,7 +280,10 @@ impl PqcLinkCrypto {
 
     /// Drops the session for a peer (link closed / pruned).
     pub fn remove(&self, peer: &str) {
-        self.states
+        let mut states = self.states.lock().unwrap_or_else(|e| e.into_inner());
+        states.remove(peer);
+        drop(states);
+        self.keygens
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(peer);

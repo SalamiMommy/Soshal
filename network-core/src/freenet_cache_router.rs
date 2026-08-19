@@ -97,26 +97,35 @@ pub fn process_freenet_cache_command(
                 }
             }
 
-            let app_dir = std::env::temp_dir().join("soshal_media_cache");
-            let cached_path = app_dir.join(format!("{}.bin", hash));
-            if cached_path.exists() {
-                if let Ok(file) = std::fs::File::open(&cached_path) {
-                    let total = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
-                    if *chunk_offset < total {
-                        let end = (chunk_offset + chunk_length).min(total);
-                        use std::io::{Read, Seek, SeekFrom};
-                        let mut file = file;
-                        let mut slice = vec![0u8; end.saturating_sub(*chunk_offset)];
-                        if file.seek(SeekFrom::Start(*chunk_offset as u64)).is_ok()
-                            && file.read_exact(&mut slice).is_ok()
-                        {
-                            let data_b64 = soshal_crypto_core::base64::base64_encode_bytes(&slice);
-                            return Some(FreenetP2PCommand::MediaBlobResponse {
-                                hash: hash.clone(),
-                                offset: *chunk_offset,
-                                total_size: total,
-                                data_b64,
-                            });
+            // Legacy whole-file cache fallback, guarded like the CAS path:
+            // bounded chunk, validated 64-hex content hash, checked range,
+            // read capped at MAX_BLOB_RESPONSE.
+            let valid_hash = hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit());
+            if *chunk_length > 0 && *chunk_length <= MAX_BLOB_RESPONSE && valid_hash {
+                let app_dir = std::env::temp_dir().join("soshal_media_cache");
+                let cached_path = app_dir.join(format!("{}.bin", hash));
+                if cached_path.exists() {
+                    if let Ok(file) = std::fs::File::open(&cached_path) {
+                        let total = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+                        if *chunk_offset < total {
+                            if let Some(end) = chunk_offset.checked_add(*chunk_length) {
+                                let end = end.min(total);
+                                use std::io::{Read, Seek, SeekFrom};
+                                let mut file = file;
+                                let mut slice = vec![0u8; end.saturating_sub(*chunk_offset)];
+                                if file.seek(SeekFrom::Start(*chunk_offset as u64)).is_ok()
+                                    && file.read_exact(&mut slice).is_ok()
+                                {
+                                    let data_b64 =
+                                        soshal_crypto_core::base64::base64_encode_bytes(&slice);
+                                    return Some(FreenetP2PCommand::MediaBlobResponse {
+                                        hash: hash.clone(),
+                                        offset: *chunk_offset,
+                                        total_size: total,
+                                        data_b64,
+                                    });
+                                }
+                            }
                         }
                     }
                 }

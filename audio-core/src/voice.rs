@@ -10,6 +10,14 @@ use crate::{OPUS_FRAME_SIZE, OPUS_SAMPLE_RATE};
 /// Max single Opus packet size; bounds the length prefix.
 const MAX_PACKET_LEN: usize = 4096;
 
+/// Max framed input accepted by `decode_packets`; matches the 4 MiB
+/// decompress-cap convention used elsewhere (content-core).
+const MAX_DECODE_INPUT_BYTES: usize = 4 * 1024 * 1024;
+
+/// Max decoded f32 samples emitted by `decode_packets`; matches the 64 MiB
+/// decode-alloc cap convention used elsewhere (media-core).
+const MAX_DECODE_OUTPUT_SAMPLES: usize = 64 * 1024 * 1024;
+
 fn new_decoder() -> Result<Decoder, String> {
     Decoder::new(SampleRate::Hz48000, Channels::Mono).map_err(|e| format!("opus decoder: {e}"))
 }
@@ -25,9 +33,15 @@ fn new_encoder() -> Result<Encoder, String> {
 
 /// Decode a length-prefixed Opus stream (after the magic header) to mono f32.
 pub(crate) fn decode_packets(data: &[u8]) -> Result<crate::MonoF32, String> {
+    if data.len() > MAX_DECODE_INPUT_BYTES {
+        return Err(format!(
+            "opus stream too large: {} bytes (max {MAX_DECODE_INPUT_BYTES})",
+            data.len()
+        ));
+    }
     let mut dec = new_decoder()?;
     let est_frames = (data.len() / 32).max(1);
-    let mut out = Vec::with_capacity(est_frames * OPUS_FRAME_SIZE);
+    let mut out = Vec::with_capacity((est_frames * OPUS_FRAME_SIZE).min(MAX_DECODE_OUTPUT_SAMPLES));
     let mut pos = 0usize;
     let mut pcm = vec![0i16; OPUS_FRAME_SIZE];
     while pos < data.len() {
@@ -44,6 +58,11 @@ pub(crate) fn decode_packets(data: &[u8]) -> Result<crate::MonoF32, String> {
         let n = dec
             .decode(Some(packet), &mut pcm[..], false)
             .map_err(|e| format!("opus decode: {e}"))?;
+        if out.len() + n > MAX_DECODE_OUTPUT_SAMPLES {
+            return Err(format!(
+                "opus stream decodes beyond {MAX_DECODE_OUTPUT_SAMPLES} samples"
+            ));
+        }
         out.extend(pcm[..n].iter().map(|s| *s as f32 / 32768.0));
     }
     Ok(out)

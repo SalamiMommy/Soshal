@@ -8,11 +8,14 @@ use crate::envelope::MAX_ENVELOPE_BYTES;
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Inbound queue cap; oldest frames dropped past it.
 const RECEIVED_CAP: usize = 4096;
+/// Cap on concurrent inbound reader threads; connections beyond it are
+/// dropped (bounds per-connection thread/fd DoS).
+const MAX_INBOUND_STREAMS: usize = 64;
 
 pub struct I2pBackend {
     session: Option<Arc<soshal_network_core::i2p_sam::I2PSessionManager>>,
@@ -76,12 +79,22 @@ impl MeshBackend for I2pBackend {
         let running = self.running.clone();
         let received = self.received.clone();
         let session_thread = session.clone();
+        let active_inbound = Arc::new(AtomicUsize::new(0));
         self.listener = Some(std::thread::spawn(move || {
             while running.load(Ordering::Relaxed) {
                 match session_thread.accept_connection() {
                     Ok(stream) => {
+                        if active_inbound.load(Ordering::Relaxed) >= MAX_INBOUND_STREAMS {
+                            drop(stream); // reject beyond cap
+                            continue;
+                        }
+                        active_inbound.fetch_add(1, Ordering::Relaxed);
                         let received = received.clone();
-                        std::thread::spawn(move || reader_loop(stream, received));
+                        let active_inbound = active_inbound.clone();
+                        std::thread::spawn(move || {
+                            reader_loop(stream, received);
+                            active_inbound.fetch_sub(1, Ordering::Relaxed);
+                        });
                     }
                     Err(_) => std::thread::sleep(std::time::Duration::from_millis(500)),
                 }

@@ -1,7 +1,7 @@
 use aead::{Aead, KeyInit};
 use base64::Engine;
 use chacha20poly1305::ChaCha20Poly1305;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 const KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 12;
@@ -12,7 +12,8 @@ pub fn kem_seal(
     domain: &[u8],
 ) -> Result<(String, String, String), String> {
     let (ct_hex, ss_hex) = crate::kem::kem_encapsulate(peer_pk_hex)?;
-    let ss = hex::decode(&ss_hex).map_err(|_| "bad ss hex".to_string())?;
+    let ss_hex = Zeroizing::new(ss_hex);
+    let ss = Zeroizing::new(hex::decode(ss_hex.as_str()).map_err(|_| "bad ss hex".to_string())?);
     let derived = hkdf_derive(&ss, domain)?;
     let (encrypted, nonce) = aead_encrypt(payload, &derived.enc_key, &derived.nonce)?;
     Ok((ct_hex, nonce, encrypted))
@@ -26,7 +27,8 @@ pub fn kem_unseal(
     domain: &[u8],
 ) -> Result<Vec<u8>, String> {
     let ss_hex = crate::kem::kem_decapsulate(ct_hex, sk_hex)?;
-    let ss = hex::decode(&ss_hex).map_err(|_| "bad ss hex".to_string())?;
+    let ss_hex = Zeroizing::new(ss_hex);
+    let ss = Zeroizing::new(hex::decode(ss_hex.as_str()).map_err(|_| "bad ss hex".to_string())?);
     let derived = hkdf_derive(&ss, domain)?;
     let nonce_bytes = hex::decode(nonce_hex).map_err(|_| "bad nonce hex".to_string())?;
     if nonce_bytes.len() != NONCE_LEN {
@@ -52,7 +54,8 @@ pub fn hybrid_seal(
     let mut pk_arr = [0u8; crate::hybrid::HYBRID_PK_LEN];
     pk_arr.copy_from_slice(&pk_bytes);
     let (ct, ss) = crate::hybrid::hybrid_encapsulate_bytes(&pk_arr, domain)?;
-    let derived = hkdf_derive(&ss, domain)?;
+    let ss = Zeroizing::new(ss);
+    let derived = hkdf_derive(ss.as_slice(), domain)?;
     let (encrypted, nonce) = aead_encrypt(payload, &derived.enc_key, &derived.nonce)?;
     Ok((hex::encode(ct), nonce, encrypted))
 }
@@ -77,7 +80,8 @@ pub fn hybrid_unseal(
     ct_arr.copy_from_slice(&ct_bytes);
     sk_arr.copy_from_slice(&sk_bytes);
     let ss = crate::hybrid::hybrid_decapsulate_bytes(&ct_arr, &sk_arr, domain)?;
-    let derived = hkdf_derive(&ss, domain)?;
+    let ss = Zeroizing::new(ss);
+    let derived = hkdf_derive(ss.as_slice(), domain)?;
     let nonce_bytes = hex::decode(nonce_hex).map_err(|_| "bad nonce hex".to_string())?;
     if nonce_bytes.len() != NONCE_LEN {
         return Err("bad nonce len".to_string());

@@ -77,19 +77,17 @@ pub fn session_save(db_path: String, session_data: String) -> Result<bool, Strin
         .join("session.json");
 
     match serde_json::from_str::<SessionData>(&session_data) {
-        Ok(session) => {
-            match std::fs::write(
-                &session_path,
-                serde_json::to_string_pretty(&session).unwrap(),
-            ) {
+        Ok(session) => match serde_json::to_string_pretty(&session) {
+            Ok(json) => match std::fs::write(&session_path, json) {
                 Ok(_) => {
                     let mut session_lock = lock_session()?;
                     *session_lock = Some(session);
                     Ok(true).into()
                 }
                 Err(e) => Err(format!("Failed to write session: {}", e)).into(),
-            }
-        }
+            },
+            Err(e) => Err(format!("Failed to serialize session: {}", e)).into(),
+        },
         Err(e) => Err(format!("Invalid session JSON: {}", e)).into(),
     }
 }

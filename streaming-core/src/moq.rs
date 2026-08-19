@@ -41,7 +41,7 @@ pub fn encode_group_stream_to_writer<W: Write>(
     push_u64(out, group.group_sequence)?;
     push_u32(out, group.objects.len() as u32)?;
     for obj in &group.objects {
-        // Pack the 33-byte per-object header in one write:
+        // Pack the 33-byte per-object header:
         //   [u32 track_id][u64 group_seq][u64 obj_seq][u8 track_type][u64 timestamp_ms][u32 payload_len]
         let mut hdr = [0u8; 33];
         hdr[0..4].copy_from_slice(&obj.header.track_id.to_le_bytes());
@@ -52,8 +52,10 @@ pub fn encode_group_stream_to_writer<W: Write>(
         hdr[29..33].copy_from_slice(&(obj.payload.len() as u32).to_le_bytes());
         out.write_all(&hdr)
             .map_err(|e| format!("moq write failed: {e}"))?;
-        out.write_all(&obj.payload)
-            .map_err(|e| format!("moq write failed: {e}"))?;
+        if !obj.payload.is_empty() {
+            out.write_all(&obj.payload)
+                .map_err(|e| format!("moq write failed: {e}"))?;
+        }
     }
     Ok(())
 }

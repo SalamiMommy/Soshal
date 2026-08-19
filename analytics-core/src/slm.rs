@@ -44,47 +44,12 @@ impl BurnSlmEngine {
             return Err("text must not be empty".to_string());
         }
 
-        // Compute normalized float32 feature vector (MiniLM format)
-        let mut vector = vec![0.0f32; 384];
-        let bytes = text.as_bytes();
-        for (i, val) in vector.iter_mut().enumerate() {
-            let b = bytes.get(i % bytes.len()).copied().unwrap_or(0) as f32;
-            *val = ((b * 31.0 + i as f32) % 100.0) / 100.0;
-        }
-
-        Ok(SlmEmbedding {
-            vector,
-            dimension: 384,
-        })
+        Err("SLM embedding unavailable (roadmap)".to_string())
     }
 
     /// Classify post text for automated spam detection & sentiment analysis locally.
-    pub fn classify_post(&self, text: &str) -> Result<SlmClassification, String> {
-        let text_lower = text.to_lowercase();
-        let is_spam =
-            text_lower.contains("claim free crypto") || text_lower.contains("win $1000000");
-        let is_positive = text_lower.contains("awesome")
-            || text_lower.contains("great")
-            || text_lower.contains("love");
-
-        Ok(SlmClassification {
-            label: if is_spam {
-                "spam".to_string()
-            } else if is_positive {
-                "positive".to_string()
-            } else {
-                "neutral".to_string()
-            },
-            confidence: 0.92,
-            is_spam,
-            sentiment_score: if is_positive {
-                0.85
-            } else if is_spam {
-                -0.90
-            } else {
-                0.0
-            },
-        })
+    pub fn classify_post(&self, _text: &str) -> Result<SlmClassification, String> {
+        Err("SLM text classification unavailable (roadmap)".to_string())
     }
 }
 
@@ -98,12 +63,12 @@ mod tests {
 
         let embedding = engine
             .generate_embedding("Soshal P2P mesh network")
-            .unwrap();
-        assert_eq!(embedding.dimension, 384);
-        assert_eq!(embedding.vector.len(), 384);
+            .unwrap_err();
+        assert!(embedding.contains("roadmap"));
 
-        let classification = engine.classify_post("claim free crypto now!!!").unwrap();
-        assert!(classification.is_spam);
-        assert_eq!(classification.label, "spam");
+        let classification = engine
+            .classify_post("claim free crypto now!!!")
+            .unwrap_err();
+        assert!(classification.contains("roadmap"));
     }
 }

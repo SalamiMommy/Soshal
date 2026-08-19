@@ -71,60 +71,84 @@ mod android {
         }
     }
 
-    /// Android SDK level (Build.VERSION.SDK_INT). Codec features gate on 26.
-    pub fn sdk_int() -> Result<i32, String> {
-        let mut env = attach()?;
-        let class = env
-            .find_class("android/os/Build$VERSION")
-            .map_err(|e| e.to_string())?;
-        let value = env
-            .get_static_field(class, "SDK_INT", "I")
-            .map_err(|e| e.to_string())?;
-        match value {
-            jni::objects::JValueOwned::Int(i) => Ok(i),
-            _ => Err("SDK_INT not readable".to_string()),
+    /// Local-frame error: carries our own messages and converts JNI errors,
+    /// so `with_local_frame` closures can propagate either with `?`.
+    #[derive(Debug)]
+    struct JniErr(String);
+
+    impl std::fmt::Display for JniErr {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(&self.0)
         }
     }
 
-    fn activity<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, String> {
-        let class = env
-            .find_class(PLATFORM_BRIDGE_CLASS)
-            .map_err(|e| e.to_string())?;
-        let value = env
-            .get_static_field(class, MAIN_ACTIVITY_FIELD, MAIN_ACTIVITY_SIG)
-            .map_err(|e| e.to_string())?;
+    impl std::error::Error for JniErr {}
+
+    impl From<jni::errors::Error> for JniErr {
+        fn from(e: jni::errors::Error) -> Self {
+            JniErr(e.to_string())
+        }
+    }
+
+    /// Android SDK level (Build.VERSION.SDK_INT). Codec features gate on 26.
+    pub fn sdk_int() -> Result<i32, String> {
+        let mut env = attach()?;
+        env.with_local_frame(4, |env| -> Result<i32, JniErr> {
+            let class = env.find_class("android/os/Build$VERSION")?;
+            let value = env.get_static_field(class, "SDK_INT", "I")?;
+            match value {
+                jni::objects::JValueOwned::Int(i) => Ok(i),
+                _ => Err(JniErr("SDK_INT not readable".to_string())),
+            }
+        })
+        .map_err(|e| e.0)
+    }
+
+    fn activity<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, JniErr> {
+        let class = env.find_class(PLATFORM_BRIDGE_CLASS)?;
+        let value = env.get_static_field(class, MAIN_ACTIVITY_FIELD, MAIN_ACTIVITY_SIG)?;
         match value {
             jni::objects::JValueOwned::Object(obj) if !obj.is_null() => Ok(obj),
-            _ => Err("PlatformBridge.activity not set".to_string()),
+            _ => Err(JniErr("PlatformBridge.activity not set".to_string())),
         }
     }
 
     /// Absolute app files directory, from the Activity's Context.
     pub fn files_dir() -> Result<String, String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let file = env
-            .call_method(&activity, "getFilesDir", "()Ljava/io/File;", &[])
-            .map_err(|e| e.to_string())?;
-        let file_obj = file.l().map_err(|e| e.to_string())?;
-        let path = env
-            .call_method(&file_obj, "getAbsolutePath", "()Ljava/lang/String;", &[])
-            .map_err(|e| e.to_string())?;
-        let path_obj = path.l().map_err(|e| e.to_string())?;
-        let jstr = JString::from(path_obj);
-        let s = env.get_string(&jstr).map_err(|e| e.to_string())?;
-        Ok(s.into())
+        env.with_local_frame(8, |env| -> Result<String, JniErr> {
+            let activity = activity(env)?;
+            let file = env.call_method(&activity, "getFilesDir", "()Ljava/io/File;", &[])?;
+            let file_obj = file.l()?;
+            let path =
+                env.call_method(&file_obj, "getAbsolutePath", "()Ljava/lang/String;", &[])?;
+            let path_obj = path.l()?;
+            let jstr = JString::from(path_obj);
+            let s = env.get_string(&jstr)?;
+            Ok(s.into())
+        })
+        .map_err(|e| e.0)
     }
 
     /// Java `LiveRecorder` singleton (Kotlin object) — DVR muxer for live
     /// broadcasts. MediaMuxer has no NDK API, so the muxer stays Kotlin and
     /// the Rust codec drains call into it via JNI.
     pub fn live_recorder_start() -> Result<String, String> {
-        l_string(live_recorder_call("start", "()Ljava/lang/String;", &[])?)
+        let mut env = attach()?;
+        env.with_local_frame(8, |env| -> Result<String, JniErr> {
+            let value = live_recorder_call(env, "start", "()Ljava/lang/String;", &[])?;
+            l_string(env, value)
+        })
+        .map_err(|e| e.0)
     }
 
     pub fn live_recorder_stop() -> Result<String, String> {
-        l_string(live_recorder_call("stop", "()Ljava/lang/String;", &[])?)
+        let mut env = attach()?;
+        env.with_local_frame(8, |env| -> Result<String, JniErr> {
+            let value = live_recorder_call(env, "stop", "()Ljava/lang/String;", &[])?;
+            l_string(env, value)
+        })
+        .map_err(|e| e.0)
     }
 
     pub fn live_recorder_write_video(
@@ -134,70 +158,80 @@ mod android {
         width: i32,
         height: i32,
     ) -> Result<(), String> {
-        live_recorder_call(
-            "writeVideo",
-            "([BZZII)V",
-            &[
-                jni::objects::JValue::Object(&jbytes(nal)),
-                jni::objects::JValue::Bool(is_key as u8),
-                jni::objects::JValue::Bool(is_config as u8),
-                jni::objects::JValue::Int(width),
-                jni::objects::JValue::Int(height),
-            ],
-        )?;
-        Ok(())
+        let mut env = attach()?;
+        env.with_local_frame(16, |env| -> Result<(), JniErr> {
+            let nal_j = jbytes(env, nal)?;
+            live_recorder_call(
+                env,
+                "writeVideo",
+                "([BZZII)V",
+                &[
+                    jni::objects::JValue::Object(nal_j.as_ref()),
+                    jni::objects::JValue::Bool(is_key as u8),
+                    jni::objects::JValue::Bool(is_config as u8),
+                    jni::objects::JValue::Int(width),
+                    jni::objects::JValue::Int(height),
+                ],
+            )?;
+            Ok(())
+        })
+        .map_err(|e| e.0)
     }
 
     pub fn live_recorder_write_audio(blob: &[u8], is_config: bool) -> Result<(), String> {
-        live_recorder_call(
-            "writeAudio",
-            "([BZ)V",
-            &[
-                jni::objects::JValue::Object(&jbytes(blob)),
-                jni::objects::JValue::Bool(is_config as u8),
-            ],
-        )?;
-        Ok(())
+        let mut env = attach()?;
+        env.with_local_frame(16, |env| -> Result<(), JniErr> {
+            let blob_j = jbytes(env, blob)?;
+            live_recorder_call(
+                env,
+                "writeAudio",
+                "([BZ)V",
+                &[
+                    jni::objects::JValue::Object(blob_j.as_ref()),
+                    jni::objects::JValue::Bool(is_config as u8),
+                ],
+            )?;
+            Ok(())
+        })
+        .map_err(|e| e.0)
     }
 
-    fn jbytes(data: &[u8]) -> jni::objects::JByteArray<'_> {
-        // attached env used below via live_recorder_call; re-attach here
-        let env = attach().expect("jvm attached");
-        env.byte_array_from_slice(data).expect("byte array")
+    fn jbytes<'local>(
+        env: &mut JNIEnv<'local>,
+        data: &[u8],
+    ) -> Result<jni::objects::JByteArray<'local>, JniErr> {
+        Ok(env.byte_array_from_slice(data)?)
     }
 
-    fn live_recorder_call(
+    fn live_recorder_call<'local>(
+        env: &mut JNIEnv<'local>,
         method: &str,
         sig: &str,
         args: &[jni::objects::JValue<'_, '_>],
-    ) -> Result<jni::objects::JValueOwned<'static>, String> {
-        let mut env = attach()?;
-        let class = env
-            .find_class("com/example/soshal_flutter/LiveRecorder")
-            .map_err(|e| e.to_string())?;
-        let instance = env
-            .get_static_field(
-                class,
-                "INSTANCE",
-                "Lcom/example/soshal_flutter/LiveRecorder;",
-            )
-            .map_err(|e| e.to_string())?;
+    ) -> Result<jni::objects::JValueOwned<'local>, JniErr> {
+        let class = env.find_class("com/example/soshal_flutter/LiveRecorder")?;
+        let instance = env.get_static_field(
+            class,
+            "INSTANCE",
+            "Lcom/example/soshal_flutter/LiveRecorder;",
+        )?;
         let obj = match instance {
             jni::objects::JValueOwned::Object(o) if !o.is_null() => o,
-            _ => return Err("LiveRecorder.INSTANCE not set".to_string()),
+            _ => return Err(JniErr("LiveRecorder.INSTANCE not set".to_string())),
         };
-        env.call_method(&obj, method, sig, args)
-            .map_err(|e| e.to_string())
+        Ok(env.call_method(&obj, method, sig, args)?)
     }
 
-    fn l_string(value: jni::objects::JValueOwned<'_>) -> Result<String, String> {
-        let mut env = attach()?;
-        let obj = value.l().map_err(|e| e.to_string())?;
+    fn l_string<'local>(
+        env: &mut JNIEnv<'local>,
+        value: jni::objects::JValueOwned<'local>,
+    ) -> Result<String, JniErr> {
+        let obj = value.l()?;
         if obj.is_null() {
-            return Err("null result".to_string());
+            return Err(JniErr("null result".to_string()));
         }
         let jstr = jni::objects::JString::from(obj);
-        let s = env.get_string(&jstr).map_err(|e| e.to_string())?;
+        let s = env.get_string(&jstr)?;
         Ok(s.into())
     }
 
@@ -207,72 +241,73 @@ mod android {
     /// Runtime permission state via Activity.checkSelfPermission (API 23+).
     pub fn permission_granted(name: &str) -> Result<bool, String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let name_j = env.new_string(name).map_err(|e| e.to_string())?;
-        let value = env
-            .call_method(
+        env.with_local_frame(8, |env| -> Result<bool, JniErr> {
+            let activity = activity(env)?;
+            let name_j = env.new_string(name)?;
+            let value = env.call_method(
                 &activity,
                 "checkSelfPermission",
                 "(Ljava/lang/String;)I",
                 &[jni::objects::JValue::Object(&name_j)],
-            )
-            .map_err(|e| e.to_string())?;
-        match value {
-            jni::objects::JValueOwned::Int(i) => Ok(i == PERMISSION_GRANTED),
-            _ => Err("checkSelfPermission unreadable".to_string()),
-        }
+            )?;
+            match value {
+                jni::objects::JValueOwned::Int(i) => Ok(i == PERMISSION_GRANTED),
+                _ => Err(JniErr("checkSelfPermission unreadable".to_string())),
+            }
+        })
+        .map_err(|e| e.0)
     }
 
     /// Fire a runtime permission dialog (Activity.requestPermissions).
     pub fn request_permissions(names: &[&str]) -> Result<(), String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let string_class = env
-            .find_class("java/lang/String")
-            .map_err(|e| e.to_string())?;
-        let array = env
-            .new_object_array(
+        env.with_local_frame(16, |env| -> Result<(), JniErr> {
+            let activity = activity(env)?;
+            let string_class = env.find_class("java/lang/String")?;
+            let array = env.new_object_array(
                 names.len() as i32,
                 &string_class,
                 &jni::objects::JObject::null(),
-            )
-            .map_err(|e| e.to_string())?;
-        for (i, n) in names.iter().enumerate() {
-            let s = env.new_string(*n).map_err(|e| e.to_string())?;
-            env.set_object_array_element(&array, i as i32, &s)
-                .map_err(|e| e.to_string())?;
-        }
-        env.call_method(
-            &activity,
-            "requestPermissions",
-            "([Ljava/lang/String;I)V",
-            &[
-                jni::objects::JValue::Object(&array),
-                jni::objects::JValue::Int(PERMISSION_REQUEST_CODE),
-            ],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
+            )?;
+            for (i, n) in names.iter().enumerate() {
+                let s = env.new_string(*n)?;
+                env.set_object_array_element(&array, i as i32, &s)?;
+            }
+            env.call_method(
+                &activity,
+                "requestPermissions",
+                "([Ljava/lang/String;I)V",
+                &[
+                    jni::objects::JValue::Object(array.as_ref()),
+                    jni::objects::JValue::Int(PERMISSION_REQUEST_CODE),
+                ],
+            )?;
+            Ok(())
+        })
+        .map_err(|e| e.0)
     }
 
     /// False for a *denied* permission when the user chose "don't ask again"
     /// (Activity.shouldShowRequestPermissionRationale, API 23+).
     pub fn should_show_rationale(name: &str) -> Result<bool, String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let name_j = env.new_string(name).map_err(|e| e.to_string())?;
-        let value = env
-            .call_method(
+        env.with_local_frame(8, |env| -> Result<bool, JniErr> {
+            let activity = activity(env)?;
+            let name_j = env.new_string(name)?;
+            let value = env.call_method(
                 &activity,
                 "shouldShowRequestPermissionRationale",
                 "(Ljava/lang/String;)Z",
                 &[jni::objects::JValue::Object(&name_j)],
-            )
-            .map_err(|e| e.to_string())?;
-        match value {
-            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
-            _ => Err("shouldShowRequestPermissionRationale unreadable".to_string()),
-        }
+            )?;
+            match value {
+                jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+                _ => Err(JniErr(
+                    "shouldShowRequestPermissionRationale unreadable".to_string(),
+                )),
+            }
+        })
+        .map_err(|e| e.0)
     }
 
     const DAEMON_SERVICE_CLASS: &str = "com/example/soshal_flutter/DaemonForegroundService";
@@ -281,74 +316,75 @@ mod android {
     /// i2pd/freenet/rnsd child processes it spawned — alive while
     /// backgrounded).
     pub fn daemon_service_start() -> Result<bool, String> {
-        daemon_service_call("start", "(Landroid/content/Context;)Z", &[])
+        let mut env = attach()?;
+        env.with_local_frame(8, |env| -> Result<bool, JniErr> {
+            daemon_service_call(env, "start", "(Landroid/content/Context;)Z", &[])
+        })
+        .map_err(|e| e.0)
     }
 
     /// Stop the daemon foreground service.
     pub fn daemon_service_stop() -> Result<bool, String> {
-        daemon_service_call("stop", "(Landroid/content/Context;)Z", &[])
+        let mut env = attach()?;
+        env.with_local_frame(8, |env| -> Result<bool, JniErr> {
+            daemon_service_call(env, "stop", "(Landroid/content/Context;)Z", &[])
+        })
+        .map_err(|e| e.0)
     }
 
     /// Whether the daemon foreground service is currently started.
     pub fn daemon_service_running() -> Result<bool, String> {
         let mut env = attach()?;
-        let class = env
-            .find_class(DAEMON_SERVICE_CLASS)
-            .map_err(|e| e.to_string())?;
-        let value = env
-            .get_static_field(class, "running", "Z")
-            .map_err(|e| e.to_string())?;
-        match value {
-            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
-            _ => Err("daemon service running unreadable".to_string()),
-        }
+        env.with_local_frame(8, |env| -> Result<bool, JniErr> {
+            let class = env.find_class(DAEMON_SERVICE_CLASS)?;
+            let value = env.get_static_field(class, "running", "Z")?;
+            match value {
+                jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+                _ => Err(JniErr("daemon service running unreadable".to_string())),
+            }
+        })
+        .map_err(|e| e.0)
     }
 
-    fn daemon_service_call(
+    fn daemon_service_call<'local>(
+        env: &mut JNIEnv<'local>,
         method: &str,
         sig: &str,
         args: &[jni::objects::JValue<'_, '_>],
-    ) -> Result<bool, String> {
-        let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let class = env
-            .find_class(DAEMON_SERVICE_CLASS)
-            .map_err(|e| e.to_string())?;
-        let instance = env
-            .get_static_field(
-                class,
-                "INSTANCE",
-                "Lcom/example/soshal_flutter/DaemonForegroundService;",
-            )
-            .map_err(|e| e.to_string())?;
+    ) -> Result<bool, JniErr> {
+        let activity = activity(env)?;
+        let class = env.find_class(DAEMON_SERVICE_CLASS)?;
+        let instance = env.get_static_field(
+            class,
+            "INSTANCE",
+            "Lcom/example/soshal_flutter/DaemonForegroundService;",
+        )?;
         let obj = match instance {
             jni::objects::JValueOwned::Object(o) if !o.is_null() => o,
-            _ => return Err("DaemonForegroundService.INSTANCE not set".to_string()),
+            _ => {
+                return Err(JniErr(
+                    "DaemonForegroundService.INSTANCE not set".to_string(),
+                ))
+            }
         };
         let mut call_args = Vec::with_capacity(args.len() + 1);
         call_args.push(jni::objects::JValue::Object(&activity));
         call_args.extend_from_slice(args);
-        match env
-            .call_method(&obj, method, sig, &call_args)
-            .map_err(|e| e.to_string())?
-        {
+        match env.call_method(&obj, method, sig, &call_args)? {
             jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
-            _ => Err(format!("daemon service {method} unreadable")),
+            _ => Err(JniErr(format!("daemon service {method} unreadable"))),
         }
     }
 
     const RNSD_RUNNER_CLASS: &str = "com/example/soshal_flutter/RnsdRunner";
 
-    fn rnsd_runner<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, String> {
-        let class = env
-            .find_class(RNSD_RUNNER_CLASS)
-            .map_err(|e| e.to_string())?;
-        let instance = env
-            .get_static_field(class, "INSTANCE", "Lcom/example/soshal_flutter/RnsdRunner;")
-            .map_err(|e| e.to_string())?;
+    fn rnsd_runner<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, JniErr> {
+        let class = env.find_class(RNSD_RUNNER_CLASS)?;
+        let instance =
+            env.get_static_field(class, "INSTANCE", "Lcom/example/soshal_flutter/RnsdRunner;")?;
         match instance {
             jni::objects::JValueOwned::Object(o) if !o.is_null() => Ok(o),
-            _ => Err("RnsdRunner.INSTANCE not set".to_string()),
+            _ => Err(JniErr("RnsdRunner.INSTANCE not set".to_string())),
         }
     }
 
@@ -356,11 +392,11 @@ mod android {
     /// `config_dir` receives RNS's auto-generated config + identities.
     pub fn rnsd_start(config_dir: &str) -> Result<bool, String> {
         let mut env = attach()?;
-        let runner = rnsd_runner(&mut env)?;
-        let activity = activity(&mut env)?;
-        let dir_j = env.new_string(config_dir).map_err(|e| e.to_string())?;
-        match env
-            .call_method(
+        env.with_local_frame(8, |env| -> Result<bool, JniErr> {
+            let runner = rnsd_runner(env)?;
+            let activity = activity(env)?;
+            let dir_j = env.new_string(config_dir)?;
+            match env.call_method(
                 &runner,
                 "start",
                 "(Landroid/content/Context;Ljava/lang/String;)Z",
@@ -368,214 +404,192 @@ mod android {
                     jni::objects::JValue::Object(&activity),
                     jni::objects::JValue::Object(&dir_j),
                 ],
-            )
-            .map_err(|e| e.to_string())?
-        {
-            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
-            _ => Err("rnsd start unreadable".to_string()),
-        }
+            )? {
+                jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+                _ => Err(JniErr("rnsd start unreadable".to_string())),
+            }
+        })
+        .map_err(|e| e.0)
     }
 
     /// Stop the Reticulum daemon.
     pub fn rnsd_stop() -> Result<bool, String> {
         let mut env = attach()?;
-        let runner = rnsd_runner(&mut env)?;
-        let activity = activity(&mut env)?;
-        match env
-            .call_method(
+        env.with_local_frame(8, |env| -> Result<bool, JniErr> {
+            let runner = rnsd_runner(env)?;
+            let activity = activity(env)?;
+            match env.call_method(
                 &runner,
                 "stop",
                 "(Landroid/content/Context;)Z",
                 &[jni::objects::JValue::Object(&activity)],
-            )
-            .map_err(|e| e.to_string())?
-        {
-            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
-            _ => Err("rnsd stop unreadable".to_string()),
-        }
+            )? {
+                jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+                _ => Err(JniErr("rnsd stop unreadable".to_string())),
+            }
+        })
+        .map_err(|e| e.0)
     }
 
     /// Whether the Reticulum daemon thread is live.
     pub fn rnsd_running() -> Result<bool, String> {
         let mut env = attach()?;
-        let runner = rnsd_runner(&mut env)?;
-        match env
-            .call_method(&runner, "isRunning", "()Z", &[])
-            .map_err(|e| e.to_string())?
-        {
-            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
-            _ => Err("rnsd running unreadable".to_string()),
-        }
+        env.with_local_frame(8, |env| -> Result<bool, JniErr> {
+            let runner = rnsd_runner(env)?;
+            match env.call_method(&runner, "isRunning", "()Z", &[])? {
+                jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+                _ => Err(JniErr("rnsd running unreadable".to_string())),
+            }
+        })
+        .map_err(|e| e.0)
     }
 
     /// First entry of Build.SUPPORTED_ABIS (e.g. "arm64-v8a") — used to pick
     /// the per-ABI daemon binary asset.
     pub fn supported_abi() -> Result<String, String> {
         let mut env = attach()?;
-        let class = env
-            .find_class("android/os/Build")
-            .map_err(|e| e.to_string())?;
-        let array = env
-            .get_static_field(class, "SUPPORTED_ABIS", "[Ljava/lang/String;")
-            .map_err(|e| e.to_string())?;
-        let arr = array.l().map_err(|e| e.to_string())?;
-        if arr.is_null() {
-            return Err("SUPPORTED_ABIS null".to_string());
-        }
-        let first = env
-            .get_object_array_element(&arr, 0)
-            .map_err(|e| e.to_string())?;
-        let jstr = jni::objects::JString::from(first);
-        let s = env.get_string(&jstr).map_err(|e| e.to_string())?;
-        Ok(s.into())
+        env.with_local_frame(8, |env| -> Result<String, JniErr> {
+            let class = env.find_class("android/os/Build")?;
+            let array = env.get_static_field(class, "SUPPORTED_ABIS", "[Ljava/lang/String;")?;
+            let arr = jni::objects::JObjectArray::from(array.l()?);
+            if arr.is_null() {
+                return Err(JniErr("SUPPORTED_ABIS null".to_string()));
+            }
+            let first = env.get_object_array_element(&arr, 0)?;
+            let jstr = jni::objects::JString::from(first);
+            let s = env.get_string(&jstr)?;
+            Ok(s.into())
+        })
+        .map_err(|e| e.0)
     }
 
     /// Fire the "ignore battery optimizations" request dialog.
     pub fn request_ignore_battery_optimizations() -> Result<(), String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let pkg = {
-            let value = env
-                .call_method(&activity, "getPackageName", "()Ljava/lang/String;", &[])
-                .map_err(|e| e.to_string())?;
-            l_string(value)?
-        };
-        let action = env
-            .new_string("android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS")
-            .map_err(|e| e.to_string())?;
-        let intent = env
-            .new_object(
+        env.with_local_frame(16, |env| -> Result<(), JniErr> {
+            let activity = activity(env)?;
+            let pkg = {
+                let value =
+                    env.call_method(&activity, "getPackageName", "()Ljava/lang/String;", &[])?;
+                l_string(env, value)?
+            };
+            let action = env.new_string("android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS")?;
+            let intent = env.new_object(
                 "android/content/Intent",
                 "(Ljava/lang/String;)V",
                 &[jni::objects::JValue::Object(&action)],
-            )
-            .map_err(|e| e.to_string())?;
-        let uri_spec = env
-            .new_string(format!("package:{pkg}"))
-            .map_err(|e| e.to_string())?;
-        let uri = env
-            .call_static_method(
-                "android/net/Uri",
-                "parse",
-                "(Ljava/lang/String;)Landroid/net/Uri;",
-                &[jni::objects::JValue::Object(&uri_spec)],
-            )
-            .map_err(|e| e.to_string())?
-            .l()
-            .map_err(|e| e.to_string())?;
-        env.call_method(
-            &intent,
-            "setData",
-            "(Landroid/net/Uri;)Landroid/content/Intent;",
-            &[jni::objects::JValue::Object(&uri)],
-        )
-        .map_err(|e| e.to_string())?;
-        env.call_method(
-            &intent,
-            "addFlags",
-            "(I)Landroid/content/Intent;",
-            &[jni::objects::JValue::Int(0x1000_0000)], // FLAG_ACTIVITY_NEW_TASK
-        )
-        .map_err(|e| e.to_string())?;
-        env.call_method(
-            &activity,
-            "startActivity",
-            "(Landroid/content/Intent;)V",
-            &[jni::objects::JValue::Object(&intent)],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
+            )?;
+            let uri_spec = env.new_string(format!("package:{pkg}"))?;
+            let uri = env
+                .call_static_method(
+                    "android/net/Uri",
+                    "parse",
+                    "(Ljava/lang/String;)Landroid/net/Uri;",
+                    &[jni::objects::JValue::Object(&uri_spec)],
+                )?
+                .l()?;
+            env.call_method(
+                &intent,
+                "setData",
+                "(Landroid/net/Uri;)Landroid/content/Intent;",
+                &[jni::objects::JValue::Object(&uri)],
+            )?;
+            env.call_method(
+                &intent,
+                "addFlags",
+                "(I)Landroid/content/Intent;",
+                &[jni::objects::JValue::Int(0x1000_0000)], // FLAG_ACTIVITY_NEW_TASK
+            )?;
+            env.call_method(
+                &activity,
+                "startActivity",
+                "(Landroid/content/Intent;)V",
+                &[jni::objects::JValue::Object(&intent)],
+            )?;
+            Ok(())
+        })
+        .map_err(|e| e.0)
     }
 
     /// Open the OS app-settings page for this app.
     pub fn open_app_settings() -> Result<(), String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let pkg = {
-            let value = env
-                .call_method(&activity, "getPackageName", "()Ljava/lang/String;", &[])
-                .map_err(|e| e.to_string())?;
-            l_string(value)?
-        };
-        let action = env
-            .new_string("android.settings.APPLICATION_DETAILS_SETTINGS")
-            .map_err(|e| e.to_string())?;
-        let intent = env
-            .new_object(
+        env.with_local_frame(16, |env| -> Result<(), JniErr> {
+            let activity = activity(env)?;
+            let pkg = {
+                let value =
+                    env.call_method(&activity, "getPackageName", "()Ljava/lang/String;", &[])?;
+                l_string(env, value)?
+            };
+            let action = env.new_string("android.settings.APPLICATION_DETAILS_SETTINGS")?;
+            let intent = env.new_object(
                 "android/content/Intent",
                 "(Ljava/lang/String;)V",
                 &[jni::objects::JValue::Object(&action)],
-            )
-            .map_err(|e| e.to_string())?;
-        let uri_spec = env
-            .new_string(format!("package:{pkg}"))
-            .map_err(|e| e.to_string())?;
-        let uri = env
-            .call_static_method(
-                "android/net/Uri",
-                "parse",
-                "(Ljava/lang/String;)Landroid/net/Uri;",
-                &[jni::objects::JValue::Object(&uri_spec)],
-            )
-            .map_err(|e| e.to_string())?
-            .l()
-            .map_err(|e| e.to_string())?;
-        env.call_method(
-            &intent,
-            "setData",
-            "(Landroid/net/Uri;)Landroid/content/Intent;",
-            &[jni::objects::JValue::Object(&uri)],
-        )
-        .map_err(|e| e.to_string())?;
-        env.call_method(
-            &intent,
-            "addFlags",
-            "(I)Landroid/content/Intent;",
-            &[jni::objects::JValue::Int(0x1000_0000)], // FLAG_ACTIVITY_NEW_TASK
-        )
-        .map_err(|e| e.to_string())?;
-        env.call_method(
-            &activity,
-            "startActivity",
-            "(Landroid/content/Intent;)V",
-            &[jni::objects::JValue::Object(&intent)],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
+            )?;
+            let uri_spec = env.new_string(format!("package:{pkg}"))?;
+            let uri = env
+                .call_static_method(
+                    "android/net/Uri",
+                    "parse",
+                    "(Ljava/lang/String;)Landroid/net/Uri;",
+                    &[jni::objects::JValue::Object(&uri_spec)],
+                )?
+                .l()?;
+            env.call_method(
+                &intent,
+                "setData",
+                "(Landroid/net/Uri;)Landroid/content/Intent;",
+                &[jni::objects::JValue::Object(&uri)],
+            )?;
+            env.call_method(
+                &intent,
+                "addFlags",
+                "(I)Landroid/content/Intent;",
+                &[jni::objects::JValue::Int(0x1000_0000)], // FLAG_ACTIVITY_NEW_TASK
+            )?;
+            env.call_method(
+                &activity,
+                "startActivity",
+                "(Landroid/content/Intent;)V",
+                &[jni::objects::JValue::Object(&intent)],
+            )?;
+            Ok(())
+        })
+        .map_err(|e| e.0)
     }
 
     /// Any location provider enabled (GPS or network).
     pub fn location_enabled() -> Result<bool, String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let svc = env.new_string("location").map_err(|e| e.to_string())?;
-        let manager = env
-            .call_method(
-                &activity,
-                "getSystemService",
-                "(Ljava/lang/String;)Ljava/lang/Object;",
-                &[jni::objects::JValue::Object(&svc)],
-            )
-            .map_err(|e| e.to_string())?
-            .l()
-            .map_err(|e| e.to_string())?;
-        for provider in ["gps", "network"] {
-            let p = env.new_string(provider).map_err(|e| e.to_string())?;
-            let value = env
+        env.with_local_frame(16, |env| -> Result<bool, JniErr> {
+            let activity = activity(env)?;
+            let svc = env.new_string("location")?;
+            let manager = env
                 .call_method(
+                    &activity,
+                    "getSystemService",
+                    "(Ljava/lang/String;)Ljava/lang/Object;",
+                    &[jni::objects::JValue::Object(&svc)],
+                )?
+                .l()?;
+            for provider in ["gps", "network"] {
+                let p = env.new_string(provider)?;
+                let value = env.call_method(
                     &manager,
                     "isProviderEnabled",
                     "(Ljava/lang/String;)Z",
                     &[jni::objects::JValue::Object(&p)],
-                )
-                .map_err(|e| e.to_string())?;
-            if let jni::objects::JValueOwned::Bool(b) = value {
-                if b != 0 {
-                    return Ok(true);
+                )?;
+                if let jni::objects::JValueOwned::Bool(b) = value {
+                    if b != 0 {
+                        return Ok(true);
+                    }
                 }
             }
-        }
-        Ok(false)
+            Ok(false)
+        })
+        .map_err(|e| e.0)
     }
 
     const BATTERY_PROPERTY_CAPACITY: i32 = 4;
@@ -588,108 +602,95 @@ mod android {
     /// Battery charge state via BatteryManager: (charging, capacity %).
     pub fn battery_state() -> Result<(bool, i32), String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let svc = env
-            .new_string("batterymanager")
-            .map_err(|e| e.to_string())?;
-        let manager = env
-            .call_method(
-                &activity,
-                "getSystemService",
-                "(Ljava/lang/String;)Ljava/lang/Object;",
-                &[jni::objects::JValue::Object(&svc)],
-            )
-            .map_err(|e| e.to_string())?
-            .l()
-            .map_err(|e| e.to_string())?;
-        let capacity = match env
-            .call_method(
+        env.with_local_frame(16, |env| -> Result<(bool, i32), JniErr> {
+            let activity = activity(env)?;
+            let svc = env.new_string("batterymanager")?;
+            let manager = env
+                .call_method(
+                    &activity,
+                    "getSystemService",
+                    "(Ljava/lang/String;)Ljava/lang/Object;",
+                    &[jni::objects::JValue::Object(&svc)],
+                )?
+                .l()?;
+            let capacity = match env.call_method(
                 &manager,
                 "getIntProperty",
                 "(I)I",
                 &[jni::objects::JValue::Int(BATTERY_PROPERTY_CAPACITY)],
-            )
-            .map_err(|e| e.to_string())?
-        {
-            jni::objects::JValueOwned::Int(i) => i,
-            _ => return Err("capacity unreadable".to_string()),
-        };
-        let status = match env
-            .call_method(
+            )? {
+                jni::objects::JValueOwned::Int(i) => i,
+                _ => return Err(JniErr("capacity unreadable".to_string())),
+            };
+            let status = match env.call_method(
                 &manager,
                 "getIntProperty",
                 "(I)I",
                 &[jni::objects::JValue::Int(BATTERY_PROPERTY_STATUS)],
-            )
-            .map_err(|e| e.to_string())?
-        {
-            jni::objects::JValueOwned::Int(i) => i,
-            _ => return Err("status unreadable".to_string()),
-        };
-        let charging = status == BATTERY_STATUS_CHARGING || status == BATTERY_STATUS_FULL;
-        Ok((charging, if capacity < 0 { 100 } else { capacity }))
+            )? {
+                jni::objects::JValueOwned::Int(i) => i,
+                _ => return Err(JniErr("status unreadable".to_string())),
+            };
+            let charging = status == BATTERY_STATUS_CHARGING || status == BATTERY_STATUS_FULL;
+            Ok((charging, if capacity < 0 { 100 } else { capacity }))
+        })
+        .map_err(|e| e.0)
     }
 
     /// OS battery-save mode via PowerManager.isPowerSaveMode.
     pub fn power_save_mode() -> Result<bool, String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let svc = env.new_string("power").map_err(|e| e.to_string())?;
-        let manager = env
-            .call_method(
-                &activity,
-                "getSystemService",
-                "(Ljava/lang/String;)Ljava/lang/Object;",
-                &[jni::objects::JValue::Object(&svc)],
-            )
-            .map_err(|e| e.to_string())?
-            .l()
-            .map_err(|e| e.to_string())?;
-        match env
-            .call_method(&manager, "isPowerSaveMode", "()Z", &[])
-            .map_err(|e| e.to_string())?
-        {
-            jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
-            _ => Err("power save mode unreadable".to_string()),
-        }
+        env.with_local_frame(8, |env| -> Result<bool, JniErr> {
+            let activity = activity(env)?;
+            let svc = env.new_string("power")?;
+            let manager = env
+                .call_method(
+                    &activity,
+                    "getSystemService",
+                    "(Ljava/lang/String;)Ljava/lang/Object;",
+                    &[jni::objects::JValue::Object(&svc)],
+                )?
+                .l()?;
+            match env.call_method(&manager, "isPowerSaveMode", "()Z", &[])? {
+                jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
+                _ => Err(JniErr("power save mode unreadable".to_string())),
+            }
+        })
+        .map_err(|e| e.0)
     }
 
     /// True when the active network is cellular (mobile/wimax).
     pub fn cellular_connection() -> Result<bool, String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let svc = env.new_string("connectivity").map_err(|e| e.to_string())?;
-        let manager = env
-            .call_method(
-                &activity,
-                "getSystemService",
-                "(Ljava/lang/String;)Ljava/lang/Object;",
-                &[jni::objects::JValue::Object(&svc)],
-            )
-            .map_err(|e| e.to_string())?
-            .l()
-            .map_err(|e| e.to_string())?;
-        let info = env
-            .call_method(
-                &manager,
-                "getActiveNetworkInfo",
-                "()Landroid/net/NetworkInfo;",
-                &[],
-            )
-            .map_err(|e| e.to_string())?
-            .l()
-            .map_err(|e| e.to_string())?;
-        if info.is_null() {
-            return Ok(false);
-        }
-        let net_type = match env
-            .call_method(&info, "getType", "()I", &[])
-            .map_err(|e| e.to_string())?
-        {
-            jni::objects::JValueOwned::Int(i) => i,
-            _ => return Err("network type unreadable".to_string()),
-        };
-        Ok(net_type == CONNECTIVITY_TYPE_MOBILE || net_type == CONNECTIVITY_TYPE_WIMAX)
+        env.with_local_frame(16, |env| -> Result<bool, JniErr> {
+            let activity = activity(env)?;
+            let svc = env.new_string("connectivity")?;
+            let manager = env
+                .call_method(
+                    &activity,
+                    "getSystemService",
+                    "(Ljava/lang/String;)Ljava/lang/Object;",
+                    &[jni::objects::JValue::Object(&svc)],
+                )?
+                .l()?;
+            let info = env
+                .call_method(
+                    &manager,
+                    "getActiveNetworkInfo",
+                    "()Landroid/net/NetworkInfo;",
+                    &[],
+                )?
+                .l()?;
+            if info.is_null() {
+                return Ok(false);
+            }
+            let net_type = match env.call_method(&info, "getType", "()I", &[])? {
+                jni::objects::JValueOwned::Int(i) => i,
+                _ => return Err(JniErr("network type unreadable".to_string())),
+            };
+            Ok(net_type == CONNECTIVITY_TYPE_MOBILE || net_type == CONNECTIVITY_TYPE_WIMAX)
+        })
+        .map_err(|e| e.0)
     }
 
     type AAssetManagerFromJava = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void;
@@ -702,51 +703,53 @@ mod android {
     /// Read a bundled asset ("daemons/i2pd") via the native AssetManager.
     pub fn read_asset(name: &str) -> Result<Vec<u8>, String> {
         let mut env = attach()?;
-        let activity = activity(&mut env)?;
-        let assets = env
-            .call_method(
+        env.with_local_frame(8, |env| -> Result<Vec<u8>, JniErr> {
+            let activity = activity(env)?;
+            let assets = env.call_method(
                 &activity,
                 "getAssets",
                 "()Landroid/content/res/AssetManager;",
                 &[],
-            )
-            .map_err(|e| e.to_string())?;
-        let assets_obj = assets.l().map_err(|e| e.to_string())?;
+            )?;
+            let assets_obj = assets.l()?;
 
-        let from_java = dlsym::<AAssetManagerFromJava>("libandroid.so", "AAssetManager_fromJava")
-            .ok_or("AAssetManager_fromJava missing".to_string())?;
-        let open_fn = dlsym::<AAssetManagerOpen>("libandroid.so", "AAssetManager_open")
-            .ok_or("AAssetManager_open missing".to_string())?;
-        let len_fn = dlsym::<AAssetGetLength>("libandroid.so", "AAsset_getLength")
-            .ok_or("AAsset_getLength missing".to_string())?;
-        let read_fn = dlsym::<AAssetRead>("libandroid.so", "AAsset_read")
-            .ok_or("AAsset_read missing".to_string())?;
-        let close_fn = dlsym::<AAssetClose>("libandroid.so", "AAsset_close")
-            .ok_or("AAsset_close missing".to_string())?;
+            let from_java =
+                dlsym::<AAssetManagerFromJava>("libandroid.so", "AAssetManager_fromJava")
+                    .ok_or_else(|| JniErr("AAssetManager_fromJava missing".to_string()))?;
+            let open_fn = dlsym::<AAssetManagerOpen>("libandroid.so", "AAssetManager_open")
+                .ok_or_else(|| JniErr("AAssetManager_open missing".to_string()))?;
+            let len_fn = dlsym::<AAssetGetLength>("libandroid.so", "AAsset_getLength")
+                .ok_or_else(|| JniErr("AAsset_getLength missing".to_string()))?;
+            let read_fn = dlsym::<AAssetRead>("libandroid.so", "AAsset_read")
+                .ok_or_else(|| JniErr("AAsset_read missing".to_string()))?;
+            let close_fn = dlsym::<AAssetClose>("libandroid.so", "AAsset_close")
+                .ok_or_else(|| JniErr("AAsset_close missing".to_string()))?;
 
-        let c_name = std::ffi::CString::new(name).map_err(|e| e.to_string())?;
-        let env_raw = env.get_native_interface();
-        let manager =
-            unsafe { from_java(env_raw as *mut c_void, assets_obj.as_raw() as *mut c_void) };
-        if manager.is_null() {
-            return Err("AssetManager_fromJava failed".to_string());
-        }
-        let asset = unsafe { open_fn(manager, c_name.as_ptr(), 0) };
-        if asset.is_null() {
-            return Err(format!("asset not found: {name}"));
-        }
-        let len = unsafe { len_fn(asset) };
-        if len <= 0 {
+            let c_name = std::ffi::CString::new(name).map_err(|e| JniErr(e.to_string()))?;
+            let env_raw = env.get_native_interface();
+            let manager =
+                unsafe { from_java(env_raw as *mut c_void, assets_obj.as_raw() as *mut c_void) };
+            if manager.is_null() {
+                return Err(JniErr("AssetManager_fromJava failed".to_string()));
+            }
+            let asset = unsafe { open_fn(manager, c_name.as_ptr(), 0) };
+            if asset.is_null() {
+                return Err(JniErr(format!("asset not found: {name}")));
+            }
+            let len = unsafe { len_fn(asset) };
+            if len <= 0 {
+                unsafe { close_fn(asset) };
+                return Err(JniErr(format!("asset empty: {name}")));
+            }
+            let mut buf = vec![0u8; len as usize];
+            let read = unsafe { read_fn(asset, buf.as_mut_ptr() as *mut c_void, buf.len()) };
             unsafe { close_fn(asset) };
-            return Err(format!("asset empty: {name}"));
-        }
-        let mut buf = vec![0u8; len as usize];
-        let read = unsafe { read_fn(asset, buf.as_mut_ptr() as *mut c_void, buf.len()) };
-        unsafe { close_fn(asset) };
-        if read != len as isize {
-            return Err(format!("short asset read for {name}: {read}/{len}"));
-        }
-        Ok(buf)
+            if read != len as isize {
+                return Err(JniErr(format!("short asset read for {name}: {read}/{len}")));
+            }
+            Ok(buf)
+        })
+        .map_err(|e| e.0)
     }
 }
 

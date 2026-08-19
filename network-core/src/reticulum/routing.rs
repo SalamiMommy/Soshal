@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub const DEFAULT_ROUTE_TTL_SECS: u64 = 7200; // 2 hours
+/// Cap on path table entries; new routes rejected past it (bounds
+/// attacker-flooded announces).
+pub const MAX_PATH_TABLE_ROUTES: usize = 4096;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PathEntry {
@@ -46,6 +49,12 @@ impl PathTable {
             }
             false
         } else {
+            if self.routes.len() >= MAX_PATH_TABLE_ROUTES {
+                self.prune_expired(now_secs);
+            }
+            if self.routes.len() >= MAX_PATH_TABLE_ROUTES {
+                return false;
+            }
             self.routes.insert(
                 destination,
                 PathEntry {

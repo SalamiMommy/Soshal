@@ -20,6 +20,7 @@ pub mod ephemeral;
 pub mod events;
 pub mod feed;
 pub mod groups;
+pub mod guestbook;
 pub mod h264;
 pub mod headless;
 pub mod identity;

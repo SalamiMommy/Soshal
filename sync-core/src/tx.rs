@@ -87,13 +87,29 @@ pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
                 (row.get::<String>(1)?, row.get::<String>(2)?),
             );
         }
+        let mut revert_errors: Vec<String> = Vec::new();
         for node_id in &order {
             let (kind, payload) = nodes.get(node_id).cloned().unwrap_or_default();
-            revert::revert_tx(&tx, &kind, &payload).await?;
+            // A per-node revert failure (e.g. malformed payload JSON) must
+            // not abort the rollback chain: record it and keep rolling back
+            // the remaining nodes (revert.rs: a revert must never fail the
+            // whole rollback chain). Reported as an aggregated error only
+            // after the chain has fully committed.
+            if let Err(e) = revert::revert_tx(&tx, &kind, &payload).await {
+                revert_errors.push(format!("{node_id}: {e}"));
+                continue;
+            }
             set_status_tx(&tx, node_id, STATUS_ROLLED_BACK).await?;
         }
         set_status_tx(&tx, id, STATUS_FAILED).await?;
         tx.commit().await?;
+        if !revert_errors.is_empty() {
+            return Err(DbError::Migration(format!(
+                "{} node revert(s) failed after chain rollback: {}",
+                revert_errors.len(),
+                revert_errors.join("; ")
+            )));
+        }
         Ok(())
     })
     .map_err(|e| format!("tx_fail: {e}"))?;

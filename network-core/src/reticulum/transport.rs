@@ -115,8 +115,20 @@ impl ReticulumNode {
         let udp_clone = udp_socket.clone();
         let handle = thread::spawn(move || {
             let mut buf = [0u8; 2048];
+            let mut ticks: u64 = 0;
 
             while *running.lock().unwrap_or_else(|e| e.into_inner()) {
+                ticks = ticks.wrapping_add(1);
+                // Periodic maintenance: prune expired routes every ~1000
+                // iterations (~10 s when idle) so attacker-filled tables
+                // cannot grow without bound.
+                if ticks.is_multiple_of(1000) {
+                    let now = now_secs() as u64;
+                    path_table
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .prune_expired(now);
+                }
                 match udp_clone.recv_from(&mut buf) {
                     Ok((len, src_addr)) => {
                         if let Ok(packet_data) = super::slip::slip_decode(&buf[..len]) {

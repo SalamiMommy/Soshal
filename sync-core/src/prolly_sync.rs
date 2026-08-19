@@ -34,6 +34,11 @@ pub enum ProllySyncMessage {
     },
 }
 
+/// Cap on keys accepted from a single `ResponseBranch` (peer memory bound).
+const MAX_KEYS_PER_BRANCH: usize = 10_000;
+/// Cap on total missing keys tracked per session (unbounded-growth bound).
+const MAX_MISSING_KEYS_TOTAL: usize = 100_000;
+
 /// Prolly Sync Session Manager for negotiating diffs with a connected peer.
 #[derive(Debug)]
 pub struct ProllySyncSession {
@@ -92,6 +97,11 @@ impl ProllySyncSession {
                     child_hashes: self.local_tree.nodes[idx].values_or_child_hashes.clone(),
                 }),
             ProllySyncMessage::ResponseBranch { keys, .. } => {
+                // Reject oversized branches outright: a peer must not grow
+                // our memory via unlimited fresh keys in one message.
+                if keys.len() > MAX_KEYS_PER_BRANCH {
+                    return None;
+                }
                 // Determine missing keys compared to local tree keys (set is
                 // precomputed once per session, not rebuilt per message).
                 let missing: Vec<String> = keys
@@ -100,6 +110,10 @@ impl ProllySyncSession {
                     .collect();
 
                 if !missing.is_empty() {
+                    // Total missing-set cap exceeded — drop, never accumulate.
+                    if self.missing_keys.len() + missing.len() > MAX_MISSING_KEYS_TOTAL {
+                        return None;
+                    }
                     self.missing_keys.extend(missing.clone());
                     Some(ProllySyncMessage::RequestDeltas {
                         missing_ids: missing,
@@ -158,5 +172,18 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         let back: ProllySyncMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn response_branch_caps_oversized_messages() {
+        let tree = ProllyTree::build(&vec![("post_1".to_string(), "data1".to_string())]);
+        let mut session = ProllySyncSession::new(tree);
+        let oversized = ProllySyncMessage::ResponseBranch {
+            node_hash: "h".to_string(),
+            keys: (0..=MAX_KEYS_PER_BRANCH).map(|i| format!("k{i}")).collect(),
+            child_hashes: Vec::new(),
+        };
+        assert_eq!(session.handle_message(oversized), None);
+        assert!(session.missing_keys.is_empty());
     }
 }

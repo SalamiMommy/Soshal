@@ -19,13 +19,18 @@ pub fn compute_analytics_posts_json(json_input: &str) -> Result<String, String> 
 }
 
 pub fn compute_analytics_posts(posts: &[PostInput], self_pubkey: &str) -> AnalyticsOutput {
-    let total_posts = posts.iter().filter(|p| p.pubkey == self_pubkey).count();
-    let total_reactions = posts
-        .iter()
-        .filter(|p| p.pubkey == self_pubkey)
-        .filter_map(|p| p.local_stats.as_ref())
-        .filter_map(|s| s.likes_count)
-        .sum();
+    let mut total_posts = 0;
+    let mut total_reactions = 0;
+    for p in posts {
+        if p.pubkey == self_pubkey {
+            total_posts += 1;
+            if let Some(ref stats) = p.local_stats {
+                if let Some(likes) = stats.likes_count {
+                    total_reactions += likes;
+                }
+            }
+        }
+    }
     AnalyticsOutput {
         total_posts,
         total_reactions,

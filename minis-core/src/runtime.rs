@@ -50,23 +50,16 @@ impl WasmComponentHost {
     /// Execute a ContentFilter Wasm component to evaluate text.
     pub fn filter_content(
         plugin: &WasmComponentPlugin,
-        text: &str,
+        _text: &str,
     ) -> Result<WasmFilterResult, String> {
         if plugin.component_type != WasmComponentType::ContentFilter {
             return Err("invalid plugin component type for content filter".to_string());
         }
 
-        let is_toxic = text.to_lowercase().contains("malicious_phishing");
-        Ok(WasmFilterResult {
-            allow: !is_toxic,
-            score: if is_toxic { 0.95 } else { 0.05 },
-            reason: if is_toxic {
-                "Toxic content flagged by Wasm component"
-            } else {
-                "Clean"
-            }
-            .to_string(),
-        })
+        // Honest gate: wasmtime host is on the roadmap; no simulated filtering
+        // is performed (previously a hardcoded substring match pretending to
+        // be a Wasm component verdict).
+        Err("wasm content filtering unavailable (roadmap)".to_string())
     }
 }
 
@@ -75,7 +68,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_wasm_component_execution() {
+    fn test_wasm_content_filter_wasm_host_unavailable() {
         let plugin = WasmComponentPlugin {
             plugin_id: "filter_01".to_string(),
             name: "Spam Guard Wasm".to_string(),
@@ -84,12 +77,11 @@ mod tests {
             binary_bytes: vec![0x00, 0x61, 0x73, 0x6d], // \0asm magic bytes
         };
 
-        let result = WasmComponentHost::filter_content(&plugin, "Hello safe text").unwrap();
-        assert!(result.allow);
-
-        let toxic_result =
-            WasmComponentHost::filter_content(&plugin, "bad malicious_phishing link").unwrap();
-        assert!(!toxic_result.allow);
+        let err = WasmComponentHost::filter_content(&plugin, "Hello safe text").unwrap_err();
+        assert!(err.contains("unavailable"), "err: {err}");
+        let err =
+            WasmComponentHost::filter_content(&plugin, "bad malicious_phishing link").unwrap_err();
+        assert!(err.contains("unavailable"), "err: {err}");
     }
 
     #[test]

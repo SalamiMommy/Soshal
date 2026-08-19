@@ -11,6 +11,12 @@ pub struct FormatFts5Input {
 
 /// Sanitizes a single FTS5 term.
 pub fn sanitize_fts5_term(raw: &str) -> Option<String> {
+    if raw.chars().all(|c| c.is_alphanumeric()) {
+        if raw.is_empty() || raw.len() > MAX_FTS5_TERM_LEN {
+            return None;
+        }
+        return Some(raw.to_string());
+    }
     let mut out = String::with_capacity(raw.len());
     for c in raw.chars() {
         if c.is_alphanumeric() {
@@ -40,13 +46,14 @@ pub fn format_fts5_query(query: &str) -> String {
     let mut count = 0;
     for word in cleaned.split_whitespace() {
         if let Some(t) = sanitize_fts5_term(word) {
-            if seen.insert(t.clone()) {
+            if !seen.contains(&t) {
                 if count > 0 {
                     out.push_str(" AND ");
                 }
                 out.push_str(&t);
                 out.push('*');
                 count += 1;
+                seen.insert(t);
                 if count >= MAX_FTS5_TERMS {
                     break;
                 }

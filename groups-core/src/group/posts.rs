@@ -37,8 +37,6 @@ fn parse_group_posts(input: ParseGroupPostsInput) -> Vec<ParsedGroupPostOut> {
         }
         let mut d_tag: Option<&str> = None;
         let mut channel_id: Option<&str> = None;
-        let mut images: Vec<String> = Vec::new();
-        let mut videos: Vec<String> = Vec::new();
         for tag in &event.tags {
             if tag.len() < 2 {
                 continue;
@@ -46,6 +44,20 @@ fn parse_group_posts(input: ParseGroupPostsInput) -> Vec<ParsedGroupPostOut> {
             match tag[0].as_str() {
                 "d" if d_tag.is_none() => d_tag = Some(&tag[1]),
                 "h" if channel_id.is_none() => channel_id = Some(&tag[1]),
+                _ => {}
+            }
+        }
+        if d_tag.map(|d| d != input.group_id.as_str()).unwrap_or(true) {
+            continue;
+        }
+
+        let mut images: Vec<String> = Vec::new();
+        let mut videos: Vec<String> = Vec::new();
+        for tag in &event.tags {
+            if tag.len() < 2 {
+                continue;
+            }
+            match tag[0].as_str() {
                 "image" => {
                     if tag[1].len() <= MAX_TAG_VALUE_LEN && images.len() < 1024 {
                         images.push(tag[1].clone());
@@ -77,9 +89,6 @@ fn parse_group_posts(input: ParseGroupPostsInput) -> Vec<ParsedGroupPostOut> {
                 }
                 _ => {}
             }
-        }
-        if d_tag.map(|d| d != input.group_id.as_str()).unwrap_or(true) {
-            continue;
         }
         let channel_id = channel_id.map(|s| s.to_string());
         results.push(ParsedGroupPostOut {

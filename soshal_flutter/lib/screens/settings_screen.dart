@@ -7,6 +7,7 @@ import '../services/settings_service.dart';
 import '../services/network_service.dart';
 import '../services/zap_service.dart';
 import '../utils/format.dart';
+import '../utils/dialog_guard.dart';
 import 'share_app_screen.dart';
 
 /// Settings Screen
@@ -436,7 +437,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (!context.mounted) return;
                 Navigator.of(context).pop();
                 final meta = jsonDecode(json) as Map<String, dynamic>;
-                showDialog(
+                showDialogDeferred(
                   context: context,
                   builder: (context) => AlertDialog(
                     title: const Text('LNURL resolved'),
@@ -472,6 +473,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showLogoutDialog() {
+    final screenContext = context;
     showDialog(
       context: context,
       builder: (context) {
@@ -486,7 +488,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                context.go('/auth');
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (screenContext.mounted) screenContext.go('/auth');
+                });
               },
               child: const Text('Logout'),
             ),

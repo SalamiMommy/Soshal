@@ -17,6 +17,10 @@ pub const KIND_TEXT_NOTE: u16 = 1;
 pub const KIND_REACTION: u16 = 7;
 // Custom profile nodes
 pub const KIND_CUSTOM_PROFILE: u16 = 30085;
+// Guestbook entries (signed by sender, tagged with owner pubkey)
+pub const KIND_GUESTBOOK: u16 = 30080;
+// Guestbook entry approval/denial (signed by the profile owner)
+pub const KIND_GUESTBOOK_APPROVAL: u16 = 30081;
 // Marketplace swap orders
 pub const KIND_SWAP: u16 = 38383;
 // Unknown-kind mention fallback (notification aggregation)

@@ -433,9 +433,17 @@ pub fn state_key(peer: &str) -> String {
     format!("pqc_state:{}", peer)
 }
 
-/// Domain-separation context for a peer pair.
+/// Domain-separation context for a peer pair. The two identity components
+/// are sorted so both sides derive the identical string regardless of call
+/// order ("dm:A:B" == "dm:B:A") — every key derivation bakes this string in,
+/// so an asymmetric context would make the first frame fail to decrypt.
 pub fn ratchet_context(my_pubkey: &str, peer: &str) -> String {
-    format!("dm:{}:{}", my_pubkey, peer)
+    let (first, second) = if my_pubkey <= peer {
+        (my_pubkey, peer)
+    } else {
+        (peer, my_pubkey)
+    };
+    format!("dm:{}:{}", first, second)
 }
 
 /// Parses and version-checks ratchet state from decrypted plaintext. Stale

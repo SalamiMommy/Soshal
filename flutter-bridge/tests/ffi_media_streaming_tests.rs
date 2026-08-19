@@ -330,6 +330,8 @@ mod ffi_media_streaming_tests {
     }
     #[test]
     fn streaming_get_video_url_uninitialized() {
+        let _g = crate::test_util::lock();
+        let _ = streaming::streaming_stop_local_server();
         let e = streaming::streaming_get_video_url(
             "vid1".to_string(),
             "/tmp/nonexistent.mp4".to_string(),

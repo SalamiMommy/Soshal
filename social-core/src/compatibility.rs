@@ -21,8 +21,8 @@ pub fn interest_overlap_details<'a>(
         }
     };
     // Build deduplicated key sets.
-    let mut seen_a: HashSet<Cow<'a, str>> = HashSet::new();
-    let mut seen_b: HashSet<Cow<'a, str>> = HashSet::new();
+    let mut seen_a: HashSet<Cow<'a, str>> = HashSet::with_capacity(a.len());
+    let mut seen_b: HashSet<Cow<'a, str>> = HashSet::with_capacity(b.len());
     for s in a {
         let t = norm(s);
         if !t.is_empty() {
@@ -35,15 +35,16 @@ pub fn interest_overlap_details<'a>(
             seen_b.insert(key(t));
         }
     }
-    // Collect common items (deduplicated by tracking which keys we already emitted).
-    let mut emitted: HashSet<Cow<'a, str>> = HashSet::new();
-    let common: Vec<&'a str> = a
-        .iter()
-        .map(|s| s.trim())
-        .filter(|t| !t.is_empty() && seen_b.contains(&key(t)) && emitted.insert(key(t)))
-        .collect();
     let len_a = seen_a.len();
     let len_b = seen_b.len();
+    // Collect common items (deduplicated by removing from seen_b when found).
+    let mut common: Vec<&'a str> = Vec::with_capacity(len_a.min(len_b));
+    for s in a {
+        let t = norm(s);
+        if !t.is_empty() && seen_b.remove(&key(t)) {
+            common.push(t);
+        }
+    }
     // |A ∪ B| = |A| + |B| − |A ∩ B|; |A ∩ B| = common.len() (already deduplicated).
     let union = len_a + len_b - common.len();
     (common, union, len_a, len_b)

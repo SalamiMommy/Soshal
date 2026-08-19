@@ -169,19 +169,21 @@ pub fn recalculate_wot(self_pubkey: &str, users: &[WotUser]) -> Vec<WotUpdate> {
                 .iter()
                 .filter(|c| self_contacts.contains(c.as_str()))
                 .count();
-            let introducer_count = introduced_by
-                .get(user.pubkey.as_str())
-                .map(|s| s.len())
-                .unwrap_or(0);
+            let introducers = introduced_by.get(user.pubkey.as_str());
+            let introducer_count = introducers.map_or(0, |s| s.len());
             let trust_score = calculate_trust_score(distance, mutual_count, introducer_count);
+            let introduced_by_vec = introducers.and_then(|s| {
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s.iter().map(|k| (*k).to_string()).collect())
+                }
+            });
             WotUpdate {
                 pubkey: user.pubkey.clone(),
                 distance,
                 trust_score,
-                introduced_by: introduced_by
-                    .get(user.pubkey.as_str())
-                    .map(|s| s.iter().map(|k| (*k).to_string()).collect::<Vec<_>>())
-                    .filter(|v: &Vec<String>| !v.is_empty()),
+                introduced_by: introduced_by_vec,
             }
         })
         .collect()

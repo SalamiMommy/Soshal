@@ -62,10 +62,30 @@ fn validate_swap_event(input: &ValidateSwapInput) -> ValidateSwapOut {
         };
     }
     let tags: Vec<Vec<String>> = event.tags.iter().map(|t| t.clone().to_vec()).collect();
-    let [d_tag_val, p_tag, role_tag, type_tag] =
-        find_tag_values_map(&tags, ["d", "p", "role", "type"]);
+    let [d_tag_val, p_tag, role_tag, type_tag, expiration_tag] =
+        find_tag_values_map(&tags, ["d", "p", "role", "type", "expiration"]);
     let d_tag = d_tag_val.map(|s| s.to_string());
     let d_present = d_tag.is_some();
+    if let Some(expiration) = expiration_tag {
+        let expires_at = expiration.parse::<u64>().ok();
+        let expired = match expires_at {
+            Some(ts) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                ts < now
+            }
+            None => true,
+        };
+        if expired {
+            return ValidateSwapOut {
+                valid: false,
+                d_tag,
+                inner_pubkey: None,
+            };
+        }
+    }
     let p_ok = p_tag == Some(input.self_pubkey.as_str());
     let role_ok = role_tag == Some(input.expected_role.as_str());
     let type_ok = type_tag == Some(input.expected_type.as_str());
@@ -198,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn swap_expiry_not_enforced() {
+    fn swap_expired_rejected() {
         let keys = keys();
         let pk = keys.public_key().to_hex();
         let ev = EventBuilder::new(Kind::Custom(KIND_SWAP), "{}")
@@ -215,7 +235,7 @@ mod tests {
             false,
         )))
         .unwrap();
-        assert_eq!(v["valid"], true);
+        assert_eq!(v["valid"], false);
     }
 
     #[test]

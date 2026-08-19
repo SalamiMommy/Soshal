@@ -8,16 +8,17 @@
 //! `try_recv`/`send_to` pair — no async plumbing crosses the FFI boundary.
 //!
 //! Auth note: transport TLS uses a per-install self-signed cert accepted by
-//! peers (mesh-internal); identity/authentication happens at the app layer via
-//! the peer key in the registration datagram, same trust model as the LAN
-//! beacon handshake. Micro-events are presence signals — never authoritative.
+//! peers (mesh-internal); inbound connections must present the HMAC beacon
+//! line (registration datagram, re-sent per datagram since they are lossy)
+//! before any micro-event is forwarded — same trust model as the LAN stream
+//! handshake. Micro-events are presence signals — never authoritative.
 
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig, TransportConfig};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -50,6 +51,7 @@ pub struct MicroEvent {
 }
 
 const MAX_DATAGRAM: usize = 1200;
+const MAX_DATAGRAM_CONNS: usize = 64;
 const REGISTRATION_KIND: &str = "__peer_key__";
 
 /// Accept-any-cert verifier: identity is app-layer (peer key datagram).
@@ -136,10 +138,12 @@ impl QuicDatagramHandle {
 }
 
 /// Spawns the QUIC datagram channel on its own thread + runtime.
-/// `my_peer_key` is the hex pubkey advertised in registration datagrams.
+/// `my_peer_key` is the hex pubkey advertised in registration datagrams;
+/// `key` is the LAN key used to MAC them (HMAC beacon auth).
 pub fn spawn_quic_datagram_channel(
     bind_port: u16,
     my_peer_key: String,
+    key: [u8; 32],
 ) -> Result<QuicDatagramHandle, String> {
     let stop = Arc::new(AtomicBool::new(false));
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<Command>(1024);
@@ -162,6 +166,7 @@ pub fn spawn_quic_datagram_channel(
             rt.block_on(run_channel(
                 bind_port,
                 my_peer_key,
+                key,
                 cmd_rx,
                 evt_tx,
                 thread_stop,
@@ -184,6 +189,7 @@ pub fn spawn_quic_datagram_channel(
 async fn run_channel(
     bind_port: u16,
     my_peer_key: String,
+    key: [u8; 32],
     mut cmd_rx: tokio::sync::mpsc::Receiver<Command>,
     evt_tx: std::sync::mpsc::SyncSender<MicroEvent>,
     stop: Arc<AtomicBool>,
@@ -223,6 +229,8 @@ async fn run_channel(
     endpoint.set_default_client_config(client_config);
 
     let mut conns: HashMap<SocketAddr, Connection> = HashMap::new();
+    // Remote addrs that presented a valid HMAC beacon registration.
+    let authed: Arc<Mutex<HashSet<SocketAddr>>> = Arc::new(Mutex::new(HashSet::new()));
     let mut sweep = tokio::time::interval(std::time::Duration::from_secs(30));
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -234,11 +242,22 @@ async fn run_channel(
                 // Evict dead connections (closed by peer or idle timeout) so
                 // the map cannot grow unboundedly over long sessions.
                 conns.retain(|_, c| c.close_reason().is_none());
+                if let Ok(mut a) = authed.lock() {
+                    a.retain(|addr| conns.contains_key(addr));
+                }
             }
             incoming = endpoint.accept() => {
                 let Some(incoming) = incoming else { continue; };
+                // Privacy invariant: only private hosts may connect.
+                if !crate::lan::is_private_ip(incoming.remote_address().ip()) {
+                    continue;
+                }
+                if conns.len() >= MAX_DATAGRAM_CONNS {
+                    continue;
+                }
                 if let Ok(conn) = incoming.await {
-                    spawn_conn_task(conn, evt_tx.clone(), bound);
+                    conns.insert(conn.remote_address(), conn.clone());
+                    spawn_conn_task(conn, evt_tx.clone(), bound, key, authed.clone());
                 }
             }
             cmd = recv_cmd(&mut cmd_rx) => {
@@ -264,23 +283,32 @@ async fn run_channel(
                                 match conn.await {
                                     Ok(c) => {
                                         conns.insert(peer, c.clone());
-                                        // register identity
-                                        let reg = MicroEvent {
-                                            kind: REGISTRATION_KIND.to_string(),
-                                            payload: my_peer_key.clone(),
-                                        };
-                                        if let Ok(bytes) = serde_json::to_vec(&reg) {
-                                            if bytes.len() <= MAX_DATAGRAM {
-                                                let _ = c.send_datagram(bytes.into());
-                                            }
-                                        }
-                                        spawn_conn_task(c.clone(), evt_tx.clone(), bound);
+                                        spawn_conn_task(c.clone(), evt_tx.clone(), bound, key, authed.clone());
                                         c
                                     }
                                     Err(_) => continue,
                                 }
                             }
                         };
+                        // register identity: HMAC beacon line, re-sent with
+                        // every datagram (datagrams are lossy — a dropped
+                        // registration must not deadlock the channel)
+                        let body = crate::lan::beacon_body(
+                            crate::lan_transport::LAN_MAGIC,
+                            &my_peer_key,
+                            0,
+                            soshal_common_core::format::now_secs() as u64,
+                        );
+                        let mac = crate::lan::beacon_mac(&key, &body);
+                        let reg = MicroEvent {
+                            kind: REGISTRATION_KIND.to_string(),
+                            payload: format!("{body}:{mac}"),
+                        };
+                        if let Ok(bytes) = serde_json::to_vec(&reg) {
+                            if bytes.len() <= MAX_DATAGRAM {
+                                let _ = conn.send_datagram(bytes.into());
+                            }
+                        }
                         if conn.send_datagram(payload.into()).is_err() {
                             conns.remove(&peer);
                         }
@@ -296,15 +324,39 @@ fn spawn_conn_task(
     conn: Connection,
     evt_tx: std::sync::mpsc::SyncSender<MicroEvent>,
     _bound: Option<SocketAddr>,
+    key: [u8; 32],
+    authed: Arc<Mutex<HashSet<SocketAddr>>>,
 ) {
     tokio::spawn(async move {
         loop {
             match conn.read_datagram().await {
                 Ok(bytes) => {
-                    if let Ok(ev) = serde_json::from_slice::<MicroEvent>(&bytes) {
-                        if ev.kind != REGISTRATION_KIND {
-                            let _ = evt_tx.send(ev);
+                    let remote = conn.remote_address();
+                    let is_authed = authed.lock().map(|g| g.contains(&remote)).unwrap_or(false);
+                    let Ok(ev) = serde_json::from_slice::<MicroEvent>(&bytes) else {
+                        continue;
+                    };
+                    if !is_authed {
+                        // First datagram must be the HMAC beacon registration;
+                        // anything else is ignored until the beacon verifies.
+                        if ev.kind == REGISTRATION_KIND
+                            && crate::lan::parse_beacon(
+                                &key,
+                                crate::lan_transport::LAN_MAGIC,
+                                ev.payload.trim(),
+                                0,
+                                soshal_common_core::format::now_secs() as u64,
+                            )
+                            .is_some()
+                        {
+                            if let Ok(mut g) = authed.lock() {
+                                g.insert(remote);
+                            }
                         }
+                        continue;
+                    }
+                    if ev.kind != REGISTRATION_KIND {
+                        let _ = evt_tx.send(ev);
                     }
                 }
                 Err(quinn::ConnectionError::ApplicationClosed(_))
@@ -620,6 +672,11 @@ async fn run_stream_server(
             }
             incoming = endpoint.accept() => {
                 let Some(incoming) = incoming else { break; };
+                // Privacy invariant (mirrors TCP LAN transport): only private
+                // hosts may connect; refuse the rest before handshake.
+                if !crate::lan::is_private_ip(incoming.remote_address().ip()) {
+                    continue;
+                }
                 if let Ok(conn) = incoming.await {
                     let store = store.clone();
                     tokio::spawn(serve_stream_conn(conn, key, store));
