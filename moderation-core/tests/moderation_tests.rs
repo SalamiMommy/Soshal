@@ -224,10 +224,9 @@ fn check_text_adversarial_cases() {
     );
     assert!(!passed(&check_text("FAGGOT")));
     assert!(!passed(&check_text("TrAnNy")));
-    assert!(passed(&check_text("f\u{0430}ggot")));
-    assert!(passed(&check_text("nigg\u{301}er")));
-    assert!(passed(&check_text("faggotry")));
-    assert!(passed(&check_text("unfaggot")));
+    // Cyrillic and combining diacritic evasions are de-obfuscated and caught
+    assert!(!passed(&check_text("f\u{0430}ggot")));
+    assert!(!passed(&check_text("nigg\u{301}er")));
     assert!(passed(&check_text("hello world")));
     assert_eq!(category(&check_text("hello world")).as_deref(), None);
     assert!(passed(&check_text("")));
@@ -333,15 +332,215 @@ fn glitter_drops_css_uri_and_scheme_in_all_attr_names() {
 #[test]
 fn glitter_keeps_undecodable_entities_in_suspicious_attr_values() {
     // &#39; decodes to a plain `'` (named-table decimal arm); &#xZZ; is not
-    // valid hex so the entity decoder strips the non-hex digits and the
-    // stub `&#x;ZZ;` survives. With no entity strings left, the
-    // contains_entity_for guard is inert and the href survives intact.
+    // valid hex so the entity decoder leaves it verbatim. With no decodable
+    // entity strings left, the contains_entity_for guard is inert and the
+    // href survives intact.
     let input = "<a href=\"x&#xZZ;&#39;y\">text</a>";
     let cleaned = sanitize_glitter_content(input);
-    assert_eq!(cleaned, "<a href=\"x&#x;ZZ;'y\">text</a>", "{cleaned}");
+    assert_eq!(cleaned, "<a href=\"x&#xZZ;'y\">text</a>", "{cleaned}");
     // &#47; decodes to `/`; the named table has no `/` entry (glitter.rs:14),
     // so the entity guard never trips and the src survives intact.
     let input = "<img src=\"x&#xZZ;&#47;y\">";
     let cleaned = sanitize_glitter_content(input);
-    assert_eq!(cleaned, "<img src=\"x&#x;ZZ;/y\">", "{cleaned}");
+    assert_eq!(cleaned, "<img src=\"x&#xZZ;/y\">", "{cleaned}");
+}
+
+#[test]
+fn test_spam_detection_comprehensive() {
+    // Crypto doubler
+    let doubler = "Send 1 BTC to this wallet and get 2x return today!";
+    assert!(!passed(&check_text(doubler)));
+    assert_eq!(category(&check_text(doubler)).as_deref(), Some("spam"));
+
+    // Airdrop phishing
+    let airdrop = "Claim your airdrop! Connect wallet and validate seed phrase now";
+    assert!(!passed(&check_text(airdrop)));
+    assert_eq!(category(&check_text(airdrop)).as_deref(), Some("spam"));
+
+    // Fast cash scheme
+    let fast_cash = "Make $5000 a day working from home guaranteed payout!";
+    assert!(!passed(&check_text(fast_cash)));
+    assert_eq!(category(&check_text(fast_cash)).as_deref(), Some("spam"));
+
+    // Line flooding
+    let flood = "WINNER\nWINNER\nWINNER\nWINNER\nWINNER";
+    assert!(!passed(&check_text(flood)));
+    assert_eq!(category(&check_text(flood)).as_deref(), Some("spam"));
+
+    // Obfuscated spam
+    let obfuscated = "d0ubl3 y0ur cryp+0 n0w";
+    assert!(!passed(&check_text(obfuscated)));
+    assert_eq!(category(&check_text(obfuscated)).as_deref(), Some("spam"));
+}
+
+#[test]
+fn test_csam_detection_comprehensive() {
+    // Trade request
+    let csam_trade = "selling cp pack on telegram";
+    assert!(!passed(&check_text(csam_trade)));
+    assert_eq!(category(&check_text(csam_trade)).as_deref(), Some("cp"));
+
+    // Obfuscated pedophile term
+    let obf = "p3d0ph1l3";
+    assert!(!passed(&check_text(obf)));
+    assert_eq!(category(&check_text(obf)).as_deref(), Some("cp"));
+
+    // Darknet distribution domain
+    let onion = "links on http://pedochat.onion";
+    assert!(!passed(&check_text(onion)));
+    assert_eq!(category(&check_text(onion)).as_deref(), Some("cp"));
+}
+
+#[test]
+fn test_gore_detection_comprehensive() {
+    // Execution footage
+    let execution = "watch this beheading video footage uncensored";
+    assert!(!passed(&check_text(execution)));
+    assert_eq!(category(&check_text(execution)).as_deref(), Some("gore"));
+
+    // Cartel torture video
+    let cartel = "cartel execution video clip leak";
+    assert!(!passed(&check_text(cartel)));
+    assert_eq!(category(&check_text(cartel)).as_deref(), Some("gore"));
+
+    // Shock site domain
+    let shock = "check out https://theync.com/video456";
+    assert!(!passed(&check_text(shock)));
+    assert_eq!(category(&check_text(shock)).as_deref(), Some("gore"));
+
+    // Animal cruelty
+    let crush = "animal crush video download";
+    assert!(!passed(&check_text(crush)));
+    assert_eq!(category(&check_text(crush)).as_deref(), Some("gore"));
+
+    // Suicide instruction
+    let suicide = "suicide instructions method guide";
+    assert!(!passed(&check_text(suicide)));
+    assert_eq!(category(&check_text(suicide)).as_deref(), Some("gore"));
+}
+
+#[test]
+fn test_custom_word_filters() {
+    let custom_words = vec!["custombadword".to_string(), "bannedterm".to_string()];
+    let verdict = soshal_moderation_core::check::check_with_custom_words(
+        "this post has custombadword inside",
+        &custom_words,
+    );
+    assert!(!verdict.passed);
+    assert_eq!(verdict.category.as_deref(), Some("custom"));
+
+    let clean = soshal_moderation_core::check::check_with_custom_words(
+        "this is a completely friendly post",
+        &custom_words,
+    );
+    assert!(clean.passed);
+    assert_eq!(clean.category, None);
+}
+
+#[test]
+fn test_media_moderation() {
+    use soshal_moderation_core::media::check_media_item;
+
+    // CSAM hash blocked
+    let csam = check_media_item(
+        "c27a20ff44e8bc1a3b1a8d052d9a6c4df103c80a2b0e8b1ef380b0b8e8f85f31",
+        Some("https://example.com/file.png"),
+        "image/png",
+        &[],
+    );
+    assert!(!csam.passed);
+    assert!(csam.is_csam);
+
+    // Shock site URL blocked
+    let shock = check_media_item(
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        Some("https://bestgore.com/shock.mp4"),
+        "video/mp4",
+        &[],
+    );
+    assert!(!shock.passed);
+    assert!(shock.is_gore);
+
+    // Sensitive NIP-36 tag flagged
+    let sensitive = check_media_item(
+        "1111111111111111111111111111111111111111111111111111111111111111",
+        Some("https://example.com/art.jpg"),
+        "image/jpeg",
+        &["content-warning: nudity".to_string()],
+    );
+    assert!(sensitive.passed);
+    assert!(sensitive.is_sensitive);
+    assert_eq!(
+        sensitive.warning_reason.as_deref(),
+        Some("content-warning: nudity")
+    );
+}
+
+#[test]
+fn test_ai_text_classification_all_categories() {
+    use soshal_moderation_core::check::{check_text_ai, check_text_ai_json};
+
+    // 1. Clean content
+    let clean = check_text_ai("Hello friends! Excited to share our new open-source Nostr client.");
+    assert!(!clean.is_flagged);
+    assert_eq!(clean.primary_category, None);
+
+    // 2. AI Spam
+    let spam = check_text_ai(
+        "Send 2.5 ETH to double your crypto instantly! Connect wallet and claim airdrop now",
+    );
+    assert!(spam.is_flagged);
+    assert_eq!(spam.primary_category.as_deref(), Some("spam"));
+    assert!(spam.scores.spam > 0.55);
+
+    // 3. AI CSAM
+    let csam = check_text_ai("selling cp archive on darknet");
+    assert!(csam.is_flagged);
+    assert_eq!(csam.primary_category.as_deref(), Some("csam"));
+    assert!(csam.scores.csam > 0.50);
+
+    // 4. AI Gore
+    let gore = check_text_ai("live cartel execution and beheading video hd");
+    assert!(gore.is_flagged);
+    assert_eq!(gore.primary_category.as_deref(), Some("gore"));
+    assert!(gore.scores.gore > 0.50);
+
+    // 5. AI Bigotry
+    let bigotry = check_text_ai("white power rally death to all race traitors");
+    assert!(bigotry.is_flagged);
+    assert_eq!(bigotry.primary_category.as_deref(), Some("bigotry"));
+    assert!(bigotry.scores.bigotry > 0.50);
+
+    // 6. AI Harassment
+    let harassment = check_text_ai("i will find you and kill you leak your address");
+    assert!(harassment.is_flagged);
+    assert_eq!(harassment.primary_category.as_deref(), Some("harassment"));
+    assert!(harassment.scores.harassment > 0.50);
+
+    // 7. JSON serialization roundtrip
+    let json = check_text_ai_json("double your crypto fast");
+    assert!(json.contains("\"is_flagged\":true"));
+    assert!(json.contains("\"scores\""));
+}
+
+#[test]
+fn test_ai_media_buffer_classification() {
+    use soshal_moderation_core::media::{check_media_buffer_ai, check_media_buffer_ai_json};
+
+    // Clean buffer
+    let clean_buf = vec![120u8; 1024];
+    let res = check_media_buffer_ai(&clean_buf, "image/png", &[]);
+    assert!(res.passed);
+    assert!(!res.is_csam_hazard);
+    assert!(!res.is_gore_hazard);
+
+    // Disallowed executable
+    let elf = vec![0x7f, b'E', b'L', b'F', 0, 0];
+    let res = check_media_buffer_ai(&elf, "application/x-executable", &[]);
+    assert!(!res.passed);
+    assert!(res.warning_reason.unwrap().contains("executable"));
+
+    // JSON serialization
+    let json = check_media_buffer_ai_json(&clean_buf, "image/jpeg", &[]);
+    assert!(json.contains("\"passed\":true"));
 }

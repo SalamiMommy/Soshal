@@ -167,6 +167,24 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
     });
   }
 
+  String _availabilitySummary(String json) {
+    try {
+      final decoded = jsonDecode(json);
+      if (decoded is! Map<String, dynamic>) return '';
+      final interests = (decoded['interests'] as List?) ?? const [];
+      final mediaType = (decoded['media_type'] as String?) ?? '';
+      final mode = (decoded['mode'] as String?) ?? '';
+      final parts = [
+        if (interests.isNotEmpty) interests.join(', '),
+        if (mediaType.isNotEmpty) mediaType,
+        if (mode.isNotEmpty) mode,
+      ];
+      return parts.join(' · ');
+    } catch (_) {
+      return '';
+    }
+  }
+
   List<Widget> _headerChildren(ChatrandomService service) {
     return [
       Text('Your Status', style: Theme.of(context).textTheme.titleMedium),
@@ -224,9 +242,8 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
       const SizedBox(height: 12),
       if (_availabilityJson.isNotEmpty)
         Text(
-          'Availability: $_availabilityJson',
+          'Availability: ${_availabilitySummary(_availabilityJson)}',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
                 color: Theme.of(context).colorScheme.outline,
               ),
         ),

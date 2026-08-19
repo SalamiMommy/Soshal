@@ -1,7 +1,8 @@
 //! I2P SAM V3 client implementation for anonymous networking.
 
+use crate::pqc_link::{parse_handshake_frame, PqcLinkCrypto, PQ_LINK_CRYPTO};
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -376,11 +377,221 @@ impl I2PSessionManager {
             None => Err("i2p session not running".to_string()),
         }
     }
+
+    /// Opens an outbound stream with a hybrid PQC ratchet handshake. The
+    /// returned codec must drive the handshake (outbound first) before any
+    /// encrypted payload flows.
+    pub fn connect_to_destination_pqc(
+        &self,
+        destination: &str,
+    ) -> Result<(std::net::TcpStream, I2PStreamCodec), String> {
+        let stream = self.connect_to_destination(destination)?;
+        Ok((stream, I2PStreamCodec::new(destination)))
+    }
+
+    /// Accepts an inbound stream and pairs it with a hybrid PQC ratchet
+    /// codec (the peer drives the handshake; we answer on accept).
+    pub fn accept_connection_pqc(&self) -> Result<(std::net::TcpStream, I2PStreamCodec), String> {
+        let stream = self.accept_connection()?;
+        let codec = I2PStreamCodec::new("inbound");
+        Ok((stream, codec))
+    }
 }
 
 impl Default for I2PSessionManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Hybrid PQC double-ratchet codec for i2p SAM streams. Every message on
+/// the wire is `u32 BE length ‖ body`; the first body in each direction is
+/// a ratchet handshake frame (session id + hybrid public key), everything
+/// after is an encrypted ratchet frame.
+///
+/// The outbound side owns the session id (the destination hash); the
+/// inbound side adopts the id from the handshake frame, so both ends key
+/// the shared process-wide crypto store identically.
+pub struct I2PStreamCodec {
+    crypto: &'static PqcLinkCrypto,
+    peer: String,
+    context: String,
+    handshake_sent: bool,
+    handshake_done: bool,
+}
+
+/// Upper bound for a framed i2p message (handshake pk or ratchet frame).
+const MAX_I2P_FRAME: usize = 128 * 1024;
+
+fn write_raw_frame(stream: &mut TcpStream, body: &[u8]) -> Result<(), String> {
+    if body.len() > MAX_I2P_FRAME {
+        return Err("i2p frame too large".to_string());
+    }
+    stream
+        .write_all(&(body.len() as u32).to_be_bytes())
+        .map_err(|e| format!("i2p frame write failed: {e}"))?;
+    stream
+        .write_all(body)
+        .map_err(|e| format!("i2p frame write failed: {e}"))?;
+    stream
+        .flush()
+        .map_err(|e| format!("i2p frame flush failed: {e}"))
+}
+
+fn read_raw_frame(stream: &mut TcpStream) -> Result<Vec<u8>, String> {
+    let mut len_buf = [0u8; 4];
+    stream
+        .read_exact(&mut len_buf)
+        .map_err(|e| format!("i2p frame read failed: {e}"))?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    if len == 0 || len > MAX_I2P_FRAME {
+        return Err("bad i2p frame length".to_string());
+    }
+    let mut body = vec![0u8; len];
+    stream
+        .read_exact(&mut body)
+        .map_err(|e| format!("i2p frame read failed: {e}"))?;
+    Ok(body)
+}
+
+impl I2PStreamCodec {
+    /// Outbound side: session keyed by the remote destination hash.
+    pub fn new(peer: &str) -> Self {
+        Self {
+            crypto: &PQ_LINK_CRYPTO,
+            peer: peer.to_string(),
+            context: format!("i2p:{}", peer),
+            handshake_sent: false,
+            handshake_done: false,
+        }
+    }
+
+    /// Outbound side: builds the first handshake frame (own hybrid pk).
+    pub fn outbound_first(&mut self) -> Result<Vec<u8>, String> {
+        let pk = self.crypto.begin_handshake(&self.peer, &self.context)?;
+        self.handshake_sent = true;
+        Ok(PqcLinkCrypto::handshake_frame(&self.peer, &pk))
+    }
+
+    /// Outbound side: consumes the responder's handshake reply, completing
+    /// the session.
+    pub fn outbound_finish(&mut self, reply: &[u8]) -> Result<(), String> {
+        if !self.handshake_sent {
+            return Err("outbound handshake not sent".to_string());
+        }
+        let (_sid, pk) = parse_handshake_frame(reply)?;
+        self.crypto.complete_handshake(&self.peer, pk)?;
+        self.handshake_done = true;
+        Ok(())
+    }
+
+    /// Inbound side: consumes the initiator's handshake frame and returns
+    /// the reply carrying our hybrid pk. State is keyed under
+    /// `inbound:<sid>` so a same-process both-ends link cannot collide with
+    /// the outbound side's session; the ratchet context keeps the raw
+    /// session id so both ends derive identical keys.
+    pub fn inbound_accept(&mut self, frame: &[u8]) -> Result<Vec<u8>, String> {
+        let (sid, _) = parse_handshake_frame(frame)?;
+        let context = format!("i2p:{}", sid);
+        let state_key = format!("inbound:{}", sid);
+        let (_key, own_pk) = self.crypto.accept_handshake(&context, &state_key, frame)?;
+        self.peer = state_key;
+        self.context = context;
+        self.handshake_done = true;
+        Ok(PqcLinkCrypto::handshake_frame(sid, &own_pk))
+    }
+
+    /// Inbound codec before the handshake (peer key filled on accept).
+    pub fn new_inbound() -> Self {
+        Self {
+            crypto: &PQ_LINK_CRYPTO,
+            peer: String::new(),
+            context: "i2p:inbound".to_string(),
+            handshake_sent: false,
+            handshake_done: false,
+        }
+    }
+
+    pub fn handshake_done(&self) -> bool {
+        self.handshake_done
+    }
+
+    /// Encrypts a payload and writes it as a length-prefixed ratchet frame.
+    pub fn write_encrypted(&self, stream: &mut TcpStream, payload: &[u8]) -> Result<(), String> {
+        if !self.handshake_done {
+            return Err("i2p ratchet handshake incomplete".to_string());
+        }
+        let frame = self.crypto.encrypt(&self.peer, &self.context, payload)?;
+        write_raw_frame(stream, &frame)
+    }
+
+    /// Reads a length-prefixed ratchet frame and decrypts it.
+    pub fn read_decrypted(&self, stream: &mut TcpStream) -> Result<Vec<u8>, String> {
+        if !self.handshake_done {
+            return Err("i2p ratchet handshake incomplete".to_string());
+        }
+        let frame = read_raw_frame(stream)?;
+        self.crypto.decrypt(&self.peer, &self.context, &frame)
+    }
+}
+
+#[cfg(test)]
+mod codec_tests {
+    use super::*;
+    use crate::pqc_link::FRAME_TAG_HANDSHAKE;
+    use std::net::TcpListener;
+    use std::thread;
+
+    fn connected_pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = thread::spawn(move || listener.accept().expect("accept").0);
+        let client = TcpStream::connect(addr).expect("connect");
+        let server = server.join().expect("join");
+        (client, server)
+    }
+
+    #[test]
+    fn handshake_and_encrypted_roundtrip() {
+        let (mut client, mut server) = connected_pair();
+        let mut outbound = I2PStreamCodec::new("dest-hash-1");
+        let mut inbound = I2PStreamCodec::new_inbound();
+
+        let hello = outbound.outbound_first().unwrap();
+        write_raw_frame(&mut client, &hello).unwrap();
+        let inbound_frame = read_raw_frame(&mut server).unwrap();
+        let reply = inbound.inbound_accept(&inbound_frame).unwrap();
+        assert!(inbound.handshake_done());
+        write_raw_frame(&mut server, &reply).unwrap();
+        let reply_frame = read_raw_frame(&mut client).unwrap();
+        outbound.outbound_finish(&reply_frame).unwrap();
+        assert!(outbound.handshake_done());
+
+        let payload = b"secret i2p payload";
+        outbound.write_encrypted(&mut client, payload).unwrap();
+        let plain = inbound.read_decrypted(&mut server).unwrap();
+        assert_eq!(plain, payload);
+
+        inbound.write_encrypted(&mut server, b"reply").unwrap();
+        let plain = outbound.read_decrypted(&mut client).unwrap();
+        assert_eq!(plain, b"reply");
+    }
+
+    #[test]
+    fn encrypted_io_before_handshake_fails() {
+        let (mut client, _server) = connected_pair();
+        let outbound = I2PStreamCodec::new("dest-hash-2");
+        assert!(outbound.write_encrypted(&mut client, b"x").is_err());
+        assert!(outbound.read_decrypted(&mut client).is_err());
+    }
+
+    #[test]
+    fn outbound_finish_before_send_fails() {
+        let mut outbound = I2PStreamCodec::new("dest-hash-3");
+        assert!(outbound.outbound_finish(&[0u8; 8]).is_err());
+        let hello = outbound.outbound_first().unwrap();
+        assert!(hello[0] == FRAME_TAG_HANDSHAKE);
+        assert!(outbound.outbound_finish(&[0x99u8; 8]).is_err());
     }
 }
 

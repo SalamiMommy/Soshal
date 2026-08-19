@@ -1717,16 +1717,9 @@ mod tests {
             "content is a string, keys: {:?}",
             info.as_object().map(|m| m.keys().collect::<Vec<_>>())
         );
-        eprintln!(
-            "INFO KEYS: {:?} content={:?}",
-            info.as_object().map(|m| m.keys().collect::<Vec<_>>()),
-            info.get("content")
-        );
-        let info_content: serde_json::Value =
-            serde_json::from_str(info["content"].as_str().unwrap()).unwrap();
         assert!(
-            info_content["shipping_available"] == serde_json::Value::Bool(false)
-                && info_content["currency"] == "sats",
+            info["shipping_available"] == serde_json::Value::Bool(false)
+                && info["currency"] == "sats",
             "got {info:?}"
         );
 

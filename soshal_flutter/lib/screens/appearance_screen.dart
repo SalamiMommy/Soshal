@@ -42,6 +42,15 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     ('monospace', 'Monospace'),
   ];
 
+  static const fontColors = <(String, String)>[
+    ('', 'Default'),
+    ('#ffffff', 'White'),
+    ('#000000', 'Black'),
+    ('#ff4444', 'Red'),
+    ('#4488ff', 'Blue'),
+    ('#44cc66', 'Green'),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -210,6 +219,38 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
               if (v != null) theme.update(fontFamily: v);
             },
           ),
+          const SizedBox(height: 24),
+          Text('Font color', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final (color, label) in fontColors)
+                ChoiceChip(
+                  avatar: color.isEmpty
+                      ? null
+                      : CircleAvatar(
+                          backgroundColor: Color(0xFF000000 |
+                              int.parse(color.substring(1), radix: 16)),
+                          radius: 8,
+                        ),
+                  label: Text(label),
+                  selected:
+                      theme.fontColor.toLowerCase() == color.toLowerCase(),
+                  onSelected: (_) => theme.update(fontColor: color),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            decoration: const InputDecoration(
+              labelText: '#RRGGBB (optional)',
+              hintText: '#4f9cf9',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (v) => theme.update(fontColor: v.trim()),
+          ),
           const SizedBox(height: 32),
           FilledButton.icon(
             onPressed: () async {
@@ -233,6 +274,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
                 customAccent: '',
                 fontScale: 1.0,
                 fontFamily: 'default',
+                fontColor: '',
                 backgroundImage: ThemeService.defaultBackgroundImage,
               );
               theme.save();

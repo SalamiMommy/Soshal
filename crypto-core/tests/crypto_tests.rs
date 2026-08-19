@@ -7,9 +7,7 @@ use soshal_crypto_core::base64::{
 use soshal_crypto_core::base64url::{from_base64url, to_base64url};
 use soshal_crypto_core::hash::{hkdf_sha256, hmac_sha256, sha256, sha256_hex};
 use soshal_crypto_core::key_derivation::derive_db_key;
-use soshal_crypto_core::nip44::{
-    decrypt, encrypt, encrypt_padded, pad, unpad, SALT_LEN, VERSION_LEGACY,
-};
+use soshal_crypto_core::nip44::{decrypt, encrypt, encrypt_padded, pad, unpad, SALT_LEN};
 use soshal_crypto_core::pqc::{dsa, hybrid, kem};
 use soshal_crypto_core::zk_trust::{generate_zk_wot_proof, verify_zk_wot_proof};
 
@@ -77,10 +75,7 @@ fn nip44_tests() {
     assert_eq!(unpad(&pad(b"hello").unwrap()).unwrap(), b"hello");
 
     let legacy_ct = encrypt_padded(b"legacy data", &key).unwrap();
-    let mut buf = legacy_ct[..SALT_LEN].to_vec();
-    buf.push(VERSION_LEGACY);
-    buf.extend_from_slice(&legacy_ct[SALT_LEN..]);
-    let encoded = base64_encode_bytes(&buf);
+    let encoded = base64_encode_bytes(&legacy_ct);
     assert_eq!(decrypt(&encoded, &key).unwrap(), b"legacy data");
 }
 
@@ -146,10 +141,7 @@ fn nip44_adversarial_tests() {
     assert!(decrypt(&ct, &wrong_key).is_err());
 
     let empty = encrypt_padded(b"", &key).unwrap();
-    let mut empty_buf = empty[..SALT_LEN].to_vec();
-    empty_buf.push(VERSION_LEGACY);
-    empty_buf.extend_from_slice(&empty[SALT_LEN..]);
-    assert!(decrypt(&base64_encode_bytes(&empty_buf), &key)
+    assert!(decrypt(&base64_encode_bytes(&empty), &key)
         .unwrap()
         .is_empty());
 
@@ -157,11 +149,8 @@ fn nip44_adversarial_tests() {
     assert_eq!(decrypt(&encrypt(&bin, &key).unwrap(), &key).unwrap(), bin);
 
     let padded = encrypt_padded(b"padded data", &key).unwrap();
-    let mut padded_buf = padded[..SALT_LEN].to_vec();
-    padded_buf.push(VERSION_LEGACY);
-    padded_buf.extend_from_slice(&padded[SALT_LEN..]);
     assert_eq!(
-        decrypt(&base64_encode_bytes(&padded_buf), &key).unwrap(),
+        decrypt(&base64_encode_bytes(&padded), &key).unwrap(),
         b"padded data"
     );
 

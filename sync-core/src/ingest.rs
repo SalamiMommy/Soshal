@@ -262,19 +262,18 @@ async fn handle_impl(
             let Some(recipient) = p_tags(event).first().cloned() else {
                 return Ok(());
             };
-            let amount = event
-                .tags
-                .iter()
-                .find(|t| t.kind() == "amount")
-                .and_then(|t| t.content())
-                .and_then(|v| v.parse::<i64>().ok())
-                .unwrap_or(0);
+            if recipient != my_pubkey {
+                return Ok(());
+            }
+            let Some(amount_sats) = soshal_zap_core::bolt11_amount_sats(&event.content) else {
+                return Ok(());
+            };
             let row = ZapRow {
                 id: event.id.to_hex(),
                 pubkey: event.pubkey.to_hex(),
                 recipient_pubkey: recipient,
                 event_id: e_tags(event).first().cloned(),
-                amount,
+                amount: amount_sats.min(i64::MAX as u64) as i64,
                 content: Some(event.content.clone()),
                 created_at: event.created_at.as_secs() as i64,
                 zap_type: "public".to_string(),
@@ -286,6 +285,9 @@ async fn handle_impl(
             let owner = Some(event.pubkey.to_hex());
             for tag in event.tags.iter().filter(|t| t.kind() == "r") {
                 let Some(url) = tag.content() else { continue };
+                if !soshal_common_core::url::is_valid_event_relay_url(url) {
+                    continue;
+                }
                 let (read_enabled, write_enabled) = match tag.as_slice().get(2).map(|s| s.as_str())
                 {
                     Some("read") => (true, false),
@@ -650,57 +652,46 @@ mod tests {
         .unwrap();
         assert_eq!(count, 0);
 
-        // Missing amount tag → 0; unparseable amount → 0.
+        // Receipt addressed to someone else (p-tag != my pubkey): skipped.
         let target = "aa".repeat(32);
-        let zap_no_amount = signed_event_with_tags(
+        let mine = "bb".repeat(32);
+        let zap_other = signed_event_with_tags(
             &keys,
             Kind::ZapReceipt,
-            "zap",
+            "lnbc10n",
             vec![vec!["p".to_string(), target.clone()]],
         );
-        handle(&db, "", &zap_no_amount, &tx).unwrap();
-        let zap_bad_amount = signed_event_with_tags(
+        handle(&db, &mine, &zap_other, &tx).unwrap();
+        let count: i64 = query_first(&db.conn().unwrap(), "SELECT COUNT(*) FROM zaps", (), |r| {
+            r.get(0)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(count, 0);
+
+        // Invoice missing/unparseable from content: skipped, nothing persisted.
+        let zap_bad = signed_event_with_tags(
             &keys,
             Kind::ZapReceipt,
             "zap",
-            vec![
-                vec!["p".to_string(), target.clone()],
-                vec!["amount".to_string(), "not-a-number".to_string()],
-            ],
+            vec![vec!["p".to_string(), mine.clone()]],
         );
-        handle(&db, "", &zap_bad_amount, &tx).unwrap();
-        for z in [&zap_no_amount, &zap_bad_amount] {
-            let amount: i64 = query_first(
-                &db.conn().unwrap(),
-                "SELECT amount FROM zaps WHERE id = ?1",
-                libsql::params![z.id.to_hex().as_str()],
-                |r| r.get(0),
-            )
-            .unwrap()
-            .unwrap();
-            assert_eq!(amount, 0);
-        }
-        let recipient: String = query_first(
-            &db.conn().unwrap(),
-            "SELECT recipient_pubkey FROM zaps WHERE id = ?1",
-            libsql::params![zap_bad_amount.id.to_hex().as_str()],
-            |r| r.get(0),
-        )
+        handle(&db, &mine, &zap_bad, &tx).unwrap();
+        let count: i64 = query_first(&db.conn().unwrap(), "SELECT COUNT(*) FROM zaps", (), |r| {
+            r.get(0)
+        })
         .unwrap()
         .unwrap();
-        assert_eq!(recipient, target);
+        assert_eq!(count, 0);
 
-        // Valid amount parses.
+        // Valid invoice addressed to me: amount taken from bolt11 (sats).
         let zap_good = signed_event_with_tags(
             &keys,
             Kind::ZapReceipt,
-            "zap",
-            vec![
-                vec!["p".to_string(), target],
-                vec!["amount".to_string(), "999".to_string()],
-            ],
+            "lnbc10n",
+            vec![vec!["p".to_string(), mine.clone()]],
         );
-        handle(&db, "", &zap_good, &tx).unwrap();
+        handle(&db, &mine, &zap_good, &tx).unwrap();
         let amount: i64 = query_first(
             &db.conn().unwrap(),
             "SELECT amount FROM zaps WHERE id = ?1",
@@ -709,7 +700,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(amount, 999);
+        assert_eq!(amount, 1); // lnbc10n = 1 sat
 
         // RelayList: read/write/other branches set flags.
         let relays = signed_event_with_tags(
@@ -727,7 +718,7 @@ mod tests {
                     "wss://write.only".to_string(),
                     "write".to_string(),
                 ],
-                vec!["r".to_string(), "wss://both".to_string()],
+                vec!["r".to_string(), "wss://both.example.com".to_string()],
             ],
         );
         handle(&db, "", &relays, &tx).unwrap();
@@ -742,7 +733,7 @@ mod tests {
             .unwrap();
         assert!(!wr.read_enabled && wr.write_enabled);
         let br = RelayRepo::new(&db)
-            .get_by_url("wss://both")
+            .get_by_url("wss://both.example.com")
             .unwrap()
             .unwrap();
         assert!(br.read_enabled && br.write_enabled);

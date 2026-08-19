@@ -172,7 +172,8 @@ impl ReticulumNode {
                                         now_secs,
                                     );
                                 } else if pkt.packet_type == ReticulumPacketType::LinkRequest {
-                                    let _ = link_manager.handle_link_request(pkt.destination);
+                                    let _ = link_manager
+                                        .handle_link_request(pkt.destination, &pkt.payload);
                                 } else if pkt.packet_type == ReticulumPacketType::Proof {
                                     let _ = link_manager
                                         .handle_link_proof(pkt.destination, &pkt.payload);

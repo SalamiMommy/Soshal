@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `daemons_dir`, `files_dir`, `spawn`, `write_file`
+// These functions are ignored because they are not marked as `pub`: `daemons_dir`, `files_dir`, `is_running`, `spawn`, `write_file`
 
 /// Extract the three bundled daemons from assets into files/daemons/.
 /// Returns false if extraction is unsupported (no bundled assets).
@@ -25,7 +25,9 @@ bool daemonAreDaemonsAvailable() =>
 String daemonGetDaemonStatus() =>
     RustLib.instance.api.crateFfiDaemonDaemonGetDaemonStatus();
 
-/// Extract + launch i2pd (SAM 7656, SOCKS 4447, HTTP 4444) and rnsd.
+/// Extract + launch i2pd (SAM 7656, SOCKS 4447, HTTP 4444), freenet, and
+/// rnsd. Each spawn is attempted independently; the result reports per
+/// daemon liveness after the spawn attempt.
 bool daemonStartDaemons() =>
     RustLib.instance.api.crateFfiDaemonDaemonStartDaemons();
 

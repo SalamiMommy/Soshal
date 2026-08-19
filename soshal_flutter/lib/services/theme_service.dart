@@ -19,6 +19,7 @@ class ThemeService extends ChangeNotifier {
   String customAccent = '';
   double fontScale = 1.0;
   String fontFamily = 'default';
+  String fontColor = '';
   String backgroundImage = defaultBackgroundImage;
 
   bool _loaded = false;
@@ -36,6 +37,7 @@ class ThemeService extends ChangeNotifier {
           customAccent = v['customAccent'] as String? ?? '';
           fontScale = (v['fontSizeScale'] as num?)?.toDouble() ?? 1.0;
           fontFamily = v['fontFamily'] as String? ?? 'default';
+          fontColor = v['fontColor'] as String? ?? '';
           backgroundImage =
               v['backgroundImage'] as String? ?? defaultBackgroundImage;
         } catch (_) {}
@@ -66,6 +68,7 @@ class ThemeService extends ChangeNotifier {
           'customAccent': customAccent,
           'fontSizeScale': fontScale,
           'fontFamily': fontFamily,
+          'fontColor': fontColor,
           'backgroundImage': backgroundImage,
         }),
       );
@@ -86,6 +89,7 @@ class ThemeService extends ChangeNotifier {
     String? customAccent,
     double? fontScale,
     String? fontFamily,
+    String? fontColor,
     String? backgroundImage,
   }) {
     if (hue != null) this.hue = hue;
@@ -93,6 +97,7 @@ class ThemeService extends ChangeNotifier {
     if (customAccent != null) this.customAccent = customAccent;
     if (fontScale != null) this.fontScale = fontScale;
     if (fontFamily != null) this.fontFamily = fontFamily;
+    if (fontColor != null) this.fontColor = fontColor;
     if (backgroundImage != null) this.backgroundImage = backgroundImage;
     notifyListeners();
   }
@@ -108,6 +113,7 @@ class ThemeService extends ChangeNotifier {
       fontFamily: fontFamily,
       fontScale: fontScale,
       customAccent: customAccent.isNotEmpty ? customAccent : null,
+      fontColor: fontColor.isNotEmpty ? fontColor : null,
     );
   }
 }

@@ -142,7 +142,7 @@ pub fn decode_ascii_entities<'a>(s: &'a str) -> Cow<'a, str> {
                     break;
                 }
             }
-            if chars.peek() == Some(&';') {
+            if buf_len > 0 && chars.peek() == Some(&';') {
                 chars.next();
             }
             let num_str = std::str::from_utf8(&buf[..buf_len]).unwrap_or("");
@@ -167,7 +167,9 @@ pub fn decode_ascii_entities<'a>(s: &'a str) -> Cow<'a, str> {
                 result.push('x');
             }
             result.push_str(num_str);
-            result.push(';');
+            if buf_len > 0 || chars.peek().is_none() {
+                result.push(';');
+            }
         } else {
             result.push(c);
         }

@@ -58,7 +58,9 @@ class _BlobImageState extends State<BlobImage> {
   @override
   void initState() {
     super.initState();
-    _resolve();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _resolve();
+    });
   }
 
   @override
@@ -68,7 +70,9 @@ class _BlobImageState extends State<BlobImage> {
       _path = null;
       _isUrl = false;
       _failed = false;
-      _resolve();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _resolve();
+      });
     }
   }
 

@@ -30,14 +30,21 @@ fn cleanup_db(path: &str) {
     let _ = std::fs::remove_file(format!("{path}-wal"));
     let _ = std::fs::remove_file(format!("{path}-shm"));
 }
-fn create_profile(pk: &str, name: &str, age: i32, interests: &str) -> String {
+fn create_profile_g(
+    pk: &str,
+    name: &str,
+    age: i32,
+    gender: &str,
+    seeking: &str,
+    interests: &str,
+) -> String {
     let signed = dating::dating_create_profile(
         pk.to_string(),
         name.to_string(),
         age,
         "u123".to_string(),
-        "female".to_string(),
-        "male".to_string(),
+        gender.to_string(),
+        seeking.to_string(),
         170,
         "athletic".to_string(),
         "never".to_string(),
@@ -55,6 +62,10 @@ fn create_profile(pk: &str, name: &str, age: i32, interests: &str) -> String {
     .unwrap();
     let v: serde_json::Value = serde_json::from_str(&signed).unwrap();
     v["id"].as_str().unwrap().to_string()
+}
+
+fn create_profile(pk: &str, name: &str, age: i32, interests: &str) -> String {
+    create_profile_g(pk, name, age, "female", "male", interests)
 }
 #[test]
 fn test_dating_profile_roundtrip() {
@@ -222,16 +233,16 @@ fn test_dating_filter_profiles() {
     let path = setup_db("dating_filter");
     let (alice_secret, alice_pk) = gen_keys();
     unlock(&alice_secret);
-    let _ = create_profile(&alice_pk, "alice", 30, "[]");
+    let _ = create_profile_g(&alice_pk, "alice", 30, "female", "male", "[]");
     let (bob_secret, bob_pk) = gen_keys();
     unlock(&bob_secret);
-    let _ = create_profile(&bob_pk, "bob", 25, "[]");
+    let _ = create_profile_g(&bob_pk, "bob", 25, "male", "female", "[]");
     let (carol_secret, carol_pk) = gen_keys();
     unlock(&carol_secret);
-    let _ = create_profile(&carol_pk, "carol", 40, "[]");
+    let _ = create_profile_g(&carol_pk, "carol", 40, "male", "female", "[]");
     let (dave_secret, dave_pk) = gen_keys();
     unlock(&dave_secret);
-    let _ = create_profile(&dave_pk, "dave", 30, "[\"music\"]");
+    let _ = create_profile_g(&dave_pk, "dave", 30, "male", "female", "[\"music\"]");
     unlock(&alice_secret);
     let filtered: Vec<serde_json::Value> = serde_json::from_str(
         &dating::dating_filter_profiles(

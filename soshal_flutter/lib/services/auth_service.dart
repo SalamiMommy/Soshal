@@ -160,10 +160,8 @@ class KeyPair {
 
   factory KeyPair.fromJson(Map<String, dynamic> json) {
     return KeyPair(
-      publicKey:
-          json.strOrNull('publicKey') ?? json.strOf('public_key'),
-      secretKey:
-          json.strOrNull('secretKey') ?? json.strOf('secret_key'),
+      publicKey: json.strOrNull('publicKey') ?? json.strOf('public_key'),
+      secretKey: json.strOrNull('secretKey') ?? json.strOf('secret_key'),
     );
   }
 

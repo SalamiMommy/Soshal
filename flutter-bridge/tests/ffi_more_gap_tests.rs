@@ -143,15 +143,24 @@ mod ffi_more_gap_tests {
         let by_type =
             notifications::notifications_fetch_by_type(me.clone(), "mention".into(), 10).unwrap();
         assert!(by_type.contains("n1"), "{by_type}");
-        let mentions = notifications::notifications_fetch_mentions(me.clone(), 10).unwrap();
+        let mentions =
+            notifications::notifications_fetch_by_type(me.clone(), "mention".to_string(), 10)
+                .unwrap();
         assert!(mentions.contains("n1"), "{mentions}");
-        let reactions = notifications::notifications_fetch_reactions(me.clone(), 10).unwrap();
+        let reactions =
+            notifications::notifications_fetch_by_type(me.clone(), "like".to_string(), 10).unwrap();
         assert!(reactions.contains("n2"), "{reactions}");
-        let replies = notifications::notifications_fetch_replies(me.clone(), 10).unwrap();
+        let replies =
+            notifications::notifications_fetch_by_type(me.clone(), "reply".to_string(), 10)
+                .unwrap();
         assert_eq!(replies, "[]");
-        let messages = notifications::notifications_fetch_messages(me.clone(), 10).unwrap();
+        let messages =
+            notifications::notifications_fetch_by_type(me.clone(), "message".to_string(), 10)
+                .unwrap();
         assert_eq!(messages, "[]");
-        let follows = notifications::notifications_fetch_follows(me.clone(), 10).unwrap();
+        let follows =
+            notifications::notifications_fetch_by_type(me.clone(), "follow".to_string(), 10)
+                .unwrap();
         assert!(follows.contains("n3"), "{follows}");
         assert!(notifications::notifications_mark_read("n1".into()).unwrap());
         assert_eq!(

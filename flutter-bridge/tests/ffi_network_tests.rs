@@ -6,18 +6,20 @@ mod network_ffi_tests {
     use soshal_flutter_bridge::*;
     #[test]
     fn network_ffi_transport_mode_roundtrip() {
-        for mode in ["clearnet", "auto", "i2p"] {
-            assert!(network::network_set_transport_mode(mode.to_string()).unwrap());
+        let _g = crate::test_util::lock();
+        for (set, expect) in [("clearnet", "nostr"), ("auto", "default"), ("i2p", "i2p")] {
+            assert!(network::network_set_transport_mode(set.to_string()).unwrap());
             let got = network::network_get_transport_mode().unwrap();
-            assert!(got == mode, "expected {mode}, got {got}");
+            assert_eq!(got, expect, "set {set}, got {got}");
         }
-        network::network_set_transport_mode("clearnet".to_string()).unwrap();
+        network::network_set_transport_mode("default".to_string()).unwrap();
     }
     #[test]
     fn network_ffi_transport_mode_invalid_rejected() {
+        let _g = crate::test_util::lock();
         network::network_set_transport_mode("clearnet".to_string()).unwrap();
         assert!(network::network_set_transport_mode("quantum".to_string()).is_err());
-        assert_eq!(network::network_get_transport_mode().unwrap(), "clearnet");
+        assert_eq!(network::network_get_transport_mode().unwrap(), "nostr");
     }
     #[test]
     fn network_ffi_get_sys_diagnostics_ok() {

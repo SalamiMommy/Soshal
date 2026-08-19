@@ -349,6 +349,58 @@ impl ChunkStore {
         total
     }
 
+    /// Enforces a maximum byte quota on the chunk cache by removing oldest chunks.
+    pub fn enforce_cache_quota(&self, max_bytes: u64) -> Result<u64, String> {
+        let current = self.total_bytes();
+        if current <= max_bytes {
+            return Ok(0);
+        }
+
+        let mut files: Vec<(PathBuf, u64, std::time::SystemTime)> = Vec::new();
+        if let Ok(entries) = fs::read_dir(&self.root) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    if let Ok(inner) = fs::read_dir(entry.path()) {
+                        for f in inner.flatten() {
+                            if let Ok(md) = f.metadata() {
+                                if md.is_file() {
+                                    let modified =
+                                        md.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                                    files.push((f.path(), md.len(), modified));
+                                }
+                            }
+                        }
+                    }
+                } else if let Ok(md) = entry.metadata() {
+                    if md.is_file() {
+                        let modified = md.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        files.push((entry.path(), md.len(), modified));
+                    }
+                }
+            }
+        }
+
+        files.sort_by_key(|f| f.2);
+
+        let mut reclaimed = 0u64;
+        let mut remaining = current;
+        for (path, size, _) in files {
+            if remaining <= max_bytes {
+                break;
+            }
+            if fs::remove_file(&path).is_ok() {
+                reclaimed += size;
+                remaining = remaining.saturating_sub(size);
+            }
+        }
+
+        if reclaimed > 0 {
+            self.refresh_index();
+        }
+
+        Ok(reclaimed)
+    }
+
     /// Removes all chunks (cache clear).
     pub fn clear(&self) {
         let _ = fs::remove_dir_all(&self.root);
@@ -845,5 +897,23 @@ mod tests {
         assert!(m5.chunks.is_empty());
         assert_eq!(m5.total_size, 0);
         assert!(m5.is_valid());
+    }
+
+    #[test]
+    fn test_enforce_cache_quota() {
+        let root = soshal_test_util::tmp_root("cas_quota");
+        let store = ChunkStore::new(root);
+        let chunk1 = vec![1u8; 1024];
+        let chunk2 = vec![2u8; 1024];
+        let chunk3 = vec![3u8; 1024];
+        store.put(&chunk1);
+        store.put(&chunk2);
+        store.put(&chunk3);
+        assert!(store.total_bytes() >= 3072);
+
+        // Enforce quota of 2000 bytes -> should prune oldest chunks
+        let reclaimed = store.enforce_cache_quota(2000).unwrap();
+        assert!(reclaimed > 0);
+        assert!(store.total_bytes() <= 2000);
     }
 }

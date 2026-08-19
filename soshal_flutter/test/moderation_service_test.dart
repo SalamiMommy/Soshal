@@ -1,4 +1,4 @@
-// ignore_for_file: invalid_use_of_internal_member
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/moderation_service.dart';
 
@@ -164,5 +164,85 @@ void main() {
       expect(await mod.shouldFilter('x', 'pk-me'), isFalse);
       expect(mod.lastError, contains('filter down'));
     });
+
+    test('aiClassifyText parses result and scores', () async {
+      final mod = ModerationService();
+      api.stubString(
+        'crateFfiModerationModerationAiClassifyText',
+        '{"is_flagged":true,"primary_category":"spam","confidence":0.92,"scores":{"spam":0.92,"csam":0.0,"gore":0.0,"bigotry":0.0,"harassment":0.0},"detected_reasons":["crypto_doubler"],"evasion_score":0.15}',
+      );
+
+      final res = await mod.aiClassifyText('double crypto fast');
+      expect(res.isFlagged, isTrue);
+      expect(res.primaryCategory, 'spam');
+      expect(res.confidence, closeTo(0.92, 0.01));
+      expect(res.scores.spam, closeTo(0.92, 0.01));
+      expect(res.scores.csam, 0.0);
+      expect(res.detectedReasons, ['crypto_doubler']);
+      expect(res.evasionScore, closeTo(0.15, 0.01));
+
+      final inv =
+          api.callsOf('crateFfiModerationModerationAiClassifyText').single;
+      expect(api.namedArg(inv, 'content'), 'double crypto fast');
+    });
+
+    test('aiClassifyMedia parses media verdict', () async {
+      final mod = ModerationService();
+      api.stubString(
+        'crateFfiModerationModerationAiClassifyMedia',
+        '{"passed":true,"is_csam_hazard":false,"is_gore_hazard":false,"is_nsfw":false,"exposure_score":0.12,"gore_score":0.05,"warning_reason":null}',
+      );
+
+      final res = await mod.aiClassifyMedia(Uint8List.fromList([1, 2, 3]), 'image/jpeg');
+      expect(res.passed, isTrue);
+      expect(res.isCsamHazard, isFalse);
+      expect(res.isGoreHazard, isFalse);
+      expect(res.exposureScore, closeTo(0.12, 0.01));
+
+      final inv =
+          api.callsOf('crateFfiModerationModerationAiClassifyMedia').single;
+      expect(api.namedArg(inv, 'mimeType'), 'image/jpeg');
+    });
+
+    test('hybridClassifyText parses 2-tier hybrid result', () async {
+      final mod = ModerationService();
+      api.stubString(
+        'crateFfiModerationModerationHybridClassifyText',
+        '{"is_flagged":true,"primary_category":"threat","confidence":0.88,"tier_evaluated":"Tier2Deep","tier1_result":{"is_flagged":false,"primary_category":null,"confidence":0.4,"scores":{"spam":0.0,"csam":0.0,"gore":0.0,"bigotry":0.0,"harassment":0.4},"detected_reasons":[],"evasion_score":0.0},"tier2_roberta_result":{"is_flagged":true,"primary_category":"threat","confidence":0.88,"scores":{"toxic":0.88,"severe_toxic":0.88,"obscene":0.1,"threat":0.88,"insult":0.2,"identity_hate":0.0,"spam":0.0,"csam":0.0,"gore":0.0},"token_count":8,"detected_signals":["roberta_semantic_threat"]},"detected_reasons":["roberta_semantic_threat"]}',
+      );
+
+      final res = await mod.hybridClassifyText('i will hunt you down', forceDeepScan: true);
+      expect(res.isFlagged, isTrue);
+      expect(res.tierEvaluated, 'Tier2Deep');
+      expect(res.primaryCategory, 'threat');
+      expect(res.tier2RobertaResult, isNotNull);
+      expect(res.tier2RobertaResult!.scores.threat, closeTo(0.88, 0.01));
+
+      final inv =
+          api.callsOf('crateFfiModerationModerationHybridClassifyText').single;
+      expect(api.namedArg(inv, 'content'), 'i will hunt you down');
+      expect(api.namedArg(inv, 'forceDeepScan'), isTrue);
+    });
+
+    test('computePdqHash parses 256-bit PDQ hash result', () async {
+      final mod = ModerationService();
+      api.stubString(
+        'crateFfiModerationModerationComputePdqHash',
+        '{"hash_hex":"f0f0f0f0f0f0f0f0a5a5a5a5a5a5a5a5123456789abcdef0123456789abcdef0","quality":85,"is_threat_match":true,"matched_category":"csam","min_hamming_distance":0}',
+      );
+
+      final res = await mod.computePdqHash(Uint8List.fromList([10, 20, 30]));
+      expect(res, isNotNull);
+      expect(res!.hashHex, 'f0f0f0f0f0f0f0f0a5a5a5a5a5a5a5a5123456789abcdef0123456789abcdef0');
+      expect(res.quality, 85);
+      expect(res.isThreatMatch, isTrue);
+      expect(res.matchedCategory, 'csam');
+      expect(res.minHammingDistance, 0);
+
+      final inv =
+          api.callsOf('crateFfiModerationModerationComputePdqHash').single;
+      expect(api.namedArg(inv, 'imageBytes'), isNotNull);
+    });
   });
 }
+

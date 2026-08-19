@@ -70,18 +70,6 @@ pub fn relay_node_status() -> Result<String, String> {
     Ok(status()).into()
 }
 
-/// Connect an I2P peer by destination hash (best-effort).
-#[frb(sync, serialize)]
-pub fn relay_connect_i2p(destination: String) -> Result<bool, String> {
-    let mut guard = node_guard();
-    let Some(node) = guard.as_mut() else {
-        return Err("mesh relay not running".to_string()).into();
-    };
-    node.connect_i2p(&destination)
-        .map_err(|e| format!("i2p connect failed: {e}"))?;
-    Ok(true).into()
-}
-
 /// Publish a signed event JSON to the mesh. Returns Ok(true) when published
 /// via mesh, Ok(false) when the mesh is not the active transport (caller
 /// falls back to relays/outbox).

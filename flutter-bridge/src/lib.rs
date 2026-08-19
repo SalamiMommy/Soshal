@@ -8,6 +8,7 @@ mod ffi;
 mod platform;
 
 pub use ffi::*;
+pub use zeroize::Zeroizing;
 
 #[allow(clippy::all, unsafe_code)]
 mod frb_generated; // AUTO INJECTED BY flutter_rust_bridge

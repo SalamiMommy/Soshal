@@ -64,9 +64,6 @@ flate2 = "1.0"
 zstd = "0.13"
 getrandom = "0.4"
 url = "2.5"
-pulldown-cmark = "0.12"
-prost = "0.13"
-rkyv = { version = "0.8", features = ["validation", "std"] }
 ml-kem = { version = "0.3.2", features = ["zeroize", "getrandom"] }
 ml-dsa = "0.1.1"
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
@@ -102,8 +99,6 @@ quinn = "0.11"
 oxidelta = "0.1"
 # Blurred image placeholders sent inside metadata.
 thumbhash = "0.1"
-# 2D physics driving Impeller shader uniforms.
-rapier2d = "0.25"
 
 [profile.release]
 opt-level = 3

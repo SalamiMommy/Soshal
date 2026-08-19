@@ -2,7 +2,7 @@
 //! local cache, per-kind watermarks, revert strategies, and PlumTree gossip
 //! bridging.
 
-use nostr::event::{Event, EventBuilder, FinalizeEvent, Kind, Tag};
+use nostr::event::{Event, Kind};
 use nostr::key::Keys;
 use sha2::{Digest, Sha256};
 use soshal_db_core::query::query_first;
@@ -33,14 +33,6 @@ fn gossip_msg(event: &Event) -> soshal_network_core::plumtree::PlumTreeMessage {
     }
 }
 
-fn signed_event(keys: &Keys, kind: Kind, content: &str, tags: Vec<Vec<String>>) -> Event {
-    let mut builder = EventBuilder::new(kind, content);
-    for t in tags {
-        builder = builder.tag(Tag::parse(t).unwrap());
-    }
-    builder.finalize(keys).unwrap()
-}
-
 fn channel() -> (mpsc::Sender<SyncUpdate>, mpsc::Receiver<SyncUpdate>) {
     mpsc::channel(16)
 }
@@ -50,7 +42,7 @@ fn ingest_text_note_caches_post_and_emits_feed() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
-    let event = signed_event(&keys, Kind::TextNote, "hello mesh", vec![]);
+    let event = soshal_test_util::signed_event_tagged(&keys, Kind::TextNote, "hello mesh", vec![]);
     let (tx, mut rx) = channel();
     handle(&db, "", &event, &tx).unwrap();
 
@@ -76,7 +68,7 @@ fn ingest_freenet_tag_sets_native_fields() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &keys,
         Kind::TextNote,
         "mesh note",
@@ -97,7 +89,12 @@ fn ingest_freenet_tag_sets_native_fields() {
 fn ingest_oversized_content_skipped() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    let event = signed_event(&keys, Kind::TextNote, &"x".repeat(70 * 1024), vec![]);
+    let event = soshal_test_util::signed_event_tagged(
+        &keys,
+        Kind::TextNote,
+        &"x".repeat(70 * 1024),
+        vec![],
+    );
     let (tx, _rx) = channel();
     handle(&db, "", &event, &tx).unwrap();
     assert!(PostRepo::new(&db)
@@ -112,7 +109,7 @@ fn ingest_contact_list_sets_user_contacts() {
     let keys = Keys::generate();
     let a = Keys::generate();
     let b = Keys::generate();
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &keys,
         Kind::ContactList,
         "",
@@ -138,7 +135,7 @@ fn ingest_zap_receipt_creates_zap_row() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let recipient = Keys::generate();
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &keys,
         Kind::ZapReceipt,
         "thanks!",
@@ -158,7 +155,7 @@ fn ingest_bookmarks_creates_bookmark_row() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &keys,
         Kind::Bookmarks,
         "saved stuff",
@@ -178,7 +175,7 @@ fn ingest_dm_addressed_to_me_emits_update() {
     let db = soshal_test_util::test_db();
     let me = Keys::generate();
     let peer = Keys::generate();
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &peer,
         Kind::EncryptedDirectMessage,
         "encrypted-blob",
@@ -209,7 +206,7 @@ fn ingest_dm_not_addressed_to_me_skipped() {
     let me = Keys::generate();
     let peer = Keys::generate();
     let other = Keys::generate();
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &peer,
         Kind::EncryptedDirectMessage,
         "encrypted-blob",
@@ -225,7 +222,7 @@ fn ingest_dm_authored_by_me_emits_update() {
     let db = soshal_test_util::test_db();
     let me = Keys::generate();
     let peer = Keys::generate();
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &me,
         Kind::EncryptedDirectMessage,
         "outgoing-blob",
@@ -240,7 +237,7 @@ fn ingest_dm_authored_by_me_emits_update() {
 fn ingest_custom_kind_cached_as_post() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &keys,
         Kind::Custom(20082),
         r#"{"t":"group_dist","groupId":"group-42"}"#,
@@ -261,7 +258,7 @@ fn ingest_reaction_caches_with_e_tag() {
     let keys = Keys::generate();
     let target = Keys::generate();
     soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &keys,
         Kind::Reaction,
         "+",
@@ -283,7 +280,7 @@ fn ingest_reaction_caches_with_e_tag() {
 fn ingest_reaction_without_e_tag_skipped() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    let event = signed_event(&keys, Kind::Reaction, "+", vec![]);
+    let event = soshal_test_util::signed_event_tagged(&keys, Kind::Reaction, "+", vec![]);
     let (tx, mut rx) = channel();
     handle(&db, "", &event, &tx).unwrap();
     assert!(rx.try_recv().is_err());
@@ -293,7 +290,7 @@ fn ingest_reaction_without_e_tag_skipped() {
 fn ingest_metadata_upserts_user() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &keys,
         Kind::Metadata,
         r#"{"name":"alice","about":"builder","lud16":"alice@example.com"}"#,
@@ -315,7 +312,7 @@ fn ingest_metadata_upserts_user() {
 fn ingest_rejects_unverified_event() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    let mut event = signed_event(&keys, Kind::TextNote, "hello", vec![]);
+    let mut event = soshal_test_util::signed_event_tagged(&keys, Kind::TextNote, "hello", vec![]);
     event.content = "tampered".to_string();
     let (tx, _rx) = channel();
     assert!(handle(&db, "", &event, &tx).is_err());
@@ -329,8 +326,8 @@ fn ingest_rejects_unverified_event() {
 fn ingest_batch_applies_all_events() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
-    let e1 = signed_event(&keys, Kind::TextNote, "one", vec![]);
-    let e2 = signed_event(&keys, Kind::TextNote, "two", vec![]);
+    let e1 = soshal_test_util::signed_event_tagged(&keys, Kind::TextNote, "one", vec![]);
+    let e2 = soshal_test_util::signed_event_tagged(&keys, Kind::TextNote, "two", vec![]);
     soshal_test_util::seed_user(&db, &e1.pubkey.to_hex());
     let (tx, _rx) = channel();
     handle_batch(&db, "", &[e1.clone(), e2.clone()], &tx).unwrap();
@@ -380,7 +377,7 @@ fn revert_like_removes_reaction() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
-    let event = signed_event(
+    let event = soshal_test_util::signed_event_tagged(
         &keys,
         Kind::Reaction,
         "+",
@@ -459,7 +456,7 @@ async fn gossip_forwards_to_eager_peers_and_ingests() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
-    let event = signed_event(&keys, Kind::TextNote, "gossiped", vec![]);
+    let event = soshal_test_util::signed_event_tagged(&keys, Kind::TextNote, "gossiped", vec![]);
     let msg = gossip_msg(&event);
     let bridge = GossipSyncBridge::new("self");
     bridge.node.write().await.add_peer("peer_a");
@@ -493,7 +490,7 @@ async fn gossip_duplicate_emits_prune() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
-    let event = signed_event(&keys, Kind::TextNote, "dup", vec![]);
+    let event = soshal_test_util::signed_event_tagged(&keys, Kind::TextNote, "dup", vec![]);
     let msg = gossip_msg(&event);
     let bridge = GossipSyncBridge::new("self");
     bridge.node.write().await.add_peer("peer_a");

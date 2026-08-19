@@ -7,6 +7,17 @@ struct VerifiedCache {
     queue: VecDeque<[u8; 32]>,
 }
 
+fn max_cache_capacity() -> usize {
+    #[cfg(target_os = "android")]
+    {
+        10_000
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        50_000
+    }
+}
+
 static VERIFIED_CACHE: RwLock<Option<VerifiedCache>> = RwLock::new(None);
 
 /// Verifies a Nostr event's Schnorr signature, using an in-memory bounded LRU cache.
@@ -25,7 +36,8 @@ pub fn verify_event(e: &nostr::event::Event) -> bool {
                 set: HashSet::with_capacity(1024),
                 queue: VecDeque::with_capacity(1024),
             });
-            if cache.set.len() >= 10_000 {
+            let max_cap = max_cache_capacity();
+            if cache.set.len() >= max_cap {
                 if let Some(oldest) = cache.queue.pop_front() {
                     cache.set.remove(&oldest);
                 }

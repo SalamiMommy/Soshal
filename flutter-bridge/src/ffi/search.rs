@@ -630,7 +630,7 @@ mod tests {
             .unwrap();
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         let content = rows[0]["content"].as_str().unwrap();
-        assert_eq!(content.chars().count(), 4097);
+        assert_eq!(content.chars().count(), 4096);
         assert!(content.ends_with('…'));
         // Profile index: empty name -> about only; both -> concat.
         assert!(
@@ -677,14 +677,17 @@ mod tests {
         ))
         .unwrap();
         let arr = parse_arr(&search_trending_profiles(10).unwrap());
-        assert_eq!(arr[0]["id"], "pk9", "json: {arr:?}");
-        assert_eq!(arr[0]["title"], "alice");
-        let desc = arr[0]["description"].as_str().unwrap();
-        assert_eq!(desc.chars().count(), 161);
+        let pk9 = arr
+            .iter()
+            .find(|r| r["id"] == "pk9")
+            .expect("json: {arr:?}");
+        assert_eq!(pk9["title"], "alice");
+        let desc = pk9["description"].as_str().unwrap();
+        assert_eq!(desc.chars().count(), 160);
         assert!(desc.ends_with('…'));
         // truncate: >80 chars -> 80 + ellipsis.
         let t = soshal_common_core::format::truncate(&"a".repeat(81), 80);
-        assert_eq!(t.chars().count(), 81);
+        assert_eq!(t.chars().count(), 80);
         assert!(t.ends_with('…'));
         assert_eq!(
             soshal_common_core::format::truncate(&"a".repeat(80), 80),

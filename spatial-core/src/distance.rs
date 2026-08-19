@@ -14,6 +14,10 @@ pub fn haversine_batch_km(lat1: f64, lon1: f64, targets: &[(f64, f64)], results:
     let cos_lat1 = lat1_rad.cos();
 
     for (i, &(lat2, lon2)) in targets.iter().enumerate().take(results.len()) {
+        if (lat1 - lat2).abs() < 1e-7 && (lon1 - lon2).abs() < 1e-7 {
+            results[i] = 0.0;
+            continue;
+        }
         let d_lat = (lat2 - lat1).to_radians();
         let d_lon = (lon2 - lon1).to_radians();
         let a = (d_lat / 2.0).sin().powi(2)

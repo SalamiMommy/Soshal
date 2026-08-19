@@ -26,9 +26,25 @@ pub fn parse_nwc_uri(uri: &str) -> Result<NwcConnectionInfo, String> {
     let mut secret_hex = String::new();
     let mut lud16 = None;
 
+    // NWC traffic carries the wallet secret + invoices: no cleartext ws://,
+    // and no loopback/private/rebinding hosts (SSRF guard on the relay).
+    // Every `relay=` param is validated — the nostr crate uses the first
+    // one, so an unvalidated later param must never win.
     for (k, v) in parsed.query_pairs() {
         match k.as_ref() {
-            "relay" => relay_url = v.to_string(),
+            "relay" => {
+                let r = v.to_string();
+                if r.len() > 512 {
+                    return Err("NWC relay too long".into());
+                }
+                if !r.starts_with("wss://") {
+                    return Err("NWC relay must be wss://".into());
+                }
+                if !soshal_common_core::url::is_valid_relay_url(&r).0 {
+                    return Err("invalid NWC relay".into());
+                }
+                relay_url = r;
+            }
             "secret" => secret_hex = v.to_string(),
             "lud16" => lud16 = Some(v.to_string()),
             _ => {}
@@ -36,17 +52,6 @@ pub fn parse_nwc_uri(uri: &str) -> Result<NwcConnectionInfo, String> {
     }
     if relay_url.is_empty() {
         return Err("missing relay in NWC URI".into());
-    }
-    if relay_url.len() > 512 {
-        return Err("NWC relay too long".into());
-    }
-    // NWC traffic carries the wallet secret + invoices: no cleartext ws://,
-    // and no loopback/private/rebinding hosts (SSRF guard on the relay).
-    if !relay_url.starts_with("wss://") {
-        return Err("NWC relay must be wss://".into());
-    }
-    if !soshal_common_core::url::is_valid_relay_url(&relay_url).0 {
-        return Err("invalid NWC relay".into());
     }
     if secret_hex.is_empty() || secret_hex.len() < 32 || secret_hex.len() > 128 {
         return Err("invalid secret in NWC URI".into());
@@ -175,7 +180,7 @@ pub async fn nwc_send_request<
         .map_err(|e| format!("nwc fetch: {}", e))?;
     let ev = events
         .into_iter()
-        .find(|e| e.verify().is_ok())
+        .find(|e| e.pubkey.to_string() == wallet_pk && e.verify().is_ok())
         .ok_or("nwc: no response within 15s")?;
     let response = nostr::nips::nip47::Response::from_event(
         &uri,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/session_service.dart';
+import '../services/signer_service.dart';
 import '../utils/format.dart';
 
 /// Account management: list accounts, switch, remove, add new.
@@ -99,6 +100,21 @@ class _AccountsScreenState extends State<AccountsScreen> {
                         TextButton(
                           onPressed: () async {
                             await session.switchAccount(account.pubkey);
+                            if (!context.mounted) return;
+                            // Re-key the in-process signer for the new
+                            // account; when no keychain entry exists, lock
+                            // it so the signer-lock overlay (recovery phrase
+                            // verified against the now-active account) shows
+                            // instead of mismatched-pubkey sign errors.
+                            final signer = context.read<SignerService>();
+                            var unlocked = false;
+                            try {
+                              unlocked = await signer
+                                  .unlockFromKeyring(account.pubkey);
+                            } catch (_) {}
+                            if (!unlocked) {
+                              await signer.lock();
+                            }
                           },
                           child: const Text('Switch'),
                         ),

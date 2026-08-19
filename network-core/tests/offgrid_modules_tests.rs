@@ -147,7 +147,7 @@ async fn http3_request_rejects_invalid_method_before_network() {
     let e = client
         .request(
             "BAD METHOD",
-            "http://127.0.0.1:1/",
+            "https://example.com/",
             Default::default(),
             None,
         )
@@ -165,7 +165,10 @@ async fn http3_request_unreachable_server_errors() {
         .request("GET", "http://127.0.0.1:1/", headers, Some(vec![1, 2, 3]))
         .await
         .unwrap_err();
-    assert!(e.contains("HTTP request failed"), "got {e}");
+    assert!(
+        e.contains("HTTP request failed") || e.contains("SSRF"),
+        "got {e}"
+    );
 }
 
 #[test]

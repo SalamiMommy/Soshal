@@ -112,6 +112,18 @@ pub struct RatchetState {
     pub skipped: Vec<SkippedKey>,
 }
 
+impl Drop for RatchetState {
+    fn drop(&mut self) {
+        self.root_key.zeroize();
+        self.current_sk.zeroize();
+        self.sending_chain_key.zeroize();
+        self.receiving_chain_key.zeroize();
+        for s in &mut self.skipped {
+            s.key.zeroize();
+        }
+    }
+}
+
 /// Input state for ratchet operations (deserialized from at-rest storage).
 pub type RatchetInput = RatchetState;
 
@@ -319,21 +331,27 @@ pub fn decrypt_ratchet(
         if state.root_key.is_empty() {
             let root = init_root(&ss, &state.context)?;
             ss.zeroize();
+            out.root_key.zeroize();
             out.root_key = hex_encode(&root);
             recv_chain = derive_chain(&out.root_key, &state.context)?.to_vec();
         } else {
             let (new_root, new_chain) = derive_root_step(&ss, &state.root_key, &state.context)?;
             ss.zeroize();
+            out.root_key.zeroize();
             out.root_key = hex_encode(&new_root);
             recv_chain = new_chain.to_vec();
         }
         out.chain_counter = header.chain_counter;
         out.receiving_chain_counter = 0;
+        for s in &mut out.skipped {
+            s.key.zeroize();
+        }
         out.skipped.clear();
         // Rotate the receiver KEM keypair after every root step and
         // republish the new public key (forward secrecy): a compromised
         // receiver key cannot decrypt future messages.
         let (rotated_pk, rotated_sk) = hybrid_keygen().map_err(|_| "rng failed")?;
+        out.current_sk.zeroize();
         out.current_sk = rotated_sk;
         out.current_pk = rotated_pk;
         prev_counter = 0;
@@ -354,10 +372,18 @@ pub fn decrypt_ratchet(
             .iter()
             .position(|s| s.seq == header.seq)
             .ok_or("replay")?;
-        let key_hex = out.skipped.remove(pos).key;
-        let bytes = hex_decode(&key_hex).map_err(|_| "bad skipped key hex")?;
+        let mut key_hex = out.skipped.remove(pos).key;
+        let mut bytes = match hex_decode(&key_hex) {
+            Ok(b) => b,
+            Err(e) => {
+                key_hex.zeroize();
+                return Err(e);
+            }
+        };
+        key_hex.zeroize();
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
+        bytes.zeroize();
         msg_key = arr;
     } else {
         let gap = header.seq - prev_counter;
@@ -372,7 +398,8 @@ pub fn decrypt_ratchet(
                 key: hex_encode(&skipped_key),
             });
             if out.skipped.len() > MAX_RATCHET_WINDOW as usize {
-                out.skipped.remove(0);
+                let mut evicted = out.skipped.remove(0);
+                evicted.key.zeroize();
             }
         }
         let (mk, next) = derive_msg_key_bytes(&recv_chain, &state.context)?;
@@ -380,6 +407,7 @@ pub fn decrypt_ratchet(
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&mk);
         msg_key = arr;
+        out.receiving_chain_key.zeroize();
         out.receiving_chain_key = hex_encode(&recv_chain);
         out.receiving_chain_counter = header.seq + 1;
     }

@@ -105,6 +105,9 @@ pub fn daemon_get_daemon_status() -> Result<String, String> {
 }
 
 fn spawn(name: &'static str, mut cmd: Command, log_name: &str, data_dir: &std::path::Path) -> bool {
+    if is_running(name) {
+        return true;
+    }
     fs::create_dir_all(data_dir).ok();
     let log = OpenOptions::new()
         .create(true)
@@ -132,7 +135,18 @@ fn spawn(name: &'static str, mut cmd: Command, log_name: &str, data_dir: &std::p
     }
 }
 
-/// Extract + launch i2pd (SAM 7656, SOCKS 4447, HTTP 4444) and rnsd.
+fn is_running(name: &'static str) -> bool {
+    CHILDREN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_mut(name)
+        .map(|c| c.try_wait().ok().map(|s| s.is_none()).unwrap_or(false))
+        .unwrap_or(false)
+}
+
+/// Extract + launch i2pd (SAM 7656, SOCKS 4447, HTTP 4444), freenet, and
+/// rnsd. Each spawn is attempted independently; the result reports per
+/// daemon liveness after the spawn attempt.
 #[frb(sync, serialize)]
 pub fn daemon_start_daemons() -> Result<bool, String> {
     let extracted = daemon_extract_daemons()?;
@@ -158,12 +172,17 @@ pub fn daemon_start_daemons() -> Result<bool, String> {
         .arg(format!("--conf={}", i2pd_conf.display()));
     let i2pd_ok = spawn("i2pd", i2pd_cmd, "i2pd.stdout.log", &i2pd_data);
 
+    let freenet_data = files.join("freenet-data");
+    let mut freenet_cmd = Command::new(dir.join("freenet"));
+    freenet_cmd.current_dir(&freenet_data);
+    let freenet_ok = spawn("freenet", freenet_cmd, "freenet.log", &freenet_data);
+
     let rnsd_data = files.join("reticulum-data");
     let mut rnsd_cmd = Command::new(dir.join("rnsd"));
     rnsd_cmd.current_dir(&rnsd_data);
     let rnsd_ok = spawn("rnsd", rnsd_cmd, "rnsd.log", &rnsd_data);
 
-    Ok(i2pd_ok || rnsd_ok)
+    Ok(i2pd_ok && freenet_ok && rnsd_ok)
 }
 
 /// Kill any spawned daemons.

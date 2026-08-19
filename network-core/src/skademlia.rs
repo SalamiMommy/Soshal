@@ -58,8 +58,8 @@ pub fn check_leading_zeros(hash: &[u8; 32], bits: u32) -> bool {
 /// Computes the XOR distance metric between two Node IDs.
 pub fn xor_distance(a: &NodeId, b: &NodeId) -> NodeId {
     let mut dist = [0u8; 32];
-    for i in 0..32 {
-        dist[i] = a[i] ^ b[i];
+    for (d, (&x, &y)) in dist.iter_mut().zip(a.iter().zip(b.iter())) {
+        *d = x ^ y;
     }
     dist
 }

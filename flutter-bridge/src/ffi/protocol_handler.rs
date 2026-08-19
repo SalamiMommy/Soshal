@@ -7,7 +7,7 @@
 //!   - app://relay/status (get relay pool status)
 
 use flutter_rust_bridge::frb;
-use soshal_common_core::url::is_valid_media_url;
+use soshal_common_core::url::{is_private_ip_str, is_valid_media_url};
 use std::fs;
 use std::path::PathBuf;
 
@@ -206,14 +206,40 @@ async fn protocol_handle_avatar(path: &str) -> Result<Vec<u8>, String> {
 }
 
 /// Fetch avatar bytes over HTTPS with a 5 MiB cap. `is_valid_media_url`
-/// rejects private/loopback hosts (SSRF guard).
+/// rejects private/loopback hostnames (pre-check); resolved addresses are
+/// re-checked and pinned against DNS rebinding (SSRF guard).
 async fn fetch_avatar_bytes(url: &str) -> Result<Vec<u8>, String> {
     if !is_valid_media_url(url) {
         return Err("Invalid avatar URL".to_string());
     }
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("avatar URL parse: {e}"))?;
+    let host = parsed
+        .host_str()
+        .map(|h| h.to_string())
+        .ok_or_else(|| "avatar URL has no host".to_string())?;
+    let port = parsed
+        .port_or_known_default()
+        .ok_or_else(|| "avatar URL has no port".to_string())?;
+    let mut pinned_addrs: Vec<std::net::SocketAddr> = Vec::new();
+    match tokio::net::lookup_host((host.as_str(), port)).await {
+        Ok(addrs) => {
+            for addr in addrs {
+                if is_private_ip_str(&addr.ip().to_string()) {
+                    return Err("avatar URL resolves to an internal address".to_string());
+                }
+                pinned_addrs.push(addr);
+            }
+        }
+        Err(_) => return Err("avatar URL does not resolve".to_string()),
+    }
+    if pinned_addrs.is_empty() {
+        return Err("avatar URL does not resolve".to_string());
+    }
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
+        .connect_timeout(std::time::Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(&host, &pinned_addrs)
         .build()
         .map_err(|e| format!("http client: {e}"))?;
     let mut resp = client

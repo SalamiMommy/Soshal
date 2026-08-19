@@ -346,6 +346,7 @@ pub fn encrypt_padded(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, 
     nonce_bytes.zeroize();
 
     let mut output = salt.to_vec();
+    output.push(VERSION_LEGACY);
     output.extend_from_slice(&ciphertext);
     Ok(output)
 }
@@ -355,8 +356,12 @@ fn decrypt_legacy(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'stat
         return Err("payload too short");
     }
     let salt = &decoded[..SALT_LEN];
-    let version = decoded[SALT_LEN];
-    let encrypted = &decoded[SALT_LEN + VERSION_LEN..];
+    let tagged = matches!(decoded[SALT_LEN], VERSION_LEGACY | VERSION_PADDED);
+    let (version, encrypted) = if tagged {
+        (decoded[SALT_LEN], &decoded[SALT_LEN + VERSION_LEN..])
+    } else {
+        (VERSION_LEGACY, &decoded[SALT_LEN..])
+    };
 
     let mut derived =
         hash::hkdf_sha256(key, salt, NIP44_INFO, DERIVED_LEN).map_err(|_| "hkdf failed")?;
@@ -478,10 +483,11 @@ mod tests {
     fn test_legacy_decode_path() {
         let key = [0x42u8; 32];
         let legacy_ct = encrypt_padded(b"legacy stored data", &key).unwrap();
-        let mut buf = legacy_ct[..SALT_LEN].to_vec();
-        buf.push(VERSION_LEGACY);
-        buf.extend_from_slice(&legacy_ct[SALT_LEN..]);
-        let encoded = general_purpose::STANDARD.encode(&buf);
+        let encoded = general_purpose::STANDARD.encode(&legacy_ct);
+        assert_eq!(decrypt(&encoded, &key).unwrap(), b"legacy stored data");
+        let mut untagged = legacy_ct[..SALT_LEN].to_vec();
+        untagged.extend_from_slice(&legacy_ct[SALT_LEN + VERSION_LEN..]);
+        let encoded = general_purpose::STANDARD.encode(&untagged);
         assert_eq!(decrypt(&encoded, &key).unwrap(), b"legacy stored data");
     }
 

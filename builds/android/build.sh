@@ -113,17 +113,22 @@ EOF
 # Download and prepare I2P router (i2pd) for Android
 ensure_i2pd() {
   local version="${I2PD_VERSION:-2.50.0}"
+  # Official binary bundle from PurpleI2P/i2pd-android: contains per-arch
+  # statics (i2pd-aarch64, i2pd-armv7l, i2pd-x86_64) + launcher + certs.
   ensure_download "i2pd" \
-    "https://github.com/PurpleI2P/i2pd/releases/download/${version}/i2pd_${version}_android_arm64.zip" \
-    "$DAEMONS_CACHE/i2pd-arm64.zip" "$DAEMONS_CACHE/i2pd" "i2pd"
+    "https://github.com/PurpleI2P/i2pd-android/releases/download/${version}/i2pd_${version}_android_binary.zip" \
+    "$DAEMONS_CACHE/i2pd-android.zip" "$DAEMONS_CACHE/i2pd" "i2pd-aarch64"
 }
 
-# Download and prepare Freenet reference node for Android
+# Freenet has no official Android daemon binary: freenet-core publishes no
+# node build for Android, and the freenet-mobile APK ships the incompatible
+# legacy fred/JVM stack. Bundled as an honest stub; the WS backend
+# (ws://127.0.0.1:8888) stays dormant until a real binary exists.
 ensure_freenet() {
-  local version="${FREENET_VERSION:-0.4.0}"
-  ensure_download "freenet" \
-    "https://github.com/freenet/freenet-core/releases/download/${version}/freenet-node-android.zip" \
-    "$DAEMONS_CACHE/freenet-android.zip" "$DAEMONS_CACHE/freenet" "freenet"
+  local cache_dir="$DAEMONS_CACHE/freenet"
+  mkdir -p "$cache_dir"
+  create_stub "$cache_dir/freenet" "Freenet daemon: no official Android binary - not bundled in APK"
+  echo "  freenet: stub prepared (no official Android binary)"
 }
 
 # Build Reticulum daemon for Android (use Python-for-Android approach)
@@ -137,29 +142,33 @@ ensure_reticulum() {
   echo "  reticulum: stub prepared (requires Python runtime)"
 }
 
-# Bundle all daemons into APK assets
+# Bundle all daemons into APK assets. Real binaries are >100KB; anything
+# smaller is a stub/error placeholder and never bundled as a real daemon.
 bundle_daemons() {
   echo "  bundling: networking daemons"
   mkdir -p "$ASSETS_DIR"
-  
-  # Copy daemons to assets
-  if [[ -f "$DAEMONS_CACHE/i2pd/i2pd" ]]; then
-    cp "$DAEMONS_CACHE/i2pd/i2pd" "$ASSETS_DIR/i2pd"
+
+  if [[ -f "$DAEMONS_CACHE/i2pd/i2pd-aarch64" ]] &&
+     [[ $(stat -c%s "$DAEMONS_CACHE/i2pd/i2pd-aarch64") -gt 100000 ]]; then
+    cp "$DAEMONS_CACHE/i2pd/i2pd-aarch64" "$ASSETS_DIR/i2pd"
+    echo "  i2pd: arm64 binary bundled"
   else
     # Create stub if download failed
     create_stub "$ASSETS_DIR/i2pd" "I2P daemon not available - download failed"
   fi
-  
-  if [[ -f "$DAEMONS_CACHE/freenet/freenet" ]]; then
+
+  if [[ -f "$DAEMONS_CACHE/freenet/freenet" ]] &&
+     [[ $(stat -c%s "$DAEMONS_CACHE/freenet/freenet") -gt 100000 ]]; then
     cp "$DAEMONS_CACHE/freenet/freenet" "$ASSETS_DIR/freenet"
+    echo "  freenet: binary bundled"
   else
-    # Create stub if download failed
-    create_stub "$ASSETS_DIR/freenet" "Freenet daemon not available - download failed"
+    # Create stub if no binary available
+    create_stub "$ASSETS_DIR/freenet" "Freenet daemon: no official Android binary - not bundled in APK"
   fi
-  
+
   # Always use Reticulum stub (requires Python runtime)
   cp "$DAEMONS_CACHE/reticulum/rnsd" "$ASSETS_DIR/rnsd"
-  
+
   echo "  daemons: bundled to assets/daemons/"
 }
 
@@ -267,4 +276,8 @@ if [[ "$BRIDGE_COUNT" -lt 3 ]]; then
 fi
 echo "  verifying: networking daemons"
 unzip -l "$OUT" | grep "assets/daemons/" || echo "  warning: daemons not found in APK"
+I2PD_SIZE="$(unzip -l "$OUT" | grep 'assets/daemons/i2pd' | awk '{print $1}' || true)"
+if [[ -n "$I2PD_SIZE" && "$I2PD_SIZE" -lt 100000 ]]; then
+  echo "  WARNING: assets/daemons/i2pd is ${I2PD_SIZE}B (stub, not a real binary)" >&2
+fi
 echo "== Done: $OUT =="

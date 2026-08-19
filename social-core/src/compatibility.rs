@@ -60,6 +60,9 @@ pub fn basic_compatibility(a_interest: &[String], b_interest: &[String]) -> f64 
     if a_interest.is_empty() || b_interest.is_empty() {
         return 0.5;
     }
+    if a_interest == b_interest {
+        return 1.0;
+    }
     let (common, _, len_a, len_b) = interest_overlap_details(a_interest, b_interest, false);
     let max = len_a.max(len_b);
     if max == 0 {
@@ -77,6 +80,9 @@ pub fn jaccard_similarity(
 ) -> f64 {
     if a_interest.is_empty() || b_interest.is_empty() {
         return 0.5;
+    }
+    if a_interest == b_interest {
+        return 1.0;
     }
     let (common, union) = interest_overlap(a_interest, b_interest, case_insensitive);
     if union == 0 {

@@ -16,6 +16,8 @@ class _ModerationScreenState extends State<ModerationScreen> {
   String? _pubkey;
   final _testContent = TextEditingController();
   bool? _filtered;
+  HybridModerationResult? _hybridResult;
+  bool _forceDeepScan = false;
   List<dynamic> _reports = [];
   bool _reportsLoading = false;
   final _checkTarget = TextEditingController();
@@ -391,38 +393,249 @@ class _ModerationScreenState extends State<ModerationScreen> {
             },
           ),
           const Divider(height: 32),
-          Text('Content check', style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('2-Tier Hybrid AI Scanner',
+                  style: Theme.of(context).textTheme.titleMedium),
+              Row(
+                children: [
+                  const Text('Deep Scan (RoBERTa):',
+                      style: TextStyle(fontSize: 12)),
+                  Switch(
+                    value: _forceDeepScan,
+                    onChanged: (v) => setState(() => _forceDeepScan = v),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          Text(
+            'Tier 1 (N-Gram Subword) + Tier 2 (RoBERTa Transformer & Meta PDQ Image Hash)',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 8),
           TextField(
             controller: _testContent,
+            maxLines: 3,
             decoration: const InputDecoration(
-              hintText: 'Paste content to test against filters',
+              hintText: 'Paste content to scan through 2-Tier Hybrid AI',
               border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 8),
           FilledButton.icon(
-            icon: const Icon(Icons.filter_alt),
-            label: const Text('Check content'),
+            icon: const Icon(Icons.psychology_outlined),
+            label: const Text('Scan with 2-Tier Hybrid AI'),
             onPressed: () async {
               final pubkey = _pubkey;
               if (pubkey == null) return;
-              final filtered =
-                  await api.shouldFilter(_testContent.text, pubkey);
-              if (mounted) setState(() => _filtered = filtered);
+              final text = _testContent.text;
+              final filtered = await api.shouldFilter(text, pubkey);
+              final hybrid = await api.hybridClassifyText(
+                text,
+                forceDeepScan: _forceDeepScan,
+              );
+              if (mounted) {
+                setState(() {
+                  _filtered = filtered;
+                  _hybridResult = hybrid;
+                });
+              }
             },
           ),
-          if (_filtered != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                _filtered! ? '⚠ Filtered' : 'OK — passes filters',
-                style: TextStyle(
-                  color: _filtered! ? Colors.orange : Colors.green,
-                  fontWeight: FontWeight.bold,
+          if (_filtered != null && _hybridResult != null) ...[
+            const SizedBox(height: 12),
+            Card(
+              elevation: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          _hybridResult!.isFlagged
+                              ? Icons.warning_amber_rounded
+                              : Icons.check_circle_outline,
+                          color: _hybridResult!.isFlagged
+                              ? Colors.red
+                              : Colors.green,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _hybridResult!.isFlagged
+                              ? 'Flagged (${_hybridResult!.primaryCategory?.toUpperCase() ?? "HAZARD"})'
+                              : 'Safe — Content Passes 2-Tier AI',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: _hybridResult!.isFlagged
+                                ? Colors.red
+                                : Colors.green,
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _hybridResult!.tierEvaluated == 'Tier2Deep'
+                                ? Colors.purple.shade50
+                                : Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _hybridResult!.tierEvaluated == 'Tier2Deep'
+                                  ? Colors.purple
+                                  : Colors.blue,
+                            ),
+                          ),
+                          child: Text(
+                            _hybridResult!.tierEvaluated == 'Tier2Deep'
+                                ? 'Tier 2: RoBERTa'
+                                : 'Tier 1: Fast N-Gram',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: _hybridResult!.tierEvaluated == 'Tier2Deep'
+                                  ? Colors.purple.shade800
+                                  : Colors.blue.shade800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 16),
+                    _buildScoreRow(
+                      context,
+                      'Spam & Scams',
+                      _hybridResult!.tier1Result.scores.spam,
+                      Colors.orange,
+                    ),
+                    _buildScoreRow(
+                      context,
+                      'CSAM Zero-Tolerance',
+                      _hybridResult!.tier1Result.scores.csam,
+                      Colors.red.shade900,
+                    ),
+                    _buildScoreRow(
+                      context,
+                      'Gore & Violence',
+                      _hybridResult!.tier1Result.scores.gore,
+                      Colors.deepOrange,
+                    ),
+                    _buildScoreRow(
+                      context,
+                      'Bigotry & Hate Speech',
+                      _hybridResult!.tier1Result.scores.bigotry,
+                      Colors.purple,
+                    ),
+                    _buildScoreRow(
+                      context,
+                      'Targeted Harassment',
+                      _hybridResult!.tier1Result.scores.harassment,
+                      Colors.indigo,
+                    ),
+                    if (_hybridResult!.tier2RobertaResult != null) ...[
+                      const Divider(height: 16),
+                      Text(
+                        'RoBERTa Transformer Semantic Scores:',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      _buildScoreRow(
+                        context,
+                        'RoBERTa Toxicity',
+                        _hybridResult!.tier2RobertaResult!.scores.toxic,
+                        Colors.redAccent,
+                      ),
+                      _buildScoreRow(
+                        context,
+                        'RoBERTa Threat',
+                        _hybridResult!.tier2RobertaResult!.scores.threat,
+                        Colors.deepPurple,
+                      ),
+                      _buildScoreRow(
+                        context,
+                        'RoBERTa Identity Hate',
+                        _hybridResult!.tier2RobertaResult!.scores.identityHate,
+                        Colors.purpleAccent,
+                      ),
+                    ],
+                    if (_hybridResult!.tier1Result.evasionScore > 0.05) ...[
+                      const SizedBox(height: 6),
+                      _buildScoreRow(
+                        context,
+                        'Obfuscation / Evasion Score',
+                        _hybridResult!.tier1Result.evasionScore,
+                        Colors.amber.shade800,
+                      ),
+                    ],
+                    if (_hybridResult!.detectedReasons.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Detection Signals:',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          for (final r in _hybridResult!.detectedReasons)
+                            Chip(
+                              label:
+                                  Text(r, style: const TextStyle(fontSize: 11)),
+                              padding: EdgeInsets.zero,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreRow(
+    BuildContext context,
+    String label,
+    double score,
+    Color color,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label, style: const TextStyle(fontSize: 12)),
+              Text(
+                '${(score * 100).toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: score > 0.5 ? color : Colors.grey,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          LinearProgressIndicator(
+            value: score.clamp(0.0, 1.0),
+            backgroundColor: Colors.grey.shade200,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              score > 0.5 ? color : Colors.grey.shade400,
+            ),
+            minHeight: 4,
+          ),
         ],
       ),
     );

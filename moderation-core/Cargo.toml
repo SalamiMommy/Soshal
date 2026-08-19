@@ -4,11 +4,15 @@ version = { workspace = true }
 edition = "2021"
 
 [dependencies]
+hex = { workspace = true }
+image = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 soshal-content-core = { path = "../content-core" }
 soshal-crypto-core = { path = "../crypto-core" }
+
 
 [lints]
 workspace = true

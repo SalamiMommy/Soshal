@@ -37,8 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _relays = [];
     }
     final settings = context.read<SettingsService>();
-    _autologinEnabled =
-        settings.getSetting('autologin_enabled') != 'false';
+    _autologinEnabled = settings.getSetting('autologin_enabled') != 'false';
   }
 
   @override

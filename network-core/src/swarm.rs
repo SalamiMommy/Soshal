@@ -72,6 +72,14 @@ pub fn spawn_swarm_download(cfg: SwarmConfig) -> std::thread::JoinHandle<SwarmRe
 async fn download(cfg: SwarmConfig) -> SwarmReport {
     let total = cfg.manifest.total_size;
     let chunks = Arc::new(cfg.manifest.chunks.clone());
+    if total > crate::blob_grab::MAX_BLOB_FETCH_BYTES {
+        log::warn!("swarm: manifest total_size {total} exceeds cap");
+        return SwarmReport {
+            failures: chunks.len(),
+            failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
+            ..SwarmReport::default()
+        };
+    }
     if chunks.is_empty() || cfg.peers.is_empty() {
         return SwarmReport {
             failures: chunks.len(),

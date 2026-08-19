@@ -71,6 +71,11 @@ pub fn open_at_rest(key: &[u8; 32], sealed_hex: &str) -> Result<Vec<u8>, String>
 
 const AT_REST_V2_DOMAIN: &[u8] = b"soshal-at-rest-v2";
 
+/// Opt-in: untagged legacy blobs (v1 hex, pre-tag v2) still open when true.
+pub const ALLOW_UNTAGGED_V1: bool = true;
+
+const AT_REST_V2_INNER_TAG: &[u8] = b"soshal-at-rest-v2\x00";
+
 /// v2 identity-derived key (HKDF path under the v2 domain). Deterministic per
 /// nsec, so two devices of the same identity derive the same value — used for
 /// cross-device secrets (LAN sync tokens, beacon MAC keys) that must NOT
@@ -96,8 +101,11 @@ pub fn seal_at_rest_v2(
     plaintext: &[u8],
 ) -> Result<String, String> {
     let inner = seal_at_rest(master_key, plaintext)?;
+    let mut tagged = Vec::with_capacity(AT_REST_V2_INNER_TAG.len() + inner.len());
+    tagged.extend_from_slice(AT_REST_V2_INNER_TAG);
+    tagged.extend_from_slice(inner.as_bytes());
     let (ct_hex, nonce, payload) =
-        soshal_pqc_core::seal::hybrid_seal(inner.as_bytes(), wrap_pk_hex, AT_REST_V2_DOMAIN)?;
+        soshal_pqc_core::seal::hybrid_seal(&tagged, wrap_pk_hex, AT_REST_V2_DOMAIN)?;
     Ok(serde_json::json!({
         "v": 2,
         "ct": ct_hex,
@@ -138,6 +146,9 @@ pub fn open_at_rest_v2(
                 "at-rest blob is neither a v2 JSON envelope nor a valid v1 hex blob".into(),
             );
         }
+        if !ALLOW_UNTAGGED_V1 {
+            return Err("legacy v1 blob rejected: untagged blobs disabled".into());
+        }
         // Legacy v1 blob (plain hex-encoded AES-GCM): readable for migration.
         return open_at_rest(master_key, blob);
     };
@@ -148,7 +159,12 @@ pub fn open_at_rest_v2(
         wrap_sk_hex,
         AT_REST_V2_DOMAIN,
     )?;
-    let inner_str = std::str::from_utf8(&inner)
+    let inner_hex = match inner.strip_prefix(AT_REST_V2_INNER_TAG) {
+        Some(tagged) => tagged,
+        None if ALLOW_UNTAGGED_V1 => &inner[..],
+        None => return Err("v2 envelope missing version marker; untagged disabled".into()),
+    };
+    let inner_str = std::str::from_utf8(inner_hex)
         .map_err(|_| "v2 inner blob is not UTF-8 (wrong key?)".to_string())?;
     open_at_rest(master_key, inner_str)
 }

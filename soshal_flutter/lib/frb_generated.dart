@@ -21,6 +21,7 @@ import 'ffi/session.dart';
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
+import 'lib.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// Main entrypoint of the Rust API
@@ -80,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1533595583;
+  int get rustContentHash => 1019245445;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -92,6 +93,18 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  String crateFfiAuthKeyPairResultAutoAccessorGetPublicKey(
+      {required KeyPairResult that});
+
+  ZeroizingString crateFfiAuthKeyPairResultAutoAccessorGetSecretKey(
+      {required KeyPairResult that});
+
+  void crateFfiAuthKeyPairResultAutoAccessorSetPublicKey(
+      {required KeyPairResult that, required String publicKey});
+
+  void crateFfiAuthKeyPairResultAutoAccessorSetSecretKey(
+      {required KeyPairResult that, required ZeroizingString secretKey});
+
   String crateFfiAnalyticsAnalyticsComputeStats();
 
   Future<String> crateFfiAnalyticsAnalyticsSlmClassifyPost(
@@ -925,8 +938,16 @@ abstract class RustLibApi extends BaseApi {
       required List<String> postsJson,
       required String wasmBytesHex});
 
+  String crateFfiModerationModerationAiClassifyMedia(
+      {required List<int> imageBytes, required String mimeType});
+
+  String crateFfiModerationModerationAiClassifyText({required String content});
+
   bool crateFfiModerationModerationBlockUser(
       {required String blockerPubkey, required String targetPubkey});
+
+  String crateFfiModerationModerationComputePdqHash(
+      {required List<int> imageBytes});
 
   String crateFfiModerationModerationCreateJuryCase(
       {required String caseId,
@@ -945,6 +966,12 @@ abstract class RustLibApi extends BaseApi {
       {required String userPubkey});
 
   List<String> crateFfiModerationModerationGetWordFilters();
+
+  String crateFfiModerationModerationHybridClassifyMedia(
+      {required List<int> imageBytes, required String mimeType});
+
+  String crateFfiModerationModerationHybridClassifyText(
+      {required String content, required bool forceDeepScan});
 
   bool crateFfiModerationModerationIsRestricted(
       {required String actorPubkey, required String targetPubkey});
@@ -1086,21 +1113,6 @@ abstract class RustLibApi extends BaseApi {
       required String notificationType,
       required int limit});
 
-  String crateFfiNotificationsNotificationsFetchFollows(
-      {required String userPubkey, required int limit});
-
-  String crateFfiNotificationsNotificationsFetchMentions(
-      {required String userPubkey, required int limit});
-
-  String crateFfiNotificationsNotificationsFetchMessages(
-      {required String userPubkey, required int limit});
-
-  String crateFfiNotificationsNotificationsFetchReactions(
-      {required String userPubkey, required int limit});
-
-  String crateFfiNotificationsNotificationsFetchReplies(
-      {required String userPubkey, required int limit});
-
   String crateFfiNotificationsNotificationsFetchUnread(
       {required String userPubkey, required int limit});
 
@@ -1239,8 +1251,6 @@ abstract class RustLibApi extends BaseApi {
       {required PlatformInt64 textureId, required BigInt frameTimestampNs});
 
   bool crateFfiRelationsRelationsSendFriendRequest({required String pubkey});
-
-  bool crateFfiRelayRelayConnectI2P({required String destination});
 
   String crateFfiRelayRelayNodeStart({required String pubkey});
 
@@ -1545,6 +1555,24 @@ abstract class RustLibApi extends BaseApi {
       {required String dbPath, required String rollupJson});
 
   String crateFfiZkZkVerifyRollup({required String rollupJson});
+
+  RustArcIncrementStrongCountFnType
+      get rust_arc_increment_strong_count_KeyPairResult;
+
+  RustArcDecrementStrongCountFnType
+      get rust_arc_decrement_strong_count_KeyPairResult;
+
+  CrossPlatformFinalizerArg
+      get rust_arc_decrement_strong_count_KeyPairResultPtr;
+
+  RustArcIncrementStrongCountFnType
+      get rust_arc_increment_strong_count_ZeroizingString;
+
+  RustArcDecrementStrongCountFnType
+      get rust_arc_decrement_strong_count_ZeroizingString;
+
+  CrossPlatformFinalizerArg
+      get rust_arc_decrement_strong_count_ZeroizingStringPtr;
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -1554,6 +1582,127 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required super.generalizedFrbRustBinding,
     required super.portManager,
   });
+
+  @override
+  String crateFfiAuthKeyPairResultAutoAccessorGetPublicKey(
+      {required KeyPairResult that}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        var arg0 =
+            cst_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+                that);
+        return wire
+            .wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_public_key(
+                arg0);
+      },
+      codec: DcoCodec(
+        decodeSuccessData: dco_decode_String,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAuthKeyPairResultAutoAccessorGetPublicKeyConstMeta,
+      argValues: [that],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiAuthKeyPairResultAutoAccessorGetPublicKeyConstMeta =>
+          const TaskConstMeta(
+            debugName: "KeyPairResult_auto_accessor_get_public_key",
+            argNames: ["that"],
+          );
+
+  @override
+  ZeroizingString crateFfiAuthKeyPairResultAutoAccessorGetSecretKey(
+      {required KeyPairResult that}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        var arg0 =
+            cst_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+                that);
+        return wire
+            .wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_secret_key(
+                arg0);
+      },
+      codec: DcoCodec(
+        decodeSuccessData:
+            dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAuthKeyPairResultAutoAccessorGetSecretKeyConstMeta,
+      argValues: [that],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiAuthKeyPairResultAutoAccessorGetSecretKeyConstMeta =>
+          const TaskConstMeta(
+            debugName: "KeyPairResult_auto_accessor_get_secret_key",
+            argNames: ["that"],
+          );
+
+  @override
+  void crateFfiAuthKeyPairResultAutoAccessorSetPublicKey(
+      {required KeyPairResult that, required String publicKey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        var arg0 =
+            cst_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+                that);
+        var arg1 = cst_encode_String(publicKey);
+        return wire
+            .wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_public_key(
+                arg0, arg1);
+      },
+      codec: DcoCodec(
+        decodeSuccessData: dco_decode_unit,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAuthKeyPairResultAutoAccessorSetPublicKeyConstMeta,
+      argValues: [that, publicKey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiAuthKeyPairResultAutoAccessorSetPublicKeyConstMeta =>
+          const TaskConstMeta(
+            debugName: "KeyPairResult_auto_accessor_set_public_key",
+            argNames: ["that", "publicKey"],
+          );
+
+  @override
+  void crateFfiAuthKeyPairResultAutoAccessorSetSecretKey(
+      {required KeyPairResult that, required ZeroizingString secretKey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        var arg0 =
+            cst_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+                that);
+        var arg1 =
+            cst_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+                secretKey);
+        return wire
+            .wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_secret_key(
+                arg0, arg1);
+      },
+      codec: DcoCodec(
+        decodeSuccessData: dco_decode_unit,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiAuthKeyPairResultAutoAccessorSetSecretKeyConstMeta,
+      argValues: [that, secretKey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiAuthKeyPairResultAutoAccessorSetSecretKeyConstMeta =>
+          const TaskConstMeta(
+            debugName: "KeyPairResult_auto_accessor_set_secret_key",
+            argNames: ["that", "secretKey"],
+          );
 
   @override
   String crateFfiAnalyticsAnalyticsComputeStats() {
@@ -8801,6 +8950,60 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  String crateFfiModerationModerationAiClassifyMedia(
+      {required List<int> imageBytes, required String mimeType}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_list_prim_u_8_loose(imageBytes, serializer);
+        sse_encode_String(mimeType, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__moderation__moderation_ai_classify_media(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiModerationModerationAiClassifyMediaConstMeta,
+      argValues: [imageBytes, mimeType],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiModerationModerationAiClassifyMediaConstMeta =>
+      const TaskConstMeta(
+        debugName: "moderation_ai_classify_media",
+        argNames: ["imageBytes", "mimeType"],
+      );
+
+  @override
+  String crateFfiModerationModerationAiClassifyText({required String content}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(content, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__moderation__moderation_ai_classify_text(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiModerationModerationAiClassifyTextConstMeta,
+      argValues: [content],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiModerationModerationAiClassifyTextConstMeta =>
+      const TaskConstMeta(
+        debugName: "moderation_ai_classify_text",
+        argNames: ["content"],
+      );
+
+  @override
   bool crateFfiModerationModerationBlockUser(
       {required String blockerPubkey, required String targetPubkey}) {
     return handler.executeSync(SyncTask(
@@ -8826,6 +9029,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "moderation_block_user",
         argNames: ["blockerPubkey", "targetPubkey"],
+      );
+
+  @override
+  String crateFfiModerationModerationComputePdqHash(
+      {required List<int> imageBytes}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_list_prim_u_8_loose(imageBytes, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__moderation__moderation_compute_pdq_hash(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiModerationModerationComputePdqHashConstMeta,
+      argValues: [imageBytes],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiModerationModerationComputePdqHashConstMeta =>
+      const TaskConstMeta(
+        debugName: "moderation_compute_pdq_hash",
+        argNames: ["imageBytes"],
       );
 
   @override
@@ -8982,6 +9212,64 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "moderation_get_word_filters",
         argNames: [],
+      );
+
+  @override
+  String crateFfiModerationModerationHybridClassifyMedia(
+      {required List<int> imageBytes, required String mimeType}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_list_prim_u_8_loose(imageBytes, serializer);
+        sse_encode_String(mimeType, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__moderation__moderation_hybrid_classify_media(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiModerationModerationHybridClassifyMediaConstMeta,
+      argValues: [imageBytes, mimeType],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiModerationModerationHybridClassifyMediaConstMeta =>
+      const TaskConstMeta(
+        debugName: "moderation_hybrid_classify_media",
+        argNames: ["imageBytes", "mimeType"],
+      );
+
+  @override
+  String crateFfiModerationModerationHybridClassifyText(
+      {required String content, required bool forceDeepScan}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(content, serializer);
+        sse_encode_bool(forceDeepScan, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__moderation__moderation_hybrid_classify_text(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiModerationModerationHybridClassifyTextConstMeta,
+      argValues: [content, forceDeepScan],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiModerationModerationHybridClassifyTextConstMeta =>
+      const TaskConstMeta(
+        debugName: "moderation_hybrid_classify_text",
+        argNames: ["content", "forceDeepScan"],
       );
 
   @override
@@ -10204,152 +10492,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "notifications_fetch_by_type",
         argNames: ["userPubkey", "notificationType", "limit"],
-      );
-
-  @override
-  String crateFfiNotificationsNotificationsFetchFollows(
-      {required String userPubkey, required int limit}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(userPubkey, serializer);
-        sse_encode_i_32(limit, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire
-            .wire__crate__ffi__notifications__notifications_fetch_follows(
-                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiNotificationsNotificationsFetchFollowsConstMeta,
-      argValues: [userPubkey, limit],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiNotificationsNotificationsFetchFollowsConstMeta =>
-      const TaskConstMeta(
-        debugName: "notifications_fetch_follows",
-        argNames: ["userPubkey", "limit"],
-      );
-
-  @override
-  String crateFfiNotificationsNotificationsFetchMentions(
-      {required String userPubkey, required int limit}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(userPubkey, serializer);
-        sse_encode_i_32(limit, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire
-            .wire__crate__ffi__notifications__notifications_fetch_mentions(
-                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiNotificationsNotificationsFetchMentionsConstMeta,
-      argValues: [userPubkey, limit],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiNotificationsNotificationsFetchMentionsConstMeta =>
-      const TaskConstMeta(
-        debugName: "notifications_fetch_mentions",
-        argNames: ["userPubkey", "limit"],
-      );
-
-  @override
-  String crateFfiNotificationsNotificationsFetchMessages(
-      {required String userPubkey, required int limit}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(userPubkey, serializer);
-        sse_encode_i_32(limit, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire
-            .wire__crate__ffi__notifications__notifications_fetch_messages(
-                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiNotificationsNotificationsFetchMessagesConstMeta,
-      argValues: [userPubkey, limit],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiNotificationsNotificationsFetchMessagesConstMeta =>
-      const TaskConstMeta(
-        debugName: "notifications_fetch_messages",
-        argNames: ["userPubkey", "limit"],
-      );
-
-  @override
-  String crateFfiNotificationsNotificationsFetchReactions(
-      {required String userPubkey, required int limit}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(userPubkey, serializer);
-        sse_encode_i_32(limit, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire
-            .wire__crate__ffi__notifications__notifications_fetch_reactions(
-                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiNotificationsNotificationsFetchReactionsConstMeta,
-      argValues: [userPubkey, limit],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta
-      get kCrateFfiNotificationsNotificationsFetchReactionsConstMeta =>
-          const TaskConstMeta(
-            debugName: "notifications_fetch_reactions",
-            argNames: ["userPubkey", "limit"],
-          );
-
-  @override
-  String crateFfiNotificationsNotificationsFetchReplies(
-      {required String userPubkey, required int limit}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(userPubkey, serializer);
-        sse_encode_i_32(limit, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire
-            .wire__crate__ffi__notifications__notifications_fetch_replies(
-                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiNotificationsNotificationsFetchRepliesConstMeta,
-      argValues: [userPubkey, limit],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiNotificationsNotificationsFetchRepliesConstMeta =>
-      const TaskConstMeta(
-        debugName: "notifications_fetch_replies",
-        argNames: ["userPubkey", "limit"],
       );
 
   @override
@@ -11750,32 +11892,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "relations_send_friend_request",
         argNames: ["pubkey"],
-      );
-
-  @override
-  bool crateFfiRelayRelayConnectI2P({required String destination}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(destination, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__relay__relay_connect_i2p(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiRelayRelayConnectI2PConstMeta,
-      argValues: [destination],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiRelayRelayConnectI2PConstMeta =>
-      const TaskConstMeta(
-        debugName: "relay_connect_i2p",
-        argNames: ["destination"],
       );
 
   @override
@@ -14774,10 +14890,74 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: ["rollupJson"],
       );
 
+  RustArcIncrementStrongCountFnType
+      get rust_arc_increment_strong_count_KeyPairResult => wire
+          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult;
+
+  RustArcDecrementStrongCountFnType
+      get rust_arc_decrement_strong_count_KeyPairResult => wire
+          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult;
+
+  RustArcIncrementStrongCountFnType
+      get rust_arc_increment_strong_count_ZeroizingString => wire
+          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString;
+
+  RustArcDecrementStrongCountFnType
+      get rust_arc_decrement_strong_count_ZeroizingString => wire
+          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString;
+
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return AnyhowException(raw as String);
+  }
+
+  @protected
+  KeyPairResult
+      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return KeyPairResultImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
+  ZeroizingString
+      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+          dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ZeroizingStringImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
+  KeyPairResult
+      dco_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return KeyPairResultImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
+  KeyPairResult
+      dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return KeyPairResultImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
+  KeyPairResult
+      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return KeyPairResultImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
+  ZeroizingString
+      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+          dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ZeroizingStringImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -15074,6 +15254,60 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_String(deserializer);
     return AnyhowException(inner);
+  }
+
+  @protected
+  KeyPairResult
+      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return KeyPairResultImpl.frbInternalSseDecode(
+        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
+  }
+
+  @protected
+  ZeroizingString
+      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+          SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return ZeroizingStringImpl.frbInternalSseDecode(
+        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
+  }
+
+  @protected
+  KeyPairResult
+      sse_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return KeyPairResultImpl.frbInternalSseDecode(
+        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
+  }
+
+  @protected
+  KeyPairResult
+      sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return KeyPairResultImpl.frbInternalSseDecode(
+        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
+  }
+
+  @protected
+  KeyPairResult
+      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return KeyPairResultImpl.frbInternalSseDecode(
+        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
+  }
+
+  @protected
+  ZeroizingString
+      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+          SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return ZeroizingStringImpl.frbInternalSseDecode(
+        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
   }
 
   @protected
@@ -15410,6 +15644,54 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int cst_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+      KeyPairResult raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+// ignore: invalid_use_of_internal_member
+    return (raw as KeyPairResultImpl).frbInternalCstEncode(move: true);
+  }
+
+  @protected
+  int cst_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+      ZeroizingString raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+// ignore: invalid_use_of_internal_member
+    return (raw as ZeroizingStringImpl).frbInternalCstEncode(move: true);
+  }
+
+  @protected
+  int cst_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+      KeyPairResult raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+// ignore: invalid_use_of_internal_member
+    return (raw as KeyPairResultImpl).frbInternalCstEncode(move: false);
+  }
+
+  @protected
+  int cst_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+      KeyPairResult raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+// ignore: invalid_use_of_internal_member
+    return (raw as KeyPairResultImpl).frbInternalCstEncode(move: false);
+  }
+
+  @protected
+  int cst_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+      KeyPairResult raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+// ignore: invalid_use_of_internal_member
+    return (raw as KeyPairResultImpl).frbInternalCstEncode();
+  }
+
+  @protected
+  int cst_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+      ZeroizingString raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+// ignore: invalid_use_of_internal_member
+    return (raw as ZeroizingStringImpl).frbInternalCstEncode();
+  }
+
+  @protected
   int cst_encode_u_8(int raw) {
     // Codec=Cst (C-struct based), see doc to use other codecs
     return raw;
@@ -15426,6 +15708,66 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       AnyhowException self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.message, serializer);
+  }
+
+  @protected
+  void
+      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          KeyPairResult self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+        (self as KeyPairResultImpl).frbInternalSseEncode(move: true),
+        serializer);
+  }
+
+  @protected
+  void
+      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+          ZeroizingString self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+        (self as ZeroizingStringImpl).frbInternalSseEncode(move: true),
+        serializer);
+  }
+
+  @protected
+  void
+      sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          KeyPairResult self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+        (self as KeyPairResultImpl).frbInternalSseEncode(move: false),
+        serializer);
+  }
+
+  @protected
+  void
+      sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          KeyPairResult self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+        (self as KeyPairResultImpl).frbInternalSseEncode(move: false),
+        serializer);
+  }
+
+  @protected
+  void
+      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+          KeyPairResult self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+        (self as KeyPairResultImpl).frbInternalSseEncode(move: null),
+        serializer);
+  }
+
+  @protected
+  void
+      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+          ZeroizingString self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+        (self as ZeroizingStringImpl).frbInternalSseEncode(move: null),
+        serializer);
   }
 
   @protected
@@ -15734,4 +16076,62 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putBigUint64(self);
   }
+}
+
+@sealed
+class KeyPairResultImpl extends RustOpaque implements KeyPairResult {
+  // Not to be used by end users
+  KeyPairResultImpl.frbInternalDcoDecode(List<dynamic> wire)
+      : super.frbInternalDcoDecode(wire, _kStaticData);
+
+  // Not to be used by end users
+  KeyPairResultImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
+      : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
+
+  static final _kStaticData = RustArcStaticData(
+    rustArcIncrementStrongCount:
+        RustLib.instance.api.rust_arc_increment_strong_count_KeyPairResult,
+    rustArcDecrementStrongCount:
+        RustLib.instance.api.rust_arc_decrement_strong_count_KeyPairResult,
+    rustArcDecrementStrongCountPtr:
+        RustLib.instance.api.rust_arc_decrement_strong_count_KeyPairResultPtr,
+  );
+
+  String get publicKey =>
+      RustLib.instance.api.crateFfiAuthKeyPairResultAutoAccessorGetPublicKey(
+        that: this,
+      );
+
+  ZeroizingString get secretKey =>
+      RustLib.instance.api.crateFfiAuthKeyPairResultAutoAccessorGetSecretKey(
+        that: this,
+      );
+
+  set publicKey(String publicKey) =>
+      RustLib.instance.api.crateFfiAuthKeyPairResultAutoAccessorSetPublicKey(
+          that: this, publicKey: publicKey);
+
+  set secretKey(ZeroizingString secretKey) =>
+      RustLib.instance.api.crateFfiAuthKeyPairResultAutoAccessorSetSecretKey(
+          that: this, secretKey: secretKey);
+}
+
+@sealed
+class ZeroizingStringImpl extends RustOpaque implements ZeroizingString {
+  // Not to be used by end users
+  ZeroizingStringImpl.frbInternalDcoDecode(List<dynamic> wire)
+      : super.frbInternalDcoDecode(wire, _kStaticData);
+
+  // Not to be used by end users
+  ZeroizingStringImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
+      : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
+
+  static final _kStaticData = RustArcStaticData(
+    rustArcIncrementStrongCount:
+        RustLib.instance.api.rust_arc_increment_strong_count_ZeroizingString,
+    rustArcDecrementStrongCount:
+        RustLib.instance.api.rust_arc_decrement_strong_count_ZeroizingString,
+    rustArcDecrementStrongCountPtr:
+        RustLib.instance.api.rust_arc_decrement_strong_count_ZeroizingStringPtr,
+  );
 }

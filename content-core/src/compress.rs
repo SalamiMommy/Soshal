@@ -158,6 +158,11 @@ pub fn decompress_json_dict(encoded: &str) -> String {
     }
 }
 
+/// Batch-compresses multiple slices with the bundled zstd dictionary.
+pub fn compress_dict_batch(items: &[&[u8]]) -> Vec<Result<Vec<u8>, String>> {
+    items.iter().map(|item| compress_dict(item)).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

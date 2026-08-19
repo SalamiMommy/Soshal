@@ -2,7 +2,6 @@
 
 pub mod address;
 pub mod auto_interface;
-pub mod crypto;
 pub mod interface;
 pub mod link;
 pub mod packet;
@@ -13,7 +12,6 @@ pub mod transport;
 
 pub use address::ReticulumAddress;
 pub use auto_interface::{AutoInterface, AutoInterfaceConfig};
-pub use crypto::ReticulumEncryption;
 pub use interface::{ReticulumInterfaceKind, ReticulumInterfaceStatus};
 pub use link::{LinkInfo, LinkManager, LinkState};
 pub use packet::{ReticulumPacket, ReticulumPacketType};

@@ -24,6 +24,7 @@ pub mod p2p_frame;
 pub mod peer_filter;
 pub mod plumtree;
 pub mod power;
+pub mod pqc_link;
 pub mod privacy;
 pub mod quic;
 pub mod quic_migration;

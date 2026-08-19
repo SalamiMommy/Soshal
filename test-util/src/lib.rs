@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-use nostr::event::{Event, EventBuilder, FinalizeEvent, Kind};
+use nostr::event::{Event, EventBuilder, FinalizeEvent, Kind, Tag};
 use nostr::key::Keys;
 use nostr::types::Timestamp;
 use soshal_db_core::repos::post::PostRow;
@@ -73,6 +73,20 @@ pub fn signed_event(keys: &Keys, kind: Kind, content: &str, created_at: u64) -> 
         .custom_created_at(Timestamp::from(created_at))
         .finalize(keys)
         .unwrap()
+}
+
+/// `signed_event` plus extra tags.
+pub fn signed_event_tagged(
+    keys: &Keys,
+    kind: Kind,
+    content: &str,
+    tags: Vec<Vec<String>>,
+) -> Event {
+    let mut builder = EventBuilder::new(kind, content);
+    for t in tags {
+        builder = builder.tag(Tag::parse(t).unwrap());
+    }
+    builder.finalize(keys).unwrap()
 }
 
 /// Ensure a user row exists in the DB.

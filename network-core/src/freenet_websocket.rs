@@ -1,5 +1,6 @@
 //! Freenet WebSocket client for contract operations and node communication.
 
+use crate::pqc_link::PQ_LINK_CRYPTO;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use soshal_common_core::url::is_valid_media_url;
@@ -10,13 +11,21 @@ use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
 pub use crate::freenet_contract::StateSummary as ContractSummary;
 use crate::freenet_contract::{RelatedContract, StateSummary};
 
-/// Freenet WebSocket client for contract operations
+/// Freenet WebSocket client for contract operations.
+///
+/// When a ratchet peer is configured (`with_ratchet_peer`), contract state
+/// payloads are sealed with the hybrid PQC double ratchet before the put
+/// and unsealed after the get. The contract key is then derived from the
+/// ciphertext, so only the designated peer (holding the matching session)
+/// can read the state; everyone else sees an opaque blob. Subscribers
+/// without the session cannot decode it by design.
 pub struct FreenetWebSocketClient {
     url: String,
     auth_token: String,
     socket: Arc<
         Mutex<Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>>,
     >,
+    ratchet_peer: Option<(String, String)>,
 }
 
 impl FreenetWebSocketClient {
@@ -26,6 +35,38 @@ impl FreenetWebSocketClient {
             url,
             auth_token,
             socket: Arc::new(Mutex::new(None)),
+            ratchet_peer: None,
+        }
+    }
+
+    /// Enables hybrid PQC ratchet sealing of contract payloads to a peer.
+    /// `peer` is the shared session id both ends agree on (e.g. a Nostr
+    /// pubkey hex); `peer_pk` is the peer's hybrid public key, exchanged
+    /// out-of-band once (the process-wide session persists for the app
+    /// lifetime). Both ends must configure each other for reads to work.
+    pub fn with_ratchet_peer(mut self, peer: &str, peer_pk: &str) -> Self {
+        self.ratchet_peer = Some((peer.to_string(), peer_pk.to_string()));
+        self
+    }
+
+    fn seal(&self, payload: Vec<u8>) -> Result<Vec<u8>, String> {
+        match &self.ratchet_peer {
+            Some((peer, peer_pk)) => {
+                let context = format!("freenet:{}", peer);
+                PQ_LINK_CRYPTO.ensure_session(peer, &context, peer_pk)?;
+                PQ_LINK_CRYPTO.encrypt(peer, &context, &payload)
+            }
+            None => Ok(payload),
+        }
+    }
+
+    fn unseal(&self, payload: Vec<u8>) -> Result<Vec<u8>, String> {
+        match &self.ratchet_peer {
+            Some((peer, _)) => {
+                let context = format!("freenet:{}", peer);
+                PQ_LINK_CRYPTO.decrypt(peer, &context, &payload)
+            }
+            None => Ok(payload),
         }
     }
 
@@ -96,7 +137,9 @@ impl FreenetWebSocketClient {
         }
     }
 
-    /// Fetches contract state from the Freenet node
+    /// Fetches contract state from the Freenet node. With a ratchet peer
+    /// configured, the state payload is unsealed with the hybrid PQC
+    /// ratchet before returning.
     pub async fn get_contract(&self, key: &str, subscribe: bool) -> Result<ContractState, String> {
         let request = FreenetRequest::Get(GetRequest {
             key: key.to_string(),
@@ -108,18 +151,25 @@ impl FreenetWebSocketClient {
         let response = self.send_request(request).await?;
 
         match response {
-            FreenetResponse::GetResult(result) => Ok(result.state),
+            FreenetResponse::GetResult(mut result) => {
+                result.state.state = self.unseal(result.state.state)?;
+                Ok(result.state)
+            }
             FreenetResponse::Error(err) => Err(format!("Get failed: {}", err.message)),
             _ => Err("Unexpected response type".to_string()),
         }
     }
 
-    /// Publishes contract state to the Freenet node
+    /// Publishes contract state to the Freenet node. With a ratchet peer
+    /// configured, the state payload is sealed with the hybrid PQC ratchet
+    /// first (the contract key derives from the ciphertext).
     pub async fn put_contract(
         &self,
         state: ContractState,
         subscribe: bool,
     ) -> Result<String, String> {
+        let mut state = state;
+        state.state = self.seal(state.state)?;
         let request = FreenetRequest::Put(PutRequest {
             container: None,
             wrapped_state: Some(state),

@@ -4,9 +4,9 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import '../lib.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `KeyPairResult`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
 
 /// Result wrapper for FFI operations.
@@ -41,3 +41,14 @@ String authNpubEncode({required String publicKey}) =>
 /// Decode npub to hex public key
 String authNpubDecode({required String npub}) =>
     RustLib.instance.api.crateFfiAuthAuthNpubDecode(npub: npub);
+
+// Rust type: RustOpaqueNom<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<KeyPairResult>>
+abstract class KeyPairResult implements RustOpaqueInterface {
+  String get publicKey;
+
+  ZeroizingString get secretKey;
+
+  set publicKey(String publicKey);
+
+  set secretKey(ZeroizingString secretKey);
+}

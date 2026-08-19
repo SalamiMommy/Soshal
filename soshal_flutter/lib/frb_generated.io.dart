@@ -20,6 +20,7 @@ import 'ffi/power.dart';
 import 'ffi/raster.dart';
 import 'ffi/session.dart';
 import 'frb_generated.dart';
+import 'lib.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 
@@ -33,9 +34,25 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
                     required super.portManager,
                   });
 
-                  
+                  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_KeyPairResultPtr => wire._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResultPtr;
+
+CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr => wire._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingStringPtr;
+
+
 
                   @protected AnyhowException dco_decode_AnyhowException(dynamic raw);
+
+@protected KeyPairResult dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(dynamic raw);
+
+@protected ZeroizingString dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(dynamic raw);
+
+@protected KeyPairResult dco_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(dynamic raw);
+
+@protected KeyPairResult dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(dynamic raw);
+
+@protected KeyPairResult dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(dynamic raw);
+
+@protected ZeroizingString dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(dynamic raw);
 
 @protected RustStreamSink<String> dco_decode_StreamSink_String_Dco(dynamic raw);
 
@@ -114,6 +131,18 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected BigInt dco_decode_usize(dynamic raw);
 
 @protected AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
+
+@protected KeyPairResult sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(SseDeserializer deserializer);
+
+@protected ZeroizingString sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(SseDeserializer deserializer);
+
+@protected KeyPairResult sse_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(SseDeserializer deserializer);
+
+@protected KeyPairResult sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(SseDeserializer deserializer);
+
+@protected KeyPairResult sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(SseDeserializer deserializer);
+
+@protected ZeroizingString sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(SseDeserializer deserializer);
 
 @protected RustStreamSink<String> sse_decode_StreamSink_String_Dco(SseDeserializer deserializer);
 
@@ -228,11 +257,35 @@ wireObj.bytes_downloaded = cst_encode_u_64(apiObj.bytesDownloaded);
 wireObj.failures = cst_encode_usize(apiObj.failures);
 wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 
+@protected int cst_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(KeyPairResult raw);
+
+@protected int cst_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(ZeroizingString raw);
+
+@protected int cst_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(KeyPairResult raw);
+
+@protected int cst_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(KeyPairResult raw);
+
+@protected int cst_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(KeyPairResult raw);
+
+@protected int cst_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(ZeroizingString raw);
+
 @protected int cst_encode_u_8(int raw);
 
 @protected void cst_encode_unit(void raw);
 
 @protected void sse_encode_AnyhowException(AnyhowException self, SseSerializer serializer);
+
+@protected void sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(KeyPairResult self, SseSerializer serializer);
+
+@protected void sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(ZeroizingString self, SseSerializer serializer);
+
+@protected void sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(KeyPairResult self, SseSerializer serializer);
+
+@protected void sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(KeyPairResult self, SseSerializer serializer);
+
+@protected void sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(KeyPairResult self, SseSerializer serializer);
+
+@protected void sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(ZeroizingString self, SseSerializer serializer);
 
 @protected void sse_encode_StreamSink_String_Dco(RustStreamSink<String> self, SseSerializer serializer);
 
@@ -1212,6 +1265,74 @@ class RustLibWire implements BaseWire {
   late final _dummy_method_to_enforce_bundling =
       _dummy_method_to_enforce_bundlingPtr.asFunction<int Function()>();
 
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResultPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_soshal_flutter_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult',
+      );
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult =
+      _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResultPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingStringPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_soshal_flutter_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString',
+      );
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString =
+      _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingStringPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResultPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_soshal_flutter_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult',
+      );
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResult =
+      _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerKeyPairResultPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingStringPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_soshal_flutter_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString',
+      );
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingString =
+      _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerZeroizingStringPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
   void store_dart_post_cobject(int ptr) {
     return _store_dart_post_cobject(ptr);
   }
@@ -1534,6 +1655,90 @@ class RustLibWire implements BaseWire {
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
+
+  WireSyncRust2DartDco
+  wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_public_key(int that) {
+    return _wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_public_key(
+      that,
+    );
+  }
+
+  late final _wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_public_keyPtr =
+      _lookup<ffi.NativeFunction<WireSyncRust2DartDco Function(ffi.UintPtr)>>(
+        'frbgen_soshal_flutter_wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_public_key',
+      );
+  late final _wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_public_key =
+      _wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_public_keyPtr
+          .asFunction<WireSyncRust2DartDco Function(int)>();
+
+  WireSyncRust2DartDco
+  wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_secret_key(int that) {
+    return _wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_secret_key(
+      that,
+    );
+  }
+
+  late final _wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_secret_keyPtr =
+      _lookup<ffi.NativeFunction<WireSyncRust2DartDco Function(ffi.UintPtr)>>(
+        'frbgen_soshal_flutter_wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_secret_key',
+      );
+  late final _wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_secret_key =
+      _wire__crate__ffi__auth__KeyPairResult_auto_accessor_get_secret_keyPtr
+          .asFunction<WireSyncRust2DartDco Function(int)>();
+
+  WireSyncRust2DartDco
+  wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_public_key(
+    int that,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> public_key,
+  ) {
+    return _wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_public_key(
+      that,
+      public_key,
+    );
+  }
+
+  late final _wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_public_keyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartDco Function(
+            ffi.UintPtr,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_public_key',
+      );
+  late final _wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_public_key =
+      _wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_public_keyPtr
+          .asFunction<
+            WireSyncRust2DartDco Function(
+              int,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            )
+          >();
+
+  WireSyncRust2DartDco
+  wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_secret_key(
+    int that,
+    int secret_key,
+  ) {
+    return _wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_secret_key(
+      that,
+      secret_key,
+    );
+  }
+
+  late final _wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_secret_keyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartDco Function(ffi.UintPtr, ffi.UintPtr)
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_secret_key',
+      );
+  late final _wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_secret_key =
+      _wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_secret_keyPtr
+          .asFunction<WireSyncRust2DartDco Function(int, int)>();
 
   WireSyncRust2DartSse wire__crate__ffi__auth__auth_generate_keypair(
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -8089,6 +8294,68 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  WireSyncRust2DartSse
+  wire__crate__ffi__moderation__moderation_ai_classify_media(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__moderation__moderation_ai_classify_media(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__moderation__moderation_ai_classify_mediaPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__moderation__moderation_ai_classify_media',
+      );
+  late final _wire__crate__ffi__moderation__moderation_ai_classify_media =
+      _wire__crate__ffi__moderation__moderation_ai_classify_mediaPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__moderation__moderation_ai_classify_text(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__moderation__moderation_ai_classify_text(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__moderation__moderation_ai_classify_textPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__moderation__moderation_ai_classify_text',
+      );
+  late final _wire__crate__ffi__moderation__moderation_ai_classify_text =
+      _wire__crate__ffi__moderation__moderation_ai_classify_textPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   WireSyncRust2DartSse wire__crate__ffi__moderation__moderation_block_user(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -8115,6 +8382,37 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__moderation__moderation_block_user =
       _wire__crate__ffi__moderation__moderation_block_userPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__moderation__moderation_compute_pdq_hash(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__moderation__moderation_compute_pdq_hash(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__moderation__moderation_compute_pdq_hashPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__moderation__moderation_compute_pdq_hash',
+      );
+  late final _wire__crate__ffi__moderation__moderation_compute_pdq_hash =
+      _wire__crate__ffi__moderation__moderation_compute_pdq_hashPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -8267,6 +8565,68 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__moderation__moderation_get_word_filters =
       _wire__crate__ffi__moderation__moderation_get_word_filtersPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__moderation__moderation_hybrid_classify_media(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__moderation__moderation_hybrid_classify_media(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__moderation__moderation_hybrid_classify_mediaPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__moderation__moderation_hybrid_classify_media',
+      );
+  late final _wire__crate__ffi__moderation__moderation_hybrid_classify_media =
+      _wire__crate__ffi__moderation__moderation_hybrid_classify_mediaPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__moderation__moderation_hybrid_classify_text(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__moderation__moderation_hybrid_classify_text(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__moderation__moderation_hybrid_classify_textPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__moderation__moderation_hybrid_classify_text',
+      );
+  late final _wire__crate__ffi__moderation__moderation_hybrid_classify_text =
+      _wire__crate__ffi__moderation__moderation_hybrid_classify_textPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -10190,161 +10550,6 @@ class RustLibWire implements BaseWire {
           >();
 
   WireSyncRust2DartSse
-  wire__crate__ffi__notifications__notifications_fetch_follows(
-    ffi.Pointer<ffi.Uint8> ptr_,
-    int rust_vec_len_,
-    int data_len_,
-  ) {
-    return _wire__crate__ffi__notifications__notifications_fetch_follows(
-      ptr_,
-      rust_vec_len_,
-      data_len_,
-    );
-  }
-
-  late final _wire__crate__ffi__notifications__notifications_fetch_followsPtr =
-      _lookup<
-        ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
-            ffi.Pointer<ffi.Uint8>,
-            ffi.Int32,
-            ffi.Int32,
-          )
-        >
-      >(
-        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_fetch_follows',
-      );
-  late final _wire__crate__ffi__notifications__notifications_fetch_follows =
-      _wire__crate__ffi__notifications__notifications_fetch_followsPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
-
-  WireSyncRust2DartSse
-  wire__crate__ffi__notifications__notifications_fetch_mentions(
-    ffi.Pointer<ffi.Uint8> ptr_,
-    int rust_vec_len_,
-    int data_len_,
-  ) {
-    return _wire__crate__ffi__notifications__notifications_fetch_mentions(
-      ptr_,
-      rust_vec_len_,
-      data_len_,
-    );
-  }
-
-  late final _wire__crate__ffi__notifications__notifications_fetch_mentionsPtr =
-      _lookup<
-        ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
-            ffi.Pointer<ffi.Uint8>,
-            ffi.Int32,
-            ffi.Int32,
-          )
-        >
-      >(
-        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_fetch_mentions',
-      );
-  late final _wire__crate__ffi__notifications__notifications_fetch_mentions =
-      _wire__crate__ffi__notifications__notifications_fetch_mentionsPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
-
-  WireSyncRust2DartSse
-  wire__crate__ffi__notifications__notifications_fetch_messages(
-    ffi.Pointer<ffi.Uint8> ptr_,
-    int rust_vec_len_,
-    int data_len_,
-  ) {
-    return _wire__crate__ffi__notifications__notifications_fetch_messages(
-      ptr_,
-      rust_vec_len_,
-      data_len_,
-    );
-  }
-
-  late final _wire__crate__ffi__notifications__notifications_fetch_messagesPtr =
-      _lookup<
-        ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
-            ffi.Pointer<ffi.Uint8>,
-            ffi.Int32,
-            ffi.Int32,
-          )
-        >
-      >(
-        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_fetch_messages',
-      );
-  late final _wire__crate__ffi__notifications__notifications_fetch_messages =
-      _wire__crate__ffi__notifications__notifications_fetch_messagesPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
-
-  WireSyncRust2DartSse
-  wire__crate__ffi__notifications__notifications_fetch_reactions(
-    ffi.Pointer<ffi.Uint8> ptr_,
-    int rust_vec_len_,
-    int data_len_,
-  ) {
-    return _wire__crate__ffi__notifications__notifications_fetch_reactions(
-      ptr_,
-      rust_vec_len_,
-      data_len_,
-    );
-  }
-
-  late final _wire__crate__ffi__notifications__notifications_fetch_reactionsPtr =
-      _lookup<
-        ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
-            ffi.Pointer<ffi.Uint8>,
-            ffi.Int32,
-            ffi.Int32,
-          )
-        >
-      >(
-        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_fetch_reactions',
-      );
-  late final _wire__crate__ffi__notifications__notifications_fetch_reactions =
-      _wire__crate__ffi__notifications__notifications_fetch_reactionsPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
-
-  WireSyncRust2DartSse
-  wire__crate__ffi__notifications__notifications_fetch_replies(
-    ffi.Pointer<ffi.Uint8> ptr_,
-    int rust_vec_len_,
-    int data_len_,
-  ) {
-    return _wire__crate__ffi__notifications__notifications_fetch_replies(
-      ptr_,
-      rust_vec_len_,
-      data_len_,
-    );
-  }
-
-  late final _wire__crate__ffi__notifications__notifications_fetch_repliesPtr =
-      _lookup<
-        ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
-            ffi.Pointer<ffi.Uint8>,
-            ffi.Int32,
-            ffi.Int32,
-          )
-        >
-      >(
-        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_fetch_replies',
-      );
-  late final _wire__crate__ffi__notifications__notifications_fetch_replies =
-      _wire__crate__ffi__notifications__notifications_fetch_repliesPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
-
-  WireSyncRust2DartSse
   wire__crate__ffi__notifications__notifications_fetch_unread(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -11840,34 +12045,6 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__relations__relations_send_friend_request =
       _wire__crate__ffi__relations__relations_send_friend_requestPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
-
-  WireSyncRust2DartSse wire__crate__ffi__relay__relay_connect_i2p(
-    ffi.Pointer<ffi.Uint8> ptr_,
-    int rust_vec_len_,
-    int data_len_,
-  ) {
-    return _wire__crate__ffi__relay__relay_connect_i2p(
-      ptr_,
-      rust_vec_len_,
-      data_len_,
-    );
-  }
-
-  late final _wire__crate__ffi__relay__relay_connect_i2pPtr =
-      _lookup<
-        ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
-            ffi.Pointer<ffi.Uint8>,
-            ffi.Int32,
-            ffi.Int32,
-          )
-        >
-      >('frbgen_soshal_flutter_wire__crate__ffi__relay__relay_connect_i2p');
-  late final _wire__crate__ffi__relay__relay_connect_i2p =
-      _wire__crate__ffi__relay__relay_connect_i2pPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -14992,7 +15169,6 @@ const int COLOR_FormatYUV420Flexible = 2135033992;
 
 typedef DartPort = ffi.Int64;
 typedef DartDartPort = int;
-
 
 typedef __ssize_t = ffi.Long;
 typedef Dart__ssize_t = int;

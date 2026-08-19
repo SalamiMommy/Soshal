@@ -706,8 +706,8 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
               ListTile(
                 dense: true,
                 leading: const Icon(Icons.route_outlined),
-                title: Text(
-                    'In use: ${service.resolved!.resolved.toUpperCase()}'),
+                title:
+                    Text('In use: ${service.resolved!.resolved.toUpperCase()}'),
                 subtitle: Text(service.resolved!.satisfied
                     ? 'Mode ${service.transportMode.label}'
                     : 'Preferred transport down - fell back to Nostr'),
@@ -715,8 +715,9 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                   service.resolved!.satisfied
                       ? Icons.check_circle
                       : Icons.warning_amber,
-                  color:
-                      service.resolved!.satisfied ? Colors.green : Colors.orange,
+                  color: service.resolved!.satisfied
+                      ? Colors.green
+                      : Colors.orange,
                 ),
               ),
             Padding(
@@ -746,11 +747,12 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
             if (service.meshStatus != null)
               ListTile(
                 dense: true,
-                title: Text('Mesh relay: peers ${_meshPeersSummary(service.meshStatus!)}'),
-                subtitle: Text(
-                    'published ${service.meshStatus!['published']} · '
-                    'received ${service.meshStatus!['received']} · '
-                    'delivered ${service.meshStatus!['delivered']}'),
+                title: Text(
+                    'Mesh relay: peers ${_meshPeersSummary(service.meshStatus!)}'),
+                subtitle:
+                    Text('published ${service.meshStatus!['published']} · '
+                        'received ${service.meshStatus!['received']} · '
+                        'delivered ${service.meshStatus!['delivered']}'),
               ),
             TextButton.icon(
               onPressed: () async {

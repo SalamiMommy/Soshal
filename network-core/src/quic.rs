@@ -474,8 +474,13 @@ impl LiveStreamRegistry {
         lock.watermark += 1;
         let seq = lock.watermark;
         lock.entries.insert(seq, Arc::new(encoded));
-        while lock.entries.len() > LIVE_STREAM_HISTORY {
-            lock.entries.pop_first();
+        let mut total_bytes: usize = lock.entries.values().map(|g| g.len()).sum();
+        while lock.entries.len() > LIVE_STREAM_HISTORY
+            || (total_bytes > LIVE_MAX_REPLAY_BYTES && lock.entries.len() > 1)
+        {
+            if let Some((_, g)) = lock.entries.pop_first() {
+                total_bytes -= g.len();
+            }
         }
         drop(lock);
         self.notify.notify_waiters();

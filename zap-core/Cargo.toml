@@ -14,4 +14,4 @@ soshal-common-core = { path = "../common-core" }
 workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }

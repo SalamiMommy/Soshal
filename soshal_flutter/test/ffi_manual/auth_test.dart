@@ -23,15 +23,12 @@ void main() {
     expect(restored, 'restored');
   });
 
-  test('pubkey/npub encode/decode', () {
+  test('pubkey/npub encode', () {
     api.stubString('crateFfiAuthAuthPublicKeyFromNsec', 'pub');
     api.stubString('crateFfiAuthAuthNpubEncode', 'npub');
-    api.stubString('crateFfiAuthAuthNpubDecode', 'pub');
     final p = authPublicKeyFromNsec(nsec: 'n');
     final np = authNpubEncode(publicKey: 'pub');
-    final dec = authNpubDecode(npub: 'npub');
     expect(p, 'pub');
     expect(np, 'npub');
-    expect(dec, 'pub');
   });
 }

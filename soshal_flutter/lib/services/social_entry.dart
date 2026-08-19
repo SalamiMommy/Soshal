@@ -1,4 +1,5 @@
 import '../utils/json_ext.dart';
+
 /// Shared base for {id, pubkey, content, createdAt} relay entries.
 class SocialEntry {
   final String id;

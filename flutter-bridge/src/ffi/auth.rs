@@ -7,6 +7,7 @@ use nostr::nips::nip19::{FromBech32, ToBech32};
 use serde::{Deserialize, Serialize};
 use soshal_identity_core::mnemonic::{generate_mnemonic, restore_from_mnemonic, validate_mnemonic};
 use soshal_nostr_core::keys::{from_nsec, generate_keys};
+use zeroize::{Zeroize, Zeroizing};
 
 /// Result wrapper for FFI operations.
 ///
@@ -15,8 +16,8 @@ use soshal_nostr_core::keys::{from_nsec, generate_keys};
 #[frb(sync, serialize)]
 pub fn auth_generate_keypair() -> Result<String, String> {
     let keys = generate_keys();
-    let nsec = keys.secret_key().to_secret_hex();
-    let pk = super::signer::signer_unlock(nsec.clone())?;
+    let nsec = Zeroizing::new(keys.secret_key().to_secret_hex());
+    let pk = super::signer::signer_unlock((*nsec).clone())?;
     super::util::json_ok(KeyPairResult {
         public_key: pk,
         secret_key: nsec,
@@ -28,7 +29,7 @@ pub fn auth_generate_keypair() -> Result<String, String> {
 #[serde(rename_all = "camelCase")]
 pub struct KeyPairResult {
     pub public_key: String,
-    pub secret_key: String,
+    pub secret_key: Zeroizing<String>,
 }
 
 /// Generate a new BIP-39 mnemonic phrase
@@ -49,12 +50,15 @@ pub async fn auth_restore_from_mnemonic(
     mnemonic: String,
     passphrase: String,
 ) -> Result<String, String> {
-    let keys = restore_from_mnemonic(&mnemonic, &passphrase).map_err(super::util::to_err)?;
-    let pk = super::signer::signer_unlock(keys.private_key_hex.clone())?;
-    super::util::json_ok(KeyPairResult {
+    let mut keys = restore_from_mnemonic(&mnemonic, &passphrase).map_err(super::util::to_err)?;
+    let nsec = Zeroizing::new(keys.private_key_hex.clone());
+    let pk = super::signer::signer_unlock((*nsec).clone())?;
+    let result = super::util::json_ok(KeyPairResult {
         public_key: pk,
-        secret_key: keys.private_key_hex,
-    })
+        secret_key: nsec,
+    });
+    keys.private_key_hex.zeroize();
+    result
 }
 
 /// Get public key from nsec (bech32 encoded secret key)

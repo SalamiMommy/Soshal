@@ -35,8 +35,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
     final value = settings.getSetting('keychain_unlock_enabled');
     setState(() {
       _keychainUnlockEnabled = value == 'true';
-      _autologinEnabled =
-          settings.getSetting('autologin_enabled') != 'false';
+      _autologinEnabled = settings.getSetting('autologin_enabled') != 'false';
     });
   }
 
@@ -193,8 +192,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
             value: _autologinEnabled,
             onChanged: (value) async {
               final settings = context.read<SettingsService>();
-              await settings.setSetting(
-                  'autologin_enabled', value.toString());
+              await settings.setSetting('autologin_enabled', value.toString());
               setState(() {
                 _autologinEnabled = value;
               });

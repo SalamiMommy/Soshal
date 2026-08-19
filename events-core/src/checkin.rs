@@ -10,6 +10,17 @@ pub fn within_checkin_radius(
     user_lon: f64,
     radius_m: f64,
 ) -> bool {
+    if radius_m <= 0.0 {
+        return false;
+    }
+    // Fast bounding-box pre-filter: 1 degree latitude is approx 111,320 meters.
+    // If delta latitude or delta longitude (scaled) exceeds radius, reject in O(1) without trig.
+    let max_lat_deg = radius_m / 111_000.0;
+    let d_lat_deg = (user_lat - event_lat).abs();
+    if d_lat_deg > max_lat_deg {
+        return false;
+    }
+
     const EARTH_RADIUS_M: f64 = 6_371_000.0;
     let d_lat = (user_lat - event_lat).to_radians();
     let d_lon = (user_lon - event_lon).to_radians();

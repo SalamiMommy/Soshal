@@ -281,7 +281,7 @@ pub fn events_create(
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
     super::db::upsert_post_row(
-        event_id,
+        event_id.clone(),
         creator_pubkey,
         content.to_string(),
         KIND_EVENT as i64,
@@ -289,6 +289,9 @@ pub fn events_create(
         String::new(),
         Some(title),
     )?;
+    super::db::db_execute_raw(format!(
+        "UPDATE posts SET event_lat = {latitude}, event_lng = {longitude} WHERE id = '{event_id}'"
+    ))?;
     Ok(signed_json).into()
 }
 

@@ -29,11 +29,10 @@ mod ffi_tests {
             serde_json::from_str(&auth::auth_generate_keypair().unwrap()).unwrap();
         assert_eq!(keypair.public_key.len(), 64, "pubkey must be 64 hex chars");
         assert!(keypair.public_key.chars().all(|c| c.is_ascii_hexdigit()));
-        // Security invariant: secret key material never crosses FFI.
-        assert!(
-            keypair.secret_key.is_empty(),
-            "secret key must stay blank across the bridge"
-        );
+        // Generation-time nsec is surfaced once for the backup dialog; it is
+        // never persisted by the bridge and keychain ops stay pubkey-only.
+        assert_eq!(keypair.secret_key.len(), 64, "nsec must be 64 hex chars");
+        assert!(keypair.secret_key.chars().all(|c| c.is_ascii_hexdigit()));
     }
     #[test]
     fn test_auth_npub_encode_decode() {

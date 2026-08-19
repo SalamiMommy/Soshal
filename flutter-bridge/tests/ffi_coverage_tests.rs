@@ -174,7 +174,7 @@ mod ffi_coverage_tests {
         let v: serde_json::Value = serde_json::from_str(&created).unwrap();
         let event_id = v["id"].as_str().unwrap().to_string();
         assert!(!event_id.is_empty());
-        let nearby = events::events_fetch_nearby(37.0, -122.0, 10000.0, 5).unwrap();
+        let nearby = events::events_fetch_nearby(37.5, -122.4, 5000.0, 5).unwrap();
         let arr: serde_json::Value = serde_json::from_str(&nearby).unwrap();
         assert_eq!(
             arr.as_array().unwrap().len(),

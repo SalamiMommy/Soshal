@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -43,7 +44,7 @@ import 'services/stealth_service.dart';
 import 'services/vouch_service.dart';
 import 'services/calls_service.dart';
 import 'services/chatrandom_service.dart';
-import 'services/crypto_service.dart';
+import 'services/daemon_service.dart';
 import 'services/media_service.dart';
 import 'services/mesh_service.dart';
 import 'services/profile_service.dart';
@@ -99,7 +100,6 @@ void main() {
         ChangeNotifierProvider(create: (_) => VouchService()),
         ChangeNotifierProvider(create: (_) => CallsService()),
         ChangeNotifierProvider(create: (_) => ChatrandomService()),
-        ChangeNotifierProvider(create: (_) => CryptoService()),
         ChangeNotifierProvider(create: (_) => MediaService()),
         ChangeNotifierProvider(create: (_) => SignerService()),
         ChangeNotifierProvider(create: (_) => BackupService()),
@@ -132,6 +132,14 @@ class _SoshalAppState extends State<SoshalApp> {
       // ("database not initialized").
       await FfiBridge.initDatabase();
       if (!mounted) return;
+      // Bring up bundled networking daemons (i2pd, freenet, rnsd) so the
+      // local transports are live before any screen needs them. No-op on
+      // desktop (no bundled assets) and when already running.
+      try {
+        unawaited(DaemonService.startDaemons());
+      } catch (e) {
+        debugPrint('Error autolaunching daemons: $e');
+      }
       context.read<TelemetryService>().init();
       context.read<ShellService>().initialize();
       context.read<ThemeService>().load();

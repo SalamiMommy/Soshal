@@ -26,4 +26,3 @@ workspace = true
 
 [dev-dependencies]
 soshal-test-util = { path = "../test-util" }
-tokio = { workspace = true }

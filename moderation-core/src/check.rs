@@ -2,6 +2,42 @@ use std::sync::OnceLock;
 
 const MAX_MODERATION_INPUT_LEN: usize = 256 * 1024;
 
+/// Result of evaluating content for moderation.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ModerationVerdict {
+    pub passed: bool,
+    pub category: Option<String>,
+    pub severity: i32,
+    pub reason: Option<String>,
+}
+
+impl ModerationVerdict {
+    pub fn pass() -> Self {
+        Self {
+            passed: true,
+            category: None,
+            severity: 0,
+            reason: None,
+        }
+    }
+
+    pub fn flag(category: &str, severity: i32, reason: Option<String>) -> Self {
+        Self {
+            passed: false,
+            category: Some(category.to_string()),
+            severity,
+            reason,
+        }
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|_| match &self.category {
+            Some(cat) => format!("{{\"passed\":{},\"category\":\"{}\"}}", self.passed, cat),
+            None => format!("{{\"passed\":{},\"category\":null}}", self.passed),
+        })
+    }
+}
+
 struct ModerationPattern {
     pattern: &'static str,
     category: &'static str,
@@ -211,37 +247,33 @@ const MODERATION_PATTERNS: &[ModerationPattern] = &[
     },
 ];
 
-struct CompiledModerationPattern {
-    regex: regex::Regex,
-    category: &'static str,
-    severity: i32,
+struct ModerationSet {
+    set: regex::RegexSet,
+    categories: Vec<&'static str>,
+    severities: Vec<i32>,
 }
 
-fn get_compiled_moderation_patterns() -> &'static Vec<CompiledModerationPattern> {
-    static COMPILED: OnceLock<Vec<CompiledModerationPattern>> = OnceLock::new();
-    COMPILED.get_or_init(|| {
-        MODERATION_PATTERNS
-            .iter()
-            .map(|entry| {
-                let re = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    regex::RegexBuilder::new(entry.pattern)
-                        .case_insensitive(true)
-                        .size_limit(1 << 30)
-                        .dfa_size_limit(1 << 30)
-                        .build()
-                })) {
-                    Ok(Ok(r)) => r,
-                    _ => regex::Regex::new(r"^$").expect("fallback regex must compile"),
-                };
-                CompiledModerationPattern {
-                    regex: re,
-                    category: entry.category,
-                    severity: entry.severity,
-                }
-            })
-            .collect()
+fn get_moderation_set() -> &'static ModerationSet {
+    static SET: OnceLock<ModerationSet> = OnceLock::new();
+    SET.get_or_init(|| {
+        let patterns: Vec<&str> = MODERATION_PATTERNS.iter().map(|p| p.pattern).collect();
+        let categories: Vec<&'static str> =
+            MODERATION_PATTERNS.iter().map(|p| p.category).collect();
+        let severities: Vec<i32> = MODERATION_PATTERNS.iter().map(|p| p.severity).collect();
+        let set = regex::RegexSetBuilder::new(patterns)
+            .case_insensitive(true)
+            .size_limit(1 << 30)
+            .dfa_size_limit(1 << 30)
+            .build()
+            .unwrap_or_else(|_| regex::RegexSet::empty());
+        ModerationSet {
+            set,
+            categories,
+            severities,
+        }
     })
 }
+
 fn build_result_json(passed: bool, category: Option<&str>) -> String {
     match category {
         Some(cat) => format!("{{\"passed\":{},\"category\":\"{}\"}}", passed, cat),
@@ -249,23 +281,116 @@ fn build_result_json(passed: bool, category: Option<&str>) -> String {
     }
 }
 
-pub fn check_text(text: &str) -> String {
+/// Evaluates content across all layers (CSAM, Gore, Hate/Harassment, Spam, Custom Word Filters).
+pub fn check_text_comprehensive(text: &str, custom_words: &[String]) -> ModerationVerdict {
     let trimmed = text.trim();
     if trimmed.is_empty() {
-        return build_result_json(true, None);
+        return ModerationVerdict::pass();
     }
-    // Oversized input fails closed: regex scanning is bounded by the size
-    // limit, so anything larger is flagged instead of silently passing.
     if trimmed.len() > MAX_MODERATION_INPUT_LEN {
-        return build_result_json(false, Some("oversize"));
+        return ModerationVerdict::flag("oversize", 3, Some("input_oversize".to_string()));
     }
-    let patterns = get_compiled_moderation_patterns();
-    for entry in patterns {
-        if entry.severity >= 2 && entry.regex.is_match(trimmed) {
-            return build_result_json(false, Some(entry.category));
+
+    // 1. Zero-tolerance CP / CSAM Filter
+    let csam_res = crate::csam::check_csam_text(trimmed);
+    if csam_res.is_csam {
+        return ModerationVerdict::flag("cp", csam_res.severity, csam_res.rule);
+    }
+
+    // 2. Gore, Extreme Violence & Self-Harm Filter
+    let gore_res = crate::gore::check_gore_text(trimmed);
+    if gore_res.is_gore && gore_res.severity >= 2 {
+        return ModerationVerdict::flag("gore", gore_res.severity, gore_res.rule);
+    }
+
+    // 3. Normalized Hate Speech, Harassment & Base Patterns
+    let variants = crate::normalize::generate_normalized_variants(trimmed);
+    let mod_set = get_moderation_set();
+
+    for variant in &variants {
+        let matches = mod_set.set.matches(variant);
+        for idx in matches.into_iter() {
+            if mod_set.severities[idx] >= 2 {
+                return ModerationVerdict::flag(
+                    mod_set.categories[idx],
+                    mod_set.severities[idx],
+                    Some(format!("pattern_match: {}", mod_set.categories[idx])),
+                );
+            }
         }
     }
-    build_result_json(true, None)
+
+    // 4. Advanced Spam & Scam Filter
+    let spam_res = crate::spam::check_spam(trimmed);
+    if spam_res.is_spam {
+        return ModerationVerdict::flag("spam", 2, spam_res.reason);
+    }
+
+    // 5. Lightweight AI Model Multi-Class Classification
+    let ai_res = crate::ai_classifier::classify_text(trimmed);
+    if ai_res.is_flagged {
+        if let Some(cat) = ai_res.primary_category {
+            let severity = if cat == "csam" { 3 } else { 2 };
+            let reason = ai_res
+                .detected_reasons
+                .first()
+                .cloned()
+                .unwrap_or_else(|| format!("ai_classified_{cat}"));
+            return ModerationVerdict::flag(&cat, severity, Some(reason));
+        }
+    }
+
+    // 6. Custom Word Filters
+    if !custom_words.is_empty() {
+        let lower = trimmed.to_ascii_lowercase();
+        let normalized = crate::normalize::normalize_basic(trimmed);
+        for word in custom_words {
+            let w = word.trim().to_ascii_lowercase();
+            if !w.is_empty() && (lower.contains(&w) || normalized.contains(&w)) {
+                return ModerationVerdict::flag(
+                    "custom",
+                    2,
+                    Some(format!("custom_filter_match: {w}")),
+                );
+            }
+        }
+    }
+
+    ModerationVerdict::pass()
+}
+
+/// Detailed AI classification entry point returning structured `AiModerationResult`.
+pub fn check_text_ai(text: &str) -> crate::ai_classifier::AiModerationResult {
+    crate::ai_classifier::classify_text(text)
+}
+
+/// Detailed AI classification entry point returning JSON string.
+pub fn check_text_ai_json(text: &str) -> String {
+    crate::ai_classifier::classify_text_json(text)
+}
+
+/// 2-Tier Hybrid text evaluation (Tier 1 N-Gram -> Tier 2 RoBERTa).
+pub fn check_text_hybrid(
+    text: &str,
+    force_deep_scan: bool,
+) -> crate::hybrid::HybridModerationResult {
+    crate::hybrid::evaluate_text_hybrid(text, force_deep_scan)
+}
+
+/// 2-Tier Hybrid text evaluation returning JSON string.
+pub fn check_text_hybrid_json(text: &str, force_deep_scan: bool) -> String {
+    crate::hybrid::evaluate_text_hybrid_json(text, force_deep_scan)
+}
+
+/// Check text with user custom word filters.
+pub fn check_with_custom_words(text: &str, custom_words: &[String]) -> ModerationVerdict {
+    check_text_comprehensive(text, custom_words)
+}
+
+/// Standard check_text entry point (JSON output for FFI compatibility).
+pub fn check_text(text: &str) -> String {
+    let verdict = check_text_comprehensive(text, &[]);
+    build_result_json(verdict.passed, verdict.category.as_deref())
 }
 
 /// Verifies incoming zk-SNARK Web-of-Trust moderation proof.

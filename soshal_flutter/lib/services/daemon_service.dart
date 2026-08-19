@@ -53,7 +53,8 @@ class DaemonService {
     }
   }
 
-  /// Extracts bundled daemons and spawns i2pd (SAM 7656 + SOCKS 4447).
+  /// Extracts bundled daemons and spawns i2pd (SAM 7656 + SOCKS 4447),
+  /// freenet, and rnsd. Idempotent: already-running daemons are left alone.
   static Future<bool> startDaemons() async {
     try {
       return ffi_daemon.daemonStartDaemons();

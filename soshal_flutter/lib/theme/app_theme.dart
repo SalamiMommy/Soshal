@@ -86,6 +86,7 @@ class AppTheme {
     String fontFamily = 'default',
     double fontScale = 1.0,
     String? customAccent,
+    String? fontColor,
   }) {
     final bgConfig = _bgConfigs[bgLevel] ?? _bgConfigs['light']!;
     final isLight = bgLevel == 'light';
@@ -104,6 +105,15 @@ class AppTheme {
     final textPrimary = isLight ? _hsl(210, 20, 18) : _hsl(0, 0, 95);
     final textSecondary = isLight ? _hsl(210, 12, 42) : _hsl(240, 5, 65);
     final textMuted = isLight ? _hsl(210, 8, 58) : _hsl(240, 4, 45);
+
+    final primaryTextColor =
+        fontColor != null ? _parseColor(fontColor) : _parseColor(textPrimary);
+    final secondaryTextColor = fontColor != null
+        ? primaryTextColor.withValues(alpha: 0.7)
+        : _parseColor(textSecondary);
+    final mutedTextColor = fontColor != null
+        ? primaryTextColor.withValues(alpha: 0.5)
+        : _parseColor(textMuted);
 
     // Glass colors
     final glassGreen = _rgba(74, 222, 128, 0.15);
@@ -137,7 +147,7 @@ class AppTheme {
       error: _parseColor('hsl(0, 85, 58)'),
       onError: Colors.white,
       surface: _parseColor(surfaceColor),
-      onSurface: _parseColor(textPrimary),
+      onSurface: primaryTextColor,
       outline: _parseColor(borderColor),
     );
 
@@ -152,7 +162,7 @@ class AppTheme {
         centerTitle: true,
         elevation: 0,
         backgroundColor: _parseColor(surfaceColor),
-        foregroundColor: _parseColor(textPrimary),
+        foregroundColor: primaryTextColor,
       ),
       cardTheme: CardThemeData(
         elevation: 0,
@@ -187,52 +197,52 @@ class AppTheme {
         displayLarge: TextStyle(
           fontSize: 32 * fontScale,
           fontWeight: FontWeight.w700,
-          color: _parseColor(textPrimary),
+          color: primaryTextColor,
         ),
         displayMedium: TextStyle(
           fontSize: 28 * fontScale,
           fontWeight: FontWeight.w700,
-          color: _parseColor(textPrimary),
+          color: primaryTextColor,
         ),
         displaySmall: TextStyle(
           fontSize: 24 * fontScale,
           fontWeight: FontWeight.w600,
-          color: _parseColor(textPrimary),
+          color: primaryTextColor,
         ),
         headlineMedium: TextStyle(
           fontSize: 20 * fontScale,
           fontWeight: FontWeight.w600,
-          color: _parseColor(textPrimary),
+          color: primaryTextColor,
         ),
         headlineSmall: TextStyle(
           fontSize: 18 * fontScale,
           fontWeight: FontWeight.w600,
-          color: _parseColor(textPrimary),
+          color: primaryTextColor,
         ),
         titleLarge: TextStyle(
           fontSize: 16 * fontScale,
           fontWeight: FontWeight.w600,
-          color: _parseColor(textPrimary),
+          color: primaryTextColor,
         ),
         bodyLarge: TextStyle(
           fontSize: 15 * fontScale,
           fontWeight: FontWeight.w400,
-          color: _parseColor(textPrimary),
+          color: primaryTextColor,
         ),
         bodyMedium: TextStyle(
           fontSize: 13 * fontScale,
           fontWeight: FontWeight.w400,
-          color: _parseColor(textSecondary),
+          color: secondaryTextColor,
         ),
         bodySmall: TextStyle(
           fontSize: 12 * fontScale,
           fontWeight: FontWeight.w400,
-          color: _parseColor(textMuted),
+          color: mutedTextColor,
         ),
         labelLarge: TextStyle(
           fontSize: 15 * fontScale,
           fontWeight: FontWeight.w600,
-          color: _parseColor(textPrimary),
+          color: primaryTextColor,
         ),
       ),
       extensions: [
@@ -271,7 +281,9 @@ class AppTheme {
 
   static Color _parseColor(String colorString) {
     if (colorString.startsWith('#')) {
-      return Color(int.parse(colorString.substring(1), radix: 16));
+      return Color(
+        0xFF000000 | int.parse(colorString.substring(1), radix: 16),
+      );
     }
     if (colorString.startsWith('hsl(')) {
       final parts = colorString.substring(4, colorString.length - 1).split(',');

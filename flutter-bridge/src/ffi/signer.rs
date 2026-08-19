@@ -11,6 +11,7 @@ use flutter_rust_bridge::frb;
 use nostr::event::{FinalizeUnsignedEvent, SignEvent, UnsignedEvent};
 use nostr::key::{Keys, PublicKey};
 use nostr::nips::nip44;
+use soshal_identity_core::signers::SigningOps;
 use std::sync::Mutex;
 
 /// In-process key handle. `Keys` zeroizes on drop (zeroize feature).
@@ -230,8 +231,9 @@ pub fn signer_schnorr_sign(message_hex: String) -> Result<String, String> {
                 Ok(_) => return Err("message must be 32 bytes".to_string()).into(),
                 Err(e) => return Err(format!("invalid hex: {e}")).into(),
             };
-            let sig = keys.sign_schnorr(msg);
-            Ok(sig.to_hex()).into()
+            let signer = soshal_identity_core::signers::Signer::new(keys.clone());
+            let sig = signer.sign_schnorr_digest(&msg, "blossom-auth")?;
+            Ok(sig).into()
         }
         None => Err("signer locked".to_string()),
     }

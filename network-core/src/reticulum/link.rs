@@ -1,8 +1,8 @@
 //! Reticulum link establishment and management for encrypted peer connections.
 
 use super::address::ReticulumAddress;
-use super::crypto::ReticulumEncryption;
 use super::packet::{ReticulumPacket, ReticulumPacketType};
+use crate::pqc_link::PqcLinkCrypto;
 use serde::{Deserialize, Serialize};
 use soshal_common_core::format::now_secs;
 use std::collections::HashMap;
@@ -10,6 +10,17 @@ use std::sync::{Arc, Mutex};
 
 const LINK_TIMEOUT_SECS: u64 = 300; // 5 minutes
 const MAX_PENDING_LINKS: usize = 50;
+
+/// Link-request payload marker byte: a PQC hybrid public key follows.
+const LINK_REQUEST_PQC: u8 = 0x01;
+
+fn link_peer_id(dest: &ReticulumAddress) -> String {
+    format!("reticulum:{}", dest)
+}
+
+fn link_context(dest: &ReticulumAddress) -> String {
+    format!("reticulum-link:{}", dest)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum LinkState {
@@ -30,18 +41,20 @@ pub struct LinkInfo {
 
 pub struct LinkManager {
     links: Arc<Mutex<HashMap<ReticulumAddress, LinkInfo>>>,
-    encryption: Arc<Mutex<HashMap<ReticulumAddress, ReticulumEncryption>>>,
+    crypto: PqcLinkCrypto,
 }
 
 impl LinkManager {
     pub fn new() -> Self {
         Self {
             links: Arc::new(Mutex::new(HashMap::new())),
-            encryption: Arc::new(Mutex::new(HashMap::new())),
+            crypto: PqcLinkCrypto::new(),
         }
     }
 
-    /// Initiates a link request to a remote destination
+    /// Initiates a link request to a remote destination. The request payload
+    /// carries this side's hybrid PQC public key; the peer answers with its
+    /// own in the proof packet, completing the ratchet handshake.
     pub fn request_link(&self, remote_dest: ReticulumAddress) -> Result<ReticulumPacket, String> {
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
 
@@ -62,8 +75,15 @@ impl LinkManager {
 
         links.insert(remote_dest, link_info);
 
-        // Create link request packet
-        let payload = vec![0x01]; // Link request type
+        // Create link request packet carrying our hybrid PQC public key so
+        // the responder can bootstrap the ratchet session.
+        let own_pk = self
+            .crypto
+            .begin_handshake(&link_peer_id(&remote_dest), &link_context(&remote_dest))?;
+        let mut payload = Vec::with_capacity(1 + own_pk.len());
+        payload.push(LINK_REQUEST_PQC);
+        payload.extend_from_slice(own_pk.as_bytes());
+
         Ok(ReticulumPacket::new(
             remote_dest,
             ReticulumPacketType::LinkRequest,
@@ -71,19 +91,30 @@ impl LinkManager {
         ))
     }
 
-    /// Processes an incoming link request
+    /// Processes an incoming link request: bootstraps the responder-side
+    /// ratchet session from the initiator's public key and returns a proof
+    /// packet carrying our own hybrid public key.
     pub fn handle_link_request(
         &self,
         from_dest: ReticulumAddress,
+        request_payload: &[u8],
     ) -> Result<ReticulumPacket, String> {
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
 
+        if request_payload.first() != Some(&LINK_REQUEST_PQC) {
+            return Err("unsupported link request payload".to_string());
+        }
+        let initiator_pk = std::str::from_utf8(&request_payload[1..])
+            .map_err(|_| "link request pk not ascii".to_string())?;
+
         let now = now_secs() as u64;
 
-        // Create encryption context for this link
-        let encryption = ReticulumEncryption::new();
-        let mut enc_map = self.encryption.lock().unwrap_or_else(|e| e.into_inner());
-        enc_map.insert(from_dest, encryption.clone());
+        // Create the ratchet session keyed to the initiator's public key.
+        let own_pk = self.crypto.accept_handshake_pk(
+            &link_peer_id(&from_dest),
+            &link_context(&from_dest),
+            initiator_pk,
+        )?;
 
         let link_info = LinkInfo {
             remote_destination: from_dest,
@@ -96,16 +127,16 @@ impl LinkManager {
 
         links.insert(from_dest, link_info);
 
-        // Return proof packet with encrypted nonce
-        let proof_payload = encryption.nonce.clone();
+        // Return proof packet carrying our hybrid public key.
         Ok(ReticulumPacket::new(
             from_dest,
             ReticulumPacketType::Proof,
-            proof_payload,
+            own_pk.into_bytes(),
         ))
     }
 
-    /// Processes a link proof response
+    /// Processes a link proof response: completes the initiator-side ratchet
+    /// handshake with the responder's public key.
     pub fn handle_link_proof(
         &self,
         from_dest: ReticulumAddress,
@@ -118,10 +149,11 @@ impl LinkManager {
                 link.state = LinkState::Established;
                 link.last_activity = now_secs() as u64;
 
-                // Store encryption context from proof
-                let encryption = ReticulumEncryption::from_key(proof_data.to_vec());
-                let mut enc_map = self.encryption.lock().unwrap_or_else(|e| e.into_inner());
-                enc_map.insert(from_dest, encryption);
+                // Complete the ratchet handshake with the responder's key.
+                let responder_pk = std::str::from_utf8(proof_data)
+                    .map_err(|_| "link proof pk not ascii".to_string())?;
+                self.crypto
+                    .complete_handshake(&link_peer_id(&from_dest), responder_pk)?;
 
                 Ok(())
             } else {
@@ -132,34 +164,26 @@ impl LinkManager {
         }
     }
 
-    /// Encrypts data for an established link
+    /// Encrypts data for an established link with the hybrid PQC double
+    /// ratchet.
     pub fn encrypt_for_link(
         &self,
         dest: &ReticulumAddress,
         data: &[u8],
     ) -> Result<Vec<u8>, String> {
-        let enc_map = self.encryption.lock().unwrap_or_else(|e| e.into_inner());
-
-        if let Some(encryption) = enc_map.get(dest) {
-            encryption.encrypt(data)
-        } else {
-            Err("No encryption context for destination".to_string())
-        }
+        self.crypto
+            .encrypt(&link_peer_id(dest), &link_context(dest), data)
     }
 
-    /// Decrypts data from an established link
+    /// Decrypts data from an established link with the hybrid PQC double
+    /// ratchet.
     pub fn decrypt_from_link(
         &self,
         dest: &ReticulumAddress,
         data: &[u8],
     ) -> Result<Vec<u8>, String> {
-        let enc_map = self.encryption.lock().unwrap_or_else(|e| e.into_inner());
-
-        if let Some(encryption) = enc_map.get(dest) {
-            encryption.decrypt(data)
-        } else {
-            Err("No encryption context for destination".to_string())
-        }
+        self.crypto
+            .decrypt(&link_peer_id(dest), &link_context(dest), data)
     }
 
     /// Updates activity timestamp for a link
@@ -174,10 +198,9 @@ impl LinkManager {
     /// Closes a link
     pub fn close_link(&self, dest: &ReticulumAddress) {
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
-        let mut enc_map = self.encryption.lock().unwrap_or_else(|e| e.into_inner());
 
         let _link = links.remove(dest);
-        enc_map.remove(dest);
+        self.crypto.remove(&link_peer_id(dest));
     }
 
     /// Prunes stale links
@@ -185,13 +208,12 @@ impl LinkManager {
         let now = now_secs() as u64;
 
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
-        let mut enc_map = self.encryption.lock().unwrap_or_else(|e| e.into_inner());
 
         let before = links.len();
 
         links.retain(|dest, link| {
             if now - link.last_activity > LINK_TIMEOUT_SECS {
-                enc_map.remove(dest);
+                self.crypto.remove(&link_peer_id(dest));
                 false
             } else {
                 true
@@ -257,28 +279,37 @@ mod tests {
 
     #[test]
     fn test_link_proof_handling() {
-        let manager = LinkManager::new();
+        let initiator = LinkManager::new();
+        let responder = LinkManager::new();
         let dest = ReticulumAddress::from_pubkey("test_pubkey");
 
-        let proof = manager.handle_link_request(dest).unwrap();
+        let request = initiator.request_link(dest).unwrap();
+        let proof = responder
+            .handle_link_request(dest, &request.payload)
+            .unwrap();
         assert_eq!(proof.packet_type, ReticulumPacketType::Proof);
 
-        let link_info = manager.get_link_info(&dest).unwrap();
+        let link_info = responder.get_link_info(&dest).unwrap();
         assert!(matches!(link_info.state, LinkState::Established));
     }
 
     #[test]
     fn test_encryption_context() {
-        let manager = LinkManager::new();
+        let initiator = LinkManager::new();
+        let responder = LinkManager::new();
         let dest = ReticulumAddress::from_pubkey("test_pubkey");
 
-        manager.handle_link_request(dest).unwrap();
+        let request = initiator.request_link(dest).unwrap();
+        let proof = responder
+            .handle_link_request(dest, &request.payload)
+            .unwrap();
+        initiator.handle_link_proof(dest, &proof.payload).unwrap();
 
         let data = b"test data";
-        let encrypted = manager.encrypt_for_link(&dest, data).unwrap();
+        let encrypted = initiator.encrypt_for_link(&dest, data).unwrap();
         assert_ne!(data.to_vec(), encrypted);
 
-        let decrypted = manager.decrypt_from_link(&dest, &encrypted).unwrap();
+        let decrypted = responder.decrypt_from_link(&dest, &encrypted).unwrap();
         assert_eq!(data.to_vec(), decrypted);
     }
 
@@ -296,22 +327,25 @@ mod tests {
 
     #[test]
     fn test_link_proof_establishes_pending_and_enables_encryption() {
-        let manager = LinkManager::new();
+        let initiator = LinkManager::new();
+        let responder = LinkManager::new();
         let dest = ReticulumAddress::from_pubkey("test_pubkey");
 
-        let request = manager.request_link(dest).unwrap();
+        let request = initiator.request_link(dest).unwrap();
         assert_eq!(request.packet_type, ReticulumPacketType::LinkRequest);
 
-        let key = [0x42u8; 32];
-        manager.handle_link_proof(dest, &key).unwrap();
+        let proof = responder
+            .handle_link_request(dest, &request.payload)
+            .unwrap();
+        initiator.handle_link_proof(dest, &proof.payload).unwrap();
 
-        let link_info = manager.get_link_info(&dest).unwrap();
+        let link_info = initiator.get_link_info(&dest).unwrap();
         assert!(matches!(link_info.state, LinkState::Established));
 
         let data = b"proof-derived key roundtrip";
-        let encrypted = manager.encrypt_for_link(&dest, data).unwrap();
+        let encrypted = initiator.encrypt_for_link(&dest, data).unwrap();
         assert_ne!(data.to_vec(), encrypted);
-        let decrypted = manager.decrypt_from_link(&dest, &encrypted).unwrap();
+        let decrypted = responder.decrypt_from_link(&dest, &encrypted).unwrap();
         assert_eq!(data.to_vec(), decrypted);
     }
 
@@ -323,9 +357,15 @@ mod tests {
         let err = manager.handle_link_proof(dest, &[0u8; 32]).unwrap_err();
         assert!(err.contains("Unknown link"));
 
-        manager.handle_link_request(dest).unwrap();
-        let err = manager.handle_link_proof(dest, &[0u8; 32]).unwrap_err();
-        assert!(err.contains("not in pending state"));
+        let request = manager.request_link(dest).unwrap();
+        // Non-ASCII proof payload fails the pk parse.
+        let err = manager.handle_link_proof(dest, &[0xFFu8; 32]).unwrap_err();
+        assert!(err.contains("not ascii"));
+        // Reusing a request payload re-establishes the session only once.
+        let err = manager
+            .handle_link_request(dest, &request.payload)
+            .unwrap_err();
+        assert!(err.contains("session already exists"));
     }
 
     #[test]
@@ -334,74 +374,108 @@ mod tests {
         let dest = ReticulumAddress::from_pubkey("test_pubkey");
 
         let err = manager.encrypt_for_link(&dest, b"data").unwrap_err();
-        assert!(err.contains("No encryption context"));
+        assert!(err.contains("no ratchet session"));
         let err = manager.decrypt_from_link(&dest, b"data").unwrap_err();
-        assert!(err.contains("No encryption context"));
+        assert!(err.contains("bad ratchet frame"));
     }
 
     #[test]
     fn test_update_activity_and_close() {
-        let manager = LinkManager::new();
+        let initiator = LinkManager::new();
+        let responder = LinkManager::new();
         let dest = ReticulumAddress::from_pubkey("test_pubkey");
 
-        manager.handle_link_request(dest).unwrap();
-        manager.update_activity(&dest);
-        assert!(manager.get_link_info(&dest).is_some());
+        let request = initiator.request_link(dest).unwrap();
+        let proof = responder
+            .handle_link_request(dest, &request.payload)
+            .unwrap();
+        initiator.handle_link_proof(dest, &proof.payload).unwrap();
 
-        manager.close_link(&dest);
-        assert!(manager.get_link_info(&dest).is_none());
-        assert!(manager.encrypt_for_link(&dest, b"data").is_err());
-        assert!(manager.get_active_links().is_empty());
+        initiator.update_activity(&dest);
+        assert!(initiator.get_link_info(&dest).is_some());
+
+        initiator.close_link(&dest);
+        assert!(initiator.get_link_info(&dest).is_none());
+        assert!(initiator.encrypt_for_link(&dest, b"data").is_err());
+        assert!(initiator.get_active_links().is_empty());
     }
 
     #[test]
     fn test_prune_stale_links() {
-        let manager = LinkManager::new();
+        let initiator = LinkManager::new();
+        let responder = LinkManager::new();
         let fresh = ReticulumAddress::from_pubkey("fresh_peer");
         let stale = ReticulumAddress::from_pubkey("stale_peer");
 
-        manager.handle_link_request(fresh).unwrap();
-        manager.handle_link_request(stale).unwrap();
+        let req_fresh = initiator.request_link(fresh).unwrap();
+        let proof_fresh = responder
+            .handle_link_request(fresh, &req_fresh.payload)
+            .unwrap();
+        initiator
+            .handle_link_proof(fresh, &proof_fresh.payload)
+            .unwrap();
+
+        let req_stale = initiator.request_link(stale).unwrap();
+        let proof_stale = responder
+            .handle_link_request(stale, &req_stale.payload)
+            .unwrap();
+        initiator
+            .handle_link_proof(stale, &proof_stale.payload)
+            .unwrap();
 
         {
-            let mut links = manager.links.lock().unwrap_or_else(|e| e.into_inner());
+            let mut links = initiator.links.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(link) = links.get_mut(&stale) {
                 link.last_activity = 0;
             }
         }
 
-        let pruned = manager.prune_stale_links();
+        let pruned = initiator.prune_stale_links();
         assert_eq!(pruned, 1);
-        assert!(manager.get_link_info(&fresh).is_some());
-        assert!(manager.get_link_info(&stale).is_none());
-        assert_eq!(manager.prune_stale_links(), 0);
+        assert!(initiator.get_link_info(&fresh).is_some());
+        assert!(initiator.get_link_info(&stale).is_none());
+        assert_eq!(initiator.prune_stale_links(), 0);
     }
 
     #[test]
     fn test_get_active_links_filters_pending() {
-        let manager = LinkManager::new();
+        let initiator = LinkManager::new();
+        let responder = LinkManager::new();
         let pending = ReticulumAddress::from_pubkey("pending_peer");
         let established = ReticulumAddress::from_pubkey("established_peer");
 
-        manager.request_link(pending).unwrap();
-        manager.handle_link_request(established).unwrap();
+        initiator.request_link(pending).unwrap();
+        let req = initiator.request_link(established).unwrap();
+        let proof = responder
+            .handle_link_request(established, &req.payload)
+            .unwrap();
+        initiator
+            .handle_link_proof(established, &proof.payload)
+            .unwrap();
 
-        let active = manager.get_active_links();
+        let active = initiator.get_active_links();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].remote_destination, established);
     }
 
     #[test]
     fn test_announce() {
-        let manager = LinkManager::new();
-        assert!(!manager.announce("pk").unwrap());
+        let initiator = LinkManager::new();
+        let responder = LinkManager::new();
+        assert!(!initiator.announce("pk").unwrap());
 
         let pending = ReticulumAddress::from_pubkey("pending_peer");
-        manager.request_link(pending).unwrap();
-        assert!(!manager.announce("pk").unwrap());
+        initiator.request_link(pending).unwrap();
+        assert!(!initiator.announce("pk").unwrap());
 
         let established = ReticulumAddress::from_pubkey("established_peer");
-        manager.handle_link_request(established).unwrap();
-        assert!(manager.announce("pk").unwrap());
+        let req = initiator.request_link(established).unwrap();
+        let proof = responder
+            .handle_link_request(established, &req.payload)
+            .unwrap();
+        initiator
+            .handle_link_proof(established, &proof.payload)
+            .unwrap();
+        assert!(initiator.announce("pk").unwrap());
     }
 }

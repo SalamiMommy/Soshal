@@ -81,8 +81,8 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
   /// Queries the Rust-side resolved transport (probe-aware) and caches it.
   void refreshResolvedTransport() {
     try {
-      final json = RustLib.instance.api
-          .crateFfiNetworkNetworkGetResolvedTransport();
+      final json =
+          RustLib.instance.api.crateFfiNetworkNetworkGetResolvedTransport();
       _resolved = ResolvedTransport.fromJson(jsonDecode(json));
     } catch (e, st) {
       setLastError(e, st);
@@ -93,7 +93,8 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
   /// Starts the device-as-relay mesh node (Reticulum + I2P SAM + Freenet
   /// backends) plus its inbound ingest task. Returns the status JSON.
   String startMeshRelay(String pubkey) {
-    final json = RustLib.instance.api.crateFfiRelayRelayNodeStart(pubkey: pubkey);
+    final json =
+        RustLib.instance.api.crateFfiRelayRelayNodeStart(pubkey: pubkey);
     _meshRelayRunning = true;
     _meshStatus = jsonDecode(json);
     notifyListeners();

@@ -213,36 +213,6 @@ pub fn notifications_fetch_by_type(
     )?)
 }
 
-/// Fetch mentions.
-#[frb(sync, serialize)]
-pub fn notifications_fetch_mentions(user_pubkey: String, limit: i32) -> Result<String, String> {
-    notifications_fetch_by_type(user_pubkey, "mention".to_string(), limit)
-}
-
-/// Fetch likes/reactions.
-#[frb(sync, serialize)]
-pub fn notifications_fetch_reactions(user_pubkey: String, limit: i32) -> Result<String, String> {
-    notifications_fetch_by_type(user_pubkey, "like".to_string(), limit)
-}
-
-/// Fetch replies.
-#[frb(sync, serialize)]
-pub fn notifications_fetch_replies(user_pubkey: String, limit: i32) -> Result<String, String> {
-    notifications_fetch_by_type(user_pubkey, "reply".to_string(), limit)
-}
-
-/// Fetch messages (new DMs).
-#[frb(sync, serialize)]
-pub fn notifications_fetch_messages(user_pubkey: String, limit: i32) -> Result<String, String> {
-    notifications_fetch_by_type(user_pubkey, "message".to_string(), limit)
-}
-
-/// Fetch follows.
-#[frb(sync, serialize)]
-pub fn notifications_fetch_follows(user_pubkey: String, limit: i32) -> Result<String, String> {
-    notifications_fetch_by_type(user_pubkey, "follow".to_string(), limit)
-}
-
 fn ensure_active_account(user_pubkey: &str) -> Result<(), String> {
     let json = super::session::session_get_active()?;
     let active_pubkey = serde_json::from_str::<serde_json::Value>(&json)
@@ -555,7 +525,8 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("mentions");
         insert_notification("n1", "pk1", "mention", None, "x", 1000, false);
-        let json = notifications_fetch_mentions("pk1".to_string(), 10).unwrap();
+        let json =
+            notifications_fetch_by_type("pk1".to_string(), "mention".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -572,7 +543,7 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("reactions");
         insert_notification("n1", "pk1", "like", None, "x", 1000, false);
-        let json = notifications_fetch_reactions("pk1".to_string(), 10).unwrap();
+        let json = notifications_fetch_by_type("pk1".to_string(), "like".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -589,7 +560,7 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("replies");
         insert_notification("n1", "pk1", "reply", None, "x", 1000, false);
-        let json = notifications_fetch_replies("pk1".to_string(), 10).unwrap();
+        let json = notifications_fetch_by_type("pk1".to_string(), "reply".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -606,7 +577,8 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("messages");
         insert_notification("n1", "pk1", "message", None, "x", 1000, false);
-        let json = notifications_fetch_messages("pk1".to_string(), 10).unwrap();
+        let json =
+            notifications_fetch_by_type("pk1".to_string(), "message".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -623,7 +595,8 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("follows");
         insert_notification("n1", "pk1", "follow", None, "x", 1000, false);
-        let json = notifications_fetch_follows("pk1".to_string(), 10).unwrap();
+        let json =
+            notifications_fetch_by_type("pk1".to_string(), "follow".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()

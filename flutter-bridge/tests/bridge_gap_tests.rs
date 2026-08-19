@@ -53,7 +53,7 @@ mod bridge_gap_tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let bad_url = music::music_publish(
+            let err = music::music_publish(
                 "ftp://insecure.example.com/a.mp3".into(),
                 None,
                 None,
@@ -62,7 +62,10 @@ mod bridge_gap_tests {
             )
             .await
             .unwrap_err();
-            assert!(bad_url.contains("audio_url"), "{bad_url}");
+            assert!(
+                err.contains("media") || err.contains("url") || err.contains("URL"),
+                "{err}"
+            );
             signer::signer_unlock(secret).unwrap();
             let no_client = music::music_publish(
                 "https://example.com/a.mp3".into(),

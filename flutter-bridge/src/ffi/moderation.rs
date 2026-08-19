@@ -26,11 +26,6 @@ fn parse_pubkey_list(json: &str) -> Vec<String> {
     serde_json::from_str(json).unwrap_or_default()
 }
 
-#[derive(serde::Deserialize)]
-struct CheckTextVerdict {
-    passed: bool,
-}
-
 /// Mute a user (per-account settings list; never yourself).
 #[frb(sync, serialize)]
 pub fn moderation_mute_user(muter_pubkey: String, target_pubkey: String) -> Result<bool, String> {
@@ -197,11 +192,16 @@ pub fn moderation_delete_report(report_id: String) -> Result<bool, String> {
 #[frb(sync, serialize)]
 pub fn moderation_should_filter(content: String, user_pubkey: String) -> Result<bool, String> {
     drop(user_pubkey);
-    let verdict = soshal_moderation_core::check::check_text(&content);
-    let passed = serde_json::from_str::<CheckTextVerdict>(&verdict)
-        .map(|v| v.passed)
-        .unwrap_or(false);
-    Ok(!passed).into()
+    let custom_filters = super::db::with_db_result(|db| {
+        let raw = SettingsRepo::new(db)
+            .get("moderation_word_filters")?
+            .unwrap_or_default();
+        Ok(parse_pubkey_list(&raw))
+    })
+    .unwrap_or_default();
+
+    let verdict = soshal_moderation_core::check::check_with_custom_words(&content, &custom_filters);
+    Ok(!verdict.passed).into()
 }
 
 /// Get the active word filter list (device-global moderation settings key).
@@ -230,6 +230,59 @@ pub fn moderation_set_word_filters(filters_json: String) -> Result<bool, String>
         )?;
         Ok(true)
     })
+}
+
+/// Classify text using the lightweight AI moderation engine (Spam, CSAM, Gore, Bigotry, Harassment).
+#[frb(sync, serialize)]
+pub fn moderation_ai_classify_text(content: String) -> Result<String, String> {
+    Ok(soshal_moderation_core::check::check_text_ai_json(&content))
+}
+
+/// Classify raw media bytes with the AI media perceptual and chrominance analyzer.
+#[frb(sync, serialize)]
+pub fn moderation_ai_classify_media(
+    image_bytes: Vec<u8>,
+    mime_type: String,
+) -> Result<String, String> {
+    Ok(soshal_moderation_core::media::check_media_buffer_ai_json(
+        &image_bytes,
+        &mime_type,
+        &[],
+    ))
+}
+
+/// 2-Tier Hybrid text evaluation (Tier 1 N-Gram -> Tier 2 RoBERTa).
+#[frb(sync, serialize)]
+pub fn moderation_hybrid_classify_text(
+    content: String,
+    force_deep_scan: bool,
+) -> Result<String, String> {
+    Ok(soshal_moderation_core::check::check_text_hybrid_json(
+        &content,
+        force_deep_scan,
+    ))
+}
+
+/// 2-Tier Hybrid media evaluation (Chrominance/Skin-tone -> Meta PDQ Perceptual Hash).
+#[frb(sync, serialize)]
+pub fn moderation_hybrid_classify_media(
+    image_bytes: Vec<u8>,
+    mime_type: String,
+) -> Result<String, String> {
+    Ok(soshal_moderation_core::media::check_media_hybrid_json(
+        &image_bytes,
+        &mime_type,
+        &[],
+    ))
+}
+
+/// Compute 256-bit Meta PDQ perceptual image hash and evaluate against threat blocklist.
+#[frb(sync, serialize)]
+pub fn moderation_compute_pdq_hash(image_bytes: Vec<u8>) -> Result<String, String> {
+    match soshal_moderation_core::media::compute_image_pdq_hash(&image_bytes) {
+        Some(res) => serde_json::to_string(&res).map_err(|e| format!("json encode error: {e}")),
+        None => Err("failed to decode image or extract PDQ hash".to_string()),
+    }
 }
 
 /// Create a FROST threshold jury case for community moderation.

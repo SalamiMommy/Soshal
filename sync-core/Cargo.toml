@@ -14,6 +14,7 @@ soshal-crypto-core = { path = "../crypto-core" }
 soshal-db-core = { path = "../db-core" }
 soshal-network-core = { path = "../network-core" }
 soshal-nostr-core = { path = "../nostr-core" }
+soshal-zap-core = { path = "../zap-core" }
 libsql = { workspace = true }
 rustls = { workspace = true }
 sha2 = { workspace = true }
