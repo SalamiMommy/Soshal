@@ -35,26 +35,39 @@ const MAX_PARSE_BOLT11_MSATS: u64 = 1_000_000_000_000;
 /// Returns 0 when no amount is present, the input is malformed, or too long.
 /// Returns an error when the amount overflows or exceeds the zap cap.
 pub fn parse_msats_from_bolt11(bolt11: &str) -> Result<u64, String> {
-    if bolt11.len() > 4096 {
+    if bolt11.len() > 4096 || bolt11.is_empty() {
         return Ok(0);
     }
 
-    let bytes = bolt11.as_bytes();
-    let pos = match bytes
-        .windows(4)
-        .position(|w| w.eq_ignore_ascii_case(b"lnbc"))
-    {
-        Some(p) => p + 4,
-        None => return Ok(0),
+    let lower = bolt11.to_ascii_lowercase();
+    let rest = if let Some(r) = lower.strip_prefix("lnbcrt") {
+        r
+    } else if let Some(r) = lower.strip_prefix("lnbc") {
+        r
+    } else if let Some(r) = lower.strip_prefix("lntb") {
+        r
+    } else if let Some(r) = lower.strip_prefix("lnsb") {
+        r
+    } else {
+        return Ok(0);
     };
 
-    let rest = &bytes[pos..];
+    if rest.is_empty() {
+        return Ok(0);
+    }
+
     let mut amount: u128 = 0;
     let mut digit_len = 0usize;
-    for &b in rest.iter().take(18) {
+    for &b in rest.as_bytes() {
         if b.is_ascii_digit() {
-            amount = amount * 10 + (b - b'0') as u128;
+            amount = amount
+                .checked_mul(10)
+                .and_then(|a| a.checked_add((b - b'0') as u128))
+                .ok_or_else(|| "BOLT-11 amount overflow".to_string())?;
             digit_len += 1;
+            if digit_len > 18 {
+                return Err("BOLT-11 amount exceeds range".to_string());
+            }
         } else {
             break;
         }
@@ -63,7 +76,7 @@ pub fn parse_msats_from_bolt11(bolt11: &str) -> Result<u64, String> {
         return Ok(0);
     }
 
-    let unit = rest.get(digit_len).copied().map(|b| b.to_ascii_lowercase());
+    let unit = rest.as_bytes().get(digit_len).copied();
     let msats = match unit {
         Some(b'p') => Some(amount / 10),
         Some(b'n') => amount.checked_mul(MULT_N as u128),

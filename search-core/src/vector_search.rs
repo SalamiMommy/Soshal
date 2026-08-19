@@ -23,10 +23,15 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         norm_b += y * y;
     }
 
-    if norm_a == 0.0 || norm_b == 0.0 {
+    if norm_a <= 0.0 || norm_b <= 0.0 {
         0.0
     } else {
-        dot / (norm_a.sqrt() * norm_b.sqrt())
+        let sim = dot / (norm_a.sqrt() * norm_b.sqrt());
+        if sim.is_finite() {
+            sim.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
     }
 }
 
@@ -47,10 +52,15 @@ fn cosine_similarity_with_norm(a: &[f32], norm_a: f32, b: &[f32]) -> f32 {
         norm_b += y * y;
     }
 
-    if norm_a == 0.0 || norm_b == 0.0 {
+    if norm_a <= 0.0 || norm_b <= 0.0 {
         0.0
     } else {
-        dot / (norm_a.sqrt() * norm_b.sqrt())
+        let sim = dot / (norm_a.sqrt() * norm_b.sqrt());
+        if sim.is_finite() {
+            sim.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
     }
 }
 
@@ -97,5 +107,17 @@ mod tests {
 
         assert!((cosine_similarity(&v1, &v2) - 1.0).abs() < 1e-5);
         assert!((cosine_similarity(&v1, &v3) - 0.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_cosine_similarity_handles_nan_and_inf() {
+        let v_nan = vec![f32::NAN, 1.0, 0.0];
+        let v_normal = vec![1.0, 1.0, 0.0];
+        let sim = cosine_similarity(&v_nan, &v_normal);
+        assert_eq!(sim, 0.0);
+
+        let v_inf = vec![f32::INFINITY, 0.0, 0.0];
+        let sim_inf = cosine_similarity(&v_inf, &v_normal);
+        assert_eq!(sim_inf, 0.0);
     }
 }

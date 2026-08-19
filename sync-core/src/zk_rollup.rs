@@ -89,13 +89,8 @@ impl ZkRollupEngine {
         input.extend_from_slice(&rollup.operation_count.to_le_bytes());
         let expected_digest = soshal_crypto_core::hash::sha256(&input);
 
-        // Commitment check: first 32 bytes must contain the digest
-        let is_valid = if proof_bytes.len() >= 32 {
-            proof_bytes[0..32] == expected_digest[..]
-        } else {
-            // For compact test proofs, verify non-empty hash match
-            !proof_bytes.is_empty()
-        };
+        // Commitment check: first 32 bytes must contain the expected digest
+        let is_valid = proof_bytes.len() >= 32 && proof_bytes[0..32] == expected_digest[..];
 
         let latency_ms = start_time.elapsed().as_millis() as u64;
 
@@ -317,5 +312,15 @@ mod tests {
         let res = engine.verify_rollup(&rollup);
         assert!(res.verified);
         assert_eq!(res.verified_operations, 500);
+    }
+
+    #[test]
+    fn test_zk_rollup_rejects_truncated_proof() {
+        let mut rollup = valid_rollup("t_short", 10);
+        rollup.proof_bytes_hex = "01".to_string(); // 1 byte only
+        let engine = ZkRollupEngine::new();
+        let res = engine.verify_rollup(&rollup);
+        assert!(!res.verified);
+        assert_eq!(res.verified_operations, 0);
     }
 }

@@ -101,7 +101,7 @@ pub fn validate_pay_invoice(invoice: &str) -> Result<(), String> {
     }
     let msats = super::parse_msats_from_bolt11(invoice)
         .map_err(|_| "invalid bolt11 invoice".to_string())?;
-    if msats > 0 && msats / 1000 > super::NWC_MAX_PAY_SATS {
+    if msats > super::NWC_MAX_PAY_SATS * 1000 {
         return Err(format!(
             "payment exceeds {}-sat NWC cap",
             super::NWC_MAX_PAY_SATS

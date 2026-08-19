@@ -4432,6 +4432,7 @@ dependencies = [
  "soshal-common-core",
  "soshal-crypto-core",
  "soshal-nostr-core",
+ "zeroize",
 ]
 
 [[package]]
@@ -4566,6 +4567,7 @@ dependencies = [
  "soshal-test-util",
  "tokio",
  "tokio-tungstenite 0.21.0",
+ "url",
  "webrtc-ice",
 ]
 

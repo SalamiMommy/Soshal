@@ -85,10 +85,10 @@ pub fn fetch_blob_from_peer(
     }
 
     // 2) Chunk bodies: QUIC preferred, TCP fallback, each BLAKE3-verified.
-    // Pool is created lazily inside a runtime context (quinn needs a reactor);
-    // leaked to 'static since it is process-global and reused across chunks.
-    static QUIC_POOL: std::sync::OnceLock<std::sync::Mutex<Option<&'static quic::QuicChunkPool>>> =
-        std::sync::OnceLock::new();
+    // Pool is created lazily inside a runtime context (quinn needs a reactor).
+    static QUIC_POOL: std::sync::OnceLock<
+        std::sync::Mutex<Option<std::sync::Arc<quic::QuicChunkPool>>>,
+    > = std::sync::OnceLock::new();
     let quic_addr = peer.quic_addr();
     static SHARED_RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
     let rt = match tokio::runtime::Handle::try_current() {
@@ -123,20 +123,18 @@ pub fn fetch_blob_from_peer(
                             want_manifest: false,
                         };
                         let fetched = rt.block_on(async move {
-                            let fut = {
+                            let pool = {
                                 let guard = QUIC_POOL.get_or_init(|| std::sync::Mutex::new(None));
                                 let mut guard =
                                     guard.lock().map_err(|_| "quic pool lock".to_string())?;
                                 if guard.is_none() {
                                     let pool = quic::QuicChunkPool::new()
                                         .map_err(|e| format!("quic pool: {e}"))?;
-                                    *guard = Some(Box::leak(Box::new(pool)));
+                                    *guard = Some(std::sync::Arc::new(pool));
                                 }
-                                guard
-                                    .as_ref()
-                                    .expect("quic pool")
-                                    .fetch_chunk(*qa, key, my_pubkey, &req)
+                                guard.as_ref().expect("quic pool").clone()
                             };
+                            let fut = pool.fetch_chunk(*qa, key, my_pubkey, &req);
                             tokio::time::timeout(QUIC_EXCHANGE_TIMEOUT, fut)
                                 .await
                                 .map_err(|_| "quic exchange timed out".to_string())

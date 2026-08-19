@@ -24,6 +24,7 @@ rustls = { workspace = true }
 aes-gcm = "0.10"
 tokio-tungstenite = "0.21"
 futures-util = { workspace = true }
+url = { workspace = true }
 soshal-common-core = { path = "../common-core" }
 soshal-content-core = { path = "../content-core" }
 soshal-crypto-core = { path = "../crypto-core" }

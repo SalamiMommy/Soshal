@@ -20,6 +20,13 @@ fn max_cache_capacity() -> usize {
 
 static VERIFIED_CACHE: RwLock<Option<VerifiedCache>> = RwLock::new(None);
 
+/// Clears the global verified event signature cache to release memory.
+pub fn clear_verified_cache() {
+    if let Ok(mut guard) = VERIFIED_CACHE.write() {
+        *guard = None;
+    }
+}
+
 /// Verifies a Nostr event's Schnorr signature, using an in-memory bounded LRU cache.
 pub fn verify_event(e: &nostr::event::Event) -> bool {
     let id_bytes = e.id.as_bytes();
@@ -37,13 +44,14 @@ pub fn verify_event(e: &nostr::event::Event) -> bool {
                 queue: VecDeque::with_capacity(1024),
             });
             let max_cap = max_cache_capacity();
-            if cache.set.len() >= max_cap {
-                if let Some(oldest) = cache.queue.pop_front() {
-                    cache.set.remove(&oldest);
+            if cache.set.insert(*id_bytes) {
+                if cache.set.len() > max_cap {
+                    if let Some(oldest) = cache.queue.pop_front() {
+                        cache.set.remove(&oldest);
+                    }
                 }
+                cache.queue.push_back(*id_bytes);
             }
-            cache.set.insert(*id_bytes);
-            cache.queue.push_back(*id_bytes);
         }
         true
     } else {

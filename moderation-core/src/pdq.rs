@@ -50,12 +50,22 @@ pub fn compute_pdq_hash(image_bytes: &[u8]) -> Option<([u8; 32], u32)> {
         return None;
     }
 
-    // Attempt decoding using the image crate
-    if let Ok(dyn_img) = image::load_from_memory(image_bytes) {
-        let gray = dyn_img.to_luma8();
-        let (w, h) = gray.dimensions();
-        let luma_matrix = downsample_to_64x64(&gray.into_raw(), w as usize, h as usize);
-        return Some(pdq_from_64x64_luma(&luma_matrix));
+    // Attempt decoding using the image crate with explicit resource limits (anti-decompression bomb)
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(64 * 1024 * 1024);
+
+    if let Ok(mut reader) =
+        image::ImageReader::new(std::io::Cursor::new(image_bytes)).with_guessed_format()
+    {
+        reader.limits(limits);
+        if let Ok(dyn_img) = reader.decode() {
+            let gray = dyn_img.to_luma8();
+            let (w, h) = gray.dimensions();
+            let luma_matrix = downsample_to_64x64(&gray.into_raw(), w as usize, h as usize);
+            return Some(pdq_from_64x64_luma(&luma_matrix));
+        }
     }
 
     // Fallback: if raw RGB or grayscale buffer is provided

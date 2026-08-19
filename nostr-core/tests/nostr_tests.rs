@@ -116,3 +116,17 @@ fn nostr_event_find_tag_value() {
     assert_eq!(find_tag_value(&tags, "p"), Some("pubkey-val"));
     assert_eq!(find_tag_value(&tags, "nonexistent"), None);
 }
+
+#[test]
+fn test_verify_event_caching_and_clear() {
+    use soshal_nostr_core::models::{clear_verified_cache, verify_event};
+
+    let keys = from_nsec(SK_HEX).unwrap();
+    let event = text_note(&keys, "cached note", vec![]).unwrap();
+
+    clear_verified_cache();
+    assert!(verify_event(&event));
+    // Second verify should hit the cache without re-allocating or duplicating
+    assert!(verify_event(&event));
+    clear_verified_cache();
+}

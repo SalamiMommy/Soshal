@@ -119,7 +119,9 @@ impl SharedRing {
                 continue;
             }
             let total = len_word as usize;
-            if !(RING_ENTRY_HEADER..=RING_ENTRY_HEADER + RING_ENTRY_MAX_PAYLOAD).contains(&total)
+            const RING_ENTRY_MAX_TOTAL: usize =
+                (RING_ENTRY_HEADER + RING_ENTRY_MAX_PAYLOAD + 3) & !3;
+            if !(RING_ENTRY_HEADER..=RING_ENTRY_MAX_TOTAL).contains(&total)
                 || idx + total > self.capacity
             {
                 // Corrupt head region (partial write before advance is
@@ -182,6 +184,22 @@ pub fn register_ring(path: &Path, capacity_bytes: usize) -> Result<usize, String
         .map_err(|_| "ring registry poisoned".to_string())?
         .insert(addr, std::sync::Arc::new(std::sync::Mutex::new(ring)));
     Ok(addr)
+}
+
+/// Unregisters and drops a ring by its address, releasing the underlying mmap.
+pub fn unregister_ring(addr: usize) -> Result<(), String> {
+    registry()
+        .lock()
+        .map_err(|_| "ring registry poisoned".to_string())?
+        .remove(&addr);
+    Ok(())
+}
+
+/// Clears all registered rings from memory.
+pub fn clear_ring_registry() {
+    if let Ok(mut reg) = registry().lock() {
+        reg.clear();
+    }
 }
 
 /// FFI: advance the head cursor of the ring at `addr`.
@@ -356,15 +374,20 @@ mod tests {
             SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 64 * 1024).unwrap();
         assert!(fresh.advance_head(64 * 1024 + 1).is_err()); // diff > capacity
 
-        // Size extremes: max-size and minimal (empty) payloads read back equal.
+        // Size extremes: max-size and minimal (empty) payloads read back equal on a fresh ring.
+        let mut ring_extremes = SharedRing::init(
+            &soshal_test_util::tmp_path("ring", "ring_extremes.bin"),
+            64 * 1024,
+        )
+        .unwrap();
         let max_payload: Vec<u8> = (0..RING_ENTRY_MAX_PAYLOAD as u32)
             .map(|i| (i % 251) as u8)
             .collect();
-        write_entry_bytes(&mut ring, 7, &max_payload);
-        write_entry_bytes(&mut ring, 9, b"");
+        write_entry_bytes(&mut ring_extremes, 7, &max_payload);
+        write_entry_bytes(&mut ring_extremes, 9, b"");
         let mut kinds = Vec::new();
         let mut payloads = Vec::new();
-        ring.drain(|k, p| {
+        ring_extremes.drain(|k, p| {
             kinds.push(k);
             payloads.push(p.to_vec());
         });

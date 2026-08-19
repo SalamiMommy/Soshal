@@ -159,9 +159,16 @@ fn protocol_metadata_media(path: &str) -> Result<ProtocolResponse, String> {
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join("soshal_flutter_cache");
 
-            let file_path = cache_dir.join(parts[1]);
+            let candidate = cache_dir.join(parts[1]);
+            if let Ok(canonical) = candidate.canonicalize() {
+                if !canonical.starts_with(&cache_dir) {
+                    return Err("path traversal rejected".to_string());
+                }
+            } else if candidate.to_string_lossy().contains("..") {
+                return Err("path traversal rejected".to_string());
+            }
 
-            match fs::metadata(&file_path) {
+            match fs::metadata(&candidate) {
                 Ok(meta) => {
                     let mime_type = infer_mime_from_path(parts[1]);
                     Ok(ProtocolResponse {

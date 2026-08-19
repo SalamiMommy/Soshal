@@ -3,7 +3,6 @@
 use crate::pqc_link::PQ_LINK_CRYPTO;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use soshal_common_core::url::is_valid_media_url;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
@@ -76,7 +75,21 @@ impl FreenetWebSocketClient {
         // DNS-rebinding candidates before opening any socket.
         // Strip query string for the URL check, then reconnect with auth.
         let base_for_check = self.url.split('?').next().unwrap_or(&self.url);
-        if !is_valid_media_url(base_for_check) {
+        let parsed = url::Url::parse(base_for_check)
+            .map_err(|e| format!("Invalid Freenet WebSocket URL: {e}"))?;
+        match parsed.scheme() {
+            "ws" | "wss" => {}
+            _ => {
+                return Err(format!(
+                    "Freenet WebSocket blocked: invalid scheme '{}', must be ws:// or wss://",
+                    parsed.scheme()
+                ));
+            }
+        }
+        let hostname = parsed.host_str().unwrap_or("");
+        if soshal_common_core::url::is_private_ip_str(hostname)
+            || soshal_common_core::url::is_private_ipv6_str(hostname)
+        {
             return Err(format!(
                 "Freenet WebSocket blocked: URL does not pass SSRF policy: {}",
                 self.url

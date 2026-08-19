@@ -34,7 +34,10 @@ pub fn kem_unseal(
     }
     let mut nonce_arr = [0u8; NONCE_LEN];
     nonce_arr.copy_from_slice(&nonce_bytes);
-    aead_decrypt(ciphertext_b64, &derived.enc_key, &nonce_arr)
+    if nonce_arr != derived.nonce {
+        return Err("nonce mismatch with derived KEM session".to_string());
+    }
+    aead_decrypt(ciphertext_b64, &derived.enc_key, &derived.nonce)
 }
 
 pub fn hybrid_seal(
@@ -81,7 +84,10 @@ pub fn hybrid_unseal(
     }
     let mut nonce_arr = [0u8; NONCE_LEN];
     nonce_arr.copy_from_slice(&nonce_bytes);
-    aead_decrypt(ciphertext_b64, &derived.enc_key, &nonce_arr)
+    if nonce_arr != derived.nonce {
+        return Err("nonce mismatch with derived KEM session".to_string());
+    }
+    aead_decrypt(ciphertext_b64, &derived.enc_key, &derived.nonce)
 }
 
 struct DerivedKey {

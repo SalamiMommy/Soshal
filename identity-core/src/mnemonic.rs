@@ -16,11 +16,15 @@ pub struct MnemonicResult {
 pub fn generate_mnemonic() -> Result<String, String> {
     let mut entropy = [0u8; 32];
     let rng = SystemRandom::new();
-    rng.fill(&mut entropy)
-        .map_err(|e| format!("rng error: {}", e))?;
-    let mnemonic =
-        Mnemonic::from_entropy(&entropy).map_err(|e| format!("mnemonic error: {}", e))?;
-    Ok(mnemonic.to_string())
+    let res = rng
+        .fill(&mut entropy)
+        .map_err(|e| format!("rng error: {}", e))
+        .and_then(|_| {
+            Mnemonic::from_entropy(&entropy).map_err(|e| format!("mnemonic error: {}", e))
+        })
+        .map(|m| m.to_string());
+    entropy.zeroize();
+    res
 }
 
 pub fn validate_mnemonic(phrase: &str) -> bool {
@@ -49,10 +53,10 @@ pub fn restore_from_mnemonic(phrase: &str, passphrase: &str) -> Result<MnemonicR
     let xprv =
         XPrv::derive_from_path(seed.0, &path).map_err(|e| format!("derive from path: {}", e))?;
 
-    let sk_bytes = xprv.private_key().to_bytes();
-    let sk =
-        SecretKey::from_slice(&sk_bytes).map_err(|e| format!("secret key from bytes: {}", e))?;
-    let keys = Keys::new(sk);
+    let mut sk_bytes = xprv.private_key().to_bytes();
+    let sk = SecretKey::from_slice(&sk_bytes).map_err(|e| format!("secret key from bytes: {}", e));
+    sk_bytes.zeroize();
+    let keys = Keys::new(sk?);
 
     // Only the account key (hex) is handed to the frontend; the mnemonic
     // master seed is zeroized by SeedGuard on every exit path.

@@ -1,8 +1,8 @@
-//! Background RGBA image decoding engine.
-//! Decodes compressed image formats (WebP, PNG, JPEG, GIF) into uncompressed
-//! 32-bit RGBA pixel buffers off the UI isolate thread.
+use image::{GenericImageView, ImageFormat, ImageReader, Limits};
+use std::io::Cursor;
 
-use image::{GenericImageView, ImageFormat};
+const MAX_DECODE_DIMENSION: u32 = 8192;
+const MAX_DECODE_ALLOC_BYTES: u64 = 64 * 1024 * 1024; // 64 MB
 
 #[derive(Debug, Clone)]
 pub struct DecodedRgbaFrame {
@@ -18,7 +18,18 @@ pub fn decode_to_rgba(
     max_width: Option<u32>,
     max_height: Option<u32>,
 ) -> Result<DecodedRgbaFrame, String> {
-    let img = image::load_from_memory(bytes)
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_DECODE_DIMENSION);
+    limits.max_image_height = Some(MAX_DECODE_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODE_ALLOC_BYTES);
+
+    let mut reader = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| format!("Failed to inspect image format: {e}"))?;
+    reader.limits(limits);
+
+    let img = reader
+        .decode()
         .map_err(|e| format!("Failed to decode image from memory: {e}"))?;
 
     let resized_img = match (max_width, max_height) {
@@ -92,5 +103,10 @@ mod tests {
             assert_eq!((frame.width, frame.height), (200, 100));
             assert_eq!(frame.pixels.len(), 200 * 100 * 4);
         }
+    }
+
+    #[test]
+    fn test_decode_to_rgba_rejects_empty_bytes() {
+        assert!(decode_to_rgba(&[], None, None).is_err());
     }
 }

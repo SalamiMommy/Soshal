@@ -13,6 +13,12 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
 
   KeyPair? get currentKeypair => _currentKeypair;
 
+  /// Clear current keypair from Dart VM heap (e.g. on logout or lock)
+  void clearCurrentKeypair() {
+    _currentKeypair = null;
+    notifyListeners();
+  }
+
   /// Generate a new keypair
   Future<KeyPair> generateKeypair() async {
     try {

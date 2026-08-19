@@ -1,20 +1,28 @@
 //! NIP-44 group-message sealing under a 32-byte shared group key.
 
 use soshal_crypto_core::nip44;
+use zeroize::Zeroize;
 
 /// NIP-44 encrypt for group messages.
 pub fn nip44_seal_group(plaintext: &str, key_hex: &str) -> Result<String, String> {
     let mut key = [0u8; 32];
     hex::decode_to_slice(key_hex, &mut key).map_err(|_| "bad group key hex".to_string())?;
-    nip44::encrypt(plaintext.as_bytes(), &key).map_err(str::to_string)
+    let res = nip44::encrypt(plaintext.as_bytes(), &key).map_err(str::to_string);
+    key.zeroize();
+    res
 }
 
 /// NIP-44 decrypt for group messages.
 pub fn nip44_open_group(payload: &str, key_hex: &str) -> Result<String, String> {
     let mut key = [0u8; 32];
     hex::decode_to_slice(key_hex, &mut key).map_err(|_| "bad group key hex".to_string())?;
-    let plaintext = nip44::decrypt(payload, &key).map_err(str::to_string)?;
-    String::from_utf8(plaintext).map_err(|e| format!("plaintext utf8: {e}"))
+    let res = nip44::decrypt(payload, &key)
+        .map_err(str::to_string)
+        .and_then(|plaintext| {
+            String::from_utf8(plaintext).map_err(|e| format!("plaintext utf8: {e}"))
+        });
+    key.zeroize();
+    res
 }
 
 /// Group message envelope: `{"v":1,"payload":<nip44 ciphertext>}` when the

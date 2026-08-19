@@ -114,6 +114,9 @@ pub fn is_valid_media_url(url: &str) -> bool {
         _ => return false,
     }
     let hostname = parsed.host_str().unwrap_or("");
+    if is_private_ip_str(hostname) || is_private_ipv6_str(hostname) {
+        return false;
+    }
     for pattern in blocked_patterns() {
         if pattern.is_match(hostname) {
             return false;

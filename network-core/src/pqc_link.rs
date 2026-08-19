@@ -90,6 +90,9 @@ impl PqcLinkCrypto {
     /// Initiator side: records the peer's handshake public key. After this
     /// call the first `encrypt` performs the KEM root step.
     pub fn complete_handshake(&self, peer: &str, peer_pk: &str) -> Result<(), String> {
+        if peer_pk.trim().is_empty() {
+            return Err("empty peer public key".to_string());
+        }
         let mut state = self.get(peer)?;
         state.peer_pk = peer_pk.to_string();
         self.put(peer, state);
@@ -111,6 +114,9 @@ impl PqcLinkCrypto {
         frame: &[u8],
     ) -> Result<(String, String), String> {
         let (_sid, peer_pk) = parse_handshake_frame(frame)?;
+        if peer_pk.trim().is_empty() {
+            return Err("empty peer public key".to_string());
+        }
         if self.has_session(state_key) {
             return Err("ratchet session already exists for peer".to_string());
         }
@@ -129,6 +135,9 @@ impl PqcLinkCrypto {
         context: &str,
         peer_pk: &str,
     ) -> Result<String, String> {
+        if peer_pk.trim().is_empty() {
+            return Err("empty peer public key".to_string());
+        }
         if self.has_session(peer) {
             return Err("ratchet session already exists for peer".to_string());
         }

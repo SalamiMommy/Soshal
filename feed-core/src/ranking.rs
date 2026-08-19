@@ -66,10 +66,15 @@ pub fn score_post_with_set(
         0.0
     };
 
-    velocity * weights.velocity
+    let score = velocity * weights.velocity
         + wot_boost * weights.wot
         + recency_factor * weights.recency
-        + hashtag_score * weights.hashtag
+        + hashtag_score * weights.hashtag;
+    if score.is_finite() {
+        score.max(0.0)
+    } else {
+        0.0
+    }
 }
 
 pub fn score_post(
@@ -130,4 +135,25 @@ pub fn rank_posts(
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     }
     scored.into_iter().map(|(i, _)| i).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_score_post_handles_nan_and_inf() {
+        let stats = PostStats {
+            created_at_secs: f64::NAN,
+            likes_count: 10,
+            replies_count: 5,
+            zaps_count: 2,
+            reposts_count: 1,
+            wot_distance: 1,
+        };
+        let weights = AlgoWeights::default();
+        let score = score_post(&stats, &[], &[], &weights, 1000.0);
+        assert!(score.is_finite());
+        assert!(score >= 0.0);
+    }
 }

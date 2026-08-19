@@ -46,6 +46,9 @@ fn discover_by_interest(input: DiscoverByInterestInput) -> Vec<DiscoverResultOut
         .filter(|t| !t.is_empty() && t.len() <= MAX_INTEREST_LEN)
         .map(|t| t.to_lowercase())
         .collect();
+    if lower_tags.is_empty() {
+        return Vec::new();
+    }
     // One Aho-Corasick pass per event instead of a windows() substring scan
     // per tag (O(content x tags) worst case).
     let matcher =
@@ -86,4 +89,38 @@ pub fn discover_by_interest_json(input: &str) -> String {
     };
     let out = discover_by_interest(input);
     json_out(&out, "[]")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_discover_by_interest_empty_tags_does_not_panic() {
+        let input = DiscoverByInterestInput {
+            events: vec![DiscoveryEventInput {
+                pubkey: "pk1".to_string(),
+                content: "hello world".to_string(),
+            }],
+            tags: vec![],
+            self_pubkey: "self".to_string(),
+            self_contacts: vec![],
+            limit: 10,
+        };
+        let res = discover_by_interest(input);
+        assert!(res.is_empty());
+
+        let input_blank = DiscoverByInterestInput {
+            events: vec![DiscoveryEventInput {
+                pubkey: "pk1".to_string(),
+                content: "hello world".to_string(),
+            }],
+            tags: vec!["".to_string(), "   ".to_string()],
+            self_pubkey: "self".to_string(),
+            self_contacts: vec![],
+            limit: 10,
+        };
+        let res_blank = discover_by_interest(input_blank);
+        assert!(res_blank.is_empty());
+    }
 }

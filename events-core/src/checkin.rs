@@ -10,7 +10,13 @@ pub fn within_checkin_radius(
     user_lon: f64,
     radius_m: f64,
 ) -> bool {
-    if radius_m <= 0.0 {
+    if !event_lat.is_finite()
+        || !event_lon.is_finite()
+        || !user_lat.is_finite()
+        || !user_lon.is_finite()
+        || !radius_m.is_finite()
+        || radius_m <= 0.0
+    {
         return false;
     }
     // Fast bounding-box pre-filter: 1 degree latitude is approx 111,320 meters.
@@ -26,6 +32,7 @@ pub fn within_checkin_radius(
     let d_lon = (user_lon - event_lon).to_radians();
     let a = (d_lat / 2.0).sin().powi(2)
         + event_lat.to_radians().cos() * user_lat.to_radians().cos() * (d_lon / 2.0).sin().powi(2);
+    let a = a.clamp(0.0, 1.0);
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
     EARTH_RADIUS_M * c <= radius_m
 }
@@ -47,6 +54,23 @@ mod tests {
         ));
         assert!(within_checkin_radius(
             37.7749, -122.4194, 34.0522, -118.2437, 600_000.0
+        ));
+        // Antipodal points (opposite side of Earth)
+        assert!(!within_checkin_radius(90.0, 0.0, -90.0, 0.0, 1000.0));
+        // Non-finite coordinates
+        assert!(!within_checkin_radius(
+            f64::NAN,
+            -122.4194,
+            37.7749,
+            -122.4194,
+            500.0
+        ));
+        assert!(!within_checkin_radius(
+            37.7749,
+            -122.4194,
+            37.7749,
+            f64::INFINITY,
+            500.0
         ));
     }
 }

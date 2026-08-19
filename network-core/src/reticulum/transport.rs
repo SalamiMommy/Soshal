@@ -386,6 +386,12 @@ impl ReticulumNode {
     }
 }
 
+impl Drop for ReticulumNode {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 static NODES: OnceLock<Mutex<HashMap<String, Arc<Mutex<ReticulumNode>>>>> = OnceLock::new();
 
 /// Returns a shared node for the given pubkey, creating it on first use.
@@ -400,10 +406,15 @@ pub fn node_for(pubkey: &str) -> Result<Arc<Mutex<ReticulumNode>>, String> {
     Ok(node)
 }
 
-/// Clears the node registry; running transport threads persist until process exit.
+/// Clears the node registry and terminates all background transport threads and interfaces.
 pub fn reset_nodes() {
     let map = NODES.get_or_init(|| Mutex::new(HashMap::new()));
     let mut guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    for node in guard.values() {
+        if let Ok(mut n) = node.lock() {
+            n.stop();
+        }
+    }
     guard.clear();
 }
 

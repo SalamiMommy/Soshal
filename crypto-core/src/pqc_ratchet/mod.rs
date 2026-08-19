@@ -460,7 +460,7 @@ pub fn ratchet_state_to_json(state: &RatchetOutput) -> Option<String> {
 /// decapsulation key, plus the full header.
 pub fn ratchet_wrapper_tags(out: &RatchetOutput, header: &HeaderOutput) -> Vec<Vec<String>> {
     vec![
-        vec!["p".to_string()],
+        vec!["p".to_string(), out.peer_pk.clone()],
         vec!["pqc_pk".to_string(), out.current_pk.clone()],
         vec!["pqc_pk_version".to_string(), "1".to_string()],
         vec!["ratchet_pk".to_string(), header.pk.clone()],

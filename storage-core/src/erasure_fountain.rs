@@ -72,6 +72,12 @@ pub fn decode_fountain(
     manifest: &FountainManifest,
     packets: &[Vec<u8>],
 ) -> Result<Vec<u8>, String> {
+    if manifest.total_len == 0 || manifest.total_len > MAX_FOUNTAIN_LEN as u64 {
+        return Err("invalid fountain total length".to_string());
+    }
+    if manifest.symbol_size == 0 || manifest.symbol_size > 8192 {
+        return Err("invalid fountain symbol size".to_string());
+    }
     let oti =
         ObjectTransmissionInformation::with_defaults(manifest.total_len, manifest.symbol_size);
 
@@ -103,5 +109,32 @@ mod tests {
         let decoded = decode_fountain(&encoded.manifest, &subset).unwrap();
 
         assert_eq!(decoded, original_data);
+    }
+
+    #[test]
+    fn test_fountain_decode_rejects_invalid_manifest() {
+        let manifest_zero_symbol = FountainManifest {
+            total_len: 1024,
+            symbol_size: 0,
+            num_source_symbols: 1,
+            oti_data: vec![],
+        };
+        assert!(decode_fountain(&manifest_zero_symbol, &[]).is_err());
+
+        let manifest_zero_len = FountainManifest {
+            total_len: 0,
+            symbol_size: 1024,
+            num_source_symbols: 0,
+            oti_data: vec![],
+        };
+        assert!(decode_fountain(&manifest_zero_len, &[]).is_err());
+
+        let manifest_oversized = FountainManifest {
+            total_len: (MAX_FOUNTAIN_LEN as u64) + 1,
+            symbol_size: 1024,
+            num_source_symbols: 100,
+            oti_data: vec![],
+        };
+        assert!(decode_fountain(&manifest_oversized, &[]).is_err());
     }
 }

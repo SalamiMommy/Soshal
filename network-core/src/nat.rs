@@ -241,156 +241,168 @@ async fn run_manager(
             eprintln!("nat: stop flag");
             break;
         }
-        while let Ok(cmd) = rx.try_recv() {
-            match cmd {
-                NatCommand::Gather {
-                    pubkey,
-                    stun_urls,
-                    result,
-                } => {
-                    if sessions.contains_key(&pubkey) {
-                        let _ = result.send(Err("nat session already exists".to_string()));
-                        continue;
-                    }
-                    match gather_session(&pubkey, &stun_urls, &my_pubkey).await {
-                        Ok((agent, shared, ufrag, pwd)) => {
-                            let local = shared.local_candidates.lock().unwrap().clone();
-                            let state = shared.state.lock().unwrap().clone();
-                            let connected_addr = shared.connected_addr.lock().unwrap().clone();
-                            let status = NatSessionStatus {
-                                pubkey: pubkey.clone(),
-                                state,
-                                connected_addr,
-                                local_candidates: local,
-                                remote_candidates: Vec::new(),
-                            };
-                            sessions.insert(
-                                pubkey.clone(),
-                                Session {
-                                    agent,
-                                    shared: shared.clone(),
-                                    remote_candidates: Mutex::new(Vec::new()),
-                                    ufrag,
-                                    pwd,
-                                },
-                            );
-                            let _ = result.send(Ok(status));
-                        }
-                        Err(e) => {
-                            let _ = result.send(Err(e));
-                        }
-                    }
-                }
-                NatCommand::AddRemote {
-                    pubkey,
-                    ufrag,
-                    pwd,
-                    candidates,
-                    result,
-                } => {
-                    let mut added: Vec<String> = Vec::new();
-                    match sessions.get(&pubkey) {
-                        Some(session) => {
-                            {
-                                let remote = session.remote_candidates.lock().unwrap();
-                                for raw in &candidates {
-                                    if remote.len() + added.len() >= MAX_REMOTE_CANDIDATES {
-                                        break;
-                                    }
-                                    if remote.contains(raw) || added.contains(raw) {
-                                        continue;
-                                    }
-                                    match unmarshal_candidate(raw) {
-                                        Ok(c) => {
-                                            let c: Arc<dyn Candidate + Send + Sync> = Arc::new(c);
-                                            if let Err(e) = session.agent.add_remote_candidate(&c) {
-                                                let _ =
-                                                    result.send(Err(format!("add candidate: {e}")));
-                                                continue;
-                                            }
-                                            added.push(raw.clone());
-                                        }
-                                        Err(e) => {
-                                            let _ = result
-                                                .send(Err(format!("bad candidate {raw}: {e}")));
-                                            continue;
-                                        }
-                                    }
-                                }
-                            }
-                            if session
-                                .agent
-                                .set_remote_credentials(ufrag.clone(), pwd.clone())
-                                .await
-                                .is_err()
-                            {
-                                let _ =
-                                    result.send(Err("set remote credentials failed".to_string()));
-                                continue;
-                            }
-                            {
-                                let mut remote = session.remote_candidates.lock().unwrap();
-                                remote.extend(added.clone());
-                            }
-                            *session.shared.state.lock().unwrap() = "checking".to_string();
-                        }
-                        None => {
-                            let _ = result.send(Err("no session for pubkey".to_string()));
+        let mut disconnected = false;
+        loop {
+            match rx.try_recv() {
+                Ok(cmd) => match cmd {
+                    NatCommand::Gather {
+                        pubkey,
+                        stun_urls,
+                        result,
+                    } => {
+                        if sessions.contains_key(&pubkey) {
+                            let _ = result.send(Err("nat session already exists".to_string()));
                             continue;
                         }
-                    }
-                    let _ = result.send(Ok(()));
-                }
-                NatCommand::Remove { pubkey } => {
-                    if let Some(session) = sessions.remove(&pubkey) {
-                        let agent = session.agent.clone();
-                        let _ = agent.close().await;
-                    }
-                }
-                NatCommand::Creds { pubkey, result } => {
-                    let out = match sessions.get(&pubkey) {
-                        Some(s) => Ok((s.ufrag.clone(), s.pwd.clone())),
-                        None => Err(format!("no session for pubkey {pubkey}")),
-                    };
-                    let _ = result.send(out);
-                }
-                NatCommand::Status { result } => {
-                    let mut out = Vec::with_capacity(sessions.len());
-                    for (pubkey, session) in &sessions {
-                        let state = session.shared.state.lock().unwrap().clone();
-                        let connected = if state == "connected" {
-                            match session.agent.get_selected_candidate_pair() {
-                                Some(pair) => {
-                                    let addr =
-                                        format!("{}:{}", pair.remote.address(), pair.remote.port());
-                                    *session.shared.connected_addr.lock().unwrap() =
-                                        Some(addr.clone());
-                                    Some(addr)
-                                }
-                                None => session.shared.connected_addr.lock().unwrap().clone(),
+                        match gather_session(&pubkey, &stun_urls, &my_pubkey).await {
+                            Ok((agent, shared, ufrag, pwd)) => {
+                                let local = shared.local_candidates.lock().unwrap().clone();
+                                let state = shared.state.lock().unwrap().clone();
+                                let connected_addr = shared.connected_addr.lock().unwrap().clone();
+                                let status = NatSessionStatus {
+                                    pubkey: pubkey.clone(),
+                                    state,
+                                    connected_addr,
+                                    local_candidates: local,
+                                    remote_candidates: Vec::new(),
+                                };
+                                sessions.insert(
+                                    pubkey.clone(),
+                                    Session {
+                                        agent,
+                                        shared: shared.clone(),
+                                        remote_candidates: Mutex::new(Vec::new()),
+                                        ufrag,
+                                        pwd,
+                                    },
+                                );
+                                let _ = result.send(Ok(status));
                             }
-                        } else {
-                            session.shared.connected_addr.lock().unwrap().clone()
-                        };
-                        let local_candidates =
-                            session.shared.local_candidates.lock().unwrap().clone();
-                        let remote_candidates = session.remote_candidates.lock().unwrap().clone();
-                        out.push(NatSessionStatus {
-                            pubkey: pubkey.clone(),
-                            state,
-                            connected_addr: connected,
-                            local_candidates,
-                            remote_candidates,
-                        });
+                            Err(e) => {
+                                let _ = result.send(Err(e));
+                            }
+                        }
                     }
-                    let _ = result.send(out);
+                    NatCommand::AddRemote {
+                        pubkey,
+                        ufrag,
+                        pwd,
+                        candidates,
+                        result,
+                    } => {
+                        let mut added: Vec<String> = Vec::new();
+                        match sessions.get(&pubkey) {
+                            Some(session) => {
+                                {
+                                    let remote = session.remote_candidates.lock().unwrap();
+                                    for raw in &candidates {
+                                        if remote.len() + added.len() >= MAX_REMOTE_CANDIDATES {
+                                            break;
+                                        }
+                                        if remote.contains(raw) || added.contains(raw) {
+                                            continue;
+                                        }
+                                        match unmarshal_candidate(raw) {
+                                            Ok(c) => {
+                                                let c: Arc<dyn Candidate + Send + Sync> =
+                                                    Arc::new(c);
+                                                if let Err(e) =
+                                                    session.agent.add_remote_candidate(&c)
+                                                {
+                                                    let _ = result
+                                                        .send(Err(format!("add candidate: {e}")));
+                                                    continue;
+                                                }
+                                                added.push(raw.clone());
+                                            }
+                                            Err(e) => {
+                                                let _ = result
+                                                    .send(Err(format!("bad candidate {raw}: {e}")));
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                }
+                                if session
+                                    .agent
+                                    .set_remote_credentials(ufrag.clone(), pwd.clone())
+                                    .await
+                                    .is_err()
+                                {
+                                    let _ = result
+                                        .send(Err("set remote credentials failed".to_string()));
+                                    continue;
+                                }
+                                {
+                                    let mut remote = session.remote_candidates.lock().unwrap();
+                                    remote.extend(added.clone());
+                                }
+                                *session.shared.state.lock().unwrap() = "checking".to_string();
+                            }
+                            None => {
+                                let _ = result.send(Err("no session for pubkey".to_string()));
+                                continue;
+                            }
+                        }
+                        let _ = result.send(Ok(()));
+                    }
+                    NatCommand::Remove { pubkey } => {
+                        if let Some(session) = sessions.remove(&pubkey) {
+                            let agent = session.agent.clone();
+                            let _ = agent.close().await;
+                        }
+                    }
+                    NatCommand::Creds { pubkey, result } => {
+                        let out = match sessions.get(&pubkey) {
+                            Some(s) => Ok((s.ufrag.clone(), s.pwd.clone())),
+                            None => Err(format!("no session for pubkey {pubkey}")),
+                        };
+                        let _ = result.send(out);
+                    }
+                    NatCommand::Status { result } => {
+                        let mut out = Vec::with_capacity(sessions.len());
+                        for (pubkey, session) in &sessions {
+                            let state = session.shared.state.lock().unwrap().clone();
+                            let connected = if state == "connected" {
+                                match session.agent.get_selected_candidate_pair() {
+                                    Some(pair) => {
+                                        let addr = format!(
+                                            "{}:{}",
+                                            pair.remote.address(),
+                                            pair.remote.port()
+                                        );
+                                        *session.shared.connected_addr.lock().unwrap() =
+                                            Some(addr.clone());
+                                        Some(addr)
+                                    }
+                                    None => session.shared.connected_addr.lock().unwrap().clone(),
+                                }
+                            } else {
+                                session.shared.connected_addr.lock().unwrap().clone()
+                            };
+                            let local_candidates =
+                                session.shared.local_candidates.lock().unwrap().clone();
+                            let remote_candidates =
+                                session.remote_candidates.lock().unwrap().clone();
+                            out.push(NatSessionStatus {
+                                pubkey: pubkey.clone(),
+                                state,
+                                connected_addr: connected,
+                                local_candidates,
+                                remote_candidates,
+                            });
+                        }
+                        let _ = result.send(out);
+                    }
+                },
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    disconnected = true;
+                    break;
                 }
             }
         }
-        if matches!(
-            rx.try_recv(),
-            Err(std::sync::mpsc::TryRecvError::Disconnected)
-        ) {
+        if disconnected {
             eprintln!("nat: command channel closed");
             break;
         }
