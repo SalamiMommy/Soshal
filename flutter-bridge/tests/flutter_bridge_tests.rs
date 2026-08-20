@@ -342,7 +342,7 @@ mod integration_tests {
         signer::signer_unlock(bob.secret_key().to_secret_hex()).unwrap();
         let plain =
             signer::signer_nip44_decrypt(payload.clone(), alice.public_key().to_hex()).unwrap();
-        assert_eq!(plain, "secret dm");
+        assert_eq!(plain.as_str(), "secret dm");
         // tampered payload -> decrypt fails
         let mut tampered = payload.into_bytes();
         let mid = tampered.len() / 2;

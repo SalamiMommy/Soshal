@@ -99,18 +99,45 @@ pub async fn feed_rank_posts(events_json: String) -> Result<String, String> {
     }
 }
 
-/// Validate note content (length cap, emptiness) before publishing.
-#[frb(sync, serialize)]
-pub fn feed_validate_note(content: String) -> Result<bool, String> {
-    Ok(soshal_feed_core::publish::validate_note_content(&content).is_ok()).into()
+fn get_custom_word_filters(db: &soshal_db_core::Database) -> Vec<String> {
+    soshal_db_core::repos::settings::SettingsRepo::new(db)
+        .get("moderation_word_filters")
+        .ok()
+        .flatten()
+        .map(|raw| serde_json::from_str::<Vec<String>>(&raw).unwrap_or_default())
+        .unwrap_or_default()
 }
 
-/// Publish a text note (kind 1). Signs with the unlocked signer, sends to
-/// relays, or queues in the persistent outbox when offline. Returns the
-/// signed event JSON.
+fn is_content_clean(content: &str, filters: &[String]) -> bool {
+    soshal_moderation_core::check::check_with_custom_words(content, filters).passed
+}
+
+/// Validate note content (length cap, emptiness, and AI moderation policy) before publishing.
+#[frb(sync, serialize)]
+pub fn feed_validate_note(content: String) -> Result<bool, String> {
+    if soshal_feed_core::publish::validate_note_content(&content).is_err() {
+        return Ok(false);
+    }
+    let filters =
+        super::db::with_db_result(|db| Ok(get_custom_word_filters(db))).unwrap_or_default();
+    Ok(is_content_clean(&content, &filters)).into()
+}
+
+/// Publish a text note (kind 1). Checks note against on-device AI moderation, signs with the
+/// unlocked signer, sends to relays, or queues in the persistent outbox when offline.
+/// Returns the signed event JSON.
 #[frb(serialize)]
 pub async fn feed_publish_text_note(content: String, tags_json: String) -> Result<String, String> {
     soshal_feed_core::publish::validate_note_content(&content).map_err(super::util::to_err)?;
+    let filters =
+        super::db::with_db_result(|db| Ok(get_custom_word_filters(db))).unwrap_or_default();
+    let verdict = soshal_moderation_core::check::check_with_custom_words(&content, &filters);
+    if !verdict.passed {
+        let reason = verdict
+            .reason
+            .unwrap_or_else(|| "content violated moderation policy".to_string());
+        return Err(format!("content blocked by moderation filter: {reason}"));
+    }
     let tags: Vec<Vec<String>> =
         serde_json::from_str(&tags_json).map_err(|e| format!("invalid tags JSON: {e}"))?;
     let builder = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, content).tags(
@@ -138,6 +165,7 @@ pub async fn feed_publish_text_note(content: String, tags_json: String) -> Resul
 }
 
 /// Publish a reply (kind 1 with `e`/`p` tags referencing root/reply ids).
+/// Checks content with on-device AI moderation before publishing.
 #[frb(serialize)]
 pub async fn feed_publish_reply(
     content: String,
@@ -145,6 +173,15 @@ pub async fn feed_publish_reply(
     reply_to_event_id: String,
 ) -> Result<String, String> {
     soshal_feed_core::publish::validate_note_content(&content).map_err(super::util::to_err)?;
+    let filters =
+        super::db::with_db_result(|db| Ok(get_custom_word_filters(db))).unwrap_or_default();
+    let verdict = soshal_moderation_core::check::check_with_custom_words(&content, &filters);
+    if !verdict.passed {
+        let reason = verdict
+            .reason
+            .unwrap_or_else(|| "content violated moderation policy".to_string());
+        return Err(format!("reply blocked by moderation filter: {reason}"));
+    }
     let mut builder = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, content);
     if let Ok(tag) = nostr::event::Tag::parse(vec!["e".to_string(), root_event_id.clone()]) {
         builder = builder.tag(tag);
@@ -201,13 +238,14 @@ pub async fn feed_delete_post(event_id: String) -> Result<String, String> {
 }
 
 /// Fetch recent feed posts from the local DB (kind 1, newest first),
-/// optionally filtered to posts by the given author.
+/// filtering out posts that trip on-device AI moderation or word filters.
 #[frb(sync, serialize)]
 pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
     let opts: FeedOptions =
         serde_json::from_str(&options_json).map_err(|e| format!("invalid options JSON: {e}"))?;
     let limit = opts.limit.clamp(1, 200) as i64;
     super::db::with_db_result(|db| {
+        let filters = get_custom_word_filters(db);
         let repo = PostRepo::new(db);
         let rows = if let Some(cursor) = opts.cursor_created_at {
             repo.get_paged_meta_cursor(cursor, limit)?
@@ -217,6 +255,7 @@ pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
         };
         let posts: Vec<FeedPost> = rows
             .into_iter()
+            .filter(|row| is_content_clean(&row.content, &filters))
             .map(|row| FeedPost {
                 event_id: row.id,
                 pubkey: row.pubkey,
@@ -234,26 +273,33 @@ pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
     .map(super::util::json_ok)?
 }
 
-/// Fetch a windowed slice of feed posts from DB.
+/// Fetch a windowed slice of feed posts from DB, filtering moderated items.
 #[frb(sync, serialize)]
 pub fn feed_fetch_window(start_index: u32, limit: u32) -> Result<String, String> {
     super::db::with_db_result(|db| {
+        let filters = get_custom_word_filters(db);
         let items =
             soshal_feed_core::window::fetch_feed_window(db, start_index as usize, limit as usize)
                 .map_err(soshal_db_core::error::DbError::Migration)?;
-        Ok(items)
+        let filtered_items: Vec<soshal_feed_core::window::FeedPostItem> = items
+            .into_iter()
+            .filter(|item| is_content_clean(&item.content, &filters))
+            .collect();
+        Ok(filtered_items)
     })
     .map(super::util::json_ok)?
 }
 
-/// Fetch a thread (root post + direct replies) from the local DB.
+/// Fetch a thread (root post + direct replies) from the local DB, filtering moderated replies.
 #[frb(sync, serialize)]
 pub fn feed_fetch_thread(event_id: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
+        let filters = get_custom_word_filters(db);
         let repo = PostRepo::new(db);
         let replies = repo.get_replies_for_root(&event_id)?;
         let out: Vec<FeedPost> = replies
             .into_iter()
+            .filter(|row| is_content_clean(&row.content, &filters))
             .map(|row| FeedPost {
                 event_id: row.id,
                 pubkey: row.pubkey,
@@ -305,13 +351,103 @@ mod tests {
 
     #[test]
     fn test_validate_note() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert!(feed_validate_note("hi".to_string()).unwrap());
         assert!(!feed_validate_note("".to_string()).unwrap());
         assert!(!feed_validate_note("x".repeat(64001)).unwrap());
-        assert!(feed_validate_note("x".repeat(64000)).unwrap());
+        assert!(feed_validate_note("hello world ".repeat(5000)).unwrap());
+        // Moderation rejection on dangerous / toxic content
+        assert!(!feed_validate_note("selling cp pack".to_string()).unwrap());
+        assert!(
+            !feed_validate_note("watch this brutal beheading video decapitation".to_string())
+                .unwrap()
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_publish_text_note_blocked_by_moderation() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("pub_mod");
+        let err = feed_publish_text_note(
+            "Send 1 BTC to double your crypto immediately! Guaranteed profit".to_string(),
+            "[]".to_string(),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("blocked by moderation filter"), "{err}");
+
+        let err2 =
+            feed_publish_text_note("selling cp pack on darknet".to_string(), "[]".to_string())
+                .await
+                .unwrap_err();
+        assert!(err2.contains("blocked by moderation filter"), "{err2}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_publish_reply_blocked_by_moderation() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("rep_mod");
+        let err = feed_publish_reply(
+            "i will find you and kill you leak your address".to_string(),
+            "root".to_string(),
+            "reply".to_string(),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("blocked by moderation filter"), "{err}");
+    }
+
+    #[test]
+    fn test_fetch_events_filters_moderated_posts() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("fetch_mod");
+        insert_post(
+            "p_clean",
+            "pk1",
+            "Enjoying a lovely sunny morning!",
+            1,
+            3000,
+            "[]",
+        );
+        insert_post(
+            "p_spam",
+            "pk2",
+            "Claim free airdrop! Validate seed phrase to double crypto",
+            1,
+            2000,
+            "[]",
+        );
+        insert_post("p_csam", "pk3", "selling cp pack", 1, 1000, "[]");
+
+        let json = feed_fetch_events(r#"{"limit":10,"offset":0,"filter_type":"any"}"#.to_string())
+            .unwrap();
+        let arr = serde_json::from_str::<serde_json::Value>(&json)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(arr.len(), 1, "Only clean post should pass, got: {json}");
+        assert_eq!(arr[0]["event_id"], "p_clean");
+        assert_eq!(arr[0]["content"], "Enjoying a lovely sunny morning!");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_aggregate_chat_reactions() {
         let input = r#"{"reactions":[{"emoji":"👍","reactorPubkey":"alice"},{"emoji":"👍","reactorPubkey":"self"},{"emoji":"❤️","reactorPubkey":"bob"}],"selfPubkey":"self"}"#;
         let json = feed_aggregate_chat_reactions(input.to_string()).unwrap();
@@ -333,7 +469,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_rank_posts_happy_and_invalid() {
         let input = r#"[
             {"stats":{"created_at_secs":100,"likes_count":5,"replies_count":1,"zaps_count":0,"reposts_count":2,"wot_distance":0},"hashtags":["soshal"]},
@@ -346,8 +482,16 @@ mod tests {
         assert!(err.contains("invalid stats JSON"), "{err}");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
     async fn test_publish_text_note_validation_errors() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("pub_val");
         let err = feed_publish_text_note(String::new(), "[]".to_string())
             .await
             .unwrap_err();
@@ -358,15 +502,23 @@ mod tests {
         assert!(err.contains("invalid tags JSON"), "{err}");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
     async fn test_publish_reply_validation_error() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("rep_val");
         let err = feed_publish_reply(String::new(), "root".to_string(), "reply".to_string())
             .await
             .unwrap_err();
         assert!(err.contains("content must be 1-64000 chars"), "{err}");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_reaction_and_delete_require_signer() {
         let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK

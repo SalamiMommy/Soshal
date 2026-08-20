@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/moderation_service.dart';
 
@@ -183,6 +185,59 @@ void main() {
       expect(api.namedArg(inv, 'content'), 'i will hunt you down');
       expect(api.namedArg(inv, 'forceDeepScan'), isTrue);
     });
+
+    test('aiClassifyText parses AI moderation result', () async {
+      final mod = ModerationService();
+      api.stubString(
+        'crateFfiModerationModerationAiClassifyText',
+        '{"is_flagged":true,"primary_category":"spam","confidence":0.92,"scores":{"spam":0.92,"csam":0.0,"gore":0.0,"bigotry":0.0,"harassment":0.0},"detected_reasons":["crypto_doubler_lure"],"evasion_score":0.0}',
+      );
+
+      final res = await mod.aiClassifyText('double your crypto now');
+      expect(res.isFlagged, isTrue);
+      expect(res.primaryCategory, 'spam');
+      expect(res.confidence, closeTo(0.92, 0.01));
+      expect(res.scores.spam, closeTo(0.92, 0.01));
+      expect(res.detectedReasons, contains('crypto_doubler_lure'));
+
+      final inv =
+          api.callsOf('crateFfiModerationModerationAiClassifyText').single;
+      expect(api.namedArg(inv, 'content'), 'double your crypto now');
+    });
+
+    test('aiClassifyMedia parses media verdict', () async {
+      final mod = ModerationService();
+      api.stubString(
+        'crateFfiModerationModerationAiClassifyMedia',
+        '{"passed":false,"is_csam_hazard":false,"is_gore_hazard":true,"is_nsfw":false,"exposure_score":0.1,"gore_score":0.85,"warning_reason":"gore_chrominance_anomaly_detected"}',
+      );
+
+      final verdict = await mod.aiClassifyMedia(
+        Uint8List.fromList([1, 2, 3]),
+        'image/jpeg',
+      );
+      expect(verdict.passed, isFalse);
+      expect(verdict.isGoreHazard, isTrue);
+      expect(verdict.goreScore, closeTo(0.85, 0.01));
+      expect(verdict.warningReason, 'gore_chrominance_anomaly_detected');
+    });
+
+    test('computePdqHash parses PDQ result', () async {
+      final mod = ModerationService();
+      api.stubString(
+        'crateFfiModerationModerationComputePdqHash',
+        '{"hash_hex":"abcdef123456","quality":85,"is_threat_match":true,"matched_category":"csam","min_hamming_distance":0}',
+      );
+
+      final res = await mod.computePdqHash(Uint8List.fromList([10, 20, 30]));
+      expect(res, isNotNull);
+      expect(res!.hashHex, 'abcdef123456');
+      expect(res.quality, 85);
+      expect(res.isThreatMatch, isTrue);
+      expect(res.matchedCategory, 'csam');
+      expect(res.minHammingDistance, 0);
+    });
   });
 }
+
 

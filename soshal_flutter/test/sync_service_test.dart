@@ -16,6 +16,7 @@ void main() {
   setUp(() {
     api.handlers.clear();
     api.calls.clear();
+    api.stubBool('crateFfiFeedFeedValidateNote', true);
   });
 
   group('SyncService', () {

@@ -1046,12 +1046,17 @@ Future<String> _resolveBlobUrl(
   String url,
   String? hash,
 ) async {
-  final host = Uri.parse(url).host;
-  final isLocal = host.isEmpty ||
-      host == 'localhost' ||
-      host == '127.0.0.1' ||
-      host == '::1';
-  if (hash != null && !isLocal) {
+  final parsed = Uri.tryParse(url);
+  if (parsed == null || parsed.scheme != 'http' && parsed.scheme != 'https') {
+    return '';
+  }
+  final host = parsed.host;
+  // Post content is untrusted: never hand loopback/private-host URLs to
+  // Image.network / the video player (local SSRF via crafted content).
+  // Legit local media URLs are built by the app itself (getLocalUrl) and
+  // returned below — raw content URLs with local hosts are blocked.
+  if (host.isEmpty || _isBlockedHost(host)) return '';
+  if (hash != null) {
     final media = context.read<MediaService>();
     final transport = context.read<P2pService>();
     if (media.localServerPort == null) await media.startLocalServer();
@@ -1066,6 +1071,27 @@ Future<String> _resolveBlobUrl(
     return media.getLocalUrl(hash);
   }
   return url;
+}
+
+bool _isBlockedHost(String host) {
+  final lower = host.toLowerCase();
+  if (lower == 'localhost' || lower == '::1') return true;
+  if (lower == '0.0.0.0') return true;
+  // IPv4 literals: loopback, private, link-local, CGNAT, broadcast.
+  final ipv4 = RegExp(r'^\d{1,3}(\.\d{1,3}){3}$');
+  if (ipv4.hasMatch(lower)) {
+    final parts = lower.split('.').map(int.parse).toList();
+    final a = parts[0];
+    final b = parts[1];
+    if (a == 127) return true;
+    if (a == 10) return true;
+    if (a == 169 && b == 254) return true;
+    if (a == 172 && b >= 16 && b <= 31) return true;
+    if (a == 192 && b == 168) return true;
+    if (a == 100 && b >= 64 && b <= 127) return true;
+    if (a >= 224) return true;
+  }
+  return false;
 }
 
 class _VideoPlayerWidget extends StatefulWidget {

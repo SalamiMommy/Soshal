@@ -21,9 +21,16 @@ use crate::freenet_contract::{RelatedContract, StateSummary};
 pub struct FreenetWebSocketClient {
     url: String,
     auth_token: String,
-    socket: Arc<Mutex<Option<WebSocketStream<tokio::net::TcpStream>>>>,
+    socket: Arc<Mutex<Option<WebSocketStream<BoxedStream>>>>,
     ratchet_peer: Option<(String, String)>,
 }
+
+/// The socket stream is either a plain TCP stream or a TLS-wrapped one, so
+/// it is boxed behind this trait object at connect time.
+type BoxedStream = Box<dyn WebSocketStreamTrait>;
+
+trait WebSocketStreamTrait: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> WebSocketStreamTrait for T {}
 
 impl FreenetWebSocketClient {
     /// Creates a new Freenet WebSocket client
@@ -80,12 +87,24 @@ impl FreenetWebSocketClient {
         }
         let parsed = url::Url::parse(&self.url)
             .map_err(|e| format!("Invalid Freenet WebSocket URL: {e}"))?;
-        if parsed.scheme() != "ws" {
+        if parsed.scheme() != "ws" && parsed.scheme() != "wss" {
             return Err(format!(
-                "Freenet WebSocket blocked: scheme '{}' unsupported (TLS not compiled in); use ws://",
+                "Freenet WebSocket blocked: scheme '{}' unsupported; use ws:// or wss://",
                 parsed.scheme()
             ));
         }
+        let use_tls = parsed.scheme() == "wss";
+        let tls_connector: Option<tokio_rustls::TlsConnector> = if use_tls {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            let mut roots = rustls::RootCertStore::empty();
+            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            let cfg = rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+            Some(tokio_rustls::TlsConnector::from(std::sync::Arc::new(cfg)))
+        } else {
+            None
+        };
         let hostname = parsed.host_str().unwrap_or("").to_string();
         let port = parsed
             .port_or_known_default()
@@ -132,14 +151,31 @@ impl FreenetWebSocketClient {
                 .map_err(|e| format!("WebSocket request build failed: {e}"))?;
 
             match tokio::net::TcpStream::connect(addr).await {
-                Ok(stream) => match client_async(request, stream).await {
-                    Ok((ws, _)) => {
-                        let mut socket_guard = self.socket.lock().await;
-                        *socket_guard = Some(ws);
-                        return Ok(());
+                Ok(stream) => {
+                    let prepared: Result<Box<dyn WebSocketStreamTrait>, String> = match &tls_connector {
+                        Some(conn) => {
+                            let name =
+                                rustls::pki_types::ServerName::try_from(hostname.clone())
+                                    .map_err(|e| format!("invalid TLS hostname: {e}"))?;
+                            match conn.connect(name, stream).await {
+                                Ok(s) => Ok(Box::new(s) as _),
+                                Err(e) => Err(format!("TLS handshake failed: {e}")),
+                            }
+                        }
+                        None => Ok(Box::new(stream) as _),
+                    };
+                    match prepared {
+                        Ok(stream) => match client_async(request, stream).await {
+                            Ok((ws, _)) => {
+                                let mut socket_guard = self.socket.lock().await;
+                                *socket_guard = Some(ws);
+                                return Ok(());
+                            }
+                            Err(e) => last_err = Some(format!("WebSocket handshake failed: {e}")),
+                        },
+                        Err(e) => last_err = Some(e),
                     }
-                    Err(e) => last_err = Some(format!("WebSocket handshake failed: {e}")),
-                },
+                }
                 Err(e) => last_err = Some(format!("TCP connect to {addr} failed: {e}")),
             }
         }

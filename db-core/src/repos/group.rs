@@ -78,6 +78,18 @@ impl<'a> GroupRepo<'a> {
         Ok(())
     }
 
+    /// Membership probe: is [pubkey] a member of [group_id]?
+    pub fn is_member(&self, group_id: &str, pubkey: &str) -> Result<bool, crate::error::DbError> {
+        let conn = self.db.conn()?;
+        Ok(crate::query::query_first(
+            &conn,
+            "SELECT 1 FROM group_members WHERE group_id = ?1 AND pubkey = ?2",
+            params![group_id, pubkey],
+            |_| Ok(true),
+        )?
+        .is_some())
+    }
+
     pub fn get_members(
         &self,
         group_id: &str,
@@ -85,7 +97,7 @@ impl<'a> GroupRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT group_id, pubkey, role, joined_at FROM group_members WHERE group_id = ?1 ORDER BY joined_at ASC",
+            "SELECT group_id, pubkey, role, joined_at FROM group_members WHERE group_id = ?1 ORDER BY joined_at ASC LIMIT 10000",
             params![group_id],
             |row| {
                 Ok(GroupMemberRow {

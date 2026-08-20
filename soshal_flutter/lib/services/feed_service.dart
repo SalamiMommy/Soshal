@@ -492,9 +492,10 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  /// Insert a post arriving from the live sync stream (dedup by event id).
+  /// Insert a post arriving from the live sync stream (dedup by event id and filter moderated content).
   void insertLivePost(FeedPost post) {
     if (post.eventId.isEmpty) return;
+    if (!validateNote(post.content)) return;
     if (_posts.any((p) => p.eventId == post.eventId)) return;
     _posts.insert(0, post);
     _indexPost(post);

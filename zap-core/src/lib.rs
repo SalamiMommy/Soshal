@@ -128,10 +128,10 @@ pub fn bolt11_description_hash(bolt11: &str) -> Option<[u8; 32]> {
     let (_hrp, data) = bech32::decode(&normalized).ok()?;
     // data[0] = version (5 bits); data[1..8] = timestamp (35 bits).
     let mut i = 1 + 7;
-    while i + 3 < data.len() {
-        let field_type = u16::from(data[i]) * 32 + u16::from(data[i + 1]);
-        let field_len = usize::from(data[i + 2]) * 32 + usize::from(data[i + 3]);
-        i += 4;
+    while i + 3 <= data.len() {
+        let field_type = u16::from(data[i]);
+        let field_len = usize::from(data[i + 1]) * 32 + usize::from(data[i + 2]);
+        i += 3;
         let end = i.checked_add(field_len)?;
         if end > data.len() {
             return None;
@@ -196,8 +196,8 @@ mod tests {
         assert_eq!(words.len(), 52);
         let mut data = vec![0u8]; // version 0
         data.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0]); // 35-bit timestamp
-        data.extend_from_slice(&[0, 23]); // field type 23 ('h')
-        data.extend_from_slice(&[0, 52]); // field length 52 chars
+        data.push(23); // 1 base32 word: field type 23 ('h')
+        data.extend_from_slice(&[1, 20]); // 2 base32 words: field length 52 (1 * 32 + 20)
         data.extend_from_slice(&words);
         let invoice =
             bech32::encode::<bech32::Bech32>(Hrp::parse("lnbc1u").unwrap(), &data).unwrap();

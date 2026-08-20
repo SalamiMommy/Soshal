@@ -223,6 +223,7 @@ pub fn feed_aac(blob: &[u8]) -> bool {
             let mut size = 0usize;
             let buf = AMediaCodec_getInputBuffer(codec, idx as usize, &mut size);
             if buf.is_null() || size < blob.len() {
+                AMediaCodec_queueInputBuffer(codec, idx as usize, 0, 0, 0, 0);
                 return false;
             }
             std::ptr::copy_nonoverlapping(blob.as_ptr(), buf, blob.len());
@@ -255,14 +256,14 @@ pub fn feed_aac(blob: &[u8]) -> bool {
                     && (info.offset as usize).saturating_add(info.size as usize) <= out_size
                 {
                     let pcm = std::slice::from_raw_parts(
-                        out_buf.offset(info.offset as isize),
-                        info.size as usize,
+                        out_buf.offset(info.offset as isize) as *const i16,
+                        (info.size as usize) / 2,
                     );
                     AAudioStream_requestStart(speaker);
                     AAudioStream_write(
                         speaker,
                         pcm.as_ptr() as *const std::ffi::c_void,
-                        (pcm.len() / 2) as i32,
+                        pcm.len() as i32,
                         10_000_000,
                     );
                 }
@@ -330,6 +331,8 @@ fn capture_loop() {
                 if !buf.is_null() && size >= bytes.len() {
                     std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf, bytes.len());
                     AMediaCodec_queueInputBuffer(codec, idx as usize, 0, bytes.len(), 0, 0);
+                } else {
+                    AMediaCodec_queueInputBuffer(codec, idx as usize, 0, 0, 0, 0);
                 }
             }
             drain_audio_encoder(codec);

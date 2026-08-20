@@ -22,7 +22,9 @@ webrtc-ice = { workspace = true }
 quinn = { workspace = true }
 rcgen = "0.13"
 rustls = { workspace = true }
-tokio-tungstenite = "0.21"
+tokio-rustls = "0.26"
+webpki-roots = "0.26"
+tokio-tungstenite = { version = "0.21", features = ["rustls-tls-webpki-roots"] }
 futures-util = { workspace = true }
 url = { workspace = true }
 soshal-common-core = { path = "../common-core" }

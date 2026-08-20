@@ -36,6 +36,17 @@ impl EpochGarbageCollector {
         }
 
         let min_horizon = peer_vector_clocks.values().copied().min().unwrap_or(0);
+        // Clock floor: a zero / stale horizon (fresh peer, reset clock) must
+        // not collapse the cutoff to 0 and wipe every tombstone; require a
+        // real consensus horizon above the threshold.
+        if min_horizon <= gc_threshold_secs {
+            return Ok(EpochGcSummary {
+                domain: domain.to_string(),
+                epoch_counter: 0,
+                pruned_tombstones: 0,
+                bytes_reclaimed: 0,
+            });
+        }
         let cutoff_timestamp = min_horizon.saturating_sub(gc_threshold_secs);
 
         block_on(async {

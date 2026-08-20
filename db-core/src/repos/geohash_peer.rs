@@ -27,7 +27,7 @@ impl<'a> GeohashPeerRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT pubkey, geohash, purpose, first_seen, last_seen FROM geohash_peers WHERE geohash=?1 ORDER BY last_seen DESC",
+            "SELECT pubkey, geohash, purpose, first_seen, last_seen FROM geohash_peers WHERE geohash=?1 ORDER BY last_seen DESC LIMIT 1000",
             params![geohash],
             Self::map_row,
         )
@@ -40,7 +40,7 @@ impl<'a> GeohashPeerRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT pubkey, geohash, purpose, first_seen, last_seen FROM geohash_peers WHERE purpose=?1 OR purpose='both' ORDER BY last_seen DESC",
+            "SELECT pubkey, geohash, purpose, first_seen, last_seen FROM geohash_peers WHERE purpose=?1 OR purpose='both' ORDER BY last_seen DESC LIMIT 1000",
             params![purpose],
             Self::map_row,
         )

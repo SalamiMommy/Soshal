@@ -1,4 +1,4 @@
-package com.example.soshal_flutter
+package com.soshal.app
 
 import android.content.Context
 import com.chaquo.python.Python

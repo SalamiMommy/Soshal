@@ -36,7 +36,7 @@ impl<'a> PostViewsRepo<'a> {
         let now = now_secs();
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
-            let mut stmt = tx
+            let stmt = tx
                 .prepare(
                     "INSERT OR IGNORE INTO post_views (pubkey, post_id, seen_at) VALUES (?1, ?2, ?3)",
                 )

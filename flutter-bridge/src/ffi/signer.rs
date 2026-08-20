@@ -103,6 +103,18 @@ pub fn signer_pubkey() -> Result<String, String> {
     }
 }
 
+/// Caller-identity gate: the active signer must equal the pubkey a caller
+/// claims to act as. Without this, any FFI call taking a `user_pubkey`
+/// parameter can be made to act as an arbitrary identity by passing a
+/// different pubkey.
+pub(crate) fn require_identity(expected: &str) -> Result<(), String> {
+    let actual = signer_pubkey()?;
+    if actual != expected {
+        return Err("identity mismatch: caller is not the claimed pubkey".to_string());
+    }
+    Ok(())
+}
+
 /// Persist the unlocked secret key to the OS keychain (desktop keyring).
 /// Only called explicitly after the user opts into "remember this device".
 #[frb(serialize)]
@@ -321,31 +333,40 @@ pub fn signer_sign_unsigned(event_json: String) -> Result<String, String> {
 /// NIP-44 v2 encrypt plaintext to `recipient_pubkey` using the unlocked key.
 /// Returns the wire-format payload (base64: `2 ‖ nonce ‖ ct ‖ mac`).
 #[frb(sync, serialize)]
-pub fn signer_nip44_encrypt(plaintext: String, recipient_pubkey: String) -> Result<String, String> {
+pub fn signer_nip44_encrypt(
+    mut plaintext: String,
+    recipient_pubkey: String,
+) -> Result<String, String> {
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
-    match guard.as_ref() {
+    let out = match guard.as_ref() {
         Some(keys) => {
             let pk = match PublicKey::from_hex(&recipient_pubkey) {
                 Ok(p) => p,
                 Err(e) => return Err(format!("invalid recipient pubkey: {e}")).into(),
             };
-            match nip44::encrypt(
+            nip44::encrypt(
                 keys.secret_key(),
                 &pk,
                 plaintext.as_bytes(),
                 nip44::Version::V2,
-            ) {
-                Ok(payload) => Ok(payload).into(),
-                Err(e) => Err(format!("nip44 encrypt: {e}")).into(),
-            }
+            )
         }
-        None => Err("signer locked".to_string()),
+        None => return Err("signer locked".to_string()),
+    };
+    plaintext.zeroize();
+    match out {
+        Ok(payload) => Ok(payload).into(),
+        Err(e) => Err(format!("nip44 encrypt: {e}")).into(),
     }
 }
 
 /// NIP-44 v2 decrypt a payload from `sender_pubkey` using the unlocked key.
+/// The plaintext crosses FFI zeroized (frb maps Zeroizing<String> to String).
 #[frb(sync, serialize)]
-pub fn signer_nip44_decrypt(payload: String, sender_pubkey: String) -> Result<String, String> {
+pub fn signer_nip44_decrypt(
+    payload: String,
+    sender_pubkey: String,
+) -> Result<zeroize::Zeroizing<String>, String> {
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
     match guard.as_ref() {
         Some(keys) => {
@@ -354,7 +375,7 @@ pub fn signer_nip44_decrypt(payload: String, sender_pubkey: String) -> Result<St
                 Err(e) => return Err(format!("invalid sender pubkey: {e}")).into(),
             };
             match nip44::decrypt(keys.secret_key(), &pk, &payload) {
-                Ok(plaintext) => Ok(plaintext).into(),
+                Ok(plaintext) => Ok(zeroize::Zeroizing::new(plaintext)).into(),
                 Err(e) => Err(format!("nip44 decrypt: {e}")).into(),
             }
         }
@@ -426,7 +447,7 @@ mod tests {
             signer_nip44_encrypt("secret dm".to_string(), bob.public_key().to_hex()).unwrap();
         signer_unlock(bob.secret_key().to_secret_hex()).unwrap();
         let plain = signer_nip44_decrypt(payload, alice.public_key().to_hex()).unwrap();
-        assert_eq!(plain, "secret dm");
+        assert_eq!(&*plain, "secret dm");
         signer_lock().unwrap();
     }
 

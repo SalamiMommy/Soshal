@@ -100,11 +100,16 @@ pub fn parse_beacon(
 #[derive(Default)]
 pub struct BeaconSeq {
     seen: std::sync::Mutex<std::collections::HashMap<String, std::collections::VecDeque<[u8; 16]>>>,
+    /// Tombstone of nonces belonging to evicted peers: an evicted peer's
+    /// captured beacons stay rejected even after its entry was dropped,
+    /// closing the replay window opened by eviction.
+    evicted: std::sync::Mutex<std::collections::VecDeque<[u8; 16]>>,
 }
 
 impl BeaconSeq {
     const MAX_NONCES_PER_PEER: usize = 64;
     const MAX_TRACKED_PEERS: usize = 1024;
+    const MAX_EVICTED_TOMBSTONES: usize = 1024;
 
     pub fn new() -> Self {
         Self::default()
@@ -112,17 +117,42 @@ impl BeaconSeq {
 
     /// Records `nonce` for `peer_pk` and reports whether it was new. Returns
     /// `false` for duplicates (replay) and drops the oldest remembered nonce
-    /// once the per-peer cap is reached.
+    /// once the per-peer cap is reached. Evicted peers' nonces are moved to
+    /// the tombstone bucket instead of being forgotten.
     pub fn check_and_record(&self, peer_pk: &str, nonce: &[u8; 16]) -> bool {
         let mut g = match self.seen.lock() {
             Ok(g) => g,
             Err(e) => e.into_inner(),
         };
         if !g.contains_key(peer_pk) && g.len() >= Self::MAX_TRACKED_PEERS {
-            // Evict one arbitrary existing peer to prevent unbounded memory growth
+            // Evict one arbitrary existing peer; move its nonces into the
+            // tombstone bucket so replays stay rejected.
             if let Some(k) = g.keys().next().cloned() {
-                g.remove(&k);
+                if let Some(queue) = g.remove(&k) {
+                    let mut ev = match self.evicted.lock() {
+                        Ok(e) => e,
+                        Err(e) => e.into_inner(),
+                    };
+                    for n in queue {
+                        if !ev.contains(&n) {
+                            ev.push_back(n);
+                        }
+                    }
+                    while ev.len() > Self::MAX_EVICTED_TOMBSTONES {
+                        ev.pop_front();
+                    }
+                }
             }
+        }
+        {
+            let ev = match self.evicted.lock() {
+                Ok(e) => e,
+                Err(e) => e.into_inner(),
+            };
+            if ev.contains(nonce) {
+                return false;
+            }
+            let _unused = ev;
         }
         let queue = g
             .entry(peer_pk.to_string())
@@ -194,5 +224,24 @@ mod tests {
         for n in nonces.iter().take(5) {
             assert!(seq.check_and_record(&pk, n));
         }
+    }
+
+    #[test]
+    fn beacon_seq_tombstones_evicted_peer_nonces() {
+        let seq = BeaconSeq::new();
+        let evictor = "ab".repeat(32);
+        let n_old = fresh_nonce();
+        assert!(seq.check_and_record(&evictor, &n_old));
+        assert!(seq.check_and_record(&evictor, &fresh_nonce()));
+        // Fill the map past MAX_TRACKED_PEERS: the first-inserted peer's
+        // entries are evicted into the tombstone bucket.
+        let mut pks = Vec::new();
+        for i in 0..BeaconSeq::MAX_TRACKED_PEERS + 2 {
+            let pk = format!("{:02x}", i).repeat(32);
+            pks.push(pk);
+            assert!(seq.check_and_record(&pks[i], &fresh_nonce()));
+        }
+        // Evicted nonce now rejected via tombstone, not just replay map.
+        assert!(!seq.check_and_record(&evictor, &n_old));
     }
 }

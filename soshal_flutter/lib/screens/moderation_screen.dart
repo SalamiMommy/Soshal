@@ -429,8 +429,7 @@ class _ModerationScreenState extends State<ModerationScreen> {
             icon: const Icon(Icons.psychology_outlined),
             label: const Text('Scan with 2-Tier Hybrid AI'),
             onPressed: () async {
-              final pubkey = _pubkey;
-              if (pubkey == null) return;
+              final pubkey = _pubkey ?? '';
               final text = _testContent.text;
               final filtered = await api.shouldFilter(text, pubkey);
               final hybrid = await api.hybridClassifyText(

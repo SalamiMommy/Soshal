@@ -26,7 +26,7 @@ pub fn fetch_feed_window(
     let limit = soshal_db_core::repos::clamp_limit(limit as i64) as usize;
     let conn = db.conn().map_err(|e| e.to_string())?;
     block_on(async {
-        let mut stmt = conn
+        let stmt = conn
             .prepare(
                 "SELECT p.id, p.pubkey, p.content, p.created_at,
                         COALESCE(u.name, u.display_name), u.picture,

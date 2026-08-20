@@ -24,7 +24,7 @@ pub fn query_capacity<T>(
     map: impl Fn(&Row) -> libsql::Result<T>,
 ) -> Result<Vec<T>, DbError> {
     block_on(async {
-        let mut stmt = conn.prepare(sql).await?;
+        let stmt = conn.prepare(sql).await?;
         let mut rows = stmt.query(params).await?;
         let mut out = Vec::with_capacity(capacity);
         while let Some(row) = rows.next().await? {
@@ -52,7 +52,7 @@ pub fn query_first<T>(
     map: impl FnOnce(&Row) -> libsql::Result<T>,
 ) -> Result<Option<T>, DbError> {
     block_on(async {
-        let mut stmt = conn.prepare(sql).await?;
+        let stmt = conn.prepare(sql).await?;
         let mut rows = stmt.query(params).await?;
         match rows.next().await? {
             Some(row) => Ok(Some(map(&row)?)),
@@ -100,7 +100,7 @@ pub async fn query_capacity_async<T>(
     capacity: usize,
     map: impl Fn(&Row) -> libsql::Result<T>,
 ) -> Result<Vec<T>, DbError> {
-    let mut stmt = conn.prepare(sql).await?;
+    let stmt = conn.prepare(sql).await?;
     let mut rows = stmt.query(params).await?;
     let mut out = Vec::with_capacity(capacity);
     while let Some(row) = rows.next().await? {
@@ -126,7 +126,7 @@ pub async fn query_first_async<T>(
     params: impl IntoParams,
     map: impl FnOnce(&Row) -> libsql::Result<T>,
 ) -> Result<Option<T>, DbError> {
-    let mut stmt = conn.prepare(sql).await?;
+    let stmt = conn.prepare(sql).await?;
     let mut rows = stmt.query(params).await?;
     match rows.next().await? {
         Some(row) => Ok(Some(map(&row)?)),

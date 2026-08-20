@@ -42,8 +42,8 @@ The Dart layer provides:
 - `builds/android/build.sh` - Enhanced to download and bundle daemons
 
 ### Android Native Code
-- `android/app/src/main/kotlin/com/example/soshal_flutter/DaemonService.kt` - Daemon manager and service
-- `android/app/src/main/kotlin/com/example/soshal_flutter/MainActivity.kt` - Method channel setup
+- `android/app/src/main/kotlin/com/soshal/app/DaemonService.kt` - Daemon manager and service
+- `android/app/src/main/kotlin/com/soshal/app/MainActivity.kt` - Method channel setup
 - `android/app/src/main/AndroidManifest.xml` - Permissions and service registration
 
 ### Flutter Code

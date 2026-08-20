@@ -125,7 +125,7 @@ impl RollupEngine {
             // otherwise a forged self-consistent commitment (no anchor to
             // prior state) could overwrite or downgrade thread state.
             let existing: Option<(String, i64, String)> = {
-                let mut stmt = conn
+                let stmt = conn
                     .prepare(
                         "SELECT genesis_root, operation_count, final_state_root FROM zk_state_rollups WHERE thread_id = ?1",
                     )

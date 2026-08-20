@@ -19,6 +19,8 @@ import '../services/signer_service.dart';
 class ComposerScreen extends StatefulWidget {
   const ComposerScreen({super.key});
 
+  static const int maxPostChars = 16000;
+
   @override
   State<ComposerScreen> createState() => _ComposerScreenState();
 }
@@ -185,13 +187,20 @@ class _ComposerScreenState extends State<ComposerScreen> {
       );
       return;
     }
+    if (_contentController.text.length > ComposerScreen.maxPostChars) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: SelectableText('Post too long (max ${ComposerScreen.maxPostChars} chars)')),
+      );
+      return;
+    }
 
     final text = _contentController.text;
     if (!context.read<FeedService>().validateNote(text)) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: SelectableText('Note rejected by content validator')),
+              content: SelectableText(
+                  'Post blocked: content does not comply with moderation policy')),
         );
       }
       return;
@@ -315,6 +324,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
+              maxLength: ComposerScreen.maxPostChars,
               maxLines: 5,
               enabled: !_isPosting,
             ),

@@ -109,6 +109,15 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
         reason: "seed_phrase_phishing",
     },
     FeatureWeight {
+        token: "restore seed phrase",
+        spam: 4.5,
+        csam: 0.0,
+        gore: 0.0,
+        bigotry: 0.0,
+        harassment: 0.0,
+        reason: "seed_phrase_phishing",
+    },
+    FeatureWeight {
         token: "claim airdrop",
         spam: 2.8,
         csam: 0.0,
@@ -128,6 +137,15 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
     },
     FeatureWeight {
         token: "guaranteed profit",
+        spam: 3.2,
+        csam: 0.0,
+        gore: 0.0,
+        bigotry: 0.0,
+        harassment: 0.0,
+        reason: "ponzi_guaranteed_return",
+    },
+    FeatureWeight {
+        token: "risk-free return",
         spam: 3.2,
         csam: 0.0,
         gore: 0.0,
@@ -171,6 +189,33 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
         harassment: 0.0,
         reason: "market_manipulation_spam",
     },
+    FeatureWeight {
+        token: "binary options",
+        spam: 2.8,
+        csam: 0.0,
+        gore: 0.0,
+        bigotry: 0.0,
+        harassment: 0.0,
+        reason: "trading_signals_spam",
+    },
+    FeatureWeight {
+        token: "forex trading signal",
+        spam: 2.8,
+        csam: 0.0,
+        gore: 0.0,
+        bigotry: 0.0,
+        harassment: 0.0,
+        reason: "trading_signals_spam",
+    },
+    FeatureWeight {
+        token: "lottery winner",
+        spam: 3.0,
+        csam: 0.0,
+        gore: 0.0,
+        bigotry: 0.0,
+        harassment: 0.0,
+        reason: "lottery_scam",
+    },
     // --- CSAM / CHILD EXPLOITATION ---
     FeatureWeight {
         token: "trade cp",
@@ -198,6 +243,15 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
         bigotry: 0.0,
         harassment: 0.0,
         reason: "underage_pack_solicitation",
+    },
+    FeatureWeight {
+        token: "underage nudes",
+        spam: 0.0,
+        csam: 5.0,
+        gore: 0.0,
+        bigotry: 0.0,
+        harassment: 0.0,
+        reason: "underage_nudes_solicitation",
     },
     FeatureWeight {
         token: "child porn",
@@ -262,6 +316,15 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
         harassment: 0.0,
         reason: "csam_domain_marker",
     },
+    FeatureWeight {
+        token: "jailbait tube",
+        spam: 0.0,
+        csam: 4.5,
+        gore: 0.0,
+        bigotry: 0.0,
+        harassment: 0.0,
+        reason: "underage_exploitation_tube",
+    },
     // --- GORE / GRAPHIC VIOLENCE / SELF-HARM ---
     FeatureWeight {
         token: "beheading video",
@@ -280,6 +343,15 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
         bigotry: 0.0,
         harassment: 0.0,
         reason: "graphic_violence_token",
+    },
+    FeatureWeight {
+        token: "dismemberment video",
+        spam: 0.0,
+        csam: 0.0,
+        gore: 4.5,
+        bigotry: 0.0,
+        harassment: 0.0,
+        reason: "dismemberment_footage",
     },
     FeatureWeight {
         token: "cartel execution",
@@ -309,6 +381,15 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
         reason: "torture_media",
     },
     FeatureWeight {
+        token: "chainsaw execution",
+        spam: 0.0,
+        csam: 0.0,
+        gore: 4.8,
+        bigotry: 0.0,
+        harassment: 0.0,
+        reason: "execution_video_reference",
+    },
+    FeatureWeight {
         token: "animal crush",
         spam: 0.0,
         csam: 0.0,
@@ -333,6 +414,15 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
         gore: 2.5,
         bigotry: 0.0,
         harassment: 4.2,
+        reason: "self_harm_incitement",
+    },
+    FeatureWeight {
+        token: "slit your wrists",
+        spam: 0.0,
+        csam: 0.0,
+        gore: 3.5,
+        bigotry: 0.0,
+        harassment: 3.5,
         reason: "self_harm_incitement",
     },
     FeatureWeight {
@@ -499,6 +589,15 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
         reason: "dehumanizing_racist_slur",
     },
     FeatureWeight {
+        token: "subhuman race",
+        spam: 0.0,
+        csam: 0.0,
+        gore: 0.0,
+        bigotry: 4.5,
+        harassment: 2.0,
+        reason: "dehumanizing_racist_slur",
+    },
+    FeatureWeight {
         token: "gas the",
         spam: 0.0,
         csam: 0.0,
@@ -527,6 +626,15 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
         reason: "targeted_death_threat",
     },
     FeatureWeight {
+        token: "i will hunt you down",
+        spam: 0.0,
+        csam: 0.0,
+        gore: 1.0,
+        bigotry: 0.0,
+        harassment: 5.0,
+        reason: "targeted_threat",
+    },
+    FeatureWeight {
         token: "doxxing",
         spam: 0.0,
         csam: 0.0,
@@ -542,6 +650,15 @@ static AI_FEATURE_WEIGHTS: &[FeatureWeight] = &[
         gore: 0.0,
         bigotry: 0.0,
         harassment: 4.5,
+        reason: "dox_threat",
+    },
+    FeatureWeight {
+        token: "know where you live",
+        spam: 0.0,
+        csam: 0.0,
+        gore: 0.0,
+        bigotry: 0.0,
+        harassment: 4.0,
         reason: "dox_threat",
     },
 ];
@@ -615,6 +732,10 @@ pub fn classify_text(text: &str) -> AiModerationResult {
 
     let evasion_score = calculate_evasion_score(trimmed);
     let variants = crate::normalize::generate_normalized_variants(trimmed);
+    let lower_variants: Vec<String> = variants
+        .iter()
+        .map(|v| v.to_ascii_lowercase())
+        .collect();
 
     let mut raw_spam = 0.0f32;
     let mut raw_csam = 0.0f32;
@@ -623,30 +744,29 @@ pub fn classify_text(text: &str) -> AiModerationResult {
     let mut raw_harassment = 0.0f32;
     let mut reasons = HashSet::new();
 
-    for variant in &variants {
-        let lower = variant.to_ascii_lowercase();
-        for fw in AI_FEATURE_WEIGHTS {
-            if lower.contains(fw.token) {
-                if fw.spam > 0.0 {
-                    raw_spam += fw.spam;
-                    reasons.insert(fw.reason.to_string());
-                }
-                if fw.csam > 0.0 {
-                    raw_csam += fw.csam;
-                    reasons.insert(fw.reason.to_string());
-                }
-                if fw.gore > 0.0 {
-                    raw_gore += fw.gore;
-                    reasons.insert(fw.reason.to_string());
-                }
-                if fw.bigotry > 0.0 {
-                    raw_bigotry += fw.bigotry;
-                    reasons.insert(fw.reason.to_string());
-                }
-                if fw.harassment > 0.0 {
-                    raw_harassment += fw.harassment;
-                    reasons.insert(fw.reason.to_string());
-                }
+    // Check each feature token once across all variants
+    for fw in AI_FEATURE_WEIGHTS {
+        let matched = lower_variants.iter().any(|v| v.contains(fw.token));
+        if matched {
+            if fw.spam > 0.0 {
+                raw_spam += fw.spam;
+                reasons.insert(fw.reason.to_string());
+            }
+            if fw.csam > 0.0 {
+                raw_csam += fw.csam;
+                reasons.insert(fw.reason.to_string());
+            }
+            if fw.gore > 0.0 {
+                raw_gore += fw.gore;
+                reasons.insert(fw.reason.to_string());
+            }
+            if fw.bigotry > 0.0 {
+                raw_bigotry += fw.bigotry;
+                reasons.insert(fw.reason.to_string());
+            }
+            if fw.harassment > 0.0 {
+                raw_harassment += fw.harassment;
+                reasons.insert(fw.reason.to_string());
             }
         }
     }
@@ -771,6 +891,15 @@ mod tests {
     }
 
     #[test]
+    fn test_mild_phrase_not_overcounted() {
+        // "connect wallet" alone is a mild indicator (weight 2.2 < midpoint 2.5);
+        // it shouldn't be multiplied across 5 variants to flag innocent web3 discussions.
+        let res = classify_text("You can connect wallet in the settings screen if you like.");
+        assert!(!res.is_flagged);
+        assert!(res.scores.spam < 0.55);
+    }
+
+    #[test]
     fn test_spam_detected_ai() {
         let res = classify_text("Send 1 BTC to double your crypto instantly! Guaranteed profit");
         assert!(res.is_flagged);
@@ -823,3 +952,4 @@ mod tests {
         assert_eq!(res.primary_category.as_deref(), Some("bigotry"));
     }
 }
+

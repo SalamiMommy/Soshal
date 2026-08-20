@@ -200,10 +200,23 @@ impl BlossomClient {
             }
             bytes.extend_from_slice(&chunk);
         }
+        // SECURITY: the hash in the URL path is asserted, not trusted — a
+        // hostile or misconfigured blossom server could serve different
+        // bytes. Verify the payload matches the requested sha256.
+        let digest_hex = soshal_crypto_core::hash::sha256_hex(&bytes);
+        if !digest_hex.eq_ignore_ascii_case(hash) {
+            return Err("downloaded blob hash mismatch".into());
+        }
         Ok(bytes)
     }
 
     pub async fn list(&self, pubkey: &str) -> Result<Vec<MediaFile>, String> {
+        if pubkey.is_empty()
+            || pubkey.len() > 128
+            || !pubkey.chars().all(|c| c.is_ascii_alphanumeric())
+        {
+            return Err("invalid pubkey for blossom list".to_string());
+        }
         let url = format!("{}/list/{}", self.server_url, pubkey);
         let resp = self
             .http

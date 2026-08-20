@@ -90,7 +90,7 @@ impl ProllyTree {
                 chunk_keys.push(k);
                 chunk_vals.push(v);
 
-                if boundary || chunk_keys.len() >= 100 {
+                if (boundary && chunk_keys.len() >= 2) || chunk_keys.len() >= 100 {
                     let nhash = Self::compute_node_hash(level, &chunk_keys, &chunk_vals);
                     level_nodes.push(ProllyNode {
                         level,

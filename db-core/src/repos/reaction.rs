@@ -43,7 +43,7 @@ impl<'a> ReactionRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, event_id, kind, content, created_at FROM reactions WHERE event_id = ?1 ORDER BY created_at DESC",
+            "SELECT id, pubkey, event_id, kind, content, created_at FROM reactions WHERE event_id = ?1 ORDER BY created_at DESC LIMIT 2000",
             params![event_id],
             |row| {
                 Ok(ReactionRow {

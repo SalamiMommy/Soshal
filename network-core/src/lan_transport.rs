@@ -108,10 +108,20 @@ pub fn start_lan_server_with_store(
             let counter = active_conns.clone();
             let key = key;
             let store = store.clone();
-            let _ = std::thread::spawn(move || {
-                handle_conn(stream, key, &store);
-                counter.fetch_sub(1, Ordering::SeqCst);
-            });
+            match std::thread::Builder::new()
+                .name("soshal-lan-conn".to_string())
+                .spawn(move || {
+                    handle_conn(stream, key, &store);
+                    counter.fetch_sub(1, Ordering::SeqCst);
+                }) {
+                Ok(_) => {}
+                // Spawn failure (thread exhaustion) must still release the
+                // slot: previously the counter leaked and permanently wedged
+                // the server once every connection slot died this way.
+                Err(_) => {
+                    active_conns.fetch_sub(1, Ordering::SeqCst);
+                }
+            }
         }
     });
     Ok(LanServerHandle {

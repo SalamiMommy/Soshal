@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Soshal
+Comment=Native Rust social media app
+Exec=soshal_flutter
+Icon=soshal
+Terminal=false
+Type=Application
+Categories=Network;Chat;
+StartupNotify=true
+StartupWMClass=com.soshal.app

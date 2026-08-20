@@ -48,7 +48,7 @@ impl<'a> BannedMemberRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT group_id, pubkey, banned_by, reason, banned_at FROM banned_members WHERE group_id=?1 ORDER BY banned_at DESC",
+            "SELECT group_id, pubkey, banned_by, reason, banned_at FROM banned_members WHERE group_id=?1 ORDER BY banned_at DESC LIMIT 2000",
             params![group_id],
             Self::map_row,
         )

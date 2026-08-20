@@ -108,6 +108,12 @@ impl CodecState {
 
     pub fn release_audio(&mut self) {
         #[cfg(target_os = "android")]
+        {
+            if let Some(t) = self.capture_thread.take() {
+                let _ = t.join();
+            }
+        }
+        #[cfg(target_os = "android")]
         unsafe {
             use ndk::*;
             if let Some(m) = self.mic.take() {
@@ -123,6 +129,7 @@ impl CodecState {
         {
             self.mic = None;
             self.audio_encoder = None;
+            self.capture_thread = None;
         }
         self.audio_queue.clear();
         self.release_audio_decoder_only();

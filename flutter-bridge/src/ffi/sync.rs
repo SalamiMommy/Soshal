@@ -81,7 +81,7 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
                 id.clone(),
                 sender.clone(),
                 recipient,
-                plain.clone(),
+                plain.to_string(),
                 created_at,
                 "[]".to_string(),
             )
@@ -438,17 +438,31 @@ mod tests {
         .unwrap();
         assert_eq!(v["domain"], "feed");
         assert_eq!(v["pruned_tombstones"], 0);
-        // Seed a tombstone at created_at=0; consensus cutoff = 100-3600 → 0.
+        // Seed a tombstone at created_at=0.
         crate::ffi::db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES ('gc-tomb','pk','x',1,0,'[]','synced',1)"
                 .to_string(),
         )
         .unwrap();
+        // Clock floor: a peer horizon at or below the threshold must not
+        // collapse the cutoff to 0 and wipe every tombstone.
         let v: serde_json::Value = serde_json::from_str(
             &sync_run_epoch_garbage_collection(
                 "feed".to_string(),
-                r#"{"peer1":100}"#.to_string(),
+                r#"{"peer1":3600}"#.to_string(),
+                3600,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(v["epoch_counter"], 0, "floor no-op expected");
+        assert_eq!(v["pruned_tombstones"], 0);
+        // Consensus horizon above the threshold → cutoff prunes the tombstone.
+        let v: serde_json::Value = serde_json::from_str(
+            &sync_run_epoch_garbage_collection(
+                "feed".to_string(),
+                r#"{"peer1":100000}"#.to_string(),
                 3600,
             )
             .unwrap(),

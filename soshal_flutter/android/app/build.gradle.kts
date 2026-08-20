@@ -7,8 +7,21 @@ plugins {
     id("com.chaquo.python") version "17.0.0"
 }
 
+import java.util.Properties
+import java.io.FileInputStream
+
+// Release signing: create android/key.properties with
+//   storePassword=… keyPassword=… keyAlias=… storeFile=… (relative to android/)
+// The keystore itself is NOT committed (see android/README or AGENTS.md).
+val keystoreProperties = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) {
+        FileInputStream(f).use { load(it) }
+    }
+}
+
 android {
-    namespace = "com.example.soshal_flutter"
+    namespace = "com.soshal.app"
     compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
@@ -18,8 +31,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.soshal_flutter"
+        applicationId = "com.soshal.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // AAudio (libaaudio, API 26) is linked into the Rust bridge (.so)
@@ -48,6 +60,14 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystoreProperties["storeFile"] != null) {
+                signingConfig = signingConfigs.create("release") {
+                    keyAlias = keystoreProperties["keyAlias"] as String
+                    keyPassword = keystoreProperties["keyPassword"] as String
+                    storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
+                    storePassword = keystoreProperties["storePassword"] as String
+                }
+            }
         }
     }
 }

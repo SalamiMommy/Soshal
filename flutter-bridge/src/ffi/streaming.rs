@@ -124,7 +124,7 @@ pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, Stri
     let json = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
-            let mut stmt = conn
+            let stmt = conn
                 .prepare(
                     "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
                      JOIN users u ON u.pubkey = p.pubkey \
@@ -230,7 +230,7 @@ pub fn streaming_end_live(stream_id: String, broadcaster_pubkey: String) -> Resu
     let json = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
-            let mut stmt = conn
+            let stmt = conn
                 .prepare("SELECT pubkey, tags_json FROM posts WHERE kind = ?1 AND id = ?2")
                 .await?;
             let mut rows = stmt

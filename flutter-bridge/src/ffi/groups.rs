@@ -6,6 +6,7 @@
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
+use soshal_db_core::repos::banned_member::BannedMemberRepo;
 use soshal_db_core::repos::group::GroupRepo;
 use soshal_db_core::repos::role::{GroupRoleRepo, GroupRoleRow};
 use soshal_groups_core::group_enc::seal::group_message_envelope;
@@ -194,6 +195,20 @@ pub fn groups_post_message(
     let sender = event["pubkey"].as_str().unwrap_or_default().to_string();
     let created_at = event["created_at"].as_u64().unwrap_or(0) as i64;
     super::db::with_db_result(|db| {
+        // Enforce membership + ban state before a message may be stored:
+        // `is_banned` alone was dead code before — a banned member could
+        // keep posting and every client would render their messages.
+        let group_repo = GroupRepo::new(db);
+        if !group_repo.is_member(&group_id, &sender)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "not a member of this group".to_string(),
+            ));
+        }
+        if BannedMemberRepo::new(db).is_banned(&group_id, &sender)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "banned from this group".to_string(),
+            ));
+        }
         let conn = db.conn()?;
         soshal_db_core::block_on(conn.execute(
             "INSERT INTO group_messages (id, group_id, room_id, sender_pubkey, content, created_at, sync_status, is_deleted) \
@@ -232,7 +247,7 @@ pub fn groups_fetch_messages(
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
-            let mut stmt = conn
+            let stmt = conn
                 .prepare(
                     "SELECT id, group_id, sender_pubkey, content, created_at, sync_status, is_deleted \
                      FROM group_messages \
@@ -1139,6 +1154,10 @@ mod tests {
             "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
         )
         .unwrap();
+        // The message sender (active signer) must be a member: post-message
+        // now enforces membership.
+        let sender_pk = super::super::signer::signer_pubkey().unwrap();
+        groups_join("g6".to_string(), sender_pk, None).unwrap();
 
         assert_eq!(groups_rooms_list("g6".to_string()).unwrap(), "[]");
         let room_id = groups_rooms_create(

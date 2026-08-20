@@ -161,7 +161,8 @@ async fn blossom_upload_and_authenticated_success() {
 
 #[tokio::test]
 async fn blossom_download_success_and_content_lengths() {
-    let hash = "ab".repeat(32);
+    let payload = b"hello blossom";
+    let hash = soshal_crypto_core::hash::sha256_hex(payload);
     let hash_match = hash.clone();
     let server = spawn_mock_blossom(move |req| {
         if req.contains(&format!("/{hash_match} ")) {

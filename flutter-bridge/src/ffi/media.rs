@@ -8,7 +8,37 @@ use soshal_common_core::url::is_valid_media_url;
 use soshal_media_core::cas::ChunkStore;
 use std::fs;
 use std::io::Cursor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Resolve a Dart-supplied file path to a canonical absolute path, but only
+/// when it lives under an allowed root (the chunk store or the system temp
+/// dir). The parent directory is canonicalized first, so `..`, symlinks and
+/// other escapes are rejected. This keeps `media_fetch_blob`/`media_load_local`
+/// from writing/reading arbitrary files when a compromised Dart layer (or a
+/// hostile blob hash spliced into a path) reaches this boundary.
+fn resolve_allowed_path(path: &str, what: &str) -> Result<PathBuf, String> {
+    if path.is_empty() {
+        return Err(format!("{what} path cannot be empty"));
+    }
+    let p = Path::new(path);
+    let parent = p.parent().ok_or_else(|| format!("{what} path has no parent"))?;
+    let canon_parent = fs::canonicalize(parent).map_err(|e| format!("{what} dir: {e}"))?;
+    let allowed = [
+        ChunkStore::default_root(),
+        std::env::temp_dir(),
+    ];
+    if !allowed.iter().any(|root| canon_parent.starts_with(root)) {
+        return Err(format!(
+            "{what} path must be inside the media cache or temp dir"
+        ));
+    }
+    let file_name = p
+        .file_name()
+        .ok_or_else(|| format!("{what} path has no file name"))?
+        .to_string_lossy()
+        .into_owned();
+    Ok(canon_parent.join(file_name))
+}
 
 lazy_static::lazy_static! {
     static ref MEDIA_SERVER: std::sync::Mutex<Option<soshal_streaming_core::video_server::LocalVideoServer>> =
@@ -100,10 +130,12 @@ pub async fn media_fetch(url: String, cache_dir: String) -> Result<String, Strin
     }
 }
 
-/// Load media from cache or disk
+/// Load media from cache or disk (path must resolve inside the media cache
+/// or temp dir; arbitrary file reads are rejected).
 #[frb(serialize)]
 pub fn media_load_local(file_path: String) -> Result<Vec<u8>, String> {
-    match fs::read(&file_path) {
+    let resolved = resolve_allowed_path(&file_path, "media")?;
+    match fs::read(&resolved) {
         Ok(data) => Ok(data).into(),
         Err(e) => Err(format!("Failed to read media: {e}")).into(),
     }
@@ -133,7 +165,28 @@ fn generate_cache_filename(url: &str) -> String {
 /// Clear media cache directory
 #[frb(serialize)]
 pub fn media_clear_cache(cache_dir: String) -> Result<String, String> {
-    match fs::remove_dir_all(&cache_dir) {
+    if cache_dir.is_empty() {
+        return Err("cache_dir cannot be empty".to_string());
+    }
+    let p = std::path::Path::new(&cache_dir);
+    if !p.exists() {
+        return Err("Cache directory does not exist".to_string());
+    }
+    let canon = std::fs::canonicalize(p).map_err(|e| format!("canonicalize: {e}"))?;
+    if let Ok(db_p) = super::db::db_path() {
+        if !db_p.is_empty() && !db_p.starts_with(':') {
+            if let Some(parent) = std::path::Path::new(&db_p).parent() {
+                if !parent.as_os_str().is_empty() {
+                    if let Ok(canon_parent) = std::fs::canonicalize(parent) {
+                        if !canon.starts_with(&canon_parent) && !canon.starts_with(std::env::temp_dir()) {
+                            return Err("cache_dir must be inside application directory".to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    match fs::remove_dir_all(&canon) {
         Ok(_) => Ok("Cache cleared".to_string()).into(),
         Err(e) => Err(format!("Clear failed: {e}")).into(),
     }
@@ -186,7 +239,8 @@ pub fn media_fetch_blob(blob_hash: String, out_path: String) -> Result<String, S
 
     // Reconstruct the blob from chunks
     let data = soshal_media_core::cas::manifest_bytes(&store, &manifest);
-    fs::write(&out_path, data).map_err(|e| format!("write failed: {e}"))?;
+    let resolved = resolve_allowed_path(&out_path, "blob output")?;
+    fs::write(&resolved, data).map_err(|e| format!("write failed: {e}"))?;
 
     serde_json::to_string(&serde_json::json!({
         "success": true,

@@ -2,11 +2,11 @@ use crate::repos::limits;
 use crate::Database;
 use libsql::params;
 
-const POST_UPSERT_SQL: &str = "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id, category) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18, CASE WHEN ?4 = 30402 THEN (SELECT json_extract(je.value, '$[1]') FROM json_each(CASE WHEN json_valid(?6) THEN ?6 ELSE '[]' END) je WHERE json_extract(je.value, '$[0]') = 't' LIMIT 1) ELSE NULL END) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, is_deleted=excluded.is_deleted, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native, rsvp_event_id=excluded.rsvp_event_id, category=excluded.category";
+const POST_UPSERT_SQL: &str = "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id, category) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18, CASE WHEN ?4 = 30402 THEN (SELECT json_extract(je.value, '$[1]') FROM json_each(CASE WHEN json_valid(?6) THEN ?6 ELSE '[]' END) je WHERE json_extract(je.value, '$[0]') = 't' LIMIT 1) ELSE NULL END) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, is_deleted=excluded.is_deleted, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native, rsvp_event_id=excluded.rsvp_event_id, category=excluded.category WHERE posts.is_deleted = 0";
 const POST_FEED_SQL: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE pubkey IN (SELECT value FROM json_each(?1)) AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3";
 const POST_SELECT_BY_ID: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE id = ?1";
 const POST_SELECT_BY_PUBKEY: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3";
-const POST_SELECT_REPLIES: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 ORDER BY created_at ASC";
+const POST_SELECT_REPLIES: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 ORDER BY created_at ASC LIMIT 1000";
 const POST_SELECT_PAGED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2";
 /// Slim feed variant: only the columns the feed surface consumes. Feed pages
 /// are the hottest read path; the 17-column row mapping wastes decode work
@@ -179,7 +179,7 @@ impl<'a> PostRepo<'a> {
         tx: &libsql::Transaction,
         posts: &[PostRow],
     ) -> Result<(), crate::error::DbError> {
-        let mut stmt = tx.prepare(POST_UPSERT_SQL).await?;
+        let stmt = tx.prepare(POST_UPSERT_SQL).await?;
         for post in posts {
             if limits::row_too_big(&post.content, &post.tags_json) {
                 continue; // relay content too large: skip, never store
@@ -217,6 +217,24 @@ impl<'a> PostRepo<'a> {
             "UPDATE posts SET is_deleted = 1 WHERE id = ?1",
             params![id],
         )?;
+        Ok(())
+    }
+
+    /// Soft-delete a post within an open transaction, scoped to the event
+    /// author. Used by NIP-09 delete ingestion: a tombstone may only clear a
+    /// row the deleting pubkey actually authored (relay replays of a delete
+    /// must not clear other users' posts).
+    pub async fn mark_deleted_in(
+        &self,
+        tx: &libsql::Transaction,
+        id: &str,
+        author: &str,
+    ) -> Result<(), crate::error::DbError> {
+        tx.execute(
+            "UPDATE posts SET is_deleted = 1 WHERE id = ?1 AND pubkey = ?2",
+            params![id, author],
+        )
+        .await?;
         Ok(())
     }
 

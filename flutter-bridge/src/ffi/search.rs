@@ -39,7 +39,7 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
         // the AND/prefix semantics (and injecting a literal `AND` term).
         let fts_match = fts_query;
         let out = soshal_db_core::block_on(async {
-            let mut stmt = conn
+            let stmt = conn
                 .prepare(
                     "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at FROM posts_fts f \
                      JOIN posts p ON f.rowid = p.rowid \
@@ -219,7 +219,7 @@ fn cached_trending_hashtags(limit: i64) -> Result<Vec<String>, String> {
     let tags = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
-            let mut stmt = conn.prepare(TRENDING_HASHTAGS_SQL).await?;
+            let stmt = conn.prepare(TRENDING_HASHTAGS_SQL).await?;
             let mut rows = stmt.query(()).await?;
             let mut out = Vec::new();
             while let Some(row) = rows.next().await? {

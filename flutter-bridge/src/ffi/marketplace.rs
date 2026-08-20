@@ -620,12 +620,20 @@ pub fn marketplace_release_escrow(
     escrow_id: String,
     seller_pubkey: String,
 ) -> Result<bool, String> {
-    drop(seller_pubkey);
+    // Bind the caller to the unlocked signer: the previous code dropped the
+    // seller identity entirely, so any local caller could release any escrow.
+    let caller = super::signer::signer_pubkey()?;
+    if caller != seller_pubkey {
+        return Err("release must be initiated by the seller identity".into());
+    }
     super::db::with_db_result(|db| {
         let repo = EscrowRepo::new(db);
         let escrow = repo
             .get(&escrow_id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
+        if escrow.seller_pubkey != caller {
+            return Err(soshal_db_core::error::DbError::NotFound);
+        }
         let (buyer_confirmed, seller_confirmed) = repo.get_confirms(&escrow_id)?;
         let disputed = escrow.status == "disputed";
         let arbitrator_approved = escrow.status == "completed";
@@ -675,12 +683,20 @@ pub fn marketplace_resolve_escrow(
     mediator_pubkey: String,
     winner_pubkey: String,
 ) -> Result<bool, String> {
-    drop(mediator_pubkey);
+    // Bind the caller to the unlocked signer: the mediator identity was
+    // dropped before, letting any local caller arbitrate any escrow. The
+    // caller must be an escrow party (the mediator role is a UI-level gate);
+    // the winner must be a party (checked below).
+    let caller = super::signer::signer_pubkey()?;
     super::db::with_db_result(|db| {
         let repo = EscrowRepo::new(db);
         let escrow = repo
             .get(&escrow_id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
+        if caller != escrow.buyer_pubkey && caller != escrow.seller_pubkey {
+            return Err(soshal_db_core::error::DbError::NotFound);
+        }
+        drop(mediator_pubkey);
         if winner_pubkey != escrow.buyer_pubkey && winner_pubkey != escrow.seller_pubkey {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "winner must be an escrow party".to_string(),
@@ -794,14 +810,30 @@ pub fn marketplace_poll_create(
     if options.len() < 2 {
         return Err("poll needs at least 2 options".to_string()).into();
     }
+    if options.len() > 20 {
+        return Err("poll supports at most 20 options".to_string()).into();
+    }
+    if question.trim().is_empty() || question.len() > 512 {
+        return Err("poll question must be 1-512 characters".to_string()).into();
+    }
+    for opt in &options {
+        let o = opt.trim();
+        if o.is_empty() || o.len() > 256 {
+            return Err("poll option must be 1-256 characters".to_string()).into();
+        }
+    }
     let id = uuid_like();
     let now = soshal_common_core::format::now_secs();
+    // Clamp the expiry computation: a hostile/huge hours value must not
+    // overflow i64 and wrap into the past (or a tiny negative) expiry.
+    let offset = expires_in_hours.saturating_mul(3600);
+    let expires_at = now.saturating_add(offset).max(now - 1);
     let row = soshal_db_core::repos::poll::PollRow {
         id: id.clone(),
         pubkey: user_pubkey,
         question,
         options: options_json,
-        expires_at: now + expires_in_hours * 3600,
+        expires_at,
         closed: false,
         created_at: now,
     };
@@ -1175,8 +1207,14 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = db::tmp_db("orders", "market");
-        insert_listing("l1", "seller1", "widget", 5000, "tools", 2000);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let spk = keys.public_key().to_hex();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        insert_listing("l1", &spk, "widget", 5000, "tools", 2000);
 
         assert!(marketplace_create_order(
             "l1".to_string(),
@@ -1188,14 +1226,14 @@ mod tests {
         let order_id = marketplace_create_order(
             "l1".to_string(),
             "buyer1".to_string(),
-            "seller1".to_string(),
+            spk.clone(),
         )
         .unwrap();
 
         let order = marketplace_get_order(order_id.clone()).unwrap();
         assert!(order.contains("\"status\":\"created\""), "{order}");
         assert!(order.contains("\"listing_id\":\"l1\""), "{order}");
-        assert!(order.contains("\"seller_pubkey\":\"seller1\""), "{order}");
+        assert!(order.contains(&format!("\"seller_pubkey\":\"{spk}\"")), "{order}");
         assert!(order.contains("\"buyer_pubkey\":\"\""), "{order}");
         assert!(marketplace_get_order("nope".to_string())
             .unwrap_err()
@@ -1203,7 +1241,7 @@ mod tests {
 
         let json = marketplace_fetch_buyer_orders("buyer1".to_string()).unwrap();
         assert!(json.contains(&order_id), "{json}");
-        let json = marketplace_fetch_seller_orders("seller1".to_string()).unwrap();
+        let json = marketplace_fetch_seller_orders(spk.clone()).unwrap();
         assert!(json.contains(&order_id), "{json}");
         let json = marketplace_fetch_seller_orders("nobody".to_string()).unwrap();
         assert_eq!(json, "[]");
@@ -1211,7 +1249,7 @@ mod tests {
         assert!(marketplace_create_escrow(
             order_id.clone(),
             "buyer1".to_string(),
-            "seller1".to_string(),
+            spk.clone(),
             5000,
         )
         .unwrap_err()
@@ -1219,13 +1257,13 @@ mod tests {
         assert!(marketplace_create_escrow(
             order_id.clone(),
             String::new(),
-            "seller1".to_string(),
+            spk.clone(),
             0,
         )
         .unwrap_err()
         .contains("amount must be positive"));
         let escrow_id =
-            marketplace_create_escrow(order_id.clone(), String::new(), "seller1".to_string(), 5000)
+            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000)
                 .unwrap();
 
         let escrow = marketplace_get_escrow(escrow_id.clone()).unwrap();
@@ -1240,18 +1278,18 @@ mod tests {
             "null"
         );
 
-        assert!(marketplace_release_escrow(escrow_id.clone(), "seller1".to_string()).is_err());
+        assert!(marketplace_release_escrow(escrow_id.clone(), spk.clone()).is_err());
         assert!(marketplace_resolve_escrow(
             escrow_id.clone(),
             "mediator".to_string(),
-            "seller1".to_string(),
+            spk.clone(),
         )
         .unwrap());
         let escrow = marketplace_get_escrow(escrow_id).unwrap();
         assert!(escrow.contains("\"status\":\"refunded\""), "{escrow}");
 
         let escrow2 =
-            marketplace_create_escrow(order_id.clone(), String::new(), "seller1".to_string(), 5000)
+            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000)
                 .unwrap();
         assert!(marketplace_dispute_escrow(
             escrow2.clone(),
@@ -1261,28 +1299,28 @@ mod tests {
         .is_err());
         assert!(marketplace_dispute_escrow(
             escrow2.clone(),
-            "seller1".to_string(),
+            spk.clone(),
             "item not as described".to_string(),
         )
         .unwrap());
         // Disputed escrows need arbitrator resolution; caller release refused.
-        assert!(marketplace_release_escrow(escrow2, "seller1".to_string()).is_err());
+        assert!(marketplace_release_escrow(escrow2, spk.clone()).is_err());
 
         // Non-disputed escrow releases only after BOTH parties confirm.
         let escrow4 =
-            marketplace_create_escrow(order_id.clone(), String::new(), "seller1".to_string(), 5000)
+            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000)
                 .unwrap();
-        assert!(marketplace_release_escrow(escrow4.clone(), "seller1".to_string()).is_err());
+        assert!(marketplace_release_escrow(escrow4.clone(), spk.clone()).is_err());
         db::db_execute_raw_test(format!(
             "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id='{escrow4}'"
         ))
         .unwrap();
-        assert!(marketplace_release_escrow(escrow4.clone(), "seller1".to_string()).unwrap());
+        assert!(marketplace_release_escrow(escrow4.clone(), spk.clone()).unwrap());
         let escrow = marketplace_get_escrow(escrow4).unwrap();
         assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
 
         let escrow3 =
-            marketplace_create_escrow(order_id, String::new(), "seller1".to_string(), 5000)
+            marketplace_create_escrow(order_id, String::new(), spk.clone(), 5000)
                 .unwrap();
         assert!(marketplace_resolve_escrow(
             escrow3.clone(),
@@ -1298,6 +1336,7 @@ mod tests {
         let escrow = marketplace_get_escrow(escrow3).unwrap();
         assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
         assert!(escrow.contains("resolved by mediator"), "{escrow}");
+        signer::signer_lock().unwrap();
     }
 
     #[test]
@@ -1519,7 +1558,13 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = db::tmp_db("mkt_esc", "mk");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let spk = keys.public_key().to_hex();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         insert_listing("l1", "seller1", "widget", 5000, "tools", 2000);
         insert_escrow("escA", "l1", "created");
 
@@ -1532,7 +1577,7 @@ mod tests {
         .unwrap_err()
         .contains("Order not found"));
         assert!(
-            marketplace_release_escrow("nope".to_string(), "seller1".to_string())
+            marketplace_release_escrow("nope".to_string(), spk.clone())
                 .unwrap_err()
                 .contains("not found")
         );
@@ -1563,6 +1608,7 @@ mod tests {
         assert_eq!(note.chars().count(), 512);
         assert!(note.ends_with('…'));
         assert!(note.starts_with(&long[..100]));
+        signer::signer_lock().unwrap();
     }
 
     #[test]

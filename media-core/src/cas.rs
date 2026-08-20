@@ -21,6 +21,10 @@ fn is_valid_hash(hash: &str) -> bool {
     hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Persistent override for [`ChunkStore::default_root`], installed once by
+/// the FFI bridge at `db_init` so blobs survive OS temp-dir wipes.
+static DEFAULT_ROOT_OVERRIDE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
 /// Chunk files are plaintext cache content. At-rest encryption of the app DB
 /// is untouched; the CAS lives in cache space and is evictable.
 #[derive(Clone)]
@@ -441,10 +445,23 @@ impl ChunkStore {
     }
 
     /// Default on-disk location used by peer-serving and bridge call sites.
+    /// The FFI bridge pins this to a persistent app-data dir at startup; the
+    /// temp-dir fallback is only for bare/core use and is wiped on reboot.
     pub fn default_root() -> PathBuf {
-        std::env::var_os("SOSHAL_CHUNK_CACHE")
-            .map(PathBuf::from)
+        DEFAULT_ROOT_OVERRIDE
+            .get()
+            .cloned()
+            .or_else(|| std::env::var_os("SOSHAL_CHUNK_CACHE").map(PathBuf::from))
             .unwrap_or_else(|| std::env::temp_dir().join("soshal_chunks"))
+    }
+
+    /// Point `default_root()` at a persistent directory (the app data dir),
+    /// called once at startup by the FFI bridge. Without this the temp-dir
+    /// fallback dies on OS reboot and every stored blob (music, images,
+    /// videos) becomes unreachable — "no device has this blob". No-op when
+    /// already set; `SOSHAL_CHUNK_CACHE` still wins for operator overrides.
+    pub fn set_default_root(dir: PathBuf) {
+        let _ = DEFAULT_ROOT_OVERRIDE.set(dir);
     }
 
     /// Manifest persistence lives next to the chunk files so peer-serving

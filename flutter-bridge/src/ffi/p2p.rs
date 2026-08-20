@@ -157,6 +157,11 @@ pub fn p2p_mdns_browse_start() -> Result<bool, String> {
 }
 
 /// Drain pending mDNS discovery results as a JSON list of peers.
+///
+/// Contact-graph gating: an advertiser is only accepted when we already know
+/// its pubkey (a stored user/profile row or an entry in our own kind-3
+/// contact list). Without this, ANY LAN device running the app — or a hostile
+/// advertiser spoofing `_soshal._tcp` — becomes a swarm peer.
 #[frb(sync, serialize)]
 pub fn p2p_mdns_browse_drain() -> Result<Vec<P2pPeerDto>, String> {
     let mut st = state_mut();
@@ -164,9 +169,37 @@ pub fn p2p_mdns_browse_drain() -> Result<Vec<P2pPeerDto>, String> {
     let Some(browser) = inner.browser.as_mut() else {
         return Ok(Vec::new()).into();
     };
+    let known = crate::ffi::db::with_db_string(|db| {
+        let repo = soshal_db_core::repos::user::UserRepo::new(db);
+        let mine = crate::ffi::signer::signer_pubkey().ok();
+        let contacts: Vec<String> = mine
+            .as_deref()
+            .and_then(|m| repo.get_by_pubkey(m).ok().flatten())
+            .map(|u| {
+                u.contact_pubkeys
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(contacts)
+    })
+    .unwrap_or_default();
     let peers = browser
         .drain_peers()
         .into_iter()
+        .filter(|p| {
+            let known_row = crate::ffi::db::with_db_string(|db| {
+                Ok(soshal_db_core::repos::user::UserRepo::new(db)
+                    .get_by_pubkey(p.pubkey.as_str())
+                    .ok()
+                    .flatten()
+                    .is_some())
+            })
+            .unwrap_or(false);
+            known_row || known.iter().any(|k| k == &p.pubkey)
+        })
         .map(P2pPeerDto::from)
         .collect();
     Ok(peers).into()

@@ -330,6 +330,8 @@ impl RobertaModerationModel {
             || text_lower.contains("double your")
             || text_lower.contains("send btc")
             || text_lower.contains("fast cash")
+            || text_lower.contains("guaranteed profit")
+            || text_lower.contains("make money fast")
         {
             spam_logit += 4.5;
             detected_signals.push("roberta_semantic_spam".to_string());
@@ -348,6 +350,8 @@ impl RobertaModerationModel {
             || text_lower.contains("dox your")
             || text_lower.contains("i will hunt you")
             || text_lower.contains("watch your back")
+            || text_lower.contains("leak your address")
+            || text_lower.contains("know where you live")
         {
             threat_logit += 5.5;
             detected_signals.push("roberta_semantic_threat".to_string());
@@ -361,11 +365,21 @@ impl RobertaModerationModel {
             "nigger",
             "kike",
             "faggot",
+            "fag",
+            "dyke",
             "tranny",
+            "shemale",
             "chink",
+            "gook",
+            "spic",
+            "coon",
+            "wetback",
             "subhuman race",
+            "mud people",
             "gas the",
             "white power",
+            "hitler was right",
+            "race traitor",
         ];
         for m in hate_markers {
             if text_lower.contains(m) {
@@ -381,11 +395,17 @@ impl RobertaModerationModel {
         let mut csam_logit = -4.0f32;
         let csam_markers = [
             "cp trade",
+            "trade cp",
+            "selling cp",
             "child porn",
             "preteen nudes",
+            "preteen nude",
             "underage pics",
+            "underage nudes",
             "lolicon pack",
             "pedophile",
+            "pedo",
+            "jailbait",
         ];
         for m in csam_markers {
             if text_lower.contains(m) {
@@ -400,10 +420,15 @@ impl RobertaModerationModel {
         let mut gore_logit = -3.5f32;
         let gore_markers = [
             "beheading video",
+            "decapitation",
+            "cartel execution",
+            "dismemberment",
             "snuff film",
             "cartel flaying",
             "crush video",
             "suicide instruction",
+            "how to kill yourself",
+            "go kill yourself",
             "slit wrists",
         ];
         for m in gore_markers {

@@ -49,7 +49,7 @@ impl<'a> GroupInviteRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, group_id, created_by, token, max_uses, uses, expires_at, created_at FROM group_invites WHERE group_id=?1 ORDER BY created_at DESC",
+            "SELECT id, group_id, created_by, token, max_uses, uses, expires_at, created_at FROM group_invites WHERE group_id=?1 ORDER BY created_at DESC LIMIT 2000",
             params![group_id],
             Self::map_row,
         )

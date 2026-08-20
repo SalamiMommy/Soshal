@@ -76,8 +76,11 @@ impl PqcLinkCrypto {
     fn keygen_budget(&self, peer: &str) -> bool {
         let now = now_secs() as u64;
         let mut keygens = self.keygens.lock().unwrap_or_else(|e| e.into_inner());
+        if keygens.len() > 4096 {
+            keygens.retain(|_, (_, ts)| now.saturating_sub(*ts) < KEYGEN_WINDOW_SECS);
+        }
         let entry = keygens.entry(peer.to_string()).or_insert((0, now));
-        if now - entry.1 >= KEYGEN_WINDOW_SECS {
+        if now.saturating_sub(entry.1) >= KEYGEN_WINDOW_SECS {
             *entry = (0, now);
         }
         if entry.0 >= MAX_KEYGEN_PER_SOURCE {

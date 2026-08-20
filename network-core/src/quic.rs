@@ -566,6 +566,10 @@ pub fn moq_stream_known(stream_id: &str) -> bool {
 }
 const STREAM_CONNECT_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 const STREAM_EXCHANGE_TIMEOUT: StdDuration = StdDuration::from_secs(15);
+
+/// Cap on concurrent QUIC stream handshakes still waiting for the HMAC
+/// beacon line (see D2 hardening: slow-loris over QUIC).
+const MAX_PENDING_AUTH_STREAMS: usize = 8;
 const AUTH_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
 /// Handle for the QUIC stream media server (mirrors `LanServerHandle`).
@@ -672,6 +676,10 @@ async fn run_stream_server(
     let store = ChunkStore::new(store_root);
     const MAX_STREAM_CONNS: usize = 32;
     let active_conns = Arc::new(AtomicUsize::new(0));
+    // Unauthenticated handshakes are separately capped: a private-IP flood
+    // of idle connections must not occupy every connection slot for the
+    // whole AUTH_TIMEOUT window (slow-loris over QUIC).
+    let pending_auth = Arc::new(AtomicUsize::new(0));
     loop {
         tokio::select! {
             _ = stop_notify.notified() => {
@@ -692,9 +700,10 @@ async fn run_stream_server(
                 if let Ok(conn) = incoming.await {
                     active_conns.fetch_add(1, Ordering::SeqCst);
                     let counter = active_conns.clone();
+                    let pa = pending_auth.clone();
                     let store = store.clone();
                     tokio::spawn(async move {
-                        serve_stream_conn(conn, key, store).await;
+                        serve_stream_conn(conn, key, store, pa).await;
                         counter.fetch_sub(1, Ordering::SeqCst);
                     });
                 }
@@ -706,12 +715,18 @@ async fn run_stream_server(
 
 /// Accepts bi-streams on one connection and serves each in its own task so
 /// parallel chunk fetches never head-of-line block each other.
-async fn serve_stream_conn(conn: Connection, key: [u8; 32], store: ChunkStore) {
+async fn serve_stream_conn(
+    conn: Connection,
+    key: [u8; 32],
+    store: ChunkStore,
+    pending_auth: Arc<AtomicUsize>,
+) {
     loop {
         match conn.accept_bi().await {
             Ok((send, recv)) => {
                 let store = store.clone();
-                tokio::spawn(serve_stream(send, recv, key, store));
+                let pa = pending_auth.clone();
+                tokio::spawn(async move { serve_stream(send, recv, key, store, pa).await });
             }
             Err(quinn::ConnectionError::ApplicationClosed(_))
             | Err(quinn::ConnectionError::ConnectionClosed(_))
@@ -727,11 +742,20 @@ async fn serve_stream(
     mut recv: quinn::RecvStream,
     key: [u8; 32],
     store: ChunkStore,
+    pending_auth: Arc<AtomicUsize>,
 ) {
     // Auth: exactly like the TCP transport, the client must open with the
     // HMAC'd beacon line; anything else gets a refused stream. Bytes past
     // the newline (coalesced request frame) come back for the frame reads.
-    let mut leftover = match auth_stream(&mut recv, &key).await {
+    if pending_auth.load(Ordering::SeqCst) >= MAX_PENDING_AUTH_STREAMS {
+        let _ = send.write_all(b"ERR\n").await;
+        let _ = send.finish();
+        return;
+    }
+    pending_auth.fetch_add(1, Ordering::SeqCst);
+    let auth = auth_stream(&mut recv, &key).await;
+    pending_auth.fetch_sub(1, Ordering::SeqCst);
+    let mut leftover = match auth {
         Ok(l) if !global_power_scheduler().mode().paused() => l,
         _ => {
             let _ = send.write_all(b"ERR\n").await;

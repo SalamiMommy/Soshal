@@ -505,4 +505,54 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
       return HybridModerationResult.clean();
     }
   }
+
+  /// Classify text using the lightweight AI moderation engine (Spam, CSAM, Gore, Bigotry, Harassment).
+  Future<AiModerationResult> aiClassifyText(String content) async {
+    try {
+      final json =
+          RustLib.instance.api.crateFfiModerationModerationAiClassifyText(
+        content: content,
+      );
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      clearLastError();
+      return AiModerationResult.fromJson(map);
+    } catch (e, st) {
+      setLastError(e, st);
+      return AiModerationResult.clean();
+    }
+  }
+
+  /// Classify raw media bytes with the AI media perceptual and chrominance analyzer.
+  Future<AiMediaVerdict> aiClassifyMedia(
+      Uint8List imageBytes, String mimeType) async {
+    try {
+      final json =
+          RustLib.instance.api.crateFfiModerationModerationAiClassifyMedia(
+        imageBytes: imageBytes,
+        mimeType: mimeType,
+      );
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      clearLastError();
+      return AiMediaVerdict.fromJson(map);
+    } catch (e, st) {
+      setLastError(e, st);
+      return AiMediaVerdict.pass();
+    }
+  }
+
+  /// Compute 256-bit Meta PDQ perceptual image hash and evaluate against threat blocklist.
+  Future<PdqHashResult?> computePdqHash(Uint8List imageBytes) async {
+    try {
+      final json =
+          RustLib.instance.api.crateFfiModerationModerationComputePdqHash(
+        imageBytes: imageBytes,
+      );
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      clearLastError();
+      return PdqHashResult.fromJson(map);
+    } catch (e, st) {
+      setLastError(e, st);
+      return null;
+    }
+  }
 }

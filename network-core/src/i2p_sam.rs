@@ -41,9 +41,19 @@ impl I2PSamClient {
 
     /// Connects to the SAM bridge
     pub fn connect(&mut self) -> Result<(), String> {
+        // SAM is a local daemon; only loopback addresses are accepted. A
+        // remote host here would tunnel traffic through an untrusted SAM
+        // endpoint (and could be a hostile relay capturing metadata).
         let addr = format!("{}:{}", self.host, self.port);
-        let stream =
-            TcpStream::connect(&addr).map_err(|e| format!("SAM connection failed: {e}"))?;
+        let sock = std::net::ToSocketAddrs::to_socket_addrs(&addr)
+            .map_err(|e| format!("SAM host resolve failed: {e}"))?
+            .next()
+            .ok_or("SAM host resolved to no address")?;
+        if !sock.ip().is_loopback() {
+            return Err("SAM bridge must be on a loopback address".to_string());
+        }
+        let stream = TcpStream::connect_timeout(&sock, Duration::from_secs(10))
+            .map_err(|e| format!("SAM connection failed: {e}"))?;
 
         stream
             .set_read_timeout(Some(Duration::from_secs(30)))

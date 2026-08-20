@@ -100,6 +100,15 @@ pub fn db_init(db_path: String) -> Result<String, String> {
     // (reqwest on a tokio worker, quinn, …) panics before the lazy installs
     // in sync-core/network-core run.
     let _ = rustls::crypto::ring::default_provider().install_default();
+    // Pin the chunk store next to the DB (persistent app-data dir). The
+    // default temp-dir fallback is wiped on reboot, so published blobs
+    // (music, images, videos) would vanish. An explicit SOSHAL_CHUNK_CACHE
+    // env var still wins.
+    if std::env::var_os("SOSHAL_CHUNK_CACHE").is_none() {
+        if let Some(dir) = std::path::Path::new(&db_path).parent() {
+            soshal_media_core::cas::ChunkStore::set_default_root(dir.join("chunks"));
+        }
+    }
     let db = match Database::open(&db_path) {
         Ok(d) => d,
         Err(e) => return Err(format!("open failed: {e}")).into(),
@@ -257,7 +266,49 @@ const PROTECTED_SETTING_KEYS: &[&str] =
     &["pin_hash", "pin_permanently_locked", "pin_lockout_state"];
 
 fn raw_sql_allowed(sql: &str) -> bool {
-    let lower = sql.trim().to_lowercase();
+    // Normalize before checking: SQLite accepts `/*…*/` comments, `--…`
+    // line comments and \t\n\r as token separators, so a naive keyword
+    // blacklist is bypassable (`drop/**/table`, `insert\tinto`). Strip
+    // comments and collapse all whitespace to single spaces first.
+    let mut norm = String::with_capacity(sql.len());
+    let mut chars = sql.chars().peekable();
+    let mut in_block = false;
+    while let Some(c) = chars.next() {
+        if in_block {
+            if c == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                in_block = false;
+                // SQLite treats comments as token separators: `drop/**/table`
+                // is `drop table`. Emit a space so the blacklist sees it.
+                if !norm.ends_with(' ') {
+                    norm.push(' ');
+                }
+            }
+            continue;
+        }
+        match c {
+            '-' if chars.peek() == Some(&'-') => {
+                chars.next();
+                for n in chars.by_ref() {
+                    if n == '\n' {
+                        break;
+                    }
+                }
+                norm.push(' ');
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                in_block = true;
+            }
+            c if c.is_whitespace() => {
+                if !norm.ends_with(' ') {
+                    norm.push(' ');
+                }
+            }
+            c => norm.push(c),
+        }
+    }
+    let lower = norm.trim().to_lowercase();
     // The raw console is only meant for single SELECT/DELETE/UPDATE
     // statements. Reject multi-statement input, schema mutation, writes
     // (INSERT/REPLACE), and anything that could touch files outside the
@@ -284,7 +335,7 @@ pub fn db_query_params(sql: &str, params: &[String]) -> Result<String, String> {
     with_db(|db| {
         let conn = db.conn()?;
         let out = block_on(async {
-            let mut stmt = conn.prepare(sql).await?;
+            let stmt = conn.prepare(sql).await?;
             let mut rows = stmt
                 .query(params_from_iter(params.iter().map(|p| p.as_str())))
                 .await?;
@@ -380,9 +431,13 @@ pub fn db_set_setting(key: String, value: String) -> Result<bool, String> {
     })
 }
 
-/// Get a setting value by key.
+/// Get a setting value by key. PIN-related keys are denied: their values
+/// (salt+hash, lockout state) must never leave Rust.
 #[frb(sync, serialize)]
 pub fn db_get_setting(key: String) -> Result<Option<String>, String> {
+    if PROTECTED_SETTING_KEYS.contains(&key.as_str()) {
+        return Err(format!("setting key is protected: {key}"));
+    }
     with_db(|db| {
         soshal_db_core::repos::settings::SettingsRepo::new(db)
             .get(&key)
@@ -390,9 +445,13 @@ pub fn db_get_setting(key: String) -> Result<Option<String>, String> {
     })
 }
 
-/// Delete a setting key.
+/// Delete a setting key. PIN-related keys are denied: deleting them would
+/// bypass the PIN lockout state machine.
 #[frb(sync, serialize)]
 pub fn db_delete_setting(key: String) -> Result<bool, String> {
+    if PROTECTED_SETTING_KEYS.contains(&key.as_str()) {
+        return Err(format!("setting key is protected: {key}"));
+    }
     with_db(|db| {
         soshal_db_core::repos::settings::SettingsRepo::new(db).delete(&key)?;
         Ok(true)
@@ -576,30 +635,28 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
     if db_dir_canon != src_dir_canon {
         return Err("restore path must be in the same directory as the database".to_string());
     }
-    // Encrypted backups (SOSHBK01 magic) are decrypted with the at-rest key
-    // into a temp file first; plaintext legacy backups pass through as-is.
-    let mut backup_file = backup_path.clone();
-    let mut encrypted = false;
+    // Only SOSHBK01-sealed backups are accepted. A plaintext DB file could
+    // be a forged store that bypasses every guard (raw-SQL, protected
+    // settings, PIN lockout) — reject it outright.
+    let mut head = [0u8; BACKUP_MAGIC.len()];
     {
         use std::io::Read;
         let mut f = std::fs::File::open(&backup_path)
             .map_err(|e| format!("cannot open backup file: {e}"))?;
-        let mut head = [0u8; BACKUP_MAGIC.len()];
-        if f.read_exact(&mut head).is_ok() && head == BACKUP_MAGIC {
-            encrypted = true;
-        }
+        f.read_exact(&mut head)
+            .map_err(|_| "backup file too small to be a Soshal backup".to_string())?;
     }
-    if encrypted {
-        let blob = std::fs::read(&backup_path)
-            .map_err(|e| format!("cannot read encrypted backup: {e}"))?;
-        let key = super::signer::signer_at_rest_key().map_err(|e| format!("at-rest key: {e}"))?;
-        let plain =
-            soshal_crypto_core::at_rest::open_at_rest_bin(&key, &blob[BACKUP_MAGIC.len()..])
-                .map_err(|e| format!("backup decrypt failed: {e}"))?;
-        let temp = format!("{backup_path}.plain");
-        std::fs::write(&temp, plain).map_err(|e| format!("temp write failed: {e}"))?;
-        backup_file = temp;
+    if head != BACKUP_MAGIC {
+        return Err("backup file is not a sealed Soshal backup (SOSHBK01)".to_string());
     }
+    let blob = std::fs::read(&backup_path)
+        .map_err(|e| format!("cannot read encrypted backup: {e}"))?;
+    let key = super::signer::signer_at_rest_key().map_err(|e| format!("at-rest key: {e}"))?;
+    let plain = soshal_crypto_core::at_rest::open_at_rest_bin(&key, &blob[BACKUP_MAGIC.len()..])
+        .map_err(|e| format!("backup decrypt failed: {e}"))?;
+    let temp = format!("{backup_path}.plain");
+    std::fs::write(&temp, plain).map_err(|e| format!("temp write failed: {e}"))?;
+    let backup_file = temp;
     // Validate SQLite magic bytes before replacing the live DB.
     const SQLITE_MAGIC: &[u8] = b"SQLite format 3\x00";
     let mut header = [0u8; 16];
@@ -609,12 +666,14 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
     f.read_exact(&mut header)
         .map_err(|_| "backup file too small to be a valid SQLite database".to_string())?;
     if header != SQLITE_MAGIC {
-        if encrypted {
-            let _ = std::fs::remove_file(&backup_file);
-        }
+        let _ = std::fs::remove_file(&backup_file);
         return Err("backup file is not a valid SQLite 3 database".to_string());
     }
     drop(f);
+    // Stale WAL/SHM from a previous live DB must not survive the swap: a
+    // leftover -wal could resurrect old data or corrupt the restored file.
+    let _ = std::fs::remove_file(format!("{dst}-wal"));
+    let _ = std::fs::remove_file(format!("{dst}-shm"));
     *DB.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let bak = format!("{dst}.bak");
     // Preserve the current live DB as .bak for rollback — but only when it
@@ -630,17 +689,13 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
     }
     if let Err(e) = std::fs::copy(&backup_file, &dst) {
         // re-open the original db so the app stays usable
-        if encrypted {
-            let _ = std::fs::remove_file(&backup_file);
-        }
+        let _ = std::fs::remove_file(&backup_file);
         if let Ok(db) = Database::open(&dst) {
             *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
         }
         return Err(format!("restore copy failed: {e}"));
     }
-    if encrypted {
-        let _ = std::fs::remove_file(&backup_file);
-    }
+    let _ = std::fs::remove_file(&backup_file);
     match Database::open(&dst) {
         Ok(db) => {
             if let Err(e) = db.migrate() {
@@ -652,7 +707,19 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
                 }
                 return Err(format!("restore migrate failed: {e}"));
             }
+            // Post-restore integrity: a forged `_migrations` table (max
+            // version >= SCHEMA_VERSION) makes migrate() bail without
+            // touching anything, so verify the core schema actually exists.
+            if let Err(e) = verify_restored_schema(&db) {
+                drop(db);
+                let _ = std::fs::copy(&bak, &dst);
+                if let Ok(db) = Database::open(&dst) {
+                    *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+                }
+                return Err(e);
+            }
             *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+            let _ = std::fs::remove_file(&bak);
             Ok(dst)
         }
         Err(e) => {
@@ -668,6 +735,34 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
             Err(format!("restore open failed: {e}"))
         }
     }
+}
+
+/// Post-restore integrity check: the required core tables must exist. A
+/// forged backup whose `_migrations` table claims the latest version would
+/// otherwise skip migration entirely.
+fn verify_restored_schema(db: &Database) -> Result<(), String> {
+    const REQUIRED: [&str; 5] = ["posts", "users", "zaps", "outbox_queue", "_migrations"];
+    let conn = db.conn().map_err(|e| format!("verify conn: {e}"))?;
+    let present = block_on(async {
+        let mut rows = conn
+            .query(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN (?,?,?,?,?)",
+                REQUIRED.map(|n| n.to_string()),
+            )
+            .await
+            .map_err(|e| format!("verify query: {e}"))?;
+        let row = rows.next().await.map_err(|e| format!("verify rows: {e}"))?;
+        let row = row.ok_or("verify no row")?;
+        row.get::<i64>(0).map_err(|e| format!("verify get: {e}"))
+    })
+    .map_err(|e: String| e)?;
+    if present != REQUIRED.len() as i64 {
+        return Err(format!(
+            "restored backup is missing required tables ({present}/{} present)",
+            REQUIRED.len()
+        ));
+    }
+    Ok(())
 }
 
 /// Run a closure against the shared database. Used by domain modules
@@ -1001,6 +1096,30 @@ mod tests {
             )
             .is_err(),
             "raw SQL must not INSERT (write path is db_execute_params)"
+        );
+        // Blacklist bypass attempts: SQLite treats comments and \t\n\r as
+        // token separators — normalized input must still be caught.
+        for evil in [
+            "drop/**/table users",
+            "insert\tinto users (pubkey) values ('x')",
+            "attach\nDATABASE '/tmp/x.db' AS x",
+            "create--\n table evil (id int)",
+            "pragma\x0bjournal_mode=delete",
+            "DROP TABLE users; DROP TABLE posts",
+        ] {
+            assert!(
+                db_execute_raw(evil.to_string()).is_err(),
+                "bypass attempt must be rejected: {evil}"
+            );
+        }
+        // get/delete of protected keys must be denied too.
+        assert!(
+            db_get_setting("pin_hash".to_string()).is_err(),
+            "pin_hash must not be readable via db_get_setting"
+        );
+        assert!(
+            db_delete_setting("pin_lockout_state".to_string()).is_err(),
+            "lockout state must not be deletable via db_delete_setting"
         );
         assert!(
             db_execute_params(

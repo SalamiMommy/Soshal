@@ -19,7 +19,7 @@ pub fn escape_regex(s: &str) -> String {
 pub fn is_match(pattern: &str, text: &str) -> bool {
     let cache = REGEX_CACHE.get_or_init(|| Mutex::new(VecDeque::new()));
     let re = {
-        let mut guard = cache.lock().unwrap();
+        let mut guard = cache.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(pos) = guard.iter().position(|(p, _)| p == pattern) {
             let re = guard.remove(pos).expect("position from iter").1;
             guard.push_back((pattern.to_string(), re.clone()));

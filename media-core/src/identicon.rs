@@ -61,7 +61,7 @@ pub fn identicon_png(seed: &str) -> Vec<u8> {
         })
     });
     {
-        let guard = cache.lock().unwrap();
+        let guard = cache.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(png) = guard.map.get(seed) {
             return png.clone();
         }
@@ -124,7 +124,7 @@ pub fn identicon_png(seed: &str) -> Vec<u8> {
             Err(_) => FALLBACK_PNG.to_vec(),
         };
     {
-        let mut guard = cache.lock().unwrap();
+        let mut guard = cache.lock().unwrap_or_else(|p| p.into_inner());
         if !guard.map.contains_key(seed) {
             if guard.order.len() >= CACHE_CAP {
                 if let Some(oldest) = guard.order.pop_front() {

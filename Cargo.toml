@@ -68,7 +68,7 @@ ml-kem = { version = "0.3.2", features = ["zeroize", "getrandom"] }
 ml-dsa = "0.1.1"
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 # Turso libSQL embedded SQLite database engine & edge replication
-libsql = { version = "0.6", features = ["replication", "serde"] }
+libsql = { version = "0.10.0-pre.4", default-features = false, features = ["serde", "core"] }
 geohash = "0.13"
 rand = "0.8"
 rand_core = "0.10"

@@ -99,7 +99,7 @@ impl<'a> GroupThreadRepo<'a> {
             }
         };
         let sql = format!(
-            "SELECT {} FROM group_threads t WHERE t.group_id = ?1 ORDER BY {}",
+            "SELECT {} FROM group_threads t WHERE t.group_id = ?1 ORDER BY {} LIMIT 5000",
             Self::COLUMNS,
             order
         );

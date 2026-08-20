@@ -117,6 +117,8 @@ async fn replay_outbox(db: &Database, client: &Client) {
     if !completed.is_empty() {
         let _ = crate::outbox::mark_outbox_items_completed(db, &completed);
     }
+    // Bounded queue growth: keep the newest 500 settled rows per pass.
+    let _ = crate::outbox::prune_outbox_settled(db, 500);
 }
 
 /// Exponential retry delay (seconds) for outbox failures, capped at 256 s.

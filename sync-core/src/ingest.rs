@@ -9,7 +9,32 @@ use nostr::event::{Event, Kind};
 use nostr::key::PublicKey;
 use nostr::nips::nip19::ToBech32;
 use sha2::{Digest, Sha256};
-use soshal_common_core::consts::{KIND_EVENT_RSVP, KIND_REACTION};
+use soshal_common_core::consts::{
+    KIND_EVENT_RSVP, KIND_MENTION, KIND_MINIS, KIND_PROFILE, KIND_REACTION, KIND_STORY, KIND_SWAP,
+    KIND_LISTING, KIND_ORDER, KIND_EVENT, KIND_LIVE, KIND_CUSTOM_PROFILE, KIND_GUESTBOOK,
+    KIND_GUESTBOOK_APPROVAL,
+};
+
+/// Kinds permitted to land in the `posts` table. Everything else arriving on
+/// the relay wire (legacy NIP-04, unknown/junk kinds) is dropped at ingest.
+const POST_KIND_ALLOWLIST: &[u16] = &[
+    1,
+    KIND_REACTION,
+    1059,
+    KIND_GUESTBOOK,
+    KIND_GUESTBOOK_APPROVAL,
+    KIND_STORY,
+    KIND_PROFILE,
+    KIND_CUSTOM_PROFILE,
+    KIND_LIVE,
+    KIND_LISTING,
+    KIND_ORDER,
+    KIND_MINIS,
+    KIND_EVENT,
+    KIND_EVENT_RSVP,
+    KIND_SWAP,
+    KIND_MENTION,
+];
 use soshal_db_core::error::DbError;
 use soshal_db_core::repos::bookmark::{BookmarkRepo, BookmarkRow};
 use soshal_db_core::repos::post::{PostRepo, PostRow};
@@ -40,6 +65,20 @@ fn p_tags(event: &Event) -> Vec<String> {
         .filter(|t| t.kind() == "p")
         .filter_map(|t| t.content().map(|c| c.to_string()))
         .collect()
+}
+
+/// Order-preserving union of two comma-separated pubkey lists.
+fn merge_pubkey_lists(stored: &str, incoming: &str) -> String {
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+    for pk in stored.split(',').chain(incoming.split(',')) {
+        let pk = pk.trim();
+        if pk.is_empty() || !seen.insert(pk.to_string()) {
+            continue;
+        }
+        out.push(pk.to_string());
+    }
+    out.join(",")
 }
 
 fn has_p_tag(event: &Event, pubkey: &str) -> bool {
@@ -274,7 +313,10 @@ async fn handle_impl(
                     contact_pubkeys: String::new(),
                     relay_list: String::new(),
                 });
-            row.contact_pubkeys = p_tags(event).join(",");
+            // Merge: kind-3 lists arrive per-relay and are partial views;
+            // union with the stored list so contacts seen on other relays
+            // are never dropped by a narrower list.
+            row.contact_pubkeys = merge_pubkey_lists(&row.contact_pubkeys, &p_tags(event).join(","));
             repo.upsert_in(t, &row).await?;
         }
         Kind::ZapRequest => {
@@ -425,9 +467,24 @@ async fn handle_impl(
                 });
             }
         }
+        Kind::EventDeletion => {
+            // NIP-09 tombstone. Only the deleting author's own rows are
+            // cleared — a relay replaying a stale delete must not hide a
+            // re-issued post by someone else. Tombstone-wins: once flagged,
+            // POST_UPSERT_SQL refuses to resurrect the row.
+            let author = event.pubkey.to_hex();
+            for eid in e_tags(event) {
+                let _ = PostRepo::new(db).mark_deleted_in(t, &eid, &author).await;
+            }
+        }
         _ => {
-            if let Some(row) = post_row(event) {
-                PostRepo::new(db).upsert_in(t, &row).await?;
+            // Kind allowlist: only kinds the app models may land in `posts`.
+            // Anything else (NIP-04 DM legacy, unknown junk, hostile test
+            // events) is dropped instead of being cached as a feed row.
+            if POST_KIND_ALLOWLIST.contains(&event.kind.as_u16()) {
+                if let Some(row) = post_row(event) {
+                    PostRepo::new(db).upsert_in(t, &row).await?;
+                }
             }
         }
     }
@@ -464,8 +521,10 @@ pub fn handle_batch(
                     let _ = handle_impl(db, my_pubkey, event, tx, true, &t).await;
                 }
                 _ => {
-                    if let Some(row) = post_row(event) {
-                        rows.push(row);
+                    if POST_KIND_ALLOWLIST.contains(&event.kind.as_u16()) {
+                        if let Some(row) = post_row(event) {
+                            rows.push(row);
+                        }
                     }
                 }
             }
@@ -548,8 +607,8 @@ mod tests {
         }
         let mut data = vec![0u8]; // version 0
         data.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0]); // 35-bit timestamp
-        data.extend_from_slice(&[0, 23]); // field type 'h' = description hash
-        data.extend_from_slice(&[0, 52]); // 52 chars
+        data.push(23); // 1 base32 word: field type 23 ('h')
+        data.extend_from_slice(&[1, 20]); // 2 base32 words: field length 52 (1 * 32 + 20)
         data.extend_from_slice(&words);
         bech32::encode::<bech32::Bech32>(bech32::Hrp::parse("lnbc10n").unwrap(), &data).unwrap()
     }
@@ -932,7 +991,8 @@ mod tests {
         );
         assert_eq!(row.name.as_deref(), Some("alice"));
 
-        // Re-ingest second contact list for same user: merge replaces follows.
+        // Re-ingest second contact list for same user: union merges, so the
+        // follow set is never narrowed by a partial relay view.
         let cl2 = signed_event_with_tags(
             &keys,
             Kind::ContactList,
@@ -941,7 +1001,15 @@ mod tests {
         );
         handle(&db, "", &cl2, &tx).unwrap();
         let row = UserRepo::new(&db).get_by_pubkey(&pk).unwrap().unwrap();
-        assert_eq!(row.contact_pubkeys, "c".repeat(64));
+        assert_eq!(
+            row.contact_pubkeys,
+            format!(
+                "{},{},{}",
+                "a".repeat(64),
+                "b".repeat(64),
+                "c".repeat(64)
+            )
+        );
         assert_eq!(row.name.as_deref(), Some("alice"));
     }
 

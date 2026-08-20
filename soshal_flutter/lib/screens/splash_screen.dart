@@ -8,6 +8,7 @@ import '../services/settings_service.dart';
 import '../services/shell_service.dart';
 import '../services/signer_service.dart';
 import '../services/sync_service.dart';
+import '../services/ffi_bridge.dart';
 import '../services/error_log.dart';
 
 /// Splash Screen
@@ -28,6 +29,12 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _initializeApp() async {
     try {
+      if (!mounted) return;
+
+      // Serialize behind the app-root init: every DB read below must wait
+      // for db_init or the global handle is still None ("database not
+      // initialized" race).
+      await FfiBridge.ensureDatabaseInitialized();
       if (!mounted) return;
 
       // Load session

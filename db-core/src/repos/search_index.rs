@@ -42,7 +42,7 @@ impl<'a> SearchIndexRepo<'a> {
         // the posts rowid (matching the posts_ai trigger), everything else
         // gets a deterministic negative rowid. Auto-assigned rowids collide
         // with trigger inserts and surface as bare `constraint failed`.
-        let mut stmt = tx
+        let stmt = tx
             .prepare(
                 "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content) SELECT COALESCE((SELECT rowid FROM posts WHERE id = ?1), ?2), ?1, ?3, ?4",
             )

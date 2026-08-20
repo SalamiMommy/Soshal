@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 use nostr::event::{Event, EventBuilder, FinalizeUnsignedEvent, SignEvent, UnsignedEvent};
 use nostr::key::{Keys, PublicKey};
-use sha2::Digest;
 use zeroize::Zeroize;
 
 /// Narrow signing surface shared by in-process and remote (key agent)
@@ -104,14 +103,15 @@ fn derive_shared_secret(sk: &nostr::key::SecretKey, pk: &PublicKey) -> Result<[u
     // SharedSecret hash is SHA-256 of the *compressed* point, which embeds the
     // parity bit — that would make the derived key depend on each party's y
     // parity (lost in x-only pubkeys) and break encryption ~half the time.
+    //
+    // NIP-44 specifies the RAW x-coordinate as the ECDH output (HKDF input),
+    // NOT a hashed/derived value: `ecdh = X coordinate of (sk * pk)`. Hashing
+    // the coordinate (a previous "uniformization") deviates from the spec and
+    // breaks interop with every other NIP-44 implementation, so the raw
+    // x-coordinate is returned verbatim (parity is pinned to Even).
     let mut xy = ecdh::shared_secret_point(&secp_pk, sk);
-    // Uniformize: SHA-256 of the x-coordinate. Hashing removes the low-order
-    // point / structure the raw x-coordinate could carry, while staying
-    // parity-independent (the x-only pubkey never re-introduces the y-parity
-    // dependence the raw compressed-point hash would have).
-    let digest = sha2::Sha256::digest(&xy[..32]);
     let mut key = [0u8; 32];
-    key.copy_from_slice(&digest);
+    key.copy_from_slice(&xy[..32]);
     xy.zeroize();
     Ok(key)
 }

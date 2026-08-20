@@ -218,7 +218,7 @@ impl LinkManager {
         let before = links.len();
 
         links.retain(|dest, link| {
-            if now - link.last_activity > LINK_TIMEOUT_SECS {
+            if now.saturating_sub(link.last_activity) > LINK_TIMEOUT_SECS {
                 self.crypto.remove(&link_peer_id(dest));
                 false
             } else {

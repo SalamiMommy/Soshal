@@ -331,6 +331,7 @@ pub fn events_rsvp(
     user_pubkey: String,
     rsvp_status: String,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     if !valid_rsvp(&rsvp_status) {
         return Err("rsvp_status must be accepted/declined/pending".to_string()).into();
     }
@@ -372,8 +373,30 @@ pub fn events_rsvp(
         .map_err(soshal_db_core::error::DbError::Migration)?;
         Ok(())
     })?;
+    // RSVP state row keyed by (user, EVENT): a status-only id (`rsvp:u:going`)
+    // would collide across events — event B's RSVP would overwrite event A's
+    // row and stale accepted rows would double-count attendees.
+    let rsvp_id = format!("rsvp:{}:{}:{}", user_pubkey, event_id, rsvp_status);
+    // Clear any previous status row for this (user, event) so a changed RSVP
+    // cannot leave a stale row (double-counts) behind.
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let _ = soshal_db_core::block_on(async {
+            let _ = conn
+                .execute(
+                    "DELETE FROM posts WHERE id LIKE ?1 AND id != ?2",
+                    libsql::params!(
+                        format!("rsvp:{user_pubkey}:{event_id}:%"),
+                        rsvp_id.clone()
+                    ),
+                )
+                .await;
+            Ok::<(), soshal_db_core::error::DbError>(())
+        });
+        Ok(())
+    })?;
     super::db::upsert_post_row(
-        format!("rsvp:{}:{}", user_pubkey, rsvp_status),
+        rsvp_id,
         user_pubkey,
         rsvp_status,
         KIND_EVENT_RSVP as i64,
@@ -393,6 +416,7 @@ pub fn events_check_in(
     latitude: f64,
     longitude: f64,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     let event: EventInfo = serde_json::from_str(&events_get_event(event_id.clone())?)
         .map_err(|e| format!("parse event: {e}"))?;
     let now = soshal_common_core::format::now_secs() as u64;

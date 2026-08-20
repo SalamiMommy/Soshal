@@ -139,7 +139,10 @@ void main() {
     await tester.tap(find.text('Publish'));
     await tester.pump();
 
-    expect(find.text('Note rejected by content validator'), findsOneWidget);
+    expect(
+        find.text(
+            'Post blocked: content does not comply with moderation policy'),
+        findsOneWidget);
     expect(api.callCount('crateFfiFeedFeedPublishTextNote'), 0);
     expect(find.text('Publish'), findsOneWidget); // composer stays open
 

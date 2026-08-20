@@ -44,7 +44,12 @@ const SPAM_PATTERNS: &[SpamPattern] = &[
         weight: 0.85,
     },
     SpamPattern {
-        pattern: r"(?i)\b(?:connect|validate|restore)\s+(?:your\s+)?(?:wallet|metamask|phantom|trust\s*wallet|seed\s*phrase|private\s*key)\b",
+        pattern: r"(?i)\b(?:validate|restore|verify|input|enter|import)\s+(?:your\s+)?(?:seed\s*phrase|private\s*key|secret\s*recovery|mnemonic)\b",
+        reason: "wallet_drainer_phishing",
+        weight: 1.0,
+    },
+    SpamPattern {
+        pattern: r"(?i)\b(?:connect|unlock)\s+(?:your\s+)?(?:wallet|metamask|phantom|trust\s*wallet)\s+(?:to\s+(?:claim|receive|verify|get|double|mint)|and\s+(?:claim|verify|receive|get|validate))\b",
         reason: "wallet_drainer_phishing",
         weight: 1.0,
     },

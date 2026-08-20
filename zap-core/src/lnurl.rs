@@ -33,6 +33,15 @@ pub fn validate_lud16_parts(lud16: &str) -> Result<(&str, &str), String> {
     if user.len() > 64 {
         return Err("invalid lud16: user part too long".into());
     }
+    if !domain
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b':')
+    {
+        return Err("invalid lud16: domain contains disallowed characters".into());
+    }
+    if domain.len() > 255 || domain.starts_with('.') || domain.ends_with('.') {
+        return Err("invalid lud16: domain invalid".into());
+    }
     Ok((user, domain))
 }
 

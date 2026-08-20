@@ -238,7 +238,7 @@ fn ingest_dm_authored_by_me_emits_update() {
 }
 
 #[test]
-fn ingest_custom_kind_cached_as_post() {
+fn ingest_unknown_kind_dropped() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let event = soshal_test_util::signed_event_tagged(
@@ -251,9 +251,59 @@ fn ingest_custom_kind_cached_as_post() {
     handle(&db, "", &event, &tx).unwrap();
     let row = PostRepo::new(&db)
         .get_by_id(&event.id.to_hex())
+        .unwrap();
+    assert!(row.is_none(), "unknown kinds must not be cached as posts");
+}
+
+#[test]
+fn ingest_delete_event_tombstones_own_posts_only() {
+    let db = soshal_test_util::test_db();
+    let keys = Keys::generate();
+    let victim = Keys::generate();
+    let note = soshal_test_util::signed_event_tagged(
+        &keys,
+        Kind::TextNote,
+        "hello",
+        vec![],
+    );
+    let (tx, _rx) = channel();
+    handle(&db, "", &note, &tx).unwrap();
+
+    // A delete event authored by someone else must NOT clear the post.
+    let foreign_delete = soshal_test_util::signed_event_tagged(
+        &victim,
+        Kind::EventDeletion,
+        "",
+        vec![vec!["e".to_string(), note.id.to_hex()]],
+    );
+    handle(&db, "", &foreign_delete, &tx).unwrap();
+    let row = PostRepo::new(&db)
+        .get_by_id(&note.id.to_hex())
         .unwrap()
         .unwrap();
-    assert_eq!(row.content, r#"{"t":"group_dist","groupId":"group-42"}"#);
+    assert!(!row.is_deleted, "foreign delete must not tombstone");
+
+    // The author's own NIP-09 delete clears it…
+    let own_delete = soshal_test_util::signed_event_tagged(
+        &keys,
+        Kind::EventDeletion,
+        "",
+        vec![vec!["e".to_string(), note.id.to_hex()]],
+    );
+    handle(&db, "", &own_delete, &tx).unwrap();
+    let row = PostRepo::new(&db)
+        .get_by_id(&note.id.to_hex())
+        .unwrap()
+        .unwrap();
+    assert!(row.is_deleted, "author delete must tombstone");
+
+    // …and a relay replay of the same note must NOT resurrect it.
+    handle(&db, "", &note, &tx).unwrap();
+    let row = PostRepo::new(&db)
+        .get_by_id(&note.id.to_hex())
+        .unwrap()
+        .unwrap();
+    assert!(row.is_deleted, "tombstone-wins: replay must not resurrect");
 }
 
 #[test]

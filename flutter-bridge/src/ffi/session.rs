@@ -131,6 +131,8 @@ pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
     if let Some(session) = session_lock.as_mut() {
         if session.accounts.iter().any(|a| a.pubkey == pubkey) {
             session.active_pubkey = Some(pubkey);
+            // Invalidate unlocked signer keys and secret caches from previous account
+            let _ = super::signer::signer_lock();
             Ok(true).into()
         } else {
             Err("Account not found".to_string()).into()

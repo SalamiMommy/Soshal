@@ -238,6 +238,59 @@ void main() {
       expect(feed.isPinned('post1'), false);
     });
 
+    test('validateNote delegates to FFI', () {
+      final feed = FeedService();
+      api.stubBool('crateFfiFeedFeedValidateNote', true);
+      expect(feed.validateNote('clean content'), isTrue);
+
+      api.stubBool('crateFfiFeedFeedValidateNote', false);
+      expect(feed.validateNote('bad content'), isFalse);
+    });
+
+    test('insertLivePost filters moderated content', () {
+      final feed = FeedService();
+      api.stubBool('crateFfiFeedFeedValidateNote', false);
+      final badPost = FeedPost(
+        eventId: 'bad1',
+        pubkey: 'pk1',
+        content: 'selling cp pack',
+        createdAt: 1000,
+        reactions: 0,
+        replies: 0,
+        reposts: 0,
+        liked: false,
+      );
+      feed.insertLivePost(badPost);
+      expect(feed.posts.isEmpty, isTrue);
+
+      api.stubBool('crateFfiFeedFeedValidateNote', true);
+      final goodPost = FeedPost(
+        eventId: 'good1',
+        pubkey: 'pk1',
+        content: 'Clean post',
+        createdAt: 1000,
+        reactions: 0,
+        replies: 0,
+        reposts: 0,
+        liked: false,
+      );
+      feed.insertLivePost(goodPost);
+      expect(feed.posts.length, 1);
+      expect(feed.posts.first.eventId, 'good1');
+    });
+
+    test('publishTextNote and publishReply pass content', () async {
+      final feed = FeedService();
+      api.stubString('crateFfiFeedFeedPublishTextNote', 'signed_event_json');
+      api.stubString('crateFfiFeedFeedPublishReply', 'signed_reply_json');
+
+      final res1 = await feed.publishTextNote('hello', [['t', 'rust']], 'pk1');
+      expect(res1, 'signed_event_json');
+
+      final res2 = await feed.publishReply('reply text', 'root1', 'parent1', 'pk1');
+      expect(res2, 'signed_reply_json');
+    });
+
     test('FeedPost model parses and serializes', () {
       const json = {
         'id': 'p1',
@@ -253,3 +306,4 @@ void main() {
     });
   });
 }
+

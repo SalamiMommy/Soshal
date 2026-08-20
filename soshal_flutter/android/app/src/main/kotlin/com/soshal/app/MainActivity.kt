@@ -1,4 +1,4 @@
-package com.example.soshal_flutter
+package com.soshal.app
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine

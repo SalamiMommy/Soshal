@@ -16,6 +16,11 @@ use soshal_network_core::transport::{TransportKind, TransportMode, I2P_SOCKS_POR
 use std::net::SocketAddr;
 use std::sync::{Mutex, OnceLock};
 
+/// Max events handed back from a single `network_query_events` call. Relay
+/// fetch results are untrusted and unbounded by nature; capping protects the
+/// bridge/UI from hostile-relay flooding.
+const QUERY_EVENTS_CAP: usize = 500;
+
 /// Shared nostr client. Holds no keys — events published through here must
 /// already be signed (`signer_sign_unsigned`).
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
@@ -282,10 +287,14 @@ pub async fn network_query_events(filter_json: String) -> Result<String, String>
         match client.fetch_events(vec![filter]).await {
             // Relay data is untrusted: only signature-valid events may cross
             // the FFI boundary (forged events are dropped, mirroring
-            // ingest's verified_events policy).
+            // ingest's verified_events policy). Result is capped so a
+            // hostile relay flooding the filter can't OOM the bridge.
             Ok(events) => {
-                let verified: Vec<&nostr::event::Event> =
-                    events.iter().filter(|e| e.verify().is_ok()).collect();
+                let verified: Vec<&nostr::event::Event> = events
+                    .iter()
+                    .filter(|e| e.verify().is_ok())
+                    .take(QUERY_EVENTS_CAP)
+                    .collect();
                 match serde_json::to_string(&verified) {
                     Ok(json) => Ok(json).into(),
                     Err(e) => Err(format!("serialize: {e}")).into(),

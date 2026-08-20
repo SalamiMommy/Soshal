@@ -1,7 +1,7 @@
 # ProGuard / R8 code shrinking rules for Soshal Flutter App & Rust FFI Bridge
 
 # Keep Flutter & flutter_rust_bridge generated classes and native bindings
--keep class com.example.soshal_flutter.** { *; }
+-keep class com.soshal.app.** { *; }
 -keepclassmembers class * {
     native <methods>;
 }

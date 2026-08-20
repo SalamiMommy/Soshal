@@ -79,7 +79,7 @@ pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
             "SELECT id, kind, payload_json FROM tx_nodes WHERE id IN ({})",
             placeholders.join(", ")
         );
-        let mut stmt = tx.prepare(&sql).await?;
+        let stmt = tx.prepare(&sql).await?;
         let mut rows = stmt
             .query(params_from_iter(order.iter().map(String::as_str)))
             .await?;
@@ -122,7 +122,7 @@ pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
 
 fn load_edges(conn: &Connection) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
     block_on(async {
-        let mut stmt = conn
+        let stmt = conn
             .prepare("SELECT parent_id, child_id FROM tx_edges")
             .await
             .map_err(|e| format!("edges prepare: {e}"))?;
@@ -225,7 +225,7 @@ async fn set_status_tx(conn: &Connection, id: &str, status: &str) -> Result<(), 
 pub fn tx_statuses(db: &Database) -> Result<Vec<TxNode>, String> {
     let conn = db.conn().map_err(|e| e.to_string())?;
     block_on(async {
-        let mut stmt = conn
+        let stmt = conn
             .prepare("SELECT id, kind, payload_json, status, created_at FROM tx_nodes ORDER BY created_at DESC LIMIT 200")
             .await
             .map_err(|e| e.to_string())?;

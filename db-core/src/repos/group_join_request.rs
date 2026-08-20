@@ -29,13 +29,13 @@ impl<'a> GroupJoinRequestRepo<'a> {
         match status {
             Some(s) => crate::query::query(
                 &conn,
-                "SELECT group_id, pubkey, status, requested_at FROM group_join_requests WHERE group_id=?1 AND status=?2 ORDER BY requested_at ASC",
+                "SELECT group_id, pubkey, status, requested_at FROM group_join_requests WHERE group_id=?1 AND status=?2 ORDER BY requested_at ASC LIMIT 2000",
                 params![group_id, s],
                 Self::map_row,
             ),
             None => crate::query::query(
                 &conn,
-                "SELECT group_id, pubkey, status, requested_at FROM group_join_requests WHERE group_id=?1 ORDER BY requested_at ASC",
+                "SELECT group_id, pubkey, status, requested_at FROM group_join_requests WHERE group_id=?1 ORDER BY requested_at ASC LIMIT 2000",
                 params![group_id],
                 Self::map_row,
             ),

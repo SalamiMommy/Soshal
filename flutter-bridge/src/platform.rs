@@ -11,9 +11,9 @@ mod android {
     use jni::objects::{JObject, JString};
     use jni::{JNIEnv, JavaVM};
 
-    const PLATFORM_BRIDGE_CLASS: &str = "com/example/soshal_flutter/PlatformBridge";
+    const PLATFORM_BRIDGE_CLASS: &str = "com/soshal/app/PlatformBridge";
     const MAIN_ACTIVITY_FIELD: &str = "activity";
-    const MAIN_ACTIVITY_SIG: &str = "Lcom/example/soshal_flutter/MainActivity;";
+    const MAIN_ACTIVITY_SIG: &str = "Lcom/soshal/app/MainActivity;";
 
     type JniGetCreatedJavaVMs =
         unsafe extern "C" fn(*mut *mut jni::sys::JavaVM, i32, *mut i32) -> i32;
@@ -209,11 +209,11 @@ mod android {
         sig: &str,
         args: &[jni::objects::JValue<'_, '_>],
     ) -> Result<jni::objects::JValueOwned<'local>, JniErr> {
-        let class = env.find_class("com/example/soshal_flutter/LiveRecorder")?;
+        let class = env.find_class("com/soshal/app/LiveRecorder")?;
         let instance = env.get_static_field(
             class,
             "INSTANCE",
-            "Lcom/example/soshal_flutter/LiveRecorder;",
+            "Lcom/soshal/app/LiveRecorder;",
         )?;
         let obj = match instance {
             jni::objects::JValueOwned::Object(o) if !o.is_null() => o,
@@ -310,7 +310,7 @@ mod android {
         .map_err(|e| e.0)
     }
 
-    const DAEMON_SERVICE_CLASS: &str = "com/example/soshal_flutter/DaemonForegroundService";
+    const DAEMON_SERVICE_CLASS: &str = "com/soshal/app/DaemonForegroundService";
 
     /// Start the daemon foreground service (keeps the app process — and the
     /// i2pd/freenet/rnsd child processes it spawned — alive while
@@ -357,7 +357,7 @@ mod android {
         let instance = env.get_static_field(
             class,
             "INSTANCE",
-            "Lcom/example/soshal_flutter/DaemonForegroundService;",
+            "Lcom/soshal/app/DaemonForegroundService;",
         )?;
         let obj = match instance {
             jni::objects::JValueOwned::Object(o) if !o.is_null() => o,
@@ -376,12 +376,12 @@ mod android {
         }
     }
 
-    const RNSD_RUNNER_CLASS: &str = "com/example/soshal_flutter/RnsdRunner";
+    const RNSD_RUNNER_CLASS: &str = "com/soshal/app/RnsdRunner";
 
     fn rnsd_runner<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, JniErr> {
         let class = env.find_class(RNSD_RUNNER_CLASS)?;
         let instance =
-            env.get_static_field(class, "INSTANCE", "Lcom/example/soshal_flutter/RnsdRunner;")?;
+            env.get_static_field(class, "INSTANCE", "Lcom/soshal/app/RnsdRunner;")?;
         match instance {
             jni::objects::JValueOwned::Object(o) if !o.is_null() => Ok(o),
             _ => Err(JniErr("RnsdRunner.INSTANCE not set".to_string())),
@@ -454,6 +454,10 @@ mod android {
             let arr = jni::objects::JObjectArray::from(array.l()?);
             if arr.is_null() {
                 return Err(JniErr("SUPPORTED_ABIS null".to_string()));
+            }
+            let len = env.get_array_length(&arr)?;
+            if len <= 0 {
+                return Err(JniErr("SUPPORTED_ABIS empty".to_string()));
             }
             let first = env.get_object_array_element(&arr, 0)?;
             let jstr = jni::objects::JString::from(first);
@@ -559,8 +563,9 @@ mod android {
         .map_err(|e| e.0)
     }
 
-    /// Any location provider enabled (GPS or network).
-    pub fn location_enabled() -> Result<bool, String> {
+    /// OS-level location services master switch (GPS or Network provider
+    /// enabled).
+    pub fn location_services_enabled() -> Result<bool, String> {
         let mut env = attach()?;
         env.with_local_frame(16, |env| -> Result<bool, JniErr> {
             let activity = activity(env)?;
@@ -573,6 +578,9 @@ mod android {
                     &[jni::objects::JValue::Object(&svc)],
                 )?
                 .l()?;
+            if manager.is_null() {
+                return Ok(false);
+            }
             for provider in ["gps", "network"] {
                 let p = env.new_string(provider)?;
                 let value = env.call_method(
@@ -613,6 +621,9 @@ mod android {
                     &[jni::objects::JValue::Object(&svc)],
                 )?
                 .l()?;
+            if manager.is_null() {
+                return Err(JniErr("batterymanager unavailable".to_string()));
+            }
             let capacity = match env.call_method(
                 &manager,
                 "getIntProperty",
@@ -651,6 +662,9 @@ mod android {
                     &[jni::objects::JValue::Object(&svc)],
                 )?
                 .l()?;
+            if manager.is_null() {
+                return Ok(false);
+            }
             match env.call_method(&manager, "isPowerSaveMode", "()Z", &[])? {
                 jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
                 _ => Err(JniErr("power save mode unreadable".to_string())),
@@ -673,6 +687,9 @@ mod android {
                     &[jni::objects::JValue::Object(&svc)],
                 )?
                 .l()?;
+            if manager.is_null() {
+                return Ok(false);
+            }
             let info = env
                 .call_method(
                     &manager,

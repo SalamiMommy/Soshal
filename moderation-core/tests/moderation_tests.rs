@@ -544,3 +544,79 @@ fn test_ai_media_buffer_classification() {
     let json = check_media_buffer_ai_json(&clean_buf, "image/jpeg", &[]);
     assert!(json.contains("\"passed\":true"));
 }
+
+#[test]
+fn test_ai_classifier_comprehensive_matrix() {
+    use soshal_moderation_core::check::check_text_ai;
+
+    // Spam variations
+    let spam1 = check_text_ai("Claim airdrop now and validate seed phrase to double your crypto");
+    assert!(spam1.is_flagged);
+    assert_eq!(spam1.primary_category.as_deref(), Some("spam"));
+
+    let spam2 = check_text_ai("Earn $5000 a day guaranteed profit working from home! DM me on telegram");
+    assert!(spam2.is_flagged);
+    assert_eq!(spam2.primary_category.as_deref(), Some("spam"));
+
+    // CSAM variations
+    let csam1 = check_text_ai("selling cp pack on darknet");
+    assert!(csam1.is_flagged);
+    assert_eq!(csam1.primary_category.as_deref(), Some("csam"));
+
+    let csam2 = check_text_ai("underage nudes collection download");
+    assert!(csam2.is_flagged);
+    assert_eq!(csam2.primary_category.as_deref(), Some("csam"));
+
+    // Gore variations
+    let gore1 = check_text_ai("graphic beheading video and cartel execution clip");
+    assert!(gore1.is_flagged);
+    assert_eq!(gore1.primary_category.as_deref(), Some("gore"));
+
+    let gore2 = check_text_ai("suicide instructions how to kill yourself");
+    assert!(gore2.is_flagged);
+    assert_eq!(gore2.primary_category.as_deref(), Some("gore"));
+
+    // Bigotry variations
+    let hate1 = check_text_ai("white power rally kill all race traitors");
+    assert!(hate1.is_flagged);
+    assert_eq!(hate1.primary_category.as_deref(), Some("bigotry"));
+
+    let hate2 = check_text_ai("gas the subhuman race");
+    assert!(hate2.is_flagged);
+    assert_eq!(hate2.primary_category.as_deref(), Some("bigotry"));
+
+    // Obfuscated bigotry evasion
+    let hate3 = check_text_ai("f\u{0430}gg\u{043E}t");
+    assert!(hate3.is_flagged);
+    assert_eq!(hate3.primary_category.as_deref(), Some("bigotry"));
+
+    // Harassment
+    let har1 = check_text_ai("i will find you and kill you leak your address");
+    assert!(har1.is_flagged);
+    assert_eq!(har1.primary_category.as_deref(), Some("harassment"));
+}
+
+#[test]
+fn test_ai_classifier_false_positive_resistance() {
+    use soshal_moderation_core::check::check_text_ai;
+
+    let clean_inputs = [
+        "Good morning everyone! Looking forward to testing the new Nostr client release.",
+        "The black and white photography exhibition was stunning.",
+        "You can connect wallet in settings if you wish to configure payment options.",
+        "The zoologist studied the monkey population in the nature reserve.",
+        "A minor accident occurred on the highway with no severe injuries reported.",
+        "Check out our open source code repository on GitHub.",
+    ];
+
+    for clean in clean_inputs {
+        let res = check_text_ai(clean);
+        assert!(
+            !res.is_flagged,
+            "False positive on clean text: \"{clean}\" -> flagged as {:?}",
+            res.primary_category
+        );
+        assert_eq!(res.primary_category, None);
+    }
+}
+

@@ -71,6 +71,7 @@ void stubThread(FakeApi api) {
   );
   api.stub('crateFfiFeedFeedPublishReply', (_) async => 'new-reply-event');
   api.stub('crateFfiFeedFeedCreateReaction', (_) async => 'reaction-event');
+  api.stubBool('crateFfiFeedFeedValidateNote', true);
 }
 
 Future<SessionService> seedSession() async {
@@ -155,6 +156,29 @@ void main() {
     await tester.tap(find.byIcon(Icons.send));
     await tester.pumpAndSettle();
 
+    expect(api.callCount('crateFfiFeedFeedPublishReply'), 0);
+  });
+
+  testWidgets('moderated reply does not publish and shows error',
+      (tester) async {
+    api.handlers.clear();
+    api.calls.clear();
+    stubSession(api);
+    stubThread(api);
+    api.stubBool('crateFfiFeedFeedValidateNote', false);
+
+    await pumpThread(tester, session: await seedSession());
+
+    await tester.enterText(find.byType(TextField), 'bad content');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(
+        find.textContaining(
+            'Reply blocked: content does not comply with moderation policy',
+            findRichText: true),
+        findsOneWidget);
     expect(api.callCount('crateFfiFeedFeedPublishReply'), 0);
   });
 

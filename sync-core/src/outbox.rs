@@ -124,7 +124,7 @@ pub fn fetch_pending_outbox_items_filtered(
              ORDER BY created_at ASC
              LIMIT ?2"
         };
-        let mut stmt = conn.prepare(sql).await.map_err(|e| e.to_string())?;
+        let stmt = conn.prepare(sql).await.map_err(|e| e.to_string())?;
 
         let mut rows = stmt
             .query(params![now_secs, limit as i64])
@@ -222,6 +222,26 @@ pub fn mark_outbox_items_completed(db: &Database, ids: &[String]) -> Result<(), 
     ))
     .map_err(|e| format!("batch outbox complete: {e}"))?;
     Ok(())
+}
+
+/// Prune settled outbox rows (completed / failed) that are no longer needed.
+/// Keeps the newest `keep_latest` settled rows and drops everything older,
+/// bounding queue growth for long-running installs. Returns rows removed.
+pub fn prune_outbox_settled(db: &Database, keep_latest: u32) -> Result<u64, String> {
+    let conn = db.conn().map_err(|e| e.to_string())?;
+    let deleted = block_on(conn.execute(
+        "DELETE FROM outbox_queue
+         WHERE status IN ('completed', 'failed')
+           AND id NOT IN (
+             SELECT id FROM outbox_queue
+             WHERE status IN ('completed', 'failed')
+             ORDER BY created_at DESC
+             LIMIT ?1
+           )",
+        params![keep_latest as i64],
+    ))
+    .map_err(|e| format!("prune outbox: {e}"))?;
+    Ok(deleted)
 }
 
 #[cfg(test)]

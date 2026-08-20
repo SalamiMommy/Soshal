@@ -1,4 +1,4 @@
-package com.example.soshal_flutter
+package com.soshal.app
 
 /**
  * Static platform handles for the Rust bridge (jni). Holds only the

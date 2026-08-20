@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 /// Input for [`build_key_distribution_content`].
 #[derive(Deserialize)]
 pub struct BuildKeyDistInput {
-    #[serde(rename = "groupId", default)]
+    #[serde(rename = "groupId", alias = "group_id", default)]
     pub group_id: String,
-    #[serde(rename = "sharedKey", default)]
+    #[serde(rename = "sharedKey", alias = "shared_key", default)]
     pub shared_key: String,
-    #[serde(rename = "sharedPubkey", default)]
+    #[serde(rename = "sharedPubkey", alias = "shared_pubkey", default)]
     pub shared_pubkey: String,
-    #[serde(rename = "pqcCt", default)]
+    #[serde(rename = "pqcCt", alias = "pqc_ct", default)]
     pub pqc_ct: String,
 }
 

@@ -602,10 +602,11 @@ fn test_marketplace_order_escrow_lifecycle() {
     assert_eq!(by_listing["id"], escrow_id);
     assert!(marketplace::marketplace_delete_listing(listing_id, seller.clone()).is_err());
     assert!(marketplace::marketplace_release_escrow(escrow_id.clone(), seller.clone()).is_err());
+    unlock(&seller_secret);
     assert!(marketplace::marketplace_resolve_escrow(
         escrow_id.clone(),
         "mediator".to_string(),
-        "".to_string()
+        seller.clone()
     )
     .unwrap());
     let escrow: serde_json::Value =
@@ -626,7 +627,7 @@ fn test_marketplace_order_escrow_lifecycle() {
     .is_err());
     assert!(marketplace::marketplace_dispute_escrow(
         escrow2.clone(),
-        "".to_string(),
+        seller.clone(),
         "bad item".to_string()
     )
     .unwrap());
@@ -643,6 +644,7 @@ fn test_marketplace_order_escrow_lifecycle() {
         "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id='{escrow3}'"
     ))
     .unwrap();
+    unlock(&seller_secret);
     assert!(marketplace::marketplace_release_escrow(escrow3.clone(), seller).unwrap());
     let escrow: serde_json::Value =
         serde_json::from_str(&marketplace::marketplace_get_escrow(escrow3).unwrap()).unwrap();

@@ -1,4 +1,4 @@
-package com.example.soshal_flutter
+package com.soshal.app
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -26,8 +26,8 @@ import android.os.IBinder
  * in flutter-bridge/src/platform.rs), mirroring the LiveRecorder pattern.
  */
 object DaemonForegroundService {
-    const val SERVICE_ACTION_START = "com.example.soshal_flutter.DAEMON_SERVICE_START"
-    const val SERVICE_ACTION_STOP = "com.example.soshal_flutter.DAEMON_SERVICE_STOP"
+    const val SERVICE_ACTION_START = "com.soshal.app.DAEMON_SERVICE_START"
+    const val SERVICE_ACTION_STOP = "com.soshal.app.DAEMON_SERVICE_STOP"
 
     private const val NOTIFICATION_ID = 3001
     private const val CHANNEL_ID = "daemons"

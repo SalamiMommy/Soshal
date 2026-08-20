@@ -60,9 +60,20 @@ class _ThreadScreenState extends State<ThreadScreen> {
   Future<void> _sendReply() async {
     final text = _replyController.text.trim();
     if (text.isEmpty) return;
+    final feed = context.read<FeedService>();
+    if (!feed.validateNote(text)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: SelectableText(
+                'Reply blocked: content does not comply with moderation policy'),
+          ),
+        );
+      }
+      return;
+    }
     setState(() => _sending = true);
     try {
-      final feed = context.read<FeedService>();
       final session = context.read<SessionService>();
       final pubkey = session.activePubkey;
       if (pubkey == null) {

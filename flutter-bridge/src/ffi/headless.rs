@@ -18,7 +18,6 @@ use std::sync::{Arc, Mutex};
 const SYNC_PASS_SECS: u64 = 20;
 
 struct HeadlessCtx {
-    rt: Arc<tokio::runtime::Runtime>,
     /// Joined relay list this client was built for; a changed list invalidates.
     relays_key: String,
     client: nostr_sdk::client::Client,
@@ -73,41 +72,32 @@ pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
     }
 
     let relays_key = relays.join(",");
-    let mut guard = HEADLESS_CTX.lock().unwrap_or_else(|e| e.into_inner());
-    let stale = match guard.as_ref() {
-        Some(ctx) => ctx.relays_key != relays_key,
-        None => true,
+    let (stale, cached_client) = {
+        let guard = HEADLESS_CTX.lock().unwrap_or_else(|e| e.into_inner());
+        match guard.as_ref() {
+            Some(ctx) if ctx.relays_key == relays_key => (false, Some(ctx.client.clone())),
+            _ => (true, None),
+        }
     };
-    if stale {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .thread_name("soshal-headless")
-            .build()
-            .map_err(|e| format!("Failed to build headless runtime: {e}"))?;
+    let client = if stale {
         let cfg = SyncConfig {
             db_path: db_path.clone(),
             my_pubkey: pubkey.clone(),
             relays: relays.clone(),
             socks_proxy: None,
         };
-        let client = match rt.block_on(build_client(&cfg)) {
-            Ok(c) => c,
-            Err(e) => return Err(format!("Failed to build relay client: {e}")).into(),
-        };
+        let client = build_client(&cfg)
+            .await
+            .map_err(|e| format!("Failed to build relay client: {e}"))?;
+        let mut guard = HEADLESS_CTX.lock().unwrap_or_else(|e| e.into_inner());
         *guard = Some(HeadlessCtx {
-            rt: Arc::new(rt),
             relays_key,
-            client,
+            client: client.clone(),
         });
-    }
-    // Clone the warm client + runtime handle, then release the guard BEFORE
-    // the long-running pass: an async fn must not hold a std Mutex guard
-    // across its body (the future would not be Send, and a concurrent call
-    // would block the executor thread).
-    let ctx = guard.as_ref().expect("ctx initialized above");
-    let rt = ctx.rt.clone();
-    let client = ctx.client.clone();
-    drop(guard);
+        client
+    } else {
+        cached_client.ok_or_else(|| "headless ctx missing".to_string())?
+    };
 
     // Bounded one-shot pass against the warm client: run the engine, then
     // stop after SYNC_PASS_SECS. Events are ingested + outbox items replayed
@@ -120,12 +110,10 @@ pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
         relays,
         socks_proxy: None,
     };
-    rt.block_on(async {
-        let _ = client.connect().await; // no-op when already connected
-        let handle = tokio::spawn(engine_loop_with_client(cfg, tx, stop.clone(), client));
-        tokio::time::sleep(std::time::Duration::from_secs(SYNC_PASS_SECS)).await;
-        stop.store(true, Ordering::Relaxed);
-        let _ = handle.await;
-    });
+    let _ = client.connect().await; // no-op when already connected
+    let handle = tokio::spawn(engine_loop_with_client(cfg, tx, stop.clone(), client));
+    tokio::time::sleep(std::time::Duration::from_secs(SYNC_PASS_SECS)).await;
+    stop.store(true, Ordering::Relaxed);
+    let _ = handle.await;
     Ok(1).into()
 }

@@ -38,7 +38,17 @@ pub fn is_supported() -> bool {
 pub fn init_encode(width: i32, height: i32, bitrate: i32, fps: i32) -> bool {
     #[cfg(target_os = "android")]
     {
-        if !super::sdk_gate() || width <= 0 || height <= 0 || width % 2 != 0 || height % 2 != 0 {
+        const MAX_DIM: i32 = 7680;
+        const MAX_PIXELS: i64 = 33_177_600;
+        if !super::sdk_gate()
+            || width <= 0
+            || height <= 0
+            || width % 2 != 0
+            || height % 2 != 0
+            || width > MAX_DIM
+            || height > MAX_DIM
+            || (width as i64 * height as i64) > MAX_PIXELS
+        {
             return false;
         }
         let mut s = state();
@@ -95,7 +105,13 @@ pub fn feed_encode(bgra: &[u8]) -> Vec<Vec<u8>> {
         if w <= 0 || h <= 0 {
             return Vec::new();
         }
-        let need = (w * h * 4) as usize;
+        let need = match (w as usize)
+            .checked_mul(h as usize)
+            .and_then(|p| p.checked_mul(4))
+        {
+            Some(n) => n,
+            None => return Vec::new(),
+        };
         if bgra.len() < need {
             return Vec::new();
         }
@@ -108,6 +124,8 @@ pub fn feed_encode(bgra: &[u8]) -> Vec<Vec<u8>> {
                 if !buf.is_null() && size >= i420.len() {
                     std::ptr::copy_nonoverlapping(i420.as_ptr(), buf, i420.len());
                     AMediaCodec_queueInputBuffer(codec, idx as usize, 0, i420.len(), 0, 0);
+                } else {
+                    AMediaCodec_queueInputBuffer(codec, idx as usize, 0, 0, 0, 0);
                 }
             }
             drain_encoder(codec, w, h)
@@ -175,6 +193,8 @@ pub fn feed_decode(nal: &[u8]) -> Vec<Vec<u8>> {
                 if !buf.is_null() && size >= nal.len() {
                     std::ptr::copy_nonoverlapping(nal.as_ptr(), buf, nal.len());
                     AMediaCodec_queueInputBuffer(codec, idx as usize, 0, nal.len(), 0, 0);
+                } else {
+                    AMediaCodec_queueInputBuffer(codec, idx as usize, 0, 0, 0, 0);
                 }
             }
             drain_decoder(codec)
@@ -322,7 +342,16 @@ unsafe fn image_to_jpeg(image: *mut AImage) -> Result<Vec<u8>, String> {
     AImage_getPlaneData(image, 2, &mut v, &mut v_len);
     AImage_getPlaneRowStride(image, 2, &mut v_stride);
     AImage_getPlanePixelStride(image, 2, &mut v_ps);
-    if y.is_null() || u.is_null() || v.is_null() || y_ps <= 0 || u_ps <= 0 || v_ps <= 0 {
+    if y.is_null()
+        || u.is_null()
+        || v.is_null()
+        || y_ps <= 0
+        || u_ps <= 0
+        || v_ps <= 0
+        || y_stride <= 0
+        || u_stride <= 0
+        || v_stride <= 0
+    {
         return Err("plane data".to_string());
     }
     if y_len <= 0 || u_len <= 0 || v_len <= 0 {

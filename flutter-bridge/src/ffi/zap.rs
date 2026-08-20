@@ -192,7 +192,14 @@ pub async fn zap_fetch_invoice(
     if amount_msat == 0 {
         return Err("amount must be positive".to_string()).into();
     }
-    let uri = nwc_uri()?;
+    if amount_msat < 1000 || !amount_msat.is_multiple_of(1000) {
+        return Err(
+            "amount_msat must be a positive integer multiple of 1000 (whole satoshis)".to_string(),
+        );
+    }
+    // The URI embeds the wallet secret: keep every intermediate copy inside
+    // Zeroizing so plaintext copies don't linger in the heap.
+    let uri = zeroize::Zeroizing::new(nwc_uri()?);
     let description = if _comment.trim().is_empty() {
         "zap".to_string()
     } else {
@@ -238,7 +245,7 @@ pub async fn zap_send_payment(bolt11: String) -> Result<String, String> {
         clear_pending_payment();
         return Err("invoice amount mismatch".to_string()).into();
     }
-    let uri = nwc_uri()?;
+    let uri = zeroize::Zeroizing::new(nwc_uri()?);
     let resp = soshal_zap_core::nwc::pay_invoice(BridgeSigner, &uri, bolt11).await?;
     clear_pending_payment();
     Ok(resp).into()
@@ -263,7 +270,7 @@ pub fn zap_fetch_totals(event_ids: Vec<String>) -> Result<String, String> {
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
-            let mut stmt = conn
+            let stmt = conn
                 .prepare(
                     "SELECT event_id, SUM(amount) FROM zaps WHERE event_id IN (SELECT value FROM json_each(?1)) GROUP BY event_id",
                 )
@@ -293,7 +300,7 @@ pub fn zap_fetch_receipts(event_id: String, limit: i32) -> Result<String, String
     let json = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
-            let mut stmt = conn
+            let stmt = conn
                 .prepare(
                     "SELECT id, event_id, recipient_pubkey, sender_pubkey, amount_msat, bolt11, preimage, comment, created_at, pubkey, amount, content, zap_type FROM zaps WHERE event_id = ?1 ORDER BY created_at DESC LIMIT ?2",
                 )
