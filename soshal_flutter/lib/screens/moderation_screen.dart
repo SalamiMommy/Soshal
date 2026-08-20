@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/moderation_service.dart';
 import '../services/session_service.dart';
+import '../widgets/settings_scaffold.dart';
 
 /// Moderation Settings
 /// Muted users, word filters, and a content-filter test.
@@ -196,12 +197,11 @@ class _ModerationScreenState extends State<ModerationScreen> {
   @override
   Widget build(BuildContext context) {
     final api = context.read<ModerationService>();
-    return Scaffold(
-      appBar: AppBar(title: const Text('Moderation')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text('Muted users', style: Theme.of(context).textTheme.titleMedium),
+    return SettingsScaffold(
+      title: 'Moderation',
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text('Muted users', style: Theme.of(context).textTheme.titleMedium),
           Consumer<ModerationService>(
             builder: (context, mod, _) {
               if (mod.muted.isEmpty) {
@@ -481,14 +481,13 @@ class _ModerationScreenState extends State<ModerationScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: _hybridResult!.tierEvaluated == 'Tier2Deep'
-                                ? Colors.purple.shade50
-                                : Colors.blue.shade50,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: _hybridResult!.tierEvaluated == 'Tier2Deep'
-                                  ? Colors.purple
-                                  : Colors.blue,
+                              color:
+                                  Theme.of(context).colorScheme.primary,
                             ),
                           ),
                           child: Text(
@@ -498,9 +497,7 @@ class _ModerationScreenState extends State<ModerationScreen> {
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
-                              color: _hybridResult!.tierEvaluated == 'Tier2Deep'
-                                  ? Colors.purple.shade800
-                                  : Colors.blue.shade800,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                         ),
@@ -599,7 +596,6 @@ class _ModerationScreenState extends State<ModerationScreen> {
             ),
           ],
         ],
-      ),
     );
   }
 
@@ -631,9 +627,10 @@ class _ModerationScreenState extends State<ModerationScreen> {
           const SizedBox(height: 2),
           LinearProgressIndicator(
             value: score.clamp(0.0, 1.0),
-            backgroundColor: Colors.grey.shade200,
+            backgroundColor:
+                Theme.of(context).colorScheme.surfaceContainerHighest,
             valueColor: AlwaysStoppedAnimation<Color>(
-              score > 0.5 ? color : Colors.grey.shade400,
+              score > 0.5 ? color : Theme.of(context).colorScheme.outline,
             ),
             minHeight: 4,
           ),

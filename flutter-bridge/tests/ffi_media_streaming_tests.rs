@@ -290,7 +290,7 @@ mod ffi_media_streaming_tests {
         assert_eq!(h["track_id"], 7);
         assert_eq!(h["track_type"], "VideoKeyframe");
         assert_eq!(h["group_sequence"], 1, "keyframe bumps group seq");
-        assert_eq!(h["object_sequence"], 3, "payload 3 bytes");
+        assert_eq!(h["object_sequence"], 1, "first object sequence");
         assert_eq!(h["payload_size"], 3);
         assert!(h["timestamp_ms"].as_u64().unwrap() > 0);
         let delta = streaming::streaming_moq_publish_object(

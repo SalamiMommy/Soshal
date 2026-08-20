@@ -161,10 +161,10 @@ pub fn notifications_fetch(user_pubkey: String, limit: i32, offset: i32) -> Resu
 /// Mark notification as read.
 #[frb(sync, serialize)]
 pub fn notifications_mark_read(notification_id: String) -> Result<bool, String> {
-    super::db::db_execute_raw(format!(
-        "UPDATE notifications SET is_read = 1 WHERE id = '{}' AND is_read = 0",
-        notification_id.replace('\'', "''")
-    ))
+    super::db::db_execute_params(
+        "UPDATE notifications SET is_read = 1 WHERE id = ?1 AND is_read = 0",
+        &[notification_id],
+    )
     .map(|affected| affected > 0)
     .into()
 }
@@ -172,10 +172,10 @@ pub fn notifications_mark_read(notification_id: String) -> Result<bool, String> 
 /// Mark all notifications as read for a user.
 #[frb(sync, serialize)]
 pub fn notifications_mark_all_read(user_pubkey: String) -> Result<bool, String> {
-    super::db::db_execute_raw(format!(
-        "UPDATE notifications SET is_read = 1 WHERE pubkey = '{}'",
-        user_pubkey.replace('\'', "''")
-    ))
+    super::db::db_execute_params(
+        "UPDATE notifications SET is_read = 1 WHERE pubkey = ?1",
+        &[user_pubkey],
+    )
     .map(|_| true)
     .into()
 }
@@ -183,10 +183,10 @@ pub fn notifications_mark_all_read(user_pubkey: String) -> Result<bool, String> 
 /// Delete a notification.
 #[frb(sync, serialize)]
 pub fn notifications_delete(notification_id: String) -> Result<bool, String> {
-    super::db::db_execute_raw(format!(
-        "DELETE FROM notifications WHERE id = '{}'",
-        notification_id.replace('\'', "''")
-    ))
+    super::db::db_execute_params(
+        "DELETE FROM notifications WHERE id = ?1",
+        &[notification_id],
+    )
     .map(|affected| affected > 0)
     .into()
 }
@@ -194,10 +194,10 @@ pub fn notifications_delete(notification_id: String) -> Result<bool, String> {
 /// Get unread count.
 #[frb(sync, serialize)]
 pub fn notifications_get_unread_count(user_pubkey: String) -> Result<i32, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT COUNT(*) AS c FROM notifications WHERE pubkey = '{}' AND is_read = 0",
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        "SELECT COUNT(*) AS c FROM notifications WHERE pubkey = ?1 AND is_read = 0",
+        &[user_pubkey],
+    )?;
     let count = serde_json::from_str::<Vec<serde_json::Value>>(&json)
         .ok()
         .and_then(|rows| rows.first().and_then(|r| r["c"].as_i64()))
@@ -268,9 +268,10 @@ mod tests {
         created_at: i64,
         is_read: bool,
     ) {
-        db::db_execute_raw(format!(
-            "INSERT OR IGNORE INTO users (pubkey, npub) VALUES ('{pubkey}','npub1{pubkey}')"
-        ))
+        db::db_execute_params(
+            "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, 'npub1' || ?1)",
+            &[pubkey.to_string()],
+        )
         .unwrap();
         db::with_db_result(|db| {
             NotificationRepo::new(db).upsert(&NotificationRow {
@@ -288,9 +289,10 @@ mod tests {
     }
 
     fn insert_user(pubkey: &str, name: &str) {
-        db::db_execute_raw(format!(
-            "INSERT INTO users (pubkey, npub, name) VALUES ('{pubkey}','npub1{pubkey}','{name}') ON CONFLICT DO UPDATE SET name='{name}'"
-        ))
+        db::db_execute_params(
+            "INSERT INTO users (pubkey, npub, name) VALUES (?1, 'npub1' || ?1, ?2) ON CONFLICT DO UPDATE SET name=?2",
+            &[pubkey.to_string(), name.to_string()],
+        )
         .unwrap();
     }
 

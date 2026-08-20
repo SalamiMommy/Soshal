@@ -28,11 +28,12 @@ mod ffi_tests {
         let keypair: KeyPairResult =
             serde_json::from_str(&auth::auth_generate_keypair().unwrap()).unwrap();
         assert_eq!(keypair.public_key.len(), 64, "pubkey must be 64 hex chars");
-        assert!(keypair.public_key.chars().all(|c| c.is_ascii_hexdigit()));
-        // Generation-time nsec is surfaced once for the backup dialog; it is
-        // never persisted by the bridge and keychain ops stay pubkey-only.
-        assert_eq!(keypair.secret_key.len(), 64, "nsec must be 64 hex chars");
-        assert!(keypair.secret_key.chars().all(|c| c.is_ascii_hexdigit()));
+        // The secret key is not returned across FFI; the in-process signer
+        // holds it directly, and backup happens via BIP-39 mnemonic.
+        assert!(
+            keypair.secret_key.is_empty(),
+            "secret key must not leak across FFI"
+        );
     }
     #[test]
     fn test_auth_npub_encode_decode() {
@@ -369,6 +370,14 @@ mod integration_tests {
         assert!(signer::signer_unlock_from_keyring("cc".repeat(32))
             .await
             .is_err());
+        // A locked/prompting keyring makes writes block indefinitely; probe
+        // it with a bounded check and skip the roundtrip when unavailable
+        // (headless CI, locked desktop keyring).
+        if !signer::keyring_available() {
+            eprintln!("SKIP: OS keyring unavailable (locked or headless)");
+            signer::signer_lock().unwrap();
+            return;
+        }
         // save/unlock/remove roundtrip; keychain may be unavailable on
         // headless CI, so a non-empty Err is tolerated there
         match signer::signer_save_to_keyring(pk.clone()).await {

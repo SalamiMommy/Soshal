@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'empty_state.dart';
 import 'error_state_text.dart';
 
 /// Shared skeleton for user-content list pages (minis, musicloud, …):
@@ -41,33 +42,10 @@ class UserContentList extends StatelessWidget {
                   ? ListView(
                       children: [
                         const SizedBox(height: 120),
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  emptyIcon,
-                                  size: 56,
-                                  color: Theme.of(context).colorScheme.outline,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  emptyTitle,
-                                  style: Theme.of(context).textTheme.titleLarge,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  emptyBody,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant),
-                                ),
-                              ],
-                            ),
-                          ),
+                        EmptyState(
+                          icon: emptyIcon,
+                          title: emptyTitle,
+                          body: emptyBody,
                         ),
                       ],
                     )

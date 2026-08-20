@@ -6,6 +6,7 @@ import '../services/settings_service.dart';
 import '../services/shell_service.dart';
 import '../services/signer_service.dart';
 import '../utils/format.dart';
+import '../widgets/settings_scaffold.dart';
 import '../widgets/error_state_text.dart';
 
 /// Security settings: honest status of protections on this build.
@@ -85,13 +86,12 @@ class _SecurityScreenState extends State<SecurityScreen> {
   Widget build(BuildContext context) {
     final pubkey = context.read<SessionService>().activePubkey ?? '';
     final signer = context.read<SignerService>();
-    return Scaffold(
-      appBar: AppBar(title: const Text('Security')),
-      body: ListView(
-        children: [
-          const ListTile(
-            leading: Icon(Icons.lock_outline),
-            title: Text('Key storage'),
+    return SettingsScaffold(
+      title: 'Security',
+      children: [
+        const ListTile(
+          leading: Icon(Icons.lock_outline),
+          title: Text('Key storage'),
             subtitle: Text(
                 'Secret keys live in the OS keychain (Keystore on Android). '
                 'Unlocked for the current session only.'),
@@ -159,12 +159,20 @@ class _SecurityScreenState extends State<SecurityScreen> {
             trailing: OutlinedButton(
               onPressed: () async {
                 if (pubkey.isEmpty) return;
-                await signer.saveToKeyring(pubkey);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: SelectableText('Saved to keychain ($pubkey)')),
-                  );
+                try {
+                  await signer.saveToKeyring(pubkey);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: SelectableText('Saved to keychain ($pubkey)')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: SelectableText('Keychain error: $e')),
+                    );
+                  }
                 }
               },
               child: const Text('Save'),
@@ -178,10 +186,10 @@ class _SecurityScreenState extends State<SecurityScreen> {
             onChanged: (value) async {
               final settings = context.read<SettingsService>();
               await settings.setSetting(
-                  'keychain_unlock_enabled', value.toString());
-              setState(() {
-                _keychainUnlockEnabled = value;
-              });
+                'keychain_unlock_enabled',
+                value ? 'true' : 'false',
+              );
+              setState(() => _keychainUnlockEnabled = value);
             },
           ),
           SwitchListTile(
@@ -206,14 +214,24 @@ class _SecurityScreenState extends State<SecurityScreen> {
               onPressed: _keychainUnlockEnabled
                   ? () async {
                       if (pubkey.isEmpty) return;
-                      await signer.unlockFromKeyring(pubkey);
-                      await _refresh();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content:
-                                  SelectableText('Unlocked from keychain')),
-                        );
+                      try {
+                        await signer.unlockFromKeyring(pubkey);
+                        await _refresh();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content:
+                                    SelectableText('Unlocked from keychain')),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content:
+                                    SelectableText('Keychain unlock error: $e')),
+                          );
+                        }
                       }
                     }
                   : null,
@@ -226,12 +244,22 @@ class _SecurityScreenState extends State<SecurityScreen> {
             trailing: OutlinedButton(
               onPressed: () async {
                 if (pubkey.isEmpty) return;
-                await signer.removeFromKeyring(pubkey);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: SelectableText('Removed from keychain')),
-                  );
+                try {
+                  await signer.removeFromKeyring(pubkey);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: SelectableText('Removed from keychain')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content:
+                              SelectableText('Keychain remove error: $e')),
+                    );
+                  }
                 }
               },
               child: const Text('Remove'),
@@ -340,8 +368,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
               child: const Text('Run'),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -656,7 +683,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
   Future<void> _generateKeypairDialog() async {
     final auth = context.read<AuthService>();
     String? pubkey;
-    String? nsec;
+    String? mnemonic;
     String? error;
     await showDialog<void>(
       context: context,
@@ -665,16 +692,17 @@ class _SecurityScreenState extends State<SecurityScreen> {
           Future<void> doGenerate() async {
             try {
               final kp = await auth.generateKeypair();
+              final m = await auth.generateMnemonic();
               setDialogState(() {
                 pubkey = kp.publicKey;
-                nsec = kp.secretKey;
+                mnemonic = m;
                 error = null;
               });
             } catch (e) {
               setDialogState(() {
                 error = e.toString();
                 pubkey = null;
-                nsec = null;
+                mnemonic = null;
               });
             }
           }
@@ -685,22 +713,23 @@ class _SecurityScreenState extends State<SecurityScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (pubkey != null && nsec != null) ...[
+                if (pubkey != null && mnemonic != null) ...[
                   const Text('Public key (hex)',
                       style: TextStyle(fontSize: 11, color: Colors.grey)),
                   SelectableText(pubkey!,
                       style: const TextStyle(
                           fontSize: 11, fontFamily: 'monospace')),
                   const SizedBox(height: 8),
-                  const Text('Secret key (nsec)',
+                  const Text('Backup phrase (BIP-39)',
                       style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  SelectableText(nsec!,
+                  SelectableText(mnemonic!,
                       style: const TextStyle(
                           fontSize: 11, fontFamily: 'monospace')),
                   const SizedBox(height: 8),
                   const Text(
-                    'The secret key is shown only once — copy it now. '
-                    'It is not stored by this app.',
+                    'The backup phrase is shown only once — copy it now. '
+                    'You can restore your identity from it at any time. '
+                    'The secret key itself never leaves the app.',
                     style: TextStyle(fontSize: 12, color: Colors.orange),
                   ),
                 ] else

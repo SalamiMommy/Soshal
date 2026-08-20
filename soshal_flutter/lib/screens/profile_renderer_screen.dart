@@ -145,14 +145,14 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Layout saved')),
+          SnackBar(content: SelectableText('Layout saved')),
         );
       }
     } catch (e) {
       debugPrint('ProfileRendererScreen: save error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e')),
+          SnackBar(content: SelectableText('Failed to save: $e')),
         );
       }
     } finally {
@@ -771,14 +771,14 @@ class _GuestbookWidgetState extends State<_GuestbookWidget> {
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Guestbook signed')),
+          SnackBar(content: SelectableText('Guestbook signed')),
         );
       }
     } catch (e) {
       debugPrint('guestbook sign: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sign failed: $e')),
+          SnackBar(content: SelectableText('Sign failed: $e')),
         );
       }
     } finally {

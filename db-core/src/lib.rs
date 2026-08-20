@@ -61,6 +61,7 @@ struct PoolInner {
     turso_config: Mutex<Option<TursoConfig>>,
     state: Mutex<PoolState>,
     available: Condvar,
+    max_connections: usize,
 }
 
 struct PoolState {
@@ -83,6 +84,7 @@ impl Database {
                     in_use: 0,
                 }),
                 available: Condvar::new(),
+                max_connections: max_connections(),
             }),
         })
     }
@@ -101,6 +103,7 @@ impl Database {
                     in_use: 0,
                 }),
                 available: Condvar::new(),
+                max_connections: 1,
             }),
         })
     }
@@ -184,7 +187,7 @@ impl Database {
                     db: self.inner.clone(),
                 });
             }
-            if state.in_use < max_connections() {
+            if state.in_use < self.inner.max_connections {
                 state.in_use += 1;
                 drop(state);
                 let conn = match self.open_extra() {

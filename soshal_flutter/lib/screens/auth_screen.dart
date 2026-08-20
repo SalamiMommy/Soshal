@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../services/sync_service.dart';
 import '../services/auth_service.dart';
 import '../services/error_log.dart';
+import '../utils/format.dart';
 import '../services/network_service.dart';
 import '../services/session_service.dart';
 import '../services/signer_service.dart';
@@ -53,35 +54,100 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildWelcomeStep() {
+    final session = context.watch<SessionService>();
+    final accounts = session.getAccounts();
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text(
-            'Welcome to Soshal',
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'A decentralized social network',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-          const SizedBox(height: 48),
-          ElevatedButton(
-            onPressed: () {
-              setState(() => _currentStep = 1);
-            },
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 48,
-                vertical: 16,
-              ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'Welcome to Soshal',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
             ),
-            child: const Text('Get Started'),
-          ),
-        ],
+            const SizedBox(height: 16),
+            const Text(
+              'A decentralized social network',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+            if (accounts.isNotEmpty) ...[
+              const SizedBox(height: 32),
+              const Text(
+                'Use existing account',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              for (final account in accounts)
+                Card(
+                  child: ListTile(
+                    leading: account.pubkey == session.activePubkey
+                        ? const Icon(Icons.check_circle, color: Colors.green)
+                        : const Icon(Icons.account_circle),
+                    title: Text(
+                      account.npub.isNotEmpty
+                          ? account.npub
+                          : prefixEllipsis(account.pubkey, 16),
+                    ),
+                    subtitle: Text(prefixEllipsis(account.pubkey, 24)),
+                    onTap: () => _useExistingAccount(account),
+                  ),
+                ),
+              const SizedBox(height: 16),
+              const Text('or', style: TextStyle(color: Colors.grey)),
+            ],
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                setState(() => _currentStep = 1);
+              },
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 48,
+                  vertical: 16,
+                ),
+              ),
+              child: const Text('Get Started'),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  /// Unlock an account that already has a keychain entry and make it active.
+  /// Falls back to import (recovery phrase) when no key is stored.
+  Future<void> _useExistingAccount(SessionAccount account) async {
+    final signer = context.read<SignerService>();
+    final session = context.read<SessionService>();
+    try {
+      final ok = await signer.unlockFromKeyring(account.pubkey);
+      if (!ok) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: SelectableText(
+                'No stored key for this account — import its recovery phrase '
+                'to recover.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      await session.switchAccount(account.pubkey);
+      await session.saveSession();
+      if (mounted) {
+        context.go('/feed');
+      }
+    } catch (e, st) {
+      logRuntimeError('existing account unlock: $e', st);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Could not unlock account: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildGenerateOrImportStep() {
@@ -203,7 +269,7 @@ class _GenerateMnemonicWidgetState extends State<GenerateMnemonicWidget> {
     try {
       final authService = context.read<AuthService>();
       final mnemonic = await authService.generateMnemonic();
-      setState(() => _mnemonic = mnemonic);
+      if (mounted) setState(() => _mnemonic = mnemonic);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -211,7 +277,7 @@ class _GenerateMnemonicWidgetState extends State<GenerateMnemonicWidget> {
         );
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -315,7 +381,7 @@ class _ImportMnemonicWidgetState extends State<ImportMnemonicWidget> {
         );
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -407,6 +473,11 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
         defaultRelays,
       );
 
+      // Make the just-created/imported identity active so the next launch
+      // auto-logs into it (addAccount only activates when no account is
+      // active yet — otherwise the first account ever stays active forever).
+      await sessionService.switchAccount(keypair.publicKey);
+
       // Seed a base profile row so the user is indexable/searchable
       try {
         await sessionService.storeProfile(jsonEncode({
@@ -433,6 +504,16 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
       } catch (e, st) {
         debugPrint('onboarding keychain save failed: $e');
         logRuntimeError('onboarding keychain save: $e', st);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: SelectableText(
+                'Could not remember this device — the next launch will '
+                'require your recovery phrase.',
+              ),
+            ),
+          );
+        }
       }
 
       // Refresh signer state to reflect that it's now unlocked
@@ -454,7 +535,7 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
         );
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

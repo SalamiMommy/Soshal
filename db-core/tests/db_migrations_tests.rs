@@ -105,6 +105,7 @@ fn full_chain_reaches_schema_version() {
     migrations::v4_group_password(&conn).unwrap();
     migrations::v5_performance_indexes(&conn).unwrap();
     migrations::v6_index_cleanup(&conn).unwrap();
+    migrations::v7_query_optimizations(&conn).unwrap();
     assert_eq!(max_version(&conn), SCHEMA_VERSION);
     assert!(table_exists(&conn, "group_rooms"));
     assert!(table_exists(&conn, "group_threads"));
@@ -113,6 +114,10 @@ fn full_chain_reaches_schema_version() {
     assert!(table_exists(&conn, "group_voice_channels"));
     assert!(table_exists(&conn, "group_voice_presence"));
     assert!(table_exists(&conn, "zk_state_rollups"));
+    assert!(index_exists(&conn, "idx_posts_user_timeline"));
+    assert!(index_exists(&conn, "idx_messages_conversation_asc"));
+    assert!(index_exists(&conn, "idx_reactions_event_pubkey"));
+    assert!(index_exists(&conn, "idx_reposts_event_pubkey"));
     assert!(column_exists(&conn, "group_messages", "room_id"));
     assert!(column_exists(&conn, "groups", "password_hash"));
     assert!(column_exists(&conn, "zk_state_rollups", "genesis_root"));

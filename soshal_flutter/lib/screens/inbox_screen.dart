@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../ffi/p2p.dart' show P2pPeerDto, P2pPowerDto;
 import '../services/media_service.dart';
 import '../services/messaging_service.dart';
 import '../services/p2p_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/empty_state.dart';
 
 /// Inbox Screen
 /// DMs with NIP-44 decryption
@@ -30,6 +30,7 @@ class _InboxScreenState extends State<InboxScreen> {
   final _fetchUrlController = TextEditingController();
   final _blossomServerController = TextEditingController();
   bool _isLoading = false;
+  bool _conversationsLoading = true;
   bool _burn = false;
   int _maxViews = 1;
   String? _mediaResult;
@@ -55,6 +56,7 @@ class _InboxScreenState extends State<InboxScreen> {
   }
 
   Future<void> _loadConversations() async {
+    if (mounted) setState(() => _conversationsLoading = true);
     try {
       final sessionService = context.read<SessionService>();
       final messagingService = context.read<MessagingService>();
@@ -68,6 +70,7 @@ class _InboxScreenState extends State<InboxScreen> {
     } catch (e) {
       debugPrint('load conversations: $e');
     }
+    if (mounted) setState(() => _conversationsLoading = false);
   }
 
   @override
@@ -735,50 +738,55 @@ class _InboxScreenState extends State<InboxScreen> {
     );
   }
 
-  void _openNewDmDialog() {
+  Future<void> _openNewDmDialog() async {
     final recipientController = TextEditingController();
     final messageController = TextEditingController();
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('New DM'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: recipientController,
-              decoration: const InputDecoration(
-                labelText: 'Recipient',
-                hintText: 'npub or hex pubkey…',
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('New DM'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: recipientController,
+                decoration: const InputDecoration(
+                  labelText: 'Recipient',
+                  hintText: 'npub or hex pubkey…',
+                ),
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: messageController,
+                decoration: const InputDecoration(
+                  labelText: 'Message',
+                  hintText: 'Say hello…',
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: messageController,
-              decoration: const InputDecoration(
-                labelText: 'Message',
-                hintText: 'Say hello…',
+            TextButton(
+              onPressed: () => _sendNewDm(
+                dialogContext,
+                recipientController.text,
+                messageController.text,
               ),
-              maxLines: 3,
+              child: const Text('Send'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => _sendNewDm(
-              dialogContext,
-              recipientController.text,
-              messageController.text,
-            ),
-            child: const Text('Send'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      recipientController.dispose();
+      messageController.dispose();
+    }
   }
 
   Future<void> _sendNewDm(
@@ -819,7 +827,7 @@ class _InboxScreenState extends State<InboxScreen> {
     }
   }
 
-  void _openNewGroupDmDialog() {
+  Future<void> _openNewGroupDmDialog() async {
     final messageController = TextEditingController();
     final messagingService = context.read<MessagingService>();
     final sessionService = context.read<SessionService>();
@@ -827,78 +835,82 @@ class _InboxScreenState extends State<InboxScreen> {
         .where((pk) => pk != sessionService.activePubkey)
         .toList()
       ..sort();
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) {
-          final selected = <String>{};
-          return AlertDialog(
-            title: const Text('New Group DM'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (partners.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
-                      child: Text('No conversation partners yet.'),
-                    )
-                  else
-                    SizedBox(
-                      height: 180,
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: partners.length,
-                        itemBuilder: (context, i) {
-                          final pk = partners[i];
-                          return CheckboxListTile(
-                            dense: true,
-                            value: selected.contains(pk),
-                            title: Text(prefixEllipsis(pk, 16)),
-                            onChanged: (checked) {
-                              setDialogState(() {
-                                if (checked == true) {
-                                  selected.add(pk);
-                                } else {
-                                  selected.remove(pk);
-                                }
-                              });
-                            },
-                          );
-                        },
+    final selected = <String>{};
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('New Group DM'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (partners.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text('No conversation partners yet.'),
+                      )
+                    else
+                      SizedBox(
+                        height: 180,
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: partners.length,
+                          itemBuilder: (context, i) {
+                            final pk = partners[i];
+                            return CheckboxListTile(
+                              dense: true,
+                              value: selected.contains(pk),
+                              title: Text(prefixEllipsis(pk, 16)),
+                              onChanged: (checked) {
+                                setDialogState(() {
+                                  if (checked == true) {
+                                    selected.add(pk);
+                                  } else {
+                                    selected.remove(pk);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                        ),
                       ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: messageController,
+                      decoration: const InputDecoration(
+                        labelText: 'Message',
+                        hintText: 'First message…',
+                      ),
+                      maxLines: 3,
                     ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: messageController,
-                    decoration: const InputDecoration(
-                      labelText: 'Message',
-                      hintText: 'First message…',
-                    ),
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () => _sendNewGroupDm(
-                  dialogContext,
-                  selected.toList(),
-                  messageController.text,
+                  ],
                 ),
-                child: const Text('Create & Send'),
               ),
-            ],
-          );
-        },
-      ),
-    );
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => _sendNewGroupDm(
+                    dialogContext,
+                    selected.toList(),
+                    messageController.text,
+                  ),
+                  child: const Text('Create & Send'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } finally {
+      messageController.dispose();
+    }
   }
 
   Future<void> _sendNewGroupDm(
@@ -925,7 +937,7 @@ class _InboxScreenState extends State<InboxScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Group DM sent (${prefixEllipsis(id, 12)})')),
+          SnackBar(content: SelectableText('Group DM sent (${prefixEllipsis(id, 12)})')),
         );
       }
       _loadConversations();
@@ -974,10 +986,16 @@ class _InboxScreenState extends State<InboxScreen> {
                   return _ephemeralSection(context, messagingService);
                 }
                 if (convList.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Text('No conversations yet'),
-                  );
+                  return _conversationsLoading
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      : const Padding(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          child: Text('No conversations yet'),
+                        );
                 }
                 return _conversationTile(convList[index - 3]);
               },
@@ -1002,7 +1020,11 @@ class _InboxScreenState extends State<InboxScreen> {
                   svc.conversations[widget.otherPubkey] ?? const [],
               builder: (context, messages, child) {
                 if (messages.isEmpty) {
-                  return const Center(child: Text('No messages yet'));
+                  return const EmptyState(
+                    icon: Icons.chat_bubble_outline,
+                    title: 'No messages yet',
+                    compact: true,
+                  );
                 }
 
                 return ListView.builder(
@@ -1098,6 +1120,7 @@ class _InboxScreenState extends State<InboxScreen> {
         message.isOwn || message.sender == sessionService.activePubkey;
     final content =
         message.decrypted ? message.content : '🔒 ${message.content}';
+    final scheme = Theme.of(context).colorScheme;
 
     return Align(
       alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
@@ -1105,7 +1128,7 @@ class _InboxScreenState extends State<InboxScreen> {
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isOwn ? Colors.blue : Colors.grey[300],
+          color: isOwn ? scheme.primary : scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -1141,7 +1164,7 @@ class _InboxScreenState extends State<InboxScreen> {
               child: Text(
                 content,
                 style: TextStyle(
-                  color: isOwn ? Colors.white : Colors.black,
+                  color: isOwn ? scheme.onPrimary : scheme.onSurface,
                 ),
               ),
             ),
@@ -1151,7 +1174,9 @@ class _InboxScreenState extends State<InboxScreen> {
                   message.createdAt * 1000)),
               style: TextStyle(
                 fontSize: 12,
-                color: isOwn ? Colors.white70 : Colors.grey,
+                color: isOwn
+                    ? scheme.onPrimary.withValues(alpha: 0.7)
+                    : scheme.onSurfaceVariant,
               ),
             ),
           ],

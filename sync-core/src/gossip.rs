@@ -44,7 +44,7 @@ impl GossipSyncBridge {
             if let Ok(event) = serde_json::from_str::<nostr::event::Event>(payload_json.as_ref()) {
                 let key = event.id.to_hex();
                 let fresh = {
-                    let mut seen = SEEN_GOSSIP.lock().unwrap();
+                    let mut seen = SEEN_GOSSIP.lock().unwrap_or_else(|e| e.into_inner());
                     if seen.1.insert(key.clone()) {
                         seen.0.push_back(key);
                         if seen.0.len() > SEEN_GOSSIP_CAP {

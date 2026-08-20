@@ -994,9 +994,6 @@ abstract class RustLibApi extends BaseApi {
 
   List<String> crateFfiModerationModerationGetWordFilters();
 
-  String crateFfiModerationModerationHybridClassifyMedia(
-      {required List<int> imageBytes, required String mimeType});
-
   String crateFfiModerationModerationHybridClassifyText(
       {required String content, required bool forceDeepScan});
 
@@ -1353,12 +1350,6 @@ abstract class RustLibApi extends BaseApi {
   List<String> crateFfiSearchSearchHashtags(
       {required String query, required int limit});
 
-  bool crateFfiSearchSearchIndexPost(
-      {required String eventId,
-      required String pubkey,
-      required String content,
-      required PlatformInt64 kind});
-
   bool crateFfiSearchSearchIndexPosts({required String rowsJson});
 
   bool crateFfiSearchSearchIndexProfile(
@@ -1458,9 +1449,6 @@ abstract class RustLibApi extends BaseApi {
 
   String crateFfiStreamingStreamingFetchStories({required String userPubkey});
 
-  String crateFfiStreamingStreamingGetVideoUrl(
-      {required String videoId, required String sourcePath});
-
   bool crateFfiStreamingStreamingMarkStoryViewed(
       {required String storyId, required String viewerPubkey});
 
@@ -1485,10 +1473,6 @@ abstract class RustLibApi extends BaseApi {
       required String title,
       required String description,
       required String streamUrl});
-
-  Future<int> crateFfiStreamingStreamingStartLocalServer();
-
-  void crateFfiStreamingStreamingStopLocalServer();
 
   bool crateFfiStreamingStreamingStoryReact(
       {required String storyId, required String pubkey, required String emoji});
@@ -9493,35 +9477,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiModerationModerationHybridClassifyMedia(
-      {required List<int> imageBytes, required String mimeType}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_list_prim_u_8_loose(imageBytes, serializer);
-        sse_encode_String(mimeType, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire
-            .wire__crate__ffi__moderation__moderation_hybrid_classify_media(
-                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiModerationModerationHybridClassifyMediaConstMeta,
-      argValues: [imageBytes, mimeType],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiModerationModerationHybridClassifyMediaConstMeta =>
-      const TaskConstMeta(
-        debugName: "moderation_hybrid_classify_media",
-        argNames: ["imageBytes", "mimeType"],
-      );
-
-  @override
   String crateFfiModerationModerationHybridClassifyText(
       {required String content, required bool forceDeepScan}) {
     return handler.executeSync(SyncTask(
@@ -12842,39 +12797,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateFfiSearchSearchIndexPost(
-      {required String eventId,
-      required String pubkey,
-      required String content,
-      required PlatformInt64 kind}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(eventId, serializer);
-        sse_encode_String(pubkey, serializer);
-        sse_encode_String(content, serializer);
-        sse_encode_i_64(kind, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__search__search_index_post(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiSearchSearchIndexPostConstMeta,
-      argValues: [eventId, pubkey, content, kind],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiSearchSearchIndexPostConstMeta =>
-      const TaskConstMeta(
-        debugName: "search_index_post",
-        argNames: ["eventId", "pubkey", "content", "kind"],
-      );
-
-  @override
   bool crateFfiSearchSearchIndexPosts({required String rowsJson}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
@@ -13937,34 +13859,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiStreamingStreamingGetVideoUrl(
-      {required String videoId, required String sourcePath}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(videoId, serializer);
-        sse_encode_String(sourcePath, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__streaming__streaming_get_video_url(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiStreamingStreamingGetVideoUrlConstMeta,
-      argValues: [videoId, sourcePath],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiStreamingStreamingGetVideoUrlConstMeta =>
-      const TaskConstMeta(
-        debugName: "streaming_get_video_url",
-        argNames: ["videoId", "sourcePath"],
-      );
-
-  @override
   bool crateFfiStreamingStreamingMarkStoryViewed(
       {required String storyId, required String viewerPubkey}) {
     return handler.executeSync(SyncTask(
@@ -14125,56 +14019,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "streaming_start_live",
         argNames: ["broadcasterPubkey", "title", "description", "streamUrl"],
-      );
-
-  @override
-  Future<int> crateFfiStreamingStreamingStartLocalServer() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__streaming__streaming_start_local_server(
-            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_u_16,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiStreamingStreamingStartLocalServerConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiStreamingStreamingStartLocalServerConstMeta =>
-      const TaskConstMeta(
-        debugName: "streaming_start_local_server",
-        argNames: [],
-      );
-
-  @override
-  void crateFfiStreamingStreamingStopLocalServer() {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__streaming__streaming_stop_local_server(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_unit,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiStreamingStreamingStopLocalServerConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiStreamingStreamingStopLocalServerConstMeta =>
-      const TaskConstMeta(
-        debugName: "streaming_stop_local_server",
-        argNames: [],
       );
 
   @override

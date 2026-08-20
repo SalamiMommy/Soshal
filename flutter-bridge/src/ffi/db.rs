@@ -112,16 +112,18 @@ pub fn db_init(db_path: String) -> Result<String, String> {
     let old_db = DB.lock().unwrap_or_else(|e| e.into_inner()).take();
     drop(old_db);
     if let Some(ref p) = old_path {
-        let temp = std::env::temp_dir().to_string_lossy().to_string();
-        let own_file = std::path::Path::new(p)
-            .file_name()
-            .and_then(|f| f.to_str())
-            .map(|f| f.starts_with("soshal_") && f.ends_with(".db"))
-            .unwrap_or(false);
-        if own_file && p.starts_with(&temp) {
-            let _ = std::fs::remove_file(p);
-            let _ = std::fs::remove_file(format!("{p}-wal"));
-            let _ = std::fs::remove_file(format!("{p}-shm"));
+        if old_path.as_deref() != Some(&db_path) {
+            let temp = std::env::temp_dir().to_string_lossy().to_string();
+            let own_file = std::path::Path::new(p)
+                .file_name()
+                .and_then(|f| f.to_str())
+                .map(|f| f.starts_with("soshal_") && f.ends_with(".db"))
+                .unwrap_or(false);
+            if own_file && p.starts_with(&temp) {
+                let _ = std::fs::remove_file(p);
+                let _ = std::fs::remove_file(format!("{p}-wal"));
+                let _ = std::fs::remove_file(format!("{p}-shm"));
+            }
         }
     }
     *DB_PATH.lock().unwrap_or_else(|e| e.into_inner()) = Some(db_path.clone());
@@ -224,9 +226,56 @@ pub fn db_force_migrate() -> Result<String, String> {
 
 /// Execute a raw SELECT query; rows are returned as a JSON array of objects
 /// (column names as keys). Parameter binding is supported with `?1..?N`.
+/// The `settings` table is off-limits: pin flags must only change through
+/// the pin module (db_set_setting enforces the same deny-list).
 #[frb(sync, serialize)]
 pub fn db_query_raw(sql: String) -> Result<String, String> {
+    if !raw_sql_allowed(&sql) {
+        return Err("sql touches a protected settings key".to_string());
+    }
     db_query_params(&sql, &[])
+}
+
+/// Test-only bypass of the raw-SQL console guard. Fixture setup builds
+/// tables and rows the console deliberately forbids (CREATE/INSERT);
+/// `#[cfg(test)]` keeps it out of the release bridge .so entirely.
+#[cfg(test)]
+pub fn db_query_raw_test(sql: String) -> Result<String, String> {
+    db_query_params(&sql, &[])
+}
+
+/// Test-only bypass of the raw-SQL console guard. See `db_query_raw_test`.
+#[cfg(test)]
+pub fn db_execute_raw_test(sql: String) -> Result<usize, String> {
+    db_execute_params(&sql, &[])
+}
+
+/// Protected settings keys that must only be written by their owning module
+/// (pin.rs). Keeps PIN hash + lockout flags out of reach of the Dart-side raw
+/// SQL console and any accidental generic setting write.
+const PROTECTED_SETTING_KEYS: &[&str] =
+    &["pin_hash", "pin_permanently_locked", "pin_lockout_state"];
+
+fn raw_sql_allowed(sql: &str) -> bool {
+    let lower = sql.trim().to_lowercase();
+    // The raw console is only meant for single SELECT/DELETE/UPDATE
+    // statements. Reject multi-statement input, schema mutation, writes
+    // (INSERT/REPLACE), and anything that could touch files outside the
+    // database (ATTACH DATABASE) or change runtime behavior (PRAGMA).
+    if lower.contains(';')
+        || lower.contains("attach ")
+        || lower.contains("drop ")
+        || lower.contains("vacuum")
+        || lower.contains("create ")
+        || lower.contains("alter ")
+        || lower.contains("reindex ")
+        || lower.contains("pragma ")
+        || lower.contains("insert ")
+        || lower.contains("replace ")
+    {
+        return false;
+    }
+    !lower.contains("settings") && !PROTECTED_SETTING_KEYS.iter().any(|k| lower.contains(k))
 }
 
 /// Internal helper: raw SELECT with bound ?N parameters (Vec<String>),
@@ -274,11 +323,29 @@ async fn rows_json(
 }
 
 /// Execute a raw INSERT/UPDATE/DELETE (no parameters); returns rows affected.
+/// The `settings` table is off-limits (see `raw_sql_allowed`).
 #[frb(sync, serialize)]
 pub fn db_execute_raw(sql: String) -> Result<usize, String> {
+    if !raw_sql_allowed(&sql) {
+        return Err("sql touches a protected settings key".to_string());
+    }
     with_db(|db| {
         let conn = db.conn()?;
-        Ok(block_on(async { conn.execute(&sql, ()).await })? as usize)
+        let affected = block_on(async { conn.execute(&sql, ()).await })?;
+        // Saturate instead of truncating on 32-bit targets.
+        Ok(affected.try_into().unwrap_or(usize::MAX))
+    })
+}
+
+/// Internal helper: raw INSERT/UPDATE/DELETE with bound ?N parameters
+/// (Vec<String>); returns rows affected. Not an FFI surface.
+pub fn db_execute_params(sql: &str, params: &[String]) -> Result<usize, String> {
+    with_db(|db| {
+        let conn = db.conn()?;
+        Ok(block_on(async {
+            conn.execute(sql, params_from_iter(params.iter().map(|p| p.as_str())))
+                .await
+        })? as usize)
     })
 }
 
@@ -286,7 +353,7 @@ pub fn db_execute_raw(sql: String) -> Result<usize, String> {
 #[frb(sync, serialize)]
 pub fn db_count(table: String) -> Result<i64, String> {
     if !COUNTABLE_TABLES.contains(&table.as_str()) {
-        return Err(format!("db: unknown table: {table}"));
+        return Err("db: unknown table".to_string());
     }
     with_db(|db| {
         let conn = db.conn()?;
@@ -300,9 +367,13 @@ pub fn db_count(table: String) -> Result<i64, String> {
 }
 
 /// Set a key/value setting (sidebar order, theme, stealth whitelist, PIN
-/// flags). Upserts into the `settings` table.
+/// flags). Upserts into the `settings` table. PIN-related keys are denied
+/// here — only the pin module may write them.
 #[frb(sync, serialize)]
 pub fn db_set_setting(key: String, value: String) -> Result<bool, String> {
+    if PROTECTED_SETTING_KEYS.contains(&key.as_str()) {
+        return Err(format!("setting key is protected: {key}"));
+    }
     with_db(|db| {
         soshal_db_core::repos::settings::SettingsRepo::new(db).set(&key, &value)?;
         Ok(true)
@@ -457,11 +528,25 @@ pub fn db_backup(backup_path: String) -> Result<String, String> {
     with_db(|db| {
         let conn = db.conn()?;
         let _ = block_on(conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);"));
-        std::fs::copy(&src_path, &backup_path)
-            .map_err(|e| DbError::Migration(format!("copy failed: {e}")))?;
+        // The backup is sealed with the identity-derived at-rest key: the
+        // file on disk is AES-256-GCM ciphertext, never a plaintext DB
+        // snapshot. Restore transparently decrypts it (same key).
+        let data = std::fs::read(&src_path)
+            .map_err(|e| DbError::Migration(format!("read failed: {e}")))?;
+        let key = super::signer::signer_at_rest_key()
+            .map_err(|e| DbError::Migration(format!("at-rest key: {e}")))?;
+        let sealed = soshal_crypto_core::at_rest::seal_at_rest_bin(&key, &data)
+            .map_err(|e| DbError::Migration(format!("seal failed: {e}")))?;
+        let mut out = BACKUP_MAGIC.to_vec();
+        out.extend_from_slice(&sealed);
+        std::fs::write(&backup_path, out)
+            .map_err(|e| DbError::Migration(format!("write failed: {e}")))?;
         Ok(backup_path.clone())
     })
 }
+
+/// Backup file header: `SOSHBK01` marks an at-rest-key-sealed snapshot.
+const BACKUP_MAGIC: &[u8] = b"SOSHBK01";
 
 /// Restore: close the current handle, replace the file, and reopen with
 /// migrations. Any in-flight connection is dropped.
@@ -491,15 +576,42 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
     if db_dir_canon != src_dir_canon {
         return Err("restore path must be in the same directory as the database".to_string());
     }
+    // Encrypted backups (SOSHBK01 magic) are decrypted with the at-rest key
+    // into a temp file first; plaintext legacy backups pass through as-is.
+    let mut backup_file = backup_path.clone();
+    let mut encrypted = false;
+    {
+        use std::io::Read;
+        let mut f = std::fs::File::open(&backup_path)
+            .map_err(|e| format!("cannot open backup file: {e}"))?;
+        let mut head = [0u8; BACKUP_MAGIC.len()];
+        if f.read_exact(&mut head).is_ok() && head == BACKUP_MAGIC {
+            encrypted = true;
+        }
+    }
+    if encrypted {
+        let blob = std::fs::read(&backup_path)
+            .map_err(|e| format!("cannot read encrypted backup: {e}"))?;
+        let key = super::signer::signer_at_rest_key().map_err(|e| format!("at-rest key: {e}"))?;
+        let plain =
+            soshal_crypto_core::at_rest::open_at_rest_bin(&key, &blob[BACKUP_MAGIC.len()..])
+                .map_err(|e| format!("backup decrypt failed: {e}"))?;
+        let temp = format!("{backup_path}.plain");
+        std::fs::write(&temp, plain).map_err(|e| format!("temp write failed: {e}"))?;
+        backup_file = temp;
+    }
     // Validate SQLite magic bytes before replacing the live DB.
     const SQLITE_MAGIC: &[u8] = b"SQLite format 3\x00";
     let mut header = [0u8; 16];
     let mut f =
-        std::fs::File::open(&backup_path).map_err(|e| format!("cannot open backup file: {e}"))?;
+        std::fs::File::open(&backup_file).map_err(|e| format!("cannot open backup file: {e}"))?;
     use std::io::Read;
     f.read_exact(&mut header)
         .map_err(|_| "backup file too small to be a valid SQLite database".to_string())?;
     if header != SQLITE_MAGIC {
+        if encrypted {
+            let _ = std::fs::remove_file(&backup_file);
+        }
         return Err("backup file is not a valid SQLite 3 database".to_string());
     }
     drop(f);
@@ -516,12 +628,18 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
             return Err(format!("backup copy failed: {e}"));
         }
     }
-    if let Err(e) = std::fs::copy(&backup_path, &dst) {
+    if let Err(e) = std::fs::copy(&backup_file, &dst) {
         // re-open the original db so the app stays usable
+        if encrypted {
+            let _ = std::fs::remove_file(&backup_file);
+        }
         if let Ok(db) = Database::open(&dst) {
             *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
         }
         return Err(format!("restore copy failed: {e}"));
+    }
+    if encrypted {
+        let _ = std::fs::remove_file(&backup_file);
     }
     match Database::open(&dst) {
         Ok(db) => {
@@ -537,7 +655,18 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
             *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
             Ok(dst)
         }
-        Err(e) => Err(format!("restore open failed: {e}")),
+        Err(e) => {
+            // Restore the pre-restore snapshot and reopen so the app stays
+            // usable; without this the global DB handle stays None and the
+            // app is dead until a full re-init.
+            if std::path::Path::new(&bak).exists() {
+                let _ = std::fs::copy(&bak, &dst);
+            }
+            if let Ok(db) = Database::open(&dst) {
+                *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+            }
+            Err(format!("restore open failed: {e}"))
+        }
     }
 }
 
@@ -751,7 +880,7 @@ mod tests {
         let _ = std::fs::remove_file(format!("{path}-shm"));
         let init = db_init(path.clone());
         assert!(init.is_ok());
-        let exec = db_execute_raw(
+        let exec = db_execute_raw_test(
             "INSERT INTO users (pubkey, npub, name) VALUES ('abc', 'npub1abc', 'tester') ON CONFLICT DO UPDATE SET name='tester'".to_string(),
         );
         assert!(exec.is_ok());
@@ -766,6 +895,12 @@ mod tests {
     #[test]
     fn test_backup_restore_roundtrip() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        // Backup sealing needs the identity-derived at-rest key: unlock the
+        // process-global signer first (SIGNER_TEST_LOCK guards cross-module
+        // races on that state).
+        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
+        let nsec_hex = "01".repeat(32);
+        assert!(crate::ffi::signer::signer_unlock(nsec_hex).is_ok());
         let path = format!(
             "{}/soshal_test_{}_backup.db",
             std::env::temp_dir().to_string_lossy(),
@@ -777,14 +912,20 @@ mod tests {
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
         assert!(db_init(path.clone()).is_ok());
-        assert!(db_execute_raw(
+        assert!(db_execute_raw_test(
             "CREATE TABLE backup_test (id INTEGER PRIMARY KEY, val TEXT)".to_string()
         )
         .is_ok());
-        assert!(
-            db_execute_raw("INSERT INTO backup_test (val) VALUES ('survivor')".to_string()).is_ok()
-        );
+        assert!(db_execute_params(
+            "INSERT INTO backup_test (val) VALUES (?1)",
+            &["survivor".to_string()]
+        )
+        .is_ok());
         assert!(db_backup(backup_path.clone()).is_ok());
+        // The backup file must be ciphertext (sealed), never a plaintext DB.
+        let raw = std::fs::read(&backup_path).unwrap();
+        assert!(raw.starts_with(b"SOSHBK01"));
+        assert!(!raw.windows(16).any(|w| w == b"SQLite format 3\x00"));
         *DB.lock().unwrap() = None;
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
@@ -793,9 +934,12 @@ mod tests {
         let rows = db_query_raw("SELECT val FROM backup_test".to_string());
         assert!(rows.is_ok());
         assert!(rows.unwrap().contains("survivor"));
+        // Decrypted temp must not linger.
+        assert!(!std::path::Path::new(&format!("{backup_path}.plain")).exists());
         *DB.lock().unwrap() = None;
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(&backup_path);
+        crate::ffi::signer::signer_lock().ok();
     }
 
     #[test]
@@ -823,6 +967,58 @@ mod tests {
     }
 
     #[test]
+    fn test_protected_settings_keys_denied() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let path = format!(
+            "{}/soshal_test_{}_guarded.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id()
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        assert!(db_init(path.clone()).is_ok());
+        assert!(
+            db_set_setting("pin_hash".to_string(), "x".to_string()).is_err(),
+            "pin_hash must not be settable via db_set_setting"
+        );
+        assert!(db_set_setting("pin_permanently_locked".to_string(), "false".to_string()).is_err());
+        assert!(db_set_setting("pin_lockout_state".to_string(), "{}".to_string()).is_err());
+        assert!(
+            db_execute_raw("UPDATE settings SET value='x' WHERE key='pin_hash'".to_string())
+                .is_err(),
+            "raw SQL must not touch the settings table"
+        );
+        assert!(
+            db_query_raw("SELECT value FROM settings".to_string()).is_err(),
+            "raw query must not touch the settings table"
+        );
+        assert!(
+            db_execute_raw(
+                "INSERT INTO users (pubkey, npub, name) VALUES ('guarded1', 'npub1g', 'g') \
+                 ON CONFLICT DO UPDATE SET name='g'"
+                    .to_string()
+            )
+            .is_err(),
+            "raw SQL must not INSERT (write path is db_execute_params)"
+        );
+        assert!(
+            db_execute_params(
+                "INSERT INTO users (pubkey, npub, name) VALUES (?1, ?2, ?3)",
+                &[
+                    "guarded1".to_string(),
+                    "npub1g".to_string(),
+                    "g".to_string(),
+                ]
+            )
+            .is_ok(),
+            "unrelated parameterized SQL still allowed"
+        );
+        *DB.lock().unwrap() = None;
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn test_storage_stats() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = format!(
@@ -834,7 +1030,7 @@ mod tests {
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
         assert!(db_init(path.clone()).is_ok());
-        assert!(db_execute_raw(
+        assert!(db_execute_raw_test(
             "INSERT INTO users (pubkey, npub, name) VALUES ('stat1', 'npub1stat', 's') \
                  ON CONFLICT DO UPDATE SET name='s'"
                 .to_string()
@@ -859,11 +1055,11 @@ mod tests {
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
         assert!(db_init(path.clone()).is_ok());
-        assert!(db_execute_raw(
+        assert!(db_execute_raw_test(
             "INSERT INTO users (pubkey, npub, name) VALUES ('pk', 'npub1pk', 't') ON CONFLICT DO NOTHING".to_string()
         )
         .is_ok());
-        assert!(db_execute_raw(
+        assert!(db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES ('p1','pk','hello #soshal',1,1000,'[]','synced',0)".to_string()
         )

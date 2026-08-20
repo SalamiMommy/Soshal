@@ -1,7 +1,6 @@
 //! Dating profile filtering by gender, seeking, and distance.
 
 use crate::{FilterDatingProfilesInput, FilteredDatingProfileOut, MAX_PROFILES};
-use soshal_spatial_core::distance::haversine_distance;
 use std::collections::HashSet;
 
 pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredDatingProfileOut> {
@@ -16,7 +15,10 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
         _ => vec!["male", "female", "non-binary", "other"],
     };
     let self_contacts_set: HashSet<&str> = input.self_contacts.iter().map(|s| s.as_str()).collect();
-    let own_gender_lower = input.own_gender.as_ref().map(|g| g.to_lowercase());
+    let own_coords = input
+        .own_location_geohash
+        .as_deref()
+        .and_then(soshal_spatial_core::distance::decode_geohash_coords);
     input
         .profiles
         .iter()
@@ -38,48 +40,63 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                         }
                     }
                 }
-                if let Some(ref other_seeking) = profile.seeking {
-                    if !other_seeking.eq_ignore_ascii_case("All") {
-                        if let Some(ref own_g) = own_gender_lower {
-                            let other_map: &[&str] = if other_seeking.eq_ignore_ascii_case("male") {
-                                &["male"]
-                            } else if other_seeking.eq_ignore_ascii_case("female") {
-                                &["female"]
-                            } else if other_seeking.eq_ignore_ascii_case("non-binary") {
-                                &["non-binary"]
-                            } else if other_seeking.eq_ignore_ascii_case("other") {
-                                &["other"]
-                            } else {
-                                &["male", "female", "non-binary", "other"]
-                            };
-                            if !other_map.contains(&own_g.as_str()) {
-                                return false;
-                            }
-                        }
+                if let (Some(ref own_g), Some(ref other_seeking)) =
+                    (&input.own_gender, &profile.seeking)
+                {
+                    // Mutual direction: the other's seeking preference must
+                    // include our gender. Seeking values are the lowercase
+                    // enum literals ("male"/"female"/"non-binary"/"other"),
+                    // NOT "men"/"women" — must match gender_map above.
+                    let other_map: &[&str] = if other_seeking.eq_ignore_ascii_case("male") {
+                        &["male"]
+                    } else if other_seeking.eq_ignore_ascii_case("female") {
+                        &["female"]
+                    } else if other_seeking.eq_ignore_ascii_case("non-binary") {
+                        &["non-binary"]
+                    } else if other_seeking.eq_ignore_ascii_case("other") {
+                        &["other"]
+                    } else {
+                        &["male", "female", "non-binary", "other"]
+                    };
+                    if !other_map.contains(&own_g.as_str()) {
+                        return false;
                     }
                 }
-                if let (Some(own_gh), Some(ref own_max)) = (
-                    input.own_location_geohash.as_ref(),
-                    input.own_max_distance_km,
-                ) {
-                    if *own_max > 0.0 {
-                        let other_gh = match profile.location_geohash.as_ref() {
-                            Some(gh) => gh,
-                            // A candidate without a geohash cannot be located;
-                            // exclude it when browsing by radius.
+                if let (Some((own_lat, own_lon)), Some(own_max)) =
+                    (own_coords, input.own_max_distance_km)
+                {
+                    if own_max > 0.0 {
+                        let (other_lat, other_lon) = match profile
+                            .location_geohash
+                            .as_deref()
+                            .and_then(soshal_spatial_core::distance::decode_geohash_coords)
+                        {
+                            Some(c) => c,
                             None => return false,
                         };
-                        if haversine_distance(own_gh, other_gh) > *own_max {
+                        if soshal_spatial_core::distance::haversine_km(
+                            own_lat, own_lon, other_lat, other_lon,
+                        ) > own_max
+                        {
                             return false;
                         }
                     }
                 }
-                if let (Some(other_gh), Some(ref other_max)) =
+                if let (Some(other_gh), Some(other_max)) =
                     (profile.location_geohash.as_ref(), profile.max_distance_km)
                 {
-                    if *other_max > 0.0 {
-                        if let Some(ref own_gh) = input.own_location_geohash {
-                            if haversine_distance(other_gh, own_gh) > *other_max {
+                    if other_max > 0.0 {
+                        if let Some((own_lat, own_lon)) = own_coords {
+                            let (other_lat, other_lon) =
+                                match soshal_spatial_core::distance::decode_geohash_coords(other_gh)
+                                {
+                                    Some(c) => c,
+                                    None => return false,
+                                };
+                            if soshal_spatial_core::distance::haversine_km(
+                                other_lat, other_lon, own_lat, own_lon,
+                            ) > other_max
+                            {
                                 return false;
                             }
                         }

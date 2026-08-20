@@ -198,8 +198,12 @@ fn parse_listings(json: String) -> Vec<ListingInfo> {
 }
 
 fn db_listings(sql: String) -> Result<Vec<ListingInfo>, String> {
+    db_listings_params(&sql, &[])
+}
+
+fn db_listings_params(sql: &str, params: &[String]) -> Result<Vec<ListingInfo>, String> {
     let (rows, _names) = {
-        let json = super::db::db_query_raw(sql)?;
+        let json = super::db::db_query_params(sql, params)?;
         (
             serde_json::from_str::<Vec<serde_json::Value>>(&json).unwrap_or_default(),
             (),
@@ -242,14 +246,15 @@ pub fn marketplace_search(query: String, limit: i32) -> Result<String, String> {
 /// Get listing by id.
 #[frb(sync, serialize)]
 pub fn marketplace_get_listing(listing_id: String) -> Result<String, String> {
-    let sql = format!(
-        "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
-         p.content, p.tags_json, p.created_at, p.is_deleted \
-         FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LISTING} AND p.id = '{}'",
-        listing_id.replace('\'', "''")
-    );
-    let list = db_listings(sql)?;
+    let list = db_listings_params(
+        &format!(
+            "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
+             p.content, p.tags_json, p.created_at, p.is_deleted \
+             FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
+             WHERE p.kind = {KIND_LISTING} AND p.id = ?1"
+        ),
+        &[listing_id],
+    )?;
     let info = list
         .into_iter()
         .next()
@@ -260,11 +265,10 @@ pub fn marketplace_get_listing(listing_id: String) -> Result<String, String> {
 /// Get raw listing content JSON string by listing id.
 #[frb(sync, serialize)]
 pub fn marketplace_get_content(listing_id: String) -> Result<String, String> {
-    let sql = format!(
-        "SELECT content FROM posts WHERE id = '{}' AND kind = {KIND_LISTING} LIMIT 1",
-        listing_id.replace('\'', "''")
-    );
-    let json = super::db::db_query_raw(sql)?;
+    let json = super::db::db_query_params(
+        &format!("SELECT content FROM posts WHERE id = ?1 AND kind = {KIND_LISTING} LIMIT 1"),
+        &[listing_id],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     if let Some(first) = rows.first() {
         if let Some(content_str) = first["content"].as_str() {
@@ -407,10 +411,10 @@ pub fn marketplace_delete_listing(
     if existing.seller_pubkey != seller_pubkey {
         return Err("only the seller can delete a listing".to_string()).into();
     }
-    let escrow_check = super::db::db_query_raw(format!(
-        "SELECT COUNT(*) AS c FROM escrows WHERE listing_id = '{}' AND status IN ('created','funded','shipped','disputed')",
-        listing_id.replace('\'', "''")
-    ))?;
+    let escrow_check = super::db::db_query_params(
+        "SELECT COUNT(*) AS c FROM escrows WHERE listing_id = ?1 AND status IN ('created','funded','shipped','disputed')",
+        &[listing_id.clone()],
+    )?;
     let open: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&escrow_check)
         .ok()
         .and_then(|rows| rows.first().and_then(|r| r["c"].as_i64()))
@@ -418,10 +422,10 @@ pub fn marketplace_delete_listing(
     if open > 0 {
         return Err("listing has open escrows".to_string()).into();
     }
-    super::db::db_execute_raw(format!(
-        "UPDATE posts SET is_deleted = 1 WHERE id = '{}'",
-        listing_id.replace('\'', "''")
-    ))
+    super::db::db_execute_params(
+        "UPDATE posts SET is_deleted = 1 WHERE id = ?1",
+        &[listing_id],
+    )
     .map(|_| true)
     .into()
 }
@@ -429,15 +433,16 @@ pub fn marketplace_delete_listing(
 /// Fetch seller's listings.
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_seller_listings(seller_pubkey: String) -> Result<String, String> {
-    let sql = format!(
-        "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
-         p.content, p.tags_json, p.created_at, p.is_deleted \
-         FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LISTING} AND p.pubkey = '{}' AND p.is_deleted = 0 \
-         ORDER BY p.created_at DESC LIMIT 200",
-        seller_pubkey.replace('\'', "''")
-    );
-    super::util::json_ok(db_listings(sql)?)
+    super::util::json_ok(db_listings_params(
+        &format!(
+            "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
+             p.content, p.tags_json, p.created_at, p.is_deleted \
+             FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
+             WHERE p.kind = {KIND_LISTING} AND p.pubkey = ?1 AND p.is_deleted = 0 \
+             ORDER BY p.created_at DESC LIMIT 200"
+        ),
+        &[seller_pubkey],
+    )?)
 }
 
 /// Get listings by category (denormalized `category` column, v012).
@@ -512,11 +517,13 @@ pub fn marketplace_create_order(
 /// Get order details.
 #[frb(sync, serialize)]
 pub fn marketplace_get_order(order_id: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
-         WHERE p.kind = {KIND_ORDER} AND p.id = '{}'",
-        order_id.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
+             WHERE p.kind = {KIND_ORDER} AND p.id = ?1"
+        ),
+        &[order_id],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let order = rows
         .first()
@@ -693,11 +700,11 @@ pub fn marketplace_resolve_escrow(
 /// Get escrow state by id (raw JSON).
 #[frb(sync, serialize)]
 pub fn marketplace_get_escrow(escrow_id: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
+    let json = super::db::db_query_params(
         "SELECT id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at \
-         FROM escrows WHERE id = '{}'",
-        escrow_id.replace('\'', "''")
-    ))?;
+         FROM escrows WHERE id = ?1",
+        &[escrow_id],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     if rows.is_empty() {
         return Err("Escrow not found".to_string()).into();
@@ -708,11 +715,11 @@ pub fn marketplace_get_escrow(escrow_id: String) -> Result<String, String> {
 /// Latest escrow for a listing (null JSON if none exists).
 #[frb(sync, serialize)]
 pub fn marketplace_get_escrow_by_listing(listing_id: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
+    let json = super::db::db_query_params(
         "SELECT id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at \
-         FROM escrows WHERE listing_id = '{}' ORDER BY created_at DESC LIMIT 1",
-        listing_id.replace('\'', "''")
-    ))?;
+         FROM escrows WHERE listing_id = ?1 ORDER BY created_at DESC LIMIT 1",
+        &[listing_id],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     if rows.is_empty() {
         return Ok("null".to_string()).into();
@@ -855,10 +862,10 @@ pub fn marketplace_poll_get(poll_id: String) -> Result<String, String> {
     .ok_or_else(|| "poll not found".to_string())?;
     let options: Vec<String> =
         serde_json::from_str(&poll.options).map_err(|e| format!("invalid options JSON: {e}"))?;
-    let json = super::db::db_query_raw(format!(
-        "SELECT option_id, COUNT(*) AS c FROM poll_votes WHERE poll_id = '{}' GROUP BY option_id",
-        poll_id.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        "SELECT option_id, COUNT(*) AS c FROM poll_votes WHERE poll_id = ?1 GROUP BY option_id",
+        &[poll_id],
+    )?;
     let mut votes = vec![0i64; options.len()];
     for row in serde_json::from_str::<Vec<serde_json::Value>>(&json).unwrap_or_default() {
         if let (Some(id), Some(c)) = (row["option_id"].as_i64(), row["c"].as_i64()) {
@@ -950,7 +957,7 @@ mod tests {
             "images": [],
             "escrowEnabled": false,
         });
-        db::db_execute_raw(format!(
+        db::db_execute_raw_test(format!(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, category) \
              VALUES ('{id}','{seller}','{}',{KIND_LISTING},{created_at},'[[\"d\",\"{id}\"],[\"t\",\"{category}\"]]','synced',0,'{category}')",
             content.to_string().replace('\'', "''")
@@ -959,7 +966,7 @@ mod tests {
     }
 
     fn insert_escrow(id: &str, listing_id: &str, status: &str) {
-        db::db_execute_raw(format!(
+        db::db_execute_raw_test(format!(
             "INSERT INTO escrows (id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at) \
              VALUES ('{id}','{listing_id}','buyer1','seller1',5000,'sats','{status}',NULL,100,100)"
         ))
@@ -1061,7 +1068,7 @@ mod tests {
                 .unwrap_err()
                 .contains("open escrows")
         );
-        db::db_execute_raw("DELETE FROM escrows WHERE id='esc1'".to_string()).unwrap();
+        db::db_execute_raw_test("DELETE FROM escrows WHERE id='esc1'".to_string()).unwrap();
         assert!(marketplace_delete_listing("l1".to_string(), "seller1".to_string()).unwrap());
         let info = marketplace_get_listing("l1".to_string()).unwrap();
         assert!(info.contains("\"status\":\"active\""), "{info}");
@@ -1266,7 +1273,7 @@ mod tests {
             marketplace_create_escrow(order_id.clone(), String::new(), "seller1".to_string(), 5000)
                 .unwrap();
         assert!(marketplace_release_escrow(escrow4.clone(), "seller1".to_string()).is_err());
-        db::db_execute_raw(format!(
+        db::db_execute_raw_test(format!(
             "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id='{escrow4}'"
         ))
         .unwrap();
@@ -1479,7 +1486,7 @@ mod tests {
         .contains("Listing not found"));
 
         // get_order with malformed content: row still resolves with fallback fields.
-        db::db_execute_raw(format!(
+        db::db_execute_raw_test(format!(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, category) \
              VALUES ('o1','buyer1','garbage',{KIND_ORDER},100,'[]','synced',0,'')"
         ))
@@ -1489,7 +1496,7 @@ mod tests {
         assert!(order.contains("\"listing_id\":\"\""), "{order}");
 
         // get_content: non-string content storage (BLOB -> hex) hits to_string fallback path.
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, category) \
              VALUES ('blob1','s',x'deadbeef',30402,100,'[]','synced',0,'')"
                 .to_string(),
@@ -1575,8 +1582,8 @@ mod tests {
         .unwrap();
         let v: serde_json::Value = serde_json::from_str(&created).unwrap();
         let pid = v["id"].as_str().unwrap().to_string();
-        let rows =
-            db::db_query_raw(format!("SELECT expires_at FROM polls WHERE id='{pid}'")).unwrap();
+        let rows = db::db_query_params("SELECT expires_at FROM polls WHERE id=?1", &[pid.clone()])
+            .unwrap();
         let expires: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&rows).unwrap()[0]
             ["expires_at"]
             .as_i64()
@@ -1595,7 +1602,7 @@ mod tests {
         );
 
         // Corrupt options_json -> Err from poll_get.
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO polls (id, pubkey, question, options, expires_at, closed, created_at) \
              VALUES ('pcorr','pk1','q','garbage',999999999,0,100)"
                 .to_string(),
@@ -1634,7 +1641,7 @@ mod tests {
         // Trending: repost count first, created_at tiebreak.
         insert_listing("t1", "s1", "alpha", 100, "cat", 1000);
         insert_listing("t2", "s2", "beta", 100, "cat", 2000);
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO reposts (id, pubkey, event_id, created_at) VALUES \
              ('rp1','u1','t1',100),('rp2','u1','t2',101),('rp3','u2','t2',102)"
                 .to_string(),

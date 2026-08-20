@@ -871,7 +871,7 @@ mod tests {
     }
 
     fn insert_user(pubkey: &str) {
-        super::super::db::db_execute_raw(format!(
+        super::super::db::db_execute_raw_test(format!(
             "INSERT INTO users (pubkey, npub, name) VALUES ('{pubkey}','npub1{pubkey}','tester') ON CONFLICT DO UPDATE SET name='tester'"
         ))
         .unwrap();

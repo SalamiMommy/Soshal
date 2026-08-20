@@ -4,6 +4,7 @@ import '../services/bookmarks_service.dart';
 import '../services/feed_service.dart' show FeedPost;
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/error_state_text.dart';
 
 /// Bookmarks: locally saved posts, resolved from the local DB cache.
@@ -76,7 +77,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
       debugPrint('bookmark delete: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Delete failed: $e')));
       }
     }
   }
@@ -108,23 +109,10 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
           }
           final rows = api.bookmarks;
           if (rows.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.bookmark_border, size: 48, color: Colors.grey),
-                    SizedBox(height: 12),
-                    Text('No bookmarks yet'),
-                    SizedBox(height: 4),
-                    Text(
-                      'Saved posts will appear here.',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
+            return const EmptyState(
+              icon: Icons.bookmark_border,
+              title: 'No bookmarks yet',
+              body: 'Saved posts will appear here.',
             );
           }
           if (_loadingPosts) {

@@ -263,7 +263,7 @@ pub fn feed_aac(blob: &[u8]) -> bool {
                         speaker,
                         pcm.as_ptr() as *const std::ffi::c_void,
                         (pcm.len() / 2) as i32,
-                        0,
+                        10_000_000,
                     );
                 }
                 AMediaCodec_releaseOutputBuffer(codec, out_idx as usize, 0);

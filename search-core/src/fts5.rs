@@ -46,14 +46,13 @@ pub fn format_fts5_query(query: &str) -> String {
     let mut count = 0;
     for word in cleaned.split_whitespace() {
         if let Some(t) = sanitize_fts5_term(word) {
-            if !seen.contains(&t) {
+            if seen.insert(t.clone()) {
                 if count > 0 {
                     out.push_str(" AND ");
                 }
                 out.push_str(&t);
                 out.push('*');
                 count += 1;
-                seen.insert(t);
                 if count >= MAX_FTS5_TERMS {
                     break;
                 }

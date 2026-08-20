@@ -16,6 +16,7 @@ import 'services/sync_service.dart';
 import 'services/messaging_service.dart';
 import 'services/notifications_service.dart';
 import 'services/search_service.dart';
+import 'services/crypto_service.dart';
 import 'services/dating_service.dart';
 import 'services/events_service.dart';
 import 'services/groups_service.dart';
@@ -106,6 +107,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => MediaService()),
         ChangeNotifierProvider(create: (_) => SignerService()),
         ChangeNotifierProvider(create: (_) => BackupService()),
+        ChangeNotifierProvider(create: (_) => CryptoService()),
         Provider<MinisService>(create: (_) => MinisService()),
       ],
       child: const SoshalApp(),
@@ -176,7 +178,9 @@ class _SoshalAppState extends State<SoshalApp> {
           // No deep link.
         } else if (uri.scheme == 'nostr') {
           await _handleNostrDeepLink(route);
-        } else {
+        } else if (uri.scheme == 'app') {
+          // Allowlisted scheme only; anything else is dropped (Rust side
+          // rejects unknown schemes too, this keeps the Dart heap quiet).
           if (!mounted) return;
           await context.read<AuthService>().handleNostrProtocolRequest(
                 scheme: uri.scheme,

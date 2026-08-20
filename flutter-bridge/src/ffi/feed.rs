@@ -288,10 +288,18 @@ mod tests {
         created_at: i64,
         tags_json: &str,
     ) {
-        db::db_execute_raw(format!(
+        db::db_execute_params(
             "INSERT OR IGNORE INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
-             VALUES ('{id}','{pubkey}','{content}',{kind},{created_at},'{tags_json}','synced',0)"
-        ))
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'synced', 0)",
+            &[
+                id.to_string(),
+                pubkey.to_string(),
+                content.to_string(),
+                kind.to_string(),
+                created_at.to_string(),
+                tags_json.to_string(),
+            ],
+        )
         .unwrap();
     }
 
@@ -448,7 +456,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("window");
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO users (pubkey, npub, name) VALUES ('pk1','npub1pk1','tester') ON CONFLICT DO NOTHING"
                 .to_string(),
         )
@@ -482,31 +490,31 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("thread");
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES ('root','pk1','root post',1,1000,'[]','synced',0)"
                 .to_string(),
         )
         .unwrap();
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, root_id) \
              VALUES ('r1','pk2','reply one',1,2000,'[]','synced',0,'root')"
                 .to_string(),
         )
         .unwrap();
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, root_id) \
              VALUES ('r2','pk2','reply two',1,1500,'[]','synced',0,'root')"
                 .to_string(),
         )
         .unwrap();
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES ('other','pk3','unrelated',1,3000,'[]','synced',0)"
                 .to_string(),
         )
         .unwrap();
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, root_id) \
              VALUES ('rdel','pk4','deleted',1,2500,'[]','synced',1,'root')"
                 .to_string(),

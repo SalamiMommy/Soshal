@@ -48,6 +48,23 @@ impl<'a> PostRepo<'a> {
         )
     }
 
+    /// Zap-requests (kind 9734) targeting a note, newest first. Used for
+    /// NIP-57 receipt verification: a receipt is only trusted when its
+    /// invoice description hash matches one of these requests.
+    pub async fn get_zap_requests_for_note_in(
+        &self,
+        t: &libsql::Transaction,
+        note_id: &str,
+    ) -> Result<Vec<PostRow>, crate::error::DbError> {
+        crate::query::query_async(
+            t,
+            "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE kind = 9734 AND reply_to = ?1 ORDER BY created_at DESC LIMIT 8",
+            params![note_id],
+            Self::map_row,
+        )
+        .await
+    }
+
     pub fn get_user_posts(
         &self,
         pubkey: &str,

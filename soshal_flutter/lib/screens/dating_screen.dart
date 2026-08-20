@@ -3,8 +3,10 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/dating_service.dart';
 import '../services/session_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/blob_image.dart';
+import '../widgets/empty_state.dart';
 
 /// Dating: browse cards, like/pass/superlike, matches, likes received.
 class DatingScreen extends StatefulWidget {
@@ -65,7 +67,10 @@ class _DatingScreenState extends State<DatingScreen>
     if (pubkey == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Dating')),
-        body: const Center(child: Text('Sign in to use Dating')),
+        body: const EmptyState(
+          icon: Icons.favorite_border,
+          title: 'Sign in to use Dating',
+        ),
       );
     }
 
@@ -135,6 +140,8 @@ class _DatingScreenState extends State<DatingScreen>
     final minAge = TextEditingController();
     final maxAge = TextEditingController();
     final interests = TextEditingController();
+    final minHeight = TextEditingController();
+    final maxHeight = TextEditingController();
     int radiusKm = 0;
     int heightMinCm = 0;
     int heightMaxCm = 0;
@@ -188,8 +195,7 @@ class _DatingScreenState extends State<DatingScreen>
                     children: [
                       Expanded(
                         child: TextField(
-                          controller: TextEditingController(
-                              text: heightMinCm == 0 ? '' : '$heightMinCm'),
+                          controller: minHeight,
                           keyboardType: TextInputType.number,
                           decoration:
                               const InputDecoration(labelText: 'Min height cm'),
@@ -200,8 +206,7 @@ class _DatingScreenState extends State<DatingScreen>
                       const SizedBox(width: 8),
                       Expanded(
                         child: TextField(
-                          controller: TextEditingController(
-                              text: heightMaxCm == 0 ? '' : '$heightMaxCm'),
+                          controller: maxHeight,
                           keyboardType: TextInputType.number,
                           decoration:
                               const InputDecoration(labelText: 'Max height cm'),
@@ -353,7 +358,10 @@ class _DatingScreenState extends State<DatingScreen>
     return Consumer<DatingService>(
       builder: (context, api, _) {
         if (api.cards.isEmpty) {
-          return const Center(child: Text('No profiles nearby yet'));
+          return const EmptyState(
+            icon: Icons.person_search_outlined,
+            title: 'No profiles nearby yet',
+          );
         }
         final card = api.cards[_cardIndex.clamp(0, api.cards.length - 1)];
         return Column(
@@ -374,14 +382,14 @@ class _DatingScreenState extends State<DatingScreen>
                             fit: BoxFit.cover,
                             errorBuilder: (_) => Container(
                               height: 220,
-                              color: Colors.grey[300],
+                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
                               child: const Icon(Icons.person, size: 80),
                             ),
                           )
                         else
                           Container(
                             height: 220,
-                            color: Colors.grey[300],
+                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
                             child: const Icon(Icons.person, size: 80),
                           ),
                         Padding(
@@ -613,7 +621,7 @@ class _DatingScreenState extends State<DatingScreen>
                   fit: BoxFit.cover,
                   errorBuilder: (_) => Container(
                     height: 200,
-                    color: Colors.grey[300],
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
                     child: const Icon(Icons.person, size: 64),
                   ),
                 ),
@@ -850,7 +858,7 @@ class _DatingScreenState extends State<DatingScreen>
         reason.text.trim().isEmpty ? 'reported' : reason.text.trim());
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reported')),
+        SnackBar(content: SelectableText('Reported')),
       );
       setState(() => _cardIndex++);
     }
@@ -893,7 +901,7 @@ class _DatingScreenState extends State<DatingScreen>
     final ok = await api.unmatch(pubkey, card.pubkey);
     if (!mounted) return false;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(ok ? 'Unmatched' : 'Failed to unmatch')),
+      SnackBar(content: SelectableText(ok ? 'Unmatched' : 'Failed to unmatch')),
     );
     return ok;
   }
@@ -998,22 +1006,38 @@ class _MatchesTab extends StatefulWidget {
 }
 
 class _MatchesTabState extends State<_MatchesTab> {
-  late final Future<List<DatingCard>> _future =
-      context.read<DatingService>().fetchMatches(widget.pubkey);
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      await context.read<DatingService>().fetchMatches(widget.pubkey);
+    } catch (e) {
+      debugPrint('matches: $e');
+    }
+    if (mounted) setState(() => _loading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final pubkey = widget.pubkey;
-    return FutureBuilder<List<DatingCard>>(
-      future: _future,
-      builder: (context, snapshot) {
-        final api = context.read<DatingService>();
-        if (snapshot.connectionState != ConnectionState.done) {
+    return Consumer<DatingService>(
+      builder: (context, api, _) {
+        if (_loading) {
           return const Center(child: CircularProgressIndicator());
         }
-        final matches = snapshot.data ?? [];
+        final matches = api.matches;
         if (matches.isEmpty) {
-          return const Center(child: Text('No matches yet'));
+          return const EmptyState(
+            icon: Icons.favorite_border,
+            title: 'No matches yet',
+          );
         }
         return ListView.builder(
           itemExtent: 72.0,
@@ -1051,13 +1075,19 @@ class _MatchesTabState extends State<_MatchesTab> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.green.withValues(alpha: 0.15),
+                            color: Theme.of(context)
+                                    .extension<AppThemeExtension>()
+                                    ?.glassGreen ??
+                                Theme.of(context).colorScheme.primary,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
                             '${score.round()}% match',
                             style: TextStyle(
-                              color: Colors.green.shade700,
+                              color: Theme.of(context)
+                                      .extension<AppThemeExtension>()
+                                      ?.glassGreenText ??
+                                  Theme.of(context).colorScheme.onPrimary,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -1107,22 +1137,38 @@ class _LikesTab extends StatefulWidget {
 }
 
 class _LikesTabState extends State<_LikesTab> {
-  late final Future<List<DatingCard>> _future =
-      context.read<DatingService>().fetchLikes(widget.pubkey);
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      await context.read<DatingService>().fetchLikes(widget.pubkey);
+    } catch (e) {
+      debugPrint('likes: $e');
+    }
+    if (mounted) setState(() => _loading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final pubkey = widget.pubkey;
-    return FutureBuilder<List<DatingCard>>(
-      future: _future,
-      builder: (context, snapshot) {
-        final api = context.read<DatingService>();
-        if (snapshot.connectionState != ConnectionState.done) {
+    return Consumer<DatingService>(
+      builder: (context, api, _) {
+        if (_loading) {
           return const Center(child: CircularProgressIndicator());
         }
-        final likes = snapshot.data ?? [];
+        final likes = api.likes;
         if (likes.isEmpty) {
-          return const Center(child: Text('No likes received yet'));
+          return const EmptyState(
+            icon: Icons.favorite_outline,
+            title: 'No likes received yet',
+          );
         }
         return ListView.builder(
           itemExtent: 72.0,
@@ -1166,7 +1212,7 @@ class _LikesTabState extends State<_LikesTab> {
                       await api.unlike(pubkey, l.pubkey);
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Removed like')),
+                          SnackBar(content: SelectableText('Removed like')),
                         );
                       }
                     },

@@ -157,7 +157,8 @@ class _SignerLockScreenState extends State<SignerLockScreen> {
                     Text(
                       _error!,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.redAccent),
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error),
                     ),
                   ],
                 ],

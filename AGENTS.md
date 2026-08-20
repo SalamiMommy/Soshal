@@ -92,13 +92,12 @@ NDK clang on PATH is required for ring's build script (probes
   break them; `clang`/`clang++`/`ld.lld` may be symlinked in alongside).
   `builds/android/build.sh` does all this automatically.
 - audiopus_sys builds libopus from source and IGNORES CC/CFLAGS (host .so
-  leaks into cross builds). Prebuilt static opus (opus-1.4,
-  `--disable-shared --enable-static --with-pic`) lives at
-  `/tmp/opencode/opus-prefix-<abi>/lib`; build with
-  `OPUS_LIB_DIR=… LIBOPUS_STATIC=1 OPUS_NO_PKG=1` and wipe its fingerprints
+  leaks into cross builds). `builds/android/build.sh` fetches + static-builds
+  opus (1.5.x, `--disable-shared --enable-static --with-pic`) per ABI into
+  `/tmp/opencode/opus/<abi>`, builds with
+  `OPUS_LIB_DIR=… LIBOPUS_STATIC=1 OPUS_NO_PKG=1` and wipes its fingerprints
   (`find … -path "*audiopus*" -exec rm -rf {} +` — its build script doesn't
-  rerun on env change). The build script fetches/static-builds opus into
-  `/tmp/opencode/opus/<abi>` and wipes fingerprints for you.
+  rerun on env change) — all automatic.
 - Cargo target dirs are big (~2GB/ABI); `/tmp` is tmpfs — both build scripts
   default them to disk-backed `$HOME/.cache/soshal-targets/` (override
   `SOSHAL_TARGET_DIR`).
@@ -119,15 +118,15 @@ media landed. FFI: `p2p_quic_server_start/port/stop`, `p2p_quic_fetch_chunk`,
 `swarmDownload(quicPorts:)` (parallel `Vec<Option<u16>>`) falls back to TCP per
 peer when null (`swarm.rs::fetch_from_peer`).
 
-**Live media (Android, no Rust rebuild):** capture + playback run on Kotlin
-`MethodChannel`s registered in `MainActivity.kt` — `com.soshal/h264`
-(`H264Codec.kt`: MediaCodec hw AVC encode BGRA→I420→Annex-B `[flag,…]` blobs,
-flag 1 = keyframe; sw-AVC decode → JPEG via `getOutputImage`→NV21→`YuvImage`)
-and `com.soshal/audio` (`AudioCodec.kt`: AudioRecord 48 kHz mono → AAC-LC
-64 kbps on a background thread, queue-drained; decode → AudioTrack; PCM shorts
-MUST be little-endian — `ByteBuffer.order(LITTLE_ENDIAN)` before
-`asShortBuffer`). Dart wrappers: `lib/services/h264_codec.dart`,
-`lib/services/audio_codec.dart` (every call a safe no-op off-Android).
+**Live media (Android, Rust FFI codecs):** capture + playback run through
+Rust — the legacy Kotlin `MethodChannel` codecs (`H264Codec.kt`/`AudioCodec.kt`,
+`com.soshal/h264`/`com.soshal/audio`) were DELETED. Codec work is done by
+`flutter-bridge/src/ffi/codecs/` (`h264.rs`, `audio.rs`: MediaCodec hw AVC
+encode BGRA→I420→Annex-B `[flag,…]` blobs, flag 1 = keyframe; sw-AVC decode →
+JPEG; AAC-LC 64 kbps capture, decode → AudioTrack; PCM shorts MUST be
+little-endian before `asShortBuffer`). Dart wrappers: `lib/services/h264_codec.dart`,
+`lib/services/audio_codec.dart` (every call a safe no-op off-Android) → glue
+`lib/ffi/h264.dart`/`audio.dart` → `crateFfiH264*`/`crateFfiAudio*`.
 Semantics:
 - MoQ tracks: 0 = JPEG keyframe groups (~4 fps fallback, codec-free),
   1 = H.264 groups (`VideoKeyframe`/`VideoDelta` per encoder flag),
@@ -153,14 +152,22 @@ rebuild all 3 `.so`s, re-run `flutter analyze` + bridge tests. Generated Dart
 methods are snake_case `crateFfi<Module><Fn>`; `#[frb(sync)]` fns return plain
 values (awaiting them is harmless, not an error).
 
-**Glue-trim ritual**: only 7 `lib/ffi/*.dart` glue files are kept (auth, db,
-media, network, p2p, raster, session). After EVERY regen run
-`scripts/trim-ffi-glue.sh` (deletes the 41 un-kept glue files + strips their
-`import 'ffi/…'` lines from `frb_generated.dart`, `frb_generated.io.dart` AND
-`frb_generated.web.dart`). 6 smoke tests stay in `test/ffi_manual/`:
+**Glue-trim ritual**: 13 `lib/ffi/*.dart` glue files are kept (audio, auth,
+content, daemon, db, h264, media, network, p2p, permissions, power, raster,
+session). After EVERY regen run `scripts/trim-ffi-glue.sh` (deletes the
+un-kept glue files + strips their `import 'ffi/…'` lines from
+`frb_generated.dart`, `frb_generated.io.dart` AND `frb_generated.web.dart`).
+6 smoke tests stay in `test/ffi_manual/`:
 auth/db/media/network/p2p/session (`test/ffi_manual/push_test.dart` etc. were
 deleted — do not restore). `lib/ffi/raster.dart` must be kept: `frb_generated.dart`
 references its `ImpellerFrameBufferInfo`.
+
+**Stale-codegen trap**: frb_generated.dart can carry fns whose Rust impl was
+deleted (`wire__…` absent from the .so). NEVER call a Dart fn whose Rust impl
+doesn't exist — verify with `rg "pub fn <module>_" flutter-bridge/src/ffi/`
+first. Known-removed surfaces (2026-08): `streaming_start_local_server`,
+`streaming_get_video_url`, `streaming_stop_local_server`,
+`moderation_hybrid_classify_media`, `search_index_post` (singular).
 
 **KNOWN codegen bug — io.dart corruption (frb 2.12.0)**: after EVERY regen,
 run per-file `dart analyze lib/frb_generated.io.dart lib/frb_generated.dart`
@@ -242,7 +249,7 @@ each migration SQL records its own version
 
 ### CI + Hooks
 
-- `.husky/pre-commit`: `cargo fmt --check` + clippy
+- `.husky/pre-commit`: `cargo fmt --check` + clippy (+ guard-lib-platform.sh)
 - `.husky/pre-push`: `cargo check --workspace && cargo test --workspace` (+ audit if installed)
 - `.github/workflows/ci.yml`: fmt, check, test, cargo-audit, ffi-bridge-tests,
   core-compliance, flutter-lint (pinned SHAs), plus a `coverage` job that gates

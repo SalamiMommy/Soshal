@@ -31,6 +31,9 @@ import 'package:soshal_flutter/ffi/p2p.dart'
 import 'package:soshal_flutter/ffi/power.dart'
     show PowerStateDto, powerSampleOsState;
 
+export 'package:soshal_flutter/ffi/p2p.dart'
+    show P2pPeerDto, P2pPowerDto, P2pSwarmStatusDto;
+
 import 'error_log.dart';
 
 /// P2P Service

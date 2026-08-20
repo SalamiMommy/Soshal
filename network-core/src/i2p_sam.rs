@@ -10,6 +10,7 @@ const SAM_DEFAULT_HOST: &str = "127.0.0.1";
 const SAM_DEFAULT_PORT: u16 = 7656;
 const SAM_VERSION: &str = "3.1";
 const SAM_SIGNATURE_TYPE: &str = "7"; // Ed25519
+const SAM_MAX_REPLY_LINE: u64 = 8192;
 const SAM_ENCRYPTION_TYPE: &str = "4"; // ECIES-X25519
 
 /// I2P SAM V3 client for anonymous networking
@@ -84,11 +85,16 @@ impl I2PSamClient {
             .map_err(|e| format!("Newline send failed: {e}"))?;
         stream.flush().map_err(|e| format!("Flush failed: {e}"))?;
 
-        let mut reader = BufReader::new(stream);
+        let mut reader = BufReader::new(stream).take(SAM_MAX_REPLY_LINE);
         let mut response = String::new();
         reader
+            // Hostile SAM router must not be able to grow memory without
+            // bound: cap the accepted reply line.
             .read_line(&mut response)
             .map_err(|e| format!("Response read failed: {e}"))?;
+        if response.len() as u64 >= SAM_MAX_REPLY_LINE {
+            return Err("SAM reply line too long".to_string());
+        }
 
         Ok(response.trim().to_string())
     }

@@ -4,9 +4,9 @@ import 'package:provider/provider.dart';
 import '../services/session_service.dart';
 import '../services/streaming_service.dart';
 import '../services/p2p_service.dart';
-import '../ffi/p2p.dart';
 import '../utils/format.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/empty_state.dart';
 
 /// Live streams: presence list + start/end own stream.
 class LiveScreen extends StatefulWidget {
@@ -20,125 +20,11 @@ class LiveScreen extends StatefulWidget {
 class _LiveScreenState extends State<LiveScreen> {
   bool _loading = true;
   bool _followedOnly = false;
-  int? _videoPort;
-  String? _videoUrl;
-  final _videoIdController = TextEditingController();
-  final _videoPathController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void dispose() {
-    _videoIdController.dispose();
-    _videoPathController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _startLocalVideo() async {
-    try {
-      final api = context.read<StreamingService>();
-      final port = await api.initLocalVideoServer();
-      if (!mounted) return;
-      setState(() {
-        _videoPort = port;
-        _videoUrl = null;
-        if (api.live.isNotEmpty) {
-          _videoIdController.text = api.live.first.id;
-        }
-      });
-    } catch (e) {
-      _toast('Video server failed: $e');
-    }
-  }
-
-  void _showVideoUrl() {
-    final id = _videoIdController.text.trim();
-    final path = _videoPathController.text.trim();
-    if (id.isEmpty || path.isEmpty) {
-      _toast('Enter a video id and a source path');
-      return;
-    }
-    try {
-      final url = context.read<StreamingService>().getLocalVideoUrl(id, path);
-      if (!mounted) return;
-      setState(() => _videoUrl = url);
-    } catch (e) {
-      _toast('Video URL failed: $e');
-    }
-  }
-
-  Widget _localVideoCard() {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.tv),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _videoPort == null
-                        ? 'Local video'
-                        : 'Local video · port $_videoPort',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                if (_videoPort == null)
-                  TextButton(
-                    onPressed: _startLocalVideo,
-                    child: const Text('Start server'),
-                  ),
-              ],
-            ),
-            if (_videoPort != null) ...[
-              const SizedBox(height: 8),
-              TextField(
-                controller: _videoIdController,
-                decoration: const InputDecoration(
-                  labelText: 'Video id',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _videoPathController,
-                decoration: const InputDecoration(
-                  labelText: 'Source path',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  FilledButton.tonal(
-                    onPressed: _showVideoUrl,
-                    child: const Text('Show URL'),
-                  ),
-                  if (_videoUrl != null) ...[
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SelectableText(
-                        _videoUrl!,
-                        maxLines: 1,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
   }
 
   Future<void> _load() async {
@@ -320,8 +206,10 @@ class _LiveScreenState extends State<LiveScreen> {
                   child: Consumer<StreamingService>(
                     builder: (context, api, _) {
                       if (api.live.isEmpty) {
-                        return const Center(
-                            child: Text('No streams right now'));
+                        return const EmptyState(
+                          icon: Icons.videocam_off_outlined,
+                          title: 'No streams right now',
+                        );
                       }
                       return RefreshIndicator(
                         onRefresh: _load,
@@ -361,7 +249,6 @@ class _LiveScreenState extends State<LiveScreen> {
                     },
                   ),
                 ),
-                _localVideoCard(),
               ],
             ),
     );

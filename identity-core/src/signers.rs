@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use nostr::event::{Event, EventBuilder, FinalizeUnsignedEvent, SignEvent, UnsignedEvent};
 use nostr::key::{Keys, PublicKey};
+use sha2::Digest;
 use zeroize::Zeroize;
 
 /// Narrow signing surface shared by in-process and remote (key agent)
@@ -104,8 +105,13 @@ fn derive_shared_secret(sk: &nostr::key::SecretKey, pk: &PublicKey) -> Result<[u
     // parity bit — that would make the derived key depend on each party's y
     // parity (lost in x-only pubkeys) and break encryption ~half the time.
     let mut xy = ecdh::shared_secret_point(&secp_pk, sk);
+    // Uniformize: SHA-256 of the x-coordinate. Hashing removes the low-order
+    // point / structure the raw x-coordinate could carry, while staying
+    // parity-independent (the x-only pubkey never re-introduces the y-parity
+    // dependence the raw compressed-point hash would have).
+    let digest = sha2::Sha256::digest(&xy[..32]);
     let mut key = [0u8; 32];
-    key.copy_from_slice(&xy[..32]);
+    key.copy_from_slice(&digest);
     xy.zeroize();
     Ok(key)
 }
@@ -200,15 +206,19 @@ impl SigningOps for Signer {
     }
 
     fn nip44_encrypt(&self, to: &PublicKey, content: &str) -> Result<String, String> {
-        let key = shared_secret(self.keys.secret_key(), to)?;
-        soshal_crypto_core::nip44::encrypt(content.as_bytes(), &key)
-            .map_err(|e| format!("encrypt: {e}"))
+        let mut key = shared_secret(self.keys.secret_key(), to)?;
+        let res = soshal_crypto_core::nip44::encrypt(content.as_bytes(), &key)
+            .map_err(|e| format!("encrypt: {e}"));
+        key.zeroize();
+        res
     }
 
     fn nip44_decrypt(&self, from: &PublicKey, payload: &str) -> Result<String, String> {
-        let key = shared_secret(self.keys.secret_key(), from)?;
-        let plaintext = soshal_crypto_core::nip44::decrypt(payload, &key)
-            .map_err(|e| format!("decrypt: {e}"))?;
+        let mut key = shared_secret(self.keys.secret_key(), from)?;
+        let res =
+            soshal_crypto_core::nip44::decrypt(payload, &key).map_err(|e| format!("decrypt: {e}"));
+        key.zeroize();
+        let plaintext = res?;
         String::from_utf8(plaintext).map_err(|e| format!("utf8: {e}"))
     }
 }

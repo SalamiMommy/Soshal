@@ -84,14 +84,6 @@ void main() {
       expect(streaming.lastError, contains('story down'));
     });
 
-    test('initLocalVideoServer stores the returned port', () async {
-      final streaming = StreamingService();
-      api.stub('crateFfiStreamingStreamingStartLocalServer', (_) async => 8787);
-
-      expect(await streaming.initLocalVideoServer(), 8787);
-      expect(streaming.localVideoServerPort, 8787);
-    });
-
     test('group builders encode track metadata without FFI', () {
       final streaming = StreamingService();
       final v = streaming.buildVideoGroup(

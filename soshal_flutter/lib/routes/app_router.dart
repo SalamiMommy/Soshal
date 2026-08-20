@@ -49,6 +49,7 @@ import '../screens/live_broadcast_screen.dart';
 import '../screens/moq_viewer_screen.dart';
 import '../screens/profile_builder_screen.dart';
 import '../screens/profile_renderer_screen.dart';
+import '../services/music_service.dart';
 import '../widgets/app_shell.dart';
 
 class AppRouter {
@@ -195,6 +196,11 @@ class AppRouter {
             builder: (context, state) => const MusicloudScreen(),
           ),
           GoRoute(
+            path: '/music/track',
+            builder: (context, state) =>
+                TrackDetailScreen(state.extra as MusicTrack),
+          ),
+          GoRoute(
             path: '/music/:pubkey',
             builder: (context, state) => MusicloudUserScreen(
               pubkey: state.pathParameters['pubkey'] ?? '',
@@ -295,6 +301,10 @@ class AppRouter {
           GoRoute(
             path: '/settings/privacy',
             builder: (context, state) => const PrivacyScreen(),
+          ),
+          GoRoute(
+            path: '/settings/privacy/stealth',
+            builder: (context, state) => const StealthEditorScreen(),
           ),
           GoRoute(
             path: '/settings/storage',

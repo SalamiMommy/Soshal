@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/session_service.dart';
 import '../services/signer_service.dart';
 import '../utils/format.dart';
+import '../widgets/empty_state.dart';
 
 /// Account management: list accounts, switch, remove, add new.
 class AccountsScreen extends StatefulWidget {
@@ -66,17 +67,12 @@ class _AccountsScreenState extends State<AccountsScreen> {
         builder: (context, session, _) {
           final accounts = session.getAccounts();
           if (accounts.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('No accounts yet'),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () => context.go('/auth'),
-                    child: const Text('Add account'),
-                  ),
-                ],
+            return EmptyState(
+              icon: Icons.person_add_alt_1,
+              title: 'No accounts yet',
+              action: FilledButton(
+                onPressed: () => context.go('/auth'),
+                child: const Text('Add account'),
               ),
             );
           }

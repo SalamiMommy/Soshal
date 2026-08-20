@@ -77,17 +77,19 @@ class _TursoSettingsScreenState extends State<TursoSettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Card(
+                  Card(
                     child: Padding(
-                      padding: EdgeInsets.all(16.0),
+                      padding: const EdgeInsets.all(16.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.cloud_sync, color: Colors.blue),
-                              SizedBox(width: 8),
-                              Text(
+                              Icon(Icons.cloud_sync,
+                                  color:
+                                      Theme.of(context).colorScheme.primary),
+                              const SizedBox(width: 8),
+                              const Text(
                                 'Turso Edge Replication',
                                 style: TextStyle(
                                   fontSize: 18,

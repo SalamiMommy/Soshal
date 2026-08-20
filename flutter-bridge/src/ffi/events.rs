@@ -205,15 +205,10 @@ pub fn events_fetch_nearby(
 /// Fetch events the user is involved in (created, RSVPed, or attended).
 #[frb(sync, serialize)]
 pub fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result<String, String> {
-    let pk = user_pubkey.replace('\'', "''");
-    let json = super::db::db_query_raw(event_rows_sql(
-        &format!(
-            "AND (p.pubkey = '{pk}' OR EXISTS (SELECT 1 FROM posts r WHERE r.pubkey = '{pk}' \
-            AND (r.rsvp_event_id = p.id \
-                 OR r.id = 'checkin:' || '{pk}' || ':' || p.id)))"
-        ),
-        limit,
-    ))?;
+    let filter = "AND (p.pubkey = ?1 OR EXISTS (SELECT 1 FROM posts r WHERE r.pubkey = ?1 \
+                  AND (r.rsvp_event_id = p.id \
+                       OR r.id = 'checkin:' || ?1 || ':' || p.id)))";
+    let json = super::db::db_query_params(&event_rows_sql(filter, limit), &[user_pubkey.clone()])?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let ids: Vec<String> = rows
         .iter()
@@ -295,19 +290,20 @@ pub fn events_create(
         String::new(),
         Some(title),
     )?;
-    super::db::db_execute_raw(format!(
-        "UPDATE posts SET event_lat = {latitude}, event_lng = {longitude} WHERE id = '{event_id}'"
-    ))?;
+    super::db::db_execute_params(
+        "UPDATE posts SET event_lat = ?1, event_lng = ?2 WHERE id = ?3",
+        &[latitude.to_string(), longitude.to_string(), event_id],
+    )?;
     Ok(signed_json).into()
 }
 
 /// Single-row fetch of the event host pubkey + d-tag (avoids the
 /// events_get_event + tags_json double query).
 fn event_host_and_d_tag(event_id: &str) -> Option<(String, String)> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT pubkey, tags_json FROM posts WHERE kind IN ({EVENT_KINDS}) AND id = '{}'",
-        event_id.replace('\'', "''")
-    ))
+    let json = super::db::db_query_params(
+        &format!("SELECT pubkey, tags_json FROM posts WHERE kind IN ({EVENT_KINDS}) AND id = ?1"),
+        &[event_id.to_string()],
+    )
     .ok()?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).ok()?;
     let row = rows.first()?;
@@ -465,11 +461,13 @@ pub fn events_check_in(
 /// Event details: includes local RSVP + attendee counts.
 #[frb(sync, serialize)]
 pub fn events_get_event(event_id: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
-         WHERE p.kind IN ({EVENT_KINDS}) AND p.id = '{}'",
-        event_id.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
+             WHERE p.kind IN ({EVENT_KINDS}) AND p.id = ?1"
+        ),
+        &[event_id.clone()],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let v = rows.first().ok_or("Event not found".to_string())?;
     let mut info = event_from_value(v).ok_or("Event not found".to_string())?;
@@ -482,11 +480,13 @@ pub fn events_get_event(event_id: String) -> Result<String, String> {
 /// no tags_json LIKE scan.
 #[frb(sync, serialize)]
 pub fn events_get_attendees(event_id: String) -> Result<Vec<String>, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT DISTINCT pubkey FROM posts WHERE kind = {KIND_EVENT_RSVP} AND content = 'accepted' \
-         AND rsvp_event_id = '{eid}' ORDER BY created_at DESC LIMIT 200",
-        eid = event_id.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT DISTINCT pubkey FROM posts WHERE kind = {KIND_EVENT_RSVP} AND content = 'accepted' \
+             AND rsvp_event_id = ?1 ORDER BY created_at DESC LIMIT 200"
+        ),
+        &[event_id],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     Ok(rows
         .into_iter()

@@ -163,7 +163,11 @@ pub async fn build_client(cfg: &SyncConfig) -> Result<Client, String> {
     if relays.is_empty() {
         return Err("no usable relay urls".to_string());
     }
-    let mut builder = Client::builder();
+    let mut builder = Client::builder()
+        // Bounded notification queue: a hostile relay flooding events must
+        // not grow an unbounded in-memory backlog (default is already
+        // bounded; pin a tighter cap explicitly).
+        .notification_channel_size(std::num::NonZeroUsize::new(1024).unwrap());
     if let Some(proxy) = &cfg.socks_proxy {
         let addr: std::net::SocketAddr = proxy
             .parse()
@@ -219,12 +223,13 @@ pub async fn engine_loop_with_client(
                 .since(since_dm),
             Filter::new().kinds([Kind::Metadata]).since(since_meta),
             // Lists + zaps: contacts (3), relay list (10002), bookmarks
-            // (10003), zap receipts (9735).
+            // (10003), zap requests (9734), zap receipts (9735).
             Filter::new()
                 .kinds([
                     Kind::ContactList,
                     Kind::RelayList,
                     Kind::Bookmarks,
+                    Kind::ZapRequest,
                     Kind::ZapReceipt,
                 ])
                 .since(since_meta),

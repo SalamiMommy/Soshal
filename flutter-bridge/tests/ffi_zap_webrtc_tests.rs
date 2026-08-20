@@ -12,10 +12,14 @@ mod ffi_tests {
     // Serializes tests that touch the shared in-process NWC state or the
     // shared DB handle (statics are process-global across parallel tests).
     static ZAP_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    // --- zap: DB-backed fns (no db_init in this binary -> deterministic
-    //     "database not initialized" error) --------------------------------
+    // --- zap: DB-backed fns (shared global DB handle; every test that
+    //     touches it must hold ZAP_TEST_LOCK — tests that assert on the
+    //     uninitialized-DB state are order-dependent and are NOT written) --
     #[test]
     fn zap_ffi_fetch_receipts_bad_limit() {
+        // Lock: DB global is shared; limit validation runs before any DB
+        // access, but the lock still serializes the shared handle.
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         for limit in [0, -1, 501] {
             let r = zap::zap_fetch_receipts("event1".to_string(), limit);
             let e = r.err().unwrap();
@@ -23,30 +27,23 @@ mod ffi_tests {
         }
     }
     #[test]
-    fn zap_ffi_fetch_receipts_uninitialized_db() {
-        let r = zap::zap_fetch_receipts("event1".to_string(), 10);
-        let e = r.err().unwrap();
-        assert!(e.contains("database not initialized"), "got {e}");
-    }
-    #[test]
-    fn zap_ffi_total_msat_uninitialized_db() {
-        let r = zap::zap_get_total_msat("event1".to_string());
-        let e = r.err().unwrap();
-        assert!(e.contains("database not initialized"), "got {e}");
-    }
-    #[test]
     fn zap_ffi_receipts_and_total_happy_path() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap();
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let path = crate::test_util::init_db("zap_webrtc", "zap_happy");
         let seed = |id: &str, event: &str, amount: i64, created: i64| {
-            let sql = format!(
+            db::db_execute_params(
                 "INSERT INTO zaps (id, event_id, recipient_pubkey, sender_pubkey, amount_msat, \
                  comment, created_at, pubkey, amount, content, zap_type) VALUES \
-                 ('{id}', '{event}', 'recv', 'send', {}, 'thanks', {created}, 'send', {}, 'note', 'public')",
-                amount * 1000,
-                amount
-            );
-            db::db_query_raw(sql).unwrap();
+                 (?1, ?2, 'recv', 'send', ?3, 'thanks', ?4, 'send', ?5, 'note', 'public')",
+                &[
+                    id.to_string(),
+                    event.to_string(),
+                    (amount * 1000).to_string(),
+                    created.to_string(),
+                    amount.to_string(),
+                ],
+            )
+            .unwrap();
         };
         seed("z1", "evt-1", 1000, 100);
         seed("z2", "evt-1", 2000, 200);
@@ -96,7 +93,7 @@ mod ffi_tests {
     }
     #[test]
     fn webrtc_ffi_get_turn_servers_unconfigured_errs() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap();
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let path = crate::test_util::init_db("zap_webrtc", "webrtc_turn_empty");
         let expected = "turn provisioning unavailable: no turn_endpoint configured (server endpoint on roadmap)".to_string();
         assert_eq!(webrtc::webrtc_get_turn_servers(None).unwrap_err(), expected);
@@ -108,7 +105,7 @@ mod ffi_tests {
     }
     #[test]
     fn webrtc_ffi_get_turn_servers_from_settings() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap();
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let path = crate::test_util::init_db("zap_webrtc", "webrtc_turn");
         assert!(db::db_set_setting(
             "turn_endpoint".to_string(),
@@ -285,7 +282,7 @@ mod ffi_tests {
     }
     #[test]
     fn zap_ffi_connect_nwc_rejects_invalid_uri() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap();
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = zap::zap_disconnect_nwc();
         let e = zap::zap_connect_nwc("not-a-wallet-connect-uri".to_string()).unwrap_err();
         assert!(e.contains("invalid NWC URI"), "got {e}");
@@ -297,7 +294,7 @@ mod ffi_tests {
     }
     #[test]
     fn zap_ffi_nwc_connect_status_pubkey_never_leaks_secret() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap();
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = zap::zap_disconnect_nwc();
         let status = zap::zap_get_nwc_status().unwrap();
         let v: serde_json::Value = serde_json::from_str(&status).unwrap();
@@ -331,7 +328,7 @@ mod ffi_tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn zap_ffi_fetch_invoice_error_paths_no_network() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap();
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = zap::zap_disconnect_nwc();
         // invalid lud16 -> parse error before any NWC state
         let e = zap::zap_fetch_invoice(
@@ -367,11 +364,11 @@ mod ffi_tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn zap_ffi_send_payment_error_paths_no_network() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap();
+        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = zap::zap_disconnect_nwc();
         let e = zap::zap_send_payment("lnbc1fake".to_string())
             .await
             .unwrap_err();
-        assert!(e.contains("NWC not connected"), "got {e}");
+        assert!(e.contains("no invoice pending"), "got {e}");
     }
 }

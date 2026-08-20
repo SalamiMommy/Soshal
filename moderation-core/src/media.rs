@@ -115,11 +115,6 @@ pub fn check_media_buffer_ai_json(bytes: &[u8], mime_type: &str, tags: &[String]
     crate::ai_media::classify_media_buffer_json(bytes, mime_type, tags)
 }
 
-/// 2-Tier Hybrid media evaluation returning JSON string.
-pub fn check_media_hybrid_json(bytes: &[u8], mime_type: &str, tags: &[String]) -> String {
-    crate::hybrid::evaluate_media_hybrid_json(bytes, mime_type, tags)
-}
-
 /// Compute 256-bit PDQ perceptual hash from raw image bytes.
 pub fn compute_image_pdq_hash(bytes: &[u8]) -> Option<crate::pdq::PdqHashResult> {
     crate::pdq::evaluate_media_pdq(bytes)

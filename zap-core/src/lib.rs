@@ -114,6 +114,50 @@ pub fn bolt11_amount_sats(invoice: &str) -> Option<u64> {
     Some(sats)
 }
 
+/// Extracts the description hash (BOLT-11 tagged field `h`) from an invoice.
+///
+/// NIP-57 zap receipts bind their invoice to a zap-request event via this
+/// hash: it must equal SHA-256 of the canonical zap-request JSON. Returns
+/// `None` when the invoice is malformed, too long, lacks an `h` field, or
+/// the field does not decode to exactly 32 bytes.
+pub fn bolt11_description_hash(bolt11: &str) -> Option<[u8; 32]> {
+    let normalized = bolt11.trim().to_ascii_lowercase();
+    if normalized.is_empty() || normalized.len() > 4096 || !normalized.contains('1') {
+        return None;
+    }
+    let (_hrp, data) = bech32::decode(&normalized).ok()?;
+    // data[0] = version (5 bits); data[1..8] = timestamp (35 bits).
+    let mut i = 1 + 7;
+    while i + 3 < data.len() {
+        let field_type = u16::from(data[i]) * 32 + u16::from(data[i + 1]);
+        let field_len = usize::from(data[i + 2]) * 32 + usize::from(data[i + 3]);
+        i += 4;
+        let end = i.checked_add(field_len)?;
+        if end > data.len() {
+            return None;
+        }
+        if field_type == 23 {
+            // Tagged field `h`: 52 5-bit chars = 260 bits; top 256 = hash.
+            let mut bits: u32 = 0;
+            let mut bit_len: u32 = 0;
+            let mut out = [0u8; 32];
+            let mut out_pos = 0usize;
+            for &w in &data[i..end] {
+                bits = (bits << 5) | u32::from(w);
+                bit_len += 5;
+                while bit_len >= 8 && out_pos < 32 {
+                    bit_len -= 8;
+                    out[out_pos] = (bits >> bit_len) as u8;
+                    out_pos += 1;
+                }
+            }
+            return (out_pos >= 32).then_some(out);
+        }
+        i = end;
+    }
+    None
+}
+
 /// Applies a new payment against the day's spend counter, enforcing the daily
 /// cap. Returns the new cumulative total on success.
 pub fn apply_daily_spend(spent_msats: u64, amount_sats: u64) -> Result<u64, String> {
@@ -125,4 +169,46 @@ pub fn apply_daily_spend(spent_msats: u64, amount_sats: u64) -> Result<u64, Stri
         ));
     }
     Ok(new_total)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bech32::Hrp;
+
+    #[test]
+    fn description_hash_roundtrip() {
+        let hash = [0x11u8; 32];
+        let mut words = Vec::new();
+        let mut bits: u64 = 0;
+        let mut bit_len = 0u32;
+        for &b in &hash {
+            bits = (bits << 8) | u64::from(b);
+            bit_len += 8;
+            while bit_len >= 5 {
+                bit_len -= 5;
+                words.push(((bits >> bit_len) & 0x1f) as u8);
+            }
+        }
+        if bit_len > 0 {
+            words.push(((bits << (5 - bit_len)) & 0x1f) as u8);
+        }
+        assert_eq!(words.len(), 52);
+        let mut data = vec![0u8]; // version 0
+        data.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0]); // 35-bit timestamp
+        data.extend_from_slice(&[0, 23]); // field type 23 ('h')
+        data.extend_from_slice(&[0, 52]); // field length 52 chars
+        data.extend_from_slice(&words);
+        let invoice =
+            bech32::encode::<bech32::Bech32>(Hrp::parse("lnbc1u").unwrap(), &data).unwrap();
+        assert_eq!(bolt11_description_hash(&invoice), Some(hash));
+    }
+
+    #[test]
+    fn description_hash_absent_or_garbage() {
+        assert_eq!(bolt11_description_hash(""), None);
+        assert_eq!(bolt11_description_hash("lnbc1u1notvalid@@@"), None);
+        assert_eq!(bolt11_description_hash("plaintext"), None);
+        assert_eq!(bolt11_description_hash(&"x".repeat(4097)), None);
+    }
 }

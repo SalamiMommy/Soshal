@@ -12,11 +12,21 @@ pub fn is_private_ip(ip: std::net::IpAddr) -> bool {
     soshal_common_core::url::is_private_ip_str(&ip.to_string())
 }
 
-/// Beacon body: `MAGIC:pubkey:port:unix_secs`. The timestamp is MAC'd and
-/// freshness-checked on receive so a captured handshake line cannot be
-/// replayed forever.
-pub fn beacon_body(magic: &str, pubkey: &str, port: u16, ts_secs: u64) -> String {
-    format!("{magic}:{pubkey}:{port}:{ts_secs}")
+/// Beacon body: `MAGIC:pubkey:port:unix_secs:nonce`. The timestamp is MAC'd
+/// and freshness-checked on receive so a captured handshake line cannot be
+/// replayed forever; the random nonce additionally invalidates byte-for-byte
+/// replays of a captured beacon (see [`beacon_seq`]).
+pub fn beacon_body(magic: &str, pubkey: &str, port: u16, ts_secs: u64, nonce_hex: &str) -> String {
+    format!("{magic}:{pubkey}:{port}:{ts_secs}:{nonce_hex}")
+}
+
+/// Fresh 16-byte random nonce for a beacon (hex-encoded by the caller).
+/// Unpredictable per send, so replayed beacon lines carry a duplicate nonce
+/// and are rejected by [`BeaconSeq`].
+pub fn fresh_nonce() -> [u8; 16] {
+    let mut n = [0u8; 16];
+    let _ = getrandom::fill(&mut n);
+    n
 }
 
 /// MACs a beacon body so receivers can verify the sender holds the
@@ -32,22 +42,23 @@ pub fn beacon_mac(key: &[u8; 32], body: &str) -> String {
 pub const BEACON_MAX_SKEW_SECS: u64 = 30;
 
 /// Verifies a received beacon against the derived key. Returns the claimed
-/// pubkey + port on success. Rejects malformed bodies, unknown magics, bad
-/// MACs (constant-time), and stale/future timestamps outside the skew window.
+/// pubkey, port, and nonce on success. Rejects malformed bodies, unknown
+/// magics, bad MACs (constant-time), and stale/future timestamps outside the
+/// skew window.
 pub fn parse_beacon(
     key: &[u8; 32],
     magic: &str,
     text: &str,
     default_port: u16,
     now_secs: u64,
-) -> Option<(String, u16)> {
+) -> Option<(String, u16, [u8; 16])> {
     if !text.starts_with(magic) {
         return None;
     }
-    // Split the 4 colon-delimited fields (magic, pubkey, port, ts) with
-    // slice math; the remainder is the MAC hex field. No Vec<&str> alloc nor
-    // format! body rebuild per beacon.
-    let mut fields: [&str; 4] = [""; 4];
+    // Split the 5 colon-delimited fields (magic, pubkey, port, ts, nonce)
+    // with slice math; the remainder is the MAC hex field. No Vec<&str> alloc
+    // nor format! body rebuild per beacon.
+    let mut fields: [&str; 5] = [""; 5];
     let mut rest = text;
     for field in fields.iter_mut() {
         match rest.split_once(':') {
@@ -75,8 +86,64 @@ pub fn parse_beacon(
     if skew > BEACON_MAX_SKEW_SECS {
         return None;
     }
+    let nonce_bytes = hex::decode(fields[4]).ok()?;
+    let nonce: [u8; 16] = nonce_bytes.try_into().ok()?;
     let port = fields[2].parse::<u16>().ok().unwrap_or(default_port);
-    Some((peer_pk.to_string(), port))
+    Some((peer_pk.to_string(), port, nonce))
+}
+
+/// Per-identity replay guard for beacon nonces: the last N nonces seen from
+/// each peer pubkey are remembered, so a captured beacon line replayed
+/// byte-for-byte (same MAC, same timestamp, same nonce) is rejected even
+/// inside the timestamp skew window. Legitimate parallel handshakes always
+/// carry fresh nonces and are unaffected.
+#[derive(Default)]
+pub struct BeaconSeq {
+    seen: std::sync::Mutex<std::collections::HashMap<String, std::collections::VecDeque<[u8; 16]>>>,
+}
+
+impl BeaconSeq {
+    const MAX_NONCES_PER_PEER: usize = 64;
+    const MAX_TRACKED_PEERS: usize = 1024;
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Records `nonce` for `peer_pk` and reports whether it was new. Returns
+    /// `false` for duplicates (replay) and drops the oldest remembered nonce
+    /// once the per-peer cap is reached.
+    pub fn check_and_record(&self, peer_pk: &str, nonce: &[u8; 16]) -> bool {
+        let mut g = match self.seen.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        if !g.contains_key(peer_pk) && g.len() >= Self::MAX_TRACKED_PEERS {
+            // Evict one arbitrary existing peer to prevent unbounded memory growth
+            if let Some(k) = g.keys().next().cloned() {
+                g.remove(&k);
+            }
+        }
+        let queue = g
+            .entry(peer_pk.to_string())
+            .or_insert_with(std::collections::VecDeque::new);
+        if queue.contains(nonce) {
+            return false;
+        }
+        if queue.len() >= Self::MAX_NONCES_PER_PEER {
+            queue.pop_front();
+        }
+        queue.push_back(*nonce);
+        true
+    }
+}
+
+/// Process-global beacon replay guard, shared by the TCP LAN transport and
+/// both QUIC accept paths so a beacon captured from one server cannot be
+/// replayed against another listener of the same identity.
+pub fn beacon_seq() -> &'static BeaconSeq {
+    static SEQ: std::sync::OnceLock<BeaconSeq> = std::sync::OnceLock::new();
+    SEQ.get_or_init(BeaconSeq::new)
 }
 
 /// Deterministic per-identity LAN sync bearer token derived via HKDF-SHA256
@@ -87,4 +154,45 @@ pub fn sync_token(at_rest_key: &[u8; 32]) -> String {
         soshal_crypto_core::hash::hkdf_sha256(at_rest_key, b"soshal-lan-sync", b"bearer-token", 32)
             .expect("HKDF with fixed-length output cannot fail");
     hex::encode(&okm[..16])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn beacon_seq_rejects_replayed_nonce() {
+        let seq = BeaconSeq::new();
+        let pk = "ab".repeat(32);
+        let n1 = fresh_nonce();
+        let n2 = fresh_nonce();
+        assert!(seq.check_and_record(&pk, &n1));
+        assert!(seq.check_and_record(&pk, &n2));
+        // Byte-for-byte replay of either earlier beacon is rejected.
+        assert!(!seq.check_and_record(&pk, &n1));
+        assert!(!seq.check_and_record(&pk, &n2));
+        // Fresh nonces keep flowing (parallel legit handshakes).
+        assert!(seq.check_and_record(&pk, &fresh_nonce()));
+        // A different peer is independent.
+        let other = "cd".repeat(32);
+        assert!(seq.check_and_record(&other, &n1));
+    }
+
+    #[test]
+    fn beacon_seq_caps_per_peer() {
+        let seq = BeaconSeq::new();
+        let pk = "ab".repeat(32);
+        let mut nonces = Vec::new();
+        for _ in 0..BeaconSeq::MAX_NONCES_PER_PEER + 10 {
+            let n = fresh_nonce();
+            assert!(seq.check_and_record(&pk, &n));
+            nonces.push(n);
+        }
+        // The oldest nonces were evicted, so they are accepted again
+        // (FIFO cap keeps memory bounded, not a security regression: evicted
+        // nonces are older than any in-window beacon the peer would send).
+        for n in nonces.iter().take(5) {
+            assert!(seq.check_and_record(&pk, n));
+        }
+    }
 }

@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/media_service.dart';
 import '../services/music_service.dart';
@@ -8,6 +9,7 @@ import '../services/p2p_service.dart';
 import '../services/shell_service.dart';
 import '../utils/format.dart';
 import '../widgets/blob_image.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/error_state_text.dart';
 
 /// Musicloud: track list, publish form (FAB), and a detail view with
@@ -47,123 +49,129 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
     var busy = false;
     var status = '';
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('New Track',
-                    style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 12),
-                FilledButton.tonalIcon(
-                  onPressed: () async {
-                    final picked = await FilePicker.pickFile(
-                      type: FileType.audio,
-                    );
-                    final path = picked?.path;
-                    if (path == null) return;
-                    setSheetState(() {
-                      pickedPath = path;
-                      status = '';
-                    });
-                  },
-                  icon: const Icon(Icons.audio_file),
-                  label: Text(pickedPath == null
-                      ? 'Pick audio file (hosted from device caches)'
-                      : 'Picked: ${pickedPath!.split('/').last}'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: url,
-                  keyboardType: TextInputType.url,
-                  decoration: const InputDecoration(
-                    labelText:
-                        '…or audio URL (https mp3/ogg…) — fallback when no device has the blob',
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (sbContext, setSheetState) => Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: MediaQuery.of(sbContext).viewInsets.bottom + 16,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('New Track',
+                      style: Theme.of(sbContext).textTheme.titleLarge),
+                  const SizedBox(height: 12),
+                  FilledButton.tonalIcon(
+                    onPressed: () async {
+                      final picked = await FilePicker.pickFile(
+                        type: FileType.audio,
+                      );
+                      final path = picked?.path;
+                      if (path == null) return;
+                      setSheetState(() {
+                        pickedPath = path;
+                        status = '';
+                      });
+                    },
+                    icon: const Icon(Icons.audio_file),
+                    label: Text(pickedPath == null
+                        ? 'Pick audio file (hosted from device caches)'
+                        : 'Picked: ${pickedPath!.split('/').last}'),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: title,
-                  decoration: const InputDecoration(labelText: 'Title'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: hashtags,
-                  decoration: const InputDecoration(
-                    labelText: 'Hashtags (comma-separated)',
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: url,
+                    keyboardType: TextInputType.url,
+                    decoration: const InputDecoration(
+                      labelText:
+                          '…or audio URL (https mp3/ogg…) — fallback when no device has the blob',
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          final mediaSource = pickedPath ?? url.text.trim();
-                          if (mediaSource.isEmpty) {
-                            setSheetState(() => status =
-                                'Pick an audio file or enter an audio URL.');
-                            return;
-                          }
-                          setSheetState(() {
-                            busy = true;
-                            status = 'Publishing…';
-                          });
-                          try {
-                            final id =
-                                await context.read<MusicService>().publishTrack(
-                                      mediaSource: mediaSource,
-                                      title: title.text.trim().isEmpty
-                                          ? null
-                                          : title.text.trim(),
-                                      thumbnail: null,
-                                      hashtags: hashtags.text
-                                          .split(',')
-                                          .map((h) => h.trim())
-                                          .where((h) => h.isNotEmpty)
-                                          .toList(),
-                                    );
-                            if (!sheetContext.mounted) return;
-                            Navigator.of(sheetContext).pop();
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: SelectableText('Track published: $id'),
-                              ),
-                            );
-                            await _load();
-                          } catch (e) {
-                            if (mounted) {
-                              setSheetState(
-                                  () => status = 'Publish failed: $e');
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: title,
+                    decoration: const InputDecoration(labelText: 'Title'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: hashtags,
+                    decoration: const InputDecoration(
+                      labelText: 'Hashtags (comma-separated)',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            final mediaSource = pickedPath ?? url.text.trim();
+                            if (mediaSource.isEmpty) {
+                              setSheetState(() => status =
+                                  'Pick an audio file or enter an audio URL.');
+                              return;
                             }
-                          }
-                        },
-                  child: const Text('Publish'),
-                ),
-                if (status.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(status,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      )),
+                            setSheetState(() {
+                              busy = true;
+                              status = 'Publishing…';
+                            });
+                            try {
+                              final id =
+                                  await context.read<MusicService>().publishTrack(
+                                        mediaSource: mediaSource,
+                                        title: title.text.trim().isEmpty
+                                            ? null
+                                            : title.text.trim(),
+                                        thumbnail: null,
+                                        hashtags: hashtags.text
+                                            .split(',')
+                                            .map((h) => h.trim())
+                                            .where((h) => h.isNotEmpty)
+                                            .toList(),
+                                      );
+                              if (!sheetContext.mounted) return;
+                              Navigator.of(sheetContext).pop();
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: SelectableText('Track published: $id'),
+                                ),
+                              );
+                              await _load();
+                            } catch (e) {
+                              if (sheetContext.mounted) {
+                                setSheetState(
+                                    () => status = 'Publish failed: $e');
+                              }
+                            }
+                          },
+                    child: const Text('Publish'),
+                  ),
+                  if (status.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(status,
+                        style: TextStyle(
+                          color: Theme.of(sbContext).colorScheme.error,
+                        )),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      url.dispose();
+      title.dispose();
+      hashtags.dispose();
+    }
   }
 
   Future<void> _play(MusicTrack track) async {
@@ -214,32 +222,11 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
                   ? ListView(
                       children: [
                         const SizedBox(height: 120),
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.music_note,
-                                  size: 56,
-                                  color: Theme.of(context).colorScheme.outline,
-                                ),
-                                const SizedBox(height: 16),
-                                Text('No songs found',
-                                    style:
-                                        Theme.of(context).textTheme.titleLarge),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Be the first to publish an audio track on Musicloud — tap +.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant),
-                                ),
-                              ],
-                            ),
-                          ),
+                        EmptyState(
+                          icon: Icons.music_note,
+                          title: 'No songs found',
+                          body:
+                              'Be the first to publish an audio track on Musicloud — tap +.',
                         ),
                       ],
                     )
@@ -284,11 +271,7 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
                             onPressed: () => _play(track),
                           ),
                           onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => _TrackDetailScreen(track),
-                              ),
-                            );
+                            context.push('/music/track', extra: track);
                           },
                         );
                       },
@@ -319,17 +302,17 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
 }
 
 /// Track detail: share-to-feed form + comment thread.
-class _TrackDetailScreen extends StatefulWidget {
+class TrackDetailScreen extends StatefulWidget {
   final MusicTrack track;
 
   /// Track detail screen.
-  const _TrackDetailScreen(this.track);
+  const TrackDetailScreen(this.track, {super.key});
 
   @override
-  State<_TrackDetailScreen> createState() => _TrackDetailScreenState();
+  State<TrackDetailScreen> createState() => TrackDetailScreenState();
 }
 
-class _TrackDetailScreenState extends State<_TrackDetailScreen> {
+class TrackDetailScreenState extends State<TrackDetailScreen> {
   final _shareCtrl = TextEditingController();
   final _commentCtrl = TextEditingController();
   List<TrackComment> _comments = [];

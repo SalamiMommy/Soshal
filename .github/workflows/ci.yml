@@ -48,7 +48,9 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --version 0.8.7 --locked
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov --version 0.8.7 --locked
       - name: Coverage gate
         run: cargo llvm-cov --workspace --lcov --output-path lcov.info --ignore-filename-regex frb_generated --fail-under-lines 80
 

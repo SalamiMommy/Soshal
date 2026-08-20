@@ -14,11 +14,13 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
   List<SearchResultItem> _trendingProfiles = [];
   List<String> _hashtags = [];
   List<String> _trendingHashtags = [];
+  List<Map<String, dynamic>> _dbTrendingHashtags = [];
 
   List<SearchResultItem> get results => _results;
   List<SearchResultItem> get trendingProfilesList => _trendingProfiles;
   List<String> get hashtags => _hashtags;
   List<String> get trendingHashtagsList => _trendingHashtags;
+  List<Map<String, dynamic>> get dbTrendingHashtagsList => _dbTrendingHashtags;
 
   /// Search posts (returns post rows as raw JSON).
   Future<List<SearchResultItem>> searchPosts(String query,
@@ -157,8 +159,10 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
     try {
       final json =
           RustLib.instance.api.crateFfiDbDbGetTrendingHashtags(limit: limit);
+      _dbTrendingHashtags = await runOffThread(() => _parseTrendingHashtags(json));
       clearLastError();
-      return await runOffThread(() => _parseTrendingHashtags(json));
+      notifyListeners();
+      return _dbTrendingHashtags;
     } catch (e, st) {
       setLastError(e, st);
       notifyListeners();

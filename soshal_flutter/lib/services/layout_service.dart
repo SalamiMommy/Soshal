@@ -120,7 +120,6 @@ class LayoutService extends ChangeNotifier {
       _heights[post.eventId] = result.$1;
       _mediaHeights[post.eventId] = result.$2;
       _ready = true;
-      notifyListeners();
       return result.$1;
     }
     return null;

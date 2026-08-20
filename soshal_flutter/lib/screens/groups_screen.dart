@@ -9,6 +9,7 @@ import '../services/settings_service.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/group_sidebar.dart';
 import '../widgets/group_tabs.dart';
+import '../widgets/empty_state.dart';
 
 /// Groups: list, join/leave/create, detail view.
 class GroupsScreen extends StatefulWidget {
@@ -86,8 +87,6 @@ Future<String?> showCommunityPasswordDialog(
 }
 
 class _GroupsScreenState extends State<GroupsScreen> {
-  bool _loading = true;
-
   @override
   void initState() {
     super.initState();
@@ -95,7 +94,6 @@ class _GroupsScreenState extends State<GroupsScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
     try {
       final session = context.read<SessionService>();
       final pubkey = session.activePubkey;
@@ -105,7 +103,6 @@ class _GroupsScreenState extends State<GroupsScreen> {
     } catch (e) {
       debugPrint('groups load: $e');
     }
-    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _joinOrLeave(SoshalGroup g) async {
@@ -283,12 +280,16 @@ class _GroupsScreenState extends State<GroupsScreen> {
         tooltip: 'Create group',
         child: const Icon(Icons.add),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Consumer<GroupsService>(
+      body: Consumer<GroupsService>(
               builder: (context, api, _) {
+                if (api.groupsLoading && api.groups.isEmpty) {
+                  return const Center(child: CircularProgressIndicator());
+                }
                 if (api.groups.isEmpty) {
-                  return const Center(child: Text('No groups yet'));
+                  return const EmptyState(
+                    icon: Icons.groups_outlined,
+                    title: 'No groups yet',
+                  );
                 }
                 return RefreshIndicator(
                   onRefresh: _load,

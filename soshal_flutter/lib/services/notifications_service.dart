@@ -15,6 +15,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
   final Map<String, List<AppNotification>> _byType = {};
   final Map<String, DateTime> _byTypeFetchedAt = {};
   int _unreadCount = 0;
+  bool _isLoading = false;
 
   /// Category tab results are considered fresh for this long; switching tabs
   /// within the window skips the refetch (DB query) entirely.
@@ -23,6 +24,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
   List<AppNotification> get notifications => _notifications;
   List<AppNotification> get unread => _unread;
   int get unreadCount => _unreadCount;
+  bool get isLoading => _isLoading;
 
   /// Notifications for a category tab (mention/like/reply/message/follow).
   List<AppNotification> byType(String type) => _byType[type] ?? const [];
@@ -30,6 +32,8 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
   /// Fetch recent notifications (all types).
   Future<List<AppNotification>> fetchNotifications(String pubkey,
       {int limit = 50}) async {
+    _isLoading = true;
+    notifyListeners();
     try {
       final json = RustLib.instance.api.crateFfiNotificationsNotificationsFetch(
         userPubkey: pubkey,
@@ -38,12 +42,17 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
       );
       final parsed = await runOffThread(() => parseNotifications(json));
       final capped = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
-      if (_sameNotifications(_notifications, capped)) return _notifications;
+      _isLoading = false;
+      if (_sameNotifications(_notifications, capped)) {
+        notifyListeners();
+        return _notifications;
+      }
       _notifications = capped;
       clearLastError();
       notifyListeners();
       return _notifications;
     } catch (e, st) {
+      _isLoading = false;
       setLastError(e, st);
       notifyListeners();
       rethrow;

@@ -36,7 +36,7 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if norm_a <= 0.0 || norm_b <= 0.0 {
         0.0
     } else {
-        let sim = dot / (norm_a.sqrt() * norm_b.sqrt());
+        let sim = dot / (norm_a * norm_b).sqrt();
         if sim.is_finite() {
             sim.clamp(-1.0, 1.0)
         } else {
@@ -59,7 +59,7 @@ pub fn cosine_similarity_with_norms(a: &[f32], norm_a: f32, b: &[f32], norm_b: f
     }
 
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let sim = dot / (norm_a.sqrt() * norm_b.sqrt());
+    let sim = dot / (norm_a * norm_b).sqrt();
     if sim.is_finite() {
         sim.clamp(-1.0, 1.0)
     } else {
@@ -73,6 +73,9 @@ pub fn rank_vector_documents(
     top_k: usize,
 ) -> Vec<(String, f32)> {
     let query_norm = embedding_norm(query_embedding);
+    if query_norm <= 0.0 || docs.is_empty() {
+        return Vec::new();
+    }
     let mut scored: Vec<(usize, f32)> = docs
         .iter()
         .enumerate()

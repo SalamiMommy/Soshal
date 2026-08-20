@@ -23,6 +23,8 @@ mod network_ffi_tests {
     }
     #[test]
     fn network_ffi_get_sys_diagnostics_ok() {
+        // Lock: reads the shared global DB handle (schema_version).
+        let _g = crate::test_util::lock();
         let diag = network::network_get_sys_diagnostics().unwrap();
         assert!(!diag.is_empty());
         assert!(diag.contains("schema_version"));

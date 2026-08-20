@@ -50,13 +50,22 @@ done
 echo ""
 echo "2. Checking for platform-specific business logic in cores..."
 
-# Allow #[cfg(test)] and specific PRAGMA tuning, but flag others
-PLATFORM_CFG_COUNT=$(grep -r "#\[cfg(target_" *-core/ --include="*.rs" 2>/dev/null | grep -v "test" | grep -v "PRAGMAS" | wc -l)
+# Allow #[cfg(test)], PRAGMA tuning, and the documented tuning allowlist
+# (android: cache-size tuning; linux: sendfile zero-copy). Any OTHER
+# target_os cfg in a core crate is an error — platform logic must live in
+# the bridge adapter.
+ALLOWED_PLATFORM_CFG=("android" "linux")
+PLATFORM_CFG_LINES=$(grep -r "#\[cfg(target_os" *-core/ --include="*.rs" 2>/dev/null | grep -v "test" | grep -v "PRAGMAS" || true)
 
-if [ "$PLATFORM_CFG_COUNT" -gt 0 ]; then
-    warning "Found $(echo "$PLATFORM_CFG_COUNT") platform-specific #[cfg(...)] directives in core crates"
-    echo "  (Acceptable only if used for tuning, not logic)"
-    grep -r "#\[cfg(target_" *-core/ --include="*.rs" 2>/dev/null | grep -v "test" | grep -v "PRAGMAS" | head -5
+if [ -n "$PLATFORM_CFG_LINES" ]; then
+    while IFS= read -r line; do
+        os=$(echo "$line" | sed -n 's/.*target_os *= *"\([a-z0-9]*\)".*/\1/p')
+        if printf '%s\n' "${ALLOWED_PLATFORM_CFG[@]}" | grep -qx "$os"; then
+            warning "Allowed platform cfg target_os=\"$os\" in core crate (documented tuning): $line"
+        else
+            error "Forbidden platform cfg target_os=\"$os\" in core crate: $line"
+        fi
+    done <<< "$PLATFORM_CFG_LINES"
 else
     success "No platform-specific logic in core crates"
 fi
@@ -160,7 +169,7 @@ cd ..
 echo ""
 echo "10. Running core crate tests..."
 
-if cargo test --workspace --quiet 2>/dev/null; then
+if cargo test --workspace --quiet -- --test-threads=1 2>/dev/null; then
     success "All core tests pass"
 else
     error "Some core tests failed (review output)"

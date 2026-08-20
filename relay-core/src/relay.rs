@@ -1,10 +1,12 @@
 //! The relay node: store-and-forward gossip engine over mesh backends.
 //!
 //! Flood-style: published events are broadcast at hop 0; inbound envelopes
-//! are deduped by event id and re-broadcast once at hop+1 (ceiling
+//! are deduped by payload digest and re-broadcast once at hop+1 (ceiling
 //! MAX_HOP_COUNT). Delivered payloads are queued for the app to drain.
 
 use std::collections::{HashSet, VecDeque};
+
+use sha2::{Digest, Sha256};
 
 use crate::backends::{BackendKind, MeshBackend};
 use crate::envelope::MeshEnvelope;
@@ -15,6 +17,13 @@ const RECENT_CAPACITY: usize = 10_000;
 const SEEN_CAPACITY: usize = 100_000;
 /// App-delivery queue cap.
 const DELIVERED_CAPACITY: usize = 4_096;
+
+/// Unforgeable dedup key for an envelope: sha256 of its payload bytes.
+fn payload_digest(payload: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(payload);
+    format!("{:x}", hasher.finalize())
+}
 
 /// Flood gossip relay node.
 pub struct RelayNode {
@@ -101,7 +110,7 @@ impl RelayNode {
             created_at,
             payload,
         );
-        self.note_seen(env.event_id.clone());
+        self.note_seen(payload_digest(&env.payload));
         self.recent.push_back(env.clone());
         if self.recent.len() > RECENT_CAPACITY {
             self.recent.pop_front();
@@ -132,10 +141,15 @@ impl RelayNode {
                 let Some(env) = MeshEnvelope::from_bytes(&payload) else {
                     continue;
                 };
-                if self.seen.contains(&env.event_id) {
+                // Dedup on the payload digest, NOT the envelope's event_id
+                // header: the id claim is unverified at the relay layer, so
+                // keying on it lets a forged envelope reuse a legit event's
+                // id and suppress delivery/re-broadcast of the real event.
+                // Identical payloads still dedup once.
+                if self.seen.contains(&payload_digest(&env.payload)) {
                     continue;
                 }
-                self.note_seen(env.event_id.clone());
+                self.note_seen(payload_digest(&env.payload));
                 self.received += 1;
                 new_count += 1;
                 self.delivered.push_back(env.payload.clone());
@@ -351,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn test_poll_dedups_by_event_id() {
+    fn test_poll_dedups_identical_payloads() {
         let mut node = RelayNode::new();
         let (b0, s0) = mock(BackendKind::Reticulum, 2);
         node.add_backend(Box::new(b0));
@@ -360,6 +374,29 @@ mod tests {
         s0.lock().unwrap().inbox.push(env_bytes(1));
         assert_eq!(node.poll(), 1);
         assert_eq!(node.drain_delivered().len(), 1);
+    }
+
+    #[test]
+    fn test_poll_does_not_dedup_forged_same_id_different_payload() {
+        // Forged envelope reusing a legit event_id must not suppress the
+        // real event: dedup keys on the payload digest, not the id header.
+        let mut node = RelayNode::new();
+        let (b0, s0) = mock(BackendKind::Reticulum, 2);
+        node.add_backend(Box::new(b0));
+        node.start().unwrap();
+        let legit = MeshEnvelope::new(
+            "evt-1".to_string(),
+            1,
+            "author".to_string(),
+            0,
+            b"real payload".to_vec(),
+        );
+        let mut forged = legit.clone();
+        forged.payload = b"forged payload".to_vec();
+        s0.lock().unwrap().inbox.push(legit.to_bytes());
+        s0.lock().unwrap().inbox.push(forged.to_bytes());
+        assert_eq!(node.poll(), 2);
+        assert_eq!(node.drain_delivered().len(), 2);
     }
 
     #[test]

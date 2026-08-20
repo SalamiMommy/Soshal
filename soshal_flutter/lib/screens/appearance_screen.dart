@@ -75,7 +75,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to set background: $e')),
+        SnackBar(content: SelectableText('Failed to set background: $e')),
       );
     }
   }
@@ -257,7 +257,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
               await theme.save();
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Theme saved')),
+                  SnackBar(content: SelectableText('Theme saved')),
                 );
                 context.pop();
               }

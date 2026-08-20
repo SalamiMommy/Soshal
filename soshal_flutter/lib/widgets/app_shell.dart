@@ -256,6 +256,12 @@ class _SidebarCore extends StatefulWidget {
 class _SidebarCoreState extends State<_SidebarCore> {
   final TextEditingController _search = TextEditingController();
 
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
   void _navigate(BuildContext context, String route) {
     widget.onNavigate?.call();
     context.go(route);

@@ -589,8 +589,13 @@ pub fn identity_is_blocked(checker_pubkey: String, target_pubkey: String) -> Res
 
 /// Build an in-process signer handle from an nsec; returns the derived pubkey.
 /// Used for diagnostics only — the app's live signer lives in `signer.rs`.
+/// The nsec crosses FFI, so this surface is compiled out of release builds
+/// (key material must only enter the bridge via `signer_unlock`/keyring).
 #[frb(sync, serialize)]
 pub fn identity_in_process_signer(nsec: String) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("signer probe disabled in release builds".to_string());
+    }
     use soshal_identity_core::signers::SignerHandle;
     let keys = nostr::key::Keys::parse(&nsec).map_err(|e| format!("invalid nsec: {e}"))?;
     let handle = SignerHandle::in_process(keys);
@@ -652,13 +657,13 @@ mod tests {
         let target = "f".repeat(64);
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         // me follows target (my contacts) — but target does NOT follow me.
-        crate::ffi::db::db_execute_raw(
+        crate::ffi::db::db_execute_raw_test(
             format!(
                 "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{me}', 'npub1me', '[\"{target}\"]') ON CONFLICT(pubkey) DO UPDATE SET contact_pubkeys='[\"{target}\"]'"
             ),
         )
         .unwrap();
-        crate::ffi::db::db_execute_raw(
+        crate::ffi::db::db_execute_raw_test(
             format!(
                 "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{target}', 'npub1tgt', '[]') ON CONFLICT(pubkey) DO UPDATE SET contact_pubkeys='[]'"
             ),
@@ -691,7 +696,7 @@ mod tests {
             (target.clone(), "npub1tg", "[]".to_string()),
             (stranger.clone(), "npub1st", "[]".to_string()),
         ] {
-            crate::ffi::db::db_execute_raw(format!(
+            crate::ffi::db::db_execute_raw_test(format!(
                 "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{pk}', '{npub}', '{contacts}') ON CONFLICT(pubkey) DO UPDATE SET contact_pubkeys='{contacts}'"
             ))
             .unwrap();
@@ -774,7 +779,7 @@ mod tests {
         let me = keys.public_key().to_hex();
         let target = "9".repeat(64);
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-        crate::ffi::db::db_execute_raw(format!(
+        crate::ffi::db::db_execute_raw_test(format!(
             "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{me}', 'npub1me', '[\"{target}\"]') ON CONFLICT(pubkey) DO UPDATE SET contact_pubkeys='[\"{target}\"]'"
         ))
         .unwrap();
@@ -800,14 +805,14 @@ mod tests {
         let pk = "1".repeat(64);
         let x = "2".repeat(64);
         let y = "3".repeat(64);
-        crate::ffi::db::db_execute_raw(format!(
+        crate::ffi::db::db_execute_raw_test(format!(
             "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{pk}', 'npub1x', '[\"{x}\",\"{y}\"]')"
         ))
         .unwrap();
         let follows: Vec<String> =
             serde_json::from_str(&identity_fetch_follows(pk.clone()).unwrap()).unwrap();
         assert_eq!(follows, vec![x, y]);
-        crate::ffi::db::db_execute_raw(format!(
+        crate::ffi::db::db_execute_raw_test(format!(
             "UPDATE users SET contact_pubkeys='not-json' WHERE pubkey='{pk}'"
         ))
         .unwrap();

@@ -27,3 +27,4 @@ base64 = { workspace = true }
 workspace = true
 [dev-dependencies]
 soshal-test-util = { path = "../test-util" }
+bech32 = "0.12"

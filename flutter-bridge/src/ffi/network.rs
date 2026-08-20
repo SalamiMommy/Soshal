@@ -87,7 +87,7 @@ pub async fn network_fetch_http3(
     body: Option<Vec<u8>>,
 ) -> Result<HttpResponseDto, String> {
     let headers: std::collections::HashMap<String, String> =
-        serde_json::from_str(&headers_json).unwrap_or_default();
+        serde_json::from_str(&headers_json).map_err(|e| format!("invalid headers json: {e}"))?;
 
     let client = HTTP3_CLIENT
         .get_or_init(|| match i2p_socks_addr() {
@@ -280,10 +280,17 @@ pub async fn network_query_events(filter_json: String) -> Result<String, String>
     };
     {
         match client.fetch_events(vec![filter]).await {
-            Ok(events) => match serde_json::to_string(&events) {
-                Ok(json) => Ok(json).into(),
-                Err(e) => Err(format!("serialize: {e}")).into(),
-            },
+            // Relay data is untrusted: only signature-valid events may cross
+            // the FFI boundary (forged events are dropped, mirroring
+            // ingest's verified_events policy).
+            Ok(events) => {
+                let verified: Vec<&nostr::event::Event> =
+                    events.iter().filter(|e| e.verify().is_ok()).collect();
+                match serde_json::to_string(&verified) {
+                    Ok(json) => Ok(json).into(),
+                    Err(e) => Err(format!("serialize: {e}")).into(),
+                }
+            }
             Err(e) => Err(format!("query failed: {e}")).into(),
         }
     }

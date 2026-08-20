@@ -50,7 +50,7 @@ pub(crate) fn state() -> std::sync::MutexGuard<'static, CodecState> {
 }
 
 impl CodecState {
-    pub fn release_h264(&mut self) {
+    pub fn release_h264_encoder_only(&mut self) {
         #[cfg(target_os = "android")]
         unsafe {
             use ndk::*;
@@ -58,6 +58,17 @@ impl CodecState {
                 AMediaCodec_stop(c.0);
                 AMediaCodec_delete(c.0);
             }
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            self.h264_encoder = None;
+        }
+    }
+
+    pub fn release_h264_decoder_only(&mut self) {
+        #[cfg(target_os = "android")]
+        unsafe {
+            use ndk::*;
             if let Some(c) = self.h264_decoder.take() {
                 AMediaCodec_stop(c.0);
                 AMediaCodec_delete(c.0);
@@ -65,9 +76,13 @@ impl CodecState {
         }
         #[cfg(not(target_os = "android"))]
         {
-            self.h264_encoder = None;
             self.h264_decoder = None;
         }
+    }
+
+    pub fn release_h264(&mut self) {
+        self.release_h264_encoder_only();
+        self.release_h264_decoder_only();
         self.h264_width = 0;
         self.h264_height = 0;
     }

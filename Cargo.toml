@@ -114,3 +114,9 @@ unsafe_code = "deny"
 # rustc 1.96+ flags that cfg as unexpected in bridge crates.
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(frb_expand)"] }
 
+# clippy 1.96's cloned_ref_to_slice_refs fires inside `#[frb]` macro-expanded
+# serialize glue (clone of Vec args into slice refs) — generated code, not
+# hand-written; the lint is noise here.
+[workspace.lints.clippy]
+cloned_ref_to_slice_refs = "allow"
+

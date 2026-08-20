@@ -144,14 +144,17 @@ fn handle_conn(stream: TcpStream, key: [u8; 32], store: &ChunkStore) {
     let mut inner = reader.into_inner();
     // Authenticate: MAC must match the identity-derived key...
     let now_secs = soshal_common_core::format::now_secs() as u64;
-    match lan::parse_beacon(&key, LAN_MAGIC, line.trim_end(), 0, now_secs) {
-        Some(_) if !global_power_scheduler().mode().paused() => {
-            let _ = writer.write_all(b"OK\n");
+    let authed = match lan::parse_beacon(&key, LAN_MAGIC, line.trim_end(), 0, now_secs) {
+        Some((pk, _, nonce)) if !global_power_scheduler().mode().paused() => {
+            lan::beacon_seq().check_and_record(&pk, &nonce)
         }
-        _ => {
-            let _ = writer.write_all(b"ERR\n");
-            return;
-        }
+        _ => false,
+    };
+    if authed {
+        let _ = writer.write_all(b"OK\n");
+    } else {
+        let _ = writer.write_all(b"ERR\n");
+        return;
     }
 
     loop {
@@ -478,7 +481,8 @@ fn connect_handshake(
 
     // Handshake: same MAC'd beacon body the server expects.
     let ts_secs = soshal_common_core::format::now_secs() as u64;
-    let body = lan::beacon_body(LAN_MAGIC, my_pubkey, 0, ts_secs);
+    let nonce = hex::encode(lan::fresh_nonce());
+    let body = lan::beacon_body(LAN_MAGIC, my_pubkey, 0, ts_secs, &nonce);
     let mac = lan::beacon_mac(&key, &body);
     stream
         .write_all(format!("{body}:{mac}\n").as_bytes())
@@ -610,10 +614,17 @@ pub(crate) mod tests {
     fn beacon_handshake_roundtrip() {
         let key = [7u8; 32];
         let ts_secs = 1_700_000_000;
-        let body = lan::beacon_body(LAN_MAGIC, &"ab".repeat(32), 9999, ts_secs);
+        let nonce = lan::fresh_nonce();
+        let body = lan::beacon_body(
+            LAN_MAGIC,
+            &"ab".repeat(32),
+            9999,
+            ts_secs,
+            &hex::encode(nonce),
+        );
         let mac = lan::beacon_mac(&key, &body);
         let parsed = lan::parse_beacon(&key, LAN_MAGIC, &format!("{body}:{mac}"), 0, ts_secs);
-        assert_eq!(parsed, Some(("ab".repeat(32), 9999)));
+        assert_eq!(parsed, Some(("ab".repeat(32), 9999, nonce)));
         let bad = lan::parse_beacon(&key, LAN_MAGIC, &format!("{body}:f00d"), 0, ts_secs);
         assert!(bad.is_none());
     }

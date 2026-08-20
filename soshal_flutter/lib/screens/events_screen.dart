@@ -12,6 +12,7 @@ import '../services/media_service.dart';
 import '../services/permissions_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/empty_state.dart';
 
 enum _AudienceMode { all, friends, fof, mine }
 
@@ -537,7 +538,10 @@ class _EventsScreenState extends State<EventsScreen> {
 
   Widget _buildList(List<SoshalEvent> events) {
     if (events.isEmpty) {
-      return const Center(child: Text('No events yet'));
+      return const EmptyState(
+        icon: Icons.event_busy_outlined,
+        title: 'No events yet',
+      );
     }
     return RefreshIndicator(
       onRefresh: _load,

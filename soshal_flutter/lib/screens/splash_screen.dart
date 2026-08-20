@@ -62,7 +62,9 @@ class _SplashScreenState extends State<SplashScreen> {
           if (activePubkey != null) {
             try {
               await signer.unlockFromKeyring(activePubkey);
-            } catch (_) {}
+            } catch (e, st) {
+              logRuntimeError('keyring unlock: $e', st);
+            }
           }
           if (signer.locked) {
             if (mounted) {
@@ -88,13 +90,16 @@ class _SplashScreenState extends State<SplashScreen> {
       }
     } catch (e, st) {
       logRuntimeError(e, st);
-      // Handle initialization error
-      if (mounted) {
+      // Handle initialization error. The catch can run synchronously inside
+      // initState (when the pre-first-await segment of _initializeApp throws),
+      // so defer the ScaffoldMessenger lookup past the current frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: SelectableText('Initialization error: $e')),
         );
         context.go('/auth');
-      }
+      });
     }
   }
 

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/notifications_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/settings_scaffold.dart';
 
 /// Notification settings: push registration status + in-app toggles.
 class NotificationSettingsScreen extends StatefulWidget {
@@ -50,7 +51,7 @@ class _NotificationSettingsScreenState
     if (pubkey == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sign in to change push settings')),
+        SnackBar(content: SelectableText('Sign in to change push settings')),
       );
       return;
     }
@@ -67,7 +68,7 @@ class _NotificationSettingsScreenState
         debugPrint('notification settings: disable push: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to disable push: $e')),
+            SnackBar(content: SelectableText('Failed to disable push: $e')),
           );
         }
       }
@@ -92,7 +93,7 @@ class _NotificationSettingsScreenState
         debugPrint('notification settings: enable push: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to enable push: $e')),
+            SnackBar(content: SelectableText('Failed to enable push: $e')),
           );
         }
       }
@@ -130,41 +131,39 @@ class _NotificationSettingsScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
-      body: ListView(
-        children: [
-          SwitchListTile(
-            title: const Text('In-app notifications'),
-            subtitle:
-                const Text('Notifications tab, badges, and unread counts'),
-            value: true,
-            onChanged: (_) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: SelectableText('In-app notifications are always on'),
-                ),
-              );
-            },
+    return SettingsScaffold(
+      title: 'Notifications',
+      children: [
+        SwitchListTile(
+          title: const Text('In-app notifications'),
+          subtitle:
+              const Text('Notifications tab, badges, and unread counts'),
+          value: true,
+          onChanged: (_) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: SelectableText('In-app notifications are always on'),
+              ),
+            );
+          },
+        ),
+        SwitchListTile(
+          title: const Text('Push notifications'),
+          subtitle: Text(
+            'Delivered by FCM when the app is backgrounded. '
+            '${_tokenLabel()}',
           ),
-          SwitchListTile(
-            title: const Text('Push notifications'),
-            subtitle: Text(
-              'Delivered by FCM when the app is backgrounded. '
-              '${_tokenLabel()}',
-            ),
-            value: _pushEnabled,
-            onChanged: _togglePush,
-          ),
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('About'),
-            subtitle:
-                Text('Push tokens are registered per account and stored in the '
-                    'session file.'),
-          ),
-        ],
-      ),
+          value: _pushEnabled,
+          onChanged: _togglePush,
+        ),
+        const ListTile(
+          leading: Icon(Icons.info_outline),
+          title: Text('About'),
+          subtitle:
+              Text('Push tokens are registered per account and stored in the '
+                  'session file.'),
+        ),
+      ],
     );
   }
 }

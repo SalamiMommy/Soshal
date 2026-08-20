@@ -5,6 +5,7 @@ import '../services/media_service.dart';
 import '../services/session_service.dart';
 import '../services/streaming_service.dart';
 import '../utils/format.dart';
+import '../widgets/empty_state.dart';
 
 /// Stories: followed authors' stories, mark viewed, post your own.
 class StoriesScreen extends StatefulWidget {
@@ -85,7 +86,7 @@ class _StoriesScreenState extends State<StoriesScreen> {
           .storyReact(story.id, pubkey, emoji);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? 'Reacted $emoji' : 'React failed')),
+        SnackBar(content: SelectableText(ok ? 'Reacted $emoji' : 'React failed')),
       );
     } catch (e) {
       debugPrint('story react: $e');
@@ -221,10 +222,12 @@ class _StoriesScreenState extends State<StoriesScreen> {
                     onRefresh: _load,
                     child: ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(height: 240),
-                        Center(
-                            child: Text('No stories from people you follow')),
+                      children: [
+                        const SizedBox(height: 120),
+                        EmptyState(
+                          icon: Icons.auto_stories_outlined,
+                          title: 'No stories from people you follow',
+                        ),
                       ],
                     ),
                   );
@@ -238,8 +241,9 @@ class _StoriesScreenState extends State<StoriesScreen> {
                       final viewed = _viewed[s.id] ?? false;
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundColor:
-                              viewed ? Colors.grey.shade400 : Colors.purple,
+                          backgroundColor: viewed
+                              ? Theme.of(context).colorScheme.outlineVariant
+                              : Theme.of(context).colorScheme.primary,
                           child:
                               const Icon(Icons.camera_alt, color: Colors.white),
                         ),

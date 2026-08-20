@@ -12,21 +12,37 @@ import 'error_log.dart';
 class MarketplaceService extends ChangeNotifier
     with LastErrorMixin, DeferredNotify {
   List<ListingInfo> _listings = [];
+  bool _listingsLoading = false;
   ListingInfo? _current;
   List<OrderInfo> _orders = [];
 
   List<ListingInfo> get listings => _listings;
+  bool get listingsLoading => _listingsLoading;
   ListingInfo? get current => _current;
   List<OrderInfo> get orders => _orders;
 
   Future<List<ListingInfo>> fetchListings(
       {int limit = 50, int offset = 0}) async {
-    return _decode(
-      () => RustLib.instance.api.crateFfiMarketplaceMarketplaceFetchListings(
-        limit: limit,
-        offset: offset,
-      ),
-    );
+    _listingsLoading = true;
+    notifyDeferred();
+    try {
+      final result = await _decode(
+        () => RustLib.instance.api.crateFfiMarketplaceMarketplaceFetchListings(
+          limit: limit,
+          offset: offset,
+        ),
+      );
+      _listings = result;
+      _listingsLoading = false;
+      clearLastError();
+      notifyDeferred();
+      return _listings;
+    } catch (e, st) {
+      _listingsLoading = false;
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
   }
 
   Future<List<ListingInfo>> search(String query, {int limit = 50}) async {

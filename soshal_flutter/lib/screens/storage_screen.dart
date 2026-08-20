@@ -61,7 +61,7 @@ class _StorageScreenState extends State<StorageScreen> {
     await media.clearCache();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Media cache cleared')),
+        SnackBar(content: SelectableText('Media cache cleared')),
       );
     }
     _load();
@@ -74,7 +74,7 @@ class _StorageScreenState extends State<StorageScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Server start failed: $e')),
+          SnackBar(content: SelectableText('Server start failed: $e')),
         );
       }
     }
@@ -98,7 +98,7 @@ class _StorageScreenState extends State<StorageScreen> {
     if (!ok) return;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Old posts cleared')),
+        SnackBar(content: SelectableText('Old posts cleared')),
       );
     }
     _load();
@@ -129,7 +129,7 @@ class _StorageScreenState extends State<StorageScreen> {
     if (!ok) return;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('All posts cleared')),
+        SnackBar(content: SelectableText('All posts cleared')),
       );
     }
     _load();

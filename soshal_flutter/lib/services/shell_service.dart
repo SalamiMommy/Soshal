@@ -465,4 +465,10 @@ class ShellService extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  @override
+  void dispose() {
+    _audioPlayer?.dispose();
+    super.dispose();
+  }
 }

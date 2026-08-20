@@ -123,7 +123,7 @@ fn spec_derive_keys(
     t3_input[..KEY_LEN].copy_from_slice(&t2);
     t3_input[KEY_LEN..KEY_LEN + SALT_LEN].copy_from_slice(nonce);
     t3_input[KEY_LEN + SALT_LEN] = 3;
-    let t3 = hash::hmac_sha256(ck, &t3_input);
+    let mut t3 = hash::hmac_sha256(ck, &t3_input);
     t3_input.zeroize();
 
     let mut enc_key = [0u8; KEY_LEN];
@@ -135,6 +135,7 @@ fn spec_derive_keys(
     auth_key[KEY_LEN - NONCE_LEN..].copy_from_slice(&t3[..NONCE_LEN]);
     t1.zeroize();
     t2.zeroize();
+    t3.zeroize();
     (enc_key, chacha_nonce, auth_key)
 }
 

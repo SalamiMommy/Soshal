@@ -68,9 +68,11 @@ pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
     let conn = db.conn().map_err(|e| e.to_string())?;
     let adj = load_edges(&conn)?;
     let closure = dependent_closure(&adj, id)?;
-    let rolled_back = Vec::new();
     let order = reverse_topological(&adj, &closure)?;
-    soshal_db_core::query::with_tx(&conn, |tx| async {
+    if order.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rolled_back: Vec<String> = soshal_db_core::query::with_tx(&conn, |tx| async {
         let mut nodes = std::collections::HashMap::new();
         let placeholders: Vec<String> = (1..=order.len()).map(|i| format!("?{i}")).collect();
         let sql = format!(
@@ -88,6 +90,7 @@ pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
             );
         }
         let mut revert_errors: Vec<String> = Vec::new();
+        let mut rolled_back: Vec<String> = Vec::new();
         for node_id in &order {
             let (kind, payload) = nodes.get(node_id).cloned().unwrap_or_default();
             // A per-node revert failure (e.g. malformed payload JSON) must
@@ -100,6 +103,7 @@ pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
                 continue;
             }
             set_status_tx(&tx, node_id, STATUS_ROLLED_BACK).await?;
+            rolled_back.push(node_id.clone());
         }
         set_status_tx(&tx, id, STATUS_FAILED).await?;
         tx.commit().await?;
@@ -110,10 +114,10 @@ pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
                 revert_errors.join("; ")
             )));
         }
-        Ok(())
+        Ok(rolled_back)
     })
     .map_err(|e| format!("tx_fail: {e}"))?;
-    Ok(rolled_back_after(rolled_back, order, id))
+    Ok(rolled_back_after(rolled_back, Vec::new(), id))
 }
 
 fn load_edges(conn: &Connection) -> Result<std::collections::HashMap<String, Vec<String>>, String> {

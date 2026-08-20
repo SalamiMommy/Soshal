@@ -156,11 +156,36 @@ pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> 
         return Err("stored key does not match pubkey".to_string()).into();
     }
     clear_derived_cache();
+    soshal_identity_core::signers::clear_shared_secret_cache();
     SIGNER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .replace(keys);
     Ok(true).into()
+}
+
+/// Bounded probe: is the OS keyring actually usable right now? A locked
+/// or prompting secret-service makes writes block indefinitely. The probe
+/// runs on a detached thread so a blocking keyring write cannot stall the
+/// caller (a 5s recv timeout cuts it). Used by tests to skip keyring
+/// assertions on headless CI or a locked desktop keyring.
+pub fn keyring_available() -> bool {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let ok = match keyring::Entry::new(keychain_service(), "__soshal_test_probe__") {
+            Ok(e) => {
+                let wrote = e.set_password("probe").is_ok();
+                if wrote {
+                    let _ = e.delete_credential();
+                }
+                wrote
+            }
+            Err(_) => false,
+        };
+        let _ = tx.send(ok);
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap_or_default()
 }
 
 /// Remove the stored secret key for an account from the OS keychain.
@@ -180,10 +205,9 @@ pub fn signer_remove_from_keyring(pubkey: String) -> Result<bool, String> {
 /// used by the P2P module for beacon MACs and chunk handshakes. Derived inside
 /// the signer so key bytes never cross FFI.
 pub(crate) fn lan_key() -> Result<[u8; 32], String> {
-    if let Ok(cache) = LAN_KEY_CACHE.lock() {
-        if let Some(lan) = cache.as_ref() {
-            return Ok(*lan);
-        }
+    let mut cache = LAN_KEY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(lan) = cache.as_ref() {
+        return Ok(*lan);
     }
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
     let keys = match guard.as_ref() {
@@ -203,23 +227,17 @@ pub(crate) fn lan_key() -> Result<[u8; 32], String> {
     .map_err(|e| format!("lan key derive: {e}"))?;
     let mut out = [0u8; 32];
     out.copy_from_slice(&derived);
-    // Wipe the intermediate buffers (no zeroize dep in the bridge crate).
-    for b in derived.iter_mut() {
-        *b = 0;
-    }
-    if let Ok(mut cache) = LAN_KEY_CACHE.lock() {
-        *cache = Some(out);
-    }
+    derived.zeroize();
+    *cache = Some(out);
     Ok(out)
 }
 
 /// Identity-derived at-rest encryption key (HKDF from the unlocked secret),
 /// used by domain modules to seal key material persisted in SQLite.
 pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
-    if let Ok(cache) = AT_REST_KEY_CACHE.lock() {
-        if let Some(rest) = cache.as_ref() {
-            return Ok(*rest);
-        }
+    let mut cache = AT_REST_KEY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(rest) = cache.as_ref() {
+        return Ok(*rest);
     }
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
     let keys = match guard.as_ref() {
@@ -231,9 +249,7 @@ pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
         hex::decode(&*secret_hex).map_err(|e| format!("secret decode: {e}"))?,
     );
     let rest = soshal_crypto_core::at_rest::at_rest_key(&secret)?;
-    if let Ok(mut cache) = AT_REST_KEY_CACHE.lock() {
-        *cache = Some(rest);
-    }
+    *cache = Some(rest);
     Ok(rest)
 }
 
@@ -425,6 +441,10 @@ mod tests {
         let secret = keys.secret_key().to_secret_hex();
         let pk_hex = keys.public_key().to_hex();
 
+        if !super::keyring_available() {
+            eprintln!("SKIP: OS keyring unavailable (locked or headless)");
+            return;
+        }
         signer_unlock(secret).unwrap();
         assert_eq!(signer_pubkey().unwrap(), pk_hex);
         match signer_save_to_keyring(pk_hex.clone()).await {
@@ -452,6 +472,10 @@ mod tests {
         let secret = keys.secret_key().to_secret_hex();
         let pk_hex = keys.public_key().to_hex();
 
+        if !super::keyring_available() {
+            eprintln!("SKIP: OS keyring unavailable (locked or headless)");
+            return;
+        }
         signer_unlock(secret).unwrap();
         let _ = signer_save_to_keyring(pk_hex.clone()).await;
         match signer_remove_from_keyring(pk_hex.clone()) {
@@ -532,6 +556,11 @@ mod tests {
 
         if let Ok(removed) = signer_remove_from_keyring(other.public_key().to_hex()) {
             assert!(!removed, "missing keychain entry must not report removal");
+        }
+
+        if !super::keyring_available() {
+            eprintln!("SKIP: OS keyring unavailable (locked or headless)");
+            return;
         }
 
         if signer_save_to_keyring(pk_hex.clone()).await.is_ok() {

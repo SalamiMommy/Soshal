@@ -214,13 +214,14 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     if (_loading) {
       return Container(
         width: widget.width,
         height: widget.height,
-        color: const Color(0xFF0D1117),
-        child: const Center(
-          child: CircularProgressIndicator(color: Color(0xFF00E5FF)),
+        color: scheme.surfaceContainerHighest,
+        child: Center(
+          child: CircularProgressIndicator(color: scheme.primary),
         ),
       );
     }
@@ -231,7 +232,7 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
         child: Container(
           width: widget.width,
           height: widget.height,
-          color: const Color(0xFF0D1117),
+          color: scheme.surfaceContainerHighest,
           child: ErrorStateText('WGPU Compute Error: $_error\nTap to retry'),
         ),
       );
@@ -242,7 +243,7 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
       child: Container(
         width: widget.width,
         height: widget.height,
-        color: const Color(0xFF0D1117),
+        color: scheme.surfaceContainerHighest,
         child: _renderedImage == null
             ? const SizedBox.shrink()
             : RawImage(

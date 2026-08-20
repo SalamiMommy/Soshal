@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/notifications_service.dart';
 import '../services/session_service.dart';
+import '../widgets/empty_state.dart';
 
 /// Notifications screen: all/unread/mentions/reactions/replies/follows.
 class NotificationsScreen extends StatefulWidget {
@@ -15,7 +16,6 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  bool _loading = false;
 
   @override
   void initState() {
@@ -34,7 +34,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
     try {
       final api = context.read<NotificationService>();
       final session = context.read<SessionService>();
@@ -46,7 +45,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     } catch (e) {
       debugPrint('notifications load: $e');
     }
-    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _loadType(String type) async {
@@ -69,7 +67,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     if (pubkey == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Notifications')),
-        body: const Center(child: Text('Sign in to see notifications')),
+        body: const EmptyState(
+          icon: Icons.notifications_off_outlined,
+          title: 'Sign in to see notifications',
+        ),
       );
     }
 
@@ -146,7 +147,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           ],
         ),
       ),
-      body: _loading
+      body: context.watch<NotificationService>().isLoading
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(
               controller: _tabController,
@@ -225,8 +226,11 @@ class _NotificationList extends StatelessWidget {
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               children: const [
-                SizedBox(height: 240),
-                Center(child: Text('Nothing here yet')),
+                SizedBox(height: 120),
+                EmptyState(
+                  icon: Icons.notifications_none,
+                  title: 'Nothing here yet',
+                ),
               ],
             ),
           );
@@ -270,7 +274,9 @@ class _NotificationList extends StatelessWidget {
                   ),
                   trailing: n.read
                       ? null
-                      : const Icon(Icons.circle, size: 12, color: Colors.blue),
+                      : Icon(Icons.circle,
+                          size: 12,
+                          color: Theme.of(context).colorScheme.primary),
                   onTap: () async {
                     await api.markRead(n.id);
                   },

@@ -199,7 +199,7 @@ pub fn get_wot_peers_by_distance(
     if users.len() > 64 {
         let cache = WOT_PEERS_CACHE
             .get_or_init(|| Mutex::new((HashMap::with_capacity(16), VecDeque::new())));
-        let mut guard = cache.lock().unwrap();
+        let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(cached) = guard.0.get(&(self_pubkey.to_string(), max_distance)) {
             return cached.clone();
         }

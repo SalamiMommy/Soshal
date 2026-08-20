@@ -28,10 +28,11 @@ mod bridge_gap_tests {
         let (mutual, _) = gen_keys();
         signer::signer_unlock(secret).unwrap();
         let insert = |pk: &str, contacts: &str| {
-            let sql = format!(
-                "INSERT INTO users (pubkey, npub, contact_pubkeys, relay_list) VALUES ('{pk}', '', '{contacts}', '[]')"
-            );
-            db::db_execute_raw(sql).unwrap();
+            db::db_execute_params(
+                "INSERT INTO users (pubkey, npub, contact_pubkeys, relay_list) VALUES (?1, '', ?2, '[]')",
+                &[pk.to_string(), contacts.to_string()],
+            )
+            .unwrap();
         };
         insert(&me, &format!("[\"{friend}\"]"));
         insert(&friend, &format!("[\"{me}\",\"{mutual}\"]"));
@@ -153,13 +154,15 @@ mod bridge_gap_tests {
         let empty = bookmarks::bookmarks_resolve_post("nope".into()).unwrap();
         assert_eq!(empty, "");
         let (other, _) = gen_keys();
-        db::db_execute_raw(format!(
-            "INSERT INTO users (pubkey, npub, relay_list) VALUES ('{other}', '', '[]')"
-        ))
+        db::db_execute_params(
+            "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]')",
+            &[other.clone()],
+        )
         .unwrap();
-        db::db_execute_raw(format!(
-            "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES ('evt2', '{other}', 'hello', 1, 1700000000)"
-        ))
+        db::db_execute_params(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES ('evt2', ?1, 'hello', 1, 1700000000)",
+            &[other],
+        )
         .unwrap();
         let resolved = bookmarks::bookmarks_resolve_post("evt2".into()).unwrap();
         assert!(resolved.contains("\"content\":\"hello\""), "{resolved}");

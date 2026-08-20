@@ -236,16 +236,18 @@ fn pin_lockout_three_wrong_triggers_delay() {
     assert_eq!(v1, PinVerdict::Incorrect { locked_until: None });
     let v2 = apply_pin_attempt(&mut state, 20, false, false);
     assert_eq!(v2, PinVerdict::Incorrect { locked_until: None });
+    // Attempt #3 reaches PIN_MAX_ATTEMPTS: lockout starts at the first
+    // delay tier (escalates per excess attempt).
     let v3 = apply_pin_attempt(&mut state, 30, false, false);
     match v3 {
         PinVerdict::Incorrect {
             locked_until: Some(u),
         } => {
-            assert_eq!(u, 30 + PIN_LOCKOUT_DELAYS[2])
+            assert_eq!(u, 30 + PIN_LOCKOUT_DELAYS[0])
         }
         other => panic!("expected lockout, got {:?}", other),
     }
-    assert_eq!(state.lockout_until, Some(30 + PIN_LOCKOUT_DELAYS[2]));
+    assert_eq!(state.lockout_until, Some(30 + PIN_LOCKOUT_DELAYS[0]));
 }
 
 #[test]

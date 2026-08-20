@@ -9,6 +9,7 @@ soshal-nostr-core = { path = "../nostr-core" }
 serde = { workspace = true }
 url = { workspace = true }
 soshal-common-core = { path = "../common-core" }
+bech32 = "0.12"
 
 [lints]
 workspace = true

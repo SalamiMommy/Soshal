@@ -112,14 +112,14 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     final pubkey = context.read<SessionService>().activePubkey ?? '';
     if (pubkey.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sign in first to start the relay')));
+          SnackBar(content: SelectableText('Sign in first to start the relay')));
       return;
     }
     try {
       service.startMeshRelay(pubkey);
     } catch (e) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Mesh relay: $e')));
+          .showSnackBar(SnackBar(content: SelectableText('Mesh relay: $e')));
     }
   }
 
@@ -143,7 +143,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
             ? ' — run i2pd (SAM on 7656) first'
             : '';
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('I2P start: $e$hint')));
+            .showSnackBar(SnackBar(content: SelectableText('I2P start: $e$hint')));
       }
     }
     if (mounted) setState(() => _busy = false);
@@ -161,7 +161,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
       debugPrint('i2p stop: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('I2P stop: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('I2P stop: $e')));
       }
     }
   }
@@ -178,7 +178,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
       debugPrint('i2p status: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('I2P status: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('I2P status: $e')));
       }
     }
   }
@@ -188,14 +188,14 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
       await context.read<NetworkService>().reinitRelays();
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Relays reconnected')));
+            .showSnackBar(SnackBar(content: SelectableText('Relays reconnected')));
       }
       await _refresh();
     } catch (e) {
       debugPrint('reinit relays: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Reinit relays: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Reinit relays: $e')));
       }
     }
   }
@@ -227,7 +227,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Local KV must be a JSON object')));
+            SnackBar(content: SelectableText('Local KV must be a JSON object')));
       }
       return;
     }
@@ -388,7 +388,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     if (dest.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Generate or paste a destination')));
+            SnackBar(content: SelectableText('Generate or paste a destination')));
       }
       return;
     }
@@ -433,7 +433,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     if (id.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Enter a subscription id')));
+            SnackBar(content: SelectableText('Enter a subscription id')));
       }
       return;
     }
@@ -492,7 +492,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     if (ownPubkey == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sign in first (need own pubkey)')));
+            SnackBar(content: SelectableText('Sign in first (need own pubkey)')));
       }
       return;
     }
@@ -619,7 +619,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     final path = await DaemonService.getDaemonPath(name);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$name: ${path ?? 'not bundled'}')));
+          SnackBar(content: SelectableText('$name: ${path ?? 'not bundled'}')));
     }
   }
 
@@ -628,7 +628,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     if (ip.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Enter an IP')));
+            .showSnackBar(SnackBar(content: SelectableText('Enter an IP')));
       }
       return;
     }
@@ -644,7 +644,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     if (ip.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Enter an IP')));
+            .showSnackBar(SnackBar(content: SelectableText('Enter an IP')));
       }
       return;
     }
@@ -672,12 +672,12 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     if (ok) {
       _relayField.clear();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Connected to $url')),
+        SnackBar(content: SelectableText('Connected to $url')),
       );
       _refresh();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not connect to that relay')),
+        SnackBar(content: SelectableText('Could not connect to that relay')),
       );
     }
   }

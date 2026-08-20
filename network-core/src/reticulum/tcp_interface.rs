@@ -145,7 +145,16 @@ impl TcpServerInterface {
                         *current += 1;
                         drop(current);
 
-                        let stream_clone = stream.try_clone().unwrap();
+                        let stream_clone = match stream.try_clone() {
+                            Ok(s) => s,
+                            Err(e) => {
+                                eprintln!("TCP server: try_clone error: {e}");
+                                let mut current =
+                                    active_connections.lock().unwrap_or_else(|e| e.into_inner());
+                                *current = current.saturating_sub(1);
+                                continue;
+                            }
+                        };
                         let local_dest_clone = local_dest;
                         let rx_count_clone = rx_count.clone();
                         let tx_count_clone = tx_count.clone();

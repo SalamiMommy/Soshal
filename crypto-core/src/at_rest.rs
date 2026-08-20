@@ -12,6 +12,7 @@
 
 use crate::hash::{hkdf_sha256, sha256};
 use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN};
+use zeroize::Zeroize;
 
 /// HKDF info parameter for v1 at-rest key derivation.
 /// Also used as the inner-layer info for v2 envelope sealing (the v2 outer
@@ -24,8 +25,10 @@ pub fn at_rest_key(master: &[u8]) -> Result<[u8; 32], String> {
         return Err("at-rest master secret is empty".into());
     }
     // Hash the master first so a multi-entry keychain never leaks via HKDF info.
-    let ikm = sha256(master);
-    let okm = hkdf_sha256(&ikm, b"soshal-at-rest-salt", AT_REST_V1_INFO, 32)?;
+    let mut ikm = sha256(master);
+    let okm = hkdf_sha256(&ikm, b"soshal-at-rest-salt", AT_REST_V1_INFO, 32);
+    ikm.zeroize();
+    let okm = okm?;
     let mut key = [0u8; 32];
     key.copy_from_slice(&okm);
     Ok(key)
@@ -33,6 +36,12 @@ pub fn at_rest_key(master: &[u8]) -> Result<[u8; 32], String> {
 
 /// Seals `plaintext` and returns hex(nonce ‖ ciphertext ‖ tag).
 pub fn seal_at_rest(key: &[u8; 32], plaintext: &[u8]) -> Result<String, String> {
+    Ok(hex::encode(seal_at_rest_bin(key, plaintext)?))
+}
+
+/// Seals `plaintext` and returns binary `nonce ‖ ciphertext ‖ tag` (no hex
+/// expansion — used for large blobs like encrypted DB backups).
+pub fn seal_at_rest_bin(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, String> {
     let mut nonce_bytes = [0u8; NONCE_LEN];
     getrandom::fill(&mut nonce_bytes).map_err(|e| format!("rng: {e}"))?;
     let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|e| format!("key: {e}"))?;
@@ -44,13 +53,18 @@ pub fn seal_at_rest(key: &[u8; 32], plaintext: &[u8]) -> Result<String, String> 
         .map_err(|e| format!("seal: {e}"))?;
     let mut out = nonce_bytes.to_vec();
     out.extend_from_slice(&in_out);
-    Ok(hex::encode(out))
+    Ok(out)
 }
 
 /// Opens a blob produced by `seal_at_rest`. Returns the plaintext or `Err`
 /// on any tampering, wrong key or malformed input.
 pub fn open_at_rest(key: &[u8; 32], sealed_hex: &str) -> Result<Vec<u8>, String> {
     let blob = hex::decode(sealed_hex).map_err(|e| format!("sealed blob: {e}"))?;
+    open_at_rest_bin(key, &blob)
+}
+
+/// Opens a binary blob produced by [`seal_at_rest_bin`].
+pub fn open_at_rest_bin(key: &[u8; 32], blob: &[u8]) -> Result<Vec<u8>, String> {
     if blob.len() <= NONCE_LEN {
         return Err("sealed blob too short".into());
     }
@@ -152,7 +166,7 @@ pub fn open_at_rest_v2(
         // Legacy v1 blob (plain hex-encoded AES-GCM): readable for migration.
         return open_at_rest(master_key, blob);
     };
-    let inner = soshal_pqc_core::seal::hybrid_unseal(
+    let mut inner = soshal_pqc_core::seal::hybrid_unseal(
         &payload,
         &nonce,
         &ct,
@@ -162,9 +176,18 @@ pub fn open_at_rest_v2(
     let inner_hex = match inner.strip_prefix(AT_REST_V2_INNER_TAG) {
         Some(tagged) => tagged,
         None if ALLOW_UNTAGGED_V1 => &inner[..],
-        None => return Err("v2 envelope missing version marker; untagged disabled".into()),
+        None => {
+            inner.zeroize();
+            return Err("v2 envelope missing version marker; untagged disabled".into());
+        }
     };
-    let inner_str = std::str::from_utf8(inner_hex)
-        .map_err(|_| "v2 inner blob is not UTF-8 (wrong key?)".to_string())?;
-    open_at_rest(master_key, inner_str)
+    let inner_str = match std::str::from_utf8(inner_hex) {
+        Ok(s) => s.to_string(),
+        Err(_) => {
+            inner.zeroize();
+            return Err("v2 inner blob is not UTF-8 (wrong key?)".to_string());
+        }
+    };
+    inner.zeroize();
+    open_at_rest(master_key, &inner_str)
 }

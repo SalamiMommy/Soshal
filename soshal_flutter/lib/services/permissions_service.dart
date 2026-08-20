@@ -64,28 +64,28 @@ class PermissionsService {
   static String get _platform =>
       _hostPlatform ??= ffi.permissionsPlatformCurrent();
 
-  static bool get _isAndroid =>
+  static bool get isAndroid =>
       debugPlatformIsAndroid ?? _platform == 'android';
 
-  static bool get _isLinux => debugPlatformIsLinux ?? _platform == 'linux';
+  static bool get isLinux => debugPlatformIsLinux ?? _platform == 'linux';
 
   /// Request camera + microphone together (grouped dialog on Android 12+).
   static Future<PermissionResult> ensureCameraMic() async {
-    if (!_isAndroid) {
+    if (!isAndroid) {
       return const PermissionResult.denied(_linuxCameraMicUnsupported);
     }
     return _ensureCameraMic();
   }
 
   static Future<PermissionResult> ensureCamera() async {
-    if (!_isAndroid) {
+    if (!isAndroid) {
       return const PermissionResult.denied(_linuxCameraMicUnsupported);
     }
     return _ensureCameraMic();
   }
 
   static Future<PermissionResult> ensureMic() async {
-    if (!_isAndroid) {
+    if (!isAndroid) {
       return const PermissionResult.denied(_linuxCameraMicUnsupported);
     }
     return _ensureCameraMic();
@@ -118,7 +118,7 @@ class PermissionsService {
 
   /// True when a camera/mic permission is permanently denied (Android).
   static Future<bool> isPermanentlyDenied() async {
-    if (!_isAndroid) return false;
+    if (!isAndroid) return false;
     try {
       return ffi.permissionsCameraMicPermanentlyDenied();
     } catch (_) {
@@ -128,7 +128,7 @@ class PermissionsService {
 
   /// Open the OS app-settings page (Android). Returns false elsewhere.
   static Future<bool> openSettings() async {
-    if (!_isAndroid) return false;
+    if (!isAndroid) return false;
     try {
       return ffi.permissionsOpenSettings();
     } catch (_) {
@@ -140,7 +140,7 @@ class PermissionsService {
   /// service notification needs it to be visible — the service itself runs
   /// regardless). No-op granted on older platforms.
   static Future<PermissionResult> ensureNotifications() async {
-    if (!_isAndroid) return const PermissionResult.granted();
+    if (!isAndroid) return const PermissionResult.granted();
     try {
       if (ffi.permissionsNotificationsGranted()) {
         return const PermissionResult.granted();
@@ -168,11 +168,11 @@ class PermissionsService {
   /// Request location access (Rust dialog on Android; portal grants on
   /// demand on Linux, so no static prompt here).
   static Future<PermissionResult> ensureLocation() async {
-    if (!_isAndroid && !_isLinux) {
+    if (!isAndroid && !isLinux) {
       return const PermissionResult.denied(
           'Location unavailable on this platform');
     }
-    if (_isLinux) return const PermissionResult.granted();
+    if (isLinux) return const PermissionResult.granted();
     try {
       if (ffi.permissionsLocationGranted()) {
         return const PermissionResult.granted();
@@ -199,7 +199,7 @@ class PermissionsService {
   /// permission flow itself is Rust). Linux: XDG Desktop Portal location
   /// via ashpd.
   static Future<LocationResult> currentPosition() async {
-    if (_isAndroid) {
+    if (isAndroid) {
       final granted = await ensureLocation();
       if (!granted.granted) return LocationResult.failed(granted.reason);
       try {
@@ -217,7 +217,7 @@ class PermissionsService {
         return LocationResult.failed('GPS fix failed: $e');
       }
     }
-    if (_isLinux) {
+    if (isLinux) {
       try {
         final fix = await ffi.permissionsLocationPortalFix();
         if (fix == null) {

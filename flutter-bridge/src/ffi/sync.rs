@@ -129,6 +129,13 @@ pub async fn sync_start(relays_json: String) -> Result<String, String> {
     let db_path = super::db::db_path()?;
     let my_pubkey = super::signer::signer_pubkey()?;
 
+    // Guard against double-start: an existing engine must be stopped first,
+    // otherwise its STOP flag would be overwritten and its thread would run
+    // forever (uncontrollable + two engines at once).
+    if let Some(prev) = STOP.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        prev.store(true, Ordering::Relaxed);
+    }
+
     let (tx, mut rx) = tokio::sync::mpsc::channel::<SyncUpdate>(256);
     let stop = Arc::new(AtomicBool::new(false));
     spawn_engine(
@@ -352,7 +359,7 @@ mod tests {
         // item must land in the persistent outbox.
         let event_json = r#"{"id":"sync-outbox-1","pubkey":"a","created_at":1,"kind":1,"tags":[],"content":"hi","sig":"00"}"#;
         publish_or_enqueue("post", event_json).await.unwrap();
-        let rows = crate::ffi::db::db_query_raw(
+        let rows = crate::ffi::db::db_query_raw_test(
             "SELECT id, action_type FROM outbox_queue WHERE id='sync-outbox-1'".to_string(),
         )
         .unwrap();
@@ -370,7 +377,7 @@ mod tests {
         // Even malformed JSON is queued (publish fails, outbox succeeds);
         // the event id falls back to "unknown".
         publish_or_enqueue("post", "not-json").await.unwrap();
-        let rows = crate::ffi::db::db_query_raw(
+        let rows = crate::ffi::db::db_query_raw_test(
             "SELECT id, action_type FROM outbox_queue WHERE id='unknown'".to_string(),
         )
         .unwrap();
@@ -396,9 +403,10 @@ mod tests {
         assert_eq!(v["pending_count"], 1);
         assert_eq!(v["failed_count"], 0);
         assert_eq!(v["total_count"], 1);
-        let rows = crate::ffi::db::db_query_raw(format!(
-            "SELECT id, action_type, status FROM outbox_queue WHERE id='{id}'"
-        ))
+        let rows = crate::ffi::db::db_query_params(
+            "SELECT id, action_type, status FROM outbox_queue WHERE id=?1",
+            &[id.clone()],
+        )
         .unwrap();
         assert!(rows.contains("post"), "rows: {rows}");
         assert!(rows.contains("pending"), "rows: {rows}");
@@ -431,7 +439,7 @@ mod tests {
         assert_eq!(v["domain"], "feed");
         assert_eq!(v["pruned_tombstones"], 0);
         // Seed a tombstone at created_at=0; consensus cutoff = 100-3600 → 0.
-        crate::ffi::db::db_execute_raw(
+        crate::ffi::db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES ('gc-tomb','pk','x',1,0,'[]','synced',1)"
                 .to_string(),
@@ -448,9 +456,10 @@ mod tests {
         .unwrap();
         assert_eq!(v["epoch_counter"], 1);
         assert_eq!(v["pruned_tombstones"], 1);
-        let rows =
-            crate::ffi::db::db_query_raw("SELECT id FROM posts WHERE id='gc-tomb'".to_string())
-                .unwrap();
+        let rows = crate::ffi::db::db_query_raw_test(
+            "SELECT id FROM posts WHERE id='gc-tomb'".to_string(),
+        )
+        .unwrap();
         assert!(!rows.contains("gc-tomb"), "tombstone not pruned: {rows}");
     }
 
@@ -485,7 +494,7 @@ mod tests {
         .expect("decryptable DM must emit JSON and persist");
         assert!(json.contains("\"t\":\"dm\""), "json: {json}");
         assert!(json.contains("hello dm"), "json: {json}");
-        let rows = crate::ffi::db::db_query_raw(
+        let rows = crate::ffi::db::db_query_raw_test(
             "SELECT id, pubkey FROM messages WHERE id='dm-1'".to_string(),
         )
         .unwrap();

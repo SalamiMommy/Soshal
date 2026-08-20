@@ -12,7 +12,9 @@ use zeroize::{Zeroize, Zeroizing};
 /// Result wrapper for FFI operations.
 ///
 /// Thin alias over `Result<T, String>` so flutter_rust_bridge maps errors to
-/// Generate a new keypair and unlock the signer
+/// Generate a new keypair and unlock the signer. Only the hex public key is
+/// returned; the secret never crosses the FFI boundary — the signer holds it
+/// in-process, and backup happens via the BIP-39 mnemonic instead.
 #[frb(sync, serialize)]
 pub fn auth_generate_keypair() -> Result<String, String> {
     let keys = generate_keys();
@@ -20,7 +22,7 @@ pub fn auth_generate_keypair() -> Result<String, String> {
     let pk = super::signer::signer_unlock((*nsec).to_string())?;
     super::util::json_ok(KeyPairResult {
         public_key: pk,
-        secret_key: nsec,
+        secret_key: Zeroizing::new(String::new()),
     })
 }
 

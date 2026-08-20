@@ -27,7 +27,10 @@ OUT_SO="$CACHE_DIR/$HOST_TRIPLE/debug/libsoshal_flutter_bridge.so"
 export SOSHAL_BRIDGE_SO="$OUT_SO"
 
 APPIMAGETOOL="$TOOLS_DIR/appimagetool-x86_64.AppImage"
-APPIMAGE_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+# Pinned release (AppImage/appimagetool 1.9.1, built 2025-12-04) + sha256:
+# the rolling `continuous` release is unpinned supply-chain risk.
+APPIMAGE_URL="https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage"
+APPIMAGE_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
 
 echo "== Soshal Linux dev build =="
 
@@ -40,10 +43,21 @@ echo "  bridge: cargo build (debug profile)"
 cargo build -p "$BRIDGE" --target "$HOST_TRIPLE" --target-dir "$CACHE_DIR"
 
 if [[ ! -x "$APPIMAGETOOL" ]]; then
-  echo "  tool: downloading appimagetool"
+  echo "  tool: downloading appimagetool (pinned 1.9.1)"
   mkdir -p "$TOOLS_DIR"
   curl -L -f -o "$APPIMAGETOOL" "$APPIMAGE_URL"
   chmod +x "$APPIMAGETOOL"
+fi
+# Always verify the pinned checksum (detects tampered cache or bad download).
+if ! echo "$APPIMAGE_SHA256  $APPIMAGETOOL" | sha256sum -c - >/dev/null 2>&1; then
+  echo "  tool: checksum mismatch, re-downloading"
+  rm -f "$APPIMAGETOOL"
+  curl -L -f -o "$APPIMAGETOOL" "$APPIMAGE_URL"
+  chmod +x "$APPIMAGETOOL"
+  echo "$APPIMAGE_SHA256  $APPIMAGETOOL" | sha256sum -c - || {
+    echo "FATAL: appimagetool checksum verification failed" >&2
+    exit 1
+  }
 fi
 
 cd "$PROJECT_ROOT/soshal_flutter"

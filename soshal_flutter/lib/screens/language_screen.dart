@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:soshal_flutter/services/settings_service.dart';
+import '../widgets/settings_scaffold.dart';
 
 /// Language setting — persists a locale code in the `language` settings key.
 /// The legacy UI offered a locale list; the app itself renders English for
@@ -52,26 +53,24 @@ class _LanguageScreenState extends State<LanguageScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Language')),
-      body: ListView(
-        children: [
-          for (final (code, label) in locales)
-            ListTile(
-              title: Text(label),
-              trailing: _current == code ? const Icon(Icons.check) : null,
-              onTap: () => _save(code),
-            ),
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              'UI localization pending; the preference is stored and applied '
-              'when translations land.',
-              style: TextStyle(fontStyle: FontStyle.italic),
-            ),
+    return SettingsScaffold(
+      title: 'Language',
+      children: [
+        for (final (code, label) in locales)
+          ListTile(
+            title: Text(label),
+            trailing: _current == code ? const Icon(Icons.check) : null,
+            onTap: () => _save(code),
           ),
-        ],
-      ),
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text(
+            'UI localization pending; the preference is stored and applied '
+            'when translations land.',
+            style: TextStyle(fontStyle: FontStyle.italic),
+          ),
+        ),
+      ],
     );
   }
 }

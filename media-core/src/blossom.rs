@@ -1,5 +1,6 @@
 use crate::MediaFile;
 use reqwest::Client;
+use soshal_common_core::url::is_valid_media_url;
 
 /// Hard cap on download responses: a hostile blossom server must not be able
 /// to exhaust memory with an unbounded body (64 MiB).
@@ -15,11 +16,61 @@ pub struct BlossomClient {
 }
 
 impl BlossomClient {
+    /// Same hardened client as [`Self::new`], but resolves the server
+    /// hostname at call time, verifies EVERY resolved address is public
+    /// (DNS-rebinding TOCTOU guard), and pins the connection to those
+    /// addresses so the OS resolver cannot re-resolve to a private address
+    /// between validation and connect. Preferred for production call sites.
+    pub async fn new_pinned_resolve(server_url: &str) -> Result<Self, String> {
+        if !is_valid_media_url(server_url) {
+            return Err(
+                "invalid blossom server URL (private or loopback hosts are not allowed)"
+                    .to_string(),
+            );
+        }
+        let parsed =
+            url::Url::parse(server_url).map_err(|e| format!("blossom URL parse error: {e}"))?;
+        let host = parsed
+            .host_str()
+            .map(|h| h.to_string())
+            .ok_or_else(|| "blossom URL has no host".to_string())?;
+        let port = parsed
+            .port_or_known_default()
+            .ok_or_else(|| "blossom URL has no port".to_string())?;
+        let mut pinned_addrs: Vec<std::net::SocketAddr> = Vec::new();
+        match tokio::net::lookup_host((host.as_str(), port)).await {
+            Ok(addrs) => {
+                for addr in addrs {
+                    if soshal_common_core::url::is_private_ip_str(&addr.ip().to_string()) {
+                        return Err("blossom server resolves to an internal address".to_string());
+                    }
+                    pinned_addrs.push(addr);
+                }
+            }
+            Err(_) => return Err("blossom server does not resolve".to_string()),
+        }
+        if pinned_addrs.is_empty() {
+            return Err("blossom server does not resolve".to_string());
+        }
+        Ok(Self::with_http(server_url, Some(&host), &pinned_addrs))
+    }
+
     /// Builds a client that never follows redirects (a redirecting server
     /// must not be able to funnel uploads/downloads to an attacker-chosen
     /// endpoint) and bounds connect/response time.
-    pub fn new(server_url: &str) -> Self {
-        Self::with_http(server_url, None, &[])
+    ///
+    /// Rejects loopback/private/link-local/DNS-rebinding hosts (SSRF guard):
+    /// `server_url` is user-controlled (settings, NIP-65 lists) and must
+    /// never point the client at internal networks. Hostname-level check
+    /// only; use [`Self::new_pinned_resolve`] for DNS-rebinding protection.
+    pub fn new(server_url: &str) -> Result<Self, String> {
+        if !is_valid_media_url(server_url) {
+            return Err(
+                "invalid blossom server URL (private or loopback hosts are not allowed)"
+                    .to_string(),
+            );
+        }
+        Ok(Self::with_http(server_url, None, &[]))
     }
 
     /// Same hardened client as [`Self::new`], but pins `host` to the caller-

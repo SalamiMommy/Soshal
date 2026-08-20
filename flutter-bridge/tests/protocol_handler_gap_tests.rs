@@ -65,7 +65,9 @@ mod protocol_handler_gap_tests {
             .await
             .unwrap_err();
             assert!(
-                err.contains("Invalid media URL") || err.contains("Fetch failed"),
+                err.contains("Invalid media URL")
+                    || err.contains("Fetch failed")
+                    || err.contains("blossom server does not resolve"),
                 "{err}"
             );
             let err = protocol_handler::protocol_handle_request(

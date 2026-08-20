@@ -113,7 +113,7 @@ async fn protocol_fetch_from_blossom(url_or_hash: &str) -> Result<Vec<u8>, Strin
         None => return Err("media URL must be absolute".to_string()),
     };
 
-    let client = soshal_media_core::blossom::BlossomClient::new(&server);
+    let client = soshal_media_core::blossom::BlossomClient::new_pinned_resolve(&server).await?;
     match client.download(&hash).await {
         Ok(data) => Ok(data),
         Err(e) => Err(format!("Fetch failed: {}", e)),

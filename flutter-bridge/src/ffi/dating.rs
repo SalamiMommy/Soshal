@@ -262,18 +262,23 @@ fn cards_by_pubkey(
     if pubkeys.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
-    let list: Vec<String> = pubkeys
-        .iter()
-        .take(limit as usize)
-        .map(|k| format!("'{}'", k.replace('\'', "''")))
-        .collect();
-    let json = super::db::db_query_raw(format!(
-        "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
-         FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_PROFILE} AND p.pubkey IN ({}) AND p.is_deleted = 0 \
-         ORDER BY p.created_at DESC",
-        list.join(",")
-    ))?;
+    let ids_json = serde_json::to_string(
+        &pubkeys
+            .iter()
+            .take(limit as usize)
+            .cloned()
+            .collect::<Vec<_>>(),
+    )
+    .unwrap_or_else(|_| "[]".into());
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
+             FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
+             WHERE p.kind = {KIND_PROFILE} AND p.pubkey IN (SELECT value FROM json_each(?1)) AND p.is_deleted = 0 \
+             ORDER BY p.created_at DESC"
+        ),
+        &[ids_json],
+    )?;
     let mut map = std::collections::HashMap::new();
     for card in cards_from_json(json, &std::collections::HashMap::new()) {
         map.entry(card.pubkey.clone()).or_insert(card);
@@ -285,28 +290,29 @@ fn cards_by_pubkey(
 /// user already reacted to (liked/passed).
 #[frb(sync, serialize)]
 pub fn dating_fetch_profiles(user_pubkey: String, limit: i32) -> Result<String, String> {
-    let json = super::db::db_query_raw(profile_rows_sql(
-        &format!(
-            "AND p.pubkey != '{}' AND p.id NOT IN \
-             (SELECT event_id FROM reactions WHERE pubkey = '{}') \
+    let json = super::db::db_query_params(
+        &profile_rows_sql(
+            "AND p.pubkey != ?1 AND p.id NOT IN \
+             (SELECT event_id FROM reactions WHERE pubkey = ?1) \
              AND p.id NOT IN (SELECT pubkey FROM dating_unmatches)",
-            user_pubkey.replace('\'', "''"),
-            user_pubkey.replace('\'', "''")
+            limit,
         ),
-        limit,
-    ))?;
+        &[user_pubkey],
+    )?;
     super::util::json_ok(cards_from_json(json, &std::collections::HashMap::new()))
 }
 
 /// Fetch a single dating profile by profile event id.
 #[frb(sync, serialize)]
 pub fn dating_get_profile(profile_id: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
-         FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_PROFILE} AND p.id = '{}'",
-        profile_id.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
+             FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
+             WHERE p.kind = {KIND_PROFILE} AND p.id = ?1"
+        ),
+        &[profile_id],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let card = rows
         .first()
@@ -488,11 +494,13 @@ pub fn dating_update_profile(
         interests,
         images,
     );
-    let old_json = super::db::db_query_raw(format!(
-        "SELECT content FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}' AND is_deleted = 0 \
-         ORDER BY created_at DESC LIMIT 1",
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let old_json = super::db::db_query_params(
+        &format!(
+            "SELECT content FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0 \
+             ORDER BY created_at DESC LIMIT 1"
+        ),
+        &[user_pubkey.clone()],
+    )?;
     let old: Vec<serde_json::Value> = serde_json::from_str(&old_json).unwrap_or_default();
     if let Some(prev) = old
         .first()
@@ -536,13 +544,15 @@ pub fn dating_update_profile(
 /// Get the user's own latest profile.
 #[frb(sync, serialize)]
 pub fn dating_get_own_profile(user_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
-         FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_PROFILE} AND p.pubkey = '{}' AND p.is_deleted = 0 \
-         ORDER BY p.created_at DESC LIMIT 1",
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
+             FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
+             WHERE p.kind = {KIND_PROFILE} AND p.pubkey = ?1 AND p.is_deleted = 0 \
+             ORDER BY p.created_at DESC LIMIT 1"
+        ),
+        &[user_pubkey],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let card = rows
         .first()
@@ -555,10 +565,10 @@ pub fn dating_get_own_profile(user_pubkey: String) -> Result<String, String> {
 /// relay-side counterpart).
 #[frb(sync, serialize)]
 pub fn dating_delete_profile(user_pubkey: String) -> Result<bool, String> {
-    super::db::db_execute_raw(format!(
-        "UPDATE posts SET is_deleted = 1 WHERE kind = {KIND_PROFILE} AND pubkey = '{}'",
-        user_pubkey.replace('\'', "''")
-    ))
+    super::db::db_execute_params(
+        &format!("UPDATE posts SET is_deleted = 1 WHERE kind = {KIND_PROFILE} AND pubkey = ?1"),
+        &[user_pubkey],
+    )
     .map(|_| true)
     .into()
 }
@@ -645,13 +655,15 @@ pub fn dating_pass(user_pubkey: String, profile_id: String) -> Result<bool, Stri
 /// events).
 #[frb(sync, serialize)]
 pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT r.event_id, r.pubkey FROM reactions r \
-         WHERE r.content = '+' AND r.event_id IN \
-         (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}' AND is_deleted = 0) \
-         ORDER BY r.created_at DESC LIMIT 200",
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT r.event_id, r.pubkey FROM reactions r \
+             WHERE r.content = '+' AND r.event_id IN \
+             (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0) \
+             ORDER BY r.created_at DESC LIMIT 200"
+        ),
+        &[user_pubkey],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let mut likers: Vec<String> = Vec::new();
     for row in &rows {
@@ -673,16 +685,17 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
 /// Fetch matches: profiles the user liked that also like the user back.
 #[frb(sync, serialize)]
 pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
-        "SELECT r.event_id, r.pubkey, p.pubkey AS profile_owner FROM reactions r \
-         JOIN posts p ON p.id = r.event_id \
-         WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND r.pubkey = '{}' \
-         AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND r2.pubkey = p.pubkey \
-                     AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}')) \
-         ORDER BY r.created_at DESC LIMIT 100",
-        user_pubkey.replace('\'', "''"),
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT r.event_id, r.pubkey, p.pubkey AS profile_owner FROM reactions r \
+             JOIN posts p ON p.id = r.event_id \
+             WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND r.pubkey = ?1 \
+             AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND r2.pubkey = p.pubkey \
+                         AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1)) \
+             ORDER BY r.created_at DESC LIMIT 100"
+        ),
+        &[user_pubkey],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let mut owners: Vec<String> = Vec::new();
     for row in &rows {
@@ -722,12 +735,14 @@ pub fn dating_calculate_score(
     let prefs: serde_json::Value =
         serde_json::from_str(&preferences_json).unwrap_or(serde_json::Value::Null);
     let profile_rows = |pubkey: &str| {
-        super::db::db_query_raw(format!(
-            "SELECT p.id, p.pubkey, p.content FROM posts p \
-             WHERE p.kind = {KIND_PROFILE} AND p.pubkey = '{}' AND p.is_deleted = 0 \
-             ORDER BY p.created_at DESC LIMIT 1",
-            pubkey.replace('\'', "''")
-        ))
+        super::db::db_query_params(
+            &format!(
+                "SELECT p.id, p.pubkey, p.content FROM posts p \
+                 WHERE p.kind = {KIND_PROFILE} AND p.pubkey = ?1 AND p.is_deleted = 0 \
+                 ORDER BY p.created_at DESC LIMIT 1"
+            ),
+            &[pubkey.to_string()],
+        )
     };
     let self_rows: Vec<serde_json::Value> =
         serde_json::from_str(&profile_rows(&user_pubkey)?).unwrap_or_default();
@@ -871,10 +886,12 @@ pub fn dating_filter_profiles(
 /// Dating profile statistics from the local graph.
 #[frb(sync, serialize)]
 pub fn dating_get_stats(user_pubkey: String) -> Result<String, String> {
-    let own_json = super::db::db_query_raw(format!(
-        "SELECT id, content FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}' AND is_deleted = 0 LIMIT 1",
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let own_json = super::db::db_query_params(
+        &format!(
+            "SELECT id, content FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0 LIMIT 1"
+        ),
+        &[user_pubkey.clone()],
+    )?;
     let own: Vec<serde_json::Value> = serde_json::from_str(&own_json).unwrap_or_default();
     let own_row = own.first();
     let own_id = own_row.and_then(|r| r["id"].as_str()).unwrap_or("");
@@ -883,42 +900,47 @@ pub fn dating_get_stats(user_pubkey: String) -> Result<String, String> {
         .and_then(|c| serde_json::from_str::<serde_json::Value>(c).ok())
         .map(|c| c["images"].as_array().map(|a| a.len()).unwrap_or(0))
         .unwrap_or(0) as i64;
-    let likes_json = super::db::db_query_raw(format!(
-        "SELECT COUNT(*) AS c FROM reactions WHERE event_id IN \
-         (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}') AND content = '+'",
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let likes_json = super::db::db_query_params(
+        &format!(
+            "SELECT COUNT(*) AS c FROM reactions WHERE event_id IN \
+             (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1) AND content = '+'"
+        ),
+        &[user_pubkey.clone()],
+    )?;
     let likes: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&likes_json)
         .ok()
         .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
         .unwrap_or(0);
-    let superlikes_json = super::db::db_query_raw(format!(
-        "SELECT COUNT(*) AS c FROM reactions WHERE event_id IN \
-         (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}') AND content = 'super'",
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let superlikes_json = super::db::db_query_params(
+        &format!(
+            "SELECT COUNT(*) AS c FROM reactions WHERE event_id IN \
+             (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1) AND content = 'super'"
+        ),
+        &[user_pubkey.clone()],
+    )?;
     let superlikes: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&superlikes_json)
         .ok()
         .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
         .unwrap_or(0);
-    let views_json = super::db::db_query_raw(format!(
-        "SELECT COUNT(*) AS c FROM post_views WHERE post_id = '{}'",
-        own_id.replace('\'', "''")
-    ))
+    let views_json = super::db::db_query_params(
+        "SELECT COUNT(*) AS c FROM post_views WHERE post_id = ?1",
+        &[own_id.to_string()],
+    )
     .unwrap_or_else(|_| "[]".to_string());
     let views: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&views_json)
         .ok()
         .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
         .unwrap_or(0);
-    let matches_json = super::db::db_query_raw(format!(
-        "SELECT COUNT(*) AS c FROM reactions r \
-         JOIN posts p ON p.id = r.event_id \
-         WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND r.pubkey = '{}' \
-         AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND r2.pubkey = p.pubkey \
-                     AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}'))",
-        user_pubkey.replace('\'', "''"),
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let matches_json = super::db::db_query_params(
+        &format!(
+            "SELECT COUNT(*) AS c FROM reactions r \
+             JOIN posts p ON p.id = r.event_id \
+             WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND r.pubkey = ?1 \
+             AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND r2.pubkey = p.pubkey \
+                         AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1))"
+        ),
+        &[user_pubkey],
+    )?;
     let matches: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&matches_json)
         .ok()
         .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
@@ -1132,7 +1154,7 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_radius", "ffi");
         let insert = |id: &str, pubkey: &str, age: i64, gh: &str, ts: i64| {
-            super::super::db::db_execute_raw(format!(
+            super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
                  VALUES ('{id}','{pubkey}','{{\"age\":{age},\"bio\":\"\",\"locationGeohash\":\"{gh}\",\"interests\":[]}}',{KIND_PROFILE},{ts},'[]','synced',0)"
             ))
@@ -1155,7 +1177,7 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_traits", "ffi");
         let insert = |id: &str, pubkey: &str, height: i64, smoking: &str, ts: i64| {
-            super::super::db::db_execute_raw(format!(
+            super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
                  VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"u33dc0\",\"interests\":[],\"height\":{height},\"smoking\":\"{smoking}\",\"drinking\":\"socially\",\"bodyType\":\"athletic\"}}',{KIND_PROFILE},{ts},'[]','synced',0)"
             ))
@@ -1181,7 +1203,7 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_score", "ffi");
         let insert = |id: &str, pubkey: &str, smoking: &str, ts: i64| {
-            super::super::db::db_execute_raw(format!(
+            super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
                  VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"u33dc0\",\"interests\":[],\"smoking\":\"{smoking}\"}}',{KIND_PROFILE},{ts},'[]','synced',0)"
             ))
@@ -1212,7 +1234,7 @@ mod tests {
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-        super::super::db::db_execute_raw(format!(
+        super::super::db::db_execute_raw_test(format!(
             "INSERT INTO users (pubkey, npub, name) VALUES ('{pk}', 'npub1alice', 'alice') ON CONFLICT DO NOTHING"
         ))
         .unwrap();
@@ -1244,7 +1266,7 @@ mod tests {
         .unwrap();
         let signed_v: serde_json::Value = serde_json::from_str(&signed).unwrap();
         let event_id = signed_v["id"].as_str().unwrap().to_string();
-        let rows = super::super::db::db_query_raw(format!(
+        let rows = super::super::db::db_query_raw_test(format!(
             "SELECT content FROM posts WHERE id = '{event_id}'"
         ))
         .unwrap();
@@ -1304,7 +1326,7 @@ mod tests {
         assert_eq!(updated.age, 30, "update must preserve age");
         assert_eq!(updated.location, "u33dc0", "update must preserve geohash");
         assert_eq!(updated.interests, vec!["sports".to_string()]);
-        let cnt = super::super::db::db_query_raw(format!(
+        let cnt = super::super::db::db_query_raw_test(format!(
             "SELECT COUNT(*) AS c FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{pk}' AND is_deleted = 0"
         ))
         .unwrap();
@@ -1315,7 +1337,7 @@ mod tests {
             dating_get_own_profile(pk).unwrap_err(),
             "No dating profile yet"
         );
-        let deleted = super::super::db::db_query_raw(format!(
+        let deleted = super::super::db::db_query_raw_test(format!(
             "SELECT COUNT(*) AS c FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{}' AND is_deleted = 1",
             keys.public_key().to_hex()
         ))
@@ -1344,7 +1366,7 @@ mod tests {
         assert!(dating_unlike(pk.clone(), id64.clone()).unwrap());
         assert!(dating_superlike(pk.clone(), id64.clone()).unwrap());
 
-        let reactions = super::super::db::db_query_raw(format!(
+        let reactions = super::super::db::db_query_raw_test(format!(
             "SELECT content FROM reactions WHERE id = 'reaction:{pk}:{id64}'"
         ))
         .unwrap();
@@ -1352,7 +1374,7 @@ mod tests {
         assert_eq!(rv.len(), 1);
         assert_eq!(rv[0]["content"], "super");
 
-        let outbox = super::super::db::db_query_raw(
+        let outbox = super::super::db::db_query_raw_test(
             "SELECT payload_json FROM outbox_queue WHERE action_type = 'reaction'".to_string(),
         )
         .unwrap();
@@ -1372,14 +1394,15 @@ mod tests {
         let err = dating_pass(pk.clone(), "short".to_string()).unwrap_err();
         assert_eq!(err, "invalid profile event id");
         assert!(dating_pass(pk.clone(), id64.clone()).unwrap());
-        let pass_rows = super::super::db::db_query_raw(format!(
+        let pass_rows = super::super::db::db_query_raw_test(format!(
             "SELECT content FROM reactions WHERE id = 'pass:{pk}:{id64}'"
         ))
         .unwrap();
         assert!(pass_rows.contains("\"content\":\"pass\""), "{pass_rows}");
-        let outbox2 =
-            super::super::db::db_query_raw("SELECT COUNT(*) AS c FROM outbox_queue".to_string())
-                .unwrap();
+        let outbox2 = super::super::db::db_query_raw_test(
+            "SELECT COUNT(*) AS c FROM outbox_queue".to_string(),
+        )
+        .unwrap();
         assert!(outbox2.contains("\"c\":3"), "{outbox2}");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
@@ -1391,13 +1414,13 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_graph", "dt");
         let insert_post = |id: &str, pubkey: &str, gh: &str, ts: i64| {
-            super::super::db::db_execute_raw(format!(
+            super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
                  VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"{gh}\",\"interests\":[]}}',{KIND_PROFILE},{ts},'[]','synced',0)"
             ))
         };
         let insert_react = |id: &str, event_id: &str, pubkey: &str, content: &str, ts: i64| {
-            super::super::db::db_execute_raw(format!(
+            super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO reactions (id, event_id, pubkey, content, created_at, kind) \
                  VALUES ('{id}','{event_id}','{pubkey}','{content}',{ts},7)"
             ))
@@ -1451,7 +1474,7 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_scorefilter", "dt");
         let insert_post = |id: &str, pubkey: &str, gh: &str, interests: &str, ts: i64| {
-            super::super::db::db_execute_raw(format!(
+            super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
                  VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"{gh}\",\"interests\":{interests}}}',{KIND_PROFILE},{ts},'[]','synced',0)"
             ))
@@ -1475,7 +1498,7 @@ mod tests {
                 .unwrap(),
             0.0
         );
-        assert!(super::super::db::db_execute_raw(format!(
+        assert!(super::super::db::db_execute_raw_test(format!(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES ('gself','gpk','not-json',{KIND_PROFILE},200,'[]','synced',0)"
         ))
@@ -1538,13 +1561,13 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_stats", "dt");
         let insert_post = |id: &str, pubkey: &str, images: &str, ts: i64| {
-            super::super::db::db_execute_raw(format!(
+            super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
                  VALUES ('{id}','{pubkey}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"u33dc0\",\"interests\":[],\"images\":{images}}}',{KIND_PROFILE},{ts},'[]','synced',0)"
             ))
         };
         let insert_react = |id: &str, event_id: &str, pubkey: &str, content: &str, ts: i64| {
-            super::super::db::db_execute_raw(format!(
+            super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO reactions (id, event_id, pubkey, content, created_at, kind) \
                  VALUES ('{id}','{event_id}','{pubkey}','{content}',{ts},7)"
             ))
@@ -1561,7 +1584,7 @@ mod tests {
         assert!(insert_react("r2", "own1", "likerb", "+", 200).is_ok());
         assert!(insert_react("r3", "own1", "likerc", "super", 100).is_ok());
         assert!(insert_react("r4", "la1", "me", "+", 250).is_ok());
-        assert!(super::super::db::db_execute_raw(
+        assert!(super::super::db::db_execute_raw_test(
             "INSERT INTO post_views (pubkey, post_id, seen_at) VALUES ('v1','own1',300),('v2','own1',200)"
                 .to_string()
         )
@@ -1577,13 +1600,13 @@ mod tests {
         assert_eq!(sv["profile_complete"], true);
 
         assert!(dating_block_profile("me".to_string(), "badguy".to_string()).unwrap());
-        let blocks = super::super::db::db_query_raw(
+        let blocks = super::super::db::db_query_raw_test(
             "SELECT blocked_pubkey FROM blocks WHERE pubkey = 'me'".to_string(),
         )
         .unwrap();
         assert!(blocks.contains("badguy"), "{blocks}");
         assert!(dating_unblock_profile("me".to_string(), "badguy".to_string()).unwrap());
-        let blocks2 = super::super::db::db_query_raw(
+        let blocks2 = super::super::db::db_query_raw_test(
             "SELECT COUNT(*) AS c FROM blocks WHERE pubkey = 'me'".to_string(),
         )
         .unwrap();
@@ -1592,7 +1615,7 @@ mod tests {
         assert!(
             dating_report_profile("me".to_string(), "badguy".to_string(), "x".repeat(600)).unwrap()
         );
-        let reports = super::super::db::db_query_raw(
+        let reports = super::super::db::db_query_raw_test(
             "SELECT reason, tags FROM spam_reports WHERE target_pubkey = 'badguy'".to_string(),
         )
         .unwrap();

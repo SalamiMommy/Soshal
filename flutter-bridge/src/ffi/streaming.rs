@@ -358,12 +358,14 @@ pub fn streaming_post_story(
 #[frb(sync, serialize)]
 pub fn streaming_fetch_stories(user_pubkey: String) -> Result<String, String> {
     let now = soshal_common_core::format::now_secs();
-    let json = super::db::db_query_raw(format!(
-        "SELECT id, pubkey, content, created_at, tags_json, 0 AS views FROM posts \
-         WHERE kind = {KIND_STORY} AND pubkey = '{}' AND is_deleted = 0 \
-         ORDER BY created_at DESC LIMIT 50",
-        user_pubkey.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT id, pubkey, content, created_at, tags_json, 0 AS views FROM posts \
+             WHERE kind = {KIND_STORY} AND pubkey = ?1 AND is_deleted = 0 \
+             ORDER BY created_at DESC LIMIT 50"
+        ),
+        &[user_pubkey],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     super::util::json_ok(
         rows.into_iter()
@@ -377,13 +379,15 @@ pub fn streaming_fetch_stories(user_pubkey: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn streaming_fetch_followed_stories(viewer_pubkey: String) -> Result<String, String> {
     let now = soshal_common_core::format::now_secs();
-    let json = super::db::db_query_raw(format!(
-        "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json, 0 AS views FROM posts p \
-         WHERE p.kind = {KIND_STORY} AND p.is_deleted = 0 \
-         AND p.pubkey IN (SELECT value FROM json_each((SELECT contact_pubkeys FROM users WHERE pubkey = '{}'))) \
-         ORDER BY p.created_at DESC LIMIT 200",
-        viewer_pubkey.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json, 0 AS views FROM posts p \
+             WHERE p.kind = {KIND_STORY} AND p.is_deleted = 0 \
+             AND p.pubkey IN (SELECT value FROM json_each((SELECT contact_pubkeys FROM users WHERE pubkey = ?1))) \
+             ORDER BY p.created_at DESC LIMIT 200"
+        ),
+        &[viewer_pubkey],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     super::util::json_ok(
         rows.into_iter()

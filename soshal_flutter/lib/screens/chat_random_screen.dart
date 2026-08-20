@@ -7,6 +7,7 @@ import '../services/chatrandom_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/empty_state.dart';
 
 /// Chat Random: interest-based random pairing with strangers via relay
 /// availability announcements and request/accept events.
@@ -272,7 +273,10 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Chat Random')),
       body: _pubkey == null
-          ? const Center(child: Text('Sign in required'))
+          ? const EmptyState(
+              icon: Icons.casino_outlined,
+              title: 'Sign in required',
+            )
           : Consumer<ChatrandomService>(
               builder: (context, service, _) {
                 final headers = _headerChildren(service);

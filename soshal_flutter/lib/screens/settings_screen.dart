@@ -256,7 +256,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       debugPrint('publish relay list: $e');
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Publish relay list: $e')));
+          .showSnackBar(SnackBar(content: SelectableText('Publish relay list: $e')));
     }
   }
 
@@ -353,12 +353,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   await zap.disconnect();
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('NWC wallet disconnected')),
+                    SnackBar(content: SelectableText('NWC wallet disconnected')),
                   );
                 } catch (e) {
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Disconnect failed: $e')));
+                      SnackBar(content: SelectableText('Disconnect failed: $e')));
                 }
               },
               child: const Text('Disconnect'),
@@ -394,7 +394,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (!context.mounted) return;
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Connect failed: $e')));
+                    SnackBar(content: SelectableText('Connect failed: $e')));
                 return;
               }
               if (!context.mounted) return;
@@ -459,7 +459,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (!context.mounted) return;
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context)
-                    .showSnackBar(SnackBar(content: Text('Parse failed: $e')));
+                    .showSnackBar(SnackBar(content: SelectableText('Parse failed: $e')));
               }
             },
             child: const Text('Resolve'),

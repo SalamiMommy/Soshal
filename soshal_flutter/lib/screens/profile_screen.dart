@@ -7,6 +7,8 @@ import '../services/network_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 import '../widgets/blob_image.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/error_state_text.dart';
 
 /// Profile Page
 /// Self and others, WoT indicators
@@ -144,14 +146,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (pubkey == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Profile')),
-        body: const Center(child: Text('No profile loaded')),
+        body: const EmptyState(
+          icon: Icons.person_off_outlined,
+          title: 'No profile loaded',
+        ),
       );
     }
 
     if (_loadError != null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Profile')),
-        body: Center(child: Text('Profile load error: $_loadError')),
+        body: ErrorStateText('Profile load error: $_loadError',
+            onRetry: _loadProfile),
       );
     }
 
@@ -180,7 +186,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     // Banner
                     Container(
                       height: 200,
-                      color: Colors.grey[300],
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
                       child: profile.banner.isNotEmpty
                           ? BlobImage(
                               source: profile.banner,
@@ -307,11 +313,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               children: [
                                 Text(
                                   profile.nip05,
-                                  style: const TextStyle(color: Colors.blue),
+                                  style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary),
                                 ),
                                 if (profile.nip05Valid)
-                                  const Icon(Icons.verified,
-                                      color: Colors.blue, size: 16),
+                                  Icon(Icons.verified,
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                      size: 16),
                               ],
                             ),
                           Text(

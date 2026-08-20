@@ -123,9 +123,10 @@ mod tests {
     }
 
     fn insert_post(id: &str, pubkey: &str, content: &str) {
-        crate::ffi::db::db_execute_raw(format!(
-            "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES ('{id}', '{pubkey}', '{content}', 1, 1700000000)"
-        ))
+        crate::ffi::db::db_execute_params(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES (?1, ?2, ?3, 1, 1700000000)",
+            &[id.to_string(), pubkey.to_string(), content.to_string()],
+        )
         .unwrap();
     }
 

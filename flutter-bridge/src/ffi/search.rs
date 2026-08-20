@@ -110,10 +110,10 @@ pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String>
             }
         }
     }
-    let json = super::db::db_query_raw(format!(
-        "SELECT tag FROM hashtags WHERE tag LIKE '{}%' GROUP BY tag ORDER BY SUM(count) DESC LIMIT 100",
-        query.replace('\'', "''")
-    ))?;
+    let json = super::db::db_query_params(
+        "SELECT tag FROM hashtags WHERE tag LIKE ?1 || '%' GROUP BY tag ORDER BY SUM(count) DESC LIMIT 100",
+        &[query.clone()],
+    )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let tags: Vec<String> = rows
         .into_iter()
@@ -342,17 +342,25 @@ mod tests {
     }
 
     fn insert_user(pubkey: &str, name: &str) {
-        db::db_execute_raw(format!(
-            "INSERT INTO users (pubkey, npub, name) VALUES ('{pubkey}','npub1{pubkey}','{name}') ON CONFLICT DO UPDATE SET name='{name}'"
-        ))
+        db::db_execute_params(
+            "INSERT INTO users (pubkey, npub, name) VALUES (?1, 'npub1' || ?1, ?2) ON CONFLICT DO UPDATE SET name=?2",
+            &[pubkey.to_string(), name.to_string()],
+        )
         .unwrap();
     }
 
     fn insert_post(id: &str, pubkey: &str, content: &str, kind: i64, created_at: i64) {
         insert_user(pubkey, "tester");
-        db::db_execute_raw(format!(
-            "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES ('{id}','{pubkey}','{content}',{kind},{created_at})"
-        ))
+        db::db_execute_params(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            &[
+                id.to_string(),
+                pubkey.to_string(),
+                content.to_string(),
+                kind.to_string(),
+                created_at.to_string(),
+            ],
+        )
         .unwrap();
     }
 
@@ -469,7 +477,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("hashtags");
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES \
              ('soshal','pk1',100,3),('soshal','pk2',200,5),('rust','pk1',300,1)"
                 .to_string(),
@@ -485,7 +493,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("trending");
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES \
              ('soshal','pk1',100,3),('soshal','pk2',200,5),('rust','pk1',300,1)"
                 .to_string(),
@@ -503,7 +511,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("trendprof");
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO users (pubkey, npub, name, contact_pubkeys) VALUES \
              ('pk1','npub1pk1','carl','[\"a\",\"b\",\"c\"]'),('pk2','npub1pk2','amy','[]')"
                 .to_string(),
@@ -578,7 +586,7 @@ mod tests {
         assert!(parse_arr(&search_posts("!!!".to_string(), 10).unwrap()).is_empty());
         assert!(parse_arr(&search_global("!@#$%^".to_string(), 10).unwrap()).is_empty());
         // Quote escaping + limit clamp.
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES \
              ('sos''hal','pk1',100,5),('soshal','pk2',200,3),('rust','pk3',300,1)"
                 .to_string(),
@@ -600,7 +608,7 @@ mod tests {
                 "rust".to_string()
             ]
         );
-        db::db_execute_raw("DELETE FROM hashtags".to_string()).unwrap();
+        db::db_execute_raw_test("DELETE FROM hashtags".to_string()).unwrap();
         assert_eq!(
             search_trending_hashtags(2).unwrap(),
             vec!["sos'hal".to_string(), "soshal".to_string()]
@@ -622,8 +630,9 @@ mod tests {
             "kind": 1,
         }]);
         assert!(search_index_posts(batch.to_string()).unwrap());
-        let json = db::db_query_raw("SELECT content FROM posts_fts WHERE id = 'long1'".to_string())
-            .unwrap();
+        let json =
+            db::db_query_raw_test("SELECT content FROM posts_fts WHERE id = 'long1'".to_string())
+                .unwrap();
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         let content = rows[0]["content"].as_str().unwrap();
         assert_eq!(content.chars().count(), 4096);
@@ -639,14 +648,16 @@ mod tests {
             "about text".to_string()
         )
         .unwrap());
-        let json =
-            db::db_query_raw("SELECT content FROM posts_fts WHERE id = 'profile:pkA'".to_string())
-                .unwrap();
+        let json = db::db_query_raw_test(
+            "SELECT content FROM posts_fts WHERE id = 'profile:pkA'".to_string(),
+        )
+        .unwrap();
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(rows[0]["content"], "about text");
-        let json =
-            db::db_query_raw("SELECT content FROM posts_fts WHERE id = 'profile:pkB'".to_string())
-                .unwrap();
+        let json = db::db_query_raw_test(
+            "SELECT content FROM posts_fts WHERE id = 'profile:pkB'".to_string(),
+        )
+        .unwrap();
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(rows[0]["content"], "name about text");
         // Batch index: invalid JSON errors; multi-row loop indexes both.
@@ -667,7 +678,7 @@ mod tests {
         assert!(search_remove_indexed("ghost".to_string()).unwrap());
         // Trending profile about truncated at 160.
         let about = "x".repeat(200);
-        db::db_execute_raw(format!(
+        db::db_execute_raw_test(format!(
             "INSERT INTO users (pubkey, npub, name, about, contact_pubkeys) VALUES \
              ('pk9','npub1pk9','alice','{about}','[\"a\",\"b\",\"c\"]')"
         ))

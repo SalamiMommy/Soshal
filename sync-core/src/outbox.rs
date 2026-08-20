@@ -100,18 +100,31 @@ pub fn fetch_pending_outbox_items(
     now_secs: i64,
     limit: usize,
 ) -> Result<Vec<OutboxItem>, String> {
+    fetch_pending_outbox_items_filtered(db, now_secs, limit, false)
+}
+
+pub fn fetch_pending_outbox_items_filtered(
+    db: &Database,
+    now_secs: i64,
+    limit: usize,
+    include_media: bool,
+) -> Result<Vec<OutboxItem>, String> {
     let conn = db.conn().map_err(|e| e.to_string())?;
     block_on(async {
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, action_type, payload_json, media_path, status, retry_count, next_retry_at, created_at
-                 FROM outbox_queue
-                 WHERE status = 'pending' AND next_retry_at <= ?1
-                 ORDER BY created_at ASC
-                 LIMIT ?2",
-            )
-            .await
-            .map_err(|e| e.to_string())?;
+        let sql = if include_media {
+            "SELECT id, action_type, payload_json, media_path, status, retry_count, next_retry_at, created_at
+             FROM outbox_queue
+             WHERE status = 'pending' AND next_retry_at <= ?1
+             ORDER BY created_at ASC
+             LIMIT ?2"
+        } else {
+            "SELECT id, action_type, payload_json, media_path, status, retry_count, next_retry_at, created_at
+             FROM outbox_queue
+             WHERE status = 'pending' AND media_path IS NULL AND next_retry_at <= ?1
+             ORDER BY created_at ASC
+             LIMIT ?2"
+        };
+        let mut stmt = conn.prepare(sql).await.map_err(|e| e.to_string())?;
 
         let mut rows = stmt
             .query(params![now_secs, limit as i64])

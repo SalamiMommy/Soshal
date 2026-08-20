@@ -288,10 +288,6 @@ class FakeApi extends RustLibApi {
       _asyncCall<String>('crateFfiSearchSearchRemoteGlobal', [], {#query: query, #limit: limit, #relaysJson: relaysJson});
 
   @override
-  Future<int> crateFfiStreamingStreamingStartLocalServer() =>
-      _asyncCall<int>('crateFfiStreamingStreamingStartLocalServer', [], {});
-
-  @override
   Future<String> crateFfiSyncSyncStart({required String relaysJson}) =>
       _asyncCall<String>('crateFfiSyncSyncStart', [], {#relaysJson: relaysJson});
 

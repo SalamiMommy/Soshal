@@ -13,6 +13,7 @@ import '../services/settings_service.dart';
 import '../services/signer_service.dart';
 import '../services/sync_service.dart';
 import '../services/telemetry_service.dart';
+import '../widgets/settings_scaffold.dart';
 
 /// Advanced settings — relay flags (read/write toggles), diagnostics, and
 /// transport probes. Also hosts the wired-in diagnostics cluster: sync
@@ -42,7 +43,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
   String? _telemetryInfo;
   String? _telemetryTranscript;
   bool _telemetrySealed = false;
-  final CryptoService _crypto = CryptoService();
+  CryptoService get _crypto => context.read<CryptoService>();
   final _nsecController = TextEditingController();
   String? _meshResult;
   final _shaController = TextEditingController();
@@ -136,7 +137,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     await sync.runScheduledEpochGc();
     if (!mounted) return;
     snack.showSnackBar(
-        SnackBar(content: Text('Epoch GC: ${sync.lastError ?? 'ok'}')));
+        SnackBar(content: SelectableText('Epoch GC: ${sync.lastError ?? 'ok'}')));
   }
 
   Future<void> _stopSync() async {
@@ -153,7 +154,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       final expired = settings.cleanExpiredEphemeral();
       setState(() => _ephemeralResult = 'Expired: ${expired.length}');
       snack.showSnackBar(
-          SnackBar(content: Text('Cleaned ${expired.length} expired items')));
+          SnackBar(content: SelectableText('Cleaned ${expired.length} expired items')));
     } catch (e) {
       setState(() => _ephemeralResult = 'Failed: $e');
     }
@@ -215,7 +216,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       });
     } catch (e) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('sha256: $e')));
+          .showSnackBar(SnackBar(content: SelectableText('sha256: $e')));
     }
   }
 
@@ -232,7 +233,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       });
     } catch (e) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('sha256 bytes: $e')));
+          .showSnackBar(SnackBar(content: SelectableText('sha256 bytes: $e')));
     }
   }
 
@@ -245,7 +246,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
               : 'Thread affinity unavailable')));
     } catch (e) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('affinity: $e')));
+          .showSnackBar(SnackBar(content: SelectableText('affinity: $e')));
     }
   }
 
@@ -260,7 +261,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       });
     } catch (e) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('hmac: $e')));
+          .showSnackBar(SnackBar(content: SelectableText('hmac: $e')));
     }
   }
 
@@ -273,7 +274,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       });
     } catch (e) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('hkdf: $e')));
+          .showSnackBar(SnackBar(content: SelectableText('hkdf: $e')));
     }
   }
 
@@ -290,7 +291,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       });
     } catch (e) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('random bytes: $e')));
+          .showSnackBar(SnackBar(content: SelectableText('random bytes: $e')));
     }
   }
 
@@ -300,7 +301,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       setState(() => _zeroizeResult = ok ? 'zeroized ok' : 'zeroize failed');
     } catch (e) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('zeroize: $e')));
+          .showSnackBar(SnackBar(content: SelectableText('zeroize: $e')));
     }
   }
 
@@ -315,7 +316,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     }
     if (_nip44TextController.text.trim().isEmpty || pubkey.isEmpty) {
       snack.showSnackBar(
-          const SnackBar(content: Text('Fill plaintext (pubkey optional)')));
+          SnackBar(content: SelectableText('Fill plaintext (pubkey optional)')));
       return;
     }
     try {
@@ -332,7 +333,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
             'via crypto alias match: ${pt2 == _nip44TextController.text.trim()}';
       });
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('nip44: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('nip44: $e')));
     }
   }
 
@@ -350,7 +351,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
         _pqcDecapsSs = null;
       });
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('pqc keygen: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('pqc keygen: $e')));
     }
   }
 
@@ -358,7 +359,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     final snack = ScaffoldMessenger.of(context);
     final pk = _pqcPk;
     if (pk == null) {
-      snack.showSnackBar(const SnackBar(content: Text('Run keygen first')));
+      snack.showSnackBar(SnackBar(content: SelectableText('Run keygen first')));
       return;
     }
     try {
@@ -371,7 +372,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
         _pqcDecapsSs = null;
       });
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('pqc encaps: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('pqc encaps: $e')));
     }
   }
 
@@ -380,7 +381,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     final ct = _pqcCt;
     final sk = _pqcSk;
     if (ct == null || sk == null) {
-      snack.showSnackBar(const SnackBar(content: Text('Run encaps first')));
+      snack.showSnackBar(SnackBar(content: SelectableText('Run encaps first')));
       return;
     }
     try {
@@ -388,7 +389,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _pqcDecapsSs = ss);
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('pqc decaps: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('pqc decaps: $e')));
     }
   }
 
@@ -405,7 +406,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
         _frostResult = null;
       });
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('frost keygen: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('frost keygen: $e')));
     }
   }
 
@@ -414,7 +415,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     final sharesJson = _frostSharesJson;
     final groupPubkey = _frostGroupPubkey;
     if (sharesJson == null || groupPubkey == null) {
-      snack.showSnackBar(const SnackBar(content: Text('Run keygen first')));
+      snack.showSnackBar(SnackBar(content: SelectableText('Run keygen first')));
       return;
     }
     try {
@@ -436,7 +437,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _frostResult = res);
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('frost aggregate: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('frost aggregate: $e')));
     }
   }
 
@@ -452,7 +453,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
         _pirResult = null;
       });
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('pir generate: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('pir generate: $e')));
     }
   }
 
@@ -460,7 +461,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     final snack = ScaffoldMessenger.of(context);
     final query = _pirQueryJson;
     if (query == null) {
-      snack.showSnackBar(const SnackBar(content: Text('Run query first')));
+      snack.showSnackBar(SnackBar(content: SelectableText('Run query first')));
       return;
     }
     try {
@@ -469,7 +470,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _pirResult = res);
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('pir evaluate: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('pir evaluate: $e')));
     }
   }
 
@@ -480,7 +481,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _meshResult = 'posts removed: $n');
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('db purge: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('db purge: $e')));
     }
   }
 
@@ -491,7 +492,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _meshResult = 'all posts removed: $n');
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('db purge all: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('db purge all: $e')));
     }
   }
 
@@ -503,7 +504,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _meshResult = 'geohash peers purged: $n');
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('geohash purge: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('geohash purge: $e')));
     }
   }
 
@@ -514,7 +515,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _meshResult = 'stale links pruned: $n');
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('mesh prune: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('mesh prune: $e')));
     }
   }
 
@@ -527,7 +528,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _meshResult = 'expired routes pruned: $n');
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('mesh routes: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('mesh routes: $e')));
     }
   }
 
@@ -542,7 +543,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       setState(
           () => _meshResult = 'node id: ${id ?? 'PoW miss (try nonce>0)'}');
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('skademlia: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('skademlia: $e')));
     }
   }
 
@@ -550,7 +551,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     final snack = ScaffoldMessenger.of(context);
     final nsec = _nsecController.text.trim();
     if (nsec.isEmpty) {
-      snack.showSnackBar(const SnackBar(content: Text('Enter an nsec')));
+      snack.showSnackBar(SnackBar(content: SelectableText('Enter an nsec')));
       return;
     }
     try {
@@ -559,7 +560,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _meshResult = 'derived pubkey: $pubkey');
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: Text('signer probe: $e')));
+      snack.showSnackBar(SnackBar(content: SelectableText('signer probe: $e')));
     }
   }
 
@@ -588,7 +589,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     setState(
         () => _zkResult = ok ? 'rollup applied' : 'failed — ${sync.lastError}');
     snack.showSnackBar(
-        SnackBar(content: Text(ok ? 'ZK rollup applied' : 'ZK rollup failed')));
+        SnackBar(content: SelectableText(ok ? 'ZK rollup applied' : 'ZK rollup failed')));
   }
 
   @override
@@ -605,19 +606,17 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     _nip44PubkeyController.dispose();
     _frostMsgController.dispose();
     _sqlController.dispose();
-    _crypto.dispose();
     _nsecController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Advanced')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text('Transports', style: Theme.of(context).textTheme.titleMedium),
+    return SettingsScaffold(
+      title: 'Advanced',
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text('Transports', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
           ListTile(
             leading: Icon(
@@ -1243,8 +1242,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
             icon: const Icon(Icons.refresh),
             label: const Text('Refresh'),
           ),
-        ],
-      ),
+      ],
     );
   }
 }

@@ -2233,6 +2233,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-uring"
+version = "0.7.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d64d8ca234d152948ceaede1f419b6a83983a5ecccaac05fb337a809c96d3aa6"
+dependencies = [
+ "bitflags 2.13.1",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4499,6 +4510,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "futures-util",
+ "getrandom 0.4.3",
  "hex",
  "if-addrs",
  "log",
@@ -4572,6 +4584,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2",
  "soshal-network-core",
  "tokio",
 ]
@@ -4615,6 +4628,7 @@ name = "soshal-storage-core"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "io-uring",
  "libc",
  "memmap2",
  "raptorq",
@@ -4643,6 +4657,7 @@ name = "soshal-sync-core"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bech32",
  "hex",
  "libsql",
  "nostr",
@@ -4698,6 +4713,7 @@ dependencies = [
 name = "soshal-zap-core"
 version = "0.1.0"
 dependencies = [
+ "bech32",
  "serde",
  "serde_json",
  "soshal-common-core",

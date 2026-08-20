@@ -15,14 +15,11 @@ class StreamingService extends ChangeNotifier
   final List<StreamRow> _live = [];
   final List<StreamRow> _stories = [];
 
-  int? _localVideoServerPort;
-
   String? _activeMoqStreamId;
   int _moqGroupCounter = 0;
 
   List<StreamRow> get live => _live;
   List<StreamRow> get stories => _stories;
-  int? get localVideoServerPort => _localVideoServerPort;
 
   /// Own broadcast stream id, set while `startMoqBroadcast` is active.
   String? get activeMoqStreamId => _activeMoqStreamId;
@@ -110,35 +107,6 @@ class StreamingService extends ChangeNotifier
         },
       ],
     };
-  }
-
-  /// Initialize local Rust video proxy HTTP micro-server.
-  Future<int> initLocalVideoServer() async {
-    try {
-      final port = await RustLib.instance.api
-          .crateFfiStreamingStreamingStartLocalServer();
-      _localVideoServerPort = port;
-      clearLastError();
-      notifyDeferred();
-      return port;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
-
-  /// Get local video proxy URL for a registered video.
-  String getLocalVideoUrl(String videoId, String sourcePath) {
-    try {
-      return RustLib.instance.api.crateFfiStreamingStreamingGetVideoUrl(
-        videoId: videoId,
-        sourcePath: sourcePath,
-      );
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
   }
 
   Future<List<StreamRow>> fetchLive({int limit = 50}) async {

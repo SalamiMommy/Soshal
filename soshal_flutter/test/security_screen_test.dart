@@ -187,14 +187,15 @@ void main() {
     expect(find.textContaining('signer locked'), findsOneWidget);
   });
 
-  testWidgets('generate keypair dialog shows pubkey and nsec',
+  testWidgets('generate keypair dialog shows pubkey and backup phrase',
       (tester) async {
     api.stubString('crateFfiSignerSignerPubkey', 'pk123');
     api.stubBool('crateFfiSignerSignerIsLocked', false);
     api.stubString(
       'crateFfiAuthAuthGenerateKeypair',
-      '{"publicKey":"pkgen","secretKey":"nsecgen"}',
+      '{"publicKey":"pkgen","secretKey":""}',
     );
+    api.stubString('crateFfiAuthAuthGenerateMnemonic', 'word1 word2 word3');
 
     await pumpScreen(tester);
 
@@ -209,7 +210,7 @@ void main() {
 
     expect(api.callCount('crateFfiAuthAuthGenerateKeypair'), 1);
     expect(find.text('pkgen'), findsOneWidget);
-    expect(find.text('nsecgen'), findsOneWidget);
+    expect(find.text('word1 word2 word3'), findsOneWidget);
   });
 
   testWidgets('generate keypair dialog surfaces error', (tester) async {

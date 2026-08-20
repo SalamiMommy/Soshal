@@ -29,9 +29,15 @@ mod tests {
     }
 
     fn insert_log(id: &str, actor: &str, action: &str, created_at: i64) {
-        db::db_execute_raw(format!(
-            "INSERT INTO audit_logs (id, group_id, actor_pubkey, action, target_pubkey, details, created_at) VALUES ('{id}','g1','{actor}','{action}','t1','d1',{created_at})"
-        ))
+        db::db_execute_params(
+            "INSERT INTO audit_logs (id, group_id, actor_pubkey, action, target_pubkey, details, created_at) VALUES (?1,'g1',?2,?3,'t1','d1',?4)",
+            &[
+                id.to_string(),
+                actor.to_string(),
+                action.to_string(),
+                created_at.to_string(),
+            ],
+        )
         .unwrap();
     }
 
@@ -93,7 +99,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("nullable");
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO audit_logs (id, group_id, actor_pubkey, action, created_at) VALUES ('a1','g1','pk1','kick',1000)"
                 .to_string(),
         )

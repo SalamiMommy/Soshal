@@ -211,7 +211,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
         return;
       }
     } finally {
-      setState(() => _isPosting = false);
+      if (mounted) setState(() => _isPosting = false);
     }
     if (!mounted) return;
     try {
@@ -273,7 +273,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
         );
       }
     } finally {
-      setState(() => _isPosting = false);
+      if (mounted) setState(() => _isPosting = false);
     }
   }
 

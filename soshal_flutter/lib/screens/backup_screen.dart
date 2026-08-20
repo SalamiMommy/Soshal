@@ -5,6 +5,7 @@ import '../services/backup_service.dart';
 import '../services/error_log.dart';
 import '../services/session_service.dart';
 import '../services/settings_service.dart';
+import '../widgets/empty_state.dart';
 
 /// Backup screen: account identifiers + recovery guidance.
 class BackupScreen extends StatefulWidget {
@@ -49,7 +50,10 @@ class _BackupScreenState extends State<BackupScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Backup')),
       body: account == null || account.pubkey.isEmpty
-          ? const Center(child: Text('Sign in to view backup info'))
+          ? const EmptyState(
+              icon: Icons.backup_outlined,
+              title: 'Sign in to view backup info',
+            )
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [

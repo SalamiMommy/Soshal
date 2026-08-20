@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:video_player/video_player.dart';
-import '../ffi/permissions.dart' as ffi;
+import '../services/permissions_service.dart';
 import '../services/bookmarks_service.dart';
 import '../services/feed_service.dart';
 import '../services/moderation_service.dart';
@@ -42,6 +42,7 @@ class _FeedScreenState extends State<FeedScreen> {
   double? _lastScrollPixels;
   DateTime? _lastTelemetryAt;
   FeedService? _feed;
+  bool _listening = false;
   final Map<String, int> _totals = {};
 
   @override
@@ -83,7 +84,10 @@ class _FeedScreenState extends State<FeedScreen> {
       screenWidth: size.width.round(),
       textScale: MediaQuery.textScalerOf(context).scale(14),
     );
-    feed.addListener(_onFeedChanged);
+    if (!_listening) {
+      feed.addListener(_onFeedChanged);
+      _listening = true;
+    }
   }
 
   Future<void> _loadTotals() async {
@@ -284,31 +288,6 @@ class _FeedScreenState extends State<FeedScreen> {
           );
         },
         child: const Icon(Icons.edit),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Feed'),
-          BottomNavigationBarItem(icon: Icon(Icons.mail), label: 'Messages'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.notifications), label: 'Notifications'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
-        onTap: (index) {
-          switch (index) {
-            case 1:
-              context.go('/inbox');
-              break;
-            case 2:
-              context.go('/notifications');
-              break;
-            case 3:
-              final sessionService = context.read<SessionService>();
-              if (sessionService.activePubkey != null) {
-                context.push('/profile/${sessionService.activePubkey}');
-              }
-              break;
-          }
-        },
       ),
     );
   }
@@ -1020,7 +999,7 @@ class _BlobImageState extends State<_BlobImage> {
     if (_error != null) {
       return Container(
         height: 200,
-        color: Colors.grey[300],
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -1034,7 +1013,7 @@ class _BlobImageState extends State<_BlobImage> {
       if (!_started && widget.visible) _start();
       return Container(
         height: 200,
-        color: Colors.grey[300],
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         child: Center(
           child: _started
               ? const CircularProgressIndicator()
@@ -1051,7 +1030,7 @@ class _BlobImageState extends State<_BlobImage> {
         errorBuilder: (context, error, stackTrace) {
           return Container(
             height: 200,
-            color: Colors.grey[300],
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: const Center(
               child: Text('Failed to load image'),
             ),
@@ -1143,7 +1122,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
   /// first, then a LAN crawl of discovered peers) and play from the local
   /// range server. Honest failure: no peers / no local copy = error UI.
   Future<void> _prepare() async {
-    if (ffi.permissionsPlatformCurrent() != 'android') {
+    if (!PermissionsService.isAndroid) {
       if (mounted) {
         setState(() => _error = 'Video playback is not supported on this '
             'platform (video_player has no Linux implementation yet).');
@@ -1177,7 +1156,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
     if (_error != null) {
       return Container(
         height: 200,
-        color: Colors.grey[300],
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -1190,7 +1169,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       if (!_started && widget.visible) _start();
       return Container(
         height: 200,
-        color: Colors.grey[300],
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         child: Center(
           child: _started
               ? const CircularProgressIndicator()

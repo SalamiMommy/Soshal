@@ -105,7 +105,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       final ok = await context.read<NetworkService>().addRelay(url);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(ok ? 'Relay added' : 'Could not add relay')),
+          SnackBar(content: SelectableText(ok ? 'Relay added' : 'Could not add relay')),
         );
         if (ok) _relayUrl.clear();
       }
@@ -113,7 +113,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('add relay: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Add relay: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Add relay: $e')));
       }
     }
     await _loadRelays();
@@ -185,7 +185,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('start mesh: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Start mesh: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Start mesh: $e')));
       }
     }
     if (mounted) setState(() => _startingMesh = false);
@@ -206,14 +206,14 @@ class _NetworkScreenState extends State<NetworkScreen> {
     final pubkey = context.read<SessionService>().activePubkey ?? '';
     if (pubkey.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sign in first to start the relay')));
+          SnackBar(content: SelectableText('Sign in first to start the relay')));
       return;
     }
     try {
       network.startMeshRelay(pubkey);
     } catch (e) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Mesh relay: $e')));
+          .showSnackBar(SnackBar(content: SelectableText('Mesh relay: $e')));
     }
   }
 
@@ -232,7 +232,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('refresh mesh: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Refresh mesh: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Refresh mesh: $e')));
       }
     }
   }
@@ -244,7 +244,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('announce mesh: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Announce: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Announce: $e')));
       }
     }
   }
@@ -259,13 +259,13 @@ class _NetworkScreenState extends State<NetworkScreen> {
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('AutoInterface started on :4242')));
+            SnackBar(content: SelectableText('AutoInterface started on :4242')));
       }
     } catch (e) {
       debugPrint('auto interface: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('AutoInterface: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('AutoInterface: $e')));
       }
     }
     if (mounted) setState(() => _meshBusy = false);
@@ -285,7 +285,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('tcp server: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('TCP server: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('TCP server: $e')));
       }
     }
     if (mounted) setState(() => _meshBusy = false);
@@ -296,7 +296,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     if (dest.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Enter a destination address')));
+            SnackBar(content: SelectableText('Enter a destination address')));
       }
       return;
     }
@@ -307,13 +307,13 @@ class _NetworkScreenState extends State<NetworkScreen> {
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(ok ? 'Packet sent' : 'Packet send failed')));
+            SnackBar(content: SelectableText(ok ? 'Packet sent' : 'Packet send failed')));
       }
     } catch (e) {
       debugPrint('send packet: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Send packet: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Send packet: $e')));
       }
     }
   }
@@ -323,7 +323,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     if (dest.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Enter a destination address')));
+            SnackBar(content: SelectableText('Enter a destination address')));
       }
       return;
     }
@@ -338,7 +338,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('request link: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Request link: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Request link: $e')));
       }
     }
   }
@@ -351,7 +351,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('address from pubkey: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Address: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Address: $e')));
       }
     }
   }
@@ -367,7 +367,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('address from aspect: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Address: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Address: $e')));
       }
     }
   }
@@ -377,7 +377,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     if (pubkey == null) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Sign in first')));
+            .showSnackBar(SnackBar(content: SelectableText('Sign in first')));
       }
       return;
     }
@@ -392,7 +392,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('reticulum announce: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Announce: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Announce: $e')));
       }
     }
   }
@@ -410,7 +410,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('reticulum status: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Status: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Status: $e')));
       }
     }
   }
@@ -426,7 +426,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('reticulum stop: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Stop: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Stop: $e')));
       }
     }
   }
@@ -445,7 +445,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('p2p start: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Start P2P: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Start P2P: $e')));
       }
     }
     if (mounted) setState(() => _p2pBusy = false);
@@ -464,7 +464,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       debugPrint('p2p browse: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Browse: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Browse: $e')));
       }
     }
   }
@@ -497,7 +497,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
         _swarmInfo = null;
       });
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('All P2P stopped')));
+          .showSnackBar(SnackBar(content: SelectableText('All P2P stopped')));
     }
   }
 
@@ -535,7 +535,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     if (peers.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No peers — drain the subnet first')));
+            SnackBar(content: SelectableText('No peers — drain the subnet first')));
       }
       return;
     }
@@ -561,13 +561,13 @@ class _NetworkScreenState extends State<NetworkScreen> {
       if (mounted) {
         setState(() => _swarmInfo = 'Download $id running');
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Swarm download $id started')));
+            SnackBar(content: SelectableText('Swarm download $id started')));
       }
     } catch (e) {
       debugPrint('swarm download: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Swarm download: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Swarm download: $e')));
       }
     }
     if (mounted) setState(() => _p2pBusy = false);
@@ -579,7 +579,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     if (id == null) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('No active downloads')));
+            .showSnackBar(SnackBar(content: SelectableText('No active downloads')));
       }
       return;
     }
@@ -598,7 +598,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     if (id == null) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('No active downloads')));
+            .showSnackBar(SnackBar(content: SelectableText('No active downloads')));
       }
       return;
     }
@@ -606,7 +606,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     if (mounted) {
       setState(() => _swarmInfo = null);
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Cancelled $id')));
+          .showSnackBar(SnackBar(content: SelectableText('Cancelled $id')));
     }
   }
 
@@ -657,7 +657,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Location failed: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Location failed: $e')));
       }
     }
   }
@@ -668,7 +668,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     if (lat == null || lng == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Enter valid lat/lng numbers')));
+            SnackBar(content: SelectableText('Enter valid lat/lng numbers')));
       }
       return;
     }

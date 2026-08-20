@@ -11,6 +11,7 @@ import 'error_log.dart';
 /// NIP-29 group membership, info, messages and admin actions.
 class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<SoshalGroup> _groups = [];
+  bool _groupsLoading = false;
   SoshalGroup? _current;
   List<String> _members = [];
   List<GroupMessage> _messages = [];
@@ -19,7 +20,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<GroupRoom> _rooms = [];
   List<GroupThread> _threads = [];
   List<GroupThreadReply> _replies = [];
-  List<ThreadReaction> _reactions = [];
+  final Map<String, List<ThreadReaction>> _reactionsByThread = {};
   List<GroupVoiceChannel> _voiceChannels = [];
   List<GroupVoicePresence> _presence = [];
 
@@ -34,6 +35,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   }
 
   List<SoshalGroup> get groups => _groups;
+  bool get groupsLoading => _groupsLoading;
   SoshalGroup? get current => _current;
   List<String> get members => _members;
   List<GroupMessage> get messages => _messages;
@@ -42,24 +44,29 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<GroupRoom> get rooms => _rooms;
   List<GroupThread> get threads => _threads;
   List<GroupThreadReply> get replies => _replies;
-  List<ThreadReaction> get reactions => _reactions;
+  List<ThreadReaction> get reactions =>
+      _reactionsByThread.values.expand((list) => list).toList();
   List<GroupVoiceChannel> get voiceChannels => _voiceChannels;
   List<GroupVoicePresence> get presence => _presence;
 
   /// Emoji reactions for a target (thread or reply id).
   List<ThreadReaction> reactionsFor(String targetId) =>
-      _reactions.where((r) => r.matches(targetId)).toList();
+      reactions.where((r) => r.matches(targetId)).toList();
 
   Future<List<SoshalGroup>> fetchGroups(String userPubkey) async {
+    _groupsLoading = true;
+    notifyDeferred();
     try {
       final json = RustLib.instance.api.crateFfiGroupsGroupsFetchGroups(
         userPubkey: userPubkey,
       );
       _groups = _decodeGroups(json);
+      _groupsLoading = false;
       clearLastError();
       notifyDeferred();
       return _groups;
     } catch (e, st) {
+      _groupsLoading = false;
       setLastError(e, st);
       notifyDeferred();
       rethrow;
@@ -481,12 +488,13 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         threadId: threadId,
         viewerPubkey: viewerPubkey,
       );
-      _reactions = (jsonDecode(json) as List<dynamic>)
+      final list = (jsonDecode(json) as List<dynamic>)
           .map((e) => ThreadReaction.fromJson(e as Map<String, dynamic>))
           .toList();
+      _reactionsByThread[threadId] = list;
       clearLastError();
       notifyDeferred();
-      return _reactions;
+      return list;
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();

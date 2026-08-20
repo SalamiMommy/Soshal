@@ -7,6 +7,7 @@ import 'package:soshal_flutter/screens/appearance_screen.dart';
 import 'package:soshal_flutter/screens/audit_screen.dart';
 import 'package:soshal_flutter/services/analytics_service.dart';
 import 'package:soshal_flutter/services/audit_service.dart';
+import 'package:soshal_flutter/services/crypto_service.dart';
 import 'package:soshal_flutter/services/network_service.dart';
 import 'package:soshal_flutter/services/settings_service.dart';
 import 'package:soshal_flutter/services/shell_service.dart';
@@ -51,6 +52,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => ThemeService()),
         ChangeNotifierProvider(create: (_) => ShellService()),
         ChangeNotifierProvider(create: (_) => AnalyticsService()),
+        ChangeNotifierProvider(create: (_) => CryptoService()),
         ChangeNotifierProvider<AuditService>.value(value: FakeAuditService()),
       ],
       child: MaterialApp(home: child),

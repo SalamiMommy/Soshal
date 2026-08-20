@@ -22,7 +22,8 @@ class LoggingScaffoldMessengerState extends ScaffoldMessengerState {
     final text = _snackBarText(snackBar.content);
     if (text != null && text.isNotEmpty) {
       logRuntimeError('SnackBar: $text');
-      debugPrint('SNACKBAR SITE: $text\n${StackTrace.current}');
+      debugPrint('SNACKBAR SITE: ${redactSensitive(text)}\n'
+          '${redactSensitive(StackTrace.current.toString())}');
     }
     return super
         .showSnackBar(snackBar, snackBarAnimationStyle: snackBarAnimationStyle);

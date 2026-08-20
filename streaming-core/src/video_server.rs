@@ -88,8 +88,11 @@ impl LocalVideoServer {
                 let root = root_clone.clone();
                 tokio::spawn(async move {
                     let mut buf = [0u8; 4096];
-                    let n = match socket.read(&mut buf).await {
-                        Ok(n) if n > 0 => n,
+                    let read_fut = socket.read(&mut buf);
+                    let n = match tokio::time::timeout(std::time::Duration::from_secs(10), read_fut)
+                        .await
+                    {
+                        Ok(Ok(n)) if n > 0 => n,
                         _ => return,
                     };
 
@@ -174,6 +177,12 @@ impl LocalVideoServer {
     pub fn register_video(&self, video_id: String, source_path: String) -> String {
         self.registry.register(video_id.clone(), source_path);
         format!("http://127.0.0.1:{}/video/{}", self.port, video_id)
+    }
+}
+
+impl Drop for LocalVideoServer {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 

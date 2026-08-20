@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/messaging_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/empty_state.dart';
 
 /// Blocked users screen: list + unblock.
 class BlockedScreen extends StatefulWidget {
@@ -45,7 +46,7 @@ class _BlockedScreenState extends State<BlockedScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _blocked.isEmpty
-              ? const Center(child: Text('No blocked users'))
+              ? const EmptyState(icon: Icons.block, title: 'No blocked users')
               : ListView.builder(
                   itemCount: _blocked.length,
                   itemBuilder: (context, index) {
@@ -61,7 +62,7 @@ class _BlockedScreenState extends State<BlockedScreen> {
                           if (me == null) return;
                           try {
                             await api.unblockUser(me, pubkey);
-                            setState(() => _blocked.removeAt(index));
+                            if (mounted) setState(() => _blocked.remove(pubkey));
                           } catch (e) {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(

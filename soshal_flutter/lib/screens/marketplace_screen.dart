@@ -10,6 +10,7 @@ import '../services/session_service.dart';
 import '../utils/format.dart';
 import '../widgets/app_snack.dart';
 import '../widgets/blob_image.dart';
+import '../widgets/empty_state.dart';
 
 /// Marketplace: listings, search, create, buy, orders and escrow.
 class MarketplaceScreen extends StatefulWidget {
@@ -23,7 +24,6 @@ class MarketplaceScreen extends StatefulWidget {
 class _MarketplaceScreenState extends State<MarketplaceScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
-  bool _loading = true;
   final TextEditingController _search = TextEditingController();
   Future<List<ListingInfo>>? _sellerListingsFuture;
   bool _trending = false;
@@ -43,7 +43,6 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
     try {
       final api = context.read<MarketplaceService>();
       final session = context.read<SessionService>();
@@ -62,7 +61,6 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
     } catch (e) {
       debugPrint('marketplace load: $e');
     }
-    if (mounted) setState(() => _loading = false);
   }
 
   Future<String?> _createDialog() async {
@@ -490,7 +488,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
         tooltip: 'Create listing',
         child: const Icon(Icons.add),
       ),
-      body: _loading
+      body: context.watch<MarketplaceService>().listingsLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
@@ -577,7 +575,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
     return Consumer<MarketplaceService>(
       builder: (context, api, _) {
         if (api.listings.isEmpty) {
-          return const Center(child: Text('No listings yet'));
+          return const EmptyState(
+            icon: Icons.storefront_outlined,
+            title: 'No listings yet',
+          );
         }
         return RefreshIndicator(
           onRefresh: _load,
@@ -641,7 +642,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
     return Consumer<MarketplaceService>(
       builder: (context, api, _) {
         if (api.orders.isEmpty) {
-          return const Center(child: Text('No orders yet'));
+          return const EmptyState(
+            icon: Icons.receipt_long_outlined,
+            title: 'No orders yet',
+          );
         }
         return ListView.builder(
           itemExtent: 64.0,
@@ -694,14 +698,20 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
         final session = context.read<SessionService>();
         final pubkey = session.activePubkey;
         if (pubkey == null) {
-          return const Center(child: Text('Sign in to see your listings'));
+          return const EmptyState(
+            icon: Icons.storefront_outlined,
+            title: 'Sign in to see your listings',
+          );
         }
         return FutureBuilder<List<ListingInfo>>(
           future: _sellerListingsFuture,
           builder: (context, snapshot) {
             final mine = snapshot.data ?? [];
             if (mine.isEmpty) {
-              return const Center(child: Text('You have no listings'));
+              return const EmptyState(
+                icon: Icons.storefront_outlined,
+                title: 'You have no listings',
+              );
             }
             return ListView.builder(
               itemExtent: 64.0,
@@ -726,6 +736,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                         onPressed: () async {
                           try {
                             await api.deleteListing(l.id, pubkey);
+                            _sellerListingsFuture = api.sellerListings(pubkey);
                             setState(() {});
                           } catch (e) {
                             if (context.mounted) {
@@ -1083,19 +1094,21 @@ class _EscrowSectionState extends State<_EscrowSection> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFF374151),
+              color:
+                  Theme.of(context).colorScheme.surfaceContainerHighest,
+              border: Border.all(color: Theme.of(context).colorScheme.outline),
               borderRadius: BorderRadius.circular(999),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('🔒 ', style: TextStyle(fontSize: 12)),
+                const Text('🔒 ', style: TextStyle(fontSize: 12)),
                 Text(
                   'Escrow',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],

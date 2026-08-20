@@ -76,33 +76,40 @@ impl Http3Client {
         let port = parsed
             .port_or_known_default()
             .ok_or_else(|| "HTTP request blocked: URL has no port".to_string())?;
+        let is_onion_or_i2p = host.ends_with(".i2p") || host.ends_with(".onion");
+        let use_proxy_dns = self.socks_addr.is_some() || is_onion_or_i2p;
         let mut pinned_addrs: Vec<std::net::SocketAddr> = Vec::new();
-        match tokio::net::lookup_host((host.as_str(), port)).await {
-            Ok(addrs) => {
-                for addr in addrs {
-                    if is_private_ip_str(&addr.ip().to_string()) {
-                        return Err(
-                            "HTTP request blocked: URL resolves to an internal address".to_string()
-                        );
+        if !use_proxy_dns {
+            match tokio::net::lookup_host((host.as_str(), port)).await {
+                Ok(addrs) => {
+                    for addr in addrs {
+                        if is_private_ip_str(&addr.ip().to_string()) {
+                            return Err(
+                                "HTTP request blocked: URL resolves to an internal address"
+                                    .to_string(),
+                            );
+                        }
+                        pinned_addrs.push(addr);
                     }
-                    pinned_addrs.push(addr);
                 }
+                Err(_) => return Err("HTTP request blocked: URL does not resolve".to_string()),
             }
-            Err(_) => return Err("HTTP request blocked: URL does not resolve".to_string()),
-        }
-        if pinned_addrs.is_empty() {
-            return Err("HTTP request blocked: URL does not resolve".to_string());
+            if pinned_addrs.is_empty() {
+                return Err("HTTP request blocked: URL does not resolve".to_string());
+            }
         }
         let mut client_builder = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::none());
         if let Some(addr) = self.socks_addr {
-            if let Ok(proxy) = reqwest::Proxy::all(format!("socks5://{addr}")) {
+            if let Ok(proxy) = reqwest::Proxy::all(format!("socks5h://{addr}")) {
                 client_builder = client_builder.proxy(proxy);
             }
         }
-        client_builder = client_builder.resolve_to_addrs(&host, &pinned_addrs);
+        if !pinned_addrs.is_empty() {
+            client_builder = client_builder.resolve_to_addrs(&host, &pinned_addrs);
+        }
         let client = client_builder
             .build()
             .map_err(|e| format!("HTTP client build error: {e}"))?;

@@ -24,13 +24,15 @@ mod ffi_more_gap_tests {
         );
         assert!(search::search_index_posts(rows).unwrap());
         let pk2 = "c".repeat(64);
-        db::db_execute_raw(format!(
-            "INSERT INTO users (pubkey, npub, relay_list) VALUES ('{pk}', '', '[]'), ('{pk2}', '', '[]')"
-        ))
+        db::db_execute_params(
+            "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]'), (?2, '', '[]')",
+            &[pk.clone(), pk2.clone()],
+        )
         .unwrap();
-        db::db_execute_raw(format!(
-            "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES ('p1', '{pk}', 'hello nostr world', 1, 1700000000), ('p2', '{pk2}', 'Alice Smith bio', 0, 1700000001)"
-        ))
+        db::db_execute_params(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES ('p1', ?1, 'hello nostr world', 1, 1700000000), ('p2', ?2, 'Alice Smith bio', 0, 1700000001)",
+            &[pk.clone(), pk2],
+        )
         .unwrap();
         let posts = search::search_posts("nostr".into(), 10).unwrap();
         assert!(posts.contains("hello nostr world"), "{posts}");
@@ -113,10 +115,18 @@ mod ffi_more_gap_tests {
         let unread = notifications::notifications_fetch_unread(me.clone(), 10).unwrap();
         assert_eq!(unread, "[]");
         let insert = |id: &str, typ: &str, read: i64| {
-            db::db_execute_raw(format!(
+            db::db_execute_params(
                 "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) \
-                 VALUES ('{id}', '{me}', '{typ}', 'e{id}', '{other}', 'hi', 1700000000, {read})"
-            ))
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'hi', 1700000000, ?6)",
+                &[
+                    id.to_string(),
+                    me.clone(),
+                    typ.to_string(),
+                    format!("e{id}"),
+                    other.clone(),
+                    read.to_string(),
+                ],
+            )
             .unwrap();
         };
         insert("n1", "mention", 0);

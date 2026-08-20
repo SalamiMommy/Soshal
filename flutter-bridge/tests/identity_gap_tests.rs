@@ -51,10 +51,11 @@ mod identity_gap_tests {
         let friend = "b".repeat(64);
         let stranger = "c".repeat(64);
         let insert = |pk: &str, contacts: &str| {
-            let sql = format!(
-                "INSERT INTO users (pubkey, npub, contact_pubkeys, relay_list) VALUES ('{pk}', '', '{contacts}', '[]')"
-            );
-            db::db_execute_raw(sql).unwrap();
+            db::db_execute_params(
+                "INSERT INTO users (pubkey, npub, contact_pubkeys, relay_list) VALUES (?1, '', ?2, '[]')",
+                &[pk.to_string(), contacts.to_string()],
+            )
+            .unwrap();
         };
         insert(&me, &format!("[\"{friend}\"]"));
         insert(&friend, &format!("[\"{me}\"]"));

@@ -37,9 +37,11 @@ for dep in permission_handler battery_plus connectivity_plus; do
   [ -n "$HITS" ] && { echo "$HITS"; fail "banned plugin '${dep}' imported in lib/"; }
 done
 
-# 3. `Platform.is*` fact sniffing (exempt: ffi_bridge.dart loader).
+# 3. `Platform.is*` fact sniffing (exempt: ffi_bridge.dart loader; lib/ffi
+#    glue is generated and out of scope per the header comment).
 HITS=$(grep -rn "Platform\.\(is[A-Z]\|operatingSystem\|version\|numberOfProcessors\)" \
-  "$LIB" --include='*.dart' | grep -v 'ffi_bridge.dart' | grep -v 'offthread.dart' || true)
+  "$LIB" --include='*.dart' --exclude-dir=ffi \
+  | grep -v 'ffi_bridge.dart' | grep -v 'offthread.dart' || true)
 [ -n "$HITS" ] && { echo "$HITS"; fail "Platform.is* facts must come from Rust (ffi platform fns)"; }
 
 exit $FAIL

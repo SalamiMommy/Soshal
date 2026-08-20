@@ -3,14 +3,28 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// Redacts secret-shaped strings from log lines: nsec keys, NWC URIs (which
+/// embed the wallet secret), 64-char hex secrets (raw private keys), and
+/// nostr event ids (privacy: feed content must not leak into logs).
+final RegExp _nsecRe = RegExp(r'nsec1[0-9a-z]{20,}');
+final RegExp _nwcRe = RegExp(r'nostr\+walletconnect://[^\s"<>]+');
+final RegExp _hex64Re = RegExp(r'\b[0-9a-f]{64}\b');
+
+String redactSensitive(String text) {
+  return text
+      .replaceAll(_nsecRe, 'nsec1…[redacted]')
+      .replaceAll(_nwcRe, 'nostr+walletconnect://[redacted]')
+      .replaceAll(_hex64Re, '[redacted]');
+}
+
 /// Appends a runtime error to `<app documents>/soshal-error.log` so failures
 /// shown only in the debug banner / SnackBar remain readable and copyable.
 /// Never throws: logging must not crash the app.
 Future<void> logRuntimeError(Object error, [StackTrace? stack]) async {
   final buffer = StringBuffer()
     ..writeln('[${DateTime.now().toIso8601String()}] ERROR')
-    ..writeln('$error');
-  if (stack != null) buffer.writeln('$stack');
+    ..writeln(redactSensitive('$error'));
+  if (stack != null) buffer.writeln(redactSensitive('$stack'));
   buffer.writeln('---');
   try {
     final dir = await getApplicationDocumentsDirectory();
@@ -28,7 +42,7 @@ mixin LastErrorMixin {
 
   void setLastError(Object error, [StackTrace? stack]) {
     _lastError = error.toString();
-    debugPrint('SVC ERROR: $error');
+    debugPrint('SVC ERROR: ${redactSensitive('$error')}');
     logRuntimeError('svc: $error', stack);
   }
 

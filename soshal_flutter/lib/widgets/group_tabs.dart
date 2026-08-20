@@ -4,13 +4,13 @@ import '../services/groups_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 
-/// Parses a #rrggbb hex color (falls back to purple).
+/// Parses a #rrggbb hex color (falls back to neutral gray).
 Color hexColor(String hex) {
   final trimmed = hex.trim();
   final match = RegExp(r'^#([0-9a-fA-F]{6})$').hasMatch(trimmed);
   return match
       ? Color(0xFF000000 | int.parse(trimmed.substring(1), radix: 16))
-      : const Color(0xFF8b5cf6);
+      : const Color(0xFF6b7280);
 }
 
 String _shortKey(String pubkey) => firstChars(pubkey, 12);
@@ -146,18 +146,18 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
               onPressed: () async {
                 final n = name.text.trim();
                 if (n.isEmpty) return;
+                final t = topic.text.trim();
+                final em = emoji.text.trim();
+                final api = context.read<GroupsService>();
+                final me = _me();
                 Navigator.pop(context);
                 final hex = _hex(color);
-                final me = _me();
                 if (me == null) return;
                 try {
-                  final api = context.read<GroupsService>();
                   if (room == null) {
-                    await api.createRoom(widget.groupId, n, topic.text.trim(),
-                        emoji.text.trim(), hex, me);
+                    await api.createRoom(widget.groupId, n, t, em, hex, me);
                   } else {
-                    await api.updateRoom(room.id, widget.groupId, n,
-                        topic.text.trim(), emoji.text.trim(), hex, me);
+                    await api.updateRoom(room.id, widget.groupId, n, t, em, hex, me);
                   }
                 } catch (e) {
                   if (mounted) {
@@ -172,6 +172,9 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
         ),
       ),
     );
+    name.dispose();
+    topic.dispose();
+    emoji.dispose();
   }
 
   String _hex(Color c) =>
@@ -359,7 +362,6 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
   String? _openThreadId;
   String _replyParent = '';
   bool _sendingReply = false;
-  bool _loadingReactions = false;
   final _title = TextEditingController();
   final _body = TextEditingController();
   final _reply = TextEditingController();
@@ -377,22 +379,6 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
 
   /// Fetch reaction summaries for every listed thread (list cards + detail
   /// rows both read the per-thread cache).
-  Future<void> _loadReactions(GroupsService api) async {
-    final me = context.read<SessionService>().activePubkey;
-    if (me == null || _loadingReactions) return;
-    _loadingReactions = true;
-    try {
-      for (final t in api.threads) {
-        try {
-          await api.fetchReactions(t.id, me);
-        } catch (_) {}
-      }
-    } finally {
-      _loadingReactions = false;
-      if (mounted) setState(() {});
-    }
-  }
-
   Future<void> _changeSort(ThreadSort sort, GroupsService api) async {
     if (api.threadSort == sort) return;
     api.threadSort = sort;
@@ -580,12 +566,12 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
     if (me == null || threadId == null) return;
     setState(() => _sendingReply = true);
     try {
-      await context
-          .read<GroupsService>()
-          .replyToThread(threadId, _replyParent, text, me);
+      final api = context.read<GroupsService>();
+      await api.replyToThread(threadId, _replyParent, text, me);
       _reply.clear();
+      if (!mounted) return;
       setState(() => _replyParent = '');
-      await context.read<GroupsService>().fetchThreads(widget.groupId);
+      await api.fetchThreads(widget.groupId);
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
@@ -876,10 +862,6 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
         ? null
         : api.threads.where((t) => t.id == _openThreadId).firstOrNull;
     if (open != null) return _threadDetail(open, api);
-    if (api.threads.isNotEmpty &&
-        api.threads.any((t) => !api.reactions.any((r) => r.threadId == t.id))) {
-      _loadReactions(api);
-    }
     return Column(
       children: [
         Padding(

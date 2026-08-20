@@ -343,11 +343,11 @@ fn filter_trait_any_and_empty_pass() {
 #[test]
 fn filter_distance_geohash() {
     let mut same = prof("same");
-    same.location_geohash = Some("abc".to_string());
+    same.location_geohash = Some("9q8yyk".to_string());
     let mut far = prof("far");
-    far.location_geohash = Some("def".to_string());
+    far.location_geohash = Some("u33dc0".to_string());
     let mut input = filter_input(vec![same, far]);
-    input.own_location_geohash = Some("abc".to_string());
+    input.own_location_geohash = Some("9q8yyk".to_string());
     input.own_max_distance_km = Some(10.0);
     let res = filter_dating_profiles(input);
     assert!(res[0].passes);
@@ -357,17 +357,17 @@ fn filter_distance_geohash() {
 #[test]
 fn filter_respects_profile_own_max_distance() {
     let mut p = prof("pk1");
-    p.location_geohash = Some("abc".to_string());
+    p.location_geohash = Some("9q8yyk".to_string());
     p.max_distance_km = Some(1.0);
     let mut input = filter_input(vec![p]);
-    input.own_location_geohash = Some("def".to_string());
+    input.own_location_geohash = Some("u33dc0".to_string());
     assert!(!filter_dating_profiles(input)[0].passes);
 }
 
 #[test]
 fn filter_radius_excludes_missing_geohash() {
     let mut input = filter_input(vec![prof("noloc")]);
-    input.own_location_geohash = Some("abc".to_string());
+    input.own_location_geohash = Some("9q8yyk".to_string());
     input.own_max_distance_km = Some(10.0);
     assert!(!filter_dating_profiles(input)[0].passes);
 }
@@ -375,7 +375,7 @@ fn filter_radius_excludes_missing_geohash() {
 #[test]
 fn filter_radius_without_radius_keeps_missing_geohash() {
     let mut input = filter_input(vec![prof("noloc")]);
-    input.own_location_geohash = Some("abc".to_string());
+    input.own_location_geohash = Some("9q8yyk".to_string());
     assert!(filter_dating_profiles(input)[0].passes);
 }
 
@@ -475,11 +475,11 @@ fn sort_by_age_height_distance() {
     assert_eq!(height_sorted[1].pubkey, "short");
 
     let mut near = prof("near");
-    near.location_geohash = Some("abc".to_string());
+    near.location_geohash = Some("9q8yyk".to_string());
     let mut far = prof("far");
-    far.location_geohash = Some("def".to_string());
+    far.location_geohash = Some("u33dc0".to_string());
     let mut self_p = prof("self");
-    self_p.location_geohash = Some("abc".to_string());
+    self_p.location_geohash = Some("9q8yyk".to_string());
     let distance_sorted = sort_dating_profiles(SortProfilesInput {
         profiles: vec![far, near],
         self_profile: self_p,

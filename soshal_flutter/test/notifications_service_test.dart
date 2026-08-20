@@ -43,7 +43,7 @@ void main() {
       expect(notif.notifications.first.fromPubkey, 'pk-n-0');
       expect(notif.notifications.first.eventId, 'ev-n-0');
       expect(notif.notifications.first.actionUrl, 'soshal://n/n-0');
-      expect(notified, 1);
+      expect(notified, 2);
 
       final inv = api
           .callsOf('crateFfiNotificationsNotificationsFetch')

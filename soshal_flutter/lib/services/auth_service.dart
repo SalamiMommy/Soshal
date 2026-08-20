@@ -159,9 +159,10 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
 }
 
 /// Key pair produced by the Rust keygen/restore calls.
-/// `secretKey` is only populated during onboarding key generation and is
-/// intentionally absent (null or empty) from mnemonic-restore results so
-/// that the in-process signer holds the secret, not the Dart heap.
+/// `secretKey` is always absent in production (keygen and mnemonic-restore
+/// both return an empty secret): the in-process signer holds the secret, and
+/// backup goes through the BIP-39 mnemonic. The field is kept for
+/// decode-compatibility with older responses.
 class KeyPair {
   final String publicKey;
   final String? secretKey;

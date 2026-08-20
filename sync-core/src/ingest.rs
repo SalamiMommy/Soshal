@@ -8,6 +8,7 @@ use crate::{SyncUpdate, WM_DM, WM_FEED, WM_META};
 use nostr::event::{Event, Kind};
 use nostr::key::PublicKey;
 use nostr::nips::nip19::ToBech32;
+use sha2::{Digest, Sha256};
 use soshal_common_core::consts::{KIND_EVENT_RSVP, KIND_REACTION};
 use soshal_db_core::error::DbError;
 use soshal_db_core::repos::bookmark::{BookmarkRepo, BookmarkRow};
@@ -112,6 +113,24 @@ fn post_row(event: &Event) -> Option<PostRow> {
             None
         },
     })
+}
+
+/// NIP-01 canonical JSON of a stored zap-request event (field order fixed:
+/// id, pubkey, created_at, kind, tags, content, sig). The payer's wallet
+/// hashed exactly this byte string into the invoice description hash.
+fn zap_request_canonical_json(req: &PostRow) -> String {
+    let tags = serde_json::from_str::<serde_json::Value>(&req.tags_json)
+        .unwrap_or(serde_json::Value::Null);
+    format!(
+        "{{\"id\":{},\"pubkey\":{},\"created_at\":{},\"kind\":{},\"tags\":{},\"content\":{},\"sig\":{}}}",
+        serde_json::to_string(&req.id).unwrap_or_default(),
+        serde_json::to_string(&req.pubkey).unwrap_or_default(),
+        req.created_at,
+        req.kind,
+        serde_json::to_string(&tags).unwrap_or_default(),
+        serde_json::to_string(&req.content).unwrap_or_default(),
+        serde_json::to_string(&req.sig.clone().unwrap_or_default()).unwrap_or_default(),
+    )
 }
 
 fn user_row(event: &Event) -> Option<UserRow> {
@@ -258,6 +277,12 @@ async fn handle_impl(
             row.contact_pubkeys = p_tags(event).join(",");
             repo.upsert_in(t, &row).await?;
         }
+        Kind::ZapRequest => {
+            // Store the request so later receipts can bind to it (NIP-57).
+            if let Some(row) = post_row(event) {
+                PostRepo::new(db).upsert_in(t, &row).await?;
+            }
+        }
         Kind::ZapReceipt => {
             let Some(recipient) = p_tags(event).first().cloned() else {
                 return Ok(());
@@ -265,15 +290,52 @@ async fn handle_impl(
             if recipient != my_pubkey {
                 return Ok(());
             }
-            let Some(amount_sats) = soshal_zap_core::bolt11_amount_sats(&event.content) else {
+            let Ok(amount_msats) = soshal_zap_core::parse_msats_from_bolt11(&event.content) else {
                 return Ok(());
             };
+            if amount_msats == 0 {
+                return Ok(());
+            }
+            // NIP-57 binding: only trust receipts whose invoice description
+            // hash matches a verified zap-request addressed to us for the
+            // same note at the same amount. Without this, any relay user can
+            // forge 9735s and inflate zap totals without paying a sat.
+            let Some(desc_hash) = soshal_zap_core::bolt11_description_hash(&event.content) else {
+                return Ok(());
+            };
+            let Some(zapped_event) = e_tags(event).first().cloned() else {
+                return Ok(());
+            };
+            let requests = PostRepo::new(db)
+                .get_zap_requests_for_note_in(t, &zapped_event)
+                .await?;
+            let matched = requests.iter().any(|req| {
+                let tags: Vec<Vec<String>> =
+                    serde_json::from_str(&req.tags_json).unwrap_or_default();
+                let p_me = tags.iter().any(|t| {
+                    t.first().is_some_and(|k| k == "p") && t.get(1).is_some_and(|v| v == my_pubkey)
+                });
+                let amount_ok = tags.iter().any(|t| {
+                    t.first().is_some_and(|k| k == "amount")
+                        && t.get(1).and_then(|v| v.parse::<u64>().ok()) == Some(amount_msats)
+                });
+                let hash_ok = {
+                    let mut hasher = Sha256::new();
+                    hasher.update(zap_request_canonical_json(req).as_bytes());
+                    let digest = hasher.finalize();
+                    digest.as_slice() == desc_hash
+                };
+                p_me && amount_ok && hash_ok
+            });
+            if !matched {
+                return Ok(());
+            }
             let row = ZapRow {
                 id: event.id.to_hex(),
                 pubkey: event.pubkey.to_hex(),
                 recipient_pubkey: recipient,
-                event_id: e_tags(event).first().cloned(),
-                amount: amount_sats.min(i64::MAX as u64) as i64,
+                event_id: Some(zapped_event),
+                amount: (amount_msats / 1000).min(i64::MAX as u64) as i64,
                 content: Some(event.content.clone()),
                 created_at: event.created_at.as_secs() as i64,
                 zap_type: "public".to_string(),
@@ -465,6 +527,31 @@ mod tests {
             builder = builder.tag(Tag::parse(t).unwrap());
         }
         builder.finalize(keys).unwrap()
+    }
+
+    /// Builds a valid `lnbc10n` invoice (1 sat) carrying `hash` in the
+    /// BOLT-11 `h` (description hash) tagged field.
+    fn test_invoice_with_description_hash(hash: &[u8; 32]) -> String {
+        let mut words = Vec::new();
+        let mut bits: u64 = 0;
+        let mut bit_len = 0u32;
+        for &b in hash {
+            bits = (bits << 8) | u64::from(b);
+            bit_len += 8;
+            while bit_len >= 5 {
+                bit_len -= 5;
+                words.push(((bits >> bit_len) & 0x1f) as u8);
+            }
+        }
+        if bit_len > 0 {
+            words.push(((bits << (5 - bit_len)) & 0x1f) as u8);
+        }
+        let mut data = vec![0u8]; // version 0
+        data.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0]); // 35-bit timestamp
+        data.extend_from_slice(&[0, 23]); // field type 'h' = description hash
+        data.extend_from_slice(&[0, 52]); // 52 chars
+        data.extend_from_slice(&words);
+        bech32::encode::<bech32::Bech32>(bech32::Hrp::parse("lnbc10n").unwrap(), &data).unwrap()
     }
 
     #[test]
@@ -684,18 +771,72 @@ mod tests {
         .unwrap();
         assert_eq!(count, 0);
 
-        // Valid invoice addressed to me: amount taken from bolt11 (sats).
-        let zap_good = signed_event_with_tags(
+        // Valid invoice addressed to me but no matching zap-request
+        // (NIP-57 binding missing): dropped, nothing persisted.
+        let zap_unbound = signed_event_with_tags(
             &keys,
             Kind::ZapReceipt,
             "lnbc10n",
-            vec![vec!["p".to_string(), mine.clone()]],
+            vec![
+                vec!["p".to_string(), mine.clone()],
+                vec!["e".to_string(), "note1".to_string()],
+            ],
         );
-        handle(&db, &mine, &zap_good, &tx).unwrap();
+        handle(&db, &mine, &zap_unbound, &tx).unwrap();
+        let count: i64 = query_first(&db.conn().unwrap(), "SELECT COUNT(*) FROM zaps", (), |r| {
+            r.get(0)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(count, 0);
+
+        // Full NIP-57 flow: zap-request ingested first, then a receipt whose
+        // invoice description hash matches the request's canonical JSON and
+        // whose amount matches the request's amount tag -> stored (1 sat).
+        let request = signed_event_with_tags(
+            &keys,
+            Kind::ZapRequest,
+            "",
+            vec![
+                vec!["p".to_string(), mine.clone()],
+                vec!["e".to_string(), "note1".to_string()],
+                vec!["amount".to_string(), "1000".to_string()],
+            ],
+        );
+        handle(&db, &mine, &request, &tx).unwrap();
+        let canonical = format!(
+            "{{\"id\":{},\"pubkey\":{},\"created_at\":{},\"kind\":{},\"tags\":{},\"content\":{},\"sig\":{}}}",
+            serde_json::to_string(&request.id.to_hex()).unwrap(),
+            serde_json::to_string(&request.pubkey.to_hex()).unwrap(),
+            request.created_at.as_secs(),
+            request.kind.as_u16(),
+            serde_json::to_string(
+                &request
+                    .tags
+                    .iter()
+                    .map(|t| t.as_slice().to_vec())
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            serde_json::to_string(&request.content).unwrap(),
+            serde_json::to_string(&request.sig.to_string()).unwrap(),
+        );
+        let hash: [u8; 32] = Sha256::digest(canonical.as_bytes()).into();
+        let invoice = test_invoice_with_description_hash(&hash);
+        let zap_bound = signed_event_with_tags(
+            &keys,
+            Kind::ZapReceipt,
+            &invoice,
+            vec![
+                vec!["p".to_string(), mine.clone()],
+                vec!["e".to_string(), "note1".to_string()],
+            ],
+        );
+        handle(&db, &mine, &zap_bound, &tx).unwrap();
         let amount: i64 = query_first(
             &db.conn().unwrap(),
             "SELECT amount FROM zaps WHERE id = ?1",
-            libsql::params![zap_good.id.to_hex().as_str()],
+            libsql::params![zap_bound.id.to_hex().as_str()],
             |r| r.get(0),
         )
         .unwrap()

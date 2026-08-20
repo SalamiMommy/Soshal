@@ -4,7 +4,7 @@ use crate::scoring::compute_mutual_score;
 #[doc(hidden)]
 pub use crate::MAX_PROFILES;
 use crate::{SortProfilesInput, SortedProfileOut};
-use soshal_spatial_core::distance::haversine_distance;
+use soshal_spatial_core::distance::{decode_geohash_coords, haversine_km};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
@@ -13,7 +13,11 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
         return Vec::new();
     }
     let self_contacts_set: HashSet<&str> = input.self_contacts.iter().map(|s| s.as_str()).collect();
-    let self_geohash = input.self_profile.location_geohash.clone();
+    let self_coords = input
+        .self_profile
+        .location_geohash
+        .as_deref()
+        .and_then(decode_geohash_coords);
 
     // (result, age, height, distance_km)
     let mut results: Vec<(SortedProfileOut, Option<f64>, Option<f64>, f64)> =
@@ -30,8 +34,12 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
             .collect();
 
         let score = compute_mutual_score(&input.self_profile, profile);
-        let distance_km = match (&self_geohash, &profile.location_geohash) {
-            (Some(g1), Some(g2)) => haversine_distance(g1, g2),
+        let other_coords = profile
+            .location_geohash
+            .as_deref()
+            .and_then(decode_geohash_coords);
+        let distance_km = match (self_coords, other_coords) {
+            (Some((lat1, lon1)), Some((lat2, lon2))) => haversine_km(lat1, lon1, lat2, lon2),
             _ => f64::from(if is_contact { 1 } else { 2 }),
         };
         results.push((

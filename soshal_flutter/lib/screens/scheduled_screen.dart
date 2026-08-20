@@ -4,6 +4,7 @@ import '../services/scheduled_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/empty_state.dart';
 
 /// Scheduled Posts: draft posts with a future scheduled_at, broadcast by
 /// the sync pipeline when due.
@@ -197,14 +198,19 @@ class _ScheduledScreenState extends State<ScheduledScreen> {
         ],
       ),
       body: _pubkey == null
-          ? const Center(child: Text('Sign in required'))
+          ? const EmptyState(
+              icon: Icons.schedule_outlined,
+              title: 'Sign in required',
+            )
           : _loading
               ? const Center(child: CircularProgressIndicator())
               : Consumer<ScheduledService>(
                   builder: (context, service, _) {
                     if (service.drafts.isEmpty) {
-                      return const Center(
-                          child: Text('No scheduled posts. Tap + to add one.'));
+                      return const EmptyState(
+                        icon: Icons.schedule_outlined,
+                        title: 'No scheduled posts. Tap + to add one.',
+                      );
                     }
                     return RefreshIndicator(
                       onRefresh: _load,

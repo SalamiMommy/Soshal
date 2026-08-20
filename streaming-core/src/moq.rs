@@ -205,6 +205,7 @@ pub struct MoqPublisherSession {
     pub stream_id: String,
     pub publisher_pubkey: String,
     current_group_seq: u64,
+    current_obj_seq: u64,
     tracks: HashMap<u32, String>,
 }
 
@@ -214,6 +215,7 @@ impl MoqPublisherSession {
             stream_id,
             publisher_pubkey,
             current_group_seq: 0,
+            current_obj_seq: 0,
             tracks: HashMap::new(),
         }
     }
@@ -234,12 +236,13 @@ impl MoqPublisherSession {
         if track_type == MoqTrackType::VideoKeyframe {
             self.current_group_seq += 1;
         }
+        self.current_obj_seq += 1;
 
         MoqObject {
             header: MoqObjectHeader {
                 track_id,
                 group_sequence: self.current_group_seq,
-                object_sequence: payload.len() as u64,
+                object_sequence: self.current_obj_seq,
                 payload_size: payload.len() as u32,
                 track_type,
                 timestamp_ms,

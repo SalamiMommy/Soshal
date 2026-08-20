@@ -105,7 +105,8 @@ pub async fn crypto_pir_evaluate_query(
         serde_json::from_str(&query_json).map_err(|e| format!("invalid query json: {e}"))?;
     let mut db_records = Vec::new();
     for hex_str in record_hex_list {
-        db_records.push(hex::decode(&hex_str).unwrap_or_default());
+        let bytes = hex::decode(&hex_str).map_err(|e| format!("invalid record hex: {e}"))?;
+        db_records.push(bytes);
     }
     let response = soshal_crypto_core::pir::HintlessPirServer::evaluate_query(&query, &db_records);
     serde_json::to_string(&response)

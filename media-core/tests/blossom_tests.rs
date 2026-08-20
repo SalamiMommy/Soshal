@@ -2,10 +2,24 @@ use soshal_media_core::blossom::{BlossomClient, MAX_DOWNLOAD_BYTES, MAX_LIST_BYT
 
 #[test]
 fn blossom_client_trims_trailing_slash() {
-    let c = BlossomClient::new("https://blossom.example/");
+    let c = BlossomClient::new("https://blossom.example/").unwrap();
     assert_eq!(c.server_url, "https://blossom.example");
-    let c2 = BlossomClient::new("https://blossom.example");
+    let c2 = BlossomClient::new("https://blossom.example").unwrap();
     assert_eq!(c2.server_url, "https://blossom.example");
+}
+
+#[test]
+fn blossom_client_rejects_private_hosts() {
+    for url in [
+        "http://127.0.0.1:8338",
+        "http://localhost:8338",
+        "http://192.168.1.5",
+        "http://10.0.0.1",
+        "http://[::1]:8338",
+        "http://169.254.169.254",
+    ] {
+        assert!(BlossomClient::new(url).is_err(), "accepted {url}");
+    }
 }
 
 #[test]
@@ -19,7 +33,12 @@ fn blossom_pinned_client_constructs() {
 
 #[tokio::test]
 async fn blossom_download_rejects_invalid_hash_before_network() {
-    let c = BlossomClient::new("http://127.0.0.1:1");
+    // new() blocks loopback; new_pinned is the SSRF-checked escape hatch.
+    let c = BlossomClient::new_pinned(
+        "http://127.0.0.1:1",
+        "127.0.0.1",
+        &["127.0.0.1:1".parse().unwrap()],
+    );
     assert_eq!(c.download("short").await.unwrap_err(), "invalid file hash");
     assert_eq!(
         c.download(&"zz".repeat(32)).await.unwrap_err(),
@@ -35,7 +54,11 @@ async fn blossom_download_rejects_invalid_hash_before_network() {
 
 #[tokio::test]
 async fn blossom_unreachable_server_errors() {
-    let c = BlossomClient::new("http://127.0.0.1:1");
+    let c = BlossomClient::new_pinned(
+        "http://127.0.0.1:1",
+        "127.0.0.1",
+        &["127.0.0.1:1".parse().unwrap()],
+    );
     let e = c.download(&"ab".repeat(32)).await.unwrap_err();
     assert!(e.contains("download failed"), "got {e}");
     let e = c

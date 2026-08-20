@@ -118,7 +118,7 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
       if (pubkey == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No user identity found.')),
+            SnackBar(content: SelectableText('No user identity found.')),
           );
         }
         return;
@@ -150,7 +150,7 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Your profile has been updated.')),
+          SnackBar(content: SelectableText('Your profile has been updated.')),
         );
         context.pop();
       }
@@ -158,7 +158,7 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
       debugPrint('ProfileBuilderScreen: save error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save profile: $e')),
+          SnackBar(content: SelectableText('Failed to save profile: $e')),
         );
       }
     } finally {

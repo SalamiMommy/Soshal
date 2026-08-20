@@ -1,9 +1,11 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/settings_service.dart';
 import '../services/shell_service.dart';
 import '../services/stealth_service.dart';
+import '../widgets/settings_scaffold.dart';
 
 /// Privacy settings — port of the legacy privacy section: privacy level
 /// (public/private/dark/stealth), dating profile visibility, direct-message
@@ -52,62 +54,62 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
   @override
   Widget build(BuildContext context) {
     final shell = context.read<ShellService>();
-    return Scaffold(
-      appBar: AppBar(title: const Text('Privacy')),
-      body: ListView(
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('Privacy level',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-          for (final (key, label) in levels)
-            ListTile(
-              title: Text(label),
-              trailing: _level == key ? const Icon(Icons.check) : null,
-              onTap: () => _save(key),
-            ),
-          const Divider(),
+    return SettingsScaffold(
+      title: 'Privacy',
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text('Privacy level',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        for (final (key, label) in levels)
           ListTile(
-            title: const Text('Stealth whitelist'),
-            subtitle: const Text('Pubkeys that may always reach you'),
-            trailing: const Icon(Icons.arrow_forward),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const _StealthEditor(),
-                ),
-              );
-            },
+            title: Text(label),
+            trailing: _level == key ? const Icon(Icons.check) : null,
+            onTap: () => _save(key),
           ),
-          ListTile(
-            title: const Text('Lock app'),
-            subtitle: const Text('Require PIN to unlock'),
-            trailing: const Icon(Icons.arrow_forward),
-            onTap: () {
-              shell.reevaluateLock();
-              showDialog<void>(
-                context: context,
-                builder: (ctx) => const _PinDialog(),
-              );
-            },
-          ),
-        ],
-      ),
+        const Divider(),
+        ListTile(
+          title: const Text('Stealth whitelist'),
+          subtitle: const Text('Pubkeys that may always reach you'),
+          trailing: const Icon(Icons.arrow_forward),
+          onTap: () {
+            context.push('/settings/privacy/stealth');
+          },
+        ),
+        ListTile(
+          title: const Text('Lock app'),
+          subtitle: const Text('Require PIN to unlock'),
+          trailing: const Icon(Icons.arrow_forward),
+          onTap: () {
+            shell.reevaluateLock();
+            showDialog<void>(
+              context: context,
+              builder: (ctx) => const _PinDialog(),
+            );
+          },
+        ),
+      ],
     );
   }
 }
 
-class _StealthEditor extends StatefulWidget {
-  const _StealthEditor();
+class StealthEditorScreen extends StatefulWidget {
+  const StealthEditorScreen({super.key});
 
   @override
-  State<_StealthEditor> createState() => _StealthEditorState();
+  State<StealthEditorScreen> createState() => StealthEditorScreenState();
 }
 
-class _StealthEditorState extends State<_StealthEditor> {
+class StealthEditorScreenState extends State<StealthEditorScreen> {
   final TextEditingController _field = TextEditingController();
   bool _saved = false;
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soshal_flutter/ffi/p2p.dart';
 import 'package:soshal_flutter/ffi/power.dart' show PowerStateDto;
 import 'package:soshal_flutter/services/p2p_service.dart';
 

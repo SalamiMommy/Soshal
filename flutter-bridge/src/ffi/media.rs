@@ -58,7 +58,8 @@ pub async fn media_upload(file_path: String, blossom_server: String) -> Result<S
         Err(e) => return Err(e).into(),
     };
     let mime_type = fetched_mime.unwrap_or_else(|| infer_mime_type(&file_path));
-    let client = soshal_media_core::blossom::BlossomClient::new(&blossom_server);
+    let client =
+        soshal_media_core::blossom::BlossomClient::new_pinned_resolve(&blossom_server).await?;
     match client.upload(data, &mime_type).await {
         Ok(file) => super::util::json_ok(MediaResult {
             url: file.url,
@@ -85,7 +86,7 @@ pub async fn media_fetch(url: String, cache_dir: String) -> Result<String, Strin
             }
         }
     };
-    let client = soshal_media_core::blossom::BlossomClient::new(&server);
+    let client = soshal_media_core::blossom::BlossomClient::new_pinned_resolve(&server).await?;
     match client.download(&hash).await {
         Ok(data) => {
             let filename = generate_cache_filename(&url);

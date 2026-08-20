@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/feed_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../widgets/error_state_text.dart';
 
 /// Post thread screen: root post + replies + reply composer.
 class ThreadScreen extends StatefulWidget {
@@ -18,6 +19,7 @@ class ThreadScreen extends StatefulWidget {
 class _ThreadScreenState extends State<ThreadScreen> {
   bool _loading = true;
   bool _sending = false;
+  String? _error;
   List<FeedPost> _thread = [];
   List<ReactionSummary> _reactionSummary = [];
   final TextEditingController _replyController = TextEditingController();
@@ -35,7 +37,10 @@ class _ThreadScreenState extends State<ThreadScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final api = context.read<FeedService>();
       _thread = await api.fetchThread(widget.eventId);
@@ -47,6 +52,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
       );
     } catch (e) {
       debugPrint('thread load: $e');
+      if (mounted) _error = e.toString();
     }
     if (mounted) setState(() => _loading = false);
   }
@@ -89,11 +95,15 @@ class _ThreadScreenState extends State<ThreadScreen> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : Consumer<FeedService>(
-                    builder: (context, feed, _) {
-                      if (_thread.isEmpty) {
-                        return const Center(child: Text('Thread not found'));
-                      }
+                : _error != null
+                    ? ErrorStateText('Failed to load thread: $_error',
+                        onRetry: _load)
+                    : Consumer<FeedService>(
+                        builder: (context, feed, _) {
+                          if (_thread.isEmpty) {
+                            return const Center(
+                                child: Text('Thread not found'));
+                          }
                       return ListView.builder(
                         itemCount: _thread.length,
                         itemBuilder: (context, index) {

@@ -27,6 +27,13 @@ class MessagingService extends ChangeNotifier
   List<EphemeralMedia> get pendingEphemeral =>
       List.unmodifiable(_pendingEphemeral);
 
+  @override
+  void dispose() {
+    _storeFlushTimer?.cancel();
+    _storeFlushTimer = null;
+    super.dispose();
+  }
+
   /// Insert a DM arriving from the live sync stream (already decrypted by
   /// the bridge). Conversation is keyed by the peer pubkey. Persistence is
   /// batched: a message burst on the stream triggers ONE batch FFI call

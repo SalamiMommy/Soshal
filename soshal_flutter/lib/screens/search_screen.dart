@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/search_service.dart';
 import '../services/session_service.dart';
+import '../widgets/empty_state.dart';
 
 /// Search: posts, profiles, hashtags and trending (local FTS5).
 class SearchScreen extends StatefulWidget {
@@ -23,20 +24,14 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _loading = false;
   bool _remoteLoading = false;
   List<SearchResultItem> _remoteResults = [];
-  Future<List<SearchResultItem>>? _trendingProfilesFuture;
-  Future<List<Map<String, dynamic>>>? _trendingHashtagsFuture;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        setState(() {
-          _trendingProfilesFuture =
-              context.read<SearchService>().trendingProfiles();
-          _trendingHashtagsFuture =
-              context.read<SearchService>().dbTrendingHashtags();
-        });
+        context.read<SearchService>().trendingProfiles();
+        context.read<SearchService>().dbTrendingHashtags();
       }
     });
   }
@@ -104,19 +99,20 @@ class _SearchScreenState extends State<SearchScreen> {
       debugPrint('remote search: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Remote search failed: $e')),
+          SnackBar(content: SelectableText('Remote search failed: $e')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _remoteLoading = false);
     }
-    if (mounted) setState(() => _remoteLoading = false);
   }
 
   Future<void> _loadTrending() async {
     setState(() => _loading = true);
     try {
-      _trendingHashtagsFuture =
-          context.read<SearchService>().dbTrendingHashtags();
-      await context.read<SearchService>().trendingHashtags();
+      final api = context.read<SearchService>();
+      await api.dbTrendingHashtags();
+      await api.trendingHashtags();
     } catch (e) {
       debugPrint('trending: $e');
     }
@@ -189,39 +185,33 @@ class _SearchScreenState extends State<SearchScreen> {
                         style: TextStyle(fontSize: 16)),
                   ),
                 ),
-                FutureBuilder<List<Map<String, dynamic>>>(
-                  future: _trendingHashtagsFuture,
-                  builder: (context, snapshot) {
-                    final tags = snapshot.data ?? [];
-                    if (tags.isEmpty) {
-                      return const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Text('Nothing trending yet'),
-                        ),
-                      );
-                    }
-                    return SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final tag = tags[index];
-                          return ListTile(
-                            leading: const Icon(Icons.trending_up),
-                            title: Text('#${tag['tag']}'),
-                            onTap: () {
-                              final t = tag['tag'] as String? ?? '';
-                              if (t.isEmpty) return;
-                              _query.text = t;
-                              _mode = 'posts';
-                              _runSearch();
-                            },
-                          );
-                        },
-                        childCount: tags.length,
-                      ),
-                    );
-                  },
-                ),
+                if (api.dbTrendingHashtagsList.isEmpty)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('Nothing trending yet'),
+                    ),
+                  )
+                else
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final tag = api.dbTrendingHashtagsList[index];
+                        return ListTile(
+                          leading: const Icon(Icons.trending_up),
+                          title: Text('#${tag['tag']}'),
+                          onTap: () {
+                            final t = tag['tag'] as String? ?? '';
+                            if (t.isEmpty) return;
+                            _query.text = t;
+                            _mode = 'posts';
+                            _runSearch();
+                          },
+                        );
+                      },
+                      childCount: api.dbTrendingHashtagsList.length,
+                    ),
+                  ),
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.all(16),
@@ -229,41 +219,35 @@ class _SearchScreenState extends State<SearchScreen> {
                         style: TextStyle(fontSize: 16)),
                   ),
                 ),
-                FutureBuilder<List<SearchResultItem>>(
-                  future: _trendingProfilesFuture,
-                  builder: (context, snapshot) {
-                    final profiles = snapshot.data ?? [];
-                    if (profiles.isEmpty) {
-                      return const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Text('Nothing yet'),
-                        ),
-                      );
-                    }
-                    return SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final p = profiles[index];
-                          return ListTile(
-                            leading: const Icon(Icons.person),
-                            title: Text(p.title,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                            subtitle: Text(p.description,
-                                maxLines: 2, overflow: TextOverflow.ellipsis),
-                            onTap: () {
-                              final key = p.pubkey ?? p.id;
-                              if (key.isNotEmpty) {
-                                context.push('/profile/$key');
-                              }
-                            },
-                          );
-                        },
-                        childCount: profiles.length,
-                      ),
-                    );
-                  },
-                ),
+                if (api.trendingProfilesList.isEmpty)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('Nothing yet'),
+                    ),
+                  )
+                else
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final p = api.trendingProfilesList[index];
+                        return ListTile(
+                          leading: const Icon(Icons.person),
+                          title: Text(p.title,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(p.description,
+                              maxLines: 2, overflow: TextOverflow.ellipsis),
+                          onTap: () {
+                            final key = p.pubkey ?? p.id;
+                            if (key.isNotEmpty) {
+                              context.push('/profile/$key');
+                            }
+                          },
+                        );
+                      },
+                      childCount: api.trendingProfilesList.length,
+                    ),
+                  ),
               ],
             );
           }
@@ -293,8 +277,11 @@ class _SearchScreenState extends State<SearchScreen> {
           if (api.results.isEmpty) {
             return ListView(
               children: const [
-                SizedBox(height: 200),
-                Center(child: Text('Nothing found')),
+                SizedBox(height: 120),
+                EmptyState(
+                  icon: Icons.search_off_outlined,
+                  title: 'Nothing found',
+                ),
               ],
             );
           }

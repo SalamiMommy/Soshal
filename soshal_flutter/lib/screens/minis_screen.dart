@@ -9,6 +9,7 @@ import '../services/media_service.dart';
 import '../services/minis_service.dart';
 import '../services/p2p_service.dart';
 import '../widgets/blob_image.dart';
+import '../widgets/empty_state.dart';
 
 /// Minis: mini video registry (kind-31020). Each mini is a video hosted
 /// from device caches — the local chunk store first, then LAN peers, with
@@ -150,89 +151,95 @@ class _MinisScreenState extends State<MinisScreen> {
     var busy = false;
     var status = '';
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('New Mini', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 12),
-                Text(
-                  'Pick a video file — it is hosted from device caches '
-                  '(yours + devices that play it).',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: overlay,
-                  decoration: const InputDecoration(
-                    labelText: 'Caption (optional)',
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (sbContext, setSheetState) => Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: MediaQuery.of(sbContext).viewInsets.bottom + 16,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('New Mini',
+                      style: Theme.of(sbContext).textTheme.titleLarge),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Pick a video file — it is hosted from device caches '
+                    '(yours + devices that play it).',
+                    style: Theme.of(sbContext).textTheme.bodySmall,
                   ),
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          final picked = await FilePicker.pickFile(
-                            type: FileType.video,
-                          );
-                          final path = picked?.path;
-                          if (path == null || !sheetContext.mounted) return;
-                          setSheetState(() {
-                            busy = true;
-                            status = 'Publishing…';
-                          });
-                          try {
-                            final id =
-                                await context.read<MinisService>().publishMini(
-                                      mediaSource: path,
-                                      textOverlay: overlay.text.trim().isEmpty
-                                          ? null
-                                          : overlay.text.trim(),
-                                    );
-                            if (!sheetContext.mounted) return;
-                            Navigator.of(sheetContext).pop();
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: SelectableText('Mini published: $id'),
-                              ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: overlay,
+                    decoration: const InputDecoration(
+                      labelText: 'Caption (optional)',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            final picked = await FilePicker.pickFile(
+                              type: FileType.video,
                             );
-                            await _load();
-                          } catch (e) {
-                            if (sheetContext.mounted) {
-                              setSheetState(
-                                  () => status = 'Publish failed: $e');
+                            final path = picked?.path;
+                            if (path == null || !sheetContext.mounted) return;
+                            setSheetState(() {
+                              busy = true;
+                              status = 'Publishing…';
+                            });
+                            try {
+                              final id = await context
+                                  .read<MinisService>()
+                                  .publishMini(
+                                    mediaSource: path,
+                                    textOverlay: overlay.text.trim().isEmpty
+                                        ? null
+                                        : overlay.text.trim(),
+                                  );
+                              if (!sheetContext.mounted) return;
+                              Navigator.of(sheetContext).pop();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: SelectableText('Mini published: $id'),
+                                ),
+                              );
+                              await _load();
+                            } catch (e) {
+                              if (sheetContext.mounted) {
+                                setSheetState(
+                                    () => status = 'Publish failed: $e');
+                              }
                             }
-                          }
-                        },
-                  child: const Text('Pick video & publish'),
-                ),
-                if (status.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(status,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      )),
+                          },
+                    child: const Text('Pick video & publish'),
+                  ),
+                  if (status.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(status,
+                        style: TextStyle(
+                          color: Theme.of(sbContext).colorScheme.error,
+                        )),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      overlay.dispose();
+    }
   }
 
   @override
@@ -322,30 +329,12 @@ class _MinisScreenState extends State<MinisScreen> {
                   Text('Minis', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   if (display.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 24),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.video_library,
-                            size: 56,
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                          const SizedBox(height: 16),
-                          Text('No minis yet',
-                              style: Theme.of(context).textTheme.titleLarge),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Publish a mini video — it is hosted from '
-                            'device caches, not URL links.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant),
-                          ),
-                        ],
-                      ),
+                    EmptyState(
+                      compact: true,
+                      icon: Icons.video_library,
+                      title: 'No minis yet',
+                      body:
+                          'Publish a mini video — it is hosted from device caches, not URL links.',
                     )
                   else if (_rankOn && _ranked.isNotEmpty)
                     for (final url in _ranked) ...[

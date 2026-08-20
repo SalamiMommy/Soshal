@@ -66,28 +66,30 @@ impl From<soshal_zap_core::NwcConnectionInfo> for NwcConnectionInfo {
 
 /// A `String` that zeroizes its heap buffer on drop, preventing the NWC
 /// wallet secret from lingering in freed memory.
-struct ZeroizingString(String);
-
-impl ZeroizingString {
-    fn new(s: String) -> Self {
-        Self(s)
-    }
-    fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Drop for ZeroizingString {
-    fn drop(&mut self) {
-        // Overwrite the string's heap buffer before deallocation. The String
-        // is owned exclusively (only via this struct) and is being dropped.
-        let mut bytes = std::mem::take(&mut self.0).into_bytes();
-        zeroize::Zeroize::zeroize(&mut bytes[..]);
-    }
-}
+type ZeroizingString = zeroize::Zeroizing<String>;
 
 static NWC: Mutex<Option<NwcConnectionInfo>> = Mutex::new(None);
 static NWC_URI_STATE: Mutex<Option<ZeroizingString>> = Mutex::new(None);
+
+/// Pending payment binding: the exact invoice issued by `zap_fetch_invoice`
+/// and the msat amount requested for it. `zap_send_payment` will only pay
+/// this invoice — a tampered or substituted bolt11 (wrong amount, wrong
+/// recipient) is rejected. Cleared on payment, disconnect, or a fresh
+/// invoice fetch.
+static PENDING_PAYMENT: Mutex<Option<(String, u64)>> = Mutex::new(None);
+
+fn pending_payment() -> Option<(String, u64)> {
+    PENDING_PAYMENT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+fn clear_pending_payment() {
+    if let Ok(mut g) = PENDING_PAYMENT.lock() {
+        *g = None;
+    }
+}
 
 /// Shared NWC URI fixture used by unit and integration tests only.
 /// Not included in release builds to avoid shipping a wallet secret in
@@ -144,6 +146,7 @@ pub fn zap_connect_nwc(nwc_uri: String) -> Result<bool, String> {
 pub fn zap_disconnect_nwc() -> Result<bool, String> {
     *NWC.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    clear_pending_payment();
     Ok(true).into()
 }
 
@@ -199,17 +202,45 @@ pub async fn zap_fetch_invoice(
     let req = soshal_zap_core::nwc::make_invoice_request(amount_sats, description)
         .map_err(|e| format!("invoice request: {e}"))?;
     let resp = soshal_zap_core::nwc::nwc_send_request(BridgeSigner, &uri, req).await?;
+    // Bind the exact invoice + requested amount: `zap_send_payment` will only
+    // honor this bolt11, so a provider that returns an invoice for a
+    // different amount (or a tampered bolt11 from Dart) cannot be paid.
+    let invoice = resp
+        .get("params")
+        .and_then(|p| p.get("invoice"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|i| soshal_zap_core::parse_msats_from_bolt11(i).is_ok())
+        .ok_or("NWC response missing valid bolt11 invoice")?;
+    if let Ok(mut g) = PENDING_PAYMENT.lock() {
+        *g = Some((invoice.to_string(), amount_msat));
+    }
     serde_json::to_string(&resp)
         .map_err(|e| format!("serialize: {e}"))
         .into()
 }
 
-/// Pay a BOLT-11 invoice via the connected NWC provider. Returns the
-/// serialized pay_invoice response (payment preimage).
+/// Pay a BOLT-11 invoice via the connected NWC provider. Only the exact
+/// invoice previously issued by `zap_fetch_invoice` (and the amount
+/// requested for it) is accepted; any other bolt11 is rejected before any
+/// network I/O. Returns the serialized pay_invoice response (preimage).
 #[frb(serialize)]
 pub async fn zap_send_payment(bolt11: String) -> Result<String, String> {
+    let expected =
+        pending_payment().ok_or("no invoice pending: fetch one via zap_fetch_invoice first")?;
+    if expected.0 != bolt11 {
+        clear_pending_payment();
+        return Err("invoice mismatch: bolt11 does not match the fetched invoice".to_string())
+            .into();
+    }
+    let msats = soshal_zap_core::parse_msats_from_bolt11(&bolt11)
+        .map_err(|e| format!("invalid bolt11 invoice: {e}"))?;
+    if msats != expected.1 {
+        clear_pending_payment();
+        return Err("invoice amount mismatch".to_string()).into();
+    }
     let uri = nwc_uri()?;
     let resp = soshal_zap_core::nwc::pay_invoice(BridgeSigner, &uri, bolt11).await?;
+    clear_pending_payment();
     Ok(resp).into()
 }
 
@@ -406,9 +437,10 @@ mod tests {
     async fn test_send_payment_fails_when_disconnected() {
         let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = zap_disconnect_nwc();
+        // No invoice fetched → pending binding absent → rejected before NWC.
         let r = zap_send_payment("lnbc1fake".to_string()).await;
         let e = r.err().unwrap();
-        assert!(e.contains("NWC not connected"));
+        assert!(e.contains("no invoice pending"));
     }
 
     #[test]
@@ -417,7 +449,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = db::tmp_db("totals", "zap");
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO zaps (id, event_id, recipient_pubkey, amount, amount_msat, created_at, zap_type) \
              VALUES ('z1','ev1','pk',5,5000,1000,'public'),('z2','ev1','pk',7,7000,2000,'public'),('z3','ev2','pk',3,3000,1500,'public')"
                 .to_string(),
@@ -451,7 +483,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = db::tmp_db("total-msat", "zap");
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO zaps (id, event_id, recipient_pubkey, amount, amount_msat, created_at, zap_type) \
              VALUES ('z1','ev1','pk',5,5000,1000,'public'),('z2','ev1','pk',7,7000,2000,'public'),('z3','ev2','pk',3,3000,1500,'public')"
                 .to_string(),
@@ -475,7 +507,7 @@ mod tests {
         assert_eq!(e, "limit must be 1..=500");
         // Empty DB → empty rows, not an error.
         assert_eq!(zap_fetch_receipts("ev1".to_string(), 1).unwrap(), "[]");
-        db::db_execute_raw(
+        db::db_execute_raw_test(
             "INSERT INTO zaps (id, event_id, recipient_pubkey, amount, amount_msat, created_at, zap_type) \
              VALUES ('z1','ev1','pk',5,5000,1000,'public'),('z2','ev1','pk',7,7000,2000,'public')"
                 .to_string(),

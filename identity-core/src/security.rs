@@ -110,7 +110,8 @@ pub fn apply_pin_attempt(
         return PinVerdict::PermanentlyLocked;
     }
     if state.attempt_count >= PIN_MAX_ATTEMPTS {
-        let idx = (state.attempt_count - 1).clamp(0, PIN_LOCKOUT_DELAYS.len() as i64 - 1) as usize;
+        let idx = (state.attempt_count - PIN_MAX_ATTEMPTS)
+            .clamp(0, PIN_LOCKOUT_DELAYS.len() as i64 - 1) as usize;
         let until = now + PIN_LOCKOUT_DELAYS[idx];
         state.lockout_until = Some(until);
         return PinVerdict::Incorrect {

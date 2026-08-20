@@ -110,6 +110,9 @@ mod ffi_aux_modules_tests {
     }
     #[test]
     fn relations_ffi_send_friend_request_signer_locked() {
+        // Lock: asserts the signer is locked, which must not race sibling
+        // tests that unlock the signer.
+        let _g = crate::test_util::lock();
         let e = relations::relations_send_friend_request("aux_pubkey".to_string()).unwrap_err();
         assert_eq!(e, "signer locked");
     }
@@ -146,6 +149,8 @@ mod ffi_aux_modules_tests {
     }
     #[test]
     fn social_ffi_friend_suggestions_no_signer_empty() {
+        // Lock: signer state is process-global across parallel tests.
+        let _g = crate::test_util::lock();
         let got = social::social_friend_suggestions().unwrap();
         assert!(got.is_empty());
     }

@@ -20,6 +20,7 @@ use rustls::{DigitallySignedStruct, SignatureScheme};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -298,6 +299,7 @@ async fn run_channel(
                             &my_peer_key,
                             0,
                             soshal_common_core::format::now_secs() as u64,
+                            &hex::encode(crate::lan::fresh_nonce()),
                         );
                         let mac = crate::lan::beacon_mac(&key, &body);
                         let reg = MicroEvent {
@@ -339,24 +341,27 @@ fn spawn_conn_task(
                     if !is_authed {
                         // First datagram must be the HMAC beacon registration;
                         // anything else is ignored until the beacon verifies.
-                        if ev.kind == REGISTRATION_KIND
-                            && crate::lan::parse_beacon(
+                        if ev.kind == REGISTRATION_KIND {
+                            if let Some((pk, _, nonce)) = crate::lan::parse_beacon(
                                 &key,
                                 crate::lan_transport::LAN_MAGIC,
                                 ev.payload.trim(),
                                 0,
                                 soshal_common_core::format::now_secs() as u64,
-                            )
-                            .is_some()
-                        {
-                            if let Ok(mut g) = authed.lock() {
-                                g.insert(remote);
+                            ) {
+                                // Replay guard: a captured beacon line has a
+                                // duplicate nonce and is rejected.
+                                if crate::lan::beacon_seq().check_and_record(&pk, &nonce) {
+                                    if let Ok(mut g) = authed.lock() {
+                                        g.insert(remote);
+                                    }
+                                }
                             }
                         }
                         continue;
                     }
                     if ev.kind != REGISTRATION_KIND {
-                        let _ = evt_tx.send(ev);
+                        let _ = evt_tx.try_send(ev);
                     }
                 }
                 Err(quinn::ConnectionError::ApplicationClosed(_))
@@ -378,6 +383,8 @@ fn transport_config() -> TransportConfig {
     cfg.datagram_receive_buffer_size(Some(64 * 1024));
     cfg.stream_receive_window((8 * 1024 * 1024u32).into());
     cfg.receive_window((16 * 1024 * 1024u32).into());
+    cfg.max_concurrent_bidi_streams(quinn::VarInt::from_u32(16));
+    cfg.max_concurrent_uni_streams(quinn::VarInt::from_u32(16));
     cfg.keep_alive_interval(Some(std::time::Duration::from_secs(15)));
     cfg.max_idle_timeout(Some(
         quinn::IdleTimeout::try_from(std::time::Duration::from_secs(30)).expect("idle timeout"),
@@ -663,6 +670,8 @@ async fn run_stream_server(
     let _ = port_tx.send(bound_port);
 
     let store = ChunkStore::new(store_root);
+    const MAX_STREAM_CONNS: usize = 32;
+    let active_conns = Arc::new(AtomicUsize::new(0));
     loop {
         tokio::select! {
             _ = stop_notify.notified() => {
@@ -677,9 +686,17 @@ async fn run_stream_server(
                 if !crate::lan::is_private_ip(incoming.remote_address().ip()) {
                     continue;
                 }
+                if active_conns.load(Ordering::SeqCst) >= MAX_STREAM_CONNS {
+                    continue;
+                }
                 if let Ok(conn) = incoming.await {
+                    active_conns.fetch_add(1, Ordering::SeqCst);
+                    let counter = active_conns.clone();
                     let store = store.clone();
-                    tokio::spawn(serve_stream_conn(conn, key, store));
+                    tokio::spawn(async move {
+                        serve_stream_conn(conn, key, store).await;
+                        counter.fetch_sub(1, Ordering::SeqCst);
+                    });
                 }
             }
         }
@@ -941,8 +958,10 @@ async fn auth_stream(recv: &mut quinn::RecvStream, key: &[u8; 32]) -> Result<Vec
             0,
             soshal_common_core::format::now_secs() as u64,
         ) {
-            Some(_) => Ok(()),
-            None => Err("bad hmac beacon".to_string()),
+            Some((pk, _, nonce)) if crate::lan::beacon_seq().check_and_record(&pk, &nonce) => {
+                Ok(())
+            }
+            Some(_) | None => Err("bad hmac beacon".to_string()),
         }
     })
     .await
@@ -1009,11 +1028,13 @@ async fn exchange_chunk(
         .await
         .map_err(|e| format!("open stream: {e}"))?;
 
+    let nonce = hex::encode(lan::fresh_nonce());
     let body = lan::beacon_body(
         crate::lan_transport::LAN_MAGIC,
         my_pubkey,
         0,
         soshal_common_core::format::now_secs() as u64,
+        &nonce,
     );
     let mac = lan::beacon_mac(&key, &body);
     send.write_all(format!("{body}:{mac}\n").as_bytes())
@@ -1334,6 +1355,7 @@ pub fn fetch_quic_moq_groups(
                 my_pubkey,
                 0,
                 soshal_common_core::format::now_secs() as u64,
+                &hex::encode(lan::fresh_nonce()),
             );
             let mac = lan::beacon_mac(&key, &body);
             send.write_all(format!("{body}:{mac}\n").as_bytes())

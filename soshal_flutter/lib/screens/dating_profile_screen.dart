@@ -173,7 +173,7 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Location failed: $e')));
+            .showSnackBar(SnackBar(content: SelectableText('Location failed: $e')));
       }
     }
   }

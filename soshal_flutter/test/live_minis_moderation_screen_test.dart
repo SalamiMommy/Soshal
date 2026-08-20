@@ -103,8 +103,6 @@ void main() {
 
     expect(find.text('Live'), findsOneWidget);
     expect(find.text('No streams right now'), findsOneWidget);
-    expect(find.text('Local video'), findsOneWidget);
-    expect(find.text('Start server'), findsOneWidget);
     expect(find.byIcon(Icons.videocam), findsOneWidget);
     expect(api.callCount('crateFfiStreamingStreamingFetchLive'), 1);
   });

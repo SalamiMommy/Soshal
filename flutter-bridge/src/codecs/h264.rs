@@ -38,11 +38,11 @@ pub fn is_supported() -> bool {
 pub fn init_encode(width: i32, height: i32, bitrate: i32, fps: i32) -> bool {
     #[cfg(target_os = "android")]
     {
-        if !super::sdk_gate() || width <= 0 || height <= 0 {
+        if !super::sdk_gate() || width <= 0 || height <= 0 || width % 2 != 0 || height % 2 != 0 {
             return false;
         }
         let mut s = state();
-        s.release_h264();
+        s.release_h264_encoder_only();
         unsafe {
             let codec = AMediaCodec_createEncoderByType(c"video/avc".as_ptr());
             if codec.is_null() {
@@ -128,7 +128,7 @@ pub fn init_decode() -> bool {
             return false;
         }
         let mut s = state();
-        s.release_h264();
+        s.release_h264_decoder_only();
         unsafe {
             let codec = AMediaCodec_createDecoderByType(c"video/avc".as_ptr());
             if codec.is_null() {
@@ -292,6 +292,11 @@ unsafe fn image_to_jpeg(image: *mut AImage) -> Result<Vec<u8>, String> {
     if w % 2 != 0 || h % 2 != 0 || w <= 0 || h <= 0 {
         return Err("bad dims".to_string());
     }
+    const MAX_DIM: i32 = 7680;
+    const MAX_PIXELS: i64 = 33_177_600;
+    if w > MAX_DIM || h > MAX_DIM || (w as i64) * (h as i64) > MAX_PIXELS {
+        return Err("dims too large".to_string());
+    }
     let mut planes = 0i32;
     if AImage_getNumberOfPlanes(image, &mut planes) != 0 || planes < 3 {
         return Err("no planes".to_string());
@@ -332,16 +337,14 @@ unsafe fn image_to_jpeg(image: *mut AImage) -> Result<Vec<u8>, String> {
     );
     for row in 0..h {
         for col in 0..w {
-            let yv = *y_b
-                .get((row * y_stride + col * y_ps) as usize)
-                .unwrap_or(&16) as i32;
+            let y_idx = (row as i64) * (y_stride as i64) + (col as i64) * (y_ps as i64);
+            let yv = *y_b.get(y_idx as usize).unwrap_or(&16) as i32;
             let uv_row = row / 2;
             let uv_col = col / 2;
-            let uv = *u_b
-                .get((uv_row * u_stride + uv_col * u_ps) as usize)
-                .unwrap_or(&128) as i32;
+            let uv_idx = (uv_row as i64) * (u_stride as i64) + (uv_col as i64) * (u_ps as i64);
+            let uv = *u_b.get(uv_idx as usize).unwrap_or(&128) as i32;
             let vv = *v_b
-                .get((uv_row * v_stride + uv_col * v_ps) as usize)
+                .get((uv_row as i64 * (v_stride as i64) + (uv_col as i64) * (v_ps as i64)) as usize)
                 .unwrap_or(&128) as i32;
             let c = yv - 16;
             let d = uv - 128;
@@ -372,7 +375,7 @@ unsafe fn image_to_jpeg(image: *mut AImage) -> Result<Vec<u8>, String> {
 #[cfg(target_os = "android")]
 fn bgra_to_i420(bgra: &[u8], width: i32, height: i32) -> Vec<u8> {
     let (w, h) = (width as usize, height as usize);
-    let (w2, h2) = (w / 2, h / 2);
+    let (w2, h2) = ((w + 1) / 2, (h + 1) / 2);
     let mut i420 = vec![0u8; w * h + w2 * h2 * 2];
     let mut y_pos = 0usize;
     let mut u_pos = w * h;
@@ -387,7 +390,7 @@ fn bgra_to_i420(bgra: &[u8], width: i32, height: i32) -> Vec<u8> {
             p += 4;
             i420[y_pos] = (((66 * r + 129 * g + 25 * b + 128) >> 8) + 16) as u8;
             y_pos += 1;
-            if row_even && x % 2 == 0 {
+            if row_even && x % 2 == 0 && u_pos < w * h + w2 * h2 && v_pos < i420.len() {
                 i420[u_pos] = (((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128) as u8;
                 i420[v_pos] = (((112 * r - 94 * g - 18 * b + 128) >> 8) + 128) as u8;
                 u_pos += 1;

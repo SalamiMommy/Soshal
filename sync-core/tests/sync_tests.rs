@@ -16,7 +16,8 @@ use soshal_sync_core::epoch_gc::EpochGarbageCollector;
 use soshal_sync_core::gossip::GossipSyncBridge;
 use soshal_sync_core::ingest::{handle, handle_batch, set_watermark, watermark, watermark_key};
 use soshal_sync_core::outbox::{
-    enqueue_outbox_item, fetch_pending_outbox_items, mark_outbox_item_completed, summarize_outbox,
+    enqueue_outbox_item, fetch_pending_outbox_items, fetch_pending_outbox_items_filtered,
+    mark_outbox_item_completed, summarize_outbox,
 };
 use soshal_sync_core::revert::{revert, KIND_LIKE, KIND_POST, KIND_PROFILE};
 use soshal_sync_core::tx::{tx_begin, tx_link, tx_mark_applied, tx_statuses, STATUS_APPLIED};
@@ -136,6 +137,9 @@ fn ingest_zap_receipt_creates_zap_row() {
     let keys = Keys::generate();
     let recipient = Keys::generate();
     let my_pubkey = recipient.public_key().to_hex();
+    // NIP-57: a receipt without a locally-ingested zap-request binding
+    // (matching description hash + amount) is forged-or-unverifiable and
+    // must NOT be counted toward zap totals.
     let event = soshal_test_util::signed_event_tagged(
         &keys,
         Kind::ZapReceipt,
@@ -147,7 +151,7 @@ fn ingest_zap_receipt_creates_zap_row() {
     );
     let (tx, _rx) = channel();
     handle(&db, &my_pubkey, &event, &tx).unwrap();
-    assert_eq!(ZapRepo::new(&db).sum_by_event("target-id").unwrap(), 21000);
+    assert_eq!(ZapRepo::new(&db).sum_by_event("target-id").unwrap(), 0);
 }
 
 #[test]
@@ -701,20 +705,29 @@ fn outbox_enqueue_pending_count_and_complete() {
     assert_eq!(summary.failed_count, 0);
     assert_eq!(summary.total_count, 2);
 
+    // Media-backed items are excluded from the plain fetch (separate media
+    // uploader path); include_media=true returns the full pending set.
     let pending = fetch_pending_outbox_items(&db, 200, 10).unwrap();
-    assert_eq!(pending.len(), 2);
+    assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].id, "o1");
     assert_eq!(pending[0].media_path, None);
-    assert_eq!(pending[1].id, "o2");
-    assert_eq!(pending[1].media_path.as_deref(), Some("media/x.jpg"));
-    assert_eq!(pending[1].payload_json, r#"{"path":"x"}"#);
+    let pending_all = fetch_pending_outbox_items_filtered(&db, 200, 10, true).unwrap();
+    assert_eq!(pending_all.len(), 2);
+    assert_eq!(pending_all[0].id, "o1");
+    assert_eq!(pending_all[0].media_path, None);
+    assert_eq!(pending_all[1].id, "o2");
+    assert_eq!(pending_all[1].media_path.as_deref(), Some("media/x.jpg"));
+    assert_eq!(pending_all[1].payload_json, r#"{"path":"x"}"#);
 
     mark_outbox_item_completed(&db, "o1").unwrap();
     let after = summarize_outbox(&db).unwrap();
     assert_eq!(after.pending_count, 1);
     assert_eq!(after.total_count, 2);
 
+    // Plain fetch stays media-excluded (o2 has a media path).
     let remaining = fetch_pending_outbox_items(&db, 200, 10).unwrap();
-    assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].id, "o2");
+    assert!(remaining.is_empty());
+    let remaining_all = fetch_pending_outbox_items_filtered(&db, 200, 10, true).unwrap();
+    assert_eq!(remaining_all.len(), 1);
+    assert_eq!(remaining_all[0].id, "o2");
 }
