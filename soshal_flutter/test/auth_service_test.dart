@@ -26,7 +26,6 @@ void main() {
 
       final kp = await auth.generateKeypair();
       expect(kp.publicKey, 'abc123');
-      expect(kp.secretKey, 'sec456');
       expect(auth.currentKeypair, isNotNull);
       expect(auth.currentKeypair!.publicKey, 'abc123');
       expect(notified, 1);
@@ -124,7 +123,6 @@ void main() {
 
       final kp = await auth.restoreFromMnemonic(phrase, passphrase);
       expect(kp.publicKey, 'restored_pk');
-      expect(kp.secretKey, 'restored_sk');
       expect(auth.currentKeypair, kp);
       expect(notified, 1);
 
@@ -198,25 +196,26 @@ void main() {
       final mapNew = {'public_key': 'pk1', 'secret_key': 'sk1'};
       final kp1 = KeyPair.fromJson(mapNew);
       expect(kp1.publicKey, 'pk1');
-      expect(kp1.secretKey, 'sk1');
 
       final mapOld = {'publicKey': 'pk2', 'secretKey': 'sk2'};
       final kp2 = KeyPair.fromJson(mapOld);
       expect(kp2.publicKey, 'pk2');
-      expect(kp2.secretKey, 'sk2');
 
       final mapMixed = {'publicKey': 'pk3', 'secret_key': 'sk3'};
       final kp3 = KeyPair.fromJson(mapMixed);
       expect(kp3.publicKey, 'pk3');
-      expect(kp3.secretKey, 'sk3');
     });
 
-    test('KeyPair.toJson emits snake_case keys', () {
-      final kp = KeyPair(publicKey: 'pk', secretKey: 'sk');
+    test('KeyPair never carries a secret key', () {
+      final kp = KeyPair(publicKey: 'pk');
       final json = kp.toJson();
       expect(json['public_key'], 'pk');
-      expect(json['secret_key'], 'sk');
+      expect(json.containsKey('secret_key'), false);
       expect(json.containsKey('publicKey'), false);
+      // Even a legacy response with a secret must not keep it in Dart.
+      final legacy = KeyPair.fromJson({'publicKey': 'pk', 'secretKey': 'sk'});
+      expect(legacy.publicKey, 'pk');
+      expect(legacy.toJson().containsKey('secret_key'), false);
     });
   });
 }

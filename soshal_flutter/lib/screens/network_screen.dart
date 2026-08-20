@@ -23,6 +23,7 @@ class NetworkScreen extends StatefulWidget {
 }
 
 class _NetworkScreenState extends State<NetworkScreen> {
+  P2pService? _p2p;
   final TextEditingController _relayUrl = TextEditingController();
   bool _loadingRelays = false;
   bool _loadingDiagnostics = false;
@@ -66,11 +67,13 @@ class _NetworkScreenState extends State<NetworkScreen> {
   @override
   void initState() {
     super.initState();
+    _p2p = context.read<P2pService>();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadRelays());
   }
 
   @override
   void dispose() {
+    _p2p?.stopPolling();
     _relayUrl.dispose();
     _destAddrField.dispose();
     _packetField.dispose();

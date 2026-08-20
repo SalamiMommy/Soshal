@@ -172,6 +172,36 @@ fn zap_request_canonical_json(req: &PostRow) -> String {
     )
 }
 
+/// Digest cache for zap-request canonical JSON. The canonical form is
+/// deterministic per stored request row, so receipt binding (which walks
+/// every stored request for the note) re-serialized + re-hashed each request
+/// per receipt — O(requests × receipts) SHA-256 runs. Bounded; cleared on
+/// overflow.
+static ZAP_REQUEST_DIGEST_CACHE: std::sync::Mutex<
+    Option<std::collections::HashMap<String, [u8; 32]>>,
+> = std::sync::Mutex::new(None);
+const ZAP_REQUEST_DIGEST_CACHE_CAP: usize = 2048;
+
+fn zap_request_digest(req: &PostRow) -> [u8; 32] {
+    let mut guard = ZAP_REQUEST_DIGEST_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let cache = guard.get_or_insert_with(Default::default);
+    if let Some(d) = cache.get(&req.id) {
+        return *d;
+    }
+    if cache.len() >= ZAP_REQUEST_DIGEST_CACHE_CAP {
+        cache.clear();
+    }
+    let digest: [u8; 32] = {
+        let mut hasher = Sha256::new();
+        hasher.update(zap_request_canonical_json(req).as_bytes());
+        hasher.finalize().into()
+    };
+    cache.insert(req.id.clone(), digest);
+    digest
+}
+
 fn user_row(event: &Event) -> Option<UserRow> {
     let meta: serde_json::Value = serde_json::from_str(&event.content).ok()?;
     let pubkey = event.pubkey.to_hex();
@@ -198,11 +228,11 @@ fn user_row(event: &Event) -> Option<UserRow> {
         picture: meta
             .get("picture")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .and_then(|s| soshal_common_core::url::is_valid_media_url(s).then(|| s.to_string())),
         banner: meta
             .get("banner")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .and_then(|s| soshal_common_core::url::is_valid_media_url(s).then(|| s.to_string())),
         nip05: meta
             .get("nip05")
             .and_then(|v| v.as_str())
@@ -339,6 +369,12 @@ async fn handle_impl(
             if amount_msats == 0 {
                 return Ok(());
             }
+            // Checksum-forged invoice strings (invalid bech32) are rejected:
+            // a real Lightning invoice always carries a valid checksum, so a
+            // receipt whose bolt11 fails decode is not a genuine zap.
+            if !soshal_zap_core::bolt11_checksum_valid(&event.content) {
+                return Ok(());
+            }
             // NIP-57 binding: only trust receipts whose invoice description
             // hash matches a verified zap-request addressed to us for the
             // same note at the same amount. Without this, any relay user can
@@ -362,12 +398,7 @@ async fn handle_impl(
                     t.first().is_some_and(|k| k == "amount")
                         && t.get(1).and_then(|v| v.parse::<u64>().ok()) == Some(amount_msats)
                 });
-                let hash_ok = {
-                    let mut hasher = Sha256::new();
-                    hasher.update(zap_request_canonical_json(req).as_bytes());
-                    let digest = hasher.finalize();
-                    digest.as_slice() == desc_hash
-                };
+                let hash_ok = zap_request_digest(req).as_slice() == desc_hash;
                 p_me && amount_ok && hash_ok
             });
             if !matched {
@@ -612,6 +643,28 @@ mod tests {
         data.extend_from_slice(&[1, 20]); // 2 base32 words: field length 52 (1 * 32 + 20)
         data.extend_from_slice(&words);
         bech32::encode::<bech32::Bech32>(bech32::Hrp::parse("lnbc10n").unwrap(), &data).unwrap()
+    }
+
+    #[test]
+    fn user_row_sanitizes_media_urls() {
+        let keys = Keys::generate();
+        let meta = serde_json::json!({
+            "name": "alice",
+            "picture": "https://169.254.169.254/latest/meta-data",
+            "banner": "http://localhost/banner.png",
+            "about": "hi",
+        })
+        .to_string();
+        let event = signed_event_with_tags(&keys, Kind::Metadata, &meta, vec![]);
+        let row = user_row(&event).unwrap();
+        assert_eq!(row.name.as_deref(), Some("alice"));
+        assert!(row.picture.is_none(), "private-IP picture must be dropped");
+        assert!(row.banner.is_none(), "loopback banner must be dropped");
+
+        let good = serde_json::json!({"picture": "https://example.com/a.png"}).to_string();
+        let event = signed_event_with_tags(&keys, Kind::Metadata, &good, vec![]);
+        let row = user_row(&event).unwrap();
+        assert_eq!(row.picture.as_deref(), Some("https://example.com/a.png"));
     }
 
     #[test]

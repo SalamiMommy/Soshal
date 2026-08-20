@@ -42,6 +42,18 @@ fn tag_value(tags_json: &str, key: &str) -> Option<String> {
         .and_then(|t| t.get(1).cloned())
 }
 
+/// Set the `status` tag value to `ended` in place. Hostile relay data can
+/// carry a 1-element `["status"]` tag — never index `[1]` unchecked.
+fn mark_status_ended(tags: &mut [Vec<String>]) {
+    for t in tags.iter_mut() {
+        if t.first().map(|k| k == "status").unwrap_or(false) {
+            if let Some(v) = t.get_mut(1) {
+                *v = "ended".to_string();
+            }
+        }
+    }
+}
+
 fn stream_from_value(v: &serde_json::Value) -> Option<StreamInfo> {
     let tags = v["tags_json"].as_str().unwrap_or("").to_string();
     let content = v["content"].as_str().unwrap_or("");
@@ -182,6 +194,7 @@ pub fn streaming_start_live(
     description: String,
     stream_url: String,
 ) -> Result<String, String> {
+    super::signer::require_identity(&broadcaster_pubkey)?;
     if title.trim().is_empty() || title.len() > 300 {
         return Err("title must be 1..=300 chars".to_string()).into();
     }
@@ -227,6 +240,7 @@ pub fn streaming_start_live(
 /// End a live stream: replace the local `status` tag with `ended`.
 #[frb(sync, serialize)]
 pub fn streaming_end_live(stream_id: String, broadcaster_pubkey: String) -> Result<bool, String> {
+    super::signer::require_identity(&broadcaster_pubkey)?;
     let json = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
@@ -264,11 +278,7 @@ pub fn streaming_end_live(stream_id: String, broadcaster_pubkey: String) -> Resu
     }
     let tags_json = row["tags_json"].as_str().unwrap_or("");
     let mut tags: Vec<Vec<String>> = serde_json::from_str(tags_json).unwrap_or_default();
-    for t in tags.iter_mut() {
-        if t.first().map(|k| k == "status").unwrap_or(false) {
-            t[1] = "ended".to_string();
-        }
-    }
+    mark_status_ended(&mut tags);
     if !tags
         .iter()
         .any(|t| t.first().map(|k| k == "status").unwrap_or(false))
@@ -297,6 +307,7 @@ pub fn streaming_post_story(
     images_json: String,
     expires_in_hours: i32,
 ) -> Result<String, String> {
+    super::signer::require_identity(&author_pubkey)?;
     let images: Vec<String> =
         serde_json::from_str(&images_json).map_err(|e| format!("invalid images JSON: {e}"))?;
     if images.len() > 12 {
@@ -487,6 +498,21 @@ mod tests {
         assert_eq!(tag_value(tags, "status").unwrap(), "live");
         assert_eq!(tag_value(tags, "d").unwrap(), "abc");
         assert!(tag_value(tags, "expiration").is_none());
+    }
+
+    #[test]
+    fn test_mark_status_ended_hostile_one_element_tag() {
+        let mut tags: Vec<Vec<String>> = vec![vec!["status".to_string()]];
+        mark_status_ended(&mut tags);
+        assert_eq!(
+            tags,
+            vec![vec!["status".to_string()]],
+            "len-1 tag untouched"
+        );
+
+        let mut tags: Vec<Vec<String>> = vec![vec!["status".to_string(), "live".to_string()]];
+        mark_status_ended(&mut tags);
+        assert_eq!(tags, vec![vec!["status".to_string(), "ended".to_string()]]);
     }
 
     #[test]

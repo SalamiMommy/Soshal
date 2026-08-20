@@ -3909,9 +3909,9 @@ dependencies = [
 name = "soshal-groups-core"
 version = "0.1.0"
 dependencies = [
+ "getrandom 0.4.3",
  "hex",
  "pbkdf2",
- "rand 0.8.7",
  "serde",
  "serde_json",
  "sha2",
@@ -4103,6 +4103,7 @@ dependencies = [
 name = "soshal-relay-core"
 version = "0.1.0"
 dependencies = [
+ "nostr",
  "serde",
  "serde_json",
  "sha2",

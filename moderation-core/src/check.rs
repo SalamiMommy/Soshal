@@ -326,8 +326,11 @@ pub fn check_text_comprehensive(text: &str, custom_words: &[String]) -> Moderati
         return ModerationVerdict::flag("spam", 2, spam_res.reason);
     }
 
-    // 5. Lightweight AI Model Multi-Class Classification
-    let ai_res = crate::ai_classifier::classify_text(trimmed);
+    // 5. Lightweight AI Model Multi-Class Classification (reuses the
+    // structural verdicts + variants computed above — no duplicate passes)
+    let ai_res = crate::ai_classifier::classify_text_with_verdicts(
+        trimmed, &variants, &spam_res, &csam_res, &gore_res,
+    );
     if ai_res.is_flagged {
         if let Some(cat) = ai_res.primary_category {
             let severity = if cat == "csam" { 3 } else { 2 };

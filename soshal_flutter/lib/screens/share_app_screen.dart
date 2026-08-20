@@ -14,7 +14,8 @@ class ShareAppScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final account = context.watch<SessionService>().activeAccount;
+    final account =
+        context.select((SessionService s) => s.activeAccount);
     final url = _inviteUrl(account);
 
     return Scaffold(

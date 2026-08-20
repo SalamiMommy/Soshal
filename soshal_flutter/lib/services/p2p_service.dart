@@ -52,6 +52,8 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   bool _advertising = false;
   bool _browsing = false;
   Timer? _pollTimer;
+  Duration? _pollInterval;
+  bool _pollingEnabled = false;
 
   List<P2pPeerDto> get peers => List.unmodifiable(_peers);
   Map<String, P2pSwarmStatusDto> get downloads => Map.unmodifiable(_downloads);
@@ -71,12 +73,22 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
 
   P2pService() {
     _lifecycle = AppLifecycleListener(
-      onHide: _pausePowerTimer,
-      onPause: _pausePowerTimer,
-      onResume: _resumePowerTimer,
+      onHide: _pausePollAndPowerTimers,
+      onPause: _pausePollAndPowerTimers,
+      onResume: _resumePollAndPowerTimers,
     );
     _startPowerTimer();
     _pollPower();
+  }
+
+  void _pausePollAndPowerTimers() {
+    _pausePollTimer();
+    _pausePowerTimer();
+  }
+
+  void _resumePollAndPowerTimers() {
+    _resumePollTimer();
+    _resumePowerTimer();
   }
 
   /// (Re)start the power poller at the current interval; no-op while the
@@ -498,6 +510,8 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   /// Poll swarm downloads + drain peers every [interval]; call from a
   /// lifecycle-aware owner so the timer stops when the app backgrounds.
   void startPolling(Duration interval, {String? activeDownloadId}) {
+    _pollingEnabled = true;
+    _pollInterval = interval;
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(interval, (_) async {
       final active = activeDownloadId ??
@@ -507,6 +521,25 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
       }
       await drainPeers();
     });
+  }
+
+  /// Stops the swarm poll timer (e.g. when the owning screen disposes).
+  void stopPolling() {
+    _pollingEnabled = false;
+    _pollInterval = null;
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  void _pausePollTimer() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  void _resumePollTimer() {
+    final interval = _pollInterval;
+    if (!_pollingEnabled || !_appActive || interval == null) return;
+    startPolling(interval);
   }
 
   @override

@@ -109,13 +109,9 @@ class _ThreadScreenState extends State<ThreadScreen> {
                 : _error != null
                     ? ErrorStateText('Failed to load thread: $_error',
                         onRetry: _load)
-                    : Consumer<FeedService>(
-                        builder: (context, feed, _) {
-                          if (_thread.isEmpty) {
-                            return const Center(
-                                child: Text('Thread not found'));
-                          }
-                      return ListView.builder(
+                    : _thread.isEmpty
+                        ? const Center(child: Text('Thread not found'))
+                        : ListView.builder(
                         itemCount: _thread.length,
                         itemBuilder: (context, index) {
                           final post = _thread[index];
@@ -185,11 +181,9 @@ class _ThreadScreenState extends State<ThreadScreen> {
                                     ],
                                   )
                                 : Text('↩ ${post.replies}'),
-                          );
-                        },
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    ),
           ),
           Container(
             padding: const EdgeInsets.all(8),

@@ -5,6 +5,7 @@
 use reqwest::{Client, Method};
 use soshal_common_core::url::{is_private_ip_str, is_valid_media_url};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const MAX_RESPONSE_BODY_BYTES: usize = 64 * 1024 * 1024;
@@ -18,10 +19,17 @@ pub struct HttpResponseData {
 
 #[derive(Clone)]
 pub struct Http3Client {
-    #[allow(dead_code)]
+    /// Proxy-routed default client (onion/i2p/SOCKS5). Pooled and reused.
     client: Client,
     socks_addr: Option<std::net::SocketAddr>,
+    /// Per-host clients pinned to their resolved addresses (DNS-rebinding /
+    /// SSRF defense). Cached so repeated fetches of the same host reuse the
+    /// TLS session + connection pool instead of building a fresh client (and
+    /// re-resolving) per request.
+    pinned: Arc<Mutex<HashMap<String, Client>>>,
 }
+
+const PINNED_CLIENT_CACHE_CAP: usize = 64;
 
 impl Default for Http3Client {
     fn default() -> Self {
@@ -49,7 +57,11 @@ impl Http3Client {
         }
         let client = builder.build().unwrap_or_else(|_| Client::new());
 
-        Self { client, socks_addr }
+        Self {
+            client,
+            socks_addr,
+            pinned: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     pub async fn request(
@@ -98,21 +110,39 @@ impl Http3Client {
                 return Err("HTTP request blocked: URL does not resolve".to_string());
             }
         }
-        let mut client_builder = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(10))
-            .redirect(reqwest::redirect::Policy::none());
-        if let Some(addr) = self.socks_addr {
-            if let Ok(proxy) = reqwest::Proxy::all(format!("socks5h://{addr}")) {
-                client_builder = client_builder.proxy(proxy);
+        let client = if pinned_addrs.is_empty() {
+            // Proxy/onion/i2p path: shared default client.
+            self.client.clone()
+        } else {
+            // Pinned path: reuse a per-host client (TLS session + pool) built
+            // with the verified resolved addresses.
+            let mut guard = self.pinned.lock().unwrap_or_else(|e| e.into_inner());
+            match guard.get(&host) {
+                Some(c) => c.clone(),
+                None => {
+                    if guard.len() >= PINNED_CLIENT_CACHE_CAP {
+                        guard.clear();
+                    }
+                    let mut b = reqwest::Client::builder()
+                        .timeout(Duration::from_secs(30))
+                        .connect_timeout(Duration::from_secs(10))
+                        .redirect(reqwest::redirect::Policy::none())
+                        .pool_idle_timeout(Duration::from_secs(90))
+                        .pool_max_idle_per_host(10)
+                        .resolve_to_addrs(&host, &pinned_addrs);
+                    if let Some(addr) = self.socks_addr {
+                        if let Ok(proxy) = reqwest::Proxy::all(format!("socks5h://{addr}")) {
+                            b = b.proxy(proxy);
+                        }
+                    }
+                    let c = b
+                        .build()
+                        .map_err(|e| format!("HTTP client build error: {e}"))?;
+                    guard.insert(host.clone(), c.clone());
+                    c
+                }
             }
-        }
-        if !pinned_addrs.is_empty() {
-            client_builder = client_builder.resolve_to_addrs(&host, &pinned_addrs);
-        }
-        let client = client_builder
-            .build()
-            .map_err(|e| format!("HTTP client build error: {e}"))?;
+        };
 
         let mut req = client.request(method, url);
 

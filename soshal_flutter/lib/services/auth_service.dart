@@ -31,9 +31,11 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
   /// Drop the transient onboarding nsec from the Dart heap. The keypair
   /// keeps its public key; only the secret is cleared. Called once the
   /// backup-display dialog closes — the secret is never needed afterward.
+  /// The Rust signer never returns a secret across FFI, so this is a no-op
+  /// guard for legacy responses that may have carried one.
   void clearSecretKey() {
     final kp = _currentKeypair;
-    if (kp == null || kp.secretKey == null) return;
+    if (kp == null) return;
     _currentKeypair = KeyPair(publicKey: kp.publicKey);
     notifyListeners();
   }
@@ -159,32 +161,24 @@ class AuthService extends ChangeNotifier with LastErrorMixin {
 }
 
 /// Key pair produced by the Rust keygen/restore calls.
-/// `secretKey` is always absent in production (keygen and mnemonic-restore
-/// both return an empty secret): the in-process signer holds the secret, and
-/// backup goes through the BIP-39 mnemonic. The field is kept for
-/// decode-compatibility with older responses.
+/// No secret key is ever stored: the Rust signer holds the secret
+/// in-process and never returns it across FFI, and backup goes through the
+/// BIP-39 mnemonic. Any `secretKey`/`secret_key` present in a decoded
+/// response is deliberately dropped.
 class KeyPair {
   final String publicKey;
-  final String? secretKey;
 
-  KeyPair({
-    required this.publicKey,
-    this.secretKey,
-  });
+  KeyPair({required this.publicKey});
 
   factory KeyPair.fromJson(Map<String, dynamic> json) {
-    final sk = json.strOrNull('secretKey') ?? json.strOrNull('secret_key');
     return KeyPair(
       publicKey: json.strOrNull('publicKey') ?? json.strOf('public_key'),
-      // Treat empty string the same as absent — don't persist a live key.
-      secretKey: (sk != null && sk.isNotEmpty) ? sk : null,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'public_key': publicKey,
-      if (secretKey != null && secretKey!.isNotEmpty) 'secret_key': secretKey,
     };
   }
 }

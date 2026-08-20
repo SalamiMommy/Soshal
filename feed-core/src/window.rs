@@ -26,6 +26,19 @@ pub fn fetch_feed_window(
     let limit = soshal_db_core::repos::clamp_limit(limit as i64) as usize;
     let conn = db.conn().map_err(|e| e.to_string())?;
     block_on(async {
+        let active_pubkey: Option<String> = {
+            let stmt = conn
+                .prepare("SELECT value FROM settings WHERE key = 'active_pubkey'")
+                .await
+                .map_err(|e| e.to_string())?;
+            let mut rows = stmt.query(()).await.map_err(|e| e.to_string())?;
+            if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+                row.get(0).ok()
+            } else {
+                None
+            }
+        };
+
         let stmt = conn
             .prepare(
                 "SELECT p.id, p.pubkey, p.content, p.created_at,
@@ -33,7 +46,7 @@ pub fn fetch_feed_window(
                         (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
                         (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.is_deleted = 0),
                         (SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id),
-                        EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = (SELECT value FROM settings WHERE key = 'active_pubkey'))
+                        EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?3)
                  FROM posts p
                  LEFT JOIN users u ON p.pubkey = u.pubkey
                  WHERE p.kind = 1 AND p.is_deleted = 0
@@ -44,7 +57,7 @@ pub fn fetch_feed_window(
             .map_err(|e| e.to_string())?;
 
         let mut rows = stmt
-            .query((limit as i64, start_index as i64))
+            .query((limit as i64, start_index as i64, active_pubkey))
             .await
             .map_err(|e| e.to_string())?;
 

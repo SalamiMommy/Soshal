@@ -729,9 +729,46 @@ pub fn classify_text(text: &str) -> AiModerationResult {
             evasion_score: 1.0,
         };
     }
+    let variants = crate::normalize::generate_normalized_variants(trimmed);
+    let spam_verdict = crate::spam::check_spam(trimmed);
+    let csam_verdict = crate::csam::check_csam_text(trimmed);
+    let gore_verdict = crate::gore::check_gore_text(trimmed);
+    classify_text_with_verdicts(
+        trimmed,
+        &variants,
+        &spam_verdict,
+        &csam_verdict,
+        &gore_verdict,
+    )
+}
+
+/// Shared classification core. Callers that already ran the structural
+/// checks (csam/gore/spam) and the variant normalization pass their results
+/// in so the work is done exactly once per input (feed moderation runs this
+/// after `check_text_comprehensive` already evaluated the same layers).
+pub(crate) fn classify_text_with_verdicts(
+    text: &str,
+    variants: &[String],
+    spam_verdict: &crate::spam::SpamVerdict,
+    csam_verdict: &crate::csam::CsamVerdict,
+    gore_verdict: &crate::gore::GoreVerdict,
+) -> AiModerationResult {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return AiModerationResult::clean();
+    }
+    if trimmed.len() > crate::check::MAX_MODERATION_INPUT_LEN {
+        return AiModerationResult {
+            is_flagged: true,
+            primary_category: Some("oversize".to_string()),
+            confidence: 1.0,
+            scores: AiCategoryScores::default(),
+            detected_reasons: vec!["input_oversize".to_string()],
+            evasion_score: 1.0,
+        };
+    }
 
     let evasion_score = calculate_evasion_score(trimmed);
-    let variants = crate::normalize::generate_normalized_variants(trimmed);
     let lower_variants: Vec<String> = variants.iter().map(|v| v.to_ascii_lowercase()).collect();
 
     let mut raw_spam = 0.0f32;
@@ -768,28 +805,25 @@ pub fn classify_text(text: &str) -> AiModerationResult {
         }
     }
 
-    // Blend structural heuristic signals
-    let spam_verdict = crate::spam::check_spam(trimmed);
+    // Blend structural heuristic signals (precomputed by the caller)
     if spam_verdict.is_spam {
         raw_spam += spam_verdict.confidence * 4.0;
-        if let Some(r) = spam_verdict.reason {
-            reasons.insert(r);
+        if let Some(r) = &spam_verdict.reason {
+            reasons.insert(r.clone());
         }
     }
 
-    let csam_verdict = crate::csam::check_csam_text(trimmed);
     if csam_verdict.is_csam {
         raw_csam += csam_verdict.severity as f32 * 3.0;
-        if let Some(r) = csam_verdict.rule {
-            reasons.insert(r);
+        if let Some(r) = &csam_verdict.rule {
+            reasons.insert(r.clone());
         }
     }
 
-    let gore_verdict = crate::gore::check_gore_text(trimmed);
     if gore_verdict.is_gore {
         raw_gore += gore_verdict.severity as f32 * 2.5;
-        if let Some(r) = gore_verdict.rule {
-            reasons.insert(r);
+        if let Some(r) = &gore_verdict.rule {
+            reasons.insert(r.clone());
         }
     }
 

@@ -3,7 +3,6 @@
 //! Provides salted PBKDF2-HMAC-SHA256 password hashing, constant-time verification,
 //! and privacy checks for password-protected communities.
 
-use rand::RngCore;
 use zeroize::Zeroize;
 
 pub const COMMUNITY_PASSWORD_MIN_LEN: usize = 8;
@@ -29,7 +28,8 @@ pub fn hash_community_password(password: &str) -> Result<String, String> {
     }
 
     let mut salt = [0u8; COMMUNITY_PASSWORD_SALT_BYTES];
-    rand::thread_rng().fill_bytes(&mut salt);
+    getrandom::fill(&mut salt)
+        .map_err(|_| "failed to draw password salt from OS RNG".to_string())?;
 
     let mut dk = vec![0u8; COMMUNITY_PASSWORD_DK_LEN];
     pbkdf2::pbkdf2_hmac::<sha2::Sha256>(

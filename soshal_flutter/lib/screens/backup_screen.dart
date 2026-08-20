@@ -44,8 +44,8 @@ class _BackupScreenState extends State<BackupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<SessionService>();
-    final account = session.activeAccount;
+    final account =
+        context.select((SessionService s) => s.activeAccount);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Backup')),

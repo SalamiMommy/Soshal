@@ -61,8 +61,8 @@ class _DatingScreenState extends State<DatingScreen>
 
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<SessionService>();
-    final pubkey = session.activePubkey;
+    final pubkey =
+        context.select((SessionService s) => s.activePubkey);
 
     if (pubkey == null) {
       return Scaffold(

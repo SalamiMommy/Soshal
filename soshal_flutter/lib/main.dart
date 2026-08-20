@@ -162,6 +162,7 @@ class _SoshalAppState extends State<SoshalApp> {
       syncService.attach(
         feed: context.read<FeedService>(),
         messaging: context.read<MessagingService>(),
+        p2p: context.read<P2pService>(),
       );
       context.read<SessionService>().attachSync(context.read<SyncService>());
       // Tell the Rust network stack we came up on Wi-Fi. Resolves the real

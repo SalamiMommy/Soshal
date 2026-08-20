@@ -100,6 +100,12 @@ oxidelta = "0.1"
 # Blurred image placeholders sent inside metadata.
 thumbhash = "0.1"
 
+# Dev-profile optimization: debug builds are what `cargo test` and the Linux
+# host bridge run under. opt-level=1 makes the ~1385-test suite and hot
+# feed/mesh paths materially faster at a modest compile-time cost.
+[profile.dev]
+opt-level = 1
+
 [profile.release]
 opt-level = 3
 lto = true

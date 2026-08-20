@@ -277,6 +277,14 @@ build_abi() {
   cp "$so" "$JNI_LIBS/$abi/"
 }
 
+# Rust compile cache: sccache speeds up repeated bridge builds a lot
+# (3 ABIs share most codegen). Auto-enabled when installed; disable with
+# RUSTC_WRAPPER="".
+if command -v sccache >/dev/null 2>&1; then
+  export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"
+  echo "  sccache: enabled"
+fi
+
 echo "== Soshal Android build ($MODE) =="
 mkdir -p "$JNI_LIBS" "$TARGETS_DIR"
 
@@ -287,15 +295,28 @@ ensure_freenet
 ensure_reticulum
 bundle_daemons
 
-# Build Rust bridge for all ABIs
-for abi in arm64-v8a x86_64 armeabi-v7a; do
-  if [[ "$abi" == armeabi-v7a ]]; then
-    export CC_GNU=1   # secp256k1-sys/aws-lc-sys probe arm-linux-androideabi-clang
-  else
-    unset CC_GNU
-  fi
-  build_abi "$abi"
-done
+# Build Rust bridge for all ABIs (serial by default — parallel ABI builds
+# triple peak memory; opt in with PARALLEL_ABI=1 when the machine can take it).
+if [[ "${PARALLEL_ABI:-0}" == "1" ]]; then
+  for abi in arm64-v8a x86_64 armeabi-v7a; do
+    if [[ "$abi" == armeabi-v7a ]]; then
+      export CC_GNU=1   # secp256k1-sys/aws-lc-sys probe arm-linux-androideabi-clang
+    else
+      unset CC_GNU
+    fi
+    build_abi "$abi" &
+  done
+  wait
+else
+  for abi in arm64-v8a x86_64 armeabi-v7a; do
+    if [[ "$abi" == armeabi-v7a ]]; then
+      export CC_GNU=1   # secp256k1-sys/aws-lc-sys probe arm-linux-androideabi-clang
+    else
+      unset CC_GNU
+    fi
+    build_abi "$abi"
+  done
+fi
 
 cd "$PROJECT_ROOT/soshal_flutter"
 if [[ "$MODE" == "release" ]]; then

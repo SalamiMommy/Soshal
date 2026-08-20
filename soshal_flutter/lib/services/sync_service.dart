@@ -8,6 +8,7 @@ import 'error_log.dart';
 import 'feed_service.dart';
 import 'ffi_bridge.dart';
 import 'messaging_service.dart';
+import 'p2p_service.dart';
 
 /// Sync Service
 /// Subscribes to the Rust-side background sync engine (published via the
@@ -43,10 +44,15 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
 
   /// Attach downstream consumers (called from main.dart wiring).
   void attach(
-      {required FeedService feed, required MessagingService messaging}) {
+      {required FeedService feed,
+      required MessagingService messaging,
+      required P2pService p2p}) {
     _feed = feed;
     _messaging = messaging;
-    feed.onRefreshed = () => unawaited(reconcileFeedWithPeer(''));
+    feed.onRefreshed = () {
+      if (p2p.peers.isEmpty) return;
+      unawaited(reconcileFeedWithPeer(''));
+    };
   }
 
   /// Start the engine + stream subscription for the given relays.
@@ -202,8 +208,7 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
       );
       final Map<String, dynamic> res =
           Map<String, dynamic>.from(jsonDecode(resJson) as Map);
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return res;
     } catch (e, st) {
       setLastError(e, st);

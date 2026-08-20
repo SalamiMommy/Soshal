@@ -6,15 +6,28 @@ use serde::{Deserialize, Serialize};
 pub struct VectorDocument {
     pub id: String,
     pub embedding: Vec<f32>,
+    /// Precomputed squared norm (saved at construction; `0.0` on legacy
+    /// deserialized docs triggers a one-time recompute).
+    #[serde(default)]
+    pub norm: f32,
 }
 
 impl VectorDocument {
     pub fn new(id: String, embedding: Vec<f32>) -> Self {
-        Self { id, embedding }
+        let norm = embedding_norm(&embedding);
+        Self {
+            id,
+            embedding,
+            norm,
+        }
     }
 
     pub fn compute_norm(&self) -> f32 {
-        embedding_norm(&self.embedding)
+        if self.norm > 0.0 {
+            self.norm
+        } else {
+            embedding_norm(&self.embedding)
+        }
     }
 }
 

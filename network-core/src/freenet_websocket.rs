@@ -7,6 +7,10 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::{client_async, tungstenite::Message, WebSocketStream};
 
+/// Per-phase bound for Freenet node connections (TCP connect, TLS handshake,
+/// WS upgrade). Prevents hangs on unreachable nodes.
+const WS_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 pub use crate::freenet_contract::StateSummary as ContractSummary;
 use crate::freenet_contract::{RelatedContract, StateSummary};
 
@@ -139,6 +143,8 @@ impl FreenetWebSocketClient {
         // Auth token travels as a header, never the query string (query
         // params leak via logs/referrer). Server contract change: the node
         // must read `X-Freenet-Auth` instead of `?auth=`; header preferred.
+        // Every phase (TCP connect, TLS handshake, WS upgrade) is bounded —
+        // an unreachable node must fail fast instead of hanging the caller.
         let mut last_err: Option<String> = None;
         for addr in &pinned {
             let mut builder =
@@ -150,34 +156,55 @@ impl FreenetWebSocketClient {
                 .body(())
                 .map_err(|e| format!("WebSocket request build failed: {e}"))?;
 
-            match tokio::net::TcpStream::connect(addr).await {
-                Ok(stream) => {
+            match tokio::time::timeout(WS_CONNECT_TIMEOUT, tokio::net::TcpStream::connect(addr))
+                .await
+            {
+                Ok(Ok(stream)) => {
                     let prepared: Result<Box<dyn WebSocketStreamTrait>, String> =
                         match &tls_connector {
                             Some(conn) => {
                                 let name =
                                     rustls::pki_types::ServerName::try_from(hostname.clone())
                                         .map_err(|e| format!("invalid TLS hostname: {e}"))?;
-                                match conn.connect(name, stream).await {
-                                    Ok(s) => Ok(Box::new(s) as _),
-                                    Err(e) => Err(format!("TLS handshake failed: {e}")),
+                                match tokio::time::timeout(
+                                    WS_CONNECT_TIMEOUT,
+                                    conn.connect(name, stream),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(s)) => Ok(Box::new(s) as _),
+                                    Ok(Err(e)) => Err(format!("TLS handshake failed: {e}")),
+                                    Err(_) => Err("TLS handshake timed out".to_string()),
                                 }
                             }
                             None => Ok(Box::new(stream) as _),
                         };
                     match prepared {
-                        Ok(stream) => match client_async(request, stream).await {
-                            Ok((ws, _)) => {
-                                let mut socket_guard = self.socket.lock().await;
-                                *socket_guard = Some(ws);
-                                return Ok(());
+                        Ok(stream) => {
+                            match tokio::time::timeout(
+                                WS_CONNECT_TIMEOUT,
+                                client_async(request, stream),
+                            )
+                            .await
+                            {
+                                Ok(Ok((ws, _))) => {
+                                    let mut socket_guard = self.socket.lock().await;
+                                    *socket_guard = Some(ws);
+                                    return Ok(());
+                                }
+                                Ok(Err(e)) => {
+                                    last_err = Some(format!("WebSocket handshake failed: {e}"))
+                                }
+                                Err(_) => {
+                                    last_err = Some("WebSocket handshake timed out".to_string())
+                                }
                             }
-                            Err(e) => last_err = Some(format!("WebSocket handshake failed: {e}")),
-                        },
+                        }
                         Err(e) => last_err = Some(e),
                     }
                 }
-                Err(e) => last_err = Some(format!("TCP connect to {addr} failed: {e}")),
+                Ok(Err(e)) => last_err = Some(format!("TCP connect to {addr} failed: {e}")),
+                Err(_) => last_err = Some(format!("TCP connect to {addr} timed out")),
             }
         }
         Err(last_err.unwrap_or_else(|| "WebSocket connection failed".to_string()))

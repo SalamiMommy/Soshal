@@ -193,7 +193,10 @@ pub async fn identity_verify_nip05(nip05: String) -> Result<bool, String> {
 async fn verify_nip05_fut(nip05: &str) -> Result<(bool, String), String> {
     // identity-core exposes the record struct; construct the URL and fetch.
     let (name, domain) = split_nip05(nip05);
-    let url = format!("https://{domain}/.well-known/nostr.json?name={name}");
+    let url = format!(
+        "https://{domain}/.well-known/nostr.json?name={}",
+        percent_encode_query(&name)
+    );
     if !soshal_common_core::url::is_valid_media_url(&url) {
         return Err("nip05 domain is not allowed (private or local host)".into());
     }
@@ -261,6 +264,20 @@ fn split_nip05(nip05: &str) -> (String, String) {
         Some((name, domain)) => (name.to_string(), domain.to_string()),
         None => (String::new(), nip05.to_string()),
     }
+}
+
+/// Percent-encode every byte outside `[A-Za-z0-9.-_]` for use in a query
+/// value, so a NIP-05 name cannot inject extra query parameters.
+fn percent_encode_query(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for &b in s.as_bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 /// Compute the WoT trust score (0..1) of `target` from `viewer`'s graph,
@@ -565,6 +582,7 @@ pub fn identity_publish_custom_profile(
     if unlocked != pubkey {
         return Err("pubkey does not match unlocked signer".to_string()).into();
     }
+    soshal_content_core::custom_profile::parse_and_validate(&profile_json)?;
     let builder = EventBuilder::new(Kind::Custom(30085), profile_json);
     let signed = super::signer::sign_builder(builder)?;
     publish_event(signed.clone())?;

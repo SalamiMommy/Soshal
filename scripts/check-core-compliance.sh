@@ -169,7 +169,9 @@ cd ..
 echo ""
 echo "10. Running core crate tests..."
 
-if cargo test --workspace --quiet -- --test-threads=1 2>/dev/null; then
+# Parallel by default: the DB/signer test locks (test_lock) make workspace
+# tests safe to race. --test-threads=1 serialized ~1385 tests (~minutes).
+if cargo test --workspace --quiet 2>/dev/null; then
     success "All core tests pass"
 else
     error "Some core tests failed (review output)"

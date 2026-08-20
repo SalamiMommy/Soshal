@@ -11,6 +11,7 @@ use libsql::Value;
 use soshal_db_core::block_on;
 use soshal_db_core::error::DbError;
 use soshal_db_core::Database;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 static DB: Mutex<Option<Database>> = Mutex::new(None);
@@ -607,6 +608,15 @@ pub fn db_backup(backup_path: String) -> Result<String, String> {
 /// Backup file header: `SOSHBK01` marks an at-rest-key-sealed snapshot.
 const BACKUP_MAGIC: &[u8] = b"SOSHBK01";
 
+/// Deletes its target path on drop: the plaintext restore buffer must not
+/// outlive the restore call, on any early-return path.
+struct TempCleanup(PathBuf);
+impl Drop for TempCleanup {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 /// Restore: close the current handle, replace the file, and reopen with
 /// migrations. Any in-flight connection is dropped.
 ///
@@ -654,8 +664,31 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
     let key = super::signer::signer_at_rest_key().map_err(|e| format!("at-rest key: {e}"))?;
     let plain = soshal_crypto_core::at_rest::open_at_rest_bin(&key, &blob[BACKUP_MAGIC.len()..])
         .map_err(|e| format!("backup decrypt failed: {e}"))?;
-    let temp = format!("{backup_path}.plain");
-    std::fs::write(&temp, plain).map_err(|e| format!("temp write failed: {e}"))?;
+    // Plaintext DB goes to the system temp dir with 0600 perms, never the
+    // app directory (backup dir may be world-readable via umask). Removed on
+    // every exit path by `_cleanup`.
+    let temp = std::env::temp_dir().join(format!(
+        "soshal-restore-{}-{}.db",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    {
+        use std::io::Write;
+        #[cfg(unix)]
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temp)
+            .map_err(|e| format!("temp open failed: {e}"))?;
+        f.write_all(&plain)
+            .map_err(|e| format!("temp write failed: {e}"))?;
+    }
+    let _cleanup = TempCleanup(temp.clone());
     let backup_file = temp;
     // Validate SQLite magic bytes before replacing the live DB.
     const SQLITE_MAGIC: &[u8] = b"SQLite format 3\x00";

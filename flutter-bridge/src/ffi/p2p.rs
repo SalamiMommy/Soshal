@@ -169,7 +169,7 @@ pub fn p2p_mdns_browse_drain() -> Result<Vec<P2pPeerDto>, String> {
     let Some(browser) = inner.browser.as_mut() else {
         return Ok(Vec::new()).into();
     };
-    let known = crate::ffi::db::with_db_string(|db| {
+    let known_contacts = crate::ffi::db::with_db_string(|db| {
         let repo = soshal_db_core::repos::user::UserRepo::new(db);
         let mine = crate::ffi::signer::signer_pubkey().ok();
         let contacts: Vec<String> = mine
@@ -186,23 +186,26 @@ pub fn p2p_mdns_browse_drain() -> Result<Vec<P2pPeerDto>, String> {
         Ok(contacts)
     })
     .unwrap_or_default();
-    let peers = browser
-        .drain_peers()
+    let peers = browser.drain_peers();
+    if peers.is_empty() {
+        return Ok(Vec::new()).into();
+    }
+    let pubkeys: Vec<String> = peers.iter().map(|p| p.pubkey.clone()).collect();
+    let known_rows = crate::ffi::db::with_db_string(|db| {
+        Ok(soshal_db_core::repos::user::UserRepo::new(db)
+            .existing_pubkeys(&pubkeys)
+            .unwrap_or_default())
+    })
+    .unwrap_or_default();
+    let known = known_rows
         .into_iter()
-        .filter(|p| {
-            let known_row = crate::ffi::db::with_db_string(|db| {
-                Ok(soshal_db_core::repos::user::UserRepo::new(db)
-                    .get_by_pubkey(p.pubkey.as_str())
-                    .ok()
-                    .flatten()
-                    .is_some())
-            })
-            .unwrap_or(false);
-            known_row || known.iter().any(|k| k == &p.pubkey)
-        })
+        .collect::<std::collections::HashSet<_>>();
+    let out = peers
+        .into_iter()
+        .filter(|p| known.contains(&p.pubkey) || known_contacts.iter().any(|k| k == &p.pubkey))
         .map(P2pPeerDto::from)
         .collect();
-    Ok(peers).into()
+    Ok(out).into()
 }
 
 /// Stop browsing (and drop the mDNS daemon).

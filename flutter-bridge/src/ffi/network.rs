@@ -32,26 +32,31 @@ static TRANSPORT_MODE: Mutex<TransportMode> = Mutex::new(TransportMode::Default)
 /// Persistent i2p SAM session shared across p2p/streaming FFI calls.
 static I2P_MANAGER: Mutex<Option<I2PSessionManager>> = Mutex::new(None);
 
-fn transport_mode() -> TransportMode {
+pub(super) fn transport_mode() -> TransportMode {
     *TRANSPORT_MODE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Whether the Reticulum mesh transport is started (bridge-side handle).
+/// A Reticulum node exists in the network-core registry once started
+/// (`reticulum_start_transport` or the mesh relay's Reticulum backend), so
+/// the dead bridge-side static is not consulted anymore.
 fn reticulum_started() -> bool {
-    RETICULUM
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_some()
+    soshal_network_core::reticulum::any_node_running()
+        || super::relay::mesh_backend_up(soshal_network_core::transport::TransportKind::Reticulum)
 }
 
 /// Resolves the concrete transport to use for outgoing traffic.
 /// Default chain: Reticulum -> Freenet -> I2P -> Nostr. "Only" modes fall
 /// back to Nostr with satisfied=false when their transport is unavailable.
+/// A transport counts as up when its local probe succeeds OR the mesh relay
+/// node has that backend running.
 pub(super) fn resolved_kind() -> (TransportKind, bool) {
     transport_mode().resolve(
         reticulum_started(),
-        super::util::tcp_probe("127.0.0.1", 8888),
-        super::util::tcp_probe("127.0.0.1", 7656),
+        super::util::tcp_probe("127.0.0.1", 8888)
+            || super::relay::mesh_backend_up(TransportKind::Freenet),
+        super::util::tcp_probe("127.0.0.1", 7656)
+            || super::relay::mesh_backend_up(TransportKind::I2p),
     )
 }
 
@@ -222,12 +227,18 @@ pub async fn network_relay_connection_status() -> Result<String, String> {
 
 /// Subscribe to events matching a NIP-01 filter JSON object. Returns the
 /// subscription id; events are polled with `network_take_events`.
+/// On a mesh transport the subscription is a no-op success: flood gossip
+/// ingest already delivers everything to the local DB/stream continuously.
 #[frb(serialize)]
 pub async fn network_subscribe(filter_json: String) -> Result<String, String> {
     let filter: Filter = match serde_json::from_str(&filter_json) {
         Ok(f) => f,
         Err(e) => return Err(format!("invalid filter JSON: {e}")),
     };
+    if resolved_kind().0 != TransportKind::Nostr {
+        let _ = filter;
+        return Ok(SubscriptionId::generate().to_string()).into();
+    }
     let client = match client_guard().as_ref() {
         Some(c) => c.clone(),
         None => return Err("relay client not initialized".to_string()),
@@ -239,9 +250,13 @@ pub async fn network_subscribe(filter_json: String) -> Result<String, String> {
     }
 }
 
-/// Unsubscribe a subscription id.
+/// Unsubscribe a subscription id. No-op success on a mesh transport.
 #[frb(serialize)]
 pub async fn network_unsubscribe(subscription_id: String) -> Result<bool, String> {
+    if resolved_kind().0 != TransportKind::Nostr {
+        let _ = subscription_id;
+        return Ok(true).into();
+    }
     let sub_id = SubscriptionId::new(subscription_id);
     let client = match client_guard().as_ref() {
         Some(c) => c.clone(),
@@ -255,12 +270,18 @@ pub async fn network_unsubscribe(subscription_id: String) -> Result<bool, String
 
 /// Publish an already-signed event (JSON) to all connected relays.
 /// Returns the number of relays that accepted it.
+/// Mesh transports publish via the mesh relay node (flood) first.
 #[frb(serialize)]
 pub async fn network_publish_event(event_json: String) -> Result<i32, String> {
     let event = match serde_json::from_str::<nostr::event::Event>(&event_json) {
         Ok(e) => e,
-        Err(e) => return Err(format!("invalid event JSON: {e}")),
+        Err(e) => return Err(format!("invalid event JSON: {e}")).into(),
     };
+    if let Ok(mesh_ok) = super::relay::try_mesh_publish(&event_json) {
+        if mesh_ok {
+            return Ok(1).into();
+        }
+    }
     let client = match client_guard().as_ref() {
         Some(c) => c.clone(),
         None => return Err("relay client not initialized".to_string()),
@@ -273,12 +294,33 @@ pub async fn network_publish_event(event_json: String) -> Result<i32, String> {
 
 /// Query events matching a filter against relays and the local cache.
 /// Returns an array of event JSON objects.
+/// On a mesh transport, queries the flood-gossip recent window (verified +
+/// filter-matched) instead of the wss relay client.
 #[frb(serialize)]
 pub async fn network_query_events(filter_json: String) -> Result<String, String> {
     let filter: Filter = match serde_json::from_str(&filter_json) {
         Ok(f) => f,
         Err(e) => return Err(format!("invalid filter JSON: {e}")),
     };
+    if resolved_kind().0 != TransportKind::Nostr {
+        let mut out: Vec<nostr::event::Event> = Vec::new();
+        for payload in super::relay::mesh_recent(QUERY_EVENTS_CAP * 2) {
+            if let Ok(ev) = nostr::event::Event::from_json(&payload) {
+                if ev.verify().is_ok()
+                    && filter.match_event(&ev, nostr::filter::MatchEventOptions::default())
+                {
+                    out.push(ev);
+                }
+                if out.len() >= QUERY_EVENTS_CAP {
+                    break;
+                }
+            }
+        }
+        return match serde_json::to_string(&out) {
+            Ok(json) => Ok(json).into(),
+            Err(e) => Err(format!("serialize: {e}")).into(),
+        };
+    }
     let client = match client_guard().as_ref() {
         Some(c) => c.clone(),
         None => return Err("relay client not initialized".to_string()),
@@ -786,9 +828,9 @@ pub fn network_get_sys_diagnostics() -> Result<String, String> {
     super::util::json_ok(diag)
 }
 
-/// Reticulum node state (singleton)
-static RETICULUM: Mutex<Option<soshal_network_core::reticulum::ReticulumNode>> = Mutex::new(None);
-
+/// Reticulum node state (live registry in network-core — the old
+/// bridge-side static was never populated, so status/resolution always
+/// reported "not running").
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ReticulumStatusDto {
     pub running: bool,
@@ -798,67 +840,45 @@ pub struct ReticulumStatusDto {
     pub tx_packets: u64,
 }
 
-/// Stop Reticulum transport.
+/// Stop Reticulum transports: clears the node registry and terminates all
+/// background transport threads/interfaces.
 #[frb(sync, serialize)]
 pub fn network_reticulum_stop() -> Result<bool, String> {
-    let mut guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
-    *guard = None;
+    soshal_network_core::reticulum::transport::reset_nodes();
     Ok(true)
 }
 
-/// Get current Reticulum status.
+/// Get current Reticulum status from the node registry.
 #[frb(sync, serialize)]
 pub fn network_reticulum_status() -> Result<String, String> {
-    let guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
-    match guard.as_ref() {
-        Some(node) => {
-            let running = *node.running.lock().unwrap_or_else(|e| e.into_inner());
-            let rx = *node.rx_count.lock().unwrap_or_else(|e| e.into_inner());
-            let tx = *node.tx_count.lock().unwrap_or_else(|e| e.into_inner());
-            let routes = node
-                .path_table
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .len();
-
-            let status = ReticulumStatusDto {
-                running,
-                destination_hash: node.destination.to_hex(),
-                active_routes: routes,
-                rx_packets: rx,
-                tx_packets: tx,
-            };
-            serde_json::to_string(&status).map_err(|e| format!("serialize status: {e}"))
-        }
-        None => {
-            let status = ReticulumStatusDto {
-                running: false,
-                destination_hash: String::new(),
-                active_routes: 0,
-                rx_packets: 0,
-                tx_packets: 0,
-            };
-            serde_json::to_string(&status).map_err(|e| format!("serialize status: {e}"))
-        }
-    }
+    use soshal_network_core::reticulum::transport::any_node_status;
+    let status = match any_node_status() {
+        Some(node_status) => ReticulumStatusDto {
+            running: node_status.running,
+            destination_hash: node_status.destination_hash,
+            active_routes: node_status.active_routes,
+            rx_packets: node_status.rx_packets,
+            tx_packets: node_status.tx_packets,
+        },
+        None => ReticulumStatusDto {
+            running: false,
+            destination_hash: String::new(),
+            active_routes: 0,
+            rx_packets: 0,
+            tx_packets: 0,
+        },
+    };
+    serde_json::to_string(&status).map_err(|e| format!("serialize status: {e}"))
 }
 
 /// Announce the active Reticulum destination.
 #[frb(sync, serialize)]
 pub fn network_reticulum_announce(_pubkey: String) -> Result<bool, String> {
-    let guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
-    match guard.as_ref() {
-        Some(node) => {
-            if !*node.running.lock().unwrap_or_else(|e| e.into_inner()) {
-                return Err("Reticulum not running".to_string());
-            }
-            // Announce via LinkManager
-            node.link_manager
-                .announce(&"".to_string())
-                .map_err(|e| format!("Announce failed: {e}"))
-        }
-        None => Err("Reticulum not initialized".to_string()),
+    use soshal_network_core::reticulum::transport::any_node_status;
+    if any_node_status().is_none() {
+        return Err("Reticulum not running".to_string());
     }
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -918,6 +938,34 @@ mod tests {
         assert_eq!(v["mode"], "nostr");
         assert_eq!(v["resolved"], "nostr");
         assert_eq!(v["satisfied"], true);
+    }
+
+    #[test]
+    fn test_resolved_kind_reticulum_when_node_running() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        assert!(super::network_set_transport_mode("reticulum".to_string()).unwrap());
+        // No node running yet: falls back to Nostr, unsatisfied.
+        let resolve = || {
+            serde_json::from_str::<serde_json::Value>(
+                &super::network_get_resolved_transport().unwrap(),
+            )
+            .unwrap()
+        };
+        assert_eq!(resolve()["resolved"], "nostr");
+        assert_eq!(resolve()["satisfied"], false);
+        // Starting a node (via the network-core registry) makes Reticulum
+        // resolve — this was broken before (dead bridge static).
+        soshal_network_core::reticulum::node_for("pk_resolve_test").unwrap();
+        assert_eq!(resolve()["resolved"], "reticulum");
+        assert_eq!(resolve()["satisfied"], true);
+        assert!(super::network_reticulum_status()
+            .unwrap()
+            .contains("\"running\":true"));
+        super::network_reticulum_stop().unwrap();
+        assert_eq!(resolve()["resolved"], "nostr");
+        assert!(super::network_set_transport_mode("nostr".to_string()).unwrap());
     }
 
     #[test]
@@ -1140,24 +1188,15 @@ mod tests {
 /// Prune stale Reticulum links; returns count removed.
 #[frb(sync, serialize)]
 pub fn network_reticulum_prune_stale_links() -> Result<usize, String> {
-    let guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
-    match guard.as_ref() {
-        Some(node) => Ok(node.link_manager.prune_stale_links()),
-        None => Err("Reticulum not initialized".to_string()),
-    }
+    soshal_network_core::reticulum::transport::prune_first_node(None)
+        .ok_or_else(|| "Reticulum not initialized".to_string())
 }
 
 /// Drop expired Reticulum path entries; returns count removed.
 #[frb(sync, serialize)]
 pub fn network_reticulum_prune_routes(now_secs: u64) -> Result<usize, String> {
-    let guard = RETICULUM.lock().unwrap_or_else(|e| e.into_inner());
-    match guard.as_ref() {
-        Some(node) => {
-            let mut table = node.path_table.lock().unwrap_or_else(|e| e.into_inner());
-            Ok(table.prune_expired(now_secs))
-        }
-        None => Err("Reticulum not initialized".to_string()),
-    }
+    soshal_network_core::reticulum::transport::prune_first_node(Some(now_secs))
+        .ok_or_else(|| "Reticulum not initialized".to_string())
 }
 
 /// Proof-of-work node id for a pubkey (hex, `null` when the static nonce fails).

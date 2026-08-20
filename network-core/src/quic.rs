@@ -230,6 +230,13 @@ async fn run_channel(
     endpoint.set_default_client_config(client_config);
 
     let mut conns: HashMap<SocketAddr, Connection> = HashMap::new();
+    // Serialized HMAC registration blob per peer, reused across datagrams —
+    // previously a fresh HMAC + JSON serialize ran on EVERY datagram send
+    // (the beacon is only re-announced for loss recovery; peers re-verify it
+    // the same way each time). Refreshed after the TTL so stale beacons are
+    // never reused past the clock-skew window.
+    let mut reg_cache: HashMap<SocketAddr, (std::time::Instant, Vec<u8>)> = HashMap::new();
+    const REG_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(5);
     // Remote addrs that presented a valid HMAC beacon registration.
     let authed: Arc<Mutex<HashSet<SocketAddr>>> = Arc::new(Mutex::new(HashSet::new()));
     let mut sweep = tokio::time::interval(std::time::Duration::from_secs(30));
@@ -243,6 +250,9 @@ async fn run_channel(
                 // Evict dead connections (closed by peer or idle timeout) so
                 // the map cannot grow unboundedly over long sessions.
                 conns.retain(|_, c| c.close_reason().is_none());
+                reg_cache.retain(|addr, (at, _)| {
+                    conns.contains_key(addr) && at.elapsed() < REG_CACHE_TTL
+                });
                 if let Ok(mut a) = authed.lock() {
                     a.retain(|addr| conns.contains_key(addr));
                 }
@@ -293,23 +303,31 @@ async fn run_channel(
                         };
                         // register identity: HMAC beacon line, re-sent with
                         // every datagram (datagrams are lossy — a dropped
-                        // registration must not deadlock the channel)
-                        let body = crate::lan::beacon_body(
-                            crate::lan_transport::LAN_MAGIC,
-                            &my_peer_key,
-                            0,
-                            soshal_common_core::format::now_secs() as u64,
-                            &hex::encode(crate::lan::fresh_nonce()),
-                        );
-                        let mac = crate::lan::beacon_mac(&key, &body);
-                        let reg = MicroEvent {
-                            kind: REGISTRATION_KIND.to_string(),
-                            payload: format!("{body}:{mac}"),
-                        };
-                        if let Ok(bytes) = serde_json::to_vec(&reg) {
-                            if bytes.len() <= MAX_DATAGRAM {
-                                let _ = conn.send_datagram(bytes.into());
+                        // registration must not deadlock the channel). The
+                        // serialized registration is cached per peer; only the
+                        // first send per TTL window pays the HMAC cost.
+                        let reg_bytes = match reg_cache.get(&peer) {
+                            Some((at, b)) if at.elapsed() < REG_CACHE_TTL => b.clone(),
+                            _ => {
+                                let body = crate::lan::beacon_body(
+                                    crate::lan_transport::LAN_MAGIC,
+                                    &my_peer_key,
+                                    0,
+                                    soshal_common_core::format::now_secs() as u64,
+                                    &hex::encode(crate::lan::fresh_nonce()),
+                                );
+                                let mac = crate::lan::beacon_mac(&key, &body);
+                                let reg = MicroEvent {
+                                    kind: REGISTRATION_KIND.to_string(),
+                                    payload: format!("{body}:{mac}"),
+                                };
+                                let bytes = serde_json::to_vec(&reg).unwrap_or_default();
+                                reg_cache.insert(peer, (std::time::Instant::now(), bytes.clone()));
+                                bytes
                             }
+                        };
+                        if reg_bytes.len() <= MAX_DATAGRAM {
+                            let _ = conn.send_datagram(reg_bytes.into());
                         }
                         if conn.send_datagram(payload.into()).is_err() {
                             conns.remove(&peer);

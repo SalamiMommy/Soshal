@@ -5,12 +5,25 @@ pub mod nwc;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NwcConnectionInfo {
     pub wallet_pubkey: String,
     pub relay_url: String,
     pub secret_hex: String,
     pub lud16: Option<String>,
+}
+
+/// Manual Debug: never prints the NWC wallet secret (a signing key). A stray
+/// `{:?}` in logging/error paths must not leak key material.
+impl std::fmt::Debug for NwcConnectionInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NwcConnectionInfo")
+            .field("wallet_pubkey", &self.wallet_pubkey)
+            .field("relay_url", &self.relay_url)
+            .field("secret_hex", &"<redacted>")
+            .field("lud16", &self.lud16)
+            .finish()
+    }
 }
 
 /// Parses an NWC connection URI (nostr+walletconnect://...).
@@ -29,6 +42,18 @@ const MULT_DEFAULT: u64 = 100_000_000_000;
 /// Parse-level BOLT-11 amount cap (msats) — rejects absurd invoices at parse
 /// time; the per-payment NWC cap (NWC_MAX_PAY_SATS) stays the caller's check.
 const MAX_PARSE_BOLT11_MSATS: u64 = 1_000_000_000_000;
+
+/// True when `bolt11` is a valid bech32 string (checksum + charset verified).
+/// Used to reject checksum-forged invoices on untrusted surfaces (zap
+/// receipts from relays, NWC-provided invoices). Amount parsing alone is
+/// intentionally lenient: it must keep working on partial strings for display.
+pub fn bolt11_checksum_valid(bolt11: &str) -> bool {
+    if bolt11.is_empty() || bolt11.len() > 4096 {
+        return false;
+    }
+    let lower = bolt11.to_ascii_lowercase();
+    bech32::decode(&lower).is_ok()
+}
 
 /// Parses msats from a BOLT11 invoice string (extracts amount field).
 ///

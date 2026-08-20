@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
@@ -548,6 +549,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
   }
 
   Future<void> _signerFromNsec() async {
+    if (!kDebugMode) return;
     final snack = ScaffoldMessenger.of(context);
     final nsec = _nsecController.text.trim();
     if (nsec.isEmpty) {

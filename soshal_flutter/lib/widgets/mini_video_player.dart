@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/permissions_service.dart';
+import '../utils/safe_url.dart';
 
 /// Plays a mini video (local blob-server URL or remote fallback) via
 /// video_player inside a dialog.
@@ -24,6 +25,10 @@ class _MiniVideoPlayerState extends State<MiniVideoPlayer> {
     if (!PermissionsService.isAndroid) {
       _error = 'Video playback is not supported on this platform '
           '(video_player has no Linux implementation yet).';
+      return;
+    }
+    if (!SafeUrl.isSafePlaybackUrl(widget.url)) {
+      _error = 'Video source rejected (unsafe host).';
       return;
     }
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))

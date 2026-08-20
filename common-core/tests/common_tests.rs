@@ -52,6 +52,14 @@ fn media_url_rejects_private_and_rebinding() {
     assert!(!is_valid_media_url("https://[::ffff:10.0.0.1]/x"));
     assert!(!is_valid_media_url("https://[fc00::1]/x"));
     assert!(!is_valid_media_url("https://[fe80::1]/x"));
+    assert!(!is_valid_media_url("https://240.0.0.1/x"));
+    assert!(!is_valid_media_url("https://255.255.255.255/x"));
+    assert!(!is_valid_media_url("https://nip.io/x"));
+    assert!(!is_valid_media_url("https://sslip.io/x"));
+    assert!(!is_valid_media_url("https://localtest.me/x"));
+    assert!(!is_valid_media_url("https://loca.lt/x"));
+    assert!(!is_valid_media_url("https://user:pass@example.com/x"));
+    assert!(!is_valid_media_url("https://xip.io/x"));
 }
 
 #[test]

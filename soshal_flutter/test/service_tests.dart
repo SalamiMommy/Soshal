@@ -71,7 +71,7 @@ void main() {
 
       final kp = await auth.generateKeypair();
       expect(kp.publicKey, 'pk-hex');
-      expect(kp.secretKey, 'sk-hex');
+      expect(kp.toJson().containsKey('secret_key'), false); // secret never crosses FFI
       expect(auth.currentKeypair?.publicKey, 'pk-hex');
       expect(notified, 1);
     });

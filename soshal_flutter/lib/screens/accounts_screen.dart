@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/session_service.dart';
+import '../services/settings_service.dart';
+import '../services/shell_service.dart';
 import '../services/signer_service.dart';
 import '../utils/format.dart';
 import '../widgets/empty_state.dart';
@@ -98,16 +100,24 @@ class _AccountsScreenState extends State<AccountsScreen> {
                             await session.switchAccount(account.pubkey);
                             if (!context.mounted) return;
                             // Re-key the in-process signer for the new
-                            // account; when no keychain entry exists, lock
-                            // it so the signer-lock overlay (recovery phrase
-                            // verified against the now-active account) shows
-                            // instead of mismatched-pubkey sign errors.
+                            // account. PIN users and users with keychain
+                            // unlock disabled get the lock overlay (PIN /
+                            // recovery phrase) instead of a silent keychain
+                            // unlock, so the stored key never unlocks
+                            // without authorization.
                             final signer = context.read<SignerService>();
+                            final shell = context.read<ShellService>();
                             var unlocked = false;
-                            try {
-                              unlocked = await signer
-                                  .unlockFromKeyring(account.pubkey);
-                            } catch (_) {}
+                            if (!shell.hasPin &&
+                                context
+                                        .read<SettingsService>()
+                                        .getSetting('keychain_unlock_enabled') ==
+                                    'true') {
+                              try {
+                                unlocked = await signer
+                                    .unlockFromKeyring(account.pubkey);
+                              } catch (_) {}
+                            }
                             if (!unlocked) {
                               await signer.lock();
                             }

@@ -7,9 +7,7 @@
 
 use flutter_rust_bridge::frb;
 use nostr::event::Event;
-use soshal_relay_core::backends::freenet::FreenetBackend;
-use soshal_relay_core::backends::i2p::I2pBackend;
-use soshal_relay_core::backends::reticulum::ReticulumBackend;
+use soshal_relay_core::backends::BackendKind;
 use soshal_relay_core::relay::RelayNode;
 use soshal_sync_core::SyncUpdate;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,19 +29,50 @@ pub(super) fn mesh_running() -> bool {
     node_guard().as_ref().map(|n| n.running()).unwrap_or(false)
 }
 
-/// Start the mesh relay node: Reticulum (for the active pubkey), I2P SAM,
-/// Freenet (gated on a local node). Starts the inbound ingest task that
-/// polls the node, verifies envelopes, and routes events into sync-core.
-/// Returns JSON status.
+/// Recent flood-gossip event payloads (newest first, capped). Backs the
+/// mesh fetch path for `network_query_events` when a mesh transport is
+/// resolved.
+pub(super) fn mesh_recent(limit: usize) -> Vec<Vec<u8>> {
+    let mut guard = node_guard();
+    match guard.as_mut() {
+        Some(node) => node.recent_payloads(limit),
+        None => Vec::new(),
+    }
+}
+
+/// Whether the mesh relay node has the given transport backend running.
+/// Feeds transport resolution: a live mesh backend counts as its transport
+/// being up even when the local probe (daemon port) fails.
+pub(super) fn mesh_backend_up(kind: soshal_network_core::transport::TransportKind) -> bool {
+    use soshal_network_core::transport::TransportKind as K;
+    let guard = node_guard();
+    match guard.as_ref() {
+        Some(node) => node.running_backends().iter().any(|b| {
+            matches!(
+                (b, kind),
+                (BackendKind::Reticulum, K::Reticulum)
+                    | (BackendKind::I2p, K::I2p)
+                    | (BackendKind::Freenet, K::Freenet)
+            )
+        }),
+        None => false,
+    }
+}
+
+/// Start the mesh relay node: backends are gated by the current transport
+/// mode — "only" modes pin the single backend, `default` runs all three.
+/// Starts the inbound ingest task that polls the node, verifies envelopes,
+/// and routes events into sync-core. Returns JSON status.
 #[frb(sync, serialize)]
 pub fn relay_node_start(pubkey: String) -> Result<String, String> {
     if node_guard().is_some() {
         let _ = relay_node_stop();
     }
-    let mut node = RelayNode::new();
-    node.add_backend(Box::new(ReticulumBackend::new(pubkey)));
-    node.add_backend(Box::new(I2pBackend::new()));
-    node.add_backend(Box::new(FreenetBackend::new()));
+    let mode = super::network::transport_mode();
+    let mut node = RelayNode::new_with_transport(mode, &pubkey);
+    if node.running_backends().is_empty() {
+        return Err("mesh relay needs a mesh transport mode (not nostr)".to_string());
+    }
     node.start()
         .map_err(|e| format!("mesh relay start failed: {e}"))?;
     *node_guard() = Some(node);

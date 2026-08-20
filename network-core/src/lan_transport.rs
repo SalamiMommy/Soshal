@@ -358,14 +358,29 @@ fn serve_range_zero_copy(
     }
     let mut sent = 0usize;
     let mut file_offset = (req.offset - chunk.offset as usize) as i64;
+    // EAGAIN backoff: 1 → 2 → 4 → … → 16 ms. Fixed 1 ms spin-sleeping
+    // could wake ~1000×/s on a busy LAN; doubling caps wakeups while a
+    // sustained stall (≥64 EAGAINs, ~1 s total) fails the connection so
+    // the client falls back to another peer/transport.
+    let mut eagain_backoff_ms: u32 = 1;
+    let mut eagain_streak: u32 = 0;
     while sent < req.length {
         let remaining = req.length - sent;
         match nix::sys::sendfile::sendfile(&writer, &file, Some(&mut file_offset), remaining) {
             Ok(0) => return true, // header already emitted; give up on the socket
-            Ok(n) => sent += n,
+            Ok(n) => {
+                sent += n;
+                eagain_backoff_ms = 1;
+                eagain_streak = 0;
+            }
             Err(nix::errno::Errno::EINTR) => {}
             Err(nix::errno::Errno::EAGAIN) => {
-                std::thread::sleep(Duration::from_millis(1));
+                eagain_streak += 1;
+                if eagain_streak >= 64 {
+                    return true; // stalled peer; socket stays half-written
+                }
+                std::thread::sleep(Duration::from_millis(eagain_backoff_ms as u64));
+                eagain_backoff_ms = (eagain_backoff_ms * 2).min(16);
             }
             Err(_) => return true, // header already emitted; connection is dead
         }

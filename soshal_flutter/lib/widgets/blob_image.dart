@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/media_service.dart';
 import '../services/p2p_service.dart';
 import '../utils/blob_resolver.dart';
+import '../utils/safe_url.dart';
 import 'rust_native_image.dart';
 
 /// Renders an image whose source is either an http(s) URL or a local CAS
@@ -88,7 +89,9 @@ class _BlobImageState extends State<BlobImage> {
     final hash = hashFromSource(src);
     if (hash == null) {
       final uri = Uri.tryParse(src);
-      if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+      if (uri != null &&
+          (uri.scheme == 'http' || uri.scheme == 'https') &&
+          SafeUrl.isSafeMediaUrl(src)) {
         setState(() => _isUrl = true);
       } else {
         setState(() => _failed = true);

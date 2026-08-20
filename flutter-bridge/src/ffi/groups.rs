@@ -110,6 +110,7 @@ pub fn groups_join(
     user_pubkey: String,
     password: Option<String>,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         let repo = GroupRepo::new(db);
         let group = repo
@@ -147,6 +148,7 @@ pub fn groups_join(
 /// Leave a group: remove the local membership row.
 #[frb(sync, serialize)]
 pub fn groups_leave(group_id: String, user_pubkey: String) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         GroupRepo::new(db).remove_member(&group_id, &user_pubkey)?;
         Ok(true)
@@ -955,9 +957,14 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("members");
         let owner = "a".repeat(64);
-        let member = "b".repeat(64);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let member = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         create_group("g2", &owner);
         insert_user(&member);
 
@@ -982,9 +989,14 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("role_gate");
         let owner = "a".repeat(64);
-        let member = "b".repeat(64);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let member = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         create_group("g3", &owner);
         insert_user(&member);
         groups_join("g3".to_string(), member.clone(), None).unwrap();
@@ -1434,9 +1446,14 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("private_pwd");
         let owner = "a".repeat(64);
-        let member = "b".repeat(64);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let member = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         insert_user(&owner);
         insert_user(&member);
 

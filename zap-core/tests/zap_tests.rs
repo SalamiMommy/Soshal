@@ -9,7 +9,8 @@ use soshal_zap_core::nwc::{
     validate_pay_invoice,
 };
 use soshal_zap_core::{
-    apply_daily_spend, bolt11_amount_sats, parse_msats_from_bolt11, NWC_DAILY_MAX_MSATS,
+    apply_daily_spend, bolt11_amount_sats, bolt11_checksum_valid, parse_msats_from_bolt11,
+    NWC_DAILY_MAX_MSATS,
 };
 
 #[test]
@@ -132,6 +133,23 @@ fn bolt11_overflow_safe() {
         parse_msats_from_bolt11(&format!("lnbc{}m", "1")),
         Ok(100_000_000)
     );
+}
+
+#[test]
+fn bolt11_checksum_gates_forged_invoices() {
+    // Lenient amount parsing still works on partial strings...
+    assert_eq!(parse_msats_from_bolt11("lnbc10n"), Ok(1000));
+    // ...but checksum validation rejects them (no valid bech32 checksum).
+    assert!(!bolt11_checksum_valid("lnbc10n"));
+    assert!(!bolt11_checksum_valid(""));
+    assert!(!bolt11_checksum_valid(&"x".repeat(4097)));
+    // A real encoded invoice round-trips.
+    let invoice = bech32::encode::<bech32::Bech32>(
+        bech32::Hrp::parse("lnbc10n").unwrap(),
+        &[0, 0, 0, 0, 0, 0, 0, 0, 23, 1, 20],
+    )
+    .unwrap();
+    assert!(bolt11_checksum_valid(&invoice));
 }
 
 #[test]

@@ -6,11 +6,11 @@ use crate::block_on;
 use crate::libsql::{params, Connection};
 use migrations::{
     v1_create_tables, v2_group_channels, v3_group_thread_reactions, v4_group_password,
-    v5_performance_indexes, v6_index_cleanup, v7_query_optimizations,
+    v5_performance_indexes, v6_index_cleanup, v7_query_optimizations, v8_index_cleanup,
 };
 
 /// Latest schema version the migration runner produces.
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 /// Columns added by ALTER TABLE in the pre-squash migrations v008-v013 but
 /// lost when they were collapsed into v001_initial. Legacy databases created
@@ -119,6 +119,7 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
         (5, |c| v5_performance_indexes(c).map_err(Into::into)),
         (6, |c| v6_index_cleanup(c).map_err(Into::into)),
         (7, |c| v7_query_optimizations(c).map_err(Into::into)),
+        (8, |c| v8_index_cleanup(c).map_err(Into::into)),
     ];
 
     for &(version, step_fn) in steps {

@@ -25,6 +25,21 @@ fn payload_digest(payload: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// Payloads are signed event JSON. Reject anything that does not parse as an
+/// event with a valid Schnorr signature: a mesh peer must not be able to
+/// inject garbage that fans out to every backend at hop+1 (flood
+/// amplification). Event JSON is self-authenticating — no key material
+/// needed to verify.
+fn valid_event_payload(payload: &[u8]) -> bool {
+    let Ok(json) = std::str::from_utf8(payload) else {
+        return false;
+    };
+    match nostr::event::Event::from_json(json) {
+        Ok(event) => event.verify().is_ok(),
+        Err(_) => false,
+    }
+}
+
 /// Flood gossip relay node.
 pub struct RelayNode {
     backends: Vec<Box<dyn MeshBackend>>,
@@ -59,6 +74,49 @@ impl RelayNode {
 
     pub fn add_backend(&mut self, backend: Box<dyn MeshBackend>) {
         self.backends.push(backend);
+    }
+
+    /// Builds a node with backends matching a transport mode: `Default` gets
+    /// all three mesh backends; "only" modes pin the single backend. `Nostr`
+    /// yields no backends (mesh is off — `start()` fails cleanly).
+    pub fn new_with_transport(
+        mode: soshal_network_core::transport::TransportMode,
+        pubkey: &str,
+    ) -> Self {
+        use soshal_network_core::transport::TransportMode as M;
+        let mut node = Self::new();
+        match mode {
+            M::Default => {
+                node.add_backend(Box::new(crate::backends::reticulum::ReticulumBackend::new(
+                    pubkey.to_string(),
+                )));
+                node.add_backend(Box::new(crate::backends::i2p::I2pBackend::new()));
+                node.add_backend(Box::new(crate::backends::freenet::FreenetBackend::new()));
+            }
+            M::Reticulum => {
+                node.add_backend(Box::new(crate::backends::reticulum::ReticulumBackend::new(
+                    pubkey.to_string(),
+                )));
+            }
+            M::Freenet => {
+                node.add_backend(Box::new(crate::backends::freenet::FreenetBackend::new()));
+            }
+            M::I2p => {
+                node.add_backend(Box::new(crate::backends::i2p::I2pBackend::new()));
+            }
+            M::Nostr => {}
+        }
+        node
+    }
+
+    /// Kinds of backends that are currently running (drives transport
+    /// resolution: a running mesh backend counts as its transport being up).
+    pub fn running_backends(&self) -> Vec<BackendKind> {
+        self.backends
+            .iter()
+            .filter(|b| b.running())
+            .map(|b| b.kind())
+            .collect()
     }
 
     /// Starts all backends. Returns the number started.
@@ -141,6 +199,11 @@ impl RelayNode {
                 let Some(env) = MeshEnvelope::from_bytes(&payload) else {
                     continue;
                 };
+                // Verify before dedup/delivery/re-broadcast: forged or
+                // garbage payloads die at the first relay hop.
+                if !valid_event_payload(&env.payload) {
+                    continue;
+                }
                 // Dedup on the payload digest, NOT the envelope's event_id
                 // header: the id claim is unverified at the relay layer, so
                 // keying on it lets a forged envelope reuse a legit event's
@@ -171,6 +234,18 @@ impl RelayNode {
     /// Drains payloads queued for the app.
     pub fn drain_delivered(&mut self) -> Vec<Vec<u8>> {
         self.delivered.drain(..).collect()
+    }
+
+    /// Payloads from the re-broadcastable recent ring, newest first, capped
+    /// at `limit`. Backs the mesh fetch path: flood gossip keeps no per-
+    /// consumer history, so this is the mesh's queryable event window.
+    pub fn recent_payloads(&self, limit: usize) -> Vec<Vec<u8>> {
+        self.recent
+            .iter()
+            .rev()
+            .take(limit)
+            .map(|env| env.payload.clone())
+            .collect()
     }
 
     /// Per-backend peer counts as `(kind, count)`.
@@ -238,6 +313,7 @@ mod tests {
     use super::*;
     use crate::backends::MeshBackend;
     use crate::envelope::MAX_HOP_COUNT;
+    use nostr::event::FinalizeEvent;
     use std::sync::{Arc, Mutex};
 
     #[derive(Default)]
@@ -300,12 +376,17 @@ mod tests {
     }
 
     fn env_bytes(hop: u8) -> Vec<u8> {
+        let keys = nostr::key::Keys::generate();
+        let event = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, "hello")
+            .finalize(&keys)
+            .unwrap();
+        let payload = serde_json::to_vec(&event).unwrap();
         let mut env = MeshEnvelope::new(
-            "evt-1".to_string(),
+            event.id.to_hex(),
             1,
-            "author".to_string(),
-            0,
-            b"hi".to_vec(),
+            event.pubkey.to_hex(),
+            event.created_at.as_secs(),
+            payload,
         );
         env.hop_count = hop;
         env.to_bytes()
@@ -357,7 +438,9 @@ mod tests {
         node.start().unwrap();
         s0.lock().unwrap().inbox.push(env_bytes(0));
         assert_eq!(node.poll(), 1);
-        assert_eq!(node.drain_delivered(), vec![b"hi".to_vec()]);
+        let delivered = node.drain_delivered();
+        assert_eq!(delivered.len(), 1);
+        assert!(valid_event_payload(&delivered[0]));
         let outbox = s1.lock().unwrap().outbox.clone();
         assert_eq!(outbox.len(), 1);
         let env = MeshEnvelope::from_bytes(&outbox[0]).unwrap();
@@ -370,8 +453,9 @@ mod tests {
         let (b0, s0) = mock(BackendKind::Reticulum, 2);
         node.add_backend(Box::new(b0));
         node.start().unwrap();
-        s0.lock().unwrap().inbox.push(env_bytes(0));
-        s0.lock().unwrap().inbox.push(env_bytes(1));
+        let bytes = env_bytes(0);
+        s0.lock().unwrap().inbox.push(bytes.clone());
+        s0.lock().unwrap().inbox.push(bytes);
         assert_eq!(node.poll(), 1);
         assert_eq!(node.drain_delivered().len(), 1);
     }
@@ -384,19 +468,51 @@ mod tests {
         let (b0, s0) = mock(BackendKind::Reticulum, 2);
         node.add_backend(Box::new(b0));
         node.start().unwrap();
+        let keys = nostr::key::Keys::generate();
+        let event = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, "real")
+            .finalize(&keys)
+            .unwrap();
+        let payload = serde_json::to_vec(&event).unwrap();
         let legit = MeshEnvelope::new(
-            "evt-1".to_string(),
+            event.id.to_hex(),
             1,
-            "author".to_string(),
-            0,
-            b"real payload".to_vec(),
+            event.pubkey.to_hex(),
+            event.created_at.as_secs(),
+            payload,
         );
         let mut forged = legit.clone();
         forged.payload = b"forged payload".to_vec();
         s0.lock().unwrap().inbox.push(legit.to_bytes());
         s0.lock().unwrap().inbox.push(forged.to_bytes());
-        assert_eq!(node.poll(), 2);
-        assert_eq!(node.drain_delivered().len(), 2);
+        // Only the signed event is accepted; the forged one is dropped.
+        assert_eq!(node.poll(), 1);
+        assert_eq!(node.drain_delivered().len(), 1);
+    }
+
+    #[test]
+    fn test_poll_rejects_invalid_signature() {
+        let mut node = RelayNode::new();
+        let (b0, s0) = mock(BackendKind::Reticulum, 2);
+        node.add_backend(Box::new(b0));
+        node.start().unwrap();
+        let keys = nostr::key::Keys::generate();
+        let event = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, "real")
+            .finalize(&keys)
+            .unwrap();
+        let mut json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        json["sig"] = serde_json::Value::String("00".repeat(64));
+        let tampered = serde_json::to_vec(&json).unwrap();
+        let mut env = MeshEnvelope::new(
+            event.id.to_hex(),
+            1,
+            event.pubkey.to_hex(),
+            event.created_at.as_secs(),
+            tampered,
+        );
+        env.hop_count = 0;
+        s0.lock().unwrap().inbox.push(env.to_bytes());
+        assert_eq!(node.poll(), 0, "bad-signature payload must be dropped");
+        assert!(node.drain_delivered().is_empty());
     }
 
     #[test]
@@ -441,5 +557,70 @@ mod tests {
         let mut node = RelayNode::new();
         assert!(node.start().is_err());
         assert!(!node.running());
+    }
+
+    #[test]
+    fn test_recent_payloads_newest_first_capped() {
+        let mut node = RelayNode::new();
+        let (b0, _s0) = mock(BackendKind::Reticulum, 0);
+        node.add_backend(Box::new(b0));
+        node.start().unwrap();
+        let keys = nostr::key::Keys::generate();
+        for i in 0..3 {
+            let event =
+                nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, format!("msg {i}"))
+                    .finalize(&keys)
+                    .unwrap();
+            node.publish(
+                &event.id.to_hex(),
+                1,
+                &event.pubkey.to_hex(),
+                event.created_at.as_secs(),
+                serde_json::to_vec(&event).unwrap(),
+            )
+            .unwrap();
+        }
+        let payloads = node.recent_payloads(2);
+        assert_eq!(payloads.len(), 2);
+        assert!(String::from_utf8_lossy(&payloads[0]).contains("msg 2"));
+        assert!(String::from_utf8_lossy(&payloads[1]).contains("msg 1"));
+    }
+
+    #[test]
+    fn test_new_with_transport_nostr_has_no_backends() {
+        let mut node = RelayNode::new_with_transport(
+            soshal_network_core::transport::TransportMode::Nostr,
+            "pk",
+        );
+        assert!(node.running_backends().is_empty());
+        assert!(node.start().is_err());
+        assert!(!node.running());
+    }
+
+    #[test]
+    fn test_new_with_transport_only_mode_pins_backend() {
+        let mut node = RelayNode::new_with_transport(
+            soshal_network_core::transport::TransportMode::Reticulum,
+            "pk_reticulum_only",
+        );
+        let ok = node.start().unwrap();
+        assert_eq!(ok, 1);
+        assert_eq!(node.running_backends(), vec![BackendKind::Reticulum]);
+        node.stop();
+        assert!(node.running_backends().is_empty());
+    }
+
+    #[test]
+    fn test_new_with_transport_default_runs_reticulum_without_daemons() {
+        // No i2pd/freenet in the test env: Default still starts via the
+        // in-process Reticulum node registry; i2p/freenet backends fail.
+        let mut node = RelayNode::new_with_transport(
+            soshal_network_core::transport::TransportMode::Default,
+            "pk_default",
+        );
+        let ok = node.start().unwrap();
+        assert_eq!(ok, 1);
+        assert_eq!(node.running_backends(), vec![BackendKind::Reticulum]);
+        node.stop();
     }
 }

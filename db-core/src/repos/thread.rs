@@ -77,9 +77,18 @@ impl<'a> GroupThreadRepo<'a> {
         })
     }
 
-    const COLUMNS: &'static str = "t.id, t.group_id, t.title, t.body, t.author, t.created_at, t.is_pinned,
-            (SELECT COUNT(*) FROM group_thread_replies r WHERE r.thread_id = t.id) AS reply_count,
-            (SELECT COUNT(*) FROM group_thread_reactions g WHERE g.thread_id = t.id) AS reaction_count";
+    /// COUNTs pre-aggregated once via grouped subquery joins instead of
+    /// per-row correlated subqueries (a 5000-row popular sort previously ran
+    /// up to 4 correlated COUNTs per row).
+    const FROM_JOINED: &'static str =
+        "t.id, t.group_id, t.title, t.body, t.author, t.created_at, t.is_pinned,
+            COALESCE(rc.c, 0) AS reply_count,
+            COALESCE(gc.c, 0) AS reaction_count
+     FROM group_threads t
+     LEFT JOIN (SELECT thread_id, COUNT(*) c FROM group_thread_replies GROUP BY thread_id) rc
+       ON rc.thread_id = t.id
+     LEFT JOIN (SELECT thread_id, COUNT(*) c FROM group_thread_reactions GROUP BY thread_id) gc
+       ON gc.thread_id = t.id";
 
     pub fn list(
         &self,
@@ -90,17 +99,17 @@ impl<'a> GroupThreadRepo<'a> {
         let order = match sort {
             ThreadSort::Newest => "t.is_pinned DESC, t.created_at DESC",
             // Hot: engagement velocity — (reactions + replies) per hour since
-            // creation. Pinned always floats above the feed.
+            // creation. Pinned always floats above the feed. Uses the same
+            // pre-aggregated counts as the SELECT list.
             ThreadSort::Popular => {
                 "t.is_pinned DESC,
-                 (1.0 * (SELECT COUNT(*) FROM group_thread_replies r WHERE r.thread_id = t.id)
-                      + (SELECT COUNT(*) FROM group_thread_reactions g WHERE g.thread_id = t.id))
+                 (1.0 * COALESCE(rc.c, 0) + COALESCE(gc.c, 0))
                  / MAX((?2 - t.created_at) / 3600.0, 0.1) DESC, t.created_at DESC"
             }
         };
         let sql = format!(
-            "SELECT {} FROM group_threads t WHERE t.group_id = ?1 ORDER BY {} LIMIT 5000",
-            Self::COLUMNS,
+            "SELECT {} WHERE t.group_id = ?1 ORDER BY {} LIMIT 5000",
+            Self::FROM_JOINED,
             order
         );
         if sort == ThreadSort::Popular {
@@ -117,10 +126,7 @@ impl<'a> GroupThreadRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            &format!(
-                "SELECT {} FROM group_threads t WHERE t.id = ?1",
-                Self::COLUMNS
-            ),
+            &format!("SELECT {} WHERE t.id = ?1", Self::FROM_JOINED),
             [thread_id],
             Self::row_from_columns,
         )

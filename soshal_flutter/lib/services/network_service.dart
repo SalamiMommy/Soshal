@@ -130,8 +130,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final dest = RustLib.instance.api
           .crateFfiNetworkI2PStartSession(destination: destination);
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return dest;
     } catch (e, st) {
       setLastError(e, st);
@@ -144,8 +143,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
   Future<bool> stopI2pSession() async {
     try {
       final ok = RustLib.instance.api.crateFfiNetworkI2PStopSession();
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
@@ -203,7 +201,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         headersJson: headersJson,
         body: body,
       );
-      clearLastError();
+      if (clearLastError()) notifyListeners();
       return resp;
     } catch (e, st) {
       setLastError(e, st);
@@ -283,7 +281,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       final json = await RustLib.instance.api
           .crateFfiNetworkNetworkGetMultiBearerStatus(ownPubkey: ownPubkey);
       final map = jsonDecode(json) as Map<String, dynamic>;
-      clearLastError();
+      if (clearLastError()) notifyListeners();
       return map;
     } catch (e, st) {
       setLastError(e, st);
@@ -322,8 +320,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       );
       final Map<String, dynamic> res =
           Map<String, dynamic>.from(jsonDecode(resJson) as Map);
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return res;
     } catch (e, st) {
       setLastError(e, st);
@@ -366,8 +363,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         key: key,
         subscribe: subscribe,
       );
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return json;
     } catch (e, st) {
       setLastError(e, st);
@@ -390,8 +386,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         stateJson: stateJson,
         subscribe: subscribe,
       );
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return json;
     } catch (e, st) {
       setLastError(e, st);
@@ -414,8 +409,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         key: key,
         summaryJson: summaryJson,
       );
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
@@ -429,8 +423,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final ok = RustLib.instance.api
           .crateFfiNetworkI2PConnect(samHost: samHost, samPort: samPort);
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
@@ -453,8 +446,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         sessionId: sessionId,
         destination: destination,
       );
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return dest;
     } catch (e, st) {
       setLastError(e, st);
@@ -473,8 +465,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         samHost: samHost,
         samPort: samPort,
       );
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return dest;
     } catch (e, st) {
       setLastError(e, st);
@@ -497,8 +488,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         sessionId: sessionId,
         destination: destination,
       );
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
@@ -513,8 +503,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final id = await RustLib.instance.api
           .crateFfiNetworkNetworkSubscribe(filterJson: filterJson);
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return id;
     } catch (e, st) {
       setLastError(e, st);
@@ -528,8 +517,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final ok = await RustLib.instance.api
           .crateFfiNetworkNetworkUnsubscribe(subscriptionId: subscriptionId);
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
@@ -544,8 +532,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       final id = await RustLib.instance.api.crateFfiNetworkNetworkPublishEvent(
         eventJson: eventJson,
       );
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return id;
     } catch (e, st) {
       setLastError(e, st);
@@ -559,8 +546,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final json = await RustLib.instance.api
           .crateFfiNetworkNetworkQueryEvents(filterJson: filterJson);
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return json;
     } catch (e, st) {
       setLastError(e, st);
@@ -582,8 +568,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         localRootHex: localRootHex,
         ownPubkey: ownPubkey,
       );
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return result;
     } catch (e, st) {
       setLastError(e, st);
@@ -605,8 +590,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
         expectedWotRoot: expectedWotRoot,
         blacklistedNullifiersJson: blacklistedNullifiersJson,
       );
-      clearLastError();
-      notifyListeners();
+      if (clearLastError()) notifyListeners();
       return ok;
     } catch (e, st) {
       setLastError(e, st);

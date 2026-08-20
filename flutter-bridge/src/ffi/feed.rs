@@ -8,6 +8,8 @@
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 use soshal_db_core::repos::post::PostRepo;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 /// Feed post result (mirrors a DB post row for the Dart layer).
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -108,8 +110,44 @@ fn get_custom_word_filters(db: &soshal_db_core::Database) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Bounded verdict cache for feed moderation.
+///
+/// Post content is immutable after ingest, so the comprehensive check is
+/// recomputed on every page fetch today. Cache keyed by content, invalidated
+/// wholesale when the custom word filter list changes. Bounded: full clear
+/// at the cap (eviction only costs a recompute on the next fetch).
+///
+/// Worst-case cap: 2048 × ~64-byte key ≈ 128 KiB of verdicts.
+const MODERATION_CACHE_CAP: usize = 2048;
+
+struct ModerationCache {
+    entries: HashMap<String, bool>,
+    filters: Vec<String>,
+}
+
+static MODERATION_CACHE: OnceLock<Mutex<ModerationCache>> = OnceLock::new();
+
 fn is_content_clean(content: &str, filters: &[String]) -> bool {
-    soshal_moderation_core::check::check_with_custom_words(content, filters).passed
+    let cache = MODERATION_CACHE.get_or_init(|| {
+        Mutex::new(ModerationCache {
+            entries: HashMap::new(),
+            filters: Vec::new(),
+        })
+    });
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.filters.as_slice() != filters {
+        guard.filters = filters.to_vec();
+        guard.entries.clear();
+    }
+    if let Some(&verdict) = guard.entries.get(content) {
+        return verdict;
+    }
+    let passed = soshal_moderation_core::check::check_with_custom_words(content, filters).passed;
+    if guard.entries.len() >= MODERATION_CACHE_CAP {
+        guard.entries.clear();
+    }
+    guard.entries.insert(content.to_string(), passed);
+    passed
 }
 
 /// Validate note content (length cap, emptiness, and AI moderation policy) before publishing.

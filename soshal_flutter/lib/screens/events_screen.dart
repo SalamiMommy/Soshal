@@ -12,6 +12,7 @@ import '../services/media_service.dart';
 import '../services/permissions_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../utils/safe_url.dart';
 import '../widgets/empty_state.dart';
 
 enum _AudienceMode { all, friends, fof, mine }
@@ -49,10 +50,17 @@ class _EventImage extends StatelessWidget {
         },
       );
     }
+    if (!SafeUrl.isSafeMediaUrl(trimmed)) {
+      return Icon(Icons.event, size: iconSize);
+    }
+    final h = height;
     return Image.network(
       trimmed,
       fit: BoxFit.cover,
-      height: height,
+      height: h,
+      cacheWidth: h == null
+          ? null
+          : (h * MediaQuery.devicePixelRatioOf(context)).round(),
       errorBuilder: (_, __, ___) => Icon(Icons.event, size: iconSize),
     );
   }

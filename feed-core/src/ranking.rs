@@ -47,11 +47,14 @@ pub fn score_post_with_set(
     let recency_factor = 1.0 / (hours_ago + 1.0).log2();
 
     let hashtag_score = if !post_hashtags.is_empty() && !user_hashtags_set.is_empty() {
+        // ASCII tags match via alloc-free case-insensitive scan of the
+        // (lowercased) user set — no per-tag String allocation in the
+        // scoring loop. Non-ASCII falls back to a lowercased lookup.
         let match_count = post_hashtags
             .iter()
             .filter(|t| {
                 if t.is_ascii() {
-                    user_hashtags_set.contains(t.to_ascii_lowercase().as_str())
+                    user_hashtags_set.iter().any(|u| u.eq_ignore_ascii_case(t))
                 } else {
                     user_hashtags_set.contains(t.to_lowercase().as_str())
                 }

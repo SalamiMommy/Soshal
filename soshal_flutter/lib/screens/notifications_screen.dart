@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/notifications_service.dart';
 import '../services/session_service.dart';
+import '../utils/safe_url.dart';
 import '../widgets/empty_state.dart';
 
 /// Notifications screen: all/unread/mentions/reactions/replies/follows.
@@ -61,8 +62,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<SessionService>();
-    final pubkey = session.activePubkey;
+    final session = context.select((SessionService s) => s.activePubkey);
+    final pubkey = session;
+    final isLoading =
+        context.select((NotificationService s) => s.isLoading);
+    final unreadCount =
+        context.select((NotificationService s) => s.unreadCount);
 
     if (pubkey == null) {
       return Scaffold(
@@ -115,20 +120,16 @@ class _NotificationsScreenState extends State<NotificationsScreen>
               }
             },
           ),
-          Consumer<NotificationService>(
-            builder: (context, api, _) {
-              if (api.unreadCount == 0) return const SizedBox.shrink();
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Text(
-                    '${api.unreadCount} unread',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+          if (unreadCount > 0)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  '$unreadCount unread',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-              );
-            },
-          ),
+              ),
+            ),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -147,7 +148,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           ],
         ),
       ),
-      body: context.watch<NotificationService>().isLoading
+      body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(
               controller: _tabController,
@@ -256,10 +257,11 @@ class _NotificationList extends StatelessWidget {
                 },
                 child: ListTile(
                   leading: CircleAvatar(
-                    backgroundImage: n.fromAvatar.isNotEmpty
-                        ? ResizeImage.resizeIfNeeded(
-                            128, 128, NetworkImage(n.fromAvatar))
-                        : null,
+                    backgroundImage: n.fromAvatar.isNotEmpty &&
+                        SafeUrl.isSafeMediaUrl(n.fromAvatar)
+                    ? ResizeImage.resizeIfNeeded(
+                        128, 128, NetworkImage(n.fromAvatar))
+                    : null,
                     child: n.fromName.isNotEmpty ? Text(n.fromName[0]) : null,
                   ),
                   title: Text(

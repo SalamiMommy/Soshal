@@ -155,6 +155,7 @@ pub fn mark_outbox_item_completed(db: &Database, id: &str) -> Result<(), String>
         params![id],
     ))
     .map_err(|e| format!("Failed to update outbox item status: {e}"))?;
+    mark_settled_dirty();
     Ok(())
 }
 
@@ -178,6 +179,9 @@ pub fn mark_outbox_item_failed(
         params![status, retry_count, next_retry_at, id],
     ))
     .map_err(|e| format!("Failed to update outbox item failure: {e}"))?;
+    if status == "failed" {
+        mark_settled_dirty();
+    }
     Ok(())
 }
 
@@ -209,6 +213,21 @@ pub fn summarize_outbox(db: &Database) -> Result<OutboxSummary, String> {
     })
 }
 
+/// Set whenever an outbox row transitions to a settled state (completed /
+/// failed). The engine only runs the (full-table) prune pass after such a
+/// change, instead of every flush tick.
+static SETTLED_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn mark_settled_dirty() {
+    SETTLED_DIRTY.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Takes and clears the settled-dirty flag. Returns true when a settle
+/// happened since the last prune.
+pub fn settled_dirty_take() -> bool {
+    SETTLED_DIRTY.swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Mark many outbox items completed in a single transaction.
 pub fn mark_outbox_items_completed(db: &Database, ids: &[String]) -> Result<(), String> {
     if ids.is_empty() {
@@ -221,6 +240,7 @@ pub fn mark_outbox_items_completed(db: &Database, ids: &[String]) -> Result<(), 
         params![ids_json],
     ))
     .map_err(|e| format!("batch outbox complete: {e}"))?;
+    mark_settled_dirty();
     Ok(())
 }
 

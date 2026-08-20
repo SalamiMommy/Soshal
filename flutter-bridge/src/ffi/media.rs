@@ -66,8 +66,8 @@ pub fn media_decode_image_rgba(
     max_width: Option<u32>,
     max_height: Option<u32>,
 ) -> Result<DecodedImageRgbaDto, String> {
-    let bytes =
-        fs::read(&file_path_or_url).map_err(|e| format!("Failed to read image file: {e}"))?;
+    let resolved = resolve_allowed_path(&file_path_or_url, "image decode")?;
+    let bytes = fs::read(&resolved).map_err(|e| format!("Failed to read image file: {e}"))?;
 
     let frame = soshal_media_core::decoder::decode_to_rgba(&bytes, max_width, max_height)?;
     Ok(DecodedImageRgbaDto {

@@ -11,7 +11,7 @@ use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 
 use soshal_media_core::cas::ChunkStore;
-use soshal_media_core::chunking::ChunkManifest;
+use soshal_media_core::chunking::{ChunkManifest, ChunkRef};
 
 use crate::lan_transport;
 use crate::quic;
@@ -22,6 +22,101 @@ pub const MAX_BLOB_FETCH_BYTES: u64 = 512 * 1024 * 1024;
 
 const QUIC_MAX_CHUNK: usize = 1024 * 1024;
 const QUIC_EXCHANGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// How many chunk bodies to fetch concurrently per batch. Bounds buffered
+/// in-flight bytes to ~8 × QUIC_MAX_CHUNK while overlapping the per-chunk
+/// QUIC round-trip latency instead of serializing every chunk.
+const CONCURRENT_CHUNKS: usize = 8;
+
+/// Pool is created lazily inside a runtime context (quinn needs a reactor).
+static QUIC_POOL: std::sync::OnceLock<
+    std::sync::Mutex<Option<std::sync::Arc<quic::QuicChunkPool>>>,
+> = std::sync::OnceLock::new();
+static SHARED_RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+
+fn chunk_runtime() -> tokio::runtime::Handle {
+    match tokio::runtime::Handle::try_current() {
+        Ok(h) => h,
+        Err(_) => SHARED_RT
+            .get_or_init(|| {
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .worker_threads(2)
+                    .build()
+                    .expect("quic chunk runtime")
+            })
+            .handle()
+            .clone(),
+    }
+}
+
+/// Fetch one chunk body from a peer: QUIC first, TCP fallback. Each result is
+/// BLAKE3-verified against the chunk reference.
+fn fetch_chunk_bytes(
+    peer: LanPeer,
+    key: [u8; 32],
+    my_pubkey: &str,
+    quic_addr: Option<SocketAddr>,
+    chr: ChunkRef,
+) -> Result<Vec<u8>, String> {
+    match &quic_addr {
+        Some(qa) => {
+            let qres = if chr.len == 0 || chr.len > QUIC_MAX_CHUNK {
+                Err("bad chunk request".to_string())
+            } else {
+                let req = crate::lan_transport::LanChunkRequest {
+                    hash: chr.blake3.clone(),
+                    offset: chr.offset as usize,
+                    length: chr.len,
+                    want_manifest: false,
+                };
+                let rt = chunk_runtime();
+                let fetched = rt.block_on(async move {
+                    let pool = {
+                        let guard = QUIC_POOL.get_or_init(|| std::sync::Mutex::new(None));
+                        let mut guard = guard.lock().map_err(|_| "quic pool lock".to_string())?;
+                        if guard.is_none() {
+                            let pool = quic::QuicChunkPool::new()
+                                .map_err(|e| format!("quic pool: {e}"))?;
+                            *guard = Some(std::sync::Arc::new(pool));
+                        }
+                        guard.as_ref().expect("quic pool").clone()
+                    };
+                    let fut = pool.fetch_chunk(*qa, key, my_pubkey, &req);
+                    tokio::time::timeout(QUIC_EXCHANGE_TIMEOUT, fut)
+                        .await
+                        .map_err(|_| "quic exchange timed out".to_string())
+                        .and_then(|r| r)
+                });
+                match fetched {
+                    Ok(data) if blake3::hash(&data).to_hex().as_str() == chr.blake3 => Ok(data),
+                    Ok(_) => Err("chunk hash mismatch after transfer".to_string()),
+                    Err(e) => Err(e),
+                }
+            };
+            qres.map_err(|e| format!("quic: {e}")).or_else(|e| {
+                lan_transport::fetch_verified_chunk(
+                    peer.tcp_addr(),
+                    key,
+                    my_pubkey,
+                    &chr.blake3,
+                    chr.offset as usize,
+                    chr.len,
+                )
+                .map_err(|te| format!("{e}; tcp: {te}"))
+            })
+        }
+        None => lan_transport::fetch_verified_chunk(
+            peer.tcp_addr(),
+            key,
+            my_pubkey,
+            &chr.blake3,
+            chr.offset as usize,
+            chr.len,
+        )
+        .map_err(|e| format!("tcp: {e}")),
+    }
+}
 
 /// A LAN peer that can serve chunks: TCP port always known, QUIC port only
 /// when the peer advertises it.
@@ -85,108 +180,54 @@ pub fn fetch_blob_from_peer(
     }
 
     // 2) Chunk bodies: QUIC preferred, TCP fallback, each BLAKE3-verified.
-    // Pool is created lazily inside a runtime context (quinn needs a reactor).
-    static QUIC_POOL: std::sync::OnceLock<
-        std::sync::Mutex<Option<std::sync::Arc<quic::QuicChunkPool>>>,
-    > = std::sync::OnceLock::new();
-    let quic_addr = peer.quic_addr();
-    static SHARED_RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
-    let rt = match tokio::runtime::Handle::try_current() {
-        Ok(h) => h,
-        Err(_) => SHARED_RT
-            .get_or_init(|| {
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .worker_threads(2)
-                    .build()
-                    .expect("quic chunk runtime")
-            })
-            .handle()
-            .clone(),
-    };
+    // Fetched in bounded parallel batches so per-chunk round-trip latency
+    // overlaps instead of serializing the whole blob.
     let absorbed = ChunkStore::new(ChunkStore::default_root());
     let result = (|| -> Result<u64, String> {
         let mut file =
             std::fs::File::create(out_path).map_err(|e| format!("write {out_path}: {e}"))?;
         let mut hasher = blake3::Hasher::new();
         let mut written: u64 = 0;
-        for chr in &manifest.chunks {
-            let bytes = match &quic_addr {
-                Some(qa) => {
-                    let qres = if chr.len == 0 || chr.len > QUIC_MAX_CHUNK {
-                        Err("bad chunk request".to_string())
-                    } else {
-                        let req = crate::lan_transport::LanChunkRequest {
-                            hash: chr.blake3.clone(),
-                            offset: chr.offset as usize,
-                            length: chr.len,
-                            want_manifest: false,
-                        };
-                        let fetched = rt.block_on(async move {
-                            let pool = {
-                                let guard = QUIC_POOL.get_or_init(|| std::sync::Mutex::new(None));
-                                let mut guard =
-                                    guard.lock().map_err(|_| "quic pool lock".to_string())?;
-                                if guard.is_none() {
-                                    let pool = quic::QuicChunkPool::new()
-                                        .map_err(|e| format!("quic pool: {e}"))?;
-                                    *guard = Some(std::sync::Arc::new(pool));
-                                }
-                                guard.as_ref().expect("quic pool").clone()
-                            };
-                            let fut = pool.fetch_chunk(*qa, key, my_pubkey, &req);
-                            tokio::time::timeout(QUIC_EXCHANGE_TIMEOUT, fut)
-                                .await
-                                .map_err(|_| "quic exchange timed out".to_string())
-                                .and_then(|r| r)
-                        });
-                        match fetched {
-                            Ok(data) if blake3::hash(&data).to_hex().as_str() == chr.blake3 => {
-                                Ok(data)
-                            }
-                            Ok(_) => Err("chunk hash mismatch after transfer".to_string()),
-                            Err(e) => Err(e),
-                        }
-                    };
-                    qres.map_err(|e| format!("quic: {e}")).or_else(|e| {
-                        lan_transport::fetch_verified_chunk(
-                            peer.tcp_addr(),
-                            key,
-                            my_pubkey,
-                            &chr.blake3,
-                            chr.offset as usize,
-                            chr.len,
-                        )
-                        .map_err(|te| format!("{e}; tcp: {te}"))
-                    })
+        let quic_addr = peer.quic_addr();
+        for (batch_start, batch) in manifest.chunks.chunks(CONCURRENT_CHUNKS).enumerate() {
+            let start = batch_start * CONCURRENT_CHUNKS;
+            let batch_results: Vec<Result<Vec<u8>, String>> = std::thread::scope(|s| {
+                let mut handles = Vec::with_capacity(batch.len());
+                for chr in batch {
+                    handles.push(s.spawn(move || {
+                        fetch_chunk_bytes(*peer, key, my_pubkey, quic_addr, chr.clone())
+                    }));
                 }
-                None => lan_transport::fetch_verified_chunk(
-                    peer.tcp_addr(),
-                    key,
-                    my_pubkey,
-                    &chr.blake3,
-                    chr.offset as usize,
-                    chr.len,
-                )
-                .map_err(|e| format!("tcp: {e}")),
-            }?;
-            if bytes.len() != chr.len {
-                return Err(format!(
-                    "chunk {} short ({} != {})",
-                    chr.blake3,
-                    bytes.len(),
-                    chr.len
-                ));
+                handles
+                    .into_iter()
+                    .map(|h| {
+                        h.join()
+                            .unwrap_or_else(|_| Err("chunk thread panic".to_string()))
+                    })
+                    .collect()
+            });
+            for (bi, res) in batch_results.into_iter().enumerate() {
+                let chr = &manifest.chunks[start + bi];
+                let bytes = res?;
+                if bytes.len() != chr.len {
+                    return Err(format!(
+                        "chunk {} short ({} != {})",
+                        chr.blake3,
+                        bytes.len(),
+                        chr.len
+                    ));
+                }
+                // Dedupe is normal (same clip via two peers / earlier run):
+                // only the first writer stores; the whole-blob BLAKE3 check
+                // still guards us.
+                if !absorbed.put_trusted(&chr.blake3, &bytes) && !absorbed.contains(&chr.blake3) {
+                    return Err(format!("chunk {} store failed", chr.blake3));
+                }
+                file.write_all(&bytes)
+                    .map_err(|e| format!("write {out_path}: {e}"))?;
+                hasher.update(&bytes);
+                written += bytes.len() as u64;
             }
-            // Dedupe is normal (same clip via two peers / earlier run): only the
-            // first writer stores; the whole-blob BLAKE3 check still guards us.
-            if !absorbed.put_trusted(&chr.blake3, &bytes) && !absorbed.contains(&chr.blake3) {
-                return Err(format!("chunk {} store failed", chr.blake3));
-            }
-            file.write_all(&bytes)
-                .map_err(|e| format!("write {out_path}: {e}"))?;
-            hasher.update(&bytes);
-            written += bytes.len() as u64;
         }
 
         // 3) Whole-blob verification + CAS absorb + file write.

@@ -73,6 +73,13 @@ fn dns_rebinding_domains() -> &'static [Regex] {
                 compile_re(r"(?i)\.customer\.your-server\.de$"),
                 compile_re(r"(?i)\.dns\.to$"),
                 compile_re(r"(?i)\.traefik\.me$"),
+                // Bare wildcard-DNS domains (no leading dot) resolve to
+                // loopback for every subdomain — block the apex too.
+                compile_re(r"(?i)^nip\.io$"),
+                compile_re(r"(?i)^xip\.io$"),
+                compile_re(r"(?i)^sslip\.io$"),
+                compile_re(r"(?i)^localtest\.me$"),
+                compile_re(r"(?i)^loca\.lt$"),
             ]
         })
         .as_slice()
@@ -114,6 +121,11 @@ pub fn is_valid_media_url(url: &str) -> bool {
         _ => return false,
     }
     let hostname = parsed.host_str().unwrap_or("");
+    // Embedded credentials (`http://user:pass@host`) must not be accepted:
+    // they would be stored and forwarded to the host unauthenticated.
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return false;
+    }
     if is_private_ip_str(hostname) || is_private_ipv6_str(hostname) {
         return false;
     }
@@ -163,6 +175,7 @@ fn is_private_ipv4(addr: std::net::Ipv4Addr) -> bool {
         || o[0] == 172 && (16..=31).contains(&o[1])
         || o[0] == 192 && o[1] == 168
         || o[0] == 100 && (64..=127).contains(&o[1])
+        || o[0] >= 240 // reserved (240.0.0.0/4) and broadcast (255.255.255.255)
         || addr.is_multicast()
 }
 

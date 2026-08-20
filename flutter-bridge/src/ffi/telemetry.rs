@@ -19,7 +19,7 @@ fn lock() -> Result<std::sync::MutexGuard<'static, Option<Recorder>>, String> {
 /// ring space. Safe to call repeatedly; reopens the same file.
 #[frb(sync, serialize)]
 pub fn telemetry_init(path: String, capacity_mb: u32) -> Result<(), String> {
-    let capacity = (capacity_mb.max(1) as usize) * 1024 * 1024;
+    let capacity = (capacity_mb.clamp(1, 4096) as usize) * 1024 * 1024;
     let recorder = Recorder::init(Path::new(&path), capacity)?;
     *lock()? = Some(recorder);
     Ok(())

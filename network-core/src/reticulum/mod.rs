@@ -18,4 +18,7 @@ pub use packet::{ReticulumPacket, ReticulumPacketType};
 pub use routing::{PathEntry, PathTable};
 pub use slip::{slip_decode, slip_encode};
 pub use tcp_interface::{TcpClientInterface, TcpInterfaceConfig, TcpServerInterface};
-pub use transport::{node_for, ReticulumNode, ReticulumNodeStatus};
+pub use transport::{
+    any_node_running, any_node_status, node_for, prune_first_node, ReticulumNode,
+    ReticulumNodeStatus,
+};

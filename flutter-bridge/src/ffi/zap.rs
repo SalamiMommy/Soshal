@@ -216,7 +216,10 @@ pub async fn zap_fetch_invoice(
         .get("params")
         .and_then(|p| p.get("invoice"))
         .and_then(serde_json::Value::as_str)
-        .filter(|i| soshal_zap_core::parse_msats_from_bolt11(i).is_ok())
+        .filter(|i| {
+            soshal_zap_core::parse_msats_from_bolt11(i).is_ok()
+                && soshal_zap_core::bolt11_checksum_valid(i)
+        })
         .ok_or("NWC response missing valid bolt11 invoice")?;
     if let Ok(mut g) = PENDING_PAYMENT.lock() {
         *g = Some((invoice.to_string(), amount_msat));

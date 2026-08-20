@@ -92,29 +92,25 @@ impl EigenTrustEngine {
         let pre_trusted_set: HashSet<&str> =
             self.pre_trusted_peers.iter().map(|s| s.as_str()).collect();
 
-        // 1. Build normalized local trust matrix C (n x n)
-        let mut c = vec![vec![0.0; n]; n];
-
-        for (i, row) in c.iter_mut().enumerate() {
-            let mut sum_s_ij = 0.0;
-            for (j, cell) in row.iter_mut().enumerate() {
-                if i == j {
-                    continue;
-                }
-                if let Some(&trust) = local_idx.get(&(i, j)) {
-                    *cell = trust;
-                    sum_s_ij += trust;
-                }
+        // 1. Build normalized sparse trust rows (only rated (i, j) pairs —
+        //    dense n×n matrix + full scan per iteration is O(n²·iters)).
+        let mut rows: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+        for ((i, j), trust) in &local_idx {
+            if *trust > 0.0 {
+                rows[*i].push((*j, *trust));
             }
+        }
+        for row in rows.iter_mut() {
+            let sum_s_ij: f64 = row.iter().map(|(_, v)| *v).sum();
             if sum_s_ij > 0.0 {
-                for v in row.iter_mut() {
+                for (_, v) in row.iter_mut() {
                     *v /= sum_s_ij;
                 }
             } else {
                 // If peer i has no local trust ratings, fallback to pre-trusted distribution
-                for (j, cell) in row.iter_mut().enumerate() {
-                    if pre_trusted_set.contains(peers[j].as_str()) {
-                        *cell = 1.0 / (self.pre_trusted_peers.len() as f64).max(1.0);
+                for (j, pj) in peers.iter().enumerate() {
+                    if pre_trusted_set.contains(pj.as_str()) {
+                        row.push((j, 1.0 / (self.pre_trusted_peers.len() as f64).max(1.0)));
                     }
                 }
             }
@@ -144,12 +140,17 @@ impl EigenTrustEngine {
             let mut t_next = vec![0.0; n];
 
             // t_next = (1 - alpha) * C^T * t + alpha * p
-            for j in 0..n {
-                let mut c_t_j = 0.0;
-                for i in 0..n {
-                    c_t_j += c[i][j] * t[i];
+            for (i, row) in rows.iter().enumerate() {
+                let ti = t[i];
+                if ti == 0.0 {
+                    continue;
                 }
-                t_next[j] = (1.0 - EIGENTRUST_ALPHA) * c_t_j + EIGENTRUST_ALPHA * p[j];
+                for &(j, v) in row {
+                    t_next[j] += v * ti;
+                }
+            }
+            for j in 0..n {
+                t_next[j] = (1.0 - EIGENTRUST_ALPHA) * t_next[j] + EIGENTRUST_ALPHA * p[j];
             }
 
             // Check convergence diff

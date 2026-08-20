@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/feed_service.dart';
 import 'package:soshal_flutter/services/messaging_service.dart';
+import 'package:soshal_flutter/services/p2p_service.dart';
 import 'package:soshal_flutter/services/sync_service.dart';
 
 import 'helpers/test_env.dart';
@@ -54,7 +55,7 @@ void main() {
       final sync = SyncService();
       final feed = FeedService();
       final messaging = MessagingService();
-      sync.attach(feed: feed, messaging: messaging);
+      sync.attach(feed: feed, messaging: messaging, p2p: P2pService());
 
       final controller = StreamController<String>.broadcast();
       api.stub('crateFfiSyncSyncEvents', (_) => controller.stream);

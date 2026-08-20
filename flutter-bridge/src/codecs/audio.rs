@@ -322,6 +322,7 @@ fn capture_loop() {
             if read <= 0 {
                 continue;
             }
+            let read = read.min(CHUNK_FRAMES);
             let bytes: &[u8] =
                 std::slice::from_raw_parts(chunk.as_ptr() as *const u8, (read * 2) as usize);
             let idx = AMediaCodec_dequeueInputBuffer(codec, 1000);

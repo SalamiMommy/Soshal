@@ -20,6 +20,27 @@ impl<'a> UserRepo<'a> {
         )
     }
 
+    /// Which of the given pubkeys have a stored user row. One indexed query
+    /// instead of N `get_by_pubkey` calls (mDNS peer drain runs this per
+    /// drain tick).
+    pub fn existing_pubkeys(
+        &self,
+        pubkeys: &[String],
+    ) -> Result<std::collections::HashSet<String>, crate::error::DbError> {
+        if pubkeys.is_empty() {
+            return Ok(std::collections::HashSet::new());
+        }
+        let conn = self.db.conn()?;
+        let json = serde_json::to_string(pubkeys).unwrap_or_else(|_| "[]".to_string());
+        let found = crate::query::query(
+            &conn,
+            "SELECT pubkey FROM users WHERE pubkey IN (SELECT value FROM json_each(?1))",
+            params![json.as_str()],
+            |row| row.get::<String>(0),
+        )?;
+        Ok(found.into_iter().collect())
+    }
+
     pub async fn get_by_pubkey_in(
         &self,
         tx: &libsql::Transaction,

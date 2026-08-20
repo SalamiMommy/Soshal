@@ -295,6 +295,7 @@ pub fn marketplace_create_listing(
     images_json: String,
     shipping_available: bool,
 ) -> Result<String, String> {
+    super::signer::require_identity(&seller_pubkey)?;
     if title.trim().is_empty() || title.len() > 500 {
         return Err("title must be between 1 and 500 chars".to_string()).into();
     }
@@ -805,6 +806,7 @@ pub fn marketplace_poll_create(
     options_json: String,
     expires_in_hours: i64,
 ) -> Result<String, String> {
+    super::signer::require_identity(&user_pubkey)?;
     let options: Vec<String> =
         serde_json::from_str(&options_json).map_err(|e| format!("invalid options JSON: {e}"))?;
     if options.len() < 2 {
@@ -1124,7 +1126,7 @@ mod tests {
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
 
         let signed = marketplace_create_listing(
-            "pkA".to_string(),
+            pk_hex.clone(),
             "widget".to_string(),
             "a widget".to_string(),
             1000,
@@ -1142,14 +1144,17 @@ mod tests {
         let event_id = ev["id"].as_str().unwrap();
 
         let info = marketplace_get_listing(event_id.to_string()).unwrap();
-        assert!(info.contains("\"seller_pubkey\":\"pkA\""), "{info}");
+        assert!(
+            info.contains(&format!("\"seller_pubkey\":\"{pk_hex}\"")),
+            "{info}"
+        );
         assert!(info.contains("widget"));
         assert!(info.contains("\"shipping_available\":true"), "{info}");
         assert!(info.contains("\"escrow_enabled\":true"), "{info}");
         assert!(info.contains("\"category\":\"tools\""), "{info}");
 
         assert!(marketplace_create_listing(
-            "pkA".to_string(),
+            pk_hex.clone(),
             "w".to_string(),
             "d".to_string(),
             0,
@@ -1162,7 +1167,7 @@ mod tests {
         .unwrap_err()
         .contains("price must be positive"));
         assert!(marketplace_create_listing(
-            "pkA".to_string(),
+            pk_hex.clone(),
             "w".to_string(),
             "d".to_string(),
             10,
@@ -1176,7 +1181,7 @@ mod tests {
         .contains("invalid images JSON"));
         let many = format!("[{}]", vec!["\"https://x/i.png\""; 13].join(","));
         assert!(marketplace_create_listing(
-            "pkA".to_string(),
+            pk_hex.clone(),
             "w".to_string(),
             "d".to_string(),
             10,
@@ -1191,7 +1196,7 @@ mod tests {
 
         assert!(marketplace_update_listing(
             event_id.to_string(),
-            "pkA".to_string(),
+            pk_hex.clone(),
             "widget 2".to_string(),
             "new desc".to_string(),
             2000,
@@ -1368,26 +1373,26 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = db::tmp_db("polls", "market");
-        assert!(marketplace_poll_create(
-            "pk1".to_string(),
-            "q?".to_string(),
-            "[\"a\"]".to_string(),
-            24,
-        )
-        .unwrap_err()
-        .contains("at least 2 options"));
-        assert!(marketplace_poll_create(
-            "pk1".to_string(),
-            "q?".to_string(),
-            "nope".to_string(),
-            24,
-        )
-        .unwrap_err()
-        .contains("invalid options JSON"));
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        assert!(
+            marketplace_poll_create(pk.clone(), "q?".to_string(), "[\"a\"]".to_string(), 24,)
+                .unwrap_err()
+                .contains("at least 2 options")
+        );
+        assert!(
+            marketplace_poll_create(pk.clone(), "q?".to_string(), "nope".to_string(), 24,)
+                .unwrap_err()
+                .contains("invalid options JSON")
+        );
 
         let created = marketplace_poll_create(
-            "pk1".to_string(),
+            pk.clone(),
             "best?".to_string(),
             "[\"a\",\"b\",\"c\"]".to_string(),
             24,
@@ -1408,7 +1413,7 @@ mod tests {
         assert!(marketplace_poll_close(poll_id.clone(), "other".to_string())
             .unwrap_err()
             .contains("not poll owner"));
-        assert!(marketplace_poll_close(poll_id, "pk1".to_string()).unwrap());
+        assert!(marketplace_poll_close(poll_id, pk.clone()).unwrap());
         assert!(marketplace_poll_get("nope".to_string())
             .unwrap_err()
             .contains("poll not found"));
@@ -1604,11 +1609,17 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _p = db::tmp_db("mkt_poll", "mk");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
 
         // Negative expires_in_hours -> expires_at in the past.
         let created = marketplace_poll_create(
-            "pk1".to_string(),
+            pk.clone(),
             "q?".to_string(),
             "[\"a\",\"b\"]".to_string(),
             -24,
@@ -1714,11 +1725,12 @@ mod tests {
         assert!(err.contains("signer locked"), "{err}");
 
         let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
 
         let long_title = "x".repeat(501);
         assert!(marketplace_create_listing(
-            "pkA".to_string(),
+            pk.clone(),
             long_title,
             "d".to_string(),
             1000,
@@ -1733,7 +1745,7 @@ mod tests {
 
         // Empty currency -> "sats"; shipping=false -> null geohash.
         let signed = marketplace_create_listing(
-            "pkA".to_string(),
+            pk.clone(),
             "widget".to_string(),
             "d".to_string(),
             1000,

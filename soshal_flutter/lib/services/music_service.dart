@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/blob_resolver.dart';
+import '../utils/safe_url.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
@@ -203,7 +204,7 @@ Future<String?> resolveTrackPlaybackUrl(
   final url = track.audioUrl;
   if (url.isNotEmpty &&
       !url.startsWith('blob://') &&
-      (url.startsWith('http://') || url.startsWith('https://'))) {
+      SafeUrl.isSafeMediaUrl(url)) {
     return url;
   }
   return null;

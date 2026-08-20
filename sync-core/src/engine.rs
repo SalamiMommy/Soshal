@@ -12,7 +12,7 @@ use nostr::types::Timestamp;
 use nostr_sdk::client::Client;
 use nostr_sdk::prelude::*;
 use soshal_db_core::Database;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -117,8 +117,12 @@ async fn replay_outbox(db: &Database, client: &Client) {
     if !completed.is_empty() {
         let _ = crate::outbox::mark_outbox_items_completed(db, &completed);
     }
-    // Bounded queue growth: keep the newest 500 settled rows per pass.
-    let _ = crate::outbox::prune_outbox_settled(db, 500);
+    // Bounded queue growth: prune only when something settled since the last
+    // pass (the prune is a full-table DELETE + subquery — skipping it when
+    // nothing changed keeps idle flush ticks cheap).
+    if crate::outbox::settled_dirty_take() {
+        let _ = crate::outbox::prune_outbox_settled(db, 500);
+    }
 }
 
 /// Exponential retry delay (seconds) for outbox failures, capped at 256 s.
@@ -262,6 +266,14 @@ pub async fn engine_loop_with_client(
 
     let mut batch: Vec<Event> = Vec::with_capacity(64);
 
+    // Restart-overlap dedup: subscriptions resume at `watermark - OVERLAP`,
+    // so events near the boundary are re-fetched and re-ingested once on
+    // start. Track recently-seen event ids (FIFO-bounded) and skip them —
+    // re-ingest is idempotent but re-parses + re-hashes every duplicate.
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen_order: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    const SEEN_CAP: usize = 8192;
+
     while !stop.load(Ordering::Relaxed) {
         let mut idle = false;
         let poll = if idle_ticks >= IDLE_BACKOFF_AFTER {
@@ -271,7 +283,17 @@ pub async fn engine_loop_with_client(
         };
         match tokio::time::timeout(poll, stream.next()).await {
             Ok(Some(ClientNotification::Event { event, .. })) => {
-                batch.push(*event);
+                let id = event.id.to_hex();
+                if !seen.contains(&id) {
+                    if seen_order.len() >= SEEN_CAP {
+                        if let Some(oldest) = seen_order.pop_front() {
+                            seen.remove(&oldest);
+                        }
+                    }
+                    seen.insert(id.clone());
+                    seen_order.push_back(id);
+                    batch.push(*event);
+                }
             }
             Ok(Some(ClientNotification::Message { .. }))
             | Ok(Some(ClientNotification::Shutdown)) => {}

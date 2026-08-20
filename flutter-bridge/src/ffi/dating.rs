@@ -348,6 +348,7 @@ pub fn dating_create_profile(
     images_json: String,
     interests_json: String,
 ) -> Result<String, String> {
+    super::signer::require_identity(&user_pubkey)?;
     if age <= 0 || age > 120 {
         return Err("age must be 1..=120".to_string()).into();
     }
@@ -574,6 +575,7 @@ pub fn dating_delete_profile(user_pubkey: String) -> Result<bool, String> {
 }
 
 fn react(user_pubkey: &str, target_event_id: &str, content: &str) -> Result<bool, String> {
+    super::signer::require_identity(user_pubkey)?;
     if target_event_id.len() != 64 {
         return Err("invalid profile event id".to_string());
     }
@@ -634,6 +636,7 @@ pub fn dating_superlike(user_pubkey: String, profile_id: String) -> Result<bool,
 /// published to relays.
 #[frb(sync, serialize)]
 pub fn dating_pass(user_pubkey: String, profile_id: String) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     if profile_id.len() != 64 {
         return Err("invalid profile event id".to_string()).into();
     }
@@ -960,6 +963,7 @@ pub fn dating_get_stats(user_pubkey: String) -> Result<String, String> {
 /// `blocks` table).
 #[frb(sync, serialize)]
 pub fn dating_block_profile(user_pubkey: String, target_pubkey: String) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     let row = soshal_db_core::repos::block::BlockRow {
         pubkey: user_pubkey,
         blocked_pubkey: target_pubkey,
@@ -1559,7 +1563,11 @@ mod tests {
     #[test]
     fn test_stats_block_report() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_stats", "dt");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let insert_post = |id: &str, pubkey: &str, images: &str, ts: i64| {
             super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
@@ -1572,25 +1580,19 @@ mod tests {
                  VALUES ('{id}','{event_id}','{pubkey}','{content}',{ts},7)"
             ))
         };
-        assert!(insert_post(
-            "own1",
-            "me",
-            r#"["https://x/a.png","https://x/b.png"]"#,
-            400
-        )
-        .is_ok());
+        assert!(insert_post("own1", &me, r#"["https://x/a.png","https://x/b.png"]"#, 400).is_ok());
         assert!(insert_post("la1", "likera", "[]", 300).is_ok());
         assert!(insert_react("r1", "own1", "likera", "+", 300).is_ok());
         assert!(insert_react("r2", "own1", "likerb", "+", 200).is_ok());
         assert!(insert_react("r3", "own1", "likerc", "super", 100).is_ok());
-        assert!(insert_react("r4", "la1", "me", "+", 250).is_ok());
+        assert!(insert_react("r4", "la1", &me, "+", 250).is_ok());
         assert!(super::super::db::db_execute_raw_test(
             "INSERT INTO post_views (pubkey, post_id, seen_at) VALUES ('v1','own1',300),('v2','own1',200)"
                 .to_string()
         )
         .is_ok());
 
-        let stats = dating_get_stats("me".to_string()).unwrap();
+        let stats = dating_get_stats(me.clone()).unwrap();
         let sv: serde_json::Value = serde_json::from_str(&stats).unwrap();
         assert_eq!(sv["likes_received"], 2);
         assert_eq!(sv["superlike_received"], 1);
@@ -1599,22 +1601,20 @@ mod tests {
         assert_eq!(sv["matches"], 1);
         assert_eq!(sv["profile_complete"], true);
 
-        assert!(dating_block_profile("me".to_string(), "badguy".to_string()).unwrap());
-        let blocks = super::super::db::db_query_raw_test(
-            "SELECT blocked_pubkey FROM blocks WHERE pubkey = 'me'".to_string(),
-        )
+        assert!(dating_block_profile(me.clone(), "badguy".to_string()).unwrap());
+        let blocks = super::super::db::db_query_raw_test(format!(
+            "SELECT blocked_pubkey FROM blocks WHERE pubkey = '{me}'"
+        ))
         .unwrap();
         assert!(blocks.contains("badguy"), "{blocks}");
-        assert!(dating_unblock_profile("me".to_string(), "badguy".to_string()).unwrap());
-        let blocks2 = super::super::db::db_query_raw_test(
-            "SELECT COUNT(*) AS c FROM blocks WHERE pubkey = 'me'".to_string(),
-        )
+        assert!(dating_unblock_profile(me.clone(), "badguy".to_string()).unwrap());
+        let blocks2 = super::super::db::db_query_raw_test(format!(
+            "SELECT COUNT(*) AS c FROM blocks WHERE pubkey = '{me}'"
+        ))
         .unwrap();
         assert!(blocks2.contains("\"c\":0"), "{blocks2}");
 
-        assert!(
-            dating_report_profile("me".to_string(), "badguy".to_string(), "x".repeat(600)).unwrap()
-        );
+        assert!(dating_report_profile(me.clone(), "badguy".to_string(), "x".repeat(600)).unwrap());
         let reports = super::super::db::db_query_raw_test(
             "SELECT reason, tags FROM spam_reports WHERE target_pubkey = 'badguy'".to_string(),
         )

@@ -444,6 +444,56 @@ pub fn node_for(pubkey: &str) -> Result<Arc<Mutex<ReticulumNode>>, String> {
     Ok(node)
 }
 
+/// Whether any registered node is running. Drives transport resolution
+/// (a node exists for a pubkey once `node_for` is called; `running` flips
+/// false only on stop).
+pub fn any_node_running() -> bool {
+    let Some(map) = NODES.get() else {
+        return false;
+    };
+    let guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    guard.values().any(|node| {
+        node.lock()
+            .map(|n| *n.running.lock().unwrap_or_else(|e| e.into_inner()))
+            .unwrap_or(false)
+    })
+}
+
+/// Status of the first running registered node (used by the bridge status
+/// surface; `None` when no node is running).
+pub fn any_node_status() -> Option<ReticulumNodeStatus> {
+    let map = NODES.get()?;
+    let guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    for node in guard.values() {
+        if let Ok(n) = node.lock() {
+            if *n.running.lock().unwrap_or_else(|e| e.into_inner()) {
+                return Some(n.get_status());
+            }
+        }
+    }
+    None
+}
+
+/// Prunes stale links (or expired path entries when `now_secs` is set) on
+/// the first running registered node; `None` when none is running.
+pub fn prune_first_node(now_secs: Option<u64>) -> Option<usize> {
+    let map = NODES.get()?;
+    let guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    for node in guard.values() {
+        if let Ok(n) = node.lock() {
+            if !*n.running.lock().unwrap_or_else(|e| e.into_inner()) {
+                continue;
+            }
+            if let Some(now) = now_secs {
+                let mut table = n.path_table.lock().unwrap_or_else(|e| e.into_inner());
+                return Some(table.prune_expired(now));
+            }
+            return Some(n.link_manager.prune_stale_links());
+        }
+    }
+    None
+}
+
 /// Clears the node registry and terminates all background transport threads and interfaces.
 pub fn reset_nodes() {
     let map = NODES.get_or_init(|| Mutex::new(HashMap::new()));
@@ -491,6 +541,18 @@ mod tests {
         let b = node_for("pk_b").unwrap();
         assert!(Arc::ptr_eq(&a1, &a2));
         assert!(!Arc::ptr_eq(&a1, &b));
+        reset_nodes();
+    }
+
+    #[test]
+    fn test_any_node_running_tracks_registry() {
+        let _g = TRANSPORT_TEST_LOCK.lock().unwrap();
+        reset_nodes();
+        assert!(!any_node_running());
+        let node = node_for("pk_run").unwrap();
+        assert!(any_node_running());
+        node.lock().unwrap().stop();
+        assert!(!any_node_running());
         reset_nodes();
     }
 

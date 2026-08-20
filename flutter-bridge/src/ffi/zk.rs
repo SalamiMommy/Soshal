@@ -82,7 +82,9 @@ mod tests {
 
     #[test]
     fn apply_rollup_valid_tampered_and_garbage() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let path = tmp_db_path("apply");
         let valid_json = serde_json::to_string(&valid_rollup("a", 7)).unwrap();
         assert!(zk_apply_rollup(path.clone(), valid_json).unwrap());

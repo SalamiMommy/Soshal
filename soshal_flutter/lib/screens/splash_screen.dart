@@ -61,10 +61,14 @@ class _SplashScreenState extends State<SplashScreen> {
           return;
         }
         // Persistence: a session with no loaded keys auto-unlocks from the
-        // OS keychain when no PIN is configured. PIN users get the lock
-        // screen first; the signer unlocks after PIN verification. Recovery
-        // phrase is the last resort when neither is available.
-        if (signer.locked && !shell.hasPin) {
+        // OS keychain when no PIN is configured and keychain unlock is
+        // enabled. PIN users get the lock screen first; the signer unlocks
+        // after PIN verification. Recovery phrase is the last resort when
+        // neither is available.
+        final keychainUnlockEnabled =
+            context.read<SettingsService>().getSetting('keychain_unlock_enabled') ==
+                'true';
+        if (signer.locked && !shell.hasPin && keychainUnlockEnabled) {
           final activePubkey = sessionService.activePubkey;
           if (activePubkey != null) {
             try {

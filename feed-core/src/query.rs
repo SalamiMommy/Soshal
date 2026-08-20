@@ -5,6 +5,23 @@ use std::collections::HashMap;
 
 use soshal_nostr_core::models::NostrEvent;
 
+/// True for local CAS blob references (`blob://<64hex>`, `n<64hex>`, or a
+/// bare 64-hex hash) that renderers resolve through the chunk store instead
+/// of fetching over HTTP.
+fn is_blob_ref(s: &str) -> bool {
+    if let Some(rest) = s.strip_prefix("blob://") {
+        return is_hex64(rest);
+    }
+    if let Some(rest) = s.strip_prefix('n') {
+        return is_hex64(rest);
+    }
+    is_hex64(s)
+}
+
+fn is_hex64(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 /// Maps a timeline event to `{id, pubkey, content, created_at}`.
 pub fn timeline_entry_from_event(ev: &NostrEvent) -> serde_json::Value {
     serde_json::json!({
@@ -93,6 +110,14 @@ fn parse_media_json(tags_json: &str) -> Option<String> {
             return None;
         }
         let url = tag[2].clone();
+        let url = if url.is_empty()
+            || is_blob_ref(&url)
+            || soshal_common_core::url::is_valid_media_url(&url)
+        {
+            url
+        } else {
+            String::new()
+        };
         let blob_hash = tag[3].clone();
         if blob_hash.len() != 64 || !blob_hash.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
@@ -197,4 +222,40 @@ pub fn aggregate_reply_map(events: &[NostrEvent]) -> HashMap<String, u64> {
         }
     }
     map
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn media_url_sanitized_at_parse() {
+        let bad = r#"[["media","image","http://192.168.1.1/x.png","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","123"]]"#;
+        let parsed = parse_media_json(bad).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&parsed).unwrap();
+        assert_eq!(v["url"], "", "private-IP media url must be blanked");
+
+        let good = r#"[["media","image","https://example.com/x.png","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","123"]]"#;
+        let parsed = parse_media_json(good).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&parsed).unwrap();
+        assert_eq!(v["url"], "https://example.com/x.png");
+
+        let blob = r#"[["media","image","blob://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","123"]]"#;
+        let parsed = parse_media_json(blob).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&parsed).unwrap();
+        assert_eq!(
+            v["url"], "blob://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "blob refs must survive"
+        );
+    }
+
+    #[test]
+    fn blob_ref_detection() {
+        let h = "a".repeat(64);
+        assert!(is_blob_ref(&format!("blob://{h}")));
+        assert!(is_blob_ref(&format!("n{h}")));
+        assert!(is_blob_ref(&h));
+        assert!(!is_blob_ref("https://example.com/a.png"));
+        assert!(!is_blob_ref(&"a".repeat(63)));
+    }
 }

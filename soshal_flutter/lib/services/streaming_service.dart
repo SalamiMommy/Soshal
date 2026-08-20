@@ -424,8 +424,7 @@ class StreamingService extends ChangeNotifier
       final frames = (parsed['groups'] as List<dynamic>? ?? [])
           .map((g) => _hexToBytes(g as String))
           .toList();
-      clearLastError();
-      notifyDeferred();
+      if (clearLastError()) notifyDeferred();
       return frames.map(decodeMoqGroup).toList();
     } catch (e, st) {
       setLastError(e, st);

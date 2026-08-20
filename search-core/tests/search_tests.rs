@@ -353,14 +353,17 @@ fn rank_vector_documents_orders_by_similarity() {
         VectorDocument {
             id: "far".into(),
             embedding: vec![0.0, 1.0],
+            norm: 0.0,
         },
         VectorDocument {
             id: "near".into(),
             embedding: vec![0.9, 0.1],
+            norm: 0.0,
         },
         VectorDocument {
             id: "mid".into(),
             embedding: vec![0.5, 0.5],
+            norm: 0.0,
         },
     ];
     let ranked = rank_vector_documents(&[1.0, 0.0], &docs, 3);
@@ -375,14 +378,17 @@ fn rank_vector_documents_respects_top_k() {
         VectorDocument {
             id: "a".into(),
             embedding: vec![1.0, 0.0],
+            norm: 0.0,
         },
         VectorDocument {
             id: "b".into(),
             embedding: vec![0.5, 0.5],
+            norm: 0.0,
         },
         VectorDocument {
             id: "c".into(),
             embedding: vec![0.0, 1.0],
+            norm: 0.0,
         },
     ];
     let ranked = rank_vector_documents(&[1.0, 0.0], &docs, 2);
@@ -402,10 +408,12 @@ fn rank_vector_documents_dimension_mismatch_scores_zero() {
         VectorDocument {
             id: "d1".into(),
             embedding: vec![1.0, 0.0],
+            norm: 0.0,
         },
         VectorDocument {
             id: "d2".into(),
             embedding: vec![0.0, 1.0, 0.0],
+            norm: 0.0,
         },
     ];
     let ranked = rank_vector_documents(&[1.0, 0.0], &docs, 5);

@@ -488,7 +488,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
         tooltip: 'Create listing',
         child: const Icon(Icons.add),
       ),
-      body: context.watch<MarketplaceService>().listingsLoading
+      body: context.select((MarketplaceService s) => s.listingsLoading)
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [

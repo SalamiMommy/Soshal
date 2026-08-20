@@ -46,8 +46,12 @@ mixin LastErrorMixin {
     logRuntimeError('svc: $error', stack);
   }
 
-  void clearLastError() {
+  /// Clears the stored error; returns whether one was present (so callers
+  /// can notify listeners only when the error banner must be removed).
+  bool clearLastError() {
+    if (_lastError == null) return false;
     _lastError = null;
+    return true;
   }
 }
 

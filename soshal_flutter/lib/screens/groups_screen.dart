@@ -486,8 +486,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   }
 
   Widget _sidebar(BuildContext context) {
-    final session = context.watch<SessionService>();
-    final me = session.activePubkey;
+    final me = context.select((SessionService s) => s.activePubkey);
     final api = context.read<GroupsService>();
     final isOwner = api.current != null && api.current!.owner == me;
     return GroupSidebar(
@@ -567,8 +566,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<SessionService>();
-    final me = session.activePubkey;
+    final me = context.select((SessionService s) => s.activePubkey);
 
     return Scaffold(
       appBar: AppBar(

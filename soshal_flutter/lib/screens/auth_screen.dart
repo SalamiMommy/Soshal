@@ -10,6 +10,7 @@ import '../services/error_log.dart';
 import '../utils/format.dart';
 import '../services/network_service.dart';
 import '../services/session_service.dart';
+import '../services/settings_service.dart';
 import '../services/signer_service.dart';
 
 /// Auth Flow Screen
@@ -54,8 +55,8 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildWelcomeStep() {
-    final session = context.watch<SessionService>();
-    final accounts = session.getAccounts();
+    final accounts = context.select((SessionService s) => s.getAccounts());
+    final activePubkey = context.select((SessionService s) => s.activePubkey);
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -81,7 +82,7 @@ class _AuthScreenState extends State<AuthScreen> {
               for (final account in accounts)
                 Card(
                   child: ListTile(
-                    leading: account.pubkey == session.activePubkey
+                    leading: account.pubkey == activePubkey
                         ? const Icon(Icons.check_circle, color: Colors.green)
                         : const Icon(Icons.account_circle),
                     title: Text(
@@ -116,11 +117,28 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   /// Unlock an account that already has a keychain entry and make it active.
-  /// Falls back to import (recovery phrase) when no key is stored.
+  /// Falls back to import (recovery phrase) when no key is stored or when
+  /// keychain unlock is disabled in settings.
   Future<void> _useExistingAccount(SessionAccount account) async {
     final signer = context.read<SignerService>();
     final session = context.read<SessionService>();
+    final keychainEnabled =
+        context.read<SettingsService>().getSetting('keychain_unlock_enabled') ==
+            'true';
     try {
+      if (!keychainEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: SelectableText(
+                'Keychain unlock is disabled — import the account\'s recovery '
+                'phrase to continue.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
       final ok = await signer.unlockFromKeyring(account.pubkey);
       if (!ok) {
         if (mounted) {

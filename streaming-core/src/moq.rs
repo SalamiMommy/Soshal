@@ -257,7 +257,9 @@ impl MoqPublisherSession {
 pub struct MoqSubscriberSession {
     pub stream_id: String,
     pub subscriber_pubkey: String,
-    received_objects: Arc<Mutex<Vec<MoqObject>>>,
+    // VecDeque: oldest-object eviction is pop_front (O(1)); Vec::remove(0)
+    // shifted the whole buffer per drop.
+    received_objects: Arc<Mutex<std::collections::VecDeque<MoqObject>>>,
     received_bytes: Arc<Mutex<u64>>,
 }
 
@@ -270,7 +272,7 @@ impl MoqSubscriberSession {
         Self {
             stream_id,
             subscriber_pubkey,
-            received_objects: Arc::new(Mutex::new(Vec::new())),
+            received_objects: Arc::new(Mutex::new(std::collections::VecDeque::new())),
             received_bytes: Arc::new(Mutex::new(0)),
         }
     }
@@ -280,13 +282,15 @@ impl MoqSubscriberSession {
         if let Ok(mut lock) = self.received_objects.lock() {
             if let Ok(mut bytes) = self.received_bytes.lock() {
                 *bytes += object_len;
-                lock.push(object);
+                lock.push_back(object);
                 while lock.len() > 1000 || *bytes > MAX_SUBSCRIBER_BUFFER_BYTES {
                     if lock.is_empty() {
                         break;
                     }
-                    let dropped = lock.remove(0);
-                    *bytes = bytes.saturating_sub(dropped.payload.len() as u64);
+                    let dropped = lock.pop_front();
+                    if let Some(d) = dropped {
+                        *bytes = bytes.saturating_sub(d.payload.len() as u64);
+                    }
                 }
             }
         }
@@ -294,7 +298,7 @@ impl MoqSubscriberSession {
 
     pub fn drain_pending_objects(&self) -> Vec<MoqObject> {
         if let Ok(mut lock) = self.received_objects.lock() {
-            let taken = std::mem::take(&mut *lock);
+            let taken: Vec<MoqObject> = std::mem::take(&mut *lock).into_iter().collect();
             if let Ok(mut bytes) = self.received_bytes.lock() {
                 *bytes = 0;
             }

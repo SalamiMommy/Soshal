@@ -13,6 +13,7 @@ import '../services/media_service.dart';
 import '../services/p2p_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../utils/safe_url.dart';
 import '../utils/dialog_guard.dart';
 import 'composer_screen.dart';
 import '../services/zap_service.dart';
@@ -80,7 +81,7 @@ class _FeedScreenState extends State<FeedScreen> {
     final size = MediaQuery.sizeOf(context);
     final layout = context.read<LayoutService>();
     layout.refresh(
-      feed.posts,
+      feed.displayPosts,
       screenWidth: size.width.round(),
       textScale: MediaQuery.textScalerOf(context).scale(14),
     );
@@ -118,7 +119,7 @@ class _FeedScreenState extends State<FeedScreen> {
   void _onFeedChanged() {
     if (!mounted || !context.mounted) return;
     final layout = context.read<LayoutService>();
-    final posts = context.read<FeedService>().posts;
+    final posts = context.read<FeedService>().displayPosts;
     void doRefresh() {
       if (!mounted || !context.mounted) return;
       final size = MediaQuery.sizeOf(context);
@@ -367,7 +368,8 @@ class _FeedPostCardState extends State<FeedPostCard> {
             // Author header
             Row(
               children: [
-                if (widget.post.profilePicture != null)
+                if (widget.post.profilePicture != null &&
+                      SafeUrl.isSafeMediaUrl(widget.post.profilePicture!))
                   CircleAvatar(
                     backgroundImage: ResizeImage.resizeIfNeeded(
                         128, 128, NetworkImage(widget.post.profilePicture!)),
@@ -1050,12 +1052,11 @@ Future<String> _resolveBlobUrl(
   if (parsed == null || parsed.scheme != 'http' && parsed.scheme != 'https') {
     return '';
   }
-  final host = parsed.host;
   // Post content is untrusted: never hand loopback/private-host URLs to
   // Image.network / the video player (local SSRF via crafted content).
   // Legit local media URLs are built by the app itself (getLocalUrl) and
   // returned below — raw content URLs with local hosts are blocked.
-  if (host.isEmpty || _isBlockedHost(host)) return '';
+  if (!SafeUrl.isSafeMediaUrl(url)) return '';
   if (hash != null) {
     final media = context.read<MediaService>();
     final transport = context.read<P2pService>();
@@ -1071,27 +1072,6 @@ Future<String> _resolveBlobUrl(
     return media.getLocalUrl(hash);
   }
   return url;
-}
-
-bool _isBlockedHost(String host) {
-  final lower = host.toLowerCase();
-  if (lower == 'localhost' || lower == '::1') return true;
-  if (lower == '0.0.0.0') return true;
-  // IPv4 literals: loopback, private, link-local, CGNAT, broadcast.
-  final ipv4 = RegExp(r'^\d{1,3}(\.\d{1,3}){3}$');
-  if (ipv4.hasMatch(lower)) {
-    final parts = lower.split('.').map(int.parse).toList();
-    final a = parts[0];
-    final b = parts[1];
-    if (a == 127) return true;
-    if (a == 10) return true;
-    if (a == 169 && b == 254) return true;
-    if (a == 172 && b >= 16 && b <= 31) return true;
-    if (a == 192 && b == 168) return true;
-    if (a == 100 && b >= 64 && b <= 127) return true;
-    if (a >= 224) return true;
-  }
-  return false;
 }
 
 class _VideoPlayerWidget extends StatefulWidget {
@@ -1164,6 +1144,12 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         if (mounted) setState(() => _error = '$e');
       }
       _resolvedUrlCache[widget.postId] = url;
+    }
+    if (!SafeUrl.isSafePlaybackUrl(url)) {
+      if (mounted) {
+        setState(() => _error = 'Video source rejected (unsafe host).');
+      }
+      return;
     }
     final controller = VideoPlayerController.networkUrl(Uri.parse(url));
     _controller = controller;

@@ -10,6 +10,7 @@ import '../services/messaging_service.dart';
 import '../services/p2p_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../utils/safe_url.dart';
 import '../widgets/empty_state.dart';
 
 /// Inbox Screen
@@ -207,7 +208,7 @@ class _InboxScreenState extends State<InboxScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (isImage && url.isNotEmpty)
+                if (isImage && url.isNotEmpty && SafeUrl.isSafeMediaUrl(url))
                   Image.network(
                     url,
                     width: 320,
@@ -974,16 +975,20 @@ class _InboxScreenState extends State<InboxScreen> {
             ),
           ],
         ),
-        body: Consumer<MessagingService>(
-          builder: (context, messagingService, child) {
-            final convList = messagingService.conversations.entries.toList();
+        body: Selector<MessagingService, Map<String, List<DirectMessage>>>(
+          selector: (_, s) => s.conversations,
+          builder: (context, conversations, _) {
+            final convList = conversations.entries.toList();
             return ListView.builder(
               itemCount: 3 + (convList.isEmpty ? 1 : convList.length),
               itemBuilder: (context, index) {
                 if (index == 0) return _lanDiscoverySection(context);
                 if (index == 1) return _mediaToolsSection(context);
                 if (index == 2) {
-                  return _ephemeralSection(context, messagingService);
+                  return Consumer<MessagingService>(
+                    builder: (context, messagingService, _) =>
+                        _ephemeralSection(context, messagingService),
+                  );
                 }
                 if (convList.isEmpty) {
                   return _conversationsLoading

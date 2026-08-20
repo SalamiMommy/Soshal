@@ -13,7 +13,7 @@ soshal-common-core = { path = "../common-core" }
 zeroize = { workspace = true }
 pbkdf2 = { workspace = true }
 sha2 = { workspace = true }
-rand = { workspace = true }
+getrandom = { workspace = true }
 
 [lints]
 workspace = true

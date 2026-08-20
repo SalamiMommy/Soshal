@@ -3,7 +3,7 @@ import '../utils/json_ext.dart';
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
 
@@ -19,6 +19,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
   String? _mediaType;
   DateTime? _startedAt;
   Timer? _timer;
+  AppLifecycleListener? _lifecycle;
 
   List<CallSignal> get signals => _signals;
   String? get callId => _callId;
@@ -199,7 +200,8 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
-  /// Begin tracking an active call (starts the elapsed timer).
+  /// Begin tracking an active call (starts the elapsed timer). Ticks are
+  /// paused while the app is backgrounded; elapsed wall time keeps counting.
   void startCall({
     required String callId,
     required String peer,
@@ -209,6 +211,23 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     _peer = peer;
     _mediaType = mediaType;
     _startedAt = DateTime.now();
+    _lifecycle ??= AppLifecycleListener(
+      onHide: _pauseTick,
+      onPause: _pauseTick,
+      onResume: _resumeTick,
+    );
+    _resumeTick();
+    clearLastError();
+    notifyListeners();
+  }
+
+  void _pauseTick() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void _resumeTick() {
+    if (_callId == null || _startedAt == null) return;
     _timer?.cancel();
     var lastTick = DateTime.now();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -217,8 +236,6 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
       lastTick = now;
       notifyListeners();
     });
-    clearLastError();
-    notifyListeners();
   }
 
   /// Stop tracking the active call (cancels the timer). Called by the call
@@ -236,6 +253,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
   @override
   void dispose() {
     _timer?.cancel();
+    _lifecycle?.dispose();
     super.dispose();
   }
 }

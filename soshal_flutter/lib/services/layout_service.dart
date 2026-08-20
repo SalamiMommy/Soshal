@@ -54,24 +54,6 @@ class LayoutService extends ChangeNotifier {
         },
       };
 
-  /// Compute the layout of a single card via feed-core (sync FFI).
-  (double, double)? _computeCardLayout(FeedPost post) {
-    try {
-      final json = RustLib.instance.api.crateFfiFeedFeedComputeCardLayout(
-        requestJson: jsonEncode(_requestFor(post)),
-      );
-      final m = jsonDecode(json) as Map<String, dynamic>;
-      final id = m['id'] as String? ?? '';
-      if (id.isEmpty) return null;
-      final height = (m['height_px'] as num?)?.toDouble() ?? 0;
-      final media = (m['media_height_px'] as num?)?.toDouble() ?? 0;
-      return (height, media);
-    } catch (e) {
-      debugPrint('card layout: $e');
-      return null;
-    }
-  }
-
   /// Feed cards: compute all layouts for the visible posts in one call.
   Future<void> refresh(
     List<FeedPost> posts, {
@@ -111,19 +93,9 @@ class LayoutService extends ChangeNotifier {
   }
 
   /// Height for a post card, or null when not computed yet (natural layout).
-  /// Falls back to a per-card [computeCardLayout] call for uncached posts.
-  double? heightFor(FeedPost post) {
-    final cached = _heights[post.eventId];
-    if (cached != null) return cached;
-    final result = _computeCardLayout(post);
-    if (result != null) {
-      _heights[post.eventId] = result.$1;
-      _mediaHeights[post.eventId] = result.$2;
-      _ready = true;
-      return result.$1;
-    }
-    return null;
-  }
+  /// Uncached posts get the default extent — layouts are precomputed by
+  /// [refresh] before the list renders.
+  double? heightFor(FeedPost post) => _heights[post.eventId];
 
   /// True when any [posts] card lacks a cached extent — a structural change
   /// (new ids) that needs a [refresh] before the next render.
@@ -132,16 +104,15 @@ class LayoutService extends ChangeNotifier {
 
   /// Extent for ListView.itemExtentBuilder — MUST never return null
   /// (the framework null-checks the result). Footer index gets a fixed
-  /// extent; uncached posts fall back to a per-card compute, then a
-  /// default when the compute fails.
+  /// extent; uncached posts get a default (never a synchronous FFI call in
+  /// the build phase — layout is precomputed by [refresh] before the list
+  /// renders).
   static const double _footerExtent = 56.0;
   static const double _defaultCardExtent = 180.0;
 
   double extentFor(int index, List<FeedPost> posts) {
     if (index >= posts.length) return _footerExtent;
-    final cached = _heights[posts[index].eventId];
-    if (cached != null) return cached;
-    return heightFor(posts[index]) ?? _defaultCardExtent;
+    return _heights[posts[index].eventId] ?? _defaultCardExtent;
   }
 
   void updateViewMetrics({required int screenWidth, double textScale = 1.0}) {

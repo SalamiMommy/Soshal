@@ -205,8 +205,8 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tracks = context.watch<MusicService>().tracks;
-    final error = context.watch<MusicService>().lastError;
+    final tracks = context.select((MusicService s) => s.tracks);
+    final error = context.select((MusicService s) => s.lastError);
     return Scaffold(
       appBar: AppBar(title: const Text('Musicloud')),
       floatingActionButton: FloatingActionButton(

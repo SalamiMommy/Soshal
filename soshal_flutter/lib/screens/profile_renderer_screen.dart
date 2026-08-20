@@ -11,6 +11,7 @@ import '../services/messaging_service.dart';
 import '../services/p2p_service.dart';
 import '../services/profile_service.dart';
 import '../services/session_service.dart';
+import '../utils/safe_url.dart';
 import '../services/shell_service.dart';
 import '../utils/blob_resolver.dart';
 import '../utils/format.dart';
@@ -610,6 +611,9 @@ class _WidgetRenderer extends StatelessWidget {
           itemCount: props.items.length,
           itemBuilder: (context, index) {
             final item = props.items[index];
+            if (!SafeUrl.isSafeMediaUrl(item.url)) {
+              return Container(color: Colors.grey.shade300);
+            }
             return Image.network(item.url, fit: BoxFit.cover, cacheWidth: 256);
           },
         );
@@ -1038,6 +1042,14 @@ class _MusicPlayerWidget extends StatelessWidget {
       }
       await media.startLocalServer();
       url = media.getLocalUrl(hash);
+    }
+    if (!SafeUrl.isSafePlaybackUrl(url)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Audio source rejected (unsafe host).')),
+        );
+      }
+      return;
     }
     await shell.playAudio(url, track.title);
   }
