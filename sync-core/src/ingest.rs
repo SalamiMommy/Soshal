@@ -10,9 +10,9 @@ use nostr::key::PublicKey;
 use nostr::nips::nip19::ToBech32;
 use sha2::{Digest, Sha256};
 use soshal_common_core::consts::{
-    KIND_EVENT_RSVP, KIND_MENTION, KIND_MINIS, KIND_PROFILE, KIND_REACTION, KIND_STORY, KIND_SWAP,
-    KIND_LISTING, KIND_ORDER, KIND_EVENT, KIND_LIVE, KIND_CUSTOM_PROFILE, KIND_GUESTBOOK,
-    KIND_GUESTBOOK_APPROVAL,
+    KIND_CUSTOM_PROFILE, KIND_EVENT, KIND_EVENT_RSVP, KIND_GUESTBOOK, KIND_GUESTBOOK_APPROVAL,
+    KIND_LISTING, KIND_LIVE, KIND_MENTION, KIND_MINIS, KIND_ORDER, KIND_PROFILE, KIND_REACTION,
+    KIND_STORY, KIND_SWAP,
 };
 
 /// Kinds permitted to land in the `posts` table. Everything else arriving on
@@ -316,7 +316,8 @@ async fn handle_impl(
             // Merge: kind-3 lists arrive per-relay and are partial views;
             // union with the stored list so contacts seen on other relays
             // are never dropped by a narrower list.
-            row.contact_pubkeys = merge_pubkey_lists(&row.contact_pubkeys, &p_tags(event).join(","));
+            row.contact_pubkeys =
+                merge_pubkey_lists(&row.contact_pubkeys, &p_tags(event).join(","));
             repo.upsert_in(t, &row).await?;
         }
         Kind::ZapRequest => {
@@ -1003,12 +1004,7 @@ mod tests {
         let row = UserRepo::new(&db).get_by_pubkey(&pk).unwrap().unwrap();
         assert_eq!(
             row.contact_pubkeys,
-            format!(
-                "{},{},{}",
-                "a".repeat(64),
-                "b".repeat(64),
-                "c".repeat(64)
-            )
+            format!("{},{},{}", "a".repeat(64), "b".repeat(64), "c".repeat(64))
         );
         assert_eq!(row.name.as_deref(), Some("alice"));
     }

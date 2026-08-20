@@ -554,7 +554,8 @@ fn test_ai_classifier_comprehensive_matrix() {
     assert!(spam1.is_flagged);
     assert_eq!(spam1.primary_category.as_deref(), Some("spam"));
 
-    let spam2 = check_text_ai("Earn $5000 a day guaranteed profit working from home! DM me on telegram");
+    let spam2 =
+        check_text_ai("Earn $5000 a day guaranteed profit working from home! DM me on telegram");
     assert!(spam2.is_flagged);
     assert_eq!(spam2.primary_category.as_deref(), Some("spam"));
 
@@ -619,4 +620,3 @@ fn test_ai_classifier_false_positive_resistance() {
         assert_eq!(res.primary_category, None);
     }
 }
-

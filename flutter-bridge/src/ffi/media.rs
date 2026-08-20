@@ -21,12 +21,11 @@ fn resolve_allowed_path(path: &str, what: &str) -> Result<PathBuf, String> {
         return Err(format!("{what} path cannot be empty"));
     }
     let p = Path::new(path);
-    let parent = p.parent().ok_or_else(|| format!("{what} path has no parent"))?;
+    let parent = p
+        .parent()
+        .ok_or_else(|| format!("{what} path has no parent"))?;
     let canon_parent = fs::canonicalize(parent).map_err(|e| format!("{what} dir: {e}"))?;
-    let allowed = [
-        ChunkStore::default_root(),
-        std::env::temp_dir(),
-    ];
+    let allowed = [ChunkStore::default_root(), std::env::temp_dir()];
     if !allowed.iter().any(|root| canon_parent.starts_with(root)) {
         return Err(format!(
             "{what} path must be inside the media cache or temp dir"
@@ -178,8 +177,12 @@ pub fn media_clear_cache(cache_dir: String) -> Result<String, String> {
             if let Some(parent) = std::path::Path::new(&db_p).parent() {
                 if !parent.as_os_str().is_empty() {
                     if let Ok(canon_parent) = std::fs::canonicalize(parent) {
-                        if !canon.starts_with(&canon_parent) && !canon.starts_with(std::env::temp_dir()) {
-                            return Err("cache_dir must be inside application directory".to_string());
+                        if !canon.starts_with(&canon_parent)
+                            && !canon.starts_with(std::env::temp_dir())
+                        {
+                            return Err(
+                                "cache_dir must be inside application directory".to_string()
+                            );
                         }
                     }
                 }

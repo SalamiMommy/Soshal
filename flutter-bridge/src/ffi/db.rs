@@ -649,8 +649,8 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
     if head != BACKUP_MAGIC {
         return Err("backup file is not a sealed Soshal backup (SOSHBK01)".to_string());
     }
-    let blob = std::fs::read(&backup_path)
-        .map_err(|e| format!("cannot read encrypted backup: {e}"))?;
+    let blob =
+        std::fs::read(&backup_path).map_err(|e| format!("cannot read encrypted backup: {e}"))?;
     let key = super::signer::signer_at_rest_key().map_err(|e| format!("at-rest key: {e}"))?;
     let plain = soshal_crypto_core::at_rest::open_at_rest_bin(&key, &blob[BACKUP_MAGIC.len()..])
         .map_err(|e| format!("backup decrypt failed: {e}"))?;

@@ -1223,17 +1223,16 @@ mod tests {
         )
         .unwrap_err()
         .contains("seller does not own this listing"));
-        let order_id = marketplace_create_order(
-            "l1".to_string(),
-            "buyer1".to_string(),
-            spk.clone(),
-        )
-        .unwrap();
+        let order_id =
+            marketplace_create_order("l1".to_string(), "buyer1".to_string(), spk.clone()).unwrap();
 
         let order = marketplace_get_order(order_id.clone()).unwrap();
         assert!(order.contains("\"status\":\"created\""), "{order}");
         assert!(order.contains("\"listing_id\":\"l1\""), "{order}");
-        assert!(order.contains(&format!("\"seller_pubkey\":\"{spk}\"")), "{order}");
+        assert!(
+            order.contains(&format!("\"seller_pubkey\":\"{spk}\"")),
+            "{order}"
+        );
         assert!(order.contains("\"buyer_pubkey\":\"\""), "{order}");
         assert!(marketplace_get_order("nope".to_string())
             .unwrap_err()
@@ -1254,17 +1253,13 @@ mod tests {
         )
         .unwrap_err()
         .contains("parties do not match"));
-        assert!(marketplace_create_escrow(
-            order_id.clone(),
-            String::new(),
-            spk.clone(),
-            0,
-        )
-        .unwrap_err()
-        .contains("amount must be positive"));
+        assert!(
+            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 0,)
+                .unwrap_err()
+                .contains("amount must be positive")
+        );
         let escrow_id =
-            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000)
-                .unwrap();
+            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000).unwrap();
 
         let escrow = marketplace_get_escrow(escrow_id.clone()).unwrap();
         assert!(escrow.contains("\"status\":\"created\""), "{escrow}");
@@ -1279,18 +1274,15 @@ mod tests {
         );
 
         assert!(marketplace_release_escrow(escrow_id.clone(), spk.clone()).is_err());
-        assert!(marketplace_resolve_escrow(
-            escrow_id.clone(),
-            "mediator".to_string(),
-            spk.clone(),
-        )
-        .unwrap());
+        assert!(
+            marketplace_resolve_escrow(escrow_id.clone(), "mediator".to_string(), spk.clone(),)
+                .unwrap()
+        );
         let escrow = marketplace_get_escrow(escrow_id).unwrap();
         assert!(escrow.contains("\"status\":\"refunded\""), "{escrow}");
 
         let escrow2 =
-            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000)
-                .unwrap();
+            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000).unwrap();
         assert!(marketplace_dispute_escrow(
             escrow2.clone(),
             "outsider".to_string(),
@@ -1308,8 +1300,7 @@ mod tests {
 
         // Non-disputed escrow releases only after BOTH parties confirm.
         let escrow4 =
-            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000)
-                .unwrap();
+            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000).unwrap();
         assert!(marketplace_release_escrow(escrow4.clone(), spk.clone()).is_err());
         db::db_execute_raw_test(format!(
             "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id='{escrow4}'"
@@ -1320,8 +1311,7 @@ mod tests {
         assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
 
         let escrow3 =
-            marketplace_create_escrow(order_id, String::new(), spk.clone(), 5000)
-                .unwrap();
+            marketplace_create_escrow(order_id, String::new(), spk.clone(), 5000).unwrap();
         assert!(marketplace_resolve_escrow(
             escrow3.clone(),
             "mediator".to_string(),
@@ -1576,11 +1566,9 @@ mod tests {
         )
         .unwrap_err()
         .contains("Order not found"));
-        assert!(
-            marketplace_release_escrow("nope".to_string(), spk.clone())
-                .unwrap_err()
-                .contains("not found")
-        );
+        assert!(marketplace_release_escrow("nope".to_string(), spk.clone())
+            .unwrap_err()
+            .contains("not found"));
         assert!(marketplace_dispute_escrow(
             "nope".to_string(),
             "buyer1".to_string(),

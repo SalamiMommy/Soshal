@@ -385,10 +385,7 @@ pub fn events_rsvp(
             let _ = conn
                 .execute(
                     "DELETE FROM posts WHERE id LIKE ?1 AND id != ?2",
-                    libsql::params!(
-                        format!("rsvp:{user_pubkey}:{event_id}:%"),
-                        rsvp_id.clone()
-                    ),
+                    libsql::params!(format!("rsvp:{user_pubkey}:{event_id}:%"), rsvp_id.clone()),
                 )
                 .await;
             Ok::<(), soshal_db_core::error::DbError>(())

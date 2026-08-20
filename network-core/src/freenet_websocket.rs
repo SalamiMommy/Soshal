@@ -152,18 +152,19 @@ impl FreenetWebSocketClient {
 
             match tokio::net::TcpStream::connect(addr).await {
                 Ok(stream) => {
-                    let prepared: Result<Box<dyn WebSocketStreamTrait>, String> = match &tls_connector {
-                        Some(conn) => {
-                            let name =
-                                rustls::pki_types::ServerName::try_from(hostname.clone())
-                                    .map_err(|e| format!("invalid TLS hostname: {e}"))?;
-                            match conn.connect(name, stream).await {
-                                Ok(s) => Ok(Box::new(s) as _),
-                                Err(e) => Err(format!("TLS handshake failed: {e}")),
+                    let prepared: Result<Box<dyn WebSocketStreamTrait>, String> =
+                        match &tls_connector {
+                            Some(conn) => {
+                                let name =
+                                    rustls::pki_types::ServerName::try_from(hostname.clone())
+                                        .map_err(|e| format!("invalid TLS hostname: {e}"))?;
+                                match conn.connect(name, stream).await {
+                                    Ok(s) => Ok(Box::new(s) as _),
+                                    Err(e) => Err(format!("TLS handshake failed: {e}")),
+                                }
                             }
-                        }
-                        None => Ok(Box::new(stream) as _),
-                    };
+                            None => Ok(Box::new(stream) as _),
+                        };
                     match prepared {
                         Ok(stream) => match client_async(request, stream).await {
                             Ok((ws, _)) => {

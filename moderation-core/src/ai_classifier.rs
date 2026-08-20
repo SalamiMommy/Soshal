@@ -732,10 +732,7 @@ pub fn classify_text(text: &str) -> AiModerationResult {
 
     let evasion_score = calculate_evasion_score(trimmed);
     let variants = crate::normalize::generate_normalized_variants(trimmed);
-    let lower_variants: Vec<String> = variants
-        .iter()
-        .map(|v| v.to_ascii_lowercase())
-        .collect();
+    let lower_variants: Vec<String> = variants.iter().map(|v| v.to_ascii_lowercase()).collect();
 
     let mut raw_spam = 0.0f32;
     let mut raw_csam = 0.0f32;
@@ -952,4 +949,3 @@ mod tests {
         assert_eq!(res.primary_category.as_deref(), Some("bigotry"));
     }
 }
-

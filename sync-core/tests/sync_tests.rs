@@ -249,9 +249,7 @@ fn ingest_unknown_kind_dropped() {
     );
     let (tx, _rx) = channel();
     handle(&db, "", &event, &tx).unwrap();
-    let row = PostRepo::new(&db)
-        .get_by_id(&event.id.to_hex())
-        .unwrap();
+    let row = PostRepo::new(&db).get_by_id(&event.id.to_hex()).unwrap();
     assert!(row.is_none(), "unknown kinds must not be cached as posts");
 }
 
@@ -260,12 +258,7 @@ fn ingest_delete_event_tombstones_own_posts_only() {
     let db = soshal_test_util::test_db();
     let keys = Keys::generate();
     let victim = Keys::generate();
-    let note = soshal_test_util::signed_event_tagged(
-        &keys,
-        Kind::TextNote,
-        "hello",
-        vec![],
-    );
+    let note = soshal_test_util::signed_event_tagged(&keys, Kind::TextNote, "hello", vec![]);
     let (tx, _rx) = channel();
     handle(&db, "", &note, &tx).unwrap();
 

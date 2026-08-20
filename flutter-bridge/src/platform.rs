@@ -210,11 +210,7 @@ mod android {
         args: &[jni::objects::JValue<'_, '_>],
     ) -> Result<jni::objects::JValueOwned<'local>, JniErr> {
         let class = env.find_class("com/soshal/app/LiveRecorder")?;
-        let instance = env.get_static_field(
-            class,
-            "INSTANCE",
-            "Lcom/soshal/app/LiveRecorder;",
-        )?;
+        let instance = env.get_static_field(class, "INSTANCE", "Lcom/soshal/app/LiveRecorder;")?;
         let obj = match instance {
             jni::objects::JValueOwned::Object(o) if !o.is_null() => o,
             _ => return Err(JniErr("LiveRecorder.INSTANCE not set".to_string())),
@@ -380,8 +376,7 @@ mod android {
 
     fn rnsd_runner<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, JniErr> {
         let class = env.find_class(RNSD_RUNNER_CLASS)?;
-        let instance =
-            env.get_static_field(class, "INSTANCE", "Lcom/soshal/app/RnsdRunner;")?;
+        let instance = env.get_static_field(class, "INSTANCE", "Lcom/soshal/app/RnsdRunner;")?;
         match instance {
             jni::objects::JValueOwned::Object(o) if !o.is_null() => Ok(o),
             _ => Err(JniErr("RnsdRunner.INSTANCE not set".to_string())),
