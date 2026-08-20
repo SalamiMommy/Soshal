@@ -7,7 +7,7 @@ use crate::url::is_valid_media_url;
 
 /// Longest URL kept from an HTML scan.
 #[doc(hidden)]
-pub const MAX_PREVIEW_URL_LENGTH: usize = 8 * 1024;
+pub use super::urls::MAX_PREVIEW_URL_LENGTH;
 /// Cap on raw HTML scanned.
 #[doc(hidden)]
 pub const MAX_HTML_LENGTH: usize = 5 * 1024 * 1024;

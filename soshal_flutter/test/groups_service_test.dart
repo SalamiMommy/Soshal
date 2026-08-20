@@ -127,21 +127,15 @@ void main() {
       expect(api.namedArg(leaveInv, 'userPubkey'), 'pk-me');
     });
 
-    test('setPassword and verifyPassword pass args to bridge', () async {
+    test('setPassword passes args to bridge', () async {
       final groups = GroupsService();
       api.stubBool('crateFfiGroupsGroupsSetPassword', true);
-      api.stubBool('crateFfiGroupsGroupsVerifyPassword', true);
 
       expect(await groups.setPassword('g-1', 'newPass', 'pk-me'), isTrue);
-      expect(await groups.verifyPassword('g-1', 'newPass'), isTrue);
       final setInv = api.callsOf('crateFfiGroupsGroupsSetPassword').single;
       expect(api.namedArg(setInv, 'groupId'), 'g-1');
       expect(api.namedArg(setInv, 'newPassword'), 'newPass');
       expect(api.namedArg(setInv, 'actorPubkey'), 'pk-me');
-
-      final verifyInv = api.callsOf('crateFfiGroupsGroupsVerifyPassword').single;
-      expect(api.namedArg(verifyInv, 'groupId'), 'g-1');
-      expect(api.namedArg(verifyInv, 'password'), 'newPass');
     });
 
     test('getMembers populates member list state', () async {

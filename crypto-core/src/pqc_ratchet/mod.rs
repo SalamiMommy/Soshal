@@ -46,12 +46,6 @@ pub const MAX_RATCHET_WINDOW: i64 = 1024;
 /// payloads from forcing large allocations inside the decrypt path.
 pub const MAX_RATCHET_CIPHERTEXT: usize = 64 * 1024;
 
-// ─── Hex helpers (wire format is hex) ─────────────────────────────────
-
-pub fn hex_encode(bytes: &[u8]) -> String {
-    hex::encode(bytes)
-}
-
 pub fn hex_decode(hex_str: &str) -> Result<Vec<u8>, &'static str> {
     if !hex_str.len().is_multiple_of(2) {
         return Err("odd hex length");
@@ -216,13 +210,13 @@ pub fn encrypt_ratchet(
             // Session init: root = HKDF(ss, v3-init salt, context).
             let root = init_root(&ss, &state.context)?;
             ss.zeroize();
-            let root_hex = hex_encode(&root);
+            let root_hex = hex::encode(root);
             let chain = derive_chain(&root_hex, &state.context)?;
-            (root_hex, hex_encode(&chain))
+            (root_hex, hex::encode(chain))
         } else {
             let (new_root, new_chain) = derive_root_step(&ss, &state.root_key, &state.context)?;
             ss.zeroize();
-            (hex_encode(&new_root), hex_encode(&new_chain))
+            (hex::encode(new_root), hex::encode(new_chain))
         };
         // Rotate own keypair: the fresh pk travels in the header and the
         // sk decrypts the peer's replies until the next root step.
@@ -251,13 +245,13 @@ pub fn encrypt_ratchet(
     };
 
     let (msg_key, next_chain) = derive_msg_key(&sending_chain_key, &state.context)?;
-    sending_chain_key = hex_encode(&next_chain);
+    sending_chain_key = hex::encode(&next_chain);
 
     let compressed = compress_json(plaintext)?;
     let mut mk_arr = [0u8; 32];
     mk_arr.copy_from_slice(&msg_key);
     let ciphertext = nip44_encrypt(&compressed, &mk_arr)?;
-    let mut msg_key_hex = hex_encode(&msg_key);
+    let mut msg_key_hex = hex::encode(msg_key);
     msg_key_hex.zeroize();
 
     let header = HeaderOutput {
@@ -332,13 +326,13 @@ pub fn decrypt_ratchet(
             let root = init_root(&ss, &state.context)?;
             ss.zeroize();
             out.root_key.zeroize();
-            out.root_key = hex_encode(&root);
+            out.root_key = hex::encode(root);
             recv_chain = derive_chain(&out.root_key, &state.context)?.to_vec();
         } else {
             let (new_root, new_chain) = derive_root_step(&ss, &state.root_key, &state.context)?;
             ss.zeroize();
             out.root_key.zeroize();
-            out.root_key = hex_encode(&new_root);
+            out.root_key = hex::encode(new_root);
             recv_chain = new_chain.to_vec();
         }
         out.chain_counter = header.chain_counter;
@@ -395,7 +389,7 @@ pub fn decrypt_ratchet(
             recv_chain = next;
             out.skipped.push(SkippedKey {
                 seq: prev_counter + i,
-                key: hex_encode(&skipped_key),
+                key: hex::encode(skipped_key),
             });
             if out.skipped.len() > MAX_RATCHET_WINDOW as usize {
                 let mut evicted = out.skipped.remove(0);
@@ -408,7 +402,7 @@ pub fn decrypt_ratchet(
         arr.copy_from_slice(&mk);
         msg_key = arr;
         out.receiving_chain_key.zeroize();
-        out.receiving_chain_key = hex_encode(&recv_chain);
+        out.receiving_chain_key = hex::encode(&recv_chain);
         out.receiving_chain_counter = header.seq + 1;
     }
 

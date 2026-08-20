@@ -47,12 +47,6 @@ impl FreenetBackend {
         }
     }
 
-    pub fn with_endpoint(mut self, url: String, auth_token: String) -> Self {
-        self.url = url;
-        self.auth_token = auth_token;
-        self
-    }
-
     /// Dedup helper: returns the incoming state only when it differs from the
     /// current cursor, updating the cursor either way.
     fn state_changed(current: &mut Option<Vec<u8>>, incoming: Vec<u8>) -> Option<Vec<u8>> {

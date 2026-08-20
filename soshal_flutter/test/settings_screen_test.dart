@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/settings_screen.dart';
+import 'package:soshal_flutter/screens/share_app_screen.dart';
 import 'package:soshal_flutter/services/network_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 import 'package:soshal_flutter/services/settings_service.dart';
@@ -58,6 +59,10 @@ void main() {
             path: '/settings/$p',
             builder: (_, __) => Scaffold(body: Text('$p placeholder')),
           ),
+        GoRoute(
+          path: '/settings/share',
+          builder: (_, __) => const ShareAppScreen(),
+        ),
         GoRoute(
           path: '/auth',
           builder: (_, __) => const Scaffold(body: Text('auth placeholder')),

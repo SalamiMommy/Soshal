@@ -8,7 +8,6 @@ import '../services/network_service.dart';
 import '../services/zap_service.dart';
 import '../utils/format.dart';
 import '../utils/dialog_guard.dart';
-import 'share_app_screen.dart';
 
 /// Settings Screen
 /// Relay config, privacy, backup
@@ -64,9 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('Share Soshal'),
                 leading: const Icon(Icons.share),
                 trailing: const Icon(Icons.arrow_forward),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ShareAppScreen()),
-                ),
+                onTap: () => context.push('/settings/share'),
               ),
             ]),
             // Privacy section

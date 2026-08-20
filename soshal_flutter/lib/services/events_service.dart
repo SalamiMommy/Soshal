@@ -233,25 +233,6 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  /// Interest score between my interests and a peer's (JSON: score/common).
-  Future<Map<String, dynamic>> interestScore({
-    required String myInterestsJson,
-    required String peerInterestsJson,
-  }) async {
-    try {
-      final json = RustLib.instance.api.crateFfiEventsEventsInterestScore(
-        myInterestsJson: myInterestsJson,
-        peerInterestsJson: peerInterestsJson,
-      );
-      clearLastError();
-      return Map<String, dynamic>.from(jsonDecode(json) as Map);
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
-
   /// Score loaded events against my interests via their hashtags.
   Future<void> scoreEvents(List<String> myInterests) async {
     final out = <String, double>{};

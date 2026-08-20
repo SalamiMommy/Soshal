@@ -270,27 +270,6 @@ pub fn search_trending_profiles(limit: i32) -> Result<String, String> {
     super::util::json_ok(profiles)
 }
 
-/// Index a post (or any kind) into the FTS search table.
-#[frb(sync, serialize)]
-pub fn search_index_post(
-    event_id: String,
-    pubkey: String,
-    content: String,
-    kind: i64,
-) -> Result<bool, String> {
-    let row = soshal_db_core::repos::search_index::SearchIndexRow {
-        id: event_id,
-        pubkey,
-        content: soshal_common_core::format::truncate(&content, 4096),
-        kind,
-        created_at: soshal_common_core::format::now_secs(),
-    };
-    super::db::with_db_result(|db| {
-        SearchIndexRepo::new(db).upsert(&row)?;
-        Ok(true)
-    })
-}
-
 /// Index many posts in one call. `rows_json` is a JSON array of
 /// `{"id","pubkey","content","kind"}` objects; replaces N sequential
 /// per-post index round-trips from the feed's index queue.
@@ -331,7 +310,17 @@ pub fn search_index_profile(pubkey: String, name: String, about: String) -> Resu
     } else {
         format!("{name} {about}")
     };
-    search_index_post(format!("profile:{pubkey}"), pubkey, content, 0)
+    let row = soshal_db_core::repos::search_index::SearchIndexRow {
+        id: format!("profile:{pubkey}"),
+        pubkey,
+        content: soshal_common_core::format::truncate(&content, 4096),
+        kind: 0,
+        created_at: soshal_common_core::format::now_secs(),
+    };
+    super::db::with_db_result(|db| {
+        SearchIndexRepo::new(db).upsert(&row)?;
+        Ok(true)
+    })
 }
 
 /// Remove an entry from the search index.
@@ -534,13 +523,13 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("index");
         insert_post("p1", "pk1", "seed body", 1, 1000);
-        assert!(search_index_post(
-            "p1".to_string(),
-            "pk1".to_string(),
-            "indexed content".to_string(),
-            1
-        )
-        .unwrap());
+        let batch = serde_json::json!([{
+            "id": "p1",
+            "pubkey": "pk1",
+            "content": "indexed content",
+            "kind": 1,
+        }]);
+        assert!(search_index_posts(batch.to_string()).unwrap());
         assert!(
             search_index_profile("pk9".to_string(), "carol".to_string(), String::new()).unwrap()
         );
@@ -626,7 +615,13 @@ mod tests {
         let _p = tmp_db("idxedge");
         // Long post content truncated to 4096 + ellipsis.
         let long = format!("needle{}", "x".repeat(5000));
-        assert!(search_index_post("long1".to_string(), "pk1".to_string(), long, 1).unwrap());
+        let batch = serde_json::json!([{
+            "id": "long1",
+            "pubkey": "pk1",
+            "content": long,
+            "kind": 1,
+        }]);
+        assert!(search_index_posts(batch.to_string()).unwrap());
         let json = db::db_query_raw("SELECT content FROM posts_fts WHERE id = 'long1'".to_string())
             .unwrap();
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();

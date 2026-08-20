@@ -1,8 +1,7 @@
 //! Integration tests for webrtc-core SDP sanitization and Opus configuration.
 
 use soshal_webrtc_core::ice::{
-    ice_config, is_private_ip, is_private_ipv6, is_safe_candidate, is_safe_candidate_json,
-    redact_private_ips,
+    ice_config, is_safe_candidate, is_safe_candidate_json, redact_private_ips,
 };
 use soshal_webrtc_core::sdp::{
     configure_opus_audio_sdp, configure_opus_audio_sdp_json, extract_candidates, extract_rtpmap_pt,
@@ -236,28 +235,27 @@ fn test_configure_opus_oversized_sdp_returns_empty_json() {
 // ─── ice module coverage ────────────────────────────────────────────────────
 
 #[test]
-fn is_private_ip_detects_private_ranges() {
-    assert!(is_private_ip("192.168.1.50"));
-    assert!(is_private_ip("10.0.0.1"));
-    assert!(is_private_ip("172.16.0.1"));
-    assert!(is_private_ip("127.0.0.1"));
-    assert!(is_private_ip("169.254.10.20"));
-    assert!(!is_private_ip("8.8.8.8"));
-    assert!(!is_private_ip("203.0.113.9"));
-    assert!(!is_private_ip("93.184.216.34"));
-    assert!(!is_private_ip("not-an-ip"));
-    assert!(!is_private_ip(""));
+fn redact_private_ips_masks_private_keeps_public() {
+    assert_eq!(redact_private_ips("192.168.1.50"), "0.0.0.0");
+    assert_eq!(redact_private_ips("10.0.0.1"), "0.0.0.0");
+    assert_eq!(redact_private_ips("172.16.0.1"), "0.0.0.0");
+    assert_eq!(redact_private_ips("127.0.0.1"), "0.0.0.0");
+    assert_eq!(redact_private_ips("169.254.10.20"), "0.0.0.0");
+    assert_eq!(redact_private_ips("8.8.8.8"), "8.8.8.8");
+    assert_eq!(redact_private_ips("203.0.113.9"), "203.0.113.9");
+    assert_eq!(redact_private_ips("93.184.216.34"), "93.184.216.34");
+    assert_eq!(redact_private_ips("not-an-ip"), "not-an-ip");
+    assert_eq!(redact_private_ips(""), "");
 }
 
 #[test]
-fn is_private_ipv6_detects_private_ranges() {
-    assert!(is_private_ipv6("fe80::1"));
-    assert!(is_private_ipv6("::1"));
-    assert!(is_private_ipv6("fc00::1"));
-    assert!(is_private_ipv6("ff02::1"));
-    assert!(!is_private_ipv6("2606:4700::1111"));
-    assert!(!is_private_ipv6("garbage"));
-    assert!(!is_private_ipv6(""));
+fn redact_private_ips_masks_ipv6_keeps_public() {
+    assert_eq!(redact_private_ips("fe80::1"), "0.0.0.0");
+    assert_eq!(redact_private_ips("::1"), "0.0.0.0");
+    assert_eq!(redact_private_ips("fc00::1"), "0.0.0.0");
+    assert_eq!(redact_private_ips("ff02::1"), "0.0.0.0");
+    assert_eq!(redact_private_ips("2606:4700::1111"), "2606:4700::1111");
+    assert_eq!(redact_private_ips("garbage"), "garbage");
 }
 
 #[test]

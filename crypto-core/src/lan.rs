@@ -10,7 +10,8 @@
 use ring::agreement::{EphemeralPrivateKey, UnparsedPublicKey, X25519};
 use ring::rand::SystemRandom;
 
-pub const KEY_LEN: usize = 32;
+use crate::nip44::KEY_LEN;
+
 pub const NONCE_LEN: usize = 12;
 pub const PUBLIC_KEY_LEN: usize = 32;
 

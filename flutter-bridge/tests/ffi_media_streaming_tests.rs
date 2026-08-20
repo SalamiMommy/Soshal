@@ -328,33 +328,4 @@ mod ffi_media_streaming_tests {
             "no stream registered -> deterministic unknown"
         );
     }
-    #[test]
-    fn streaming_get_video_url_uninitialized() {
-        let _g = crate::test_util::lock();
-        let _ = streaming::streaming_stop_local_server();
-        let e = streaming::streaming_get_video_url(
-            "vid1".to_string(),
-            "/tmp/nonexistent.mp4".to_string(),
-        )
-        .unwrap_err();
-        assert!(e.contains("not initialized"), "got {e}");
-    }
-    #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
-    async fn streaming_get_video_url_happy_path() {
-        let _g = crate::test_util::lock();
-        let port = streaming::streaming_start_local_server().await.unwrap();
-        let url = streaming::streaming_get_video_url(
-            "vid1".to_string(),
-            "/tmp/nonexistent.mp4".to_string(),
-        )
-        .unwrap();
-        assert!(url.contains(&format!("127.0.0.1:{port}")), "url {url}");
-        assert!(url.contains("vid1"), "url {url}");
-        assert!(streaming::streaming_get_video_url(
-            "vid2".to_string(),
-            "/tmp/other.mp4".to_string(),
-        )
-        .is_ok());
-    }
 }

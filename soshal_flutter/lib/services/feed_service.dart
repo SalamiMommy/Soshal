@@ -347,20 +347,6 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  /// Truncate text to [maxLen] chars (util-core, sync FFI).
-  String truncate(String text, int maxLen) {
-    try {
-      return RustLib.instance.api.crateFfiUtilUtilTruncate(
-        input: text,
-        maxLen: BigInt.from(maxLen),
-      );
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      return text;
-    }
-  }
-
   /// Rank local posts via feed-core and swap the displayed order.
   /// [postsJson] is an array of `{stats: {...}, hashtags: []}` entries.
   Future<List<FeedPost>> rankPosts(String postsJson) async {

@@ -198,15 +198,6 @@ pub fn unregister_ring(addr: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// Clear all registered rings (e.g. for test cleanup).
-pub fn clear_ring_registry() {
-    if let Some(r) = RINGS.get() {
-        if let Ok(mut g) = r.lock() {
-            g.clear();
-        }
-    }
-}
-
 /// FFI: advance the head cursor of the ring at `addr`.
 pub fn ffi_advance_head(addr: usize, new_head: u64) -> Result<(), String> {
     let ring = registry()

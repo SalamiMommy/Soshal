@@ -461,8 +461,7 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Create a FROST threshold jury case for community moderation. Returns
-  /// the serialized `ModerationJuryCase` JSON to feed back into
-  /// `submitJuryVote`.
+  /// the serialized `ModerationJuryCase` JSON (jury voting unavailable).
   Future<String> createJuryCase({
     required String caseId,
     required String targetPubkey,
@@ -489,59 +488,6 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
-  /// Submit a juror's partial-signature vote to a moderation jury case.
-  /// `caseJson` is the JSON returned by `createJuryCase`; `voteShareJson` a
-  /// serialized `FrostSignatureShare`. Returns verdict status JSON.
-  Future<String> submitJuryVote({
-    required String caseJson,
-    required String voteShareJson,
-  }) async {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiModerationModerationSubmitJuryVote(
-        caseJson: caseJson,
-        voteShareJson: voteShareJson,
-      );
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
-
-  /// Classify content using the lightweight AI filter.
-  Future<AiModerationResult> aiClassifyText(String content) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiModerationModerationAiClassifyText(content: content);
-      final map = jsonDecode(json) as Map<String, dynamic>;
-      clearLastError();
-      return AiModerationResult.fromJson(map);
-    } catch (e, st) {
-      setLastError(e, st);
-      return AiModerationResult.clean();
-    }
-  }
-
-  /// Classify raw media attachment with AI perceptual/chrominance analyzer.
-  Future<AiMediaVerdict> aiClassifyMedia(
-      Uint8List imageBytes, String mimeType) async {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiModerationModerationAiClassifyMedia(
-        imageBytes: imageBytes,
-        mimeType: mimeType,
-      );
-      final map = jsonDecode(json) as Map<String, dynamic>;
-      clearLastError();
-      return AiMediaVerdict.fromJson(map);
-    } catch (e, st) {
-      setLastError(e, st);
-      return AiMediaVerdict.pass();
-    }
-  }
-
   /// 2-Tier Hybrid text evaluation (Tier 1 N-Gram -> Tier 2 heuristic embeddings; real ML model on roadmap).
   Future<HybridModerationResult> hybridClassifyText(String content,
       {bool forceDeepScan = false}) async {
@@ -557,20 +503,6 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
     } catch (e, st) {
       setLastError(e, st);
       return HybridModerationResult.clean();
-    }
-  }
-
-  /// Compute 256-bit Meta PDQ perceptual image hash.
-  Future<PdqHashResult?> computePdqHash(Uint8List imageBytes) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiModerationModerationComputePdqHash(imageBytes: imageBytes);
-      final map = jsonDecode(json) as Map<String, dynamic>;
-      clearLastError();
-      return PdqHashResult.fromJson(map);
-    } catch (e, st) {
-      setLastError(e, st);
-      return null;
     }
   }
 }

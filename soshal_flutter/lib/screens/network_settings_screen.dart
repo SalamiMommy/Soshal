@@ -6,6 +6,7 @@ import '../services/daemon_service.dart';
 import '../services/ebpf_service.dart';
 import '../services/network_service.dart';
 import '../services/session_service.dart';
+import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
 
 /// Network settings — relay management (add/remove), connection status, and
@@ -1455,12 +1456,6 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     super.dispose();
   }
 
-  String _ago(int ts) {
-    if (ts <= 0) return 'never';
-    final d = DateTime.now()
-        .difference(DateTime.fromMillisecondsSinceEpoch(ts * 1000));
-    if (d.inMinutes < 1) return 'just now';
-    if (d.inHours < 1) return '${d.inMinutes}m ago';
-    return '${d.inHours}h ago';
-  }
+  String _ago(int ts) =>
+      ts <= 0 ? 'never' : relativeTime(ts);
 }

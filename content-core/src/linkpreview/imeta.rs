@@ -4,7 +4,7 @@ use crate::json_util::{json_in, json_out};
 
 /// Longest URL kept in a meta-tag scan.
 #[doc(hidden)]
-pub const MAX_PREVIEW_URL_LENGTH: usize = 8 * 1024;
+pub use super::urls::MAX_PREVIEW_URL_LENGTH;
 /// Cap on scanned meta tags.
 #[doc(hidden)]
 pub const MAX_IMETA_TAGS: usize = 100_000;

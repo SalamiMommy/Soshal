@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use soshal_common_core::json_util::{json_in, json_out};
+use soshal_common_core::url::{is_private_ip_str, is_private_ipv6_str};
 
 fn check_word_private_ip(word: &str) -> bool {
     if word.is_empty() {
@@ -7,14 +8,14 @@ fn check_word_private_ip(word: &str) -> bool {
     }
     if let Ok(sa) = word.parse::<std::net::SocketAddr>() {
         let ip_str = sa.ip().to_string();
-        if is_private_ip(&ip_str) || is_private_ipv6(&ip_str) {
+        if is_private_ip_str(&ip_str) || is_private_ipv6_str(&ip_str) {
             return true;
         }
     }
     if let Some(start) = word.find('[') {
         if let Some(rest) = word.get(start + 1..) {
             if let Some((host, _rest)) = rest.split_once(']') {
-                if is_private_ipv6(host) {
+                if is_private_ipv6_str(host) {
                     return true;
                 }
             }
@@ -24,11 +25,11 @@ fn check_word_private_ip(word: &str) -> bool {
     if clean.is_empty() {
         return false;
     }
-    if is_private_ip(clean) || is_private_ipv6(clean) {
+    if is_private_ip_str(clean) || is_private_ipv6_str(clean) {
         return true;
     }
     if let Some((host, _port)) = clean.split_once(':') {
-        if is_private_ip(host) || is_private_ipv6(host) {
+        if is_private_ip_str(host) || is_private_ipv6_str(host) {
             return true;
         }
     }
@@ -53,14 +54,6 @@ fn has_private_ip(s: &str) -> bool {
         return true;
     }
     false
-}
-
-pub fn is_private_ip(ip: &str) -> bool {
-    soshal_common_core::url::is_private_ip_str(ip)
-}
-
-pub fn is_private_ipv6(ip: &str) -> bool {
-    soshal_common_core::url::is_private_ipv6_str(ip)
 }
 
 pub fn is_safe_candidate(candidate: &str, force_relay: bool) -> bool {

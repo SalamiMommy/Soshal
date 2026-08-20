@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/backup_screen.dart';
 import 'package:soshal_flutter/services/backup_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
+import 'package:soshal_flutter/services/settings_service.dart';
 
 import 'helpers/test_env.dart';
 
@@ -17,6 +18,7 @@ void main() {
   setUp(() {
     api.handlers.clear();
     api.calls.clear();
+    api.stubString('crateFfiDbDbPath', '$root/soshal.db');
   });
 
   const sessionJson =
@@ -48,6 +50,7 @@ void main() {
         providers: [
           ChangeNotifierProvider<SessionService>.value(value: session),
           ChangeNotifierProvider(create: (_) => BackupService()),
+          ChangeNotifierProvider(create: (_) => SettingsService()),
         ],
         child: const MaterialApp(home: BackupScreen()),
       ),

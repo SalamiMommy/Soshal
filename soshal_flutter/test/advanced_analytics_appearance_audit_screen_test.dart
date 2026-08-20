@@ -141,7 +141,7 @@ void main() {
     expect(find.text('Font size scale'), findsOneWidget);
     expect(find.text('Font family'), findsOneWidget);
     expect(find.text('Save Theme'), findsOneWidget);
-    expect(find.text('Reset to default'), findsOneWidget);
+    expect(find.text('Reset to default'), findsNWidgets(2));
   });
 
   testWidgets('audit screen empty state', (tester) async {

@@ -76,43 +76,6 @@ void main() {
       expect(api.namedArg(inv, 'id'), 'bm-1');
     });
 
-    test('resolvePost parses cached FeedPost from JSON map', () async {
-      final bookmarks = BookmarksService();
-      api.stubString(
-        'crateFfiBookmarksBookmarksResolvePost',
-        '{"id":"ev-1","pubkey":"pk-1","content":"saved post",'
-        '"created_at":1700000002,"reactions":3,"replies":1,"reposts":0,'
-        '"liked":false}',
-      );
-
-      final post = await bookmarks.resolvePost('ev-1');
-      expect(post, isNotNull);
-      expect(post!.eventId, 'ev-1');
-      expect(post.content, 'saved post');
-      expect(post.createdAt, 1700000002);
-      expect(post.reactions, 3);
-
-      final inv =
-          api.callsOf('crateFfiBookmarksBookmarksResolvePost').single;
-      expect(api.namedArg(inv, 'eventId'), 'ev-1');
-    });
-
-    test('resolvePost returns null for empty json', () async {
-      final bookmarks = BookmarksService();
-      api.stubString('crateFfiBookmarksBookmarksResolvePost', '');
-
-      expect(await bookmarks.resolvePost('ev-1'), isNull);
-    });
-
-    test('resolvePost failure returns null and records lastError', () async {
-      final bookmarks = BookmarksService();
-      api.stub('crateFfiBookmarksBookmarksResolvePost',
-          (_) => throw Exception('cache miss'));
-
-      expect(await bookmarks.resolvePost('ev-1'), isNull);
-      expect(bookmarks.lastError, contains('cache miss'));
-    });
-
     test('save failure sets lastError and rethrows', () async {
       final bookmarks = BookmarksService();
       api.stub('crateFfiBookmarksBookmarksSave',

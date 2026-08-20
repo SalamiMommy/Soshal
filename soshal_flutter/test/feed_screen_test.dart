@@ -82,7 +82,7 @@ Future<void> pumpFeed(WidgetTester tester, {String? sessionPubkey}) async {
           create: (_) => FakeSession(pubkey: sessionPubkey),
         ),
         ChangeNotifierProvider(create: (_) => LayoutService()),
-        ChangeNotifierProvider(create: (_) => FakeZapService()),
+        ChangeNotifierProvider<ZapService>(create: (_) => FakeZapService()),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
@@ -111,6 +111,7 @@ void main() {
     api.handlers.clear();
     api.calls.clear();
     api.stubString('crateFfiFeedFeedComputeCardLayouts', _layoutJson);
+    api.stubBool('crateFfiSearchSearchRemoveIndexed', true);
   });
 
   testWidgets('renders posts from stubbed feed data', (tester) async {

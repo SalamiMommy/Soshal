@@ -9095,40 +9095,6 @@ fn wire__crate__ffi__moderation__moderation_get_word_filters_impl(
         },
     )
 }
-fn wire__crate__ffi__moderation__moderation_hybrid_classify_media_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "moderation_hybrid_classify_media",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_image_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
-            let api_mime_type = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::moderation::moderation_hybrid_classify_media(
-                    api_image_bytes,
-                    api_mime_type,
-                )?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__ffi__moderation__moderation_hybrid_classify_text_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -13179,44 +13145,6 @@ fn wire__crate__ffi__search__search_hashtags_impl(
         },
     )
 }
-fn wire__crate__ffi__search__search_index_post_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "search_index_post",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_event_id = <String>::sse_decode(&mut deserializer);
-            let api_pubkey = <String>::sse_decode(&mut deserializer);
-            let api_content = <String>::sse_decode(&mut deserializer);
-            let api_kind = <i64>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::search::search_index_post(
-                    api_event_id,
-                    api_pubkey,
-                    api_content,
-                    api_kind,
-                )?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__ffi__search__search_index_posts_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -14475,38 +14403,6 @@ fn wire__crate__ffi__streaming__streaming_fetch_stories_impl(
         },
     )
 }
-fn wire__crate__ffi__streaming__streaming_get_video_url_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "streaming_get_video_url",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_video_id = <String>::sse_decode(&mut deserializer);
-            let api_source_path = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::streaming::streaming_get_video_url(api_video_id, api_source_path)?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__ffi__streaming__streaming_mark_story_viewed_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -14686,71 +14582,6 @@ fn wire__crate__ffi__streaming__streaming_start_live_impl(
                     api_description,
                     api_stream_url,
                 )?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__ffi__streaming__streaming_start_local_server_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "streaming_start_local_server",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok =
-                            crate::ffi::streaming::streaming_start_local_server().await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__ffi__streaming__streaming_stop_local_server_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "streaming_stop_local_server",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::streaming::streaming_stop_local_server()?;
                 Ok(output_ok)
             })())
         },
@@ -19911,18 +19742,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__moderation__moderation_hybrid_classify_media(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__moderation__moderation_hybrid_classify_media_impl(
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__moderation__moderation_hybrid_classify_text(
         ptr_: *mut u8,
@@ -21237,14 +21056,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__search__search_index_post(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__search__search_index_post_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__search__search_index_posts(
         ptr_: *mut u8,
@@ -21634,14 +21445,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__streaming__streaming_get_video_url(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__streaming__streaming_get_video_url_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__streaming__streaming_mark_story_viewed(
         ptr_: *mut u8,
@@ -21700,33 +21503,7 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__streaming__streaming_start_local_server(
-        port_: i64,
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__streaming__streaming_start_local_server_impl(
-            port_,
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__streaming__streaming_stop_local_server(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__streaming__streaming_stop_local_server_impl(
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__streaming__streaming_story_react(
         ptr_: *mut u8,
@@ -25046,19 +24823,6 @@ mod web {
     }
 
     #[wasm_bindgen]
-    pub fn wire__crate__ffi__moderation__moderation_hybrid_classify_media(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__moderation__moderation_hybrid_classify_media_impl(
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
-    #[wasm_bindgen]
     pub fn wire__crate__ffi__moderation__moderation_hybrid_classify_text(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -26372,15 +26136,6 @@ mod web {
     }
 
     #[wasm_bindgen]
-    pub fn wire__crate__ffi__search__search_index_post(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__search__search_index_post_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
     pub fn wire__crate__ffi__search__search_index_posts(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -26769,15 +26524,6 @@ mod web {
     }
 
     #[wasm_bindgen]
-    pub fn wire__crate__ffi__streaming__streaming_get_video_url(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__streaming__streaming_get_video_url_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
     pub fn wire__crate__ffi__streaming__streaming_mark_story_viewed(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -26832,34 +26578,6 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__streaming__streaming_start_live_impl(ptr_, rust_vec_len_, data_len_)
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__streaming__streaming_start_local_server(
-        port_: flutter_rust_bridge::for_generated::MessagePort,
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) {
-        wire__crate__ffi__streaming__streaming_start_local_server_impl(
-            port_,
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
-    }
-
-    #[wasm_bindgen]
-    pub fn wire__crate__ffi__streaming__streaming_stop_local_server(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__streaming__streaming_stop_local_server_impl(
-            ptr_,
-            rust_vec_len_,
-            data_len_,
-        )
     }
 
     #[wasm_bindgen]

@@ -8,7 +8,6 @@ const POST_SELECT_BY_ID: &str = "SELECT id, pubkey, content, kind, created_at, t
 const POST_SELECT_BY_PUBKEY: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3";
 const POST_SELECT_REPLIES: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 ORDER BY created_at ASC";
 const POST_SELECT_PAGED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2";
-const POST_SELECT_PAGED_CURSOR: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE is_deleted = 0 AND created_at < ?1 ORDER BY created_at DESC LIMIT ?2";
 /// Slim feed variant: only the columns the feed surface consumes. Feed pages
 /// are the hottest read path; the 17-column row mapping wastes decode work
 /// on sig/mention/freenet/scheduling columns the UI never sees.
@@ -16,7 +15,6 @@ const POST_SELECT_PAGED_META: &str =
     "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_CURSOR: &str =
     "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND created_at < ?1 ORDER BY created_at DESC LIMIT ?2";
-const POST_FEED_CURSOR_SQL: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE pubkey IN (SELECT value FROM json_each(?1)) AND is_deleted = 0 AND created_at < ?2 ORDER BY created_at DESC LIMIT ?3";
 const POST_SELECT_SCHEDULED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC";
 
 pub struct PostRepo<'a> {
@@ -246,27 +244,6 @@ impl<'a> PostRepo<'a> {
         )
     }
 
-    /// Keyset cursor-paginated feed query: fetches rows with `created_at < before_created_at`.
-    pub fn get_feed_cursor(
-        &self,
-        pubkeys: &[String],
-        before_created_at: i64,
-        limit: i64,
-    ) -> Result<Vec<PostRow>, crate::error::DbError> {
-        if pubkeys.is_empty() {
-            return Ok(vec![]);
-        }
-        let limit = crate::repos::clamp_limit(limit);
-        let pubkeys_json = serde_json::to_string(pubkeys).unwrap_or_else(|_| "[]".into());
-        let conn = self.db.conn()?;
-        crate::query::query(
-            &conn,
-            POST_FEED_CURSOR_SQL,
-            params![pubkeys_json, before_created_at, limit],
-            Self::map_row,
-        )
-    }
-
     pub fn get_recent(&self, limit: i64) -> Result<Vec<PostRow>, crate::error::DbError> {
         self.get_paged(limit, 0)
     }
@@ -283,22 +260,6 @@ impl<'a> PostRepo<'a> {
             &conn,
             POST_SELECT_PAGED,
             params![limit, offset],
-            Self::map_row,
-        )
-    }
-
-    /// Keyset cursor-paginated paged fetch.
-    pub fn get_paged_cursor(
-        &self,
-        before_created_at: i64,
-        limit: i64,
-    ) -> Result<Vec<PostRow>, crate::error::DbError> {
-        let limit = crate::repos::clamp_limit(limit);
-        let conn = self.db.conn()?;
-        crate::query::query(
-            &conn,
-            POST_SELECT_PAGED_CURSOR,
-            params![before_created_at, limit],
             Self::map_row,
         )
     }

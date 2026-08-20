@@ -263,19 +263,6 @@ pub fn moderation_hybrid_classify_text(
     ))
 }
 
-/// 2-Tier Hybrid media evaluation (Chrominance/Skin-tone -> Meta PDQ Perceptual Hash).
-#[frb(sync, serialize)]
-pub fn moderation_hybrid_classify_media(
-    image_bytes: Vec<u8>,
-    mime_type: String,
-) -> Result<String, String> {
-    Ok(soshal_moderation_core::media::check_media_hybrid_json(
-        &image_bytes,
-        &mime_type,
-        &[],
-    ))
-}
-
 /// Compute 256-bit Meta PDQ perceptual image hash and evaluate against threat blocklist.
 #[frb(sync, serialize)]
 pub fn moderation_compute_pdq_hash(image_bytes: Vec<u8>) -> Result<String, String> {

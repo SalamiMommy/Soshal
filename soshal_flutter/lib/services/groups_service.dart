@@ -50,10 +50,6 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<ThreadReaction> reactionsFor(String targetId) =>
       _reactions.where((r) => r.matches(targetId)).toList();
 
-  /// True when [pubkey] reacted with [emoji] to [targetId].
-  bool reacted(String targetId, String emoji, String pubkey) => _reactions
-      .any((r) => r.matches(targetId) && r.emoji == emoji && r.reacted);
-
   Future<List<SoshalGroup>> fetchGroups(String userPubkey) async {
     try {
       final json = RustLib.instance.api.crateFfiGroupsGroupsFetchGroups(
@@ -136,20 +132,6 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();
-      rethrow;
-    }
-  }
-
-  Future<bool> verifyPassword(String groupId, String password) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsVerifyPassword(
-        groupId: groupId,
-        password: password,
-      );
-      clearLastError();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
       rethrow;
     }
   }

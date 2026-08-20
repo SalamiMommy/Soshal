@@ -61,7 +61,7 @@ void main() {
   testWidgets('moq viewer renders waiting state', (tester) async {
     api.stubString('crateFfiStreamingStreamingMoqSubscribeStream',
         '{"status":"ok"}');
-    api.stubString('crateFfiP2PP2PMoqSubscribeFetch', '[]');
+    api.stubString('crateFfiP2PP2PMoqSubscribeFetch', '{"groups":[]}');
     await pump(
       tester,
       const MoqViewerScreen(addr: '127.0.0.1:4242', streamId: 'stream-1'),
@@ -73,8 +73,10 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('0 frames'), findsOneWidget);
 
-    await tester.tap(find.text('Leave'));
-    await tester.pump(const Duration(milliseconds: 1200));
+    await tester.tap(find.widgetWithText(TextButton, 'Leave'), warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 300));
   });
 
   testWidgets('musicloud user screen empty state', (tester) async {

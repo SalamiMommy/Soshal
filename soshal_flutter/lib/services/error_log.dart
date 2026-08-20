@@ -47,13 +47,22 @@ mixin LastErrorMixin {
 /// single notification per frame.
 mixin DeferredNotify on ChangeNotifier {
   bool _notifyScheduled = false;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 
   void notifyDeferred() {
-    if (_notifyScheduled) return;
+    if (_notifyScheduled || _disposed) return;
     _notifyScheduled = true;
     scheduleMicrotask(() {
       _notifyScheduled = false;
-      notifyListeners();
+      if (!_disposed) {
+        notifyListeners();
+      }
     });
   }
 }

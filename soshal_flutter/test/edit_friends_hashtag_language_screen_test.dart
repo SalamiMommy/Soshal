@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/edit_profile_screen.dart';
 import 'package:soshal_flutter/screens/friends_screen.dart';
-import 'package:soshal_flutter/screens/hashtag_screen.dart';
 import 'package:soshal_flutter/screens/language_screen.dart';
+import 'package:soshal_flutter/screens/search_screen.dart';
 import 'package:soshal_flutter/services/friends_service.dart';
 import 'package:soshal_flutter/services/messaging_service.dart';
 import 'package:soshal_flutter/services/search_service.dart';
@@ -123,16 +123,16 @@ void main() {
     expect(find.text('Refresh from relays'), findsOneWidget);
   });
 
-  testWidgets('hashtag screen shows empty state', (tester) async {
-    api.stubString('crateFfiSearchSearchPosts', '[]');
-    await pump(tester, const HashtagScreen(hashtag: 'soshal'));
+  testWidgets('search screen renders search bar and trending sections', (tester) async {
+    api.stubString('crateFfiDbDbGetTrendingHashtags', '[]');
+    api.stubString('crateFfiSearchSearchTrendingHashtags', '[]');
+    api.stubString('crateFfiSearchSearchTrendingProfiles', '[]');
+    await pump(tester, const SearchScreen());
+    await tester.pumpAndSettle();
 
-    expect(find.text('#soshal'), findsOneWidget);
-    expect(find.text('No posts tagged #soshal yet'), findsOneWidget);
-    expect(
-      find.text('Posts matching this tag will appear here.'),
-      findsOneWidget,
-    );
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('Trending hashtags'), findsOneWidget);
+    expect(find.text('Trending profiles'), findsOneWidget);
   });
 
   testWidgets('language screen renders language options', (tester) async {

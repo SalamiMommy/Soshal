@@ -73,24 +73,6 @@ class BookmarksService extends ChangeNotifier
     }
   }
 
-  /// Resolve a bookmarked event from the local DB cache.
-  /// Returns null when the post is not cached locally.
-  Future<FeedPost?> resolvePost(String eventId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiBookmarksBookmarksResolvePost(
-        eventId: eventId,
-      );
-      if (json.isEmpty) return null;
-      final decoded = jsonDecode(json);
-      if (decoded is! Map<String, dynamic>) return null;
-      return FeedPost.fromJson(decoded);
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      return null;
-    }
-  }
-
   /// Resolve many bookmarked events in one FFI call. Returns a map of
   /// eventId → post for the rows cached locally.
   Future<Map<String, FeedPost>> resolvePosts(List<String> eventIds) async {

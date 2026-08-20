@@ -37,22 +37,6 @@ pub fn decode_geohash_coords(g: &str) -> Option<(f64, f64)> {
     }
 }
 
-pub fn haversine_coord_distance(c1: (f64, f64), g2: &str) -> f64 {
-    if g2.is_empty() || g2.len() > 16 {
-        return f64::INFINITY;
-    }
-    match geohash::decode(g2) {
-        Ok((c2, _, _)) => {
-            if (c1.0 - c2.y).abs() < 1e-7 && (c1.1 - c2.x).abs() < 1e-7 {
-                0.0
-            } else {
-                haversine_km(c1.0, c1.1, c2.y, c2.x)
-            }
-        }
-        Err(_) => f64::INFINITY,
-    }
-}
-
 pub fn haversine_distance(g1: &str, g2: &str) -> f64 {
     if g1 == g2 && !g1.is_empty() {
         return 0.0;

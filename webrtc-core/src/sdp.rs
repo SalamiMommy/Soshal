@@ -1,7 +1,8 @@
 use serde::Deserialize;
 
-use crate::ice::{is_private_ip, is_private_ipv6, is_safe_candidate};
+use crate::ice::is_safe_candidate;
 use soshal_common_core::json_util::{json_in, json_out};
+use soshal_common_core::url::{is_private_ip_str, is_private_ipv6_str};
 
 // ─── SDP Sanitization ───────────────────────────────────────────────────────
 
@@ -32,7 +33,7 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
             if let Some(ip4_pos) = line.find("IP4") {
                 let ip_part = &line[ip4_pos + 3..];
                 let ip = ip_part.trim();
-                if !ip.is_empty() && is_private_ip(ip) {
+                if !ip.is_empty() && is_private_ip_str(ip) {
                     lines.push(format!("c=IN IP4 {}", "127.0.0.1"));
                     continue;
                 }
@@ -40,7 +41,7 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
             if let Some(ip6_pos) = line.find("IP6") {
                 let ip_part = &line[ip6_pos + 3..];
                 let ip = ip_part.trim();
-                if !ip.is_empty() && is_private_ipv6(ip) {
+                if !ip.is_empty() && is_private_ipv6_str(ip) {
                     lines.push(format!("c=IN IP6 {}", "::1"));
                     continue;
                 }

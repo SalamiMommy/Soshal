@@ -338,11 +338,22 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
     if (mounted) setState(() {});
   }
 
+  StreamingService? _streamingService;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _streamingService = context.read<StreamingService>();
+  }
+
   @override
   void dispose() {
     _audioTimer?.cancel();
     _camera?.dispose();
-    unawaited(context.read<StreamingService>().stopMoqBroadcast());
+    final service = _streamingService;
+    if (service != null) {
+      unawaited(service.stopMoqBroadcast());
+    }
     H264Codec.stopRecord();
     H264Codec.release();
     AudioCodec.release();

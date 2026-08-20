@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/session_service.dart';
 import '../services/streaming_service.dart';
 import '../services/p2p_service.dart';
-import 'live_broadcast_screen.dart';
-import 'moq_viewer_screen.dart';
 import '../ffi/p2p.dart';
 import '../utils/format.dart';
 import '../widgets/app_snack.dart';
@@ -235,12 +234,9 @@ class _LiveScreenState extends State<LiveScreen> {
             streamId: eventId, title: title.text.trim());
         await _load();
         if (!mounted) return;
-        await Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => LiveBroadcastScreen(
-            streamId: eventId,
-            title: title.text.trim(),
-          ),
-        ));
+        await context.push(
+          '/live/broadcast/$eventId?title=${Uri.encodeQueryComponent(title.text.trim())}',
+        );
         await _load();
       } catch (e) {
         if (mounted) {
@@ -284,12 +280,9 @@ class _LiveScreenState extends State<LiveScreen> {
       return;
     }
     if (!mounted) return;
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => MoqViewerScreen(
-        addr: '$peerIp:$quicPort',
-        streamId: stream.id,
-      ),
-    ));
+    await context.push(
+      '/live/viewer/${stream.id}?addr=${Uri.encodeQueryComponent('$peerIp:$quicPort')}',
+    );
   }
 
   void _toast(String msg) {

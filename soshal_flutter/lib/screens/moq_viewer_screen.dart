@@ -193,10 +193,18 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  StreamingService? _streamingService;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _streamingService = context.read<StreamingService>();
+  }
+
   @override
   void dispose() {
     _running = false;
-    context.read<StreamingService>().stopMoqStream();
+    _streamingService?.stopMoqStream();
     _frameImage?.dispose();
     H264Codec.release();
     AudioCodec.release();

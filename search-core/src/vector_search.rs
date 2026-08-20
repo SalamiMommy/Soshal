@@ -67,11 +67,6 @@ pub fn cosine_similarity_with_norms(a: &[f32], norm_a: f32, b: &[f32], norm_b: f
     }
 }
 
-pub fn cosine_similarity_with_norm(a: &[f32], norm_a: f32, b: &[f32]) -> f32 {
-    let norm_b = embedding_norm(b);
-    cosine_similarity_with_norms(a, norm_a, b, norm_b)
-}
-
 pub fn rank_vector_documents(
     query_embedding: &[f32],
     docs: &[VectorDocument],

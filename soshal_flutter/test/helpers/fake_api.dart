@@ -300,6 +300,10 @@ class FakeApi extends RustLibApi {
       _asyncCall<bool>('crateFfiSyncSyncStop', [], {});
 
   @override
+  Future<int> crateFfiHeadlessBackgroundSyncTask({required String dbPath}) =>
+      _asyncCall<int>('crateFfiHeadlessBackgroundSyncTask', [], {#dbPath: dbPath});
+
+  @override
   Future<String> crateFfiVouchVouchFetch({required String targetPubkey}) =>
       _asyncCall<String>('crateFfiVouchVouchFetch', [], {#targetPubkey: targetPubkey});
 

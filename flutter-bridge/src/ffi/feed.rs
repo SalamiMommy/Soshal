@@ -124,12 +124,13 @@ pub async fn feed_publish_text_note(content: String, tags_json: String) -> Resul
             signed["pubkey"].as_str(),
             signed["content"].as_str(),
         ) {
-            let _ = super::search::search_index_post(
-                id.to_string(),
-                pubkey.to_string(),
-                c.to_string(),
-                1,
-            );
+            let rows = serde_json::json!([{
+                "id": id,
+                "pubkey": pubkey,
+                "content": c,
+                "kind": 1,
+            }]);
+            let _ = super::search::search_index_posts(rows.to_string());
         }
     }
     super::sync::publish_or_enqueue("post", &signed_json).await?;
@@ -158,12 +159,13 @@ pub async fn feed_publish_reply(
             signed["pubkey"].as_str(),
             signed["content"].as_str(),
         ) {
-            let _ = super::search::search_index_post(
-                id.to_string(),
-                pubkey.to_string(),
-                c.to_string(),
-                1,
-            );
+            let rows = serde_json::json!([{
+                "id": id,
+                "pubkey": pubkey,
+                "content": c,
+                "kind": 1,
+            }]);
+            let _ = super::search::search_index_posts(rows.to_string());
         }
     }
     super::sync::publish_or_enqueue("reply", &signed_json).await?;

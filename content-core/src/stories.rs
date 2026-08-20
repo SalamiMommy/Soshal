@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::json_util::{json_in, json_out};
 
 const MAX_POSTS: usize = 100_000;
-const MAX_PREVIEW_URL_LENGTH: usize = 8 * 1024;
 
+use crate::linkpreview::urls::MAX_PREVIEW_URL_LENGTH;
 use crate::tags::find_tag_value;
 
 #[derive(Deserialize, Clone)]

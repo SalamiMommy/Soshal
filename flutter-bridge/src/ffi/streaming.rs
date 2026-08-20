@@ -34,42 +34,6 @@ pub struct StoryInfo {
     pub views: i32,
 }
 
-lazy_static::lazy_static! {
-    static ref VIDEO_SERVER: std::sync::Mutex<Option<soshal_streaming_core::video_server::LocalVideoServer>> =
-        std::sync::Mutex::new(None);
-}
-
-/// Start the local Rust video streaming HTTP micro-server bound to 127.0.0.1:0.
-#[frb(serialize)]
-pub async fn streaming_start_local_server() -> Result<u16, String> {
-    let server = soshal_streaming_core::video_server::LocalVideoServer::start().await?;
-    let port = server.port();
-    if let Ok(mut lock) = VIDEO_SERVER.lock() {
-        *lock = Some(server);
-    }
-    Ok(port)
-}
-
-/// Stop the local video micro-server and clear the registered instance.
-#[frb(sync, serialize)]
-pub fn streaming_stop_local_server() -> Result<(), String> {
-    if let Ok(mut lock) = VIDEO_SERVER.lock() {
-        *lock = None;
-    }
-    Ok(())
-}
-
-/// Register a video asset with the local video micro-server and return its localhost URL.
-#[frb(sync, serialize)]
-pub fn streaming_get_video_url(video_id: String, source_path: String) -> Result<String, String> {
-    if let Ok(lock) = VIDEO_SERVER.lock() {
-        if let Some(ref server) = *lock {
-            return Ok(server.register_video(video_id, source_path));
-        }
-    }
-    Err("Video server not initialized".to_string())
-}
-
 fn tag_value(tags_json: &str, key: &str) -> Option<String> {
     serde_json::from_str::<Vec<Vec<String>>>(tags_json)
         .ok()?

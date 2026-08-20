@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:soshal_flutter/screens/splash_screen.dart';
 import 'package:soshal_flutter/services/session_service.dart';
+import 'package:soshal_flutter/services/settings_service.dart';
 import 'package:soshal_flutter/services/shell_service.dart';
 import 'package:soshal_flutter/services/signer_service.dart';
 import 'package:soshal_flutter/services/sync_service.dart';
@@ -19,6 +20,8 @@ void main() {
   setUp(() {
     api.handlers.clear();
     api.calls.clear();
+    api.stubString('crateFfiDbDbGetSetting', '');
+    api.stubBool('crateFfiDbDbSetSetting', true);
   });
 
   Future<void> pumpSplash(WidgetTester tester) async {
@@ -44,6 +47,7 @@ void main() {
           ChangeNotifierProvider(create: (_) => SignerService()),
           ChangeNotifierProvider(create: (_) => ShellService()),
           ChangeNotifierProvider(create: (_) => SyncService()),
+          ChangeNotifierProvider(create: (_) => SettingsService()),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),

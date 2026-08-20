@@ -37,7 +37,6 @@ import '../screens/stealth_screen.dart';
 import '../screens/analytics_screen.dart';
 import '../screens/audit_screen.dart';
 import '../screens/bookmarks_screen.dart';
-import '../screens/hashtag_screen.dart';
 import '../screens/scheduled_screen.dart';
 import '../screens/appearance_screen.dart';
 import '../screens/language_screen.dart';
@@ -236,12 +235,6 @@ class AppRouter {
           GoRoute(
             path: '/scheduled',
             builder: (context, state) => const ScheduledScreen(),
-          ),
-          GoRoute(
-            path: '/hashtag/:tag',
-            builder: (context, state) => HashtagScreen(
-              hashtag: state.pathParameters['tag'] ?? '',
-            ),
           ),
           GoRoute(
             path: '/call/:peer/:mediaType/:callId',
