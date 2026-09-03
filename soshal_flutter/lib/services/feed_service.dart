@@ -23,8 +23,6 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   // between mutations, otherwise `context.select((s) => s.pinnedPosts)` sees
   // a fresh identity every call and rebuilds on every FeedService notify.
   List<String> _pinnedView = const [];
-  final List<FeedPost> _pendingIndex = [];
-  bool _indexFlushScheduled = false;
 
   /// Best-effort hook invoked after a full feed refresh (offset 0). Set by
   /// [SyncService.attach] to trigger peer reconciliation; failures are silent.
@@ -390,7 +388,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
             'reposts_count': p.reposts,
             'wot_distance': 0,
           },
-          'hashtags': extractHashtags(p.content),
+          'content': p.content,
         },
     ]));
   }
@@ -424,35 +422,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  /// Queue a stored post for FTS indexing; flush runs off the load path.
-  void _indexPost(FeedPost post) {
-    if (post.eventId.isEmpty) return;
-    _pendingIndex.add(post);
-    if (_indexFlushScheduled) return;
-    _indexFlushScheduled = true;
-    Future.microtask(_flushIndexQueue);
-  }
 
-  void _flushIndexQueue() {
-    _indexFlushScheduled = false;
-    final pending = List<FeedPost>.from(_pendingIndex);
-    _pendingIndex.clear();
-    if (pending.isEmpty) return;
-    try {
-      final rowsJson = jsonEncode([
-        for (final post in pending)
-          {
-            'id': post.eventId,
-            'pubkey': post.pubkey,
-            'content': post.content,
-            'kind': 1,
-          }
-      ]);
-      RustLib.instance.api.crateFfiSearchSearchIndexPosts(rowsJson: rowsJson);
-    } catch (_) {
-      // Indexing is best-effort; a failed upsert must not break ingest.
-    }
-  }
 
   /// Decode feed rows: JSON parsing happens on a background isolate
   /// ([_parseFeedRowsStatic]); decompress (FFI, main-isolate only) + [FeedPost]
@@ -498,7 +468,6 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     if (!validateNote(post.content)) return;
     if (_posts.any((p) => p.eventId == post.eventId)) return;
     _posts.insert(0, post);
-    _indexPost(post);
     notifyDeferred();
   }
 

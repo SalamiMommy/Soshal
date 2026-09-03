@@ -76,8 +76,6 @@ class LayoutService extends ChangeNotifier {
       final json = RustLib.instance.api.crateFfiFeedFeedComputeCardLayouts(
           requestsJson: jsonEncode(requests));
       final results = jsonDecode(json) as List<dynamic>;
-      _heights.clear();
-      _mediaHeights.clear();
       for (final r in results) {
         final m = r as Map<String, dynamic>;
         final id = m['id'] as String? ?? '';

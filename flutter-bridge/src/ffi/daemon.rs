@@ -239,6 +239,7 @@ fn spawn_all() -> Result<bool, String> {
     });
 
     let rnsd_data = files.join("reticulum-data");
+    #[cfg_attr(target_os = "android", allow(unused_variables))]
     let dir_rnsd = dir;
     register_spawner("rnsd", move || {
         #[cfg(target_os = "android")]

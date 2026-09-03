@@ -89,15 +89,29 @@ pub fn rank_vector_documents(
     if query_norm <= 0.0 || docs.is_empty() {
         return Vec::new();
     }
+    let query_sqrt = query_norm.sqrt();
     let mut scored: Vec<(usize, f32)> = docs
         .iter()
         .enumerate()
         .map(|(idx, doc)| {
             let doc_norm = doc.compute_norm();
-            (
-                idx,
-                cosine_similarity_with_norms(query_embedding, query_norm, &doc.embedding, doc_norm),
-            )
+            let score = if doc_norm <= 0.0 || query_embedding.len() != doc.embedding.len() {
+                0.0
+            } else {
+                let dot: f32 = query_embedding
+                    .iter()
+                    .zip(doc.embedding.iter())
+                    .map(|(x, y)| x * y)
+                    .sum();
+                let denom = query_sqrt * doc_norm.sqrt();
+                let sim = dot / denom;
+                if sim.is_finite() {
+                    sim.clamp(-1.0, 1.0)
+                } else {
+                    0.0
+                }
+            };
+            (idx, score)
         })
         .collect();
 

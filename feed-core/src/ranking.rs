@@ -53,8 +53,17 @@ pub fn score_post_with_set(
         let match_count = post_hashtags
             .iter()
             .filter(|t| {
-                if t.is_ascii() {
-                    user_hashtags_set.iter().any(|u| u.eq_ignore_ascii_case(t))
+                if t.is_ascii() && t.len() <= 64 {
+                    let mut buf = [0u8; 64];
+                    let bytes = t.as_bytes();
+                    for (i, &b) in bytes.iter().enumerate() {
+                        buf[i] = b.to_ascii_lowercase();
+                    }
+                    if let Ok(s) = std::str::from_utf8(&buf[..bytes.len()]) {
+                        user_hashtags_set.contains(s)
+                    } else {
+                        false
+                    }
                 } else {
                     user_hashtags_set.contains(t.to_lowercase().as_str())
                 }

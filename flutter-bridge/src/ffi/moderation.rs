@@ -138,7 +138,17 @@ pub fn moderation_report_content(
     content_id: String,
     reason: String,
 ) -> Result<bool, String> {
-    drop(content_type);
+    // Validate content_type against a fixed allowlist so the API contract is
+    // honest — unknown values are rejected rather than silently discarded.
+    const VALID_CONTENT_TYPES: &[&str] =
+        &["post", "comment", "account", "message", "image", "video"];
+    if !VALID_CONTENT_TYPES.contains(&content_type.as_str()) {
+        return Err(format!(
+            "unknown content_type {content_type:?}; must be one of: {}",
+            VALID_CONTENT_TYPES.join(", ")
+        ))
+        .into();
+    }
     let reason = soshal_common_core::format::truncate(&reason, 512);
     if reason.trim().is_empty() {
         return Err("reason must not be empty".to_string()).into();

@@ -13,6 +13,8 @@ zeroize = { workspace = true }
 raptorq = "1.8"
 libc = { workspace = true }
 memmap2 = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.7"
 
 

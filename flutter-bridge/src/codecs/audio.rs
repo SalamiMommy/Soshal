@@ -7,9 +7,9 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use super::audio_state;
 #[cfg(target_os = "android")]
 use super::ndk::*;
-use super::state;
 
 #[allow(dead_code)] // android-only cfg callers
 const SAMPLE_RATE: i32 = 48_000;
@@ -37,13 +37,13 @@ pub fn release_audio_all() {
     CAPTURE_STOP.store(true, Ordering::SeqCst);
     MIC_ENABLED.store(false, Ordering::SeqCst);
     let join_thread = {
-        let mut s = state();
+        let mut s = audio_state();
         s.capture_thread.take()
     };
     if let Some(t) = join_thread {
         let _ = t.join();
     }
-    let mut s = state();
+    let mut s = audio_state();
     s.release_audio();
 }
 
@@ -57,7 +57,7 @@ pub fn init_encode() -> bool {
         }
         release_audio_all();
         CAPTURE_STOP.store(false, Ordering::SeqCst);
-        let mut s = state();
+        let mut s = audio_state();
 
         unsafe {
             // AAC-LC encoder (config blob is drained first by MediaCodec).
@@ -127,7 +127,7 @@ pub fn init_encode() -> bool {
 pub fn set_mic_enable(on: bool) -> bool {
     let prev = MIC_ENABLED.swap(on, Ordering::Relaxed);
     if on && !prev {
-        let mut s = state();
+        let mut s = audio_state();
         s.audio_queue.clear();
     }
     true
@@ -135,7 +135,7 @@ pub fn set_mic_enable(on: bool) -> bool {
 
 /// Drain queued AAC blobs: `[2, ...config]` or `[1, ...frame]`.
 pub fn drain() -> Vec<Vec<u8>> {
-    let mut s = state();
+    let mut s = audio_state();
     let mut out = Vec::new();
     while out.len() < 64 {
         match s.audio_queue.pop_front() {
@@ -153,7 +153,7 @@ pub fn init_decode() -> bool {
         if !super::sdk_gate() {
             return false;
         }
-        let mut s = state();
+        let mut s = audio_state();
         s.release_audio_decoder_only();
         unsafe {
             let codec = AMediaCodec_createDecoderByType(c"audio/mp4a-latm".as_ptr());
@@ -209,7 +209,7 @@ pub fn feed_aac(blob: &[u8]) -> bool {
         if blob.is_empty() {
             return false;
         }
-        let s = state();
+        let s = audio_state();
         let (Some(codec), Some(speaker)) = (s.audio_decoder.as_ref(), s.speaker.as_ref()) else {
             return false;
         };
@@ -295,7 +295,7 @@ fn capture_loop() {
             break;
         }
         let (codec, mic) = {
-            let s = state();
+            let s = audio_state();
             (
                 s.audio_encoder.as_ref().map(|c| c.0),
                 s.mic.as_ref().map(|m| m.0),
@@ -340,7 +340,7 @@ fn capture_loop() {
         }
     }
     unsafe {
-        let s = state();
+        let s = audio_state();
         if let Some(mic) = s.mic.as_ref() {
             AAudioStream_requestStop(mic.0);
         }
@@ -384,7 +384,7 @@ unsafe fn drain_audio_encoder(codec: *mut AMediaCodec) {
             let mut tagged = Vec::with_capacity(aac.len() + 1);
             tagged.push(tag);
             tagged.extend_from_slice(aac);
-            let mut s = state();
+            let mut s = audio_state();
             // Bound the queue to prevent unbounded memory growth under backpressure.
             const MAX_AUDIO_QUEUE: usize = 128;
             if s.audio_queue.len() >= MAX_AUDIO_QUEUE {

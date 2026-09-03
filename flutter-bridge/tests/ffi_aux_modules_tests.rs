@@ -165,6 +165,7 @@ mod ffi_aux_modules_tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = format!("{dir}/app.db");
+        assert!(db::db_init(db_path.clone()).is_ok());
         session::session_load(db_path).unwrap();
         session::session_add_account(
             "spk1".to_string(),
@@ -201,6 +202,7 @@ mod ffi_aux_modules_tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = format!("{dir}/app.db");
+        assert!(db::db_init(db_path.clone()).is_ok());
         let data = r#"{"active_pubkey":"spk1","accounts":[{"pubkey":"spk1","npub":"npub1spk1","last_used":1,"relay_list":[]}]}"#;
         assert!(session::session_save(db_path.clone(), data.to_string()).unwrap());
         let loaded = session::session_load(db_path).unwrap();

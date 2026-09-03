@@ -376,17 +376,17 @@ async fn rows_json(
 
 /// Execute a raw INSERT/UPDATE/DELETE (no parameters); returns rows affected.
 /// The `settings` table is off-limits (see `raw_sql_allowed`).
-#[frb(sync, serialize)]
+///
+/// ⚠ Security: This function is intentionally disabled — unparameterized SQL
+/// writes from Dart are architecturally unsound (text-based guard is fragile).
+/// All callers should use parameterized repo functions instead.
+/// The generated FFI stub still wires this name; it always returns an error so
+/// the Dart side receives a clear failure rather than executing raw SQL.
 pub fn db_execute_raw(sql: String) -> Result<usize, String> {
-    if !raw_sql_allowed(&sql) {
-        return Err("sql touches a protected settings key".to_string());
-    }
-    with_db(|db| {
-        let conn = db.conn()?;
-        let affected = block_on(async { conn.execute(&sql, ()).await })?;
-        // Saturate instead of truncating on 32-bit targets.
-        Ok(affected.try_into().unwrap_or(usize::MAX))
-    })
+    // If somehow called through the generated FFI, return an explicit error
+    // rather than executing unparameterized SQL.
+    let _ = sql;
+    Err("db_execute_raw is disabled; use parameterized repo functions".to_string())
 }
 
 /// Internal helper: raw INSERT/UPDATE/DELETE with bound ?N parameters

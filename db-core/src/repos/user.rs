@@ -1,6 +1,25 @@
 use crate::Database;
 use libsql::params;
 
+const USER_UPSERT_SQL: &str = "\
+INSERT INTO users (pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count) \
+VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14, \
+  CASE \
+    WHEN json_valid(?13) THEN json_array_length(?13) \
+    WHEN ?13 IS NOT NULL AND length(trim(?13)) > 0 THEN (length(?13) - length(replace(?13, ',', '')) + 1) \
+    ELSE 0 \
+  END) \
+ON CONFLICT(pubkey) DO UPDATE SET \
+  name=excluded.name, display_name=excluded.display_name, about=excluded.about, \
+  picture=excluded.picture, banner=excluded.banner, nip05=excluded.nip05, lud16=excluded.lud16, \
+  updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, contact_pubkeys=excluded.contact_pubkeys, \
+  relay_list=excluded.relay_list, \
+  follower_count=CASE \
+    WHEN json_valid(excluded.contact_pubkeys) THEN json_array_length(excluded.contact_pubkeys) \
+    WHEN excluded.contact_pubkeys IS NOT NULL AND length(trim(excluded.contact_pubkeys)) > 0 THEN (length(excluded.contact_pubkeys) - length(replace(excluded.contact_pubkeys, ',', '')) + 1) \
+    ELSE 0 \
+  END";
+
 pub struct UserRepo<'a> {
     db: &'a Database,
 }
@@ -71,7 +90,7 @@ impl<'a> UserRepo<'a> {
         row: &UserRow,
     ) -> Result<(), crate::error::DbError> {
         tx.execute(
-            "INSERT INTO users (pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14, CASE WHEN json_valid(?13) THEN json_array_length(?13) ELSE 0 END) ON CONFLICT(pubkey) DO UPDATE SET name=excluded.name, display_name=excluded.display_name, about=excluded.about, picture=excluded.picture, banner=excluded.banner, nip05=excluded.nip05, lud16=excluded.lud16, updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, contact_pubkeys=excluded.contact_pubkeys, relay_list=excluded.relay_list, follower_count=CASE WHEN json_valid(excluded.contact_pubkeys) THEN json_array_length(excluded.contact_pubkeys) ELSE 0 END",
+            USER_UPSERT_SQL,
             params![
                 row.pubkey.as_str(),
                 row.npub.as_str(),
@@ -99,8 +118,7 @@ impl<'a> UserRepo<'a> {
         }
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
-            let sql = "INSERT INTO users (pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14, CASE WHEN json_valid(?13) THEN json_array_length(?13) ELSE 0 END) ON CONFLICT(pubkey) DO UPDATE SET name=excluded.name, display_name=excluded.display_name, about=excluded.about, picture=excluded.picture, banner=excluded.banner, nip05=excluded.nip05, lud16=excluded.lud16, updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, contact_pubkeys=excluded.contact_pubkeys, relay_list=excluded.relay_list, follower_count=CASE WHEN json_valid(excluded.contact_pubkeys) THEN json_array_length(excluded.contact_pubkeys) ELSE 0 END";
-            let stmt = tx.prepare(sql).await?;
+            let stmt = tx.prepare(USER_UPSERT_SQL).await?;
             for user in users {
                 stmt.run(params![
                     user.pubkey.as_str(),

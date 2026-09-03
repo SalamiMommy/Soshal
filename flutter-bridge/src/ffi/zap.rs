@@ -99,10 +99,12 @@ pub const NWC_URI: &str = "nostr+walletconnect://abcdef0123456789abcdef012345678
 
 /// Return the stored NWC URI for in-process use.  The URI contains the wallet
 /// secret and must never be returned to Dart.
-fn nwc_uri() -> Result<String, String> {
+/// Returns a `Zeroizing<String>` so the secret bytes are zeroed as soon as the
+/// caller drops the value — no intermediate plain `String` clone lingers on the heap.
+fn nwc_uri() -> Result<ZeroizingString, String> {
     let guard = NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner());
     match guard.as_ref() {
-        Some(z) => Ok(z.as_str().to_owned()),
+        Some(z) => Ok(ZeroizingString::new(z.as_str().to_owned())),
         None => Err("NWC not connected".to_string()),
     }
 }
@@ -197,9 +199,9 @@ pub async fn zap_fetch_invoice(
             "amount_msat must be a positive integer multiple of 1000 (whole satoshis)".to_string(),
         );
     }
-    // The URI embeds the wallet secret: keep every intermediate copy inside
-    // Zeroizing so plaintext copies don't linger in the heap.
-    let uri = zeroize::Zeroizing::new(nwc_uri()?);
+    // The URI embeds the wallet secret; nwc_uri() returns a ZeroizingString so
+    // the secret is zeroed as soon as `uri` is dropped — no extra wrapper needed.
+    let uri = nwc_uri()?;
     let description = if _comment.trim().is_empty() {
         "zap".to_string()
     } else {
@@ -248,7 +250,7 @@ pub async fn zap_send_payment(bolt11: String) -> Result<String, String> {
         clear_pending_payment();
         return Err("invoice amount mismatch".to_string()).into();
     }
-    let uri = zeroize::Zeroizing::new(nwc_uri()?);
+    let uri = nwc_uri()?;
     let resp = soshal_zap_core::nwc::pay_invoice(BridgeSigner, &uri, bolt11).await?;
     clear_pending_payment();
     Ok(resp).into()

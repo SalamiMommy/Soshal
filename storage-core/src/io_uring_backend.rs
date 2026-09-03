@@ -31,7 +31,7 @@ impl IoUringEngine {
     }
 
     fn detect_best_engine() -> IoEngineMode {
-        #[cfg(any(target_os = "linux", target_os = "android"))]
+        #[cfg(target_os = "linux")]
         {
             // io_uring_setup succeeds only when the kernel supports the
             // feature; any error (ENOSYS, EPERM when disabled via sysctl,
@@ -111,7 +111,7 @@ impl IoUringEngine {
     /// io_uring-backed read: submits one read per in-flight request and
     /// waits for each completion, so no extra heap copies happen beyond the
     /// caller-owned buffer.
-    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[cfg(target_os = "linux")]
     fn read_uring(&self, path: &Path) -> Result<Vec<u8>, String> {
         use io_uring::{opcode, types};
         use std::os::unix::io::AsRawFd;
@@ -151,7 +151,7 @@ impl IoUringEngine {
 
     /// io_uring-backed write: truncates the file, then writes all bytes
     /// through the ring and fsyncs.
-    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[cfg(target_os = "linux")]
     fn write_uring(&self, path: &Path, data: &[u8]) -> Result<(), String> {
         use io_uring::{opcode, types};
         use std::os::unix::io::AsRawFd;
@@ -187,13 +187,13 @@ impl IoUringEngine {
 
     /// Non-Linux fallback: io_uring is unavailable, so the kernel-ring mode
     /// degrades to mmap zero-copy semantics (never a silent plain read).
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    #[cfg(not(target_os = "linux"))]
     fn read_uring(&self, path: &Path) -> Result<Vec<u8>, String> {
         let map = self.mmap_chunk(path)?;
         Ok(map.as_ref().to_vec())
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    #[cfg(not(target_os = "linux"))]
     fn write_uring(&self, path: &Path, data: &[u8]) -> Result<(), String> {
         let mut file = File::create(path).map_err(|e| e.to_string())?;
         file.write_all(data).map_err(|e| e.to_string())?;

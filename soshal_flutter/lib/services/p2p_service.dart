@@ -46,6 +46,8 @@ import 'error_log.dart';
 class P2pService extends ChangeNotifier with LastErrorMixin {
   final List<P2pPeerDto> _peers = [];
   final Map<String, P2pSwarmStatusDto> _downloads = {};
+  List<P2pPeerDto> _cachedPeers = const [];
+  Map<String, P2pSwarmStatusDto> _cachedDownloads = const {};
   int? _lanPort;
   int? _quicPort;
   P2pPowerDto? _power;
@@ -55,8 +57,8 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   Duration? _pollInterval;
   bool _pollingEnabled = false;
 
-  List<P2pPeerDto> get peers => List.unmodifiable(_peers);
-  Map<String, P2pSwarmStatusDto> get downloads => Map.unmodifiable(_downloads);
+  List<P2pPeerDto> get peers => _cachedPeers;
+  Map<String, P2pSwarmStatusDto> get downloads => _cachedDownloads;
   int? get lanPort => _lanPort;
   int? get quicPort => _quicPort;
   P2pPowerDto? get power => _power;
@@ -280,6 +282,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
         _peers
           ..clear()
           ..addAll(capped);
+        _cachedPeers = List.unmodifiable(_peers);
         notifyListeners();
       }
       clearLastError();
@@ -353,6 +356,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
         failures: BigInt.zero,
         failedHashes: const [],
       );
+      _cachedDownloads = Map.unmodifiable(_downloads);
       clearLastError();
       notifyListeners();
       return id;
@@ -374,6 +378,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
         } else {
           _downloads[id] = status;
         }
+        _cachedDownloads = Map.unmodifiable(_downloads);
         notifyListeners();
       }
       return status;
@@ -389,6 +394,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     try {
       p2PSwarmCancel(id: id);
       _downloads.remove(id);
+      _cachedDownloads = Map.unmodifiable(_downloads);
       notifyListeners();
     } catch (e, st) {
       setLastError(e, st);
@@ -504,6 +510,8 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     _quicPort = null;
     _downloads.clear();
     _peers.clear();
+    _cachedDownloads = const {};
+    _cachedPeers = const [];
     notifyListeners();
   }
 

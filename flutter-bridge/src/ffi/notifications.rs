@@ -474,6 +474,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("app.db").to_string_lossy().to_string();
+        let _ = crate::ffi::db::db_init(db_path.clone());
         session::session_load(db_path).unwrap();
         session::session_add_account("pk1".to_string(), "npub1pk1".to_string(), "[]".to_string())
             .unwrap();

@@ -99,7 +99,8 @@ class _RustNativeImageState extends State<RustNativeImage> {
 
       if (_imageCache.length >= _maxCacheSize) {
         final oldestKey = _imageCache.keys.first;
-        _imageCache.remove(oldestKey);
+        final evicted = _imageCache.remove(oldestKey);
+        evicted?.dispose();
       }
       _imageCache[cacheKey] = frameInfo.image;
 

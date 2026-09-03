@@ -3,7 +3,6 @@
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::sync::Mutex;
 
 /// Session account entry
@@ -34,13 +33,48 @@ fn lock_session() -> Result<std::sync::MutexGuard<'static, Option<SessionData>>,
         .map_err(|e| format!("session lock poisoned: {e}"))
 }
 
+/// Resolve and validate the `session.json` path derived from `db_path`.
+///
+/// Guards against path-traversal: the parent directory of `db_path` must
+/// canonicalize to the same directory as the process-global DB path set by
+/// `db_init`. This prevents a compromised Dart caller from writing/reading
+/// `session.json` at an arbitrary filesystem location.
+fn validated_session_path(db_path: &str) -> Result<std::path::PathBuf, String> {
+    // Require an absolute path to rule out CWD-relative tricks.
+    let p = std::path::Path::new(db_path);
+    if !p.is_absolute() {
+        return Err("db_path must be an absolute path".to_string());
+    }
+    // Canonicalize the parent to resolve any `..` or symlink components.
+    let parent = p
+        .parent()
+        .ok_or_else(|| "db_path has no parent directory".to_string())?;
+    let canon_parent =
+        std::fs::canonicalize(parent).map_err(|e| format!("db_path parent invalid: {e}"))?;
+    // Cross-check against the stored DB path set by db_init, if available.
+    // This prevents a caller from supplying a legitimately-absolute but
+    // unrelated path (e.g. /tmp/evil/session.json).
+    if let Ok(stored) = super::db::db_path() {
+        if !stored.is_empty() {
+            let stored_parent = std::path::Path::new(&stored)
+                .parent()
+                .and_then(|pp| std::fs::canonicalize(pp).ok());
+            if let Some(sp) = stored_parent {
+                if canon_parent != sp {
+                    return Err(
+                        "db_path does not match the initialized database location".to_string()
+                    );
+                }
+            }
+        }
+    }
+    Ok(canon_parent.join("session.json"))
+}
+
 /// Load session from file
 #[frb(sync, serialize)]
 pub fn session_load(db_path: String) -> Result<String, String> {
-    let session_path = Path::new(&db_path)
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("session.json");
+    let session_path = validated_session_path(&db_path)?;
 
     if session_path.exists() {
         match std::fs::read_to_string(&session_path) {
@@ -71,10 +105,7 @@ pub fn session_load(db_path: String) -> Result<String, String> {
 /// Save session to file
 #[frb(sync, serialize)]
 pub fn session_save(db_path: String, session_data: String) -> Result<bool, String> {
-    let session_path = Path::new(&db_path)
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("session.json");
+    let session_path = validated_session_path(&db_path)?;
 
     match serde_json::from_str::<SessionData>(&session_data) {
         Ok(session) => match serde_json::to_string_pretty(&session) {
@@ -221,6 +252,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("app.db").to_string_lossy().to_string();
+        let _ = db::db_init(db_path.clone());
         (dir, db_path)
     }
 

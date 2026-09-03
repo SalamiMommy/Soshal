@@ -306,6 +306,41 @@ mod android {
         .map_err(|e| e.0)
     }
 
+    /// Location service state via LocationManager.isProviderEnabled; true if
+    /// any provider (gps/network/passive) is switched on.
+    pub fn location_enabled() -> Result<bool, String> {
+        let mut env = attach()?;
+        env.with_local_frame(16, |env| -> Result<bool, JniErr> {
+            let activity = activity(env)?;
+            let service = env.new_string("location")?;
+            let manager = env.call_method(
+                &activity,
+                "getSystemService",
+                "(Ljava/lang/String;)Ljava/lang/Object;",
+                &[jni::objects::JValue::Object(&service)],
+            )?;
+            let manager_obj = manager.l()?;
+            if manager_obj.is_null() {
+                return Ok(false);
+            }
+            for provider in ["gps", "network", "passive"] {
+                let p = env.new_string(provider)?;
+                let value = env.call_method(
+                    &manager_obj,
+                    "isProviderEnabled",
+                    "(Ljava/lang/String;)Z",
+                    &[jni::objects::JValue::Object(&p)],
+                )?;
+                match value {
+                    jni::objects::JValueOwned::Bool(b) if b != 0 => return Ok(true),
+                    _ => {}
+                }
+            }
+            Ok(false)
+        })
+        .map_err(|e| e.0)
+    }
+
     const DAEMON_SERVICE_CLASS: &str = "com/soshal/app/DaemonForegroundService";
 
     /// Start the daemon foreground service (keeps the app process — and the

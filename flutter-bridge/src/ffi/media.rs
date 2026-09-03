@@ -105,6 +105,25 @@ pub async fn media_fetch(url: String, cache_dir: String) -> Result<String, Strin
     if !is_valid_media_url(&url) {
         return Err("Invalid media URL".to_string()).into();
     }
+    // Validate cache_dir: canonicalize and ensure it stays inside allowed roots
+    // (temp dir or the chunk-store app-data directory). This prevents a
+    // compromised Dart caller from directing writes to arbitrary FS locations.
+    if cache_dir.is_empty() {
+        return Err("cache_dir cannot be empty".to_string()).into();
+    }
+    let _ = std::fs::create_dir_all(&cache_dir);
+    let canon_cache =
+        std::fs::canonicalize(&cache_dir).map_err(|e| format!("cache_dir invalid: {e}"))?;
+    let allowed_cache_roots = [ChunkStore::default_root(), std::env::temp_dir()];
+    if !allowed_cache_roots
+        .iter()
+        .any(|root| canon_cache.starts_with(root))
+    {
+        return Err(
+            "cache_dir must be inside the media cache or system temp directory".to_string(),
+        )
+        .into();
+    }
     let (server, hash) = match url.split_once('/') {
         _ => {
             let scheme_end = url.find("://").map(|i| i + 3).unwrap_or(0);
@@ -119,7 +138,7 @@ pub async fn media_fetch(url: String, cache_dir: String) -> Result<String, Strin
     match client.download(&hash).await {
         Ok(data) => {
             let filename = generate_cache_filename(&url);
-            let cache_path = PathBuf::from(&cache_dir).join(&filename);
+            let cache_path = canon_cache.join(&filename);
             match fs::write(&cache_path, &data) {
                 Ok(_) => Ok(cache_path.to_string_lossy().to_string()).into(),
                 Err(e) => Err(format!("Cache write failed: {e}")).into(),
@@ -151,14 +170,13 @@ fn infer_mime_type(path: &str) -> String {
     soshal_media_core::media::guess_mime_type(path).to_string()
 }
 
-/// Generate a unique cache filename from URL
+/// Generate a stable, collision-resistant cache filename from URL.
+/// Uses the first 16 hex chars of SHA-256(url) instead of DefaultHasher, which
+/// is non-cryptographic and deterministic — two URLs with the same hash would
+/// silently overwrite each other's cache entry (cache poisoning).
 fn generate_cache_filename(url: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    url.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+    let digest = soshal_crypto_core::hash::sha256(url.as_bytes());
+    hex::encode(&digest[..8]) // 16 hex chars = 64 bits of SHA-256
 }
 
 /// Clear media cache directory
@@ -219,7 +237,23 @@ pub async fn media_upload_blob_file(file_path: String) -> Result<String, String>
         store.save_manifest(&manifest)?;
         manifest
     } else {
-        let file = fs::File::open(&file_path).map_err(|e| format!("open file failed: {e}"))?;
+        // Local file path: canonicalize and reject sensitive OS directories to
+        // prevent a compromised Dart caller from exfiltrating files like SSH keys
+        // to an attacker-controlled Blossom server.
+        let canon = fs::canonicalize(&file_path).map_err(|e| format!("file path invalid: {e}"))?;
+        // Reject paths inside privileged system directories.
+        const BLOCKED_PREFIXES: &[&str] = &["/etc", "/proc", "/sys", "/root", "/boot", "/dev"];
+        if BLOCKED_PREFIXES
+            .iter()
+            .any(|prefix| canon.starts_with(prefix))
+        {
+            return Err(
+                "file path must not be inside a system directory (/etc, /proc, /sys, …)"
+                    .to_string(),
+            )
+            .into();
+        }
+        let file = fs::File::open(&canon).map_err(|e| format!("open file failed: {e}"))?;
         let store = ChunkStore::new(ChunkStore::default_root());
         let manifest = store.store_reader(file)?;
         store.save_manifest(&manifest)?;

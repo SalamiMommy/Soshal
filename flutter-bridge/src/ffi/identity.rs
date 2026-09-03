@@ -96,6 +96,9 @@ pub fn identity_get_profile(pubkey: String) -> Result<String, String> {
 }
 
 /// Upsert a fetched kind-0 profile row into the DB.
+/// If the profile's pubkey matches the active account (unlocked signer), the
+/// caller must be acting as that identity — prevents a compromised Dart layer
+/// from injecting forged metadata for the active user.
 #[frb(sync, serialize)]
 pub fn identity_store_profile(profile: String) -> Result<bool, String> {
     let v: serde_json::Value =
@@ -113,6 +116,14 @@ pub fn identity_store_profile(profile: String) -> Result<bool, String> {
         .get("pubkey")
         .and_then(|p| p.as_str())
         .ok_or_else(|| "missing pubkey".to_string())?;
+    // If the signer is unlocked and the profile belongs to the active account,
+    // enforce identity: a Dart caller must not be able to overwrite the active
+    // user's own cached profile with forged data without holding the key.
+    if let Ok(active_pk) = super::signer::signer_pubkey() {
+        if active_pk == pubkey {
+            super::signer::require_identity(pubkey)?;
+        }
+    }
     let now = soshal_common_core::format::now_secs();
     let row = UserRow {
         pubkey: pubkey.to_string(),

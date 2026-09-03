@@ -10,7 +10,7 @@
 
 #[cfg(target_os = "android")]
 use super::ndk::*;
-use super::state;
+use super::video_state;
 
 /// True only on Android ≥ 26 with a hardware AVC encoder present.
 pub fn is_supported() -> bool {
@@ -51,7 +51,7 @@ pub fn init_encode(width: i32, height: i32, bitrate: i32, fps: i32) -> bool {
         {
             return false;
         }
-        let mut s = state();
+        let mut s = video_state();
         s.release_h264_encoder_only();
         unsafe {
             let codec = AMediaCodec_createEncoderByType(c"video/avc".as_ptr());
@@ -96,7 +96,7 @@ pub fn init_encode(width: i32, height: i32, bitrate: i32, fps: i32) -> bool {
 pub fn feed_encode(bgra: &[u8]) -> Vec<Vec<u8>> {
     #[cfg(target_os = "android")]
     {
-        let s = state();
+        let s = video_state();
         let Some(codec) = s.h264_encoder.as_ref() else {
             return Vec::new();
         };
@@ -116,14 +116,16 @@ pub fn feed_encode(bgra: &[u8]) -> Vec<Vec<u8>> {
             return Vec::new();
         }
         unsafe {
-            let i420 = bgra_to_i420(bgra, w, h);
+            let (w_u, h_u) = (w as usize, h as usize);
+            let needed_i420 = w_u * h_u + ((w_u + 1) / 2) * ((h_u + 1) / 2) * 2;
             let idx = AMediaCodec_dequeueInputBuffer(codec, 0);
             if idx >= 0 {
                 let mut size = 0usize;
                 let buf = AMediaCodec_getInputBuffer(codec, idx as usize, &mut size);
-                if !buf.is_null() && size >= i420.len() {
-                    std::ptr::copy_nonoverlapping(i420.as_ptr(), buf, i420.len());
-                    AMediaCodec_queueInputBuffer(codec, idx as usize, 0, i420.len(), 0, 0);
+                if !buf.is_null() && size >= needed_i420 {
+                    let dst = std::slice::from_raw_parts_mut(buf, needed_i420);
+                    bgra_to_i420_into(bgra, w, h, dst);
+                    AMediaCodec_queueInputBuffer(codec, idx as usize, 0, needed_i420, 0, 0);
                 } else {
                     AMediaCodec_queueInputBuffer(codec, idx as usize, 0, 0, 0, 0);
                 }
@@ -145,7 +147,7 @@ pub fn init_decode() -> bool {
         if !super::sdk_gate() {
             return false;
         }
-        let mut s = state();
+        let mut s = video_state();
         s.release_h264_decoder_only();
         unsafe {
             let codec = AMediaCodec_createDecoderByType(c"video/avc".as_ptr());
@@ -180,7 +182,7 @@ pub fn feed_decode(nal: &[u8]) -> Vec<Vec<u8>> {
         if nal.is_empty() {
             return Vec::new();
         }
-        let s = state();
+        let s = video_state();
         let Some(codec) = s.h264_decoder.as_ref() else {
             return Vec::new();
         };
@@ -209,7 +211,7 @@ pub fn feed_decode(nal: &[u8]) -> Vec<Vec<u8>> {
 
 /// Release encoder + decoder.
 pub fn release() -> bool {
-    let mut s = state();
+    let mut s = video_state();
     s.release_h264();
     true
 }
@@ -401,11 +403,11 @@ unsafe fn image_to_jpeg(image: *mut AImage) -> Result<Vec<u8>, String> {
 }
 
 /// BT.601 studio-swing BGRA (camera bgra8888) → packed planar I420.
+/// Writes directly into destination buffer without intermediate heap allocation.
 #[cfg(target_os = "android")]
-fn bgra_to_i420(bgra: &[u8], width: i32, height: i32) -> Vec<u8> {
+fn bgra_to_i420_into(bgra: &[u8], width: i32, height: i32, i420: &mut [u8]) {
     let (w, h) = (width as usize, height as usize);
     let (w2, h2) = ((w + 1) / 2, (h + 1) / 2);
-    let mut i420 = vec![0u8; w * h + w2 * h2 * 2];
     let mut y_pos = 0usize;
     let mut u_pos = w * h;
     let mut v_pos = w * h + w2 * h2;
@@ -427,5 +429,4 @@ fn bgra_to_i420(bgra: &[u8], width: i32, height: i32) -> Vec<u8> {
             }
         }
     }
-    i420
 }

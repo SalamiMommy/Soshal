@@ -76,16 +76,16 @@ pub async fn feed_rank_posts(events_json: String) -> Result<String, String> {
             reposts_count: 0,
             wot_distance: 0,
         }));
-        hashtags.push(
-            item["hashtags"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|t| t.as_str().map(|s| s.to_string()))
-                        .collect()
-                })
-                .unwrap_or_default(),
-        );
+        let item_hashtags = if let Some(a) = item["hashtags"].as_array() {
+            a.iter()
+                .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                .collect()
+        } else if let Some(content) = item["content"].as_str() {
+            soshal_content_core::hashtag::extract(content)
+        } else {
+            Vec::new()
+        };
+        hashtags.push(item_hashtags);
     }
     let ranked = soshal_feed_core::ranking::rank_posts(
         &stats,
@@ -144,7 +144,15 @@ fn is_content_clean(content: &str, filters: &[String]) -> bool {
     }
     let passed = soshal_moderation_core::check::check_with_custom_words(content, filters).passed;
     if guard.entries.len() >= MODERATION_CACHE_CAP {
-        guard.entries.clear();
+        let keys_to_remove: Vec<String> = guard
+            .entries
+            .keys()
+            .take(MODERATION_CACHE_CAP / 4)
+            .cloned()
+            .collect();
+        for k in keys_to_remove {
+            guard.entries.remove(&k);
+        }
     }
     guard.entries.insert(content.to_string(), passed);
     passed

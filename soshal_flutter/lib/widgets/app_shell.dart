@@ -185,10 +185,7 @@ class _GlassContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Positioned.fill(
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: child,
-      ),
+      child: child,
     );
   }
 }

@@ -640,9 +640,10 @@ fn test_marketplace_order_escrow_lifecycle() {
         marketplace::marketplace_create_escrow(order_id, "".to_string(), seller.clone(), 5000)
             .unwrap();
     assert!(marketplace::marketplace_release_escrow(escrow3.clone(), seller.clone()).is_err());
-    db::db_execute_raw(format!(
-        "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id='{escrow3}'"
-    ))
+    db::db_execute_params(
+        "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id=?1",
+        &[escrow3.clone()],
+    )
     .unwrap();
     unlock(&seller_secret);
     assert!(marketplace::marketplace_release_escrow(escrow3.clone(), seller).unwrap());

@@ -30,11 +30,15 @@ unsafe impl Send for NativeCodec {}
 unsafe impl Send for NativeStream {}
 
 #[derive(Default)]
-pub(crate) struct CodecState {
+pub(crate) struct VideoCodecState {
     pub h264_encoder: Option<NativeCodec>,
     pub h264_decoder: Option<NativeCodec>,
     pub h264_width: i32,
     pub h264_height: i32,
+}
+
+#[derive(Default)]
+pub(crate) struct AudioCodecState {
     pub audio_encoder: Option<NativeCodec>,
     pub audio_decoder: Option<NativeCodec>,
     pub mic: Option<NativeStream>,
@@ -43,13 +47,20 @@ pub(crate) struct CodecState {
     pub capture_thread: Option<JoinHandle<()>>,
 }
 
-static STATE: LazyLock<Mutex<CodecState>> = LazyLock::new(|| Mutex::new(CodecState::default()));
+static VIDEO_STATE: LazyLock<Mutex<VideoCodecState>> =
+    LazyLock::new(|| Mutex::new(VideoCodecState::default()));
+static AUDIO_STATE: LazyLock<Mutex<AudioCodecState>> =
+    LazyLock::new(|| Mutex::new(AudioCodecState::default()));
 
-pub(crate) fn state() -> std::sync::MutexGuard<'static, CodecState> {
-    STATE.lock().unwrap_or_else(|e| e.into_inner())
+pub(crate) fn video_state() -> std::sync::MutexGuard<'static, VideoCodecState> {
+    VIDEO_STATE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-impl CodecState {
+pub(crate) fn audio_state() -> std::sync::MutexGuard<'static, AudioCodecState> {
+    AUDIO_STATE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+impl VideoCodecState {
     pub fn release_h264_encoder_only(&mut self) {
         #[cfg(target_os = "android")]
         unsafe {
@@ -86,7 +97,9 @@ impl CodecState {
         self.h264_width = 0;
         self.h264_height = 0;
     }
+}
 
+impl AudioCodecState {
     pub fn release_audio_decoder_only(&mut self) {
         #[cfg(target_os = "android")]
         unsafe {

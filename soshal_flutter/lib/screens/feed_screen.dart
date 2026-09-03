@@ -319,13 +319,18 @@ class _FeedPostCardState extends State<FeedPostCard> {
 
   int _totalMsat = 0;
 
+  static String _truncateContent(String raw) {
+    if (raw.length <= 320) return raw;
+    final chars = raw.characters;
+    return chars.length > 320 ? '${chars.take(320)}…' : raw;
+  }
+
   @override
   void initState() {
     super.initState();
     _liked = widget.post.liked;
     final raw = widget.post.content;
-    _preview =
-        raw.characters.length > 320 ? '${raw.characters.take(320)}…' : raw;
+    _preview = _truncateContent(raw);
     _loadTotal();
   }
 
@@ -337,8 +342,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
         oldWidget.post.liked != widget.post.liked) {
       _liked = widget.post.liked;
       final raw = widget.post.content;
-      _preview =
-          raw.characters.length > 320 ? '${raw.characters.take(320)}…' : raw;
+      _preview = _truncateContent(raw);
       _loadTotal();
     }
   }
@@ -931,8 +935,16 @@ class _FeedPostCardState extends State<FeedPostCard> {
 }
 
 /// Memoized blob-resolved URLs per post id — re-scrolls reuse the LAN/local
-/// result instead of refetching.
+/// result instead of refetching. Bounded LRU eviction prevents memory leak.
 final Map<String, String> _resolvedUrlCache = <String, String>{};
+const int _maxResolvedUrlCacheSize = 256;
+
+void _cacheResolvedUrl(String postId, String url) {
+  if (_resolvedUrlCache.length >= _maxResolvedUrlCacheSize) {
+    _resolvedUrlCache.remove(_resolvedUrlCache.keys.first);
+  }
+  _resolvedUrlCache[postId] = url;
+}
 
 /// Image with the same blob + LAN-crawl fallback as `_VideoPlayerWidget`:
 /// when the URL isn't this device's own server and the post carries a CAS
@@ -992,7 +1004,7 @@ class _BlobImageState extends State<_BlobImage> {
       if (mounted) setState(() => _error = '$e');
       return;
     }
-    _resolvedUrlCache[widget.postId] = url;
+    _cacheResolvedUrl(widget.postId, url);
     if (mounted) setState(() => _resolved = url);
   }
 
@@ -1143,7 +1155,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       } catch (e) {
         if (mounted) setState(() => _error = '$e');
       }
-      _resolvedUrlCache[widget.postId] = url;
+      _cacheResolvedUrl(widget.postId, url);
     }
     if (!SafeUrl.isSafePlaybackUrl(url)) {
       if (mounted) {

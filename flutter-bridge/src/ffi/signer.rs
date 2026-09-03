@@ -184,11 +184,23 @@ pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> 
 pub fn keyring_available() -> bool {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let ok = match keyring::Entry::new(keychain_service(), "__soshal_test_probe__") {
+        // Use a random probe name so the entry is unguessable by other local
+        // processes and does not appear as a recognizable Soshal key in
+        // keychain UIs (e.g., macOS Keychain Access, GNOME Keyring).
+        let probe_name = format!("__soshal_probe_{:016x}__", rand::random::<u64>());
+        let ok = match keyring::Entry::new(keychain_service(), &probe_name) {
             Ok(e) => {
                 let wrote = e.set_password("probe").is_ok();
                 if wrote {
-                    let _ = e.delete_credential();
+                    // Attempt deletion; on failure, log a warning but do not
+                    // fail the availability check — the orphaned entry is still
+                    // random and non-guessable.
+                    if e.delete_credential().is_err() {
+                        eprintln!(
+                            "[signer] keyring probe cleanup failed for {probe_name}; \
+                            entry may be orphaned in the OS keychain"
+                        );
+                    }
                 }
                 wrote
             }

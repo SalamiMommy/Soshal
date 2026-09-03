@@ -75,16 +75,24 @@ fn unseal_dm_content_with_key(stored: String, key: &[u8; 32]) -> Result<String, 
     let mut current = stored;
     for _ in 0..3 {
         let Some(sealed) = current.strip_prefix("seal1:") else {
+            // No seal prefix — legacy plaintext row, return as-is.
             return Ok(current);
         };
         match soshal_crypto_core::at_rest::open_at_rest(key, sealed) {
             Ok(plain) => match String::from_utf8(plain) {
                 Ok(text) => current = text,
-                Err(_) => return Ok(current),
+                Err(_) => {
+                    // Decrypted bytes are not valid UTF-8: the row is corrupt.
+                    // Surface a clear sentinel rather than the raw ciphertext.
+                    return Err("decrypted content is not valid UTF-8 (corrupt row)".to_string());
+                }
             },
-            // Not valid seal payload — either legacy plaintext that happens
-            // to start with the prefix or a corrupt row; pass through.
-            Err(_) => return Ok(current),
+            Err(_) => {
+                // Decryption failed: wrong key or tampered ciphertext.
+                // Return an error so callers (and the UI) can show a warning
+                // instead of silently surfacing the raw sealed blob.
+                return Err("message decryption failed (tampered or wrong key)".to_string());
+            }
         }
     }
     Ok(current)
@@ -108,17 +116,22 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
             .into_iter()
             .map(|row| {
                 let is_own = row.pubkey == my_pk;
-                Ok(DirectMessage {
+                // Individual decryption failures produce a sentinel instead of
+                // aborting the whole batch: the UI can show an inline warning.
+                let (content, decrypted) = match unseal_dm_content_with_key(row.content, &key) {
+                    Ok(text) => (text, true),
+                    Err(_) => ("[message could not be decrypted]".to_string(), false),
+                };
+                Ok::<DirectMessage, soshal_db_core::error::DbError>(DirectMessage {
                     id: row.id,
                     sender: row.pubkey,
-                    content: unseal_dm_content_with_key(row.content, &key)?,
+                    content,
                     created_at: row.created_at.max(0) as u64,
-                    decrypted: false,
+                    decrypted,
                     is_own,
                 })
             })
-            .collect::<Result<Vec<DirectMessage>, String>>()
-            .map_err(soshal_db_core::error::DbError::Migration)?;
+            .collect::<Result<Vec<DirectMessage>, soshal_db_core::error::DbError>>()?;
         Ok(dms)
     })
     .map(super::util::json_ok)?

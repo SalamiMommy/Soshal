@@ -122,10 +122,17 @@ class _BlobImageState extends State<BlobImage> {
             );
     }
     if (_isUrl) {
+      final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+      final cacheW =
+          widget.width != null ? (widget.width! * dpr).round() : null;
+      final cacheH =
+          widget.height != null ? (widget.height! * dpr).round() : null;
       return Image.network(
         widget.source.trim(),
         width: widget.width,
         height: widget.height,
+        cacheWidth: cacheW,
+        cacheHeight: cacheH,
         fit: widget.fit,
         errorBuilder: (_, __, ___) => widget.errorBuilder != null
             ? widget.errorBuilder!(context)
