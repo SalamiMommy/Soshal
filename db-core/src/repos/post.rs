@@ -145,7 +145,12 @@ impl<'a> PostRepo<'a> {
         post: &PostRow,
     ) -> Result<(), crate::error::DbError> {
         if limits::row_too_big(&post.content, &post.tags_json) {
-            return Ok(());
+            return Err(crate::error::DbError::Oversized(format!(
+                "post {} exceeds relay size caps (content > {} or total > {} bytes)",
+                post.id,
+                limits::MAX_CONTENT_BYTES,
+                limits::MAX_BATCH_BYTES
+            )));
         }
         tx.execute(
             POST_UPSERT_SQL,

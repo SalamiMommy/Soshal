@@ -472,6 +472,56 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
             unmatched_at INTEGER NOT NULL DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS ignored_entities (
+            id TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL, -- 'notification', 'user', 'thread', 'category'
+            target_id TEXT NOT NULL,
+            owner_pubkey TEXT NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS secret_crushes (
+            owner_pubkey TEXT NOT NULL,
+            crush_pubkey TEXT NOT NULL,
+            blinded_hash TEXT NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (owner_pubkey, crush_pubkey)
+        );
+
+        CREATE TABLE IF NOT EXISTS marketplace_offers (
+            id TEXT PRIMARY KEY,
+            listing_id TEXT NOT NULL,
+            buyer_pubkey TEXT NOT NULL,
+            seller_pubkey TEXT NOT NULL,
+            amount_sats INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'accepted', 'declined', 'countered'
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS marketplace_saved (
+            listing_id TEXT NOT NULL,
+            pubkey TEXT NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (listing_id, pubkey)
+        );
+
+        CREATE TABLE IF NOT EXISTS musicloud_timed_comments (
+            id TEXT PRIMARY KEY,
+            track_id TEXT NOT NULL,
+            pubkey TEXT NOT NULL,
+            timestamp_ms INTEGER NOT NULL DEFAULT 0,
+            content TEXT NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS musicloud_playlists (
+            id TEXT PRIMARY KEY,
+            pubkey TEXT NOT NULL,
+            title TEXT NOT NULL,
+            is_private INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+
         CREATE TABLE IF NOT EXISTS group_shared_keys (
             group_id TEXT PRIMARY KEY,
             key_hex TEXT NOT NULL,
@@ -500,15 +550,11 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         );
 
         -- Feed lookups
-        CREATE INDEX IF NOT EXISTS idx_posts_pubkey ON posts(pubkey);
         CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_posts_reply_to ON posts(reply_to);
         CREATE INDEX IF NOT EXISTS idx_posts_root_id ON posts(root_id);
         CREATE INDEX IF NOT EXISTS idx_posts_kind ON posts(kind);
         CREATE INDEX IF NOT EXISTS idx_posts_pubkey_created ON posts(pubkey, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_posts_kind_created ON posts(kind, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_posts_feed_lookup ON posts(pubkey, is_deleted, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_posts_recent_lookup ON posts(is_deleted, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_posts_freenet_key ON posts(freenet_key);
         CREATE INDEX IF NOT EXISTS idx_posts_scheduled ON posts(pubkey, scheduled_at ASC);
         CREATE INDEX IF NOT EXISTS idx_posts_pubkey_scheduled_deleted ON posts(pubkey, is_deleted, scheduled_at ASC);
@@ -520,12 +566,9 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         CREATE INDEX IF NOT EXISTS idx_posts_event_lat_lng ON posts(event_lat, event_lng);
 
         -- Messages
-        CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_messages_pubkey ON messages(pubkey);
-        CREATE INDEX IF NOT EXISTS idx_messages_conv_deleted ON messages(conversation_id, is_deleted, created_at DESC);
 
         -- Reactions
-        CREATE INDEX IF NOT EXISTS idx_reactions_event ON reactions(event_id);
         CREATE INDEX IF NOT EXISTS idx_reactions_pubkey ON reactions(pubkey);
         CREATE INDEX IF NOT EXISTS idx_reactions_event_created ON reactions(event_id, created_at DESC);
 
@@ -539,16 +582,12 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         -- Notifications
         CREATE INDEX IF NOT EXISTS idx_notifications_pubkey ON notifications(pubkey, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(pubkey, is_read);
         CREATE INDEX IF NOT EXISTS idx_notifications_unread_created ON notifications(pubkey, is_read, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_notifications_unread_type ON notifications(pubkey, is_read, type, created_at DESC);
 
         -- Bookmarks
-        CREATE INDEX IF NOT EXISTS idx_bookmarks_pubkey ON bookmarks(pubkey);
         CREATE INDEX IF NOT EXISTS idx_bookmarks_pubkey_created ON bookmarks(pubkey, created_at DESC);
 
         -- Media blobs
-        CREATE INDEX IF NOT EXISTS idx_media_pubkey ON media_blobs(pubkey);
         CREATE INDEX IF NOT EXISTS idx_media_hash ON media_blobs(file_hash);
         CREATE INDEX IF NOT EXISTS idx_media_pubkey_created ON media_blobs(pubkey, created_at DESC);
 
@@ -558,7 +597,6 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         -- Audit logs
         CREATE INDEX IF NOT EXISTS idx_audit_logs_group ON audit_logs(group_id);
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_pubkey);
         CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_created ON audit_logs(actor_pubkey, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
 

@@ -15,7 +15,7 @@ import 'package:soshal_flutter/services/sync_service.dart';
 import 'package:soshal_flutter/services/telemetry_service.dart';
 import 'package:soshal_flutter/services/theme_service.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 late FakeApi api;
 

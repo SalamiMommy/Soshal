@@ -65,6 +65,7 @@ class _SplashScreenState extends State<SplashScreen> {
         // enabled. PIN users get the lock screen first; the signer unlocks
         // after PIN verification. Recovery phrase is the last resort when
         // neither is available.
+        if (!mounted) return;
         final keychainUnlockEnabled = context
                 .read<SettingsService>()
                 .getSetting('keychain_unlock_enabled') ==

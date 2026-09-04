@@ -29,7 +29,7 @@ class _DatingScreenState extends State<DatingScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
     _load();
   }
 
@@ -118,6 +118,7 @@ class _DatingScreenState extends State<DatingScreen>
                             Tab(text: 'Browse'),
                             Tab(text: 'Matches'),
                             Tab(text: 'Likes'),
+                            Tab(text: 'Secret Crush'),
                           ],
                         ),
                         Expanded(
@@ -127,6 +128,7 @@ class _DatingScreenState extends State<DatingScreen>
                               _buildBrowse(pubkey),
                               _buildMatches(pubkey),
                               _buildLikes(pubkey),
+                              _buildSecretCrush(pubkey),
                             ],
                           ),
                         ),
@@ -135,6 +137,81 @@ class _DatingScreenState extends State<DatingScreen>
                     if (_matchCard != null) _buildMatchOverlay(pubkey),
                   ],
                 ),
+    );
+  }
+
+  Widget _buildSecretCrush(String pubkey) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.lock_outline, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Secret Crush (Up to 9 Picks)',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Select up to 9 friends or followers you are interested in. They will NEVER know unless they also add you to their Secret Crush list!',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.85,
+              ),
+              itemCount: 9,
+              itemBuilder: (context, i) {
+                return Card(
+                  elevation: 1,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                      style: BorderStyle.solid,
+                    ),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Select friend for Crush Slot #${i + 1}')),
+                      );
+                    },
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 24,
+                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                          child: Icon(Icons.add, color: Theme.of(context).colorScheme.primary),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Slot #${i + 1}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text('Empty', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 

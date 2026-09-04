@@ -8,7 +8,7 @@ import 'package:soshal_flutter/services/media_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 import 'package:soshal_flutter/screens/events_screen.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 void main() {
   final env = bootstrapTestEnv('test-events-debug');

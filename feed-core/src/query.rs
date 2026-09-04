@@ -44,8 +44,8 @@ pub fn event_with_tags_from_event(ev: &NostrEvent) -> serde_json::Value {
 /// feed pages/threads/refreshes, and this avoids re-parsing + re-serializing
 /// per row per fetch.
 struct MediaJsonCache {
-    map: std::collections::HashMap<String, Option<String>>,
-    queue: std::collections::VecDeque<String>,
+    map: std::collections::HashMap<std::sync::Arc<str>, Option<String>>,
+    queue: std::collections::VecDeque<std::sync::Arc<str>>,
 }
 
 impl Default for MediaJsonCache {
@@ -77,8 +77,9 @@ fn store_media_json(tags_json: &str, parsed: &Option<String>) {
                 cache.map.remove(&oldest);
             }
         }
-        cache.map.insert(tags_json.to_string(), parsed.clone());
-        cache.queue.push_back(tags_json.to_string());
+        let key: std::sync::Arc<str> = std::sync::Arc::from(tags_json);
+        cache.map.insert(key.clone(), parsed.clone());
+        cache.queue.push_back(key);
     }
 }
 

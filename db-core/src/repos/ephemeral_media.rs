@@ -146,21 +146,27 @@ impl<'a> EphemeralMediaRepo<'a> {
     /// Deletes rows whose `expires_at` is in the past; returns the removed ids.
     pub fn clean_expired(&self, now: i64) -> Result<Vec<String>, crate::error::DbError> {
         let conn = self.db.conn()?;
-        let ids = crate::query::query(
-            &conn,
-            "SELECT id FROM ephemeral_media WHERE expires_at IS NOT NULL AND expires_at < ?1",
-            params![now],
-            |r| r.get::<String>(0),
-        )?;
-        if !ids.is_empty() {
-            let n = crate::query::execute(
-                &conn,
-                "DELETE FROM ephemeral_media WHERE expires_at < ?1",
-                params![now],
-            )?;
-            debug_assert_eq!(n, ids.len() as u64);
-        }
-        Ok(ids)
+        crate::query::with_tx(&conn, |tx| async move {
+            let stmt = tx
+                .prepare(
+                    "SELECT id FROM ephemeral_media WHERE expires_at IS NOT NULL AND expires_at < ?1",
+                )
+                .await?;
+            let mut rows = stmt.query(params![now]).await?;
+            let mut ids = Vec::new();
+            while let Some(row) = rows.next().await? {
+                ids.push(row.get::<String>(0)?);
+            }
+            if !ids.is_empty() {
+                tx.execute(
+                    "DELETE FROM ephemeral_media WHERE expires_at < ?1",
+                    params![now],
+                )
+                .await?;
+            }
+            tx.commit().await?;
+            Ok(ids)
+        })
     }
 }
 

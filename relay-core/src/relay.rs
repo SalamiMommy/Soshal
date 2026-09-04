@@ -276,7 +276,9 @@ impl RelayNode {
     }
 
     fn re_broadcast(&mut self, env: MeshEnvelope, source_idx: usize) {
-        let bytes = env.to_bytes().unwrap();
+        let Some(bytes) = env.to_bytes().ok() else {
+            return;
+        };
         for (idx, backend) in self.backends.iter_mut().enumerate() {
             if idx != source_idx && backend.running() {
                 let _ = backend.broadcast(bytes.clone());

@@ -53,9 +53,9 @@ fn reticulum_started() -> bool {
 pub(super) fn resolved_kind() -> (TransportKind, bool) {
     transport_mode().resolve(
         reticulum_started(),
-        super::util::tcp_probe("127.0.0.1", 8888)
+        super::util::cached_tcp_probe("127.0.0.1", 8888)
             || super::relay::mesh_backend_up(TransportKind::Freenet),
-        super::util::tcp_probe("127.0.0.1", 7656)
+        super::util::cached_tcp_probe("127.0.0.1", 7656)
             || super::relay::mesh_backend_up(TransportKind::I2p),
     )
 }
@@ -728,8 +728,9 @@ pub fn i2p_start_session(destination: Option<String>) -> Result<String, String> 
 pub fn i2p_stop_session() -> Result<bool, String> {
     let mut guard = I2P_MANAGER.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(m) = guard.as_mut() {
+        let was_running = m.is_running();
         m.stop();
-        Ok(true).into()
+        Ok(was_running).into()
     } else {
         Ok(false).into()
     }

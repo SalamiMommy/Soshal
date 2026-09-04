@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 use soshal_common_core::json_util::{json_in, json_out};
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Traffic shaper mechanism tag (intended mechanism — not actually attached).
@@ -38,8 +39,8 @@ pub struct EbpfShaperStats {
 pub struct EbpfShaper {
     mode: EbpfMode,
     blocked_ips: Arc<Mutex<HashSet<String>>>,
-    dropped_packets: Arc<Mutex<u64>>,
-    passed_packets: Arc<Mutex<u64>>,
+    dropped_packets: Arc<AtomicU64>,
+    passed_packets: Arc<AtomicU64>,
 }
 
 impl Default for EbpfShaper {
@@ -61,8 +62,8 @@ impl EbpfShaper {
             EbpfMode::UserSpaceFallback => Ok(Self {
                 mode: EbpfMode::UserSpaceFallback,
                 blocked_ips: Arc::new(Mutex::new(HashSet::new())),
-                dropped_packets: Arc::new(Mutex::new(0)),
-                passed_packets: Arc::new(Mutex::new(0)),
+                dropped_packets: Arc::new(AtomicU64::new(0)),
+                passed_packets: Arc::new(AtomicU64::new(0)),
             }),
         }
     }
@@ -84,20 +85,18 @@ impl EbpfShaper {
     pub fn inspect_packet(&self, src_ip: &str, _payload_len: usize) -> bool {
         let ips = self.blocked_ips.lock().unwrap();
         if ips.contains(src_ip) {
-            let mut drops = self.dropped_packets.lock().unwrap();
-            *drops += 1;
+            self.dropped_packets.fetch_add(1, Ordering::SeqCst);
             false
         } else {
-            let mut passes = self.passed_packets.lock().unwrap();
-            *passes += 1;
+            self.passed_packets.fetch_add(1, Ordering::SeqCst);
             true
         }
     }
 
     /// Get current traffic shaper metrics
     pub fn stats(&self) -> EbpfShaperStats {
-        let drops = *self.dropped_packets.lock().unwrap();
-        let passes = *self.passed_packets.lock().unwrap();
+        let drops = self.dropped_packets.load(Ordering::SeqCst);
+        let passes = self.passed_packets.load(Ordering::SeqCst);
         let blocked = self.blocked_ips.lock().unwrap().len();
 
         let nanos_saved = drops.saturating_mul(1_200);

@@ -145,6 +145,10 @@ class AppRouter {
             builder: (context, state) => const EventsScreen(),
           ),
           GoRoute(
+            path: '/events/discovery',
+            builder: (context, state) => const EventsAudienceDiscoveryScreen(),
+          ),
+          GoRoute(
             path: '/events/:eventId',
             builder: (context, state) => EventDetailScreen(
               eventId: state.pathParameters['eventId'] ?? '',

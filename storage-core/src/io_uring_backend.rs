@@ -126,7 +126,9 @@ impl IoUringEngine {
         let fd = types::Fd(file.as_raw_fd());
         let mut done = 0usize;
         while done < size {
-            let entry = opcode::Read::new(fd, buf[done..].as_mut_ptr(), (size - done) as u32)
+            let rem = size - done;
+            let chunk = rem.min(u32::MAX as usize) as u32;
+            let entry = opcode::Read::new(fd, buf[done..].as_mut_ptr(), chunk)
                 .offset(done as u64)
                 .build()
                 .user_data(1);
@@ -164,7 +166,9 @@ impl IoUringEngine {
         let fd = types::Fd(file.as_raw_fd());
         let mut done = 0usize;
         while done < data.len() {
-            let entry = opcode::Write::new(fd, data[done..].as_ptr(), (data.len() - done) as u32)
+            let rem = data.len() - done;
+            let chunk = rem.min(u32::MAX as usize) as u32;
+            let entry = opcode::Write::new(fd, data[done..].as_ptr(), chunk)
                 .offset(done as u64)
                 .build()
                 .user_data(1);

@@ -286,11 +286,15 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   }
 
   Future<bool> like(String userPubkey, String profileId) async {
-    _cards.removeWhere((c) => c.pubkey == profileId);
-    return _bool(
+    final ok = await _bool(
       () => RustLib.instance.api.crateFfiDatingDatingLike(
           userPubkey: userPubkey, profileId: profileId),
     );
+    if (ok) {
+      _cards.removeWhere((c) => c.pubkey == profileId);
+      notifyDeferred();
+    }
+    return ok;
   }
 
   Future<bool> unlike(String userPubkey, String profileId) async {
@@ -301,19 +305,27 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   }
 
   Future<bool> superlike(String userPubkey, String profileId) async {
-    _cards.removeWhere((c) => c.pubkey == profileId);
-    return _bool(
+    final ok = await _bool(
       () => RustLib.instance.api.crateFfiDatingDatingSuperlike(
           userPubkey: userPubkey, profileId: profileId),
     );
+    if (ok) {
+      _cards.removeWhere((c) => c.pubkey == profileId);
+      notifyDeferred();
+    }
+    return ok;
   }
 
   Future<bool> pass(String userPubkey, String profileId) async {
-    _cards.removeWhere((c) => c.pubkey == profileId);
-    return _bool(
+    final ok = await _bool(
       () => RustLib.instance.api.crateFfiDatingDatingPass(
           userPubkey: userPubkey, profileId: profileId),
     );
+    if (ok) {
+      _cards.removeWhere((c) => c.pubkey == profileId);
+      notifyDeferred();
+    }
+    return ok;
   }
 
   Future<bool> block(String userPubkey, String targetPubkey) async {

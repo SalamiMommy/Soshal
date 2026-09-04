@@ -215,7 +215,7 @@ class _MinisScreenState extends State<MinisScreen> {
                               status = 'Publishing…';
                             });
                             try {
-                              final id = await context
+                              final id = await sheetContext
                                   .read<MinisService>()
                                   .publishMini(
                                     mediaSource: path,
@@ -225,13 +225,15 @@ class _MinisScreenState extends State<MinisScreen> {
                                   );
                               if (!sheetContext.mounted) return;
                               Navigator.of(sheetContext).pop();
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content:
-                                      SelectableText('Mini published: $id'),
-                                ),
-                              );
+                              if (!mounted) return;
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content:
+                                        SelectableText('Mini published: $id'),
+                                  ),
+                                );
+                              }
                               await _load();
                             } catch (e) {
                               if (sheetContext.mounted) {
@@ -260,11 +262,29 @@ class _MinisScreenState extends State<MinisScreen> {
     }
   }
 
+  bool _reelsMode = true;
+  final PageController _pageController = PageController();
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final display = _rankOn && _ranked.isNotEmpty ? _ranked : _minis;
     return Scaffold(
-      appBar: AppBar(title: const Text('Minis')),
+      appBar: AppBar(
+        title: const Text('Minis'),
+        actions: [
+          IconButton(
+            icon: Icon(_reelsMode ? Icons.view_list : Icons.video_collection_outlined),
+            tooltip: _reelsMode ? 'Switch to list' : 'Switch to Reels feed',
+            onPressed: () => setState(() => _reelsMode = !_reelsMode),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openUpload,
         tooltip: 'Publish mini',
@@ -272,9 +292,11 @@ class _MinisScreenState extends State<MinisScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
+          : _reelsMode && _minis.isNotEmpty
+              ? _buildReelsFeed()
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
                   if (_wasmRuntimeUnavailable) ...[
@@ -413,6 +435,133 @@ class _MinisScreenState extends State<MinisScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildReelsFeed() {
+    return PageView.builder(
+      controller: _pageController,
+      scrollDirection: Axis.vertical,
+      itemCount: _minis.length,
+      itemBuilder: (context, index) {
+        final mini = _minis[index];
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            // Background Video Thumbnail or Player placeholder
+            mini.thumbnail.isNotEmpty
+                ? BlobImage(
+                    source: mini.thumbnail,
+                    fit: BoxFit.cover,
+                  )
+                : Container(
+                    color: Colors.black87,
+                    child: Center(
+                      child: Icon(
+                        Icons.play_circle_fill,
+                        size: 72,
+                        color: Theme.of(context).colorScheme.primary.withAlpha(200),
+                      ),
+                    ),
+                  ),
+            // Gradient scrim
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black26, Colors.transparent, Colors.black87],
+                  stops: [0.0, 0.6, 1.0],
+                ),
+              ),
+            ),
+            // Center Play Tap target
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _play(mini),
+                child: const SizedBox.expand(),
+              ),
+            ),
+            // Right-side Action Rail
+            Positioned(
+              right: 16,
+              bottom: 80,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.favorite, color: Colors.white, size: 30),
+                    tooltip: 'Like',
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Liked mini')),
+                      );
+                    },
+                  ),
+                  const Text('Like', style: TextStyle(color: Colors.white, fontSize: 11)),
+                  const SizedBox(height: 16),
+                  IconButton(
+                    icon: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 28),
+                    tooltip: 'Comments',
+                    onPressed: () => _play(mini),
+                  ),
+                  const Text('Comments', style: TextStyle(color: Colors.white, fontSize: 11)),
+                  const SizedBox(height: 16),
+                  IconButton(
+                    icon: const Icon(Icons.share, color: Colors.white, size: 28),
+                    tooltip: 'Share',
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: mini.videoUrl));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Reels link copied!')),
+                      );
+                    },
+                  ),
+                  const Text('Share', style: TextStyle(color: Colors.white, fontSize: 11)),
+                ],
+              ),
+            ),
+            // Bottom Creator & Sound Info Overlay
+            Positioned(
+              left: 16,
+              right: 80,
+              bottom: 24,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    mini.textOverlay.isNotEmpty ? mini.textOverlay : 'Reels Video',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.music_note, color: Colors.white70, size: 16),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'Original Audio · ${mini.videoUrl.split('/').last}',
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -6,7 +6,7 @@ import 'package:soshal_flutter/screens/dating_screen.dart';
 import 'package:soshal_flutter/services/dating_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 late FakeApi api;
 

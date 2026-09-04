@@ -23,7 +23,7 @@ import 'package:soshal_flutter/services/streaming_service.dart';
 import 'package:soshal_flutter/services/turso_service.dart';
 import 'package:soshal_flutter/services/vouch_service.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 late FakeApi api;
 

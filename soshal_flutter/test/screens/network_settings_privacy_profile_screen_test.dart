@@ -20,7 +20,7 @@ import 'package:soshal_flutter/services/settings_service.dart';
 import 'package:soshal_flutter/services/shell_service.dart';
 import 'package:soshal_flutter/services/stealth_service.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 late FakeApi api;
 

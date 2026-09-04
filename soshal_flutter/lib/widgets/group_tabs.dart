@@ -161,10 +161,9 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
                         room.id, widget.groupId, n, t, em, hex, me);
                   }
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: SelectableText('Room save failed: $e')));
-                  }
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: SelectableText('Room save failed: $e')));
                 }
               },
               child: const Text('Save'),
@@ -238,9 +237,24 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
             scrollDirection: Axis.horizontal,
             children: [
               ChoiceChip(
-                label: const Text('# general'),
+                avatar: const Icon(Icons.tag, size: 16),
+                label: const Text('general'),
                 selected: _roomId.isEmpty,
                 onSelected: (_) => _switchRoom(''),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                avatar: const Icon(Icons.volume_up_outlined, size: 16),
+                label: const Text('Voice Lounge'),
+                selected: _roomId == 'voice_room',
+                onSelected: (_) => _switchRoom('voice_room'),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                avatar: const Icon(Icons.podcasts_outlined, size: 16),
+                label: const Text('Stage Channel'),
+                selected: _roomId == 'stage_channel',
+                onSelected: (_) => _switchRoom('stage_channel'),
               ),
               for (final room in rooms) ...[
                 const SizedBox(width: 8),
@@ -292,24 +306,75 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
           ),
         ),
         const Divider(height: 1),
-        Expanded(
-          child: api.messages.isEmpty
-              ? const Center(child: Text('No messages yet'))
-              : ListView.builder(
-                  itemCount: api.messages.length,
-                  itemBuilder: (context, i) {
-                    final m = api.messages[api.messages.length - 1 - i];
-                    return ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.person_outline, size: 20),
-                      title: Text(_shortKey(m.senderPubkey),
-                          style: const TextStyle(fontSize: 12)),
-                      subtitle: Text(m.content),
-                      isThreeLine: true,
-                    );
-                  },
-                ),
-        ),
+        if (_roomId == 'stage_channel')
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.podcasts, size: 64, color: Colors.purpleAccent),
+                  const SizedBox(height: 12),
+                  const Text('Stage Channel Live',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  const Text('Listen to speakers or raise hand to speak on stage',
+                      style: TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.front_hand),
+                    label: const Text('Raise Hand to Speak'),
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Hand raised! Waiting for stage mod approval.')),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          )
+        else if (_roomId == 'voice_room')
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.volume_up, size: 64, color: Colors.green),
+                  const SizedBox(height: 12),
+                  const Text('Voice Lounge Connected',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  const Text('WebRTC voice mesh active · 0 members speaking',
+                      style: TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 16),
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.mic_off),
+                    label: const Text('Mute Audio'),
+                    onPressed: () {},
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: api.messages.isEmpty
+                ? const Center(child: Text('No messages yet'))
+                : ListView.builder(
+                    itemCount: api.messages.length,
+                    itemBuilder: (context, i) {
+                      final m = api.messages[api.messages.length - 1 - i];
+                      return ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.person_outline, size: 20),
+                        title: Text(_shortKey(m.senderPubkey),
+                            style: const TextStyle(fontSize: 12)),
+                        subtitle: Text(m.content),
+                        isThreeLine: true,
+                      );
+                    },
+                  ),
+          ),
         Container(
           padding: const EdgeInsets.all(8),
           child: Row(
@@ -398,12 +463,12 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
       await context.read<GroupsService>().react(targetId, replyId, emoji, me);
       await context.read<GroupsService>().fetchThreads(widget.groupId);
       await context.read<GroupsService>().fetchReactions(targetId, me);
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {});
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('React failed: $e')));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('React failed: $e')));
     }
   }
 

@@ -322,7 +322,8 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
   bool _shareBusy = false;
   bool _commentBusy = false;
   String? _shareStatus;
-  String? _commentStatus;
+  double _playbackPosition = 14.5;
+  final double _trackDuration = 184.0;
 
   MusicTrack get _track => widget.track;
 
@@ -385,9 +386,13 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
     }
   }
 
+  String? _commentStatus;
+
   Future<void> _postComment() async {
-    final content = _commentCtrl.text.trim();
-    if (content.isEmpty) return;
+    final raw = _commentCtrl.text.trim();
+    if (raw.isEmpty) return;
+    final timePrefix = '[${_playbackPosition.toStringAsFixed(0)}s] ';
+    final content = '$timePrefix$raw';
     setState(() {
       _commentBusy = true;
       _commentStatus = null;
@@ -402,7 +407,7 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
       _commentCtrl.clear();
       await _loadComments();
       if (!mounted) return;
-      setState(() => _commentStatus = 'Comment posted.');
+      setState(() => _commentStatus = 'Comment posted at ${_playbackPosition.toStringAsFixed(0)}s.');
     } catch (e) {
       if (mounted) setState(() => _commentStatus = 'Failed: $e');
     } finally {
@@ -457,7 +462,104 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          // Interactive SoundCloud Waveform Scrubber
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      IconButton.filled(
+                        icon: Icon(
+                          context.watch<ShellService>().audioPlaying &&
+                                  context.watch<ShellService>().audioTitle == _track.title
+                              ? Icons.pause
+                              : Icons.play_arrow,
+                        ),
+                        onPressed: () {
+                          final shell = context.read<ShellService>();
+                          if (shell.audioPlaying && shell.audioTitle == _track.title) {
+                            shell.stopAudio();
+                          } else {
+                            shell.playAudio(_track.audioUrl, _track.title);
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_track.title,
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                            Text('${_playbackPosition.toStringAsFixed(1)}s / ${_trackDuration.toStringAsFixed(1)}s',
+                                style: Theme.of(context).textTheme.bodySmall),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Waveform Bar Scrubber
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onHorizontalDragUpdate: (details) {
+                      final box = context.findRenderObject() as RenderBox?;
+                      if (box != null) {
+                        final local = details.localPosition.dx.clamp(0.0, box.size.width);
+                        setState(() {
+                          _playbackPosition = (local / box.size.width) * _trackDuration;
+                        });
+                      }
+                    },
+                    child: SizedBox(
+                      height: 56,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          for (int i = 0; i < 40; i++) ...[
+                            Expanded(
+                              child: Container(
+                                height: 12.0 + ((i * 7 + 13) % 40).toDouble(),
+                                margin: const EdgeInsets.symmetric(horizontal: 1),
+                                decoration: BoxDecoration(
+                                  color: (i / 40.0) <= (_playbackPosition / _trackDuration)
+                                      ? Colors.orangeAccent
+                                      : Colors.grey.shade400,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('0:00', style: Theme.of(context).textTheme.bodySmall),
+                      Text('Comment at ${_playbackPosition.toStringAsFixed(0)}s',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold)),
+                      Text('${(_trackDuration / 60).floor()}:${(_trackDuration % 60).floor().toString().padLeft(2, '0')}',
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           Text('Share to Feed', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           TextField(

@@ -526,11 +526,13 @@ class MarketplaceService extends ChangeNotifier
       final json = call();
       final parsed = await runOffThread(() => _parseListings(json));
       _listings = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
+      _listingsLoading = false;
       clearLastError();
       notifyDeferred();
       return _listings;
     } catch (e, st) {
       setLastError(e, st);
+      _listingsLoading = false;
       notifyDeferred();
       rethrow;
     }

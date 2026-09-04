@@ -11,7 +11,7 @@ import 'package:soshal_flutter/services/messaging_service.dart';
 import 'package:soshal_flutter/services/p2p_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 const mePubkey = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const alicePubkey = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';

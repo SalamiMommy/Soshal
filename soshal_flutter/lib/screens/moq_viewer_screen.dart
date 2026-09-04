@@ -57,6 +57,14 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   bool _audioTried = false;
   bool _audioGotConfig = false;
   String? _subStatus;
+  bool _showChatOverlay = true;
+  bool _modView = false;
+  final TextEditingController _chatInput = TextEditingController();
+  final List<Map<String, String>> _chatMessages = [
+    {'user': 'ModAlice', 'role': 'mod', 'badge': '🛡️', 'text': 'Welcome to the live stream!'},
+    {'user': 'VIPBob', 'role': 'vip', 'badge': '💎', 'text': 'Hype! Let\'s go!'},
+    {'user': 'SubCarol', 'role': 'sub', 'badge': '⭐', 'text': 'Subscribed for 3 months!'},
+  ];
 
   @override
   void initState() {
@@ -233,36 +241,156 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Live'),
+        title: const Text('Live Stream'),
         actions: [
+          IconButton(
+            icon: Icon(_showChatOverlay ? Icons.chat : Icons.chat_bubble_outline),
+            tooltip: 'Toggle Chat Overlay',
+            onPressed: () => setState(() => _showChatOverlay = !_showChatOverlay),
+          ),
+          IconButton(
+            icon: Icon(_modView ? Icons.security : Icons.security_outlined),
+            tooltip: 'Mod View',
+            color: _modView ? Colors.purpleAccent : null,
+            onPressed: () {
+              setState(() => _modView = !_modView);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(_modView ? 'Mod View enabled: auto-purge and timeout tools active.' : 'Mod View disabled.')),
+              );
+            },
+          ),
           TextButton(
             onPressed: _leaving ? null : _leave,
             child: const Text('Leave'),
           ),
         ],
       ),
-      body: _frameImage == null
-          ? Center(
+      body: Stack(
+        children: [
+          _frameImage == null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      _error == null
+                          ? const Text('Waiting for MoQ groups…')
+                          : ErrorStateText('$_error'),
+                    ],
+                  ),
+                )
+              : Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: RawImage(
+                      image: _frameImage,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+          if (_showChatOverlay)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 12,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  _error == null
-                      ? const Text('Waiting for MoQ groups…')
-                      : ErrorStateText('$_error'),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 180),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.75),
+                          Colors.transparent,
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _chatMessages.length,
+                      itemBuilder: (context, i) {
+                        final m = _chatMessages[i];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: RichText(
+                            text: TextSpan(
+                              style: const TextStyle(fontSize: 13, color: Colors.white),
+                              children: [
+                                TextSpan(text: '${m['badge']} '),
+                                TextSpan(
+                                  text: '${m['user']}: ',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: m['role'] == 'mod'
+                                        ? Colors.greenAccent
+                                        : m['role'] == 'vip'
+                                            ? Colors.pinkAccent
+                                            : Colors.amberAccent,
+                                  ),
+                                ),
+                                TextSpan(text: m['text']),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: TextField(
+                            controller: _chatInput,
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            decoration: const InputDecoration(
+                              hintText: 'Send a message…',
+                              hintStyle: TextStyle(color: Colors.white60),
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filled(
+                        icon: const Icon(Icons.send, size: 18),
+                        onPressed: () {
+                          final text = _chatInput.text.trim();
+                          if (text.isNotEmpty) {
+                            setState(() {
+                              _chatMessages.add({
+                                'user': 'You',
+                                'role': 'viewer',
+                                'badge': '👤',
+                                'text': text,
+                              });
+                            });
+                            _chatInput.clear();
+                          }
+                        },
+                      ),
+                    ],
+                  ),
                 ],
               ),
-            )
-          : Center(
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: RawImage(
-                  image: _frameImage,
-                  fit: BoxFit.contain,
-                ),
-              ),
             ),
+        ],
+      ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(12),

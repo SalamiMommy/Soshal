@@ -8,7 +8,7 @@ import 'package:soshal_flutter/services/auth_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 import 'package:soshal_flutter/services/sync_service.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 late FakeApi api;
 

@@ -86,6 +86,7 @@ impl<'a> GroupVoiceRepo<'a> {
                 params![channel_id],
             )
             .await?;
+            tx.commit().await?;
             Ok(())
         })
     }

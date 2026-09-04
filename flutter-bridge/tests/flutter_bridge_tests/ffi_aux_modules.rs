@@ -117,6 +117,7 @@ mod ffi_aux_modules_tests {
         // Lock: asserts the signer is locked, which must not race sibling
         // tests that unlock the signer.
         let _g = crate::test_util::lock();
+        let _ = signer::signer_lock();
         let e = relations::relations_send_friend_request("aux_pubkey".to_string()).unwrap_err();
         assert_eq!(e, "signer locked");
     }

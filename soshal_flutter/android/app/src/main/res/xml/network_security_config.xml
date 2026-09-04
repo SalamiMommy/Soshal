@@ -1,7 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
+    <!-- Base configuration: no cleartext traffic by default, use system trust anchors -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+    
+    <!-- Allow cleartext traffic for localhost/127.0.0.1 for development and local services -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">localhost</domain>
     </domain-config>
+    
+    <!-- Allow cleartext traffic for private network ranges for P2P LAN communication -->
+    <!-- These ranges are used for local mesh networking and media sharing -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <domain includeSubdomains="true">10.0.0.0</domain>
+        <domain includeSubdomains="true">172.16.0.0</domain>
+    </domain-config>
+    
+    <!-- Certificate pinning for critical endpoints (when deployed) -->
+    <!-- Uncomment and add actual certificate pins for production endpoints -->
+    <!--
+    <domain-config>
+        <domain includeSubdomains="true">api.soshal.app</domain>
+        <pin-set>
+            <pin digest="SHA-256">ADD_CERTIFICATE_PIN_HERE</pin>
+            <pin digest="SHA-256">ADD_BACKUP_CERTIFICATE_PIN_HERE</pin>
+        </pin-set>
+    </domain-config>
+    -->
+    
+    <!-- Debug overrides for development (only in debug builds) -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
 </network-security-config>

@@ -3,6 +3,14 @@
 use serde::{Deserialize, Serialize};
 use soshal_nostr_core::models::{find_tag_values_map, NostrEvent};
 
+fn clamp_created_at(v: f64) -> u64 {
+    if v.is_finite() && v >= 0.0 {
+        v as u64
+    } else {
+        0
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MiniEventOut {
@@ -83,7 +91,7 @@ pub fn mini_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
         "textOverlay": ev.content,
         "thumbnail": thumb,
         "audience": audience,
-        "createdAt": ev.created_at as u64,
+        "createdAt": clamp_created_at(ev.created_at),
     }))
 }
 
@@ -111,7 +119,7 @@ pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
         text_overlay: ev.content.clone(),
         thumbnail: thumb.to_string(),
         audience: audience.to_string(),
-        created_at: ev.created_at as u64,
+        created_at: clamp_created_at(ev.created_at),
     })
 }
 
@@ -160,7 +168,7 @@ pub fn musicloud_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
         "hashtags": hashtags,
         "d": d_tag,
         "audience": audience,
-        "createdAt": ev.created_at as u64,
+        "createdAt": clamp_created_at(ev.created_at),
     }))
 }
 
@@ -209,7 +217,7 @@ pub fn musicloud_event_out(ev: &NostrEvent) -> Option<MusicloudEventOut> {
         hashtags,
         d: d_tag.to_string(),
         audience: audience.to_string(),
-        created_at: ev.created_at as u64,
+        created_at: clamp_created_at(ev.created_at),
     })
 }
 

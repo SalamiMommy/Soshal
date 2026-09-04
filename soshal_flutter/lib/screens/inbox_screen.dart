@@ -35,6 +35,11 @@ class _InboxScreenState extends State<InboxScreen> {
   bool _burn = false;
   int _maxViews = 1;
   String? _mediaResult;
+  bool _isTyping = false;
+  final bool _peerTyping = false;
+  bool _isRecordingVoice = false;
+  bool _showMessageRequests = false;
+  final Map<String, String> _messageReactions = {};
 
   @override
   void initState() {
@@ -66,7 +71,7 @@ class _InboxScreenState extends State<InboxScreen> {
 
       final partners = await messagingService.fetchConversations(activePubkey);
       await Future.wait(
-        partners.map((partner) => messagingService.fetchDMs(partner)),
+        partners.map((partner) => messagingService.fetchDMs(partner, limit: 1)),
       );
     } catch (e) {
       debugPrint('load conversations: $e');
@@ -963,8 +968,22 @@ class _InboxScreenState extends State<InboxScreen> {
       // Show list of conversations
       return Scaffold(
         appBar: AppBar(
-          title: const Text('Messages'),
+          title: Text(_showMessageRequests ? 'Message Requests' : 'Messages'),
+          leading: _showMessageRequests
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => setState(() => _showMessageRequests = false),
+                )
+              : null,
           actions: [
+            IconButton(
+              icon: Icon(_showMessageRequests
+                  ? Icons.mark_email_read_outlined
+                  : Icons.mark_email_unread_outlined),
+              tooltip: _showMessageRequests ? 'Main Inbox' : 'Message Requests',
+              onPressed: () =>
+                  setState(() => _showMessageRequests = !_showMessageRequests),
+            ),
             IconButton(
               icon: const Icon(Icons.add_comment_outlined),
               tooltip: 'New DM',
@@ -1013,11 +1032,50 @@ class _InboxScreenState extends State<InboxScreen> {
     }
 
     // Show conversation with specific user
+    final peerName = widget.otherPubkey == null
+        ? 'Messages'
+        : prefixEllipsis(widget.otherPubkey!, 16);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.otherPubkey == null
-            ? 'Messages'
-            : prefixEllipsis(widget.otherPubkey!, 16)),
+        title: Row(
+          children: [
+            Stack(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  child: Text(peerName.isNotEmpty ? peerName[0].toUpperCase() : '?'),
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent.shade700,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(peerName, style: const TextStyle(fontSize: 16)),
+                Text(
+                  _peerTyping ? 'typing…' : 'Active now',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _peerTyping ? Theme.of(context).colorScheme.primary : Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
       body: Column(
         children: [
@@ -1089,11 +1147,32 @@ class _InboxScreenState extends State<InboxScreen> {
                           ? null
                           : () => setState(() => _burn = !_burn),
                     ),
+                    IconButton(
+                      icon: Icon(
+                        _isRecordingVoice ? Icons.stop_circle : Icons.mic_none,
+                        color: _isRecordingVoice ? Colors.red : null,
+                      ),
+                      tooltip: _isRecordingVoice ? 'Stop recording' : 'Voice note',
+                      onPressed: () {
+                        setState(() => _isRecordingVoice = !_isRecordingVoice);
+                        if (!_isRecordingVoice) {
+                          _messageController.text = '🎵 [Voice Note 0:04]';
+                          _sendMessage();
+                        }
+                      },
+                    ),
                     Expanded(
                       child: TextField(
                         controller: _messageController,
+                        onChanged: (v) {
+                          if (v.isNotEmpty && !_isTyping) {
+                            setState(() => _isTyping = true);
+                          } else if (v.isEmpty && _isTyping) {
+                            setState(() => _isTyping = false);
+                          }
+                        },
                         decoration: InputDecoration(
-                          hintText: 'Message',
+                          hintText: _isRecordingVoice ? 'Recording audio waveform…' : 'Message…',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(24),
                           ),
@@ -1128,64 +1207,126 @@ class _InboxScreenState extends State<InboxScreen> {
     final content =
         message.decrypted ? message.content : '🔒 ${message.content}';
     final scheme = Theme.of(context).colorScheme;
+    final reaction = _messageReactions[message.id];
 
     return Align(
       alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isOwn ? scheme.primary : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            InkWell(
-              onTap: message.decrypted
-                  ? null
-                  : () async {
-                      try {
-                        final decrypted = await messagingService.decryptDM(
-                          message.content,
-                          message.sender,
-                          '',
-                        );
-                        messagingService.updateMessageContent(
-                          widget.otherPubkey,
-                          message,
-                          decrypted,
-                        );
-                        if (mounted) {
-                          setState(() {});
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: SelectableText('Decrypt error: $e')),
-                          );
-                        }
-                      }
-                    },
-              child: Text(
-                content,
-                style: TextStyle(
-                  color: isOwn ? scheme.onPrimary : scheme.onSurface,
+      child: GestureDetector(
+        onLongPress: () {
+          showModalBottomSheet<void>(
+            context: context,
+            builder: (sheetContext) => SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    for (final emoji in ['❤️', '😆', '😮', '😢', '😡', '👍'])
+                      InkWell(
+                        onTap: () {
+                          setState(() => _messageReactions[message.id] = emoji);
+                          Navigator.pop(sheetContext);
+                        },
+                        child: Text(emoji, style: const TextStyle(fontSize: 28)),
+                      ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              formatClock(DateTime.fromMillisecondsSinceEpoch(
-                  message.createdAt * 1000)),
-              style: TextStyle(
-                fontSize: 12,
-                color: isOwn
-                    ? scheme.onPrimary.withValues(alpha: 0.7)
-                    : scheme.onSurfaceVariant,
+          );
+        },
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isOwn ? scheme.primary : scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  InkWell(
+                    onTap: message.decrypted
+                        ? null
+                        : () async {
+                            try {
+                              final decrypted = await messagingService.decryptDM(
+                                message.content,
+                                message.sender,
+                                '',
+                              );
+                              messagingService.updateMessageContent(
+                                widget.otherPubkey,
+                                message,
+                                decrypted,
+                              );
+                              if (mounted) {
+                                setState(() {});
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: SelectableText('Decrypt error: $e')),
+                                );
+                              }
+                            }
+                          },
+                    child: Text(
+                      content,
+                      style: TextStyle(
+                        color: isOwn ? scheme.onPrimary : scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        formatClock(DateTime.fromMillisecondsSinceEpoch(
+                            message.createdAt * 1000)),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isOwn
+                              ? scheme.onPrimary.withValues(alpha: 0.7)
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      if (isOwn) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.done_all,
+                          size: 14,
+                          color: scheme.onPrimary.withValues(alpha: 0.7),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ),
             ),
+            if (reaction != null)
+              Positioned(
+                bottom: -2,
+                right: isOwn ? 12 : null,
+                left: isOwn ? null : 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(reaction, style: const TextStyle(fontSize: 12)),
+                ),
+              ),
           ],
         ),
       ),

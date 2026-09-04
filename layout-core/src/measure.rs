@@ -72,7 +72,12 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
-static MEASURE_CACHE: Mutex<Option<HashMap<u64, TextBlockLayout>>> = Mutex::new(None);
+struct MeasureCache {
+    map: HashMap<u64, TextBlockLayout>,
+    queue: std::collections::VecDeque<u64>,
+}
+
+static MEASURE_CACHE: Mutex<Option<MeasureCache>> = Mutex::new(None);
 
 fn hash_spec(spec: &TextStyleSpec) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -101,8 +106,8 @@ pub fn measure_text(spec: &TextStyleSpec) -> TextBlockLayout {
 
     let cache_key = hash_spec(spec);
     if let Ok(guard) = MEASURE_CACHE.lock() {
-        if let Some(map) = guard.as_ref() {
-            if let Some(cached) = map.get(&cache_key) {
+        if let Some(cache) = guard.as_ref() {
+            if let Some(cached) = cache.map.get(&cache_key) {
                 return cached.clone();
             }
         }
@@ -159,11 +164,23 @@ pub fn measure_text(spec: &TextStyleSpec) -> TextBlockLayout {
     out.last_line_width_px = last_width;
 
     if let Ok(mut guard) = MEASURE_CACHE.lock() {
-        let map = guard.get_or_insert_with(HashMap::new);
-        if map.len() > 1000 {
-            map.clear();
+        let cache = guard.get_or_insert_with(|| MeasureCache {
+            map: HashMap::with_capacity(1024),
+            queue: std::collections::VecDeque::with_capacity(1024),
+        });
+        if cache.map.contains_key(&cache_key) {
+            return out;
         }
-        map.insert(cache_key, out.clone());
+        if cache.map.len() >= 1024 {
+            // Evict oldest 25% rather than wiping the entire cache.
+            for _ in 0..256 {
+                if let Some(oldest) = cache.queue.pop_front() {
+                    cache.map.remove(&oldest);
+                }
+            }
+        }
+        cache.map.insert(cache_key, out.clone());
+        cache.queue.push_back(cache_key);
     }
 
     out

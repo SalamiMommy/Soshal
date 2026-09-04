@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/chatrandom_service.dart';
 import '../services/session_service.dart';
@@ -22,7 +23,7 @@ class ChatRandomScreen extends StatefulWidget {
 class _ChatRandomScreenState extends State<ChatRandomScreen> {
   final TextEditingController _interestsController = TextEditingController();
   String _mediaType = 'video';
-  String _mode = 'public';
+  String _mode = '1-on-1';
   String _availabilityJson = '';
   bool _searching = false;
   String? _pubkey;
@@ -143,7 +144,10 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
             peers: [peer.pubkey],
             contentJson: '',
           );
-      if (mounted) _showSnack('Match accepted with ${_short(peer.pubkey)}');
+      if (mounted) {
+        _showSnack('Match accepted with ${_short(peer.pubkey)}');
+        context.push('/inbox/${peer.pubkey}');
+      }
     } catch (e) {
       if (mounted) _showSnack('Accept failed: $e');
     }
@@ -227,12 +231,12 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
         },
       ),
       const SizedBox(height: 12),
-      Text('Mode', style: Theme.of(context).textTheme.labelLarge),
+      Text('Topology & Room Mode', style: Theme.of(context).textTheme.labelLarge),
       const SizedBox(height: 4),
       SegmentedButton<String>(
         segments: const [
-          ButtonSegment(value: 'public', label: Text('Public')),
-          ButtonSegment(value: 'private', label: Text('Private')),
+          ButtonSegment(value: '1-on-1', label: Text('1-on-1')),
+          ButtonSegment(value: 'group_lounge', label: Text('Group Lounge')),
         ],
         selected: {_mode},
         onSelectionChanged: (s) {
@@ -251,10 +255,25 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
       const SizedBox(height: 12),
       if (_searching) const LinearProgressIndicator(),
       const SizedBox(height: 12),
-      FilledButton.icon(
-        onPressed: _searching ? null : _findPeer,
-        icon: const Icon(Icons.people_outline),
-        label: const Text('Find a peer'),
+      Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: _searching ? null : _findPeer,
+              icon: const Icon(Icons.shuffle),
+              label: const Text('Start Random Chat'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: () {
+              _showSnack('Skipping to next stranger...');
+              _findPeer();
+            },
+            icon: const Icon(Icons.skip_next),
+            label: const Text('Next / Skip'),
+          ),
+        ],
       ),
       const SizedBox(height: 24),
       Text('Peers (${service.peers.length})',

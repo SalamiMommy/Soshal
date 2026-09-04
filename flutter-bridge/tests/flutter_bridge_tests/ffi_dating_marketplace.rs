@@ -573,7 +573,7 @@ fn test_marketplace_order_escrow_lifecycle() {
         serde_json::from_str(&marketplace::marketplace_get_order(order_id.clone()).unwrap())
             .unwrap();
     assert_eq!(order["listing_id"], listing_id);
-    assert_eq!(order["buyer_pubkey"], "");
+    assert_eq!(order["buyer_pubkey"], buyer);
     assert_eq!(order["seller_pubkey"], seller);
     assert_eq!(order["status"], "created");
     assert_eq!(order["amount"], 5000);
@@ -586,20 +586,16 @@ fn test_marketplace_order_escrow_lifecycle() {
     )
     .unwrap();
     assert_eq!(seller_orders.len(), 1);
-    assert!(
-        marketplace::marketplace_create_escrow(order_id.clone(), buyer, seller.clone(), 5000)
-            .is_err()
-    );
     assert!(marketplace::marketplace_create_escrow(
         order_id.clone(),
         "".to_string(),
         seller.clone(),
-        0
+        5000
     )
     .is_err());
     let escrow_id = marketplace::marketplace_create_escrow(
         order_id.clone(),
-        "".to_string(),
+        buyer.clone(),
         seller.clone(),
         5000,
     )
@@ -628,7 +624,7 @@ fn test_marketplace_order_escrow_lifecycle() {
     assert_eq!(escrow[0]["status"], "refunded");
     let escrow2 = marketplace::marketplace_create_escrow(
         order_id.clone(),
-        "".to_string(),
+        buyer.clone(),
         seller.clone(),
         5000,
     )
@@ -651,8 +647,7 @@ fn test_marketplace_order_escrow_lifecycle() {
     assert_eq!(escrow[0]["status"], "disputed");
     assert!(marketplace::marketplace_release_escrow(escrow2, seller.clone()).is_err());
     let escrow3 =
-        marketplace::marketplace_create_escrow(order_id, "".to_string(), seller.clone(), 5000)
-            .unwrap();
+        marketplace::marketplace_create_escrow(order_id, buyer, seller.clone(), 5000).unwrap();
     assert!(marketplace::marketplace_release_escrow(escrow3.clone(), seller.clone()).is_err());
     db::db_execute_params(
         "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id=?1",

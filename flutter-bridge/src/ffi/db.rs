@@ -46,12 +46,17 @@ const COUNTABLE_TABLES: &[&str] = &[
     "guestbook_entries",
     "hashtags",
     "huddle_posts",
+    "ignored_entities",
     "link_previews",
+    "marketplace_offers",
     "marketplace_reviews",
+    "marketplace_saved",
     "media_blobs",
     "messages",
     "muted_conversations",
     "musicloud_comments",
+    "musicloud_playlists",
+    "musicloud_timed_comments",
     "musiclouds",
     "notifications",
     "outbox_queue",
@@ -63,6 +68,7 @@ const COUNTABLE_TABLES: &[&str] = &[
     "relays",
     "reminders",
     "reposts",
+    "secret_crushes",
     "settings",
     "spam_reports",
     "story_reactions",
@@ -149,6 +155,14 @@ pub fn db_path() -> Result<String, String> {
         Some(p) => Ok(p.clone()).into(),
         None => Err("database not initialized".to_string()).into(),
     }
+}
+
+/// Close the active database connection and clear the DB path.
+#[frb(sync, serialize)]
+pub fn db_close() -> Result<bool, String> {
+    let _ = DB_PATH.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let _ = DB.lock().unwrap_or_else(|e| e.into_inner()).take();
+    Ok(true).into()
 }
 
 /// Get the current schema version from the _migrations table.

@@ -61,7 +61,7 @@ String mediaGetCachePath() =>
     RustLib.instance.api.crateFfiMediaMediaGetCachePath();
 
 /// Start a local HTTP range server for media playback (sendfile zero-copy).
-/// Binds 127.0.0.1 on an ephemeral port; /blob/<hash> serves blob files out
+/// Binds 127.0.0.1 on an ephemeral port; /blob/`<hash>` serves blob files out
 /// of the chunk-store cache directory.
 BigInt mediaStartLocalServer() =>
     RustLib.instance.api.crateFfiMediaMediaStartLocalServer();

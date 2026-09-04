@@ -214,6 +214,31 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
     }
   }
 
+  /// Ignore/dismiss a single notification.
+  Future<void> ignoreNotification(String notificationId) async {
+    await deleteNotification(notificationId);
+  }
+
+  /// Ignore all notifications from a user.
+  Future<void> ignoreUser(String targetPubkey) async {
+    _notifications.removeWhere((n) => n.fromPubkey == targetPubkey);
+    _unread.removeWhere((n) => n.fromPubkey == targetPubkey);
+    for (final list in _byType.values) {
+      list.removeWhere((n) => n.fromPubkey == targetPubkey);
+    }
+    notifyListeners();
+  }
+
+  /// Turn off notifications for a thread/post.
+  Future<void> ignoreThread(String eventId) async {
+    _notifications.removeWhere((n) => n.eventId == eventId);
+    _unread.removeWhere((n) => n.eventId == eventId);
+    for (final list in _byType.values) {
+      list.removeWhere((n) => n.eventId == eventId);
+    }
+    notifyListeners();
+  }
+
   Future<List<AppNotification>> _fetchCategory(
     String pubkey,
     String type,

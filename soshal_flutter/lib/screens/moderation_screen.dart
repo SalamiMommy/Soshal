@@ -444,11 +444,10 @@ class _ModerationScreenState extends State<ModerationScreen> {
                 });
               }
             } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Scan failed: $e')),
-                );
-              }
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Scan failed: $e')),
+              );
             }
           },
         ),

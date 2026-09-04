@@ -5,7 +5,7 @@ import 'package:geolocator_platform_interface/geolocator_platform_interface.dart
 import 'package:soshal_flutter/ffi/permissions.dart' show LocationFixDto;
 import 'package:soshal_flutter/services/permissions_service.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 late FakeApi api;
 

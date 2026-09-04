@@ -16,7 +16,7 @@ mod ffi_tests {
     fn zap_ffi_fetch_receipts_bad_limit() {
         // Lock: DB global is shared; limit validation runs before any DB
         // access, but the lock still serializes the shared handle.
-        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::test_util::lock();
         for limit in [0, -1, 501] {
             let r = zap::zap_fetch_receipts("event1".to_string(), limit);
             let e = r.err().unwrap();
@@ -25,7 +25,7 @@ mod ffi_tests {
     }
     #[test]
     fn zap_ffi_receipts_and_total_happy_path() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("zap_webrtc", "zap_happy");
         let seed = |id: &str, event: &str, amount: i64, created: i64| {
             db::db_execute_params(

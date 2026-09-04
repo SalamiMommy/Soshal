@@ -3,7 +3,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/ffi_bridge.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 void main() {
   final env = bootstrapTestEnv('test-ffi-bridge');

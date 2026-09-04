@@ -228,6 +228,12 @@ async fn serve_video_file(
         false
     };
 
+    if is_range && start > end {
+        let resp = format!("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{total_size}\r\nContent-Length: 0\r\n\r\n");
+        let _ = socket.write_all(resp.as_bytes()).await;
+        return;
+    }
+
     let chunk_len = if total_size > 0 && start <= end {
         end - start + 1
     } else {
@@ -427,7 +433,7 @@ mod tests {
         let mut resp = Vec::new();
         sock.read_to_end(&mut resp).await.unwrap();
         let text = String::from_utf8_lossy(&resp);
-        assert!(text.starts_with("HTTP/1.1 206 Partial Content"));
+        assert!(text.starts_with("HTTP/1.1 416 Range Not Satisfiable"));
         assert!(text.contains("Content-Length: 0"));
 
         server.stop();

@@ -77,6 +77,8 @@ mod ffi_tests {
     fn test_ffi_error_propagation() {
         // Exercise real FFI error paths: Result<T, String> must surface the
         // Rust-side error string to the caller.
+        let _g = crate::test_util::lock();
+        let _ = db::db_close();
         let err = db::db_path().unwrap_err();
         assert!(err.contains("database not initialized"), "got {err}");
         let missing = std::env::temp_dir().join("soshal-no-such-media-file.bin");

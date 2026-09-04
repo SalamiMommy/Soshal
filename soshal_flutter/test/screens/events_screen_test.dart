@@ -12,7 +12,7 @@ import 'package:soshal_flutter/services/media_service.dart';
 import 'package:soshal_flutter/services/permissions_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 class _MockGeolocator extends GeolocatorPlatform {
   final Position position;

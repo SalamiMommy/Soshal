@@ -9,7 +9,7 @@ import 'package:soshal_flutter/services/session_service.dart';
 import 'package:soshal_flutter/services/settings_service.dart';
 import 'package:soshal_flutter/services/zap_service.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 late FakeApi api;
 

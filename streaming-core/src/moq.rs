@@ -237,6 +237,7 @@ impl MoqPublisherSession {
         let payload = payload.into();
         if track_type == MoqTrackType::VideoKeyframe {
             self.current_group_seq += 1;
+            self.current_obj_seq = 0;
         }
         self.current_obj_seq += 1;
 

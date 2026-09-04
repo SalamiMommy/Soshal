@@ -173,6 +173,7 @@ pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> 
     }
     clear_derived_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
+    soshal_crypto_core::nip44::clear_conversation_key_cache();
     SIGNER
         .lock()
         .unwrap_or_else(|e| e.into_inner())

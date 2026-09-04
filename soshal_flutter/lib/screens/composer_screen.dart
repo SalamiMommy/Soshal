@@ -41,6 +41,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
   List<double> _voicePeaks = const [];
   String? _voiceBlobHash;
   int _voiceSize = 0;
+  String _audience = 'public'; // public, friends, fof, only_me
 
   /// Pick an audio file, encode it as a voice memo via the Rust storage-core
   /// codec, and attach it to the post as a blob-backed `audio` media tag.
@@ -231,6 +232,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
       }
 
       final tags = <List<String>>[
+        if (_audience != 'public') ['audience', _audience],
         ..._tags.map((tag) => ['t', tag]),
         ..._mentions.map((mention) => ['p', mention]),
         if (_pendingMedia != null)
@@ -302,9 +304,75 @@ class _ComposerScreenState extends State<ComposerScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'New Post',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'New Post',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    DropdownButton<String>(
+                      value: _audience,
+                      isDense: true,
+                      underline: const SizedBox.shrink(),
+                      icon: const Icon(Icons.arrow_drop_down, size: 18),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'public',
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.public, size: 14),
+                              SizedBox(width: 4),
+                              Text('Public'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'friends',
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.people, size: 14),
+                              SizedBox(width: 4),
+                              Text('Friends'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'fof',
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.group_outlined, size: 14),
+                              SizedBox(width: 4),
+                              Text('Friends of friends'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'only_me',
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.lock_outline, size: 14),
+                              SizedBox(width: 4),
+                              Text('Only me'),
+                            ],
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setState(() => _audience = val);
+                      },
+                    ),
+                  ],
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),

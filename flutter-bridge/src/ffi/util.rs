@@ -80,6 +80,33 @@ pub(crate) fn tcp_probe(host: &str, port: u16) -> bool {
     .unwrap_or(false)
 }
 
+/// Cached TCP probe with a 5-second TTL to avoid repeated socket connections on hot paths.
+pub(crate) fn cached_tcp_probe(host: &str, port: u16) -> bool {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    type ProbeCacheMap = HashMap<(String, u16), (bool, Instant)>;
+    static PROBE_CACHE: OnceLock<Mutex<ProbeCacheMap>> = OnceLock::new();
+    let cache = PROBE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = (host.to_string(), port);
+    let ttl = Duration::from_secs(5);
+
+    if let Ok(guard) = cache.lock() {
+        if let Some((result, timestamp)) = guard.get(&key) {
+            if timestamp.elapsed() < ttl {
+                return *result;
+            }
+        }
+    }
+
+    let fresh = tcp_probe(host, port);
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(key, (fresh, Instant::now()));
+    }
+    fresh
+}
+
 pub(crate) fn uuid_like() -> String {
     use rand::RngCore;
     let mut b = [0u8; 8];

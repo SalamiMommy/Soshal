@@ -22,6 +22,7 @@ hex = { workspace = true }
 oxidelta.workspace = true
 zstd = { workspace = true }
 base64 = { workspace = true }
+rayon = { workspace = true }
 
 [lints]
 workspace = true

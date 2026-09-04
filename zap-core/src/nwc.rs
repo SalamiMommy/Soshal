@@ -53,7 +53,11 @@ pub fn parse_nwc_uri(uri: &str) -> Result<NwcConnectionInfo, String> {
     if relay_url.is_empty() {
         return Err("missing relay in NWC URI".into());
     }
-    if secret_hex.is_empty() || secret_hex.len() < 32 || secret_hex.len() > 128 {
+    if secret_hex.is_empty()
+        || secret_hex.len() < 32
+        || secret_hex.len() > 128
+        || !secret_hex.bytes().all(|b| b.is_ascii_hexdigit())
+    {
         return Err("invalid secret in NWC URI".into());
     }
     Ok(NwcConnectionInfo {

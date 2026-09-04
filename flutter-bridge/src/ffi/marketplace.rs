@@ -165,7 +165,7 @@ fn order_from_value(v: &serde_json::Value) -> Option<OrderInfo> {
     Some(OrderInfo {
         id: v["id"].as_str()?.to_string(),
         listing_id: content["listingId"].as_str().unwrap_or("").to_string(),
-        buyer_pubkey: v["seller_pubkey"].as_str().unwrap_or("").to_string(),
+        buyer_pubkey: v["pubkey"].as_str().unwrap_or("").to_string(),
         seller_pubkey: content["seller"].as_str().unwrap_or("").to_string(),
         status: content["status"].as_str().unwrap_or("created").to_string(),
         amount: content["amount"].as_f64().unwrap_or(0.0) as u64,
@@ -232,15 +232,22 @@ pub fn marketplace_search(query: String, limit: i32) -> Result<String, String> {
     if query.trim().is_empty() {
         return Ok("[]".to_string()).into();
     }
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
     let sql = format!(
         "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 AND p.content LIKE '%' || ?1 || '%' \
+         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 AND p.content LIKE '%' || ?1 || '%' ESCAPE '\\' \
          ORDER BY p.created_at DESC LIMIT {}",
         limit.clamp(1, 100)
     );
-    super::util::json_ok(parse_listings(super::db::db_query_params(&sql, &[query])?))
+    super::util::json_ok(parse_listings(super::db::db_query_params(
+        &sql,
+        &[escaped],
+    )?))
 }
 
 /// Get listing by id.
@@ -597,7 +604,7 @@ pub fn marketplace_create_escrow(
         listing_id: order.listing_id,
         buyer_pubkey,
         seller_pubkey,
-        amount_msats: amount as i64,
+        amount_msats: i64::try_from(amount).map_err(|_| "amount too large".to_string())?,
         currency: "sats".to_string(),
         status: "created".to_string(),
         escrow_note: None,
@@ -1243,7 +1250,7 @@ mod tests {
             order.contains(&format!("\"seller_pubkey\":\"{spk}\"")),
             "{order}"
         );
-        assert!(order.contains("\"buyer_pubkey\":\"\""), "{order}");
+        assert!(order.contains("\"buyer_pubkey\":\"buyer1\""), "{order}");
         assert!(marketplace_get_order("nope".to_string())
             .unwrap_err()
             .contains("Order not found"));
@@ -1257,19 +1264,20 @@ mod tests {
 
         assert!(marketplace_create_escrow(
             order_id.clone(),
-            "buyer1".to_string(),
+            "nobody".to_string(),
             spk.clone(),
-            5000,
+            5000
         )
         .unwrap_err()
         .contains("parties do not match"));
         assert!(
-            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 0,)
+            marketplace_create_escrow(order_id.clone(), "buyer1".to_string(), spk.clone(), 0,)
                 .unwrap_err()
                 .contains("amount must be positive")
         );
         let escrow_id =
-            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000).unwrap();
+            marketplace_create_escrow(order_id.clone(), "buyer1".to_string(), spk.clone(), 5000)
+                .unwrap();
 
         let escrow = marketplace_get_escrow(escrow_id.clone()).unwrap();
         assert!(escrow.contains("\"status\":\"created\""), "{escrow}");
@@ -1292,7 +1300,8 @@ mod tests {
         assert!(escrow.contains("\"status\":\"refunded\""), "{escrow}");
 
         let escrow2 =
-            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000).unwrap();
+            marketplace_create_escrow(order_id.clone(), "buyer1".to_string(), spk.clone(), 5000)
+                .unwrap();
         assert!(marketplace_dispute_escrow(
             escrow2.clone(),
             "outsider".to_string(),
@@ -1310,7 +1319,8 @@ mod tests {
 
         // Non-disputed escrow releases only after BOTH parties confirm.
         let escrow4 =
-            marketplace_create_escrow(order_id.clone(), String::new(), spk.clone(), 5000).unwrap();
+            marketplace_create_escrow(order_id.clone(), "buyer1".to_string(), spk.clone(), 5000)
+                .unwrap();
         assert!(marketplace_release_escrow(escrow4.clone(), spk.clone()).is_err());
         db::db_execute_raw_test(format!(
             "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id='{escrow4}'"
@@ -1321,18 +1331,21 @@ mod tests {
         assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
 
         let escrow3 =
-            marketplace_create_escrow(order_id, String::new(), spk.clone(), 5000).unwrap();
+            marketplace_create_escrow(order_id, "buyer1".to_string(), spk.clone(), 5000).unwrap();
         assert!(marketplace_resolve_escrow(
             escrow3.clone(),
             "mediator".to_string(),
             "outsider".to_string(),
         )
         .is_err());
-        marketplace_dispute_escrow(escrow3.clone(), String::new(), "refund".to_string()).unwrap();
-        assert!(
-            marketplace_resolve_escrow(escrow3.clone(), "mediator".to_string(), String::new(),)
-                .unwrap()
-        );
+        marketplace_dispute_escrow(escrow3.clone(), "buyer1".to_string(), "refund".to_string())
+            .unwrap();
+        assert!(marketplace_resolve_escrow(
+            escrow3.clone(),
+            "mediator".to_string(),
+            "buyer1".to_string(),
+        )
+        .unwrap());
         let escrow = marketplace_get_escrow(escrow3).unwrap();
         assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
         assert!(escrow.contains("resolved by mediator"), "{escrow}");

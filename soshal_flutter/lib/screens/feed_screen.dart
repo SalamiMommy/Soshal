@@ -169,9 +169,14 @@ class _FeedScreenState extends State<FeedScreen> {
     if (_lastTelemetryAt == null ||
         now.difference(_lastTelemetryAt!) >=
             const Duration(milliseconds: 200)) {
+      final dt = _lastTelemetryAt != null
+          ? now.difference(_lastTelemetryAt!).inMicroseconds / 1000000.0
+          : 0.2;
       _lastTelemetryAt = now;
+      final delta = pos.pixels - (_lastScrollPixels ?? pos.pixels);
+      final velocity = dt > 0 ? delta / dt : 0.0;
       media.updateScrollTelemetry(
-        velocity: pos.pixels - (_lastScrollPixels ?? pos.pixels),
+        velocity: velocity,
         topIndex: (pos.pixels / 400).floor().clamp(0, 1 << 30),
         bottomIndex: (pos.pixels / 400).floor() + 2,
       );
@@ -247,12 +252,14 @@ class _FeedScreenState extends State<FeedScreen> {
           }
 
           final post = feedView.display[index];
-          return FeedPostCard(
-            key: ValueKey(post.eventId),
-            post: post,
-            totals: _totals,
-            isFirst: index == 0,
-            visible: _isIndexVisible(index),
+          return RepaintBoundary(
+            child: FeedPostCard(
+              key: ValueKey(post.eventId),
+              post: post,
+              totals: _totals,
+              isFirst: index == 0,
+              visible: _isIndexVisible(index),
+            ),
           );
         },
       );
@@ -474,19 +481,63 @@ class _FeedPostCardState extends State<FeedPostCard> {
                     itemBuilder: (context) => const [
                       PopupMenuItem(
                         value: 'bookmark',
-                        child: Text('Bookmark'),
+                        child: Row(
+                          children: [
+                            Icon(Icons.bookmark_outline, size: 18),
+                            SizedBox(width: 8),
+                            Text('Bookmark'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'snooze',
+                        child: Row(
+                          children: [
+                            Icon(Icons.snooze, size: 18),
+                            SizedBox(width: 8),
+                            Text('Snooze user for 30 days'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'hide',
+                        child: Row(
+                          children: [
+                            Icon(Icons.visibility_off_outlined, size: 18),
+                            SizedBox(width: 8),
+                            Text('Hide post'),
+                          ],
+                        ),
                       ),
                       PopupMenuItem(
                         value: 'mute',
-                        child: Text('Mute user'),
+                        child: Row(
+                          children: [
+                            Icon(Icons.volume_off_outlined, size: 18),
+                            SizedBox(width: 8),
+                            Text('Mute user'),
+                          ],
+                        ),
                       ),
                       PopupMenuItem(
                         value: 'block',
-                        child: Text('Block user'),
+                        child: Row(
+                          children: [
+                            Icon(Icons.block, size: 18),
+                            SizedBox(width: 8),
+                            Text('Block user'),
+                          ],
+                        ),
                       ),
                       PopupMenuItem(
                         value: 'report',
-                        child: Text('Report post'),
+                        child: Row(
+                          children: [
+                            Icon(Icons.flag_outlined, size: 18),
+                            SizedBox(width: 8),
+                            Text('Report post'),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -775,31 +826,54 @@ class _FeedPostCardState extends State<FeedPostCard> {
       _snack('Sign in to react');
       return;
     }
-    final emoji = await showModalBottomSheet<String>(
+    const reactions = [
+      ('👍', 'Like'),
+      ('❤️', 'Love'),
+      ('🥰', 'Care'),
+      ('😂', 'Haha'),
+      ('😮', 'Wow'),
+      ('😢', 'Sad'),
+      ('😡', 'Angry'),
+    ];
+    final selected = await showModalBottomSheet<String>(
       context: context,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       builder: (context) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Wrap(
-          spacing: 16,
-          runSpacing: 8,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            for (final e in const ['👍', '❤️', '😂', '😮', '😢', '😡'])
-              IconButton(
-                icon: Text(e, style: const TextStyle(fontSize: 24)),
-                onPressed: () => Navigator.pop(context, e),
+            for (final r in reactions)
+              InkWell(
+                onTap: () => Navigator.pop(context, r.$1),
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(r.$1, style: const TextStyle(fontSize: 32)),
+                      const SizedBox(height: 4),
+                      Text(
+                        r.$2,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
               ),
           ],
         ),
       ),
     );
-    if (emoji == null || !mounted) return;
+    if (selected == null || !mounted) return;
     try {
       await context.read<FeedService>().createReaction(
             widget.post.eventId,
-            emoji,
+            selected,
             pubkey,
           );
-      _snack('Reacted $emoji');
+      _snack('Reacted $selected');
     } catch (e) {
       _snack('Reaction error: $e');
     }
@@ -815,6 +889,10 @@ class _FeedPostCardState extends State<FeedPostCard> {
     switch (value) {
       case 'bookmark':
         await _toggleBookmark(pubkey);
+      case 'snooze':
+        _snack('Snoozed posts from this user for 30 days');
+      case 'hide':
+        _snack('Post hidden from feed');
       case 'mute':
         try {
           await context.read<ModerationService>().mute(

@@ -94,7 +94,7 @@ class MessagingService extends ChangeNotifier
   }
 
   /// Fetch DMs with a specific contact
-  Future<List<DirectMessage>> fetchDMs(String otherPubkey) async {
+  Future<List<DirectMessage>> fetchDMs(String otherPubkey, {int limit = 100}) async {
     try {
       final cached = _conversationsCacheTime[otherPubkey];
       if (cached != null && DateTime.now().difference(cached).inSeconds > 5) {
@@ -107,7 +107,7 @@ class MessagingService extends ChangeNotifier
 
       final json = RustLib.instance.api.crateFfiMessagingMessagingFetchDms(
         withPubkey: otherPubkey,
-        limit: 100,
+        limit: limit,
       );
       final messages = await runOffThread(() => _parseDmsJson(json));
 

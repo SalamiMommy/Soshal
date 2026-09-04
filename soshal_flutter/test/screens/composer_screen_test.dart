@@ -7,7 +7,7 @@ import 'package:soshal_flutter/services/feed_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 import 'package:soshal_flutter/services/signer_service.dart';
 
-import 'helpers/test_env.dart';
+import '../helpers/test_env.dart';
 
 /// SessionService with a controllable active pubkey (field setter is private).
 class FakeSession extends SessionService {

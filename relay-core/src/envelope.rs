@@ -84,9 +84,9 @@ impl MeshEnvelope {
         out.extend_from_slice(&MAGIC);
         out.push(self.version);
         out.push(self.hop_count);
-        push_str(&mut out, &self.event_id);
+        push_str(&mut out, &self.event_id)?;
         out.extend_from_slice(&self.kind.to_le_bytes());
-        push_str(&mut out, &self.author);
+        push_str(&mut out, &self.author)?;
         out.extend_from_slice(&self.created_at.to_le_bytes());
         let len =
             u32::try_from(self.payload.len()).map_err(|e| format!("payload too large: {e}"))?;
@@ -151,10 +151,13 @@ impl MeshEnvelope {
     }
 }
 
-fn push_str(out: &mut Vec<u8>, s: &str) {
-    assert!(s.len() <= 128, "envelope string exceeds 128-byte cap");
+fn push_str(out: &mut Vec<u8>, s: &str) -> Result<(), String> {
+    if s.len() > 128 {
+        return Err("envelope string exceeds 128-byte cap".to_string());
+    }
     out.extend_from_slice(&(s.len() as u16).to_le_bytes());
     out.extend_from_slice(s.as_bytes());
+    Ok(())
 }
 
 /// Reads a u16-length-prefixed string, capping length at 128 chars.

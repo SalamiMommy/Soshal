@@ -55,7 +55,26 @@ fn mark_status_ended(tags: &mut [Vec<String>]) {
 }
 
 fn stream_from_value(v: &serde_json::Value) -> Option<StreamInfo> {
-    let tags = v["tags_json"].as_str().unwrap_or("").to_string();
+    let tags_str = v["tags_json"].as_str().unwrap_or("");
+    let parsed_tags: Vec<Vec<String>> = serde_json::from_str(tags_str).unwrap_or_default();
+    let mut status: Option<String> = None;
+    let mut stream_url: Option<String> = None;
+    for t in &parsed_tags {
+        if let Some(key) = t.first().map(|s| s.as_str()) {
+            match key {
+                "status" if status.is_none() => {
+                    status = t.get(1).cloned();
+                }
+                "d" if stream_url.is_none() => {
+                    stream_url = t.get(1).cloned();
+                }
+                _ => {}
+            }
+        }
+        if status.is_some() && stream_url.is_some() {
+            break;
+        }
+    }
     let content = v["content"].as_str().unwrap_or("");
     let c: serde_json::Value = serde_json::from_str(content).unwrap_or(serde_json::Value::Null);
     Some(StreamInfo {
@@ -63,10 +82,10 @@ fn stream_from_value(v: &serde_json::Value) -> Option<StreamInfo> {
         broadcaster_pubkey: v["pubkey"].as_str().unwrap_or("").to_string(),
         title: c["title"].as_str().unwrap_or("Live").to_string(),
         description: c["summary"].as_str().unwrap_or("").to_string(),
-        status: tag_value(&tags, "status").unwrap_or_else(|| "offline".to_string()),
+        status: status.unwrap_or_else(|| "offline".to_string()),
         viewer_count: 0,
         created_at: v["created_at"].as_i64().unwrap_or(0).max(0) as u64,
-        stream_url: tag_value(&tags, "d").unwrap_or_default(),
+        stream_url: stream_url.unwrap_or_default(),
     })
 }
 

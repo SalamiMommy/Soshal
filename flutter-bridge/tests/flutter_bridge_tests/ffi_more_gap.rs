@@ -182,6 +182,7 @@ mod ffi_more_gap_tests {
         assert!(notifications::notifications_delete("n2".into()).unwrap());
         let after = notifications::notifications_fetch(me.clone(), 10, 0).unwrap();
         assert!(!after.contains("n2"), "{after}");
+        let _ = session::session_clear();
         let unloaded =
             notifications::notifications_register_push(me.clone(), "tok".into()).unwrap_err();
         assert!(unloaded.contains("Session not loaded"), "{unloaded}");

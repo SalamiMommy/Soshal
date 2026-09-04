@@ -327,16 +327,29 @@ pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
         let posts: Vec<FeedPost> = rows
             .into_iter()
             .filter(|row| is_content_clean(&row.content, &filters))
-            .map(|row| FeedPost {
-                event_id: row.id,
-                pubkey: row.pubkey,
-                content: row.content,
-                created_at: row.created_at.max(0) as u64,
-                reactions: 0,
-                replies: 0,
-                reposts: 0,
-                liked: false,
-                media_json: soshal_feed_core::query::media_json_from_tags(&row.tags_json),
+            .map(|row| {
+                let content = if row.content.starts_with("eNo") || row.content.starts_with("eF4") {
+                    let decompressed =
+                        soshal_content_core::compress::decompress_json_dict(&row.content);
+                    if decompressed.is_empty() {
+                        row.content
+                    } else {
+                        decompressed
+                    }
+                } else {
+                    row.content
+                };
+                FeedPost {
+                    event_id: row.id,
+                    pubkey: row.pubkey,
+                    content,
+                    created_at: row.created_at.max(0) as u64,
+                    reactions: 0,
+                    replies: 0,
+                    reposts: 0,
+                    liked: false,
+                    media_json: soshal_feed_core::query::media_json_from_tags(&row.tags_json),
+                }
             })
             .collect();
         Ok(posts)

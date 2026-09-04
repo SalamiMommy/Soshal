@@ -273,11 +273,74 @@ class _NotificationList extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: n.read
-                      ? null
-                      : Icon(Icons.circle,
-                          size: 12,
-                          color: Theme.of(context).colorScheme.primary),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!n.read)
+                        Icon(Icons.circle,
+                            size: 10,
+                            color: Theme.of(context).colorScheme.primary),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, size: 18),
+                        tooltip: 'Options',
+                        onSelected: (val) {
+                          if (val == 'ignore') {
+                            api.ignoreNotification(n.id);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Notification ignored')),
+                            );
+                          } else if (val == 'ignore_user') {
+                            api.ignoreUser(n.fromPubkey);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('User ignored')),
+                            );
+                          } else if (val == 'ignore_thread' && n.eventId != null) {
+                            api.ignoreThread(n.eventId!);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Thread notifications turned off')),
+                            );
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'ignore',
+                            child: Row(
+                              children: [
+                                Icon(Icons.visibility_off_outlined, size: 18),
+                                SizedBox(width: 8),
+                                Text('Ignore this notification'),
+                              ],
+                            ),
+                          ),
+                          if (n.fromPubkey.isNotEmpty)
+                            const PopupMenuItem(
+                              value: 'ignore_user',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.person_off_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Ignore user'),
+                                ],
+                              ),
+                            ),
+                          if (n.eventId != null)
+                            const PopupMenuItem(
+                              value: 'ignore_thread',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.notifications_off_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Turn off thread notifications'),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                   onTap: () async {
                     await api.markRead(n.id);
                   },

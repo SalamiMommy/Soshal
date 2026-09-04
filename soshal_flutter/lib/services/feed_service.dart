@@ -438,7 +438,9 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     final posts = <FeedPost>[];
     for (final m in rows) {
       final content = m['content'] as String? ?? '';
-      if (content.isNotEmpty) {
+      // Post content is already decompressed by Rust in feed_fetch_events.
+      // Fallback only if raw compressed prefix remains.
+      if (content.isNotEmpty && _looksCompressed(content)) {
         final decoded = decompressJson(content);
         if (decoded != content) m['content'] = decoded;
       }

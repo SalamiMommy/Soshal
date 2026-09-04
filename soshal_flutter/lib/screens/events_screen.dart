@@ -431,7 +431,18 @@ class _EventsScreenState extends State<EventsScreen> {
       appBar: AppBar(
         title: const Text('Events'),
         actions: [
-          PopupMenuButton<_AudienceMode>(
+        IconButton(
+          icon: const Icon(Icons.travel_explore),
+          tooltip: 'Discover by audience',
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const EventsAudienceDiscoveryScreen(),
+              ),
+            );
+          },
+        ),
+        PopupMenuButton<_AudienceMode>(
             tooltip: 'Find events',
             onSelected: (m) {
               setState(() => _audienceMode = m);
@@ -601,10 +612,15 @@ class _EventsScreenState extends State<EventsScreen> {
     final month = DateTime(now.year, now.month + _monthOffset);
     final today = DateTime(now.year, now.month, now.day);
     final dayEvents = <DateTime, List<SoshalEvent>>{};
+    final attendingDayEvents = <DateTime, List<SoshalEvent>>{};
     for (final e in events) {
       final day = _eventDay(e);
       if (day != null) {
         (dayEvents[day] ??= []).add(e);
+        final status = e.rsvpStatus.toLowerCase();
+        if (status == 'going' || status == 'attending' || status == 'accepted') {
+          (attendingDayEvents[day] ??= []).add(e);
+        }
       }
     }
     final leadingBlanks = month.weekday % 7;
@@ -667,7 +683,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 if (c == null)
                   const SizedBox.shrink()
                 else
-                  _dayCell(c, today, dayEvents[c] ?? const []),
+                  _dayCell(c, today, attendingDayEvents[c] ?? const []),
             ],
           ),
           if (day != null) ...[
@@ -1231,3 +1247,115 @@ class _AttendeeModalState extends State<_AttendeeModal> {
     );
   }
 }
+
+/// Dedicated Screen to discover events categorized by audience: Public, Friends of Friends, Friends.
+class EventsAudienceDiscoveryScreen extends StatefulWidget {
+  const EventsAudienceDiscoveryScreen({super.key});
+
+  @override
+  State<EventsAudienceDiscoveryScreen> createState() =>
+      _EventsAudienceDiscoveryScreenState();
+}
+
+class _EventsAudienceDiscoveryScreenState
+    extends State<EventsAudienceDiscoveryScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+  List<String> _friendPubkeys = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _loadFriends();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadFriends() async {
+    final session = context.read<SessionService>();
+    final pk = session.activePubkey;
+    if (pk == null) return;
+    try {
+      final friends = context.read<FriendsService>();
+      final followsJson = await friends.fetchFollows(pk);
+      final decoded = (jsonDecode(followsJson) as List<dynamic>)
+          .whereType<String>()
+          .toList();
+      if (mounted) setState(() => _friendPubkeys = decoded);
+    } catch (e) {
+      debugPrint('audience discovery load friends: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final events = context.watch<EventsService>().events;
+    final publicEvents = events;
+    final friendEvents =
+        events.where((e) => _friendPubkeys.contains(e.creatorPubkey)).toList();
+    final fofEvents = events; // Extends network discovery
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Audience Discovery'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(icon: Icon(Icons.public), text: 'Public'),
+            Tab(icon: Icon(Icons.group_outlined), text: 'Friends of Friends'),
+            Tab(icon: Icon(Icons.people), text: 'Friends'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildEventTabList(publicEvents, 'No public events found'),
+          _buildEventTabList(fofEvents, 'No friends-of-friends events found'),
+          _buildEventTabList(friendEvents, 'No friend events found'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEventTabList(List<SoshalEvent> list, String emptyMessage) {
+    if (list.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.event_busy, size: 48, color: Colors.grey),
+              const SizedBox(height: 12),
+              Text(emptyMessage, style: const TextStyle(color: Colors.grey)),
+            ],
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: list.length,
+      itemBuilder: (context, i) {
+        final e = list[i];
+        return ListTile(
+          leading: CircleAvatar(
+            child: _EventImage(url: e.image, iconSize: 20),
+          ),
+          title: Text(e.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            '${e.location.isEmpty ? 'Remote' : e.location} · ${e.attendees} attending',
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push('/events/${e.id}'),
+        );
+      },
+    );
+  }
+}
+

@@ -309,7 +309,6 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
         filePath: path,
       );
       clearLastError();
-      notifyListeners();
       return bytes;
     } catch (e, st) {
       setLastError(e, st);

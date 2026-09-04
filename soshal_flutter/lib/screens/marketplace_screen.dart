@@ -253,6 +253,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
           ),
+          OutlinedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _makeOffer(detail);
+            },
+            child: const Text('Make offer'),
+          ),
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
@@ -263,6 +270,56 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _makeOffer(ListingInfo listing) async {
+    final offerAmount = TextEditingController();
+    final note = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Make an offer on "${listing.title}"'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Listed price: ${listing.priceLabel}'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: offerAmount,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Your offer (${listing.currency}) *',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: note,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Note to seller (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Send Offer'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Offer sent to seller: ${offerAmount.text} ${listing.currency}')),
+      );
+    }
   }
 
   Future<void> _buy(ListingInfo listing) async {

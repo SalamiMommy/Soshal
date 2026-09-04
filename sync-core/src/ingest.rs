@@ -34,6 +34,7 @@ const POST_KIND_ALLOWLIST: &[u16] = &[
     KIND_EVENT_RSVP,
     KIND_SWAP,
     KIND_MENTION,
+    9734,
 ];
 use soshal_db_core::error::DbError;
 use soshal_db_core::repos::bookmark::{BookmarkRepo, BookmarkRow};
@@ -389,6 +390,7 @@ async fn handle_impl(
         Kind::ZapRequest => {
             // Store the request so later receipts can bind to it (NIP-57).
             if let Some(row) = post_row(event) {
+                ensure_author_user(db, t, event).await?;
                 PostRepo::new(db).upsert_in(t, &row).await?;
             }
         }
@@ -487,6 +489,7 @@ async fn handle_impl(
             let Some(event_id) = e_tags(event).first().cloned() else {
                 return Ok(());
             };
+            ensure_author_user(db, t, event).await?;
             BookmarkRepo::new(db)
                 .upsert_in(
                     t,
@@ -504,6 +507,7 @@ async fn handle_impl(
             let Some(target) = es.first() else {
                 return Ok(());
             };
+            ensure_author_user(db, t, event).await?;
             let row = ReactionRow {
                 id: event.id.to_hex(),
                 pubkey: event.pubkey.to_hex(),
@@ -587,14 +591,28 @@ pub fn handle_batch(
     if events.is_empty() {
         return Ok(Vec::new());
     }
+
+    // Pre-verify event signatures outside of the database write transaction.
+    // When batch size >= 4, parallelize across CPU cores with Rayon.
+    let verified_mask: Vec<bool> = if events.len() >= 4 {
+        use rayon::prelude::*;
+        events
+            .par_iter()
+            .map(soshal_nostr_core::models::verify_event)
+            .collect()
+    } else {
+        events
+            .iter()
+            .map(soshal_nostr_core::models::verify_event)
+            .collect()
+    };
+
     let conn = db.conn()?;
     soshal_db_core::query::with_tx(&conn, |t| async move {
         let mut rows: Vec<PostRow> = Vec::with_capacity(events.len());
         let mut ok_pos: Vec<usize> = Vec::with_capacity(events.len());
         for (pos, event) in events.iter().enumerate() {
-            // Route through the cached verifier (nostr-core LRU) — raw
-            // event.verify() re-verifies signatures for re-fetched batches.
-            if !soshal_nostr_core::models::verify_event(event) {
+            if !verified_mask[pos] {
                 continue;
             }
             match event.kind {
@@ -611,6 +629,7 @@ pub fn handle_batch(
                 _ => {
                     if POST_KIND_ALLOWLIST.contains(&event.kind.as_u16()) {
                         if let Some(row) = post_row(event) {
+                            ensure_author_user(db, &t, event).await?;
                             rows.push(row);
                             ok_pos.push(pos);
                         }

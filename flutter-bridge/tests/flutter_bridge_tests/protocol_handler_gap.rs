@@ -89,7 +89,7 @@ mod protocol_handler_gap_tests {
     #[test]
     fn avatar_identicon_fallback() {
         let _g = crate::test_util::lock();
-        let rt = tokio::runtime::Builder::new_current_thread()
+        let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
