@@ -79,13 +79,17 @@ fn scan_entries(body: &str) -> Vec<TagEntry<'_>> {
     while i < bytes.len() {
         if body.is_char_boundary(i) {
             if let Some((kind, name_len)) = AttrKind::from_prefix(&body[i..]) {
-                let eq = i + name_len;
+                let mut eq = i + name_len;
+                while eq < bytes.len() && (bytes[eq] == b' ' || bytes[eq] == b'\t') {
+                    eq += 1;
+                }
                 let open = eq + 1;
                 if bytes.get(eq) == Some(&b'=')
                     && matches!(bytes.get(open), Some(&b'"') | Some(&b'\''))
                 {
+                    let quote = bytes[open];
                     let mut end = open + 1;
-                    while end < bytes.len() && bytes[end] != b'"' && bytes[end] != b'\'' {
+                    while end < bytes.len() && bytes[end] != quote {
                         end += 1;
                     }
                     entries.push(TagEntry {
@@ -213,6 +217,9 @@ fn scan_html(html: &str) -> LinkScan<'_> {
             } else {
                 6
             };
+            if tag.len() <= prefix + 1 {
+                continue;
+            }
             let body = &tag[prefix..tag.len() - 1];
             let entries = scan_entries(body);
             if name.eq_ignore_ascii_case("meta") {

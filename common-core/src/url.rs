@@ -163,6 +163,7 @@ fn is_private_ipv4(addr: std::net::Ipv4Addr) -> bool {
         || o[0] == 172 && (16..=31).contains(&o[1])
         || o[0] == 192 && o[1] == 168
         || o[0] == 100 && (64..=127).contains(&o[1])
+        || o[0] == 198 && (o[1] == 18 || o[1] == 19) // RFC 2544 benchmarking 198.18.0.0/15
         || o[0] >= 240 // reserved (240.0.0.0/4) and broadcast (255.255.255.255)
         || addr.is_multicast()
 }

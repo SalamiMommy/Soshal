@@ -64,7 +64,11 @@ impl MeshBackend for FreenetBackend {
     }
     fn start(&mut self) -> Result<(), String> {
         let client = FreenetWebSocketClient::new(self.url.clone(), self.auth_token.clone());
-        runtime().block_on(client.connect())?;
+        runtime().block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), client.connect())
+                .await
+                .map_err(|_| "freenet connect timed out".to_string())?
+        })?;
         self.client = Some(client);
         self.started = true;
         Ok(())
@@ -72,7 +76,9 @@ impl MeshBackend for FreenetBackend {
     fn stop(&mut self) {
         self.started = false;
         if let Some(client) = self.client.take() {
-            let _ = runtime().block_on(client.disconnect());
+            let _ = runtime().block_on(async {
+                tokio::time::timeout(std::time::Duration::from_secs(5), client.disconnect()).await
+            });
         }
     }
     fn running(&self) -> bool {
@@ -91,15 +97,27 @@ impl MeshBackend for FreenetBackend {
             state: payload,
             contract_code: None,
         };
-        runtime().block_on(client.put_contract(state, false))?;
+        runtime().block_on(async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                client.put_contract(state, false),
+            )
+            .await
+            .map_err(|_| "freenet put timed out".to_string())?
+        })?;
         Ok(1)
     }
     fn recv(&mut self) -> Vec<Vec<u8>> {
         if self.started {
             if let Some(client) = self.client.as_ref() {
-                if let Ok(state) =
-                    runtime().block_on(client.get_contract(&self.contract_key, false))
-                {
+                if let Ok(state) = runtime().block_on(async {
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        client.get_contract(&self.contract_key, false),
+                    )
+                    .await
+                    .map_err(|_| "freenet get timed out".to_string())?
+                }) {
                     if let Some(bytes) = Self::state_changed(&mut self.last_state, state.state) {
                         self.received
                             .lock()

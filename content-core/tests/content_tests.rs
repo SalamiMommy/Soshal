@@ -960,7 +960,7 @@ fn decode_ascii_entities_rules() {
     );
     assert_eq!(decode_ascii_entities("&#65"), "a");
     assert_eq!(decode_ascii_entities("&#128;"), "&#128;");
-    assert_eq!(decode_ascii_entities("&#"), "&#;");
+    assert_eq!(decode_ascii_entities("&#"), "&#");
     assert_eq!(decode_ascii_entities("&#z;"), "&#z;");
 }
 

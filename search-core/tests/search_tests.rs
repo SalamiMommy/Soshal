@@ -32,9 +32,15 @@ fn sanitize_fts5_term_rejects_oversize() {
 
 #[test]
 fn format_fts5_query_builds_prefix_query() {
-    assert_eq!(format_fts5_query("hello world"), "hello* AND world*");
-    assert_eq!(format_fts5_query("  hello   world  "), "hello* AND world*");
-    assert_eq!(format_fts5_query("a:b c"), "a* AND b* AND c*");
+    assert_eq!(
+        format_fts5_query("hello world"),
+        "\"hello\"* AND \"world\"*"
+    );
+    assert_eq!(
+        format_fts5_query("  hello   world  "),
+        "\"hello\"* AND \"world\"*"
+    );
+    assert_eq!(format_fts5_query("a:b c"), "\"a\"* AND \"b\"* AND \"c\"*");
 }
 
 #[test]
@@ -43,12 +49,15 @@ fn format_fts5_query_empty_or_oversize_is_empty() {
     assert_eq!(format_fts5_query("   "), "");
     assert_eq!(format_fts5_query("!!!"), "");
     assert_eq!(format_fts5_query(&"a".repeat(4097)), "");
-    assert_eq!(format_fts5_query("hello:world:"), "hello* AND world*");
+    assert_eq!(
+        format_fts5_query("hello:world:"),
+        "\"hello\"* AND \"world\"*"
+    );
 }
 
 #[test]
 fn format_fts5_query_deduplicates_and_caps_terms() {
-    assert_eq!(format_fts5_query("a a b"), "a* AND b*");
+    assert_eq!(format_fts5_query("a a b"), "\"a\"* AND \"b\"*");
     let many = (1..=40)
         .map(|i| format!("w{}", i))
         .collect::<Vec<_>>()
@@ -61,7 +70,7 @@ fn format_fts5_query_deduplicates_and_caps_terms() {
 fn format_fts5_query_json_validates_input() {
     assert_eq!(
         format_fts5_query_json(r#"{"query":"rust nostr"}"#),
-        "rust* AND nostr*"
+        "\"rust\"* AND \"nostr\"*"
     );
     assert_eq!(format_fts5_query_json("garbage"), "");
     assert_eq!(
@@ -328,17 +337,55 @@ fn event_to_search_result_json_limits() {
 
 #[test]
 fn format_fts5_query_handles_unicode_and_term_variants() {
-    assert_eq!(format_fts5_query("café au lait"), "café* AND au* AND lait*");
-    assert_eq!(format_fts5_query("\"quoted\" term"), "quoted* AND term*");
-    assert_eq!(format_fts5_query("rust-lang 2x!"), "rustlang* AND 2x*");
-    assert_eq!(format_fts5_query("#nostr @alice"), "nostr* AND alice*");
+    assert_eq!(
+        format_fts5_query("café au lait"),
+        "\"café\"* AND \"au\"* AND \"lait\"*"
+    );
+    assert_eq!(
+        format_fts5_query("\"quoted\" term"),
+        "\"quoted\"* AND \"term\"*"
+    );
+    assert_eq!(
+        format_fts5_query("rust-lang 2x!"),
+        "\"rustlang\"* AND \"2x\"*"
+    );
+    assert_eq!(
+        format_fts5_query("#nostr @alice"),
+        "\"nostr\"* AND \"alice\"*"
+    );
 }
 
 #[test]
 fn format_fts5_query_no_match_terms_yield_empty() {
     assert_eq!(format_fts5_query("--- ..."), "");
-    assert_eq!(format_fts5_query("'single'"), "single*");
+    assert_eq!(format_fts5_query("'single'"), "\"single\"*");
     assert_eq!(format_fts5_query(",,,"), "");
+}
+
+#[test]
+fn format_fts5_query_reserved_words_are_quoted() {
+    // FTS5 reserved words (AND, OR, NOT, NEAR) must be quoted so they are
+    // treated as literal phrase terms instead of parsed as operators.
+    assert_eq!(format_fts5_query("AND"), "\"AND\"*");
+    assert_eq!(format_fts5_query("OR NOT"), "\"OR\"* AND \"NOT\"*");
+    assert_eq!(
+        format_fts5_query("hello AND world"),
+        "\"hello\"* AND \"AND\"* AND \"world\"*"
+    );
+    assert_eq!(format_fts5_query("NEAR test"), "\"NEAR\"* AND \"test\"*");
+}
+
+#[test]
+fn sanitize_fts5_term_uses_char_count_for_length() {
+    // 33 CJK chars = 99 bytes in UTF-8; should pass at char-count 33
+    let cjk33 = "漢".repeat(33);
+    assert!(sanitize_fts5_term(&cjk33).is_some());
+    // 65 CJK chars = 195 bytes; should fail at char-count 65
+    let cjk65 = "漢".repeat(65);
+    assert!(sanitize_fts5_term(&cjk65).is_none());
+    // 64 CJK chars = 192 bytes; should pass
+    let cjk64 = "漢".repeat(64);
+    assert!(sanitize_fts5_term(&cjk64).is_some());
 }
 
 #[test]

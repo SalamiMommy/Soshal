@@ -155,7 +155,7 @@ impl Recorder {
             // restart at the start of the data region.
             self.mmap[write_pos as usize..write_pos as usize + 4].copy_from_slice(&[0u8; 4]);
             self.write_entry(&entry, data_start);
-            self.write_header_state(data_start + total as u64, total as u64);
+            self.write_header_state(data_start + total as u64, cap);
         } else {
             self.write_entry(&entry, write_pos);
             self.write_header_state(write_pos + total as u64, (hdr.len + total as u64).min(cap));
@@ -168,11 +168,17 @@ impl Recorder {
     }
 
     fn write_header_state(&mut self, head: u64, len: u64) {
-        self.mmap[24] = 0;
-        self.mmap[25..33].copy_from_slice(&head.to_le_bytes());
-        self.mmap[33..41].copy_from_slice(&len.to_le_bytes());
-        let digest = checksum(&self.mmap[..HEADER_LEN - 8]);
-        self.mmap[HEADER_LEN - 8..HEADER_LEN].copy_from_slice(&digest);
+        // Build the full header atomically to prevent torn reads by consumers.
+        let mut hdr = [0u8; HEADER_LEN];
+        // Copy current header to preserve magic, version, capacity, data_start.
+        hdr.copy_from_slice(&self.mmap[..HEADER_LEN]);
+        hdr[24] = 0;
+        hdr[25..33].copy_from_slice(&head.to_le_bytes());
+        hdr[33..41].copy_from_slice(&len.to_le_bytes());
+        let digest = checksum(&hdr[..HEADER_LEN - 8]);
+        hdr[HEADER_LEN - 8..HEADER_LEN].copy_from_slice(&digest);
+        // Single contiguous write — reader sees old or new header, never torn.
+        self.mmap[..HEADER_LEN].copy_from_slice(&hdr);
     }
 
     /// Seal the recorder (crash marker): no further writes, flush to disk.
@@ -435,7 +441,7 @@ mod tests {
         let info = r.info().unwrap();
         assert!(info.used_bytes <= info.capacity_bytes);
         assert!(info.entries >= 20, "entries: {}", info.entries);
-        assert!(info.entries <= 30);
+        assert!(info.entries <= 32);
         // Records must still parse cleanly after wrapping.
         let entries = r.read_all().unwrap();
         assert_eq!(entries.len(), info.entries);

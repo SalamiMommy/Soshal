@@ -123,6 +123,12 @@ impl NormalizedStore {
     pub fn clear(&self) {
         let mut users = self.users.write().unwrap_or_else(|e| e.into_inner());
         let mut posts = self.posts.write().unwrap_or_else(|e| e.into_inner());
+
+        // Notify listeners before clearing so they can purge stale caches.
+        if !users.is_empty() || !posts.is_empty() {
+            self.notify(EntityDelta::StoreCleared);
+        }
+
         users.clear();
         posts.clear();
     }

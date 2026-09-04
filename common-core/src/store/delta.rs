@@ -24,4 +24,5 @@ pub enum EntityDelta {
     PostDeleted {
         post_id: String,
     },
+    StoreCleared,
 }

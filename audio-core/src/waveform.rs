@@ -18,6 +18,10 @@ use crate::MonoF32;
 pub const WAVEFORM_MIN_BINS: usize = 32;
 pub const WAVEFORM_MAX_BINS: usize = 2048;
 
+/// Max decoded f32 samples emitted by the container-decode path; mirrors
+/// `voice::MAX_DECODE_OUTPUT_SAMPLES` (64 MiB decode-alloc cap).
+const MAX_CONTAINER_SAMPLES: usize = 64 * 1024 * 1024;
+
 /// Decode a whole audio file (or raw Opus voice-note stream) into mono f32.
 /// Byte payloads are spilled to a temp file so symphonia can seek (m4a etc).
 fn decode_all(data: &[u8], hint_ext: Option<&str>) -> Result<MonoF32, String> {
@@ -139,6 +143,9 @@ fn decode_reader<R: std::io::Read + std::io::Seek + Send + Sync + 'static>(
             .decode(&packet)
             .map_err(|e| format!("decode: {e}"))?;
         append_mono(&mut samples, &decoded, &mut sb, channels, sample_rate);
+        if samples.len() >= MAX_CONTAINER_SAMPLES {
+            break;
+        }
     }
     Ok(samples)
 }
@@ -359,5 +366,11 @@ mod tests {
     fn nan_sample_poisons_bucket_to_zero() {
         assert_eq!(peaks(&[f32::NAN, 1.0], 2), vec![0.0, 1.0]);
         assert_eq!(peaks(&[1.0, f32::NAN], 2), vec![1.0, 0.0]);
+    }
+
+    /// Pins the container-decode sample cap to 64 MiB (voice.rs mirror).
+    #[test]
+    fn container_sample_cap_is_64mib() {
+        assert_eq!(super::MAX_CONTAINER_SAMPLES, 64 * 1024 * 1024);
     }
 }

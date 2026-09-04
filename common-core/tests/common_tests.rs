@@ -250,6 +250,7 @@ fn entity_delta_serde_roundtrip() {
         EntityDelta::PostDeleted {
             post_id: "p3".to_string(),
         },
+        EntityDelta::StoreCleared,
     ];
     for delta in deltas {
         let json = serde_json::to_string(&delta).unwrap();

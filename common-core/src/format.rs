@@ -107,7 +107,7 @@ pub fn format_duration(seconds: f64) -> String {
     if seconds <= 0.0 || !seconds.is_finite() {
         return String::new();
     }
-    let total_secs = seconds as u64;
+    let total_secs = seconds.round() as u64;
     let m = total_secs / 60;
     let s = total_secs % 60;
     format!("{}:{:02}", m, s)

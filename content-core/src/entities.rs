@@ -167,7 +167,7 @@ pub fn decode_ascii_entities<'a>(s: &'a str) -> Cow<'a, str> {
                 result.push('x');
             }
             result.push_str(num_str);
-            if buf_len > 0 || chars.peek().is_none() {
+            if buf_len > 0 {
                 result.push(';');
             }
         } else {

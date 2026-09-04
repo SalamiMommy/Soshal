@@ -687,7 +687,7 @@ pub fn default_node(node_type: &str, index: u64) -> Result<String, String> {
         return Err(format!("unknown node type: {node_type}"));
     }
     let millis = soshal_common_core::util::now_ms();
-    let id = format!("widget_{millis}{:04}", millis % 10_000);
+    let id = format!("widget_{millis}_{index}");
     let mut props = Map::new();
     let title = |t: &str| {
         let mut m = Map::new();

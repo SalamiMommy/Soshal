@@ -586,6 +586,9 @@ impl ChunkStore {
             let chunk = mmap.as_ref();
             let from = offset.saturating_sub(c_start);
             let to = (end - c_start).min(chunk.len());
+            if from > to {
+                return None;
+            }
             out.extend_from_slice(&chunk[from..to]);
             pos += to - from;
         }

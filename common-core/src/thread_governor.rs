@@ -41,10 +41,15 @@ impl CpuTopology {
         }
 
         if core_freqs.is_empty() {
-            // Fallback default: assume 8 cores where 0..4 are EFF, 4..8 are PERF
+            // Fallback: probe actual online CPU count; split first half (eff) / second half (perf).
+            // This avoids hardcoding indices that may not exist on non-standard layouts.
+            let n = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(8);
+            let mid = n / 2;
             return Self {
-                performance_cores: vec![4, 5, 6, 7],
-                efficiency_cores: vec![0, 1, 2, 3],
+                efficiency_cores: (0..mid).collect(),
+                performance_cores: (mid..n).collect(),
             };
         }
 

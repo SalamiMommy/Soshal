@@ -36,7 +36,11 @@ pub fn encode_thumbhash_from_rgba(
     height: usize,
     rgba: &[u8],
 ) -> Result<Vec<u8>, String> {
-    if rgba.len() < width * height * 4 {
+    let cap = match width.checked_mul(height).and_then(|v| v.checked_mul(4)) {
+        Some(c) => c,
+        None => return Err("dimensions overflow".to_string()),
+    };
+    if rgba.len() < cap {
         return Err("rgba buffer too small".to_string());
     }
     Ok(thumbhash::rgba_to_thumb_hash(width, height, rgba))

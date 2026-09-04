@@ -99,9 +99,8 @@ fn format_count_negative_and_nan() {
 
 #[test]
 fn format_count_positive_infinity() {
-    // +Inf satisfies >= 1_000_000 so it formats as "infM" — caller
-    // responsibility to avoid feeding unbounded values.
-    assert_eq!(format_count(f64::INFINITY), "infM");
+    // +Inf is non-finite — clamp to 0 like NaN/negative.
+    assert_eq!(format_count(f64::INFINITY), "0");
 }
 
 #[test]

@@ -150,6 +150,7 @@ impl MeshEnvelope {
 }
 
 fn push_str(out: &mut Vec<u8>, s: &str) {
+    assert!(s.len() <= 128, "envelope string exceeds 128-byte cap");
     out.extend_from_slice(&(s.len() as u16).to_le_bytes());
     out.extend_from_slice(s.as_bytes());
 }

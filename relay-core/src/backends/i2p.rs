@@ -84,6 +84,7 @@ impl MeshBackend for I2pBackend {
             while running.load(Ordering::Relaxed) {
                 match session_thread.accept_connection() {
                     Ok(stream) => {
+                        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
                         if active_inbound.load(Ordering::Relaxed) >= MAX_INBOUND_STREAMS {
                             drop(stream); // reject beyond cap
                             continue;

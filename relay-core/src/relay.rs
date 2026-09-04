@@ -209,10 +209,11 @@ impl RelayNode {
                 // keying on it lets a forged envelope reuse a legit event's
                 // id and suppress delivery/re-broadcast of the real event.
                 // Identical payloads still dedup once.
-                if self.seen.contains(&payload_digest(&env.payload)) {
+                let digest = payload_digest(&env.payload);
+                if self.seen.contains(&digest) {
                     continue;
                 }
-                self.note_seen(payload_digest(&env.payload));
+                self.note_seen(digest);
                 self.received += 1;
                 new_count += 1;
                 self.delivered.push_back(env.payload.clone());

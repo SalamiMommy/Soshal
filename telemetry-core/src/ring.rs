@@ -19,6 +19,7 @@
 
 use memmap2::MmapMut;
 use std::fs::OpenOptions;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 /// Shared header layout (bytes):
@@ -56,7 +57,23 @@ impl SharedRing {
             .open(path)
             .map_err(|e| format!("ring open: {e}"))?;
         let total = RING_HEADER_LEN + cap;
-        if file.metadata().map_err(|e| e.to_string())?.len() != total as u64 {
+        // Read existing capacity before any resize to prevent silent data loss
+        // when reopening with a smaller requested capacity.
+        let file_len = file.metadata().map_err(|e| e.to_string())?.len() as usize;
+        let mut existing_cap: u32 = 0;
+        if file_len >= RING_HEADER_LEN + 4 {
+            let mut buf = [0u8; 4];
+            (&file)
+                .seek(SeekFrom::Start(16))
+                .map_err(|e| e.to_string())?;
+            (&file).read_exact(&mut buf).map_err(|e| e.to_string())?;
+            existing_cap = u32::from_le_bytes(buf);
+        }
+        if existing_cap != 0 && existing_cap != cap as u32 {
+            return Err("ring capacity shrink not supported".to_string());
+        }
+        // Only grow the file; never truncate a larger existing ring.
+        if file_len < total {
             file.set_len(total as u64)
                 .map_err(|e| format!("ring resize: {e}"))?;
         }
@@ -352,22 +369,32 @@ mod tests {
     #[test]
     fn init_rounds_cap_advance_head_boundary_and_size_extremes() {
         // Non-4096 cap: 70_000 → ceil(70_000 / 4096) * 4096 = 73_728.
-        let ring =
-            SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 70_000).unwrap();
+        let ring = SharedRing::init(
+            &soshal_test_util::tmp_path("ring", "ring_rounding.bin"),
+            70_000,
+        )
+        .unwrap();
         assert_eq!(ring.capacity(), 73_728);
-        // Below the 64 KiB floor.
-        let ring = SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 1000).unwrap();
+        // Below the 64 KiB floor (separate file — shrinking is rejected).
+        let ring =
+            SharedRing::init(&soshal_test_util::tmp_path("ring", "ring_floor.bin"), 1000).unwrap();
         assert_eq!(ring.capacity(), 64 * 1024);
 
         // Exact +capacity boundary advances are allowed; beyond → Err.
-        let mut ring =
-            SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 64 * 1024).unwrap();
+        let mut ring = SharedRing::init(
+            &soshal_test_util::tmp_path("ring", "ring_bound.bin"),
+            64 * 1024,
+        )
+        .unwrap();
         assert!(ring.advance_head(0).is_ok());
         assert!(ring.advance_head(64 * 1024).is_ok());
         assert!(ring.advance_head(128 * 1024).is_ok());
         assert!(ring.advance_head(128 * 1024 - 1).is_err()); // rewind
-        let mut fresh =
-            SharedRing::init(&soshal_test_util::tmp_path("ring", "ring.bin"), 64 * 1024).unwrap();
+        let mut fresh = SharedRing::init(
+            &soshal_test_util::tmp_path("ring", "ring_bound2.bin"),
+            64 * 1024,
+        )
+        .unwrap();
         assert!(fresh.advance_head(64 * 1024 + 1).is_err()); // diff > capacity
 
         // Size extremes: max-size and minimal (empty) payloads read back equal on a fresh ring.
@@ -390,6 +417,21 @@ mod tests {
         assert_eq!(kinds, vec![7, 9]);
         assert_eq!(payloads[0], max_payload);
         assert!(payloads[1].is_empty());
+    }
+
+    #[test]
+    fn init_rejects_capacity_shrink() {
+        let p = soshal_test_util::tmp_path("ring", "ring_shrink.bin");
+        let ring = SharedRing::init(&p, 128 * 1024).unwrap();
+        assert_eq!(ring.capacity(), 128 * 1024);
+        drop(ring);
+        // Reopen with smaller capacity → must error, not truncate.
+        match SharedRing::init(&p, 64 * 1024) {
+            Err(msg) => assert!(msg.contains("capacity shrink")),
+            Ok(_) => panic!("expected capacity shrink error"),
+        }
+        // Same capacity succeeds (reopen path).
+        assert!(SharedRing::init(&p, 128 * 1024).is_ok());
     }
 
     #[test]

@@ -12,7 +12,7 @@ pub struct FormatFts5Input {
 /// Sanitizes a single FTS5 term.
 pub fn sanitize_fts5_term(raw: &str) -> Option<String> {
     if raw.chars().all(|c| c.is_alphanumeric()) {
-        if raw.is_empty() || raw.len() > MAX_FTS5_TERM_LEN {
+        if raw.chars().count() == 0 || raw.chars().count() > MAX_FTS5_TERM_LEN {
             return None;
         }
         return Some(raw.to_string());
@@ -23,7 +23,7 @@ pub fn sanitize_fts5_term(raw: &str) -> Option<String> {
             out.push(c);
         }
     }
-    if out.is_empty() || out.len() > MAX_FTS5_TERM_LEN {
+    if out.chars().count() == 0 || out.chars().count() > MAX_FTS5_TERM_LEN {
         return None;
     }
     Some(out)
@@ -49,7 +49,9 @@ pub fn format_fts5_query(query: &str) -> String {
                 if count > 0 {
                     out.push_str(" AND ");
                 }
+                out.push('"');
                 out.push_str(&t);
+                out.push('"');
                 out.push('*');
                 count += 1;
                 seen.insert(t);

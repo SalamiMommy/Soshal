@@ -40,8 +40,10 @@ pub fn score_post_with_set(
     now_secs: f64,
 ) -> f64 {
     let hours_ago = (now_secs - stats.created_at_secs).max(0.1) / HOUR_SEC;
-    let engagement =
-        stats.likes_count + stats.reposts_count + stats.zaps_count + stats.replies_count;
+    let engagement = (stats.likes_count as u64)
+        + (stats.reposts_count as u64)
+        + (stats.zaps_count as u64)
+        + (stats.replies_count as u64);
     let velocity = engagement as f64 / hours_ago;
     let wot_boost = (2.0 - stats.wot_distance.min(2) as f64).max(0.5);
     let recency_factor = 1.0 / (hours_ago + 1.0).log2();
