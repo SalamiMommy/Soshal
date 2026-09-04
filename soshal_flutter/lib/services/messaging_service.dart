@@ -15,6 +15,7 @@ class MessagingService extends ChangeNotifier
     with LastErrorMixin, DeferredNotify {
   static final _hexRegex = RegExp(r'^[0-9a-f]{64}$');
   final Map<String, List<DirectMessage>> _conversations = {};
+  final Map<String, DateTime> _conversationsCacheTime = {};
   final Map<String, int> _readWatermarks = {};
   final List<EphemeralMedia> _pendingEphemeral = [];
   late List<EphemeralMedia> _cachedPendingEphemeral =
@@ -95,6 +96,11 @@ class MessagingService extends ChangeNotifier
   /// Fetch DMs with a specific contact
   Future<List<DirectMessage>> fetchDMs(String otherPubkey) async {
     try {
+      final cached = _conversationsCacheTime[otherPubkey];
+      if (cached != null && DateTime.now().difference(cached).inSeconds > 5) {
+        _conversations.remove(otherPubkey);
+        _conversationsCacheTime.remove(otherPubkey);
+      }
       if (_conversations.containsKey(otherPubkey)) {
         return _conversations[otherPubkey]!;
       }
@@ -110,6 +116,7 @@ class MessagingService extends ChangeNotifier
       } else {
         _conversations[otherPubkey] = messages;
       }
+      _conversationsCacheTime[otherPubkey] = DateTime.now();
 
       clearLastError();
       notifyDeferred();
@@ -142,7 +149,7 @@ class MessagingService extends ChangeNotifier
             eventId = decoded['id'] as String;
           }
         }
-      } catch (_) {}
+      } catch (e) { debugPrint('dm send decode: $e'); }
 
       // Add to local conversation
       final message = DirectMessage(
@@ -158,7 +165,11 @@ class MessagingService extends ChangeNotifier
       if (!_conversations.containsKey(recipientPubkey)) {
         _conversations[recipientPubkey] = [];
       }
-      _conversations[recipientPubkey]!.add(message);
+      final convo = _conversations[recipientPubkey]!;
+      if (convo.length >= 200) {
+        convo.removeRange(0, convo.length - 199);
+      }
+      convo.add(message);
 
       clearLastError();
       notifyDeferred();

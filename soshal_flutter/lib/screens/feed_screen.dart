@@ -44,6 +44,7 @@ class _FeedScreenState extends State<FeedScreen> {
   DateTime? _lastTelemetryAt;
   FeedService? _feed;
   bool _listening = false;
+  bool _isLoadingMore = false;
   final Map<String, int> _totals = {};
 
   @override
@@ -176,7 +177,8 @@ class _FeedScreenState extends State<FeedScreen> {
     }
     _lastScrollPixels = pos.pixels;
     if (pos.pixels >= pos.maxScrollExtent - 400) {
-      // Load more when scrolling near bottom
+      if (_isLoadingMore) return;
+      _isLoadingMore = true;
       try {
         await context.read<FeedService>().loadMore();
         await _loadTotals();
@@ -185,6 +187,8 @@ class _FeedScreenState extends State<FeedScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: SelectableText('Load more error: $e')));
+      } finally {
+        _isLoadingMore = false;
       }
     }
   }
@@ -364,7 +368,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
       _totalMsat =
           await context.read<ZapService>().fetchTotalMsat(widget.post.eventId);
       if (mounted) setState(() {});
-    } catch (_) {}
+    } catch (e) { debugPrint('zap total: $e'); }
   }
 
   @override
@@ -547,7 +551,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
     var connected = false;
     try {
       connected = zap.isConnected;
-    } catch (_) {}
+    } catch (e) { debugPrint('nwc connect check: $e'); }
     if (!connected) {
       final uri = TextEditingController();
       final ok = await showDialog<bool>(

@@ -31,7 +31,7 @@ Future<void> logRuntimeError(Object error, [StackTrace? stack]) async {
     await dir.create(recursive: true);
     final file = File('${dir.path}/soshal-error.log');
     await file.writeAsString(buffer.toString(), mode: FileMode.append);
-  } catch (_) {}
+  } catch (e) { debugPrint('error log write: $e'); }
 }
 
 /// Standardized error store for services: surfaces to UI via [lastError]

@@ -107,12 +107,16 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
     if is_locked {
         let verdict = apply_pin_attempt(&mut state, now, false, permanent);
         with_repo(|r| {
-            let _ = r.set(
+            if let Err(e) = r.set(
                 "pin_lockout_state",
                 &serde_json::to_string(&state).unwrap_or_default(),
-            );
+            ) {
+                eprintln!("pin state persist failed: {e}");
+            }
             if matches!(verdict, PinVerdict::PermanentlyLocked) {
-                let _ = r.set("pin_permanently_locked", "true");
+                if let Err(e) = r.set("pin_permanently_locked", "true") {
+                    eprintln!("pin state persist failed: {e}");
+                }
             }
             Ok(())
         })?;
@@ -137,15 +141,19 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
     with_repo(|r| {
         let verdict = apply_pin_attempt(&mut state, now, ok, permanent);
         let persist = || {
-            let _ = r.set(
+            if let Err(e) = r.set(
                 "pin_lockout_state",
                 &serde_json::to_string(&state).unwrap_or_default(),
-            );
+            ) {
+                eprintln!("pin state persist failed: {e}");
+            }
         };
         match verdict {
             PinVerdict::Ok => {
                 persist();
-                let _ = r.set("pin_permanently_locked", "false");
+                if let Err(e) = r.set("pin_permanently_locked", "false") {
+                    eprintln!("pin state persist failed: {e}");
+                }
                 Ok(())
             }
             PinVerdict::Incorrect { .. } => {
@@ -158,7 +166,9 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
             }
             PinVerdict::PermanentlyLocked => {
                 persist();
-                let _ = r.set("pin_permanently_locked", "true");
+                if let Err(e) = r.set("pin_permanently_locked", "true") {
+                    eprintln!("pin state persist failed: {e}");
+                }
                 Err("account permanently locked after too many failed PIN attempts".into())
             }
         }
@@ -180,8 +190,12 @@ pub async fn pin_clear(pin: String) -> Result<bool, String> {
     check_pin_with_lockout(&pin)?;
     with_repo(|r| {
         r.set(PIN_HASH_KEY, "").map_err(super::util::to_err)?;
-        let _ = r.set("pin_lockout_state", "{}");
-        let _ = r.set("pin_permanently_locked", "false");
+        if let Err(e) = r.set("pin_lockout_state", "{}") {
+            eprintln!("pin state persist failed: {e}");
+        }
+        if let Err(e) = r.set("pin_permanently_locked", "false") {
+            eprintln!("pin state persist failed: {e}");
+        }
         Ok(())
     })?;
     Ok(true)

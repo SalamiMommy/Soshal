@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../screens/splash_screen.dart';
 import '../screens/auth_screen.dart';
 import '../screens/feed_screen.dart';
@@ -50,11 +51,19 @@ import '../screens/moq_viewer_screen.dart';
 import '../screens/profile_builder_screen.dart';
 import '../screens/profile_renderer_screen.dart';
 import '../services/music_service.dart';
+import '../services/session_service.dart';
 import '../widgets/app_shell.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: '/',
+    redirect: (context, state) {
+      final path = state.uri.path;
+      if (path == '/' || path == '/auth') return null;
+      final session = context.read<SessionService>();
+      if (session.activePubkey == null) return '/';
+      return null;
+    },
     errorBuilder: (context, state) => Scaffold(
       body: Center(
         child: Column(

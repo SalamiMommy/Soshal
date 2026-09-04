@@ -313,7 +313,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     if (pubkey.isEmpty) {
       try {
         pubkey = await signer.pubkey();
-      } catch (_) {}
+      } catch (e) { debugPrint('nip44 roundtrip: $e'); }
     }
     if (_nip44TextController.text.trim().isEmpty || pubkey.isEmpty) {
       snack.showSnackBar(SnackBar(

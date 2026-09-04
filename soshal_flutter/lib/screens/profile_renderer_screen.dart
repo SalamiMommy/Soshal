@@ -63,6 +63,7 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
                       CustomProfileNode.fromJson(e as Map<String, dynamic>))
                   .toList()
               : CustomProfile.fromJson(decoded as Map<String, dynamic>).nodes;
+          if (!mounted) return;
           setState(() {
             _nodes = loadedNodes;
             _localNodes = loadedNodes;
@@ -77,6 +78,7 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
     } catch (e) {
       debugPrint('ProfileRendererScreen: load error: $e');
       // Set default nodes if none exist
+      if (!mounted) return;
       setState(() {
         _nodes = [];
         _localNodes = [];

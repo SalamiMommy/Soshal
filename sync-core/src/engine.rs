@@ -95,33 +95,41 @@ async fn replay_outbox(db: &Database, client: &Client) {
                 Ok(_) => completed.push(item.id.clone()),
                 Err(e) => {
                     eprintln!("sync engine: outbox send {}: {e}", item.id);
-                    let _ = crate::outbox::mark_outbox_item_failed(
+                    if let Err(e) = crate::outbox::mark_outbox_item_failed(
                         db,
                         &item.id,
                         item.retry_count + 1,
                         retry_at(now, item.retry_count + 1),
-                    );
+                    ) {
+                        eprintln!("outbox db write: {e}");
+                    }
                 }
             },
             Err(e) => {
                 eprintln!("sync engine: outbox parse {}: {e}", item.id);
-                let _ = crate::outbox::mark_outbox_item_failed(
+                if let Err(e) = crate::outbox::mark_outbox_item_failed(
                     db,
                     &item.id,
                     item.retry_count + 1,
                     retry_at(now, item.retry_count + 1),
-                );
+                ) {
+                    eprintln!("outbox db write: {e}");
+                }
             }
         }
     }
     if !completed.is_empty() {
-        let _ = crate::outbox::mark_outbox_items_completed(db, &completed);
+        if let Err(e) = crate::outbox::mark_outbox_items_completed(db, &completed) {
+            eprintln!("outbox db write: {e}");
+        }
     }
     // Bounded queue growth: prune only when something settled since the last
     // pass (the prune is a full-table DELETE + subquery — skipping it when
     // nothing changed keeps idle flush ticks cheap).
     if crate::outbox::settled_dirty_take() {
-        let _ = crate::outbox::prune_outbox_settled(db, 500);
+        if let Err(e) = crate::outbox::prune_outbox_settled(db, 500) {
+            eprintln!("outbox db write: {e}");
+        }
     }
 }
 

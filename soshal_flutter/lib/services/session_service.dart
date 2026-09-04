@@ -143,13 +143,20 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
     if (_session == null) return;
     final index = _session!.accounts.indexWhere((a) => a.pubkey == pubkey);
     if (index < 0) return;
-    _session!.accounts[index] = SessionAccount(
+    final updated = SessionAccount(
       pubkey: pubkey,
       npub: _session!.accounts[index].npub,
       lastUsed: _session!.accounts[index].lastUsed,
       relayList: relays,
     );
-    await saveSession();
+    final previous = _session!.accounts[index];
+    _session!.accounts[index] = updated;
+    try {
+      await saveSession();
+    } catch (e) {
+      _session!.accounts[index] = previous;
+      rethrow;
+    }
     notifyListeners();
   }
 

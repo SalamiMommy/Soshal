@@ -362,14 +362,19 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
     required String contentId,
     required String reason,
   }) async {
-    final ok = RustLib.instance.api.crateFfiModerationModerationReportContent(
-      reporterPubkey: reporterPubkey,
-      contentType: contentType,
-      contentId: contentId,
-      reason: reason,
-    );
-    notifyListeners();
-    return ok;
+    try {
+      final ok = RustLib.instance.api.crateFfiModerationModerationReportContent(
+        reporterPubkey: reporterPubkey,
+        contentType: contentType,
+        contentId: contentId,
+        reason: reason,
+      );
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      return false;
+    }
   }
 
   /// List spam reports for a target pubkey (newest first).

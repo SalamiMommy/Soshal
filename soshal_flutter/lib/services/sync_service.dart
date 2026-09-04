@@ -64,8 +64,8 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
       await RustLib.instance.api.crateFfiSyncSyncStart(
         relaysJson: jsonEncode(relays),
       );
-      _started = true;
       _ensureSubscribed();
+      _started = true;
       _gcTimer?.cancel();
       _gcTimer = Timer.periodic(const Duration(days: 1), (_) {
         runScheduledEpochGc();

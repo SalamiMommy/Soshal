@@ -398,13 +398,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       await api.getGroup(widget.groupId);
       try {
         await api.getMembers(widget.groupId);
-      } catch (_) {}
+      } catch (e) { debugPrint('group members: $e'); }
       try {
         await api.fetchMembersWithRoles(widget.groupId);
-      } catch (_) {}
+      } catch (e) { debugPrint('group roles fetch: $e'); }
       try {
         await api.fetchRoles(widget.groupId);
-      } catch (_) {}
+      } catch (e) { debugPrint('group roles: $e'); }
       try {
         await api.fetchMessages(widget.groupId);
       } catch (e) {

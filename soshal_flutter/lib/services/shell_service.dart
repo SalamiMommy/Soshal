@@ -153,7 +153,11 @@ class ShellService extends ChangeNotifier {
             _items = loaded;
             _cachedItems = List.unmodifiable(_items);
           }
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('sidebar config parse failed: $e');
+          _items = [];
+          _cachedItems = List.unmodifiable(_items);
+        }
       }
       final theme = RustLib.instance.api.crateFfiDbDbGetSetting(key: _themeKey);
       if (theme != null && theme.isNotEmpty) {

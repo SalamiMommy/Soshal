@@ -401,6 +401,7 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
       if (!mounted) return;
       _commentCtrl.clear();
       await _loadComments();
+      if (!mounted) return;
       setState(() => _commentStatus = 'Comment posted.');
     } catch (e) {
       if (mounted) setState(() => _commentStatus = 'Failed: $e');

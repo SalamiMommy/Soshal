@@ -83,7 +83,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
             if (!mounted) return;
             setState(() => _subStatus = parsed as String? ?? status);
             subscribed = true;
-          } catch (_) {}
+          } catch (e) { debugPrint('moq subscribe: $e'); }
         }
         final groups = await api.subscribeLiveFetch(
           addr: widget.addr,

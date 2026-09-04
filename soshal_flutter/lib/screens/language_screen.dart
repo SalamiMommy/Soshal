@@ -39,7 +39,7 @@ class _LanguageScreenState extends State<LanguageScreen> {
       if (saved.isNotEmpty && mounted) {
         setState(() => _current = saved);
       }
-    } catch (_) {}
+    } catch (e) { debugPrint('language load: $e'); }
   }
 
   Future<void> _save(String code) async {

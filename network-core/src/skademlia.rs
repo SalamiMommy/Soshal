@@ -121,9 +121,7 @@ impl SkademliaRoutingTable {
             if let Some(lowest_idx) = bucket
                 .iter()
                 .enumerate()
-                .min_by(|(_, a), (_, b)| {
-                    a.reputation_score.partial_cmp(&b.reputation_score).unwrap()
-                })
+                .min_by(|(_, a), (_, b)| a.reputation_score.total_cmp(&b.reputation_score))
                 .map(|(idx, _)| idx)
             {
                 if bucket[lowest_idx].reputation_score < peer.reputation_score {

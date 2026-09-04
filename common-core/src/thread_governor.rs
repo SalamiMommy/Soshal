@@ -28,7 +28,7 @@ impl CpuTopology {
                     let name = entry.file_name();
                     let name_str = name.to_string_lossy();
                     if name_str.starts_with("cpu") && name_str[3..].parse::<usize>().is_ok() {
-                        let core_idx: usize = name_str[3..].parse().unwrap();
+                        let core_idx: usize = name_str[3..].parse().unwrap_or(0);
                         let freq_path = entry.path().join("cpufreq/cpuinfo_max_freq");
                         let freq = fs::read_to_string(freq_path)
                             .ok()

@@ -129,6 +129,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       } else {
         await identity.followUser(target, me);
       }
+      if (!mounted) return;
       setState(() => _isFollowing = !_isFollowing);
     } catch (e) {
       if (mounted) {

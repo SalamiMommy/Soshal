@@ -143,7 +143,7 @@ class _CallScreenState extends State<CallScreen> {
       if (decoded is Map<String, dynamic>) {
         return decoded['iceTransportPolicy']?.toString() ?? json;
       }
-    } catch (_) {}
+    } catch (e) { debugPrint('sdp policy decode: $e'); }
     return json;
   }
 

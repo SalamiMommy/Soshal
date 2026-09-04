@@ -831,9 +831,16 @@ async fn serve_stream(
                     match store.load_manifest(&chunk_req.hash) {
                         Some(m) => match serde_json::to_vec(&m) {
                             Ok(bytes) if bytes.len() <= MAX_STREAM_FRAME => {
-                                let _ =
-                                    write_stream_frame(&mut send, ResponseKind::Ok, &bytes).await;
-                                let _ = send.finish();
+                                if let Err(e) =
+                                    write_stream_frame(&mut send, ResponseKind::Ok, &bytes).await
+                                {
+                                    log::warn!("quic response write: {e}");
+                                    return;
+                                }
+                                if let Err(e) = send.finish() {
+                                    log::warn!("quic response write: {e}");
+                                    return;
+                                }
                                 return;
                             }
                             Ok(_) | Err(_) => ResponseKind::BadRequest,
@@ -861,8 +868,16 @@ async fn serve_stream(
                     .and_then(|m| store.blob_slice(m, chunk_req.offset, chunk_req.length))
                 {
                     Some(bytes) => {
-                        let _ = write_stream_frame(&mut send, ResponseKind::Ok, &bytes).await;
-                        let _ = send.finish();
+                        if let Err(e) =
+                            write_stream_frame(&mut send, ResponseKind::Ok, &bytes).await
+                        {
+                            log::warn!("quic response write: {e}");
+                            return;
+                        }
+                        if let Err(e) = send.finish() {
+                            log::warn!("quic response write: {e}");
+                            return;
+                        }
                         return;
                     }
                     None => ResponseKind::NotFound,

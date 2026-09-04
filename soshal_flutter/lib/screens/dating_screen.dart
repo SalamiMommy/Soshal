@@ -45,7 +45,10 @@ class _DatingScreenState extends State<DatingScreen>
       final session = context.read<SessionService>();
       final api = context.read<DatingService>();
       final pubkey = session.activePubkey;
-      if (pubkey == null) return;
+      if (pubkey == null) {
+        setState(() => _loading = false);
+        return;
+      }
       try {
         await api.getOwnProfile(pubkey);
         _hasProfile = true;

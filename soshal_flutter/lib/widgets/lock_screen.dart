@@ -45,7 +45,7 @@ class _LockScreenState extends State<LockScreen> {
       final signer = context.read<SignerService>();
       try {
         await signer.unlockFromKeyring(pubkey);
-      } catch (_) {}
+      } catch (e) { debugPrint('keychain restore: $e'); }
     }
   }
 

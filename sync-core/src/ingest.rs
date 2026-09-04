@@ -261,7 +261,9 @@ pub fn watermark(db: &Database, key: &str) -> u64 {
 /// Persist the watermark for `key` (best-effort; a stale watermark only
 /// causes a small re-fetch overlap).
 pub fn set_watermark(db: &Database, key: &str, ts: u64) {
-    let _ = SettingsRepo::new(db).set(key, &ts.to_string());
+    if let Err(e) = SettingsRepo::new(db).set(key, &ts.to_string()) {
+        eprintln!("settings persist: {e}");
+    }
 }
 
 /// Handle one verified relay event: cache it, bump the watermark, and emit a
@@ -323,7 +325,12 @@ async fn handle_impl(
         Kind::Metadata => {
             if let Some(row) = user_row(event) {
                 UserRepo::new(db).upsert_in(t, &row).await?;
-                let _ = tx.try_send(SyncUpdate::Profile { pubkey: row.pubkey });
+                if tx
+                    .try_send(SyncUpdate::Profile { pubkey: row.pubkey })
+                    .is_err()
+                {
+                    eprintln!("sync update channel full, dropping update");
+                }
             }
         }
         Kind::ContactList => {
@@ -485,26 +492,36 @@ async fn handle_impl(
                 created_at: event.created_at.as_secs() as i64,
             };
             ReactionRepo::new(db).upsert_in(t, &row).await?;
-            let _ = tx.try_send(SyncUpdate::Reaction {
-                id: row.id,
-                event_id: row.event_id,
-                pubkey: row.pubkey,
-                content: row.content.unwrap_or_default(),
-                created_at: event.created_at.as_secs(),
-            });
+            if tx
+                .try_send(SyncUpdate::Reaction {
+                    id: row.id,
+                    event_id: row.event_id,
+                    pubkey: row.pubkey,
+                    content: row.content.unwrap_or_default(),
+                    created_at: event.created_at.as_secs(),
+                })
+                .is_err()
+            {
+                eprintln!("sync update channel full, dropping update");
+            }
         }
         // Text notes and other app-published kinds all land in `posts` so the
         // cached feed stays complete; only kinds with a surface model emit.
         Kind::TextNote => {
             if let Some(row) = post_row(event) {
                 PostRepo::new(db).upsert_in(t, &row).await?;
-                let _ = tx.try_send(SyncUpdate::Feed {
-                    id: row.id,
-                    pubkey: row.pubkey,
-                    content: row.content,
-                    created_at: event.created_at.as_secs(),
-                    kind: event.kind.as_u16() as u64,
-                });
+                if tx
+                    .try_send(SyncUpdate::Feed {
+                        id: row.id,
+                        pubkey: row.pubkey,
+                        content: row.content,
+                        created_at: event.created_at.as_secs(),
+                        kind: event.kind.as_u16() as u64,
+                    })
+                    .is_err()
+                {
+                    eprintln!("sync update channel full, dropping update");
+                }
             }
         }
         Kind::EventDeletion => {
@@ -514,7 +531,9 @@ async fn handle_impl(
             // POST_UPSERT_SQL refuses to resurrect the row.
             let author = event.pubkey.to_hex();
             for eid in e_tags(event) {
-                let _ = PostRepo::new(db).mark_deleted_in(t, &eid, &author).await;
+                if let Err(e) = PostRepo::new(db).mark_deleted_in(t, &eid, &author).await {
+                    eprintln!("post soft-delete: {e}");
+                }
             }
         }
         _ => {
@@ -579,14 +598,18 @@ pub fn handle_batch(
         PostRepo::new(db).upsert_batch_in(&t, &rows).await?;
         t.commit().await?;
         for row in &rows {
-            if row.kind == Kind::TextNote.as_u16() as i64 {
-                let _ = tx.try_send(SyncUpdate::Feed {
-                    id: row.id.clone(),
-                    pubkey: row.pubkey.clone(),
-                    content: row.content.clone(),
-                    created_at: row.created_at as u64,
-                    kind: row.kind as u64,
-                });
+            if row.kind == Kind::TextNote.as_u16() as i64
+                && tx
+                    .try_send(SyncUpdate::Feed {
+                        id: row.id.clone(),
+                        pubkey: row.pubkey.clone(),
+                        content: row.content.clone(),
+                        created_at: row.created_at as u64,
+                        kind: row.kind as u64,
+                    })
+                    .is_err()
+            {
+                eprintln!("sync update channel full, dropping update");
             }
         }
         Ok(ok_pos)

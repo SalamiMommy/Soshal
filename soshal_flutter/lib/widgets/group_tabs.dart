@@ -963,7 +963,7 @@ class _GroupVoiceTabState extends State<GroupVoiceTab>
     for (final ch in api.voiceChannels) {
       try {
         _presence[ch.id] = await api.fetchPresence(ch.id);
-      } catch (_) {}
+      } catch (e) { debugPrint('voice presence: $e'); }
     }
     if (mounted) setState(() {});
   }

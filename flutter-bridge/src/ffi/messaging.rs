@@ -45,14 +45,16 @@ pub async fn messaging_send_dm(
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(&signed_json) {
         if let Some(event_id) = val.get("id").and_then(|v| v.as_str()) {
             let created_at = val.get("created_at").and_then(|v| v.as_u64()).unwrap_or(0);
-            let _ = messaging_store_dm(
+            if let Err(e) = messaging_store_dm(
                 event_id.to_string(),
                 sender_pk,
                 recipient_pubkey,
                 content,
                 created_at,
                 "[]".to_string(),
-            );
+            ) {
+                eprintln!("dm local store: {e}");
+            }
         }
     }
     super::sync::publish_or_enqueue("dm", &signed_json).await?;

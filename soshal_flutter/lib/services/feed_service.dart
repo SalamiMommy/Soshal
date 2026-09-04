@@ -300,6 +300,8 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       } catch (e) {
         debugPrint('unindex: $e');
       }
+      _posts.removeWhere((p) => p.eventId == eventId);
+      notifyDeferred();
       return result;
     } catch (e, st) {
       setLastError(e, st);
@@ -483,11 +485,12 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   void applyLiveReaction(
       String eventId, String pubkey, String content, String reactionId) {
     if (reactionId.isEmpty || !_seenReactions.add(reactionId)) return;
+    if (_seenReactions.length > 500) _seenReactions.clear();
     final index = _posts.indexWhere((p) => p.eventId == eventId);
     if (index < 0) return;
     final p = _posts[index];
     final delta = content == '+' ? 1 : -1;
-    final liked = p.liked || content == '+';
+    final bool liked = content == '+' ? true : content == '-' ? false : p.liked;
     _posts[index] = FeedPost(
       eventId: p.eventId,
       pubkey: p.pubkey,

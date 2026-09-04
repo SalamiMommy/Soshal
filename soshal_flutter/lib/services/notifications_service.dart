@@ -138,8 +138,10 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         notificationId: notificationId,
       );
       if (ok) {
-        _unreadCount = _unreadCount > 0 ? _unreadCount - 1 : 0;
-        _unread.removeWhere((n) => n.id == notificationId);
+        if (_unread.any((n) => n.id == notificationId)) {
+          _unreadCount = (_unreadCount - 1).clamp(0, _unreadCount);
+          _unread.removeWhere((n) => n.id == notificationId);
+        }
       }
       clearLastError();
       notifyListeners();

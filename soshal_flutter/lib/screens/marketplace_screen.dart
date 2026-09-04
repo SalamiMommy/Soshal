@@ -326,7 +326,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
         try {
           final escrows = await api.escrowsByParticipant(pubkey);
           escrowCount = ' (${escrows.length} total)';
-        } catch (_) {}
+        } catch (e) { debugPrint('marketplace: $e'); }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -984,7 +984,7 @@ class _EscrowSectionState extends State<_EscrowSection> {
       for (final o in orders) {
         if (o.listingId == listingId) return o;
       }
-    } catch (_) {}
+    } catch (e) { debugPrint('marketplace: $e'); }
     return null;
   }
 
