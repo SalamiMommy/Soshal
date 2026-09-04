@@ -161,7 +161,7 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
                         room.id, widget.groupId, n, t, em, hex, me);
                   }
                 } catch (e) {
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                       content: SelectableText('Room save failed: $e')));
                 }
@@ -458,15 +458,16 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
 
   Future<void> _react(String targetId, String replyId, String emoji) async {
     final me = context.read<SessionService>().activePubkey;
+    final groups = context.read<GroupsService>();
     if (me == null) return;
     try {
-      await context.read<GroupsService>().react(targetId, replyId, emoji, me);
-      await context.read<GroupsService>().fetchThreads(widget.groupId);
-      await context.read<GroupsService>().fetchReactions(targetId, me);
+      await groups.react(targetId, replyId, emoji, me);
+      await groups.fetchThreads(widget.groupId);
+      await groups.fetchReactions(targetId, me);
       if (!mounted) return;
       setState(() {});
     } catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: SelectableText('React failed: $e')));
     }
@@ -611,7 +612,7 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
                 _title.clear();
                 _body.clear();
               } catch (e) {
-                if (mounted) {
+                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: SelectableText('Create failed: $e')));
                 }
@@ -651,22 +652,23 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
 
   Future<void> _pinThread(GroupThread t, bool pinned) async {
     final me = context.read<SessionService>().activePubkey;
+    final groups = context.read<GroupsService>();
+    final messenger = ScaffoldMessenger.of(context);
     if (me == null) return;
     try {
-      await context.read<GroupsService>().setThreadPinned(t.id, pinned, me);
-      await context.read<GroupsService>().fetchThreads(widget.groupId);
+      await groups.setThreadPinned(t.id, pinned, me);
+      await groups.fetchThreads(widget.groupId);
       if (mounted) setState(() {});
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Pin failed: $e')));
-      }
+      messenger.showSnackBar(
+          SnackBar(content: SelectableText('Pin failed: $e')));
     }
   }
 
   Future<void> _deleteThread(GroupThread t) async {
     final me = context.read<SessionService>().activePubkey;
     if (me == null) return;
+    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -688,16 +690,15 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
       ),
     );
     if (confirmed != true || !mounted) return;
+    final groups = context.read<GroupsService>();
     try {
-      await context.read<GroupsService>().deleteThread(t.id, me);
+      await groups.deleteThread(t.id, me);
       if (_openThreadId == t.id) setState(() => _openThreadId = null);
-      await context.read<GroupsService>().fetchThreads(widget.groupId);
+      await groups.fetchThreads(widget.groupId);
       if (mounted) setState(() {});
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Delete failed: $e')));
-      }
+      messenger.showSnackBar(
+          SnackBar(content: SelectableText('Delete failed: $e')));
     }
   }
 
@@ -1035,34 +1036,34 @@ class _GroupVoiceTabState extends State<GroupVoiceTab>
 
   Future<void> _join(GroupVoiceChannel ch) async {
     final me = context.read<SessionService>().activePubkey;
+    final groups = context.read<GroupsService>();
+    final messenger = ScaffoldMessenger.of(context);
     if (me == null) return;
     try {
-      await context.read<GroupsService>().voiceJoin(ch.id, me);
+      await groups.voiceJoin(ch.id, me);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        messenger.showSnackBar(const SnackBar(
             content: SelectableText(
                 'Voice transport unavailable (roadmap) — presence recorded')));
       }
-      await _loadPresence(context.read<GroupsService>());
+      await _loadPresence(groups);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Join failed: $e')));
-      }
+      messenger.showSnackBar(
+          SnackBar(content: SelectableText('Join failed: $e')));
     }
   }
 
   Future<void> _leave(GroupVoiceChannel ch) async {
     final me = context.read<SessionService>().activePubkey;
+    final groups = context.read<GroupsService>();
+    final messenger = ScaffoldMessenger.of(context);
     if (me == null) return;
     try {
-      await context.read<GroupsService>().voiceLeave(ch.id, me);
-      await _loadPresence(context.read<GroupsService>());
+      await groups.voiceLeave(ch.id, me);
+      await _loadPresence(groups);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Leave failed: $e')));
-      }
+      messenger.showSnackBar(
+          SnackBar(content: SelectableText('Leave failed: $e')));
     }
   }
 
@@ -1087,14 +1088,13 @@ class _GroupVoiceTabState extends State<GroupVoiceTab>
               final n = _name.text.trim();
               if (n.isEmpty) return;
               Navigator.pop(context);
+              final groups = context.read<GroupsService>();
               try {
-                await context
-                    .read<GroupsService>()
-                    .createVoiceChannel(widget.groupId, n, me);
+                await groups.createVoiceChannel(widget.groupId, n, me);
                 _name.clear();
-                await _loadPresence(context.read<GroupsService>());
+                await _loadPresence(groups);
               } catch (e) {
-                if (mounted) {
+                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: SelectableText('Create failed: $e')));
                 }
