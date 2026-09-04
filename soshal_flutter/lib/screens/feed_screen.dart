@@ -225,8 +225,8 @@ class _FeedScreenState extends State<FeedScreen> {
       );
     } else {
       body = ListView.builder(
-        controller: _scrollController,
         cacheExtent: 600,
+        controller: _scrollController,
         itemCount: feedView.display.length + 1,
         itemExtentBuilder: (index, _) =>
             context.read<LayoutService>().extentFor(index, feedView.display),
@@ -380,7 +380,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
             Row(
               children: [
                 if (widget.post.profilePicture != null &&
-                      SafeUrl.isSafeMediaUrl(widget.post.profilePicture!))
+                    SafeUrl.isSafeMediaUrl(widget.post.profilePicture!))
                   CircleAvatar(
                     backgroundImage: ResizeImage.resizeIfNeeded(
                         128, 128, NetworkImage(widget.post.profilePicture!)),

@@ -139,8 +139,11 @@ fn ingest_batch(
     cursors: &mut HashMap<&'static str, u64>,
 ) {
     match ingest::handle_batch(db, my_pubkey, batch, tx) {
-        Ok(()) => {
-            for event in batch {
+        Ok(ok_pos) => {
+            for (i, event) in batch.iter().enumerate() {
+                if !ok_pos.contains(&i) {
+                    continue;
+                }
                 if let Some(key) = watermark_key(event.kind) {
                     let cur = cursors.entry(key).or_insert(0);
                     let created = event.created_at.as_secs();

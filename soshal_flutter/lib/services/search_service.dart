@@ -165,7 +165,8 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
     try {
       final json =
           RustLib.instance.api.crateFfiDbDbGetTrendingHashtags(limit: limit);
-      _dbTrendingHashtags = await runOffThread(() => _parseTrendingHashtags(json));
+      _dbTrendingHashtags =
+          await runOffThread(() => _parseTrendingHashtags(json));
       clearLastError();
       notifyListeners();
       return _dbTrendingHashtags;

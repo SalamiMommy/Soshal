@@ -86,8 +86,7 @@ class _TursoSettingsScreenState extends State<TursoSettingsScreen> {
                           Row(
                             children: [
                               Icon(Icons.cloud_sync,
-                                  color:
-                                      Theme.of(context).colorScheme.primary),
+                                  color: Theme.of(context).colorScheme.primary),
                               const SizedBox(width: 8),
                               const Text(
                                 'Turso Edge Replication',

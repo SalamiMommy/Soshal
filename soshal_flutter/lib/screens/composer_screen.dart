@@ -189,7 +189,9 @@ class _ComposerScreenState extends State<ComposerScreen> {
     }
     if (_contentController.text.length > ComposerScreen.maxPostChars) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: SelectableText('Post too long (max ${ComposerScreen.maxPostChars} chars)')),
+        SnackBar(
+            content: SelectableText(
+                'Post too long (max ${ComposerScreen.maxPostChars} chars)')),
       );
       return;
     }
@@ -219,11 +221,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
         }
         return;
       }
-    } finally {
-      if (mounted) setState(() => _isPosting = false);
-    }
-    if (!mounted) return;
-    try {
+      if (!mounted) return;
       final feedService = context.read<FeedService>();
       final sessionService = context.read<SessionService>();
 

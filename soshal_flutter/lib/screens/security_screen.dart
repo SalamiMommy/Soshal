@@ -92,282 +92,281 @@ class _SecurityScreenState extends State<SecurityScreen> {
         const ListTile(
           leading: Icon(Icons.lock_outline),
           title: Text('Key storage'),
-            subtitle: Text(
-                'Secret keys live in the OS keychain (Keystore on Android). '
-                'Unlocked for the current session only.'),
+          subtitle:
+              Text('Secret keys live in the OS keychain (Keystore on Android). '
+                  'Unlocked for the current session only.'),
+        ),
+        const ListTile(
+          leading: Icon(Icons.screenshot_monitor),
+          title: Text('Screen capture'),
+          subtitle: Text(
+              'Blocked on Android by FLAG_SECURE while the app is active.'),
+        ),
+        const ListTile(
+          leading: Icon(Icons.pin_outlined),
+          title: Text('App lock PIN'),
+          subtitle:
+              Text('Not available in this build. Account switch is its own '
+                  'gate: switching accounts requires unlocking via recovery '
+                  'phrase.'),
+        ),
+        const ListTile(
+          leading: Icon(Icons.shield_outlined),
+          title: Text('Encrypted DMs'),
+          subtitle:
+              Text('Messages use NIP-44 v2 (ChaCha20 + HMAC). Locked bubbles '
+                  'must be tapped to decrypt in this build.'),
+        ),
+        const Divider(),
+        Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8),
+          child: Text('Signer keys',
+              style:
+                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        ),
+        ListTile(
+          dense: true,
+          title: const Text('Signer pubkey'),
+          subtitle: Text(
+            _pubkey == null ? '…' : prefixEllipsis(_pubkey!, 16),
+            style: const TextStyle(fontSize: 11),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          const ListTile(
-            leading: Icon(Icons.screenshot_monitor),
-            title: Text('Screen capture'),
-            subtitle: Text(
-                'Blocked on Android by FLAG_SECURE while the app is active.'),
-          ),
-          const ListTile(
-            leading: Icon(Icons.pin_outlined),
-            title: Text('App lock PIN'),
-            subtitle:
-                Text('Not available in this build. Account switch is its own '
-                    'gate: switching accounts requires unlocking via recovery '
-                    'phrase.'),
-          ),
-          const ListTile(
-            leading: Icon(Icons.shield_outlined),
-            title: Text('Encrypted DMs'),
-            subtitle:
-                Text('Messages use NIP-44 v2 (ChaCha20 + HMAC). Locked bubbles '
-                    'must be tapped to decrypt in this build.'),
-          ),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.only(left: 16, top: 8),
-            child: Text('Signer keys',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          ),
-          ListTile(
-            dense: true,
-            title: const Text('Signer pubkey'),
-            subtitle: Text(
-              _pubkey == null ? '…' : prefixEllipsis(_pubkey!, 16),
-              style: const TextStyle(fontSize: 11),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+        ),
+        ListTile(
+          dense: true,
+          title: const Text('Key state'),
+          subtitle: Text(
+            _locked == true ? 'Locked (keys wiped)' : 'Unlocked',
+            style: TextStyle(
+              color: _locked == true ? Colors.orange : Colors.green,
             ),
           ),
-          ListTile(
-            dense: true,
-            title: const Text('Key state'),
-            subtitle: Text(
-              _locked == true ? 'Locked (keys wiped)' : 'Unlocked',
-              style: TextStyle(
-                color: _locked == true ? Colors.orange : Colors.green,
-              ),
-            ),
+        ),
+        ListTile(
+          dense: true,
+          title: const Text('Lock now'),
+          subtitle: const Text('Zeroize in-memory keys'),
+          trailing: OutlinedButton(
+            onPressed: _confirmAndLock,
+            child: const Text('Lock'),
           ),
-          ListTile(
-            dense: true,
-            title: const Text('Lock now'),
-            subtitle: const Text('Zeroize in-memory keys'),
-            trailing: OutlinedButton(
-              onPressed: _confirmAndLock,
-              child: const Text('Lock'),
-            ),
-          ),
-          ListTile(
-            dense: true,
-            title: const Text('Save key to device keychain'),
-            trailing: OutlinedButton(
-              onPressed: () async {
-                if (pubkey.isEmpty) return;
-                try {
-                  await signer.saveToKeyring(pubkey);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: SelectableText('Saved to keychain ($pubkey)')),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: SelectableText('Keychain error: $e')),
-                    );
-                  }
+        ),
+        ListTile(
+          dense: true,
+          title: const Text('Save key to device keychain'),
+          trailing: OutlinedButton(
+            onPressed: () async {
+              if (pubkey.isEmpty) return;
+              try {
+                await signer.saveToKeyring(pubkey);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: SelectableText('Saved to keychain ($pubkey)')),
+                  );
                 }
-              },
-              child: const Text('Save'),
-            ),
-          ),
-          SwitchListTile(
-            dense: true,
-            title: const Text('Enable keychain unlock'),
-            subtitle: const Text('Allow unlocking from device keychain'),
-            value: _keychainUnlockEnabled,
-            onChanged: (value) async {
-              final settings = context.read<SettingsService>();
-              await settings.setSetting(
-                'keychain_unlock_enabled',
-                value ? 'true' : 'false',
-              );
-              setState(() => _keychainUnlockEnabled = value);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: SelectableText('Keychain error: $e')),
+                  );
+                }
+              }
             },
+            child: const Text('Save'),
           ),
-          SwitchListTile(
-            dense: true,
-            title: const Text('Autologin'),
-            subtitle: const Text(
-                'Sign in to the last account used automatically on launch'),
-            value: _autologinEnabled,
-            onChanged: (value) async {
-              final settings = context.read<SettingsService>();
-              await settings.setSetting('autologin_enabled', value.toString());
-              setState(() {
-                _autologinEnabled = value;
-              });
-            },
-          ),
-          ListTile(
-            dense: true,
-            title: const Text('Unlock from device keychain'),
-            enabled: _keychainUnlockEnabled,
-            trailing: OutlinedButton(
-              onPressed: _keychainUnlockEnabled
-                  ? () async {
-                      if (pubkey.isEmpty) return;
-                      try {
-                        await signer.unlockFromKeyring(pubkey);
-                        await _refresh();
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content:
-                                    SelectableText('Unlocked from keychain')),
-                          );
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content:
-                                    SelectableText('Keychain unlock error: $e')),
-                          );
-                        }
+        ),
+        SwitchListTile(
+          dense: true,
+          title: const Text('Enable keychain unlock'),
+          subtitle: const Text('Allow unlocking from device keychain'),
+          value: _keychainUnlockEnabled,
+          onChanged: (value) async {
+            final settings = context.read<SettingsService>();
+            await settings.setSetting(
+              'keychain_unlock_enabled',
+              value ? 'true' : 'false',
+            );
+            setState(() => _keychainUnlockEnabled = value);
+          },
+        ),
+        SwitchListTile(
+          dense: true,
+          title: const Text('Autologin'),
+          subtitle: const Text(
+              'Sign in to the last account used automatically on launch'),
+          value: _autologinEnabled,
+          onChanged: (value) async {
+            final settings = context.read<SettingsService>();
+            await settings.setSetting('autologin_enabled', value.toString());
+            setState(() {
+              _autologinEnabled = value;
+            });
+          },
+        ),
+        ListTile(
+          dense: true,
+          title: const Text('Unlock from device keychain'),
+          enabled: _keychainUnlockEnabled,
+          trailing: OutlinedButton(
+            onPressed: _keychainUnlockEnabled
+                ? () async {
+                    if (pubkey.isEmpty) return;
+                    try {
+                      await signer.unlockFromKeyring(pubkey);
+                      await _refresh();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content:
+                                  SelectableText('Unlocked from keychain')),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content:
+                                  SelectableText('Keychain unlock error: $e')),
+                        );
                       }
                     }
-                  : null,
-              child: const Text('Unlock'),
-            ),
-          ),
-          ListTile(
-            dense: true,
-            title: const Text('Remove key from device keychain'),
-            trailing: OutlinedButton(
-              onPressed: () async {
-                if (pubkey.isEmpty) return;
-                try {
-                  await signer.removeFromKeyring(pubkey);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: SelectableText('Removed from keychain')),
-                    );
                   }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content:
-                              SelectableText('Keychain remove error: $e')),
-                    );
-                  }
-                }
-              },
-              child: const Text('Remove'),
-            ),
+                : null,
+            child: const Text('Unlock'),
           ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.draw_outlined),
-            title: const Text('Sign message'),
-            subtitle: const Text('Schnorr-sign the SHA-256 digest of a text — '
-                'proof of key ownership, no secret exposed'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _signDialog,
-          ),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.only(left: 16, top: 8),
-            child: Text('Key tools',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          ),
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.vpn_key_outlined),
-            title: const Text('Generate new keypair'),
-            subtitle: const Text('Create a fresh identity (pubkey + nsec)'),
-            trailing: OutlinedButton(
-              onPressed: _generateKeypairDialog,
-              child: const Text('Generate'),
-            ),
-          ),
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.key_outlined),
-            title: const Text('Derive pubkey from nsec'),
-            subtitle: const Text('Recover the npub for a secret key — '
-                'no import, no key storage'),
-            trailing: OutlinedButton(
-              onPressed: _derivePubkeyDialog,
-              child: const Text('Derive'),
-            ),
-          ),
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.lock_clock_outlined),
-            title: const Text('Lock app (PIN)'),
-            subtitle: const Text('Show the app lock gate until the PIN is '
-                'entered again'),
-            trailing: OutlinedButton(
-              onPressed: () {
-                final shell = context.read<ShellService>();
-                if (!shell.hasPin && !shell.biometricsEnabled) {
+        ),
+        ListTile(
+          dense: true,
+          title: const Text('Remove key from device keychain'),
+          trailing: OutlinedButton(
+            onPressed: () async {
+              if (pubkey.isEmpty) return;
+              try {
+                await signer.removeFromKeyring(pubkey);
+                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                        content: SelectableText(
-                            'No app lock PIN configured — set one in '
-                            'Settings → Privacy')),
+                        content: SelectableText('Removed from keychain')),
                   );
-                  return;
                 }
-                shell.lockNow();
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: SelectableText('Keychain remove error: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Remove'),
+          ),
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.draw_outlined),
+          title: const Text('Sign message'),
+          subtitle: const Text('Schnorr-sign the SHA-256 digest of a text — '
+              'proof of key ownership, no secret exposed'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _signDialog,
+        ),
+        const Divider(),
+        Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8),
+          child: Text('Key tools',
+              style:
+                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        ),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.vpn_key_outlined),
+          title: const Text('Generate new keypair'),
+          subtitle: const Text('Create a fresh identity (pubkey + nsec)'),
+          trailing: OutlinedButton(
+            onPressed: _generateKeypairDialog,
+            child: const Text('Generate'),
+          ),
+        ),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.key_outlined),
+          title: const Text('Derive pubkey from nsec'),
+          subtitle: const Text('Recover the npub for a secret key — '
+              'no import, no key storage'),
+          trailing: OutlinedButton(
+            onPressed: _derivePubkeyDialog,
+            child: const Text('Derive'),
+          ),
+        ),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.lock_clock_outlined),
+          title: const Text('Lock app (PIN)'),
+          subtitle: const Text('Show the app lock gate until the PIN is '
+              'entered again'),
+          trailing: OutlinedButton(
+            onPressed: () {
+              final shell = context.read<ShellService>();
+              if (!shell.hasPin && !shell.biometricsEnabled) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: SelectableText('App locked')),
+                  const SnackBar(
+                      content: SelectableText(
+                          'No app lock PIN configured — set one in '
+                          'Settings → Privacy')),
                 );
-              },
-              child: const Text('Lock now'),
-            ),
+                return;
+              }
+              shell.lockNow();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: SelectableText('App locked')),
+              );
+            },
+            child: const Text('Lock now'),
           ),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.only(left: 16, top: 8),
-            child: Text('Crypto tools',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        ),
+        const Divider(),
+        Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8),
+          child: Text('Crypto tools',
+              style:
+                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        ),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.draw_outlined),
+          title: const Text('Schnorr sign digest'),
+          subtitle: const Text('SHA-256 the input Dart-side, Schnorr-sign '
+              'the digest with the unlocked key'),
+          trailing: OutlinedButton(
+            onPressed: _schnorrSignDialog,
+            child: const Text('Sign'),
           ),
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.draw_outlined),
-            title: const Text('Schnorr sign digest'),
-            subtitle: const Text('SHA-256 the input Dart-side, Schnorr-sign '
-                'the digest with the unlocked key'),
-            trailing: OutlinedButton(
-              onPressed: _schnorrSignDialog,
-              child: const Text('Sign'),
-            ),
+        ),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.event_note_outlined),
+          title: const Text('Sign event JSON'),
+          subtitle: const Text('Sign an unsigned NIP-59-style event '
+              '(pubkey, created_at, kind, tags, content)'),
+          trailing: OutlinedButton(
+            onPressed: _signUnsignedDialog,
+            child: const Text('Sign'),
           ),
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.event_note_outlined),
-            title: const Text('Sign event JSON'),
-            subtitle: const Text('Sign an unsigned NIP-59-style event '
-                '(pubkey, created_at, kind, tags, content)'),
-            trailing: OutlinedButton(
-              onPressed: _signUnsignedDialog,
-              child: const Text('Sign'),
-            ),
+        ),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.lock_outline),
+          title: const Text('NIP-44 encrypt / decrypt'),
+          subtitle: const Text('Round-trip a message to a recipient '
+              'pubkey — encrypt then decrypt back'),
+          trailing: OutlinedButton(
+            onPressed: _nip44Dialog,
+            child: const Text('Run'),
           ),
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.lock_outline),
-            title: const Text('NIP-44 encrypt / decrypt'),
-            subtitle: const Text('Round-trip a message to a recipient '
-                'pubkey — encrypt then decrypt back'),
-            trailing: OutlinedButton(
-              onPressed: _nip44Dialog,
-              child: const Text('Run'),
-            ),
-          ),
+        ),
       ],
     );
   }

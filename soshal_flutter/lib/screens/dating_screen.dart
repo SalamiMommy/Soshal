@@ -61,8 +61,7 @@ class _DatingScreenState extends State<DatingScreen>
 
   @override
   Widget build(BuildContext context) {
-    final pubkey =
-        context.select((SessionService s) => s.activePubkey);
+    final pubkey = context.select((SessionService s) => s.activePubkey);
 
     if (pubkey == null) {
       return Scaffold(
@@ -382,14 +381,18 @@ class _DatingScreenState extends State<DatingScreen>
                             fit: BoxFit.cover,
                             errorBuilder: (_) => Container(
                               height: 220,
-                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
                               child: const Icon(Icons.person, size: 80),
                             ),
                           )
                         else
                           Container(
                             height: 220,
-                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
                             child: const Icon(Icons.person, size: 80),
                           ),
                         Padding(
@@ -621,7 +624,8 @@ class _DatingScreenState extends State<DatingScreen>
                   fit: BoxFit.cover,
                   errorBuilder: (_) => Container(
                     height: 200,
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                     child: const Icon(Icons.person, size: 64),
                   ),
                 ),

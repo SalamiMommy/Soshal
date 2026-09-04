@@ -42,23 +42,28 @@ Future<String> networkRelayConnectionStatus() =>
 
 /// Subscribe to events matching a NIP-01 filter JSON object. Returns the
 /// subscription id; events are polled with `network_take_events`.
+/// On a mesh transport the subscription is a no-op success: flood gossip
+/// ingest already delivers everything to the local DB/stream continuously.
 Future<String> networkSubscribe({required String filterJson}) =>
     RustLib.instance.api
         .crateFfiNetworkNetworkSubscribe(filterJson: filterJson);
 
-/// Unsubscribe a subscription id.
+/// Unsubscribe a subscription id. No-op success on a mesh transport.
 Future<bool> networkUnsubscribe({required String subscriptionId}) =>
     RustLib.instance.api
         .crateFfiNetworkNetworkUnsubscribe(subscriptionId: subscriptionId);
 
 /// Publish an already-signed event (JSON) to all connected relays.
 /// Returns the number of relays that accepted it.
+/// Mesh transports publish via the mesh relay node (flood) first.
 Future<int> networkPublishEvent({required String eventJson}) =>
     RustLib.instance.api
         .crateFfiNetworkNetworkPublishEvent(eventJson: eventJson);
 
 /// Query events matching a filter against relays and the local cache.
 /// Returns an array of event JSON objects.
+/// On a mesh transport, queries the flood-gossip recent window (verified +
+/// filter-matched) instead of the wss relay client.
 Future<String> networkQueryEvents({required String filterJson}) =>
     RustLib.instance.api
         .crateFfiNetworkNetworkQueryEvents(filterJson: filterJson);
@@ -266,11 +271,12 @@ bool networkNotifyInterfaceChange({required String newIp}) =>
 String networkGetSysDiagnostics() =>
     RustLib.instance.api.crateFfiNetworkNetworkGetSysDiagnostics();
 
-/// Stop Reticulum transport.
+/// Stop Reticulum transports: clears the node registry and terminates all
+/// background transport threads/interfaces.
 bool networkReticulumStop() =>
     RustLib.instance.api.crateFfiNetworkNetworkReticulumStop();
 
-/// Get current Reticulum status.
+/// Get current Reticulum status from the node registry.
 String networkReticulumStatus() =>
     RustLib.instance.api.crateFfiNetworkNetworkReticulumStatus();
 

@@ -255,8 +255,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context.read<NetworkService>().publishRelayList(relayUrls: _relays);
     } catch (e) {
       debugPrint('publish relay list: $e');
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: SelectableText('Publish relay list: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Publish relay list: $e')));
     }
   }
 
@@ -360,12 +360,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   await zap.disconnect();
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: SelectableText('NWC wallet disconnected')),
+                    SnackBar(
+                        content: SelectableText('NWC wallet disconnected')),
                   );
                 } catch (e) {
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: SelectableText('Disconnect failed: $e')));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: SelectableText('Disconnect failed: $e')));
                 }
               },
               child: const Text('Disconnect'),
@@ -465,8 +466,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               } catch (e) {
                 if (!context.mounted) return;
                 Navigator.of(context).pop();
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(SnackBar(content: SelectableText('Parse failed: $e')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: SelectableText('Parse failed: $e')));
               }
             },
             child: const Text('Resolve'),

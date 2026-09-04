@@ -76,8 +76,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     } catch (e) {
       debugPrint('bookmark delete: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Delete failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Delete failed: $e')));
       }
     }
   }

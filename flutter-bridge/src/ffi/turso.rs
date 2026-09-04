@@ -21,9 +21,6 @@ pub fn db_turso_sync() -> Result<String, String> {
 /// Retrieve current Turso database replication sync status as a JSON string.
 #[frb(sync, serialize)]
 pub fn db_turso_status() -> Result<String, String> {
-    with_db_result(|db| {
-        let status = db.turso_status();
-        serde_json::to_string(&status)
-            .map_err(|e| soshal_db_core::error::DbError::Migration(e.to_string()))
-    })
+    let status = with_db_result(|db| Ok(db.turso_status()))?;
+    serde_json::to_string(&status).map_err(|e| format!("serialize turso status: {e}"))
 }

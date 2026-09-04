@@ -64,8 +64,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   Widget build(BuildContext context) {
     final session = context.select((SessionService s) => s.activePubkey);
     final pubkey = session;
-    final isLoading =
-        context.select((NotificationService s) => s.isLoading);
+    final isLoading = context.select((NotificationService s) => s.isLoading);
     final unreadCount =
         context.select((NotificationService s) => s.unreadCount);
 
@@ -258,10 +257,10 @@ class _NotificationList extends StatelessWidget {
                 child: ListTile(
                   leading: CircleAvatar(
                     backgroundImage: n.fromAvatar.isNotEmpty &&
-                        SafeUrl.isSafeMediaUrl(n.fromAvatar)
-                    ? ResizeImage.resizeIfNeeded(
-                        128, 128, NetworkImage(n.fromAvatar))
-                    : null,
+                            SafeUrl.isSafeMediaUrl(n.fromAvatar)
+                        ? ResizeImage.resizeIfNeeded(
+                            128, 128, NetworkImage(n.fromAvatar))
+                        : null,
                     child: n.fromName.isNotEmpty ? Text(n.fromName[0]) : null,
                   ),
                   title: Text(

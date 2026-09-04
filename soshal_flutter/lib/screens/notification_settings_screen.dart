@@ -136,8 +136,7 @@ class _NotificationSettingsScreenState
       children: [
         SwitchListTile(
           title: const Text('In-app notifications'),
-          subtitle:
-              const Text('Notifications tab, badges, and unread counts'),
+          subtitle: const Text('Notifications tab, badges, and unread counts'),
           value: true,
           onChanged: (_) {
             ScaffoldMessenger.of(context).showSnackBar(

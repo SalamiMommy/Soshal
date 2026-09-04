@@ -530,19 +530,24 @@ async fn handle_impl(
 }
 
 /// Handle a batch of verified relay events inside a single `with_tx` transaction wrapper.
+///
+/// Returns the indices (within `events`) whose writes succeeded, so callers can
+/// advance their sync cursor only for events that actually persisted — a skipped
+/// event (e.g. an unparseable DM) must be refetched rather than watermark-advanced.
 pub fn handle_batch(
     db: &Database,
     my_pubkey: &str,
     events: &[Event],
     tx: &tokio::sync::mpsc::Sender<SyncUpdate>,
-) -> Result<(), DbError> {
+) -> Result<Vec<usize>, DbError> {
     if events.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let conn = db.conn()?;
     soshal_db_core::query::with_tx(&conn, |t| async move {
         let mut rows: Vec<PostRow> = Vec::with_capacity(events.len());
-        for event in events {
+        let mut ok_pos: Vec<usize> = Vec::with_capacity(events.len());
+        for (pos, event) in events.iter().enumerate() {
             // Route through the cached verifier (nostr-core LRU) — raw
             // event.verify() re-verifies signatures for re-fetched batches.
             if !soshal_nostr_core::models::verify_event(event) {
@@ -555,13 +560,15 @@ pub fn handle_batch(
                 | Kind::ZapReceipt
                 | Kind::RelayList
                 | Kind::Bookmarks
-                | Kind::Reaction => {
-                    let _ = handle_impl(db, my_pubkey, event, tx, true, &t).await;
-                }
+                | Kind::Reaction => match handle_impl(db, my_pubkey, event, tx, true, &t).await {
+                    Ok(()) => ok_pos.push(pos),
+                    Err(e) => eprintln!("sync engine: handle kind {}: {e}", event.kind.as_u16()),
+                },
                 _ => {
                     if POST_KIND_ALLOWLIST.contains(&event.kind.as_u16()) {
                         if let Some(row) = post_row(event) {
                             rows.push(row);
+                            ok_pos.push(pos);
                         }
                     }
                 }
@@ -580,7 +587,7 @@ pub fn handle_batch(
                 });
             }
         }
-        Ok(())
+        Ok(ok_pos)
     })
 }
 

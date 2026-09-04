@@ -111,8 +111,8 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
   void _startMeshRelay(NetworkService service) {
     final pubkey = context.read<SessionService>().activePubkey ?? '';
     if (pubkey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: SelectableText('Sign in first to start the relay')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: SelectableText('Sign in first to start the relay')));
       return;
     }
     try {
@@ -142,8 +142,8 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
         final hint = e.toString().contains('Connection refused')
             ? ' — run i2pd (SAM on 7656) first'
             : '';
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('I2P start: $e$hint')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('I2P start: $e$hint')));
       }
     }
     if (mounted) setState(() => _busy = false);
@@ -187,15 +187,15 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     try {
       await context.read<NetworkService>().reinitRelays();
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Relays reconnected')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Relays reconnected')));
       }
       await _refresh();
     } catch (e) {
       debugPrint('reinit relays: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Reinit relays: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Reinit relays: $e')));
       }
     }
   }
@@ -226,8 +226,8 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
           jsonDecode(_localKvField.text) as Map<String, dynamic>);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Local KV must be a JSON object')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: SelectableText('Local KV must be a JSON object')));
       }
       return;
     }
@@ -387,8 +387,8 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     final dest = _samDestField.text.trim();
     if (dest.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Generate or paste a destination')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: SelectableText('Generate or paste a destination')));
       }
       return;
     }
@@ -491,8 +491,8 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     final ownPubkey = context.read<SessionService>().activePubkey;
     if (ownPubkey == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Sign in first (need own pubkey)')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: SelectableText('Sign in first (need own pubkey)')));
       }
       return;
     }
@@ -1456,6 +1456,5 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     super.dispose();
   }
 
-  String _ago(int ts) =>
-      ts <= 0 ? 'never' : relativeTime(ts);
+  String _ago(int ts) => ts <= 0 ? 'never' : relativeTime(ts);
 }

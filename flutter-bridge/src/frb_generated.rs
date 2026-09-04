@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 792852698;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -820672997;
 
 // Section: executor
 
@@ -2909,33 +2909,47 @@ fn wire__crate__ffi__db__db_delete_setting_impl(
         },
     )
 }
-fn wire__crate__ffi__db__db_execute_raw_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+fn wire__crate__ffi__db__db_execute_params_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    sql: impl CstDecode<String>,
+    params: impl CstDecode<Vec<String>>,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::DcoCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "db_execute_raw",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            debug_name: "db_execute_params",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_sql = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::db::db_execute_raw(api_sql)?;
-                Ok(output_ok)
-            })())
+            let api_sql = sql.cst_decode();
+            let api_params = params.cst_decode();
+            move |context| {
+                transform_result_dco::<_, _, String>((move || {
+                    let output_ok = crate::ffi::db::db_execute_params(&api_sql, &api_params)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__db__db_execute_raw_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    sql: impl CstDecode<String>,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::DcoCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "db_execute_raw",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let api_sql = sql.cst_decode();
+            move |context| {
+                transform_result_dco::<_, _, String>((move || {
+                    let output_ok = crate::ffi::db::db_execute_raw(api_sql)?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -7038,6 +7052,25 @@ fn wire__crate__ffi__identity__identity_verify_nip05_impl(
         },
     )
 }
+fn wire__crate__ffi__signer__keyring_available_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::DcoCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "keyring_available",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            move |context| {
+                transform_result_dco::<_, _, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(crate::ffi::signer::keyring_available())?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__ffi__marketplace__marketplace_create_escrow_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -9629,6 +9662,7 @@ fn wire__crate__ffi__music__music_share_to_feed_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_track_id = <String>::sse_decode(&mut deserializer);
             let api_track_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_track_d = <String>::sse_decode(&mut deserializer);
             let api_message = <String>::sse_decode(&mut deserializer);
             let api_hashtags = <Vec<String>>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -9638,6 +9672,7 @@ fn wire__crate__ffi__music__music_share_to_feed_impl(
                         let output_ok = crate::ffi::music::music_share_to_feed(
                             api_track_id,
                             api_track_pubkey,
+                            api_track_d,
                             api_message,
                             api_hashtags,
                         )
@@ -15987,6 +16022,12 @@ fn wire__crate__ffi__zk__zk_verify_rollup_impl(
 
 // Section: dart2rust
 
+impl CstDecode<bool> for bool {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+    fn cst_decode(self) -> bool {
+        self
+    }
+}
 impl CstDecode<u64> for u64 {
     // Codec=Cst (C-struct based), see doc to use other codecs
     fn cst_decode(self) -> u64 {
@@ -17946,12 +17987,20 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__db__db_execute_params(
+        port_: i64,
+        sql: *mut wire_cst_list_prim_u_8_strict,
+        params: *mut wire_cst_list_String,
+    ) {
+        wire__crate__ffi__db__db_execute_params_impl(port_, sql, params)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__db__db_execute_raw(
-        ptr_: *mut u8,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__db__db_execute_raw_impl(ptr_, rust_vec_len_, data_len_)
+        port_: i64,
+        sql: *mut wire_cst_list_prim_u_8_strict,
+    ) {
+        wire__crate__ffi__db__db_execute_raw_impl(port_, sql)
     }
 
     #[unsafe(no_mangle)]
@@ -19092,6 +19141,13 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__signer__keyring_available(
+        port_: i64,
+    ) {
+        wire__crate__ffi__signer__keyring_available_impl(port_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__marketplace__marketplace_create_escrow(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -19741,7 +19797,6 @@ mod io {
         )
     }
 
-    #[unsafe(no_mangle)]
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__moderation__moderation_hybrid_classify_text(
         ptr_: *mut u8,
@@ -21056,7 +21111,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__search__search_index_posts(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -21445,7 +21499,6 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
-    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__streaming__streaming_mark_story_viewed(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -21502,8 +21555,6 @@ mod io {
         wire__crate__ffi__streaming__streaming_start_live_impl(ptr_, rust_vec_len_, data_len_)
     }
 
-    #[unsafe(no_mangle)]
-    #[unsafe(no_mangle)]
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__streaming__streaming_story_react(
         ptr_: *mut u8,
@@ -22164,6 +22215,12 @@ mod web {
         // Codec=Cst (C-struct based), see doc to use other codecs
         fn cst_decode(self) -> String {
             self.as_string().expect("non-UTF-8 string, or not a string")
+        }
+    }
+    impl CstDecode<bool> for flutter_rust_bridge::for_generated::wasm_bindgen::JsValue {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(self) -> bool {
+            self.is_truthy()
         }
     }
     impl CstDecode<Vec<u8>> for flutter_rust_bridge::for_generated::wasm_bindgen::JsValue {
@@ -23027,12 +23084,20 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__db__db_execute_params(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        sql: String,
+        params: flutter_rust_bridge::for_generated::wasm_bindgen::JsValue,
+    ) {
+        wire__crate__ffi__db__db_execute_params_impl(port_, sql, params)
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__db__db_execute_raw(
-        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-        rust_vec_len_: i32,
-        data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__db__db_execute_raw_impl(ptr_, rust_vec_len_, data_len_)
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        sql: String,
+    ) {
+        wire__crate__ffi__db__db_execute_raw_impl(port_, sql)
     }
 
     #[wasm_bindgen]
@@ -24170,6 +24235,13 @@ mod web {
             rust_vec_len_,
             data_len_,
         )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__signer__keyring_available(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+    ) {
+        wire__crate__ffi__signer__keyring_available_impl(port_)
     }
 
     #[wasm_bindgen]

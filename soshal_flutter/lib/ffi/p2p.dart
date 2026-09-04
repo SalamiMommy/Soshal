@@ -27,6 +27,11 @@ bool p2PMdnsBrowseStart() =>
     RustLib.instance.api.crateFfiP2PP2PMdnsBrowseStart();
 
 /// Drain pending mDNS discovery results as a JSON list of peers.
+///
+/// Contact-graph gating: an advertiser is only accepted when we already know
+/// its pubkey (a stored user/profile row or an entry in our own kind-3
+/// contact list). Without this, ANY LAN device running the app — or a hostile
+/// advertiser spoofing `_soshal._tcp` — becomes a swarm peer.
 List<P2pPeerDto> p2PMdnsBrowseDrain() =>
     RustLib.instance.api.crateFfiP2PP2PMdnsBrowseDrain();
 

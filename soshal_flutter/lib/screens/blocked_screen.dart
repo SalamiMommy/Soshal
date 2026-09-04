@@ -62,7 +62,8 @@ class _BlockedScreenState extends State<BlockedScreen> {
                           if (me == null) return;
                           try {
                             await api.unblockUser(me, pubkey);
-                            if (mounted) setState(() => _blocked.remove(pubkey));
+                            if (mounted)
+                              setState(() => _blocked.remove(pubkey));
                           } catch (e) {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(

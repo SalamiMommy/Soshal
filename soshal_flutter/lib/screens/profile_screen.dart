@@ -48,7 +48,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (pubkey != null) {
         final me = sessionService.activePubkey;
         if (me != null && me != pubkey) {
-          _trustScoreFuture = identityService.getTrustScore(pubkey, me);
+          _trustScoreFuture = identityService.getTrustScore(me, pubkey);
         }
         if (widget.pubkey == null) {
           await identityService.getSelfProfile(pubkey);
@@ -186,7 +186,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     // Banner
                     Container(
                       height: 200,
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                       child: profile.banner.isNotEmpty
                           ? BlobImage(
                               source: profile.banner,

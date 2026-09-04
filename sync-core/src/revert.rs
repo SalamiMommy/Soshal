@@ -46,12 +46,9 @@ pub async fn revert_tx(conn: &Connection, kind: &str, payload_json: &str) -> Res
             };
             let mut cols = Vec::new();
             let mut vals: Vec<String> = Vec::new();
-            for (i, k) in ["name", "display_name", "about", "picture"]
-                .iter()
-                .enumerate()
-            {
-                if let Some(v) = prior.get(*k).and_then(|x| x.as_str()) {
-                    cols.push(format!("{k} = ?{}", i + 1));
+            for k in ["name", "display_name", "about", "picture"] {
+                if let Some(v) = prior.get(k).and_then(|x| x.as_str()) {
+                    cols.push(format!("{k} = ?{}", vals.len() + 1));
                     vals.push(v.to_string());
                 }
             }
@@ -115,6 +112,33 @@ mod tests {
         assert_eq!(user.name.as_deref(), Some("old-name"));
         assert_eq!(user.display_name.as_deref(), Some("old-display"));
         assert_eq!(user.about.as_deref(), Some("old-about"));
+        assert_eq!(user.picture.as_deref(), Some("old-pic"));
+    }
+
+    #[test]
+    fn revert_profile_with_gaps_binds_columns_to_correct_params() {
+        let db = soshal_test_util::test_db();
+        let pubkey = "aa".repeat(32);
+        UserRepo::new(&db)
+            .upsert(&user_row(&pubkey, "new-name"))
+            .unwrap();
+        let payload =
+            format!(r#"{{"pubkey":"{pubkey}","prior":{{"name":"old-name","about":"old-about"}}}}"#);
+        let conn = db.conn().unwrap();
+        revert(&conn, KIND_PROFILE, &payload).unwrap();
+        drop(conn);
+        let user = UserRepo::new(&db).get_by_pubkey(&pubkey).unwrap().unwrap();
+        assert_eq!(user.name.as_deref(), Some("old-name"));
+        assert_eq!(user.about.as_deref(), Some("old-about"));
+
+        let payload = format!(
+            r#"{{"pubkey":"{pubkey}","prior":{{"name":"old-name-2","picture":"old-pic"}}}}"#
+        );
+        let conn = db.conn().unwrap();
+        assert!(revert(&conn, KIND_PROFILE, &payload).is_ok());
+        drop(conn);
+        let user = UserRepo::new(&db).get_by_pubkey(&pubkey).unwrap().unwrap();
+        assert_eq!(user.name.as_deref(), Some("old-name-2"));
         assert_eq!(user.picture.as_deref(), Some("old-pic"));
     }
 

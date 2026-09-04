@@ -42,8 +42,7 @@ class _EventImage extends StatelessWidget {
               File(snap.data!),
               fit: BoxFit.cover,
               height: height,
-              errorBuilder: (_, __, ___) =>
-                  Icon(Icons.event, size: iconSize),
+              errorBuilder: (_, __, ___) => Icon(Icons.event, size: iconSize),
             );
           }
           return Icon(Icons.event, size: iconSize);
@@ -338,7 +337,8 @@ class _EventsScreenState extends State<EventsScreen> {
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: SelectableText('Photo failed: $e')),
+                            SnackBar(
+                                content: SelectableText('Photo failed: $e')),
                           );
                         }
                       }

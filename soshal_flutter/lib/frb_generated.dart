@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 792852698;
+  int get rustContentHash => -820672997;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -371,7 +371,10 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiDbDbDeleteSetting({required String key});
 
-  BigInt crateFfiDbDbExecuteRaw({required String sql});
+  Future<BigInt> crateFfiDbDbExecuteParams(
+      {required String sql, required List<String> params});
+
+  Future<BigInt> crateFfiDbDbExecuteRaw({required String sql});
 
   PlatformInt64 crateFfiDbDbExpectedSchemaVersion();
 
@@ -781,6 +784,8 @@ abstract class RustLibApi extends BaseApi {
 
   Future<bool> crateFfiIdentityIdentityVerifyNip05({required String nip05});
 
+  Future<bool> crateFfiSignerKeyringAvailable();
+
   String crateFfiMarketplaceMarketplaceCreateEscrow(
       {required String orderId,
       required String buyerPubkey,
@@ -1051,6 +1056,7 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateFfiMusicMusicShareToFeed(
       {required String trackId,
       required String trackPubkey,
+      required String trackD,
       required String message,
       required List<String> hashtags});
 
@@ -4109,18 +4115,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  BigInt crateFfiDbDbExecuteRaw({required String sql}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(sql, serializer);
-        final raw_ = serializer.intoRaw();
-        return wire.wire__crate__ffi__db__db_execute_raw(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+  Future<BigInt> crateFfiDbDbExecuteParams(
+      {required String sql, required List<String> params}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        var arg0 = cst_encode_String(sql);
+        var arg1 = cst_encode_list_String(params);
+        return wire.wire__crate__ffi__db__db_execute_params(port_, arg0, arg1);
       },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_usize,
-        decodeErrorData: sse_decode_String,
+      codec: DcoCodec(
+        decodeSuccessData: dco_decode_usize,
+        decodeErrorData: dco_decode_String,
+      ),
+      constMeta: kCrateFfiDbDbExecuteParamsConstMeta,
+      argValues: [sql, params],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDbDbExecuteParamsConstMeta => const TaskConstMeta(
+        debugName: "db_execute_params",
+        argNames: ["sql", "params"],
+      );
+
+  @override
+  Future<BigInt> crateFfiDbDbExecuteRaw({required String sql}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        var arg0 = cst_encode_String(sql);
+        return wire.wire__crate__ffi__db__db_execute_raw(port_, arg0);
+      },
+      codec: DcoCodec(
+        decodeSuccessData: dco_decode_usize,
+        decodeErrorData: dco_decode_String,
       ),
       constMeta: kCrateFfiDbDbExecuteRawConstMeta,
       argValues: [sql],
@@ -7689,6 +7716,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<bool> crateFfiSignerKeyringAvailable() {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        return wire.wire__crate__ffi__signer__keyring_available(port_);
+      },
+      codec: DcoCodec(
+        decodeSuccessData: dco_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateFfiSignerKeyringAvailableConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiSignerKeyringAvailableConstMeta =>
+      const TaskConstMeta(
+        debugName: "keyring_available",
+        argNames: [],
+      );
+
+  @override
   String crateFfiMarketplaceMarketplaceCreateEscrow(
       {required String orderId,
       required String buyerPubkey,
@@ -9888,6 +9937,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<String> crateFfiMusicMusicShareToFeed(
       {required String trackId,
       required String trackPubkey,
+      required String trackD,
       required String message,
       required List<String> hashtags}) {
     return handler.executeNormal(NormalTask(
@@ -9895,6 +9945,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(trackId, serializer);
         sse_encode_String(trackPubkey, serializer);
+        sse_encode_String(trackD, serializer);
         sse_encode_String(message, serializer);
         sse_encode_list_String(hashtags, serializer);
         final raw_ = serializer.intoRaw();
@@ -9906,7 +9957,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiMusicMusicShareToFeedConstMeta,
-      argValues: [trackId, trackPubkey, message, hashtags],
+      argValues: [trackId, trackPubkey, trackD, message, hashtags],
       apiImpl: this,
     ));
   }
@@ -9914,7 +9965,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiMusicMusicShareToFeedConstMeta =>
       const TaskConstMeta(
         debugName: "music_share_to_feed",
-        argNames: ["trackId", "trackPubkey", "message", "hashtags"],
+        argNames: ["trackId", "trackPubkey", "trackD", "message", "hashtags"],
       );
 
   @override
@@ -15972,6 +16023,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Cst (C-struct based), see doc to use other codecs
 // ignore: invalid_use_of_internal_member
     return (raw as ZeroizingStringImpl).frbInternalCstEncode();
+  }
+
+  @protected
+  bool cst_encode_bool(bool raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+    return raw;
   }
 
   @protected

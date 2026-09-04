@@ -6,7 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `rows_json`, `upsert_post_row`, `with_db_result`, `with_db_string`, `with_db`
+// These functions are ignored because they are not marked as `pub`: `raw_sql_allowed`, `rows_json`, `upsert_post_row`, `verify_restored_schema`, `with_db_result`, `with_db_string`, `with_db`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `TempCleanup`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `drop`
 
 /// Initialize (or re-initialize) the database at `db_path`, applying all
 /// schema migrations. Safe to call once per app start.
@@ -33,33 +35,51 @@ String dbForceMigrate() => RustLib.instance.api.crateFfiDbDbForceMigrate();
 
 /// Execute a raw SELECT query; rows are returned as a JSON array of objects
 /// (column names as keys). Parameter binding is supported with `?1..?N`.
+/// The `settings` table is off-limits: pin flags must only change through
+/// the pin module (db_set_setting enforces the same deny-list).
 String dbQueryRaw({required String sql}) =>
     RustLib.instance.api.crateFfiDbDbQueryRaw(sql: sql);
 
-/// Internal helper: raw SELECT with bound ?N parameters (`Vec<String>`),
+/// Internal helper: raw SELECT with bound ?N parameters (Vec<String>),
 /// rows as a JSON array of objects. Not an FFI surface.
 Future<String> dbQueryParams(
         {required String sql, required List<String> params}) =>
     RustLib.instance.api.crateFfiDbDbQueryParams(sql: sql, params: params);
 
 /// Execute a raw INSERT/UPDATE/DELETE (no parameters); returns rows affected.
-BigInt dbExecuteRaw({required String sql}) =>
+/// The `settings` table is off-limits (see `raw_sql_allowed`).
+///
+/// ⚠ Security: This function is intentionally disabled — unparameterized SQL
+/// writes from Dart are architecturally unsound (text-based guard is fragile).
+/// All callers should use parameterized repo functions instead.
+/// The generated FFI stub still wires this name; it always returns an error so
+/// the Dart side receives a clear failure rather than executing raw SQL.
+Future<BigInt> dbExecuteRaw({required String sql}) =>
     RustLib.instance.api.crateFfiDbDbExecuteRaw(sql: sql);
+
+/// Internal helper: raw INSERT/UPDATE/DELETE with bound ?N parameters
+/// (Vec<String>); returns rows affected. Not an FFI surface.
+Future<BigInt> dbExecuteParams(
+        {required String sql, required List<String> params}) =>
+    RustLib.instance.api.crateFfiDbDbExecuteParams(sql: sql, params: params);
 
 /// Get the row count of a table.
 PlatformInt64 dbCount({required String table}) =>
     RustLib.instance.api.crateFfiDbDbCount(table: table);
 
 /// Set a key/value setting (sidebar order, theme, stealth whitelist, PIN
-/// flags). Upserts into the `settings` table.
+/// flags). Upserts into the `settings` table. PIN-related keys are denied
+/// here — only the pin module may write them.
 bool dbSetSetting({required String key, required String value}) =>
     RustLib.instance.api.crateFfiDbDbSetSetting(key: key, value: value);
 
-/// Get a setting value by key.
+/// Get a setting value by key. PIN-related keys are denied: their values
+/// (salt+hash, lockout state) must never leave Rust.
 String? dbGetSetting({required String key}) =>
     RustLib.instance.api.crateFfiDbDbGetSetting(key: key);
 
-/// Delete a setting key.
+/// Delete a setting key. PIN-related keys are denied: deleting them would
+/// bypass the PIN lockout state machine.
 bool dbDeleteSetting({required String key}) =>
     RustLib.instance.api.crateFfiDbDbDeleteSetting(key: key);
 

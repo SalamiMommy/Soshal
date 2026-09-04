@@ -239,8 +239,10 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
       // current set instead of a stale snapshot built only from
       // fetchRelayStatus().
       if (ok && !_relays.any((r) => r.url == url)) {
-        _relays = [..._relays,
-            RelayInfo(url: url, connected: true, latencyMs: 0, lastEventAt: 0)];
+        _relays = [
+          ..._relays,
+          RelayInfo(url: url, connected: true, latencyMs: 0, lastEventAt: 0)
+        ];
       }
       clearLastError();
       notifyListeners();

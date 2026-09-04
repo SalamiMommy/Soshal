@@ -40,7 +40,7 @@ fn row_to_group(
         owner: row.pubkey.clone(),
         members: 0,
         is_member: is_owner || is_member,
-        role: if viewer.map(|v| row.pubkey == v).unwrap_or(true) {
+        role: if viewer.map(|v| row.pubkey == v).unwrap_or(false) {
             "owner".to_string()
         } else if is_member {
             "member".to_string()

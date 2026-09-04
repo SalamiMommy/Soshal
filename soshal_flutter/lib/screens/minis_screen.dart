@@ -228,7 +228,8 @@ class _MinisScreenState extends State<MinisScreen> {
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: SelectableText('Mini published: $id'),
+                                  content:
+                                      SelectableText('Mini published: $id'),
                                 ),
                               );
                               await _load();

@@ -178,8 +178,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
       // Restart the sync engine for the newly selected account. The earlier
       // stop() killed the old account's ingest; without this restart the
       // switched account's feed/DM updates stay silent until app relaunch.
-      final accountRelays = _session!
-          .accounts
+      final accountRelays = _session!.accounts
           .firstWhere((a) => a.pubkey == pubkey,
               orElse: () => _session!.accounts.first)
           .relayList;

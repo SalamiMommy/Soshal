@@ -86,7 +86,8 @@ class _StoriesScreenState extends State<StoriesScreen> {
           .storyReact(story.id, pubkey, emoji);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: SelectableText(ok ? 'Reacted $emoji' : 'React failed')),
+        SnackBar(
+            content: SelectableText(ok ? 'Reacted $emoji' : 'React failed')),
       );
     } catch (e) {
       debugPrint('story react: $e');

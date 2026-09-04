@@ -108,7 +108,9 @@ class _NetworkScreenState extends State<NetworkScreen> {
       final ok = await context.read<NetworkService>().addRelay(url);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: SelectableText(ok ? 'Relay added' : 'Could not add relay')),
+          SnackBar(
+              content:
+                  SelectableText(ok ? 'Relay added' : 'Could not add relay')),
         );
         if (ok) _relayUrl.clear();
       }
@@ -208,8 +210,8 @@ class _NetworkScreenState extends State<NetworkScreen> {
   void _startMeshRelay(BuildContext context, NetworkService network) {
     final pubkey = context.read<SessionService>().activePubkey ?? '';
     if (pubkey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: SelectableText('Sign in first to start the relay')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: SelectableText('Sign in first to start the relay')));
       return;
     }
     try {
@@ -234,8 +236,8 @@ class _NetworkScreenState extends State<NetworkScreen> {
     } catch (e) {
       debugPrint('refresh mesh: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Refresh mesh: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Refresh mesh: $e')));
       }
     }
   }
@@ -261,14 +263,14 @@ class _NetworkScreenState extends State<NetworkScreen> {
             intervalMs: 60000,
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('AutoInterface started on :4242')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: SelectableText('AutoInterface started on :4242')));
       }
     } catch (e) {
       debugPrint('auto interface: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('AutoInterface: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('AutoInterface: $e')));
       }
     }
     if (mounted) setState(() => _meshBusy = false);
@@ -309,8 +311,9 @@ class _NetworkScreenState extends State<NetworkScreen> {
             packetJson: _packetField.text,
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText(ok ? 'Packet sent' : 'Packet send failed')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                SelectableText(ok ? 'Packet sent' : 'Packet send failed')));
       }
     } catch (e) {
       debugPrint('send packet: $e');
@@ -340,8 +343,8 @@ class _NetworkScreenState extends State<NetworkScreen> {
     } catch (e) {
       debugPrint('request link: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Request link: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Request link: $e')));
       }
     }
   }
@@ -537,8 +540,8 @@ class _NetworkScreenState extends State<NetworkScreen> {
         .toList();
     if (peers.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('No peers — drain the subnet first')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: SelectableText('No peers — drain the subnet first')));
       }
       return;
     }
@@ -569,8 +572,8 @@ class _NetworkScreenState extends State<NetworkScreen> {
     } catch (e) {
       debugPrint('swarm download: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Swarm download: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Swarm download: $e')));
       }
     }
     if (mounted) setState(() => _p2pBusy = false);
@@ -581,8 +584,8 @@ class _NetworkScreenState extends State<NetworkScreen> {
     final id = p2p.downloads.keys.isNotEmpty ? p2p.downloads.keys.first : null;
     if (id == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('No active downloads')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('No active downloads')));
       }
       return;
     }
@@ -600,8 +603,8 @@ class _NetworkScreenState extends State<NetworkScreen> {
     final id = p2p.downloads.keys.isNotEmpty ? p2p.downloads.keys.first : null;
     if (id == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('No active downloads')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('No active downloads')));
       }
       return;
     }
@@ -659,8 +662,8 @@ class _NetworkScreenState extends State<NetworkScreen> {
       await _encodeGeohash();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Location failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Location failed: $e')));
       }
     }
   }

@@ -938,7 +938,9 @@ class _InboxScreenState extends State<InboxScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: SelectableText('Group DM sent (${prefixEllipsis(id, 12)})')),
+          SnackBar(
+              content:
+                  SelectableText('Group DM sent (${prefixEllipsis(id, 12)})')),
         );
       }
       _loadConversations();
@@ -997,8 +999,8 @@ class _InboxScreenState extends State<InboxScreen> {
                           child: Center(child: CircularProgressIndicator()),
                         )
                       : const Padding(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           child: Text('No conversations yet'),
                         );
                 }

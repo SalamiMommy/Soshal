@@ -151,6 +151,7 @@ pub async fn music_fetch(limit: u64, author: Option<String>) -> Result<String, S
 pub async fn music_share_to_feed(
     track_id: String,
     track_pubkey: String,
+    track_d: String,
     message: String,
     hashtags: Vec<String>,
 ) -> Result<String, String> {
@@ -163,7 +164,7 @@ pub async fn music_share_to_feed(
         vec!["e".to_string(), track_id.clone()],
         vec!["p".to_string(), track_pubkey.clone()],
         vec!["k".to_string(), "31022".to_string()],
-        vec!["a".to_string(), format!("31022:{track_pubkey}:{track_id}")],
+        vec!["a".to_string(), format!("31022:{track_pubkey}:{track_d}")],
     ] {
         builder = add_tag(builder, tag);
     }

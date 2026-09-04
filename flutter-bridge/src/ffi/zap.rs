@@ -277,7 +277,7 @@ pub fn zap_fetch_totals(event_ids: Vec<String>) -> Result<String, String> {
         let out = soshal_db_core::block_on(async {
             let stmt = conn
                 .prepare(
-                    "SELECT event_id, SUM(amount) FROM zaps WHERE event_id IN (SELECT value FROM json_each(?1)) GROUP BY event_id",
+                    "SELECT event_id, SUM(amount_msat) FROM zaps WHERE event_id IN (SELECT value FROM json_each(?1)) GROUP BY event_id",
                 )
                 .await?;
             let mut rows = stmt.query(libsql::params![ids_json.as_str()]).await?;
@@ -474,8 +474,8 @@ mod tests {
         ])
         .unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["ev1"], 12);
-        assert_eq!(v["ev2"], 3);
+        assert_eq!(v["ev1"], 12000);
+        assert_eq!(v["ev2"], 3000);
         assert_eq!(v["ev3"], 0);
     }
 
@@ -501,9 +501,9 @@ mod tests {
                 .to_string(),
         )
         .unwrap();
-        // Sum uses the `amount` column (sats), like `zap_fetch_totals`.
-        assert_eq!(zap_get_total_msat("ev1".to_string()).unwrap(), 12);
-        assert_eq!(zap_get_total_msat("ev2".to_string()).unwrap(), 3);
+        // Sum uses the `amount_msat` column (msat), so the total is msat.
+        assert_eq!(zap_get_total_msat("ev1".to_string()).unwrap(), 12000);
+        assert_eq!(zap_get_total_msat("ev2".to_string()).unwrap(), 3000);
         assert_eq!(zap_get_total_msat("ev9".to_string()).unwrap(), 0);
     }
 

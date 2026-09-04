@@ -94,12 +94,14 @@ void main() {
       final shareId = await music.shareToFeed(
         trackId: 'tr-1',
         trackPubkey: 'pk-1',
+        trackD: 'd-1',
         message: 'check this',
         hashtags: const ['music'],
       );
       expect(shareId, 'ev-share-1');
       final shareInv = api.callsOf('crateFfiMusicMusicShareToFeed').single;
       expect(api.namedArg(shareInv, 'trackId'), 'tr-1');
+      expect(api.namedArg(shareInv, 'trackD'), 'd-1');
       expect(api.namedArg(shareInv, 'trackPubkey'), 'pk-1');
       expect(api.namedArg(shareInv, 'message'), 'check this');
 

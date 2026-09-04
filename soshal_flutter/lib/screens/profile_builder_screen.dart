@@ -397,47 +397,47 @@ class _WidgetListItem extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: ListTile(
-        leading: ReorderableDragStartListener(
-          index: 0,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              '⠿',
-              style: TextStyle(
-                fontSize: 20,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+          leading: ReorderableDragStartListener(
+            index: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                '⠿',
+                style: TextStyle(
+                  fontSize: 20,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                ),
               ),
             ),
           ),
-        ),
-        leadingAndTrailingTextStyle: theme.textTheme.bodyMedium,
-        title: Row(
-          children: [
-            Text(
-              typeInfo.icon,
-              style: const TextStyle(fontSize: 24),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: theme.textTheme.titleSmall,
+          leadingAndTrailingTextStyle: theme.textTheme.bodyMedium,
+          title: Row(
+            children: [
+              Text(
+                typeInfo.icon,
+                style: const TextStyle(fontSize: 24),
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+            ],
+          ),
+          subtitle: Text(typeInfo.label),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.delete, size: 20),
+                color: theme.colorScheme.error,
+                onPressed: () => onDelete(node.id),
+              ),
+            ],
+          ),
         ),
-        subtitle: Text(typeInfo.label),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.delete, size: 20),
-              color: theme.colorScheme.error,
-              onPressed: () => onDelete(node.id),
-            ),
-          ],
-        ),
-      ),
       ),
     );
   }
@@ -473,8 +473,10 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
   void initState() {
     super.initState();
     _node = widget.node;
-    _title = TextEditingController(text: _node.properties['title'] as String? ?? '');
-    _content = TextEditingController(text: _node.properties['content'] as String? ?? '');
+    _title =
+        TextEditingController(text: _node.properties['title'] as String? ?? '');
+    _content = TextEditingController(
+        text: _node.properties['content'] as String? ?? '');
     _trackUrl = TextEditingController();
     _trackTitle = TextEditingController();
     _mediaUrl = TextEditingController();
@@ -496,7 +498,8 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
     super.dispose();
   }
 
-  Map<String, dynamic> get _props => Map<String, dynamic>.from(_node.properties);
+  Map<String, dynamic> get _props =>
+      Map<String, dynamic>.from(_node.properties);
 
   void _save() {
     widget.onChanged(_node);
@@ -515,8 +518,8 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
   }
 
   void _addMusicloudTrack(MusicTrack t) {
-    final tracks = List<AudioTrack>.from(
-        MusicPlayerProperties.fromJson(_props).tracks);
+    final tracks =
+        List<AudioTrack>.from(MusicPlayerProperties.fromJson(_props).tracks);
     tracks.add(AudioTrack(
       id: t.id,
       title: t.title,
@@ -532,8 +535,8 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
     final url = _trackUrl.text.trim();
     final title = _trackTitle.text.trim();
     if (url.isEmpty || title.isEmpty) return;
-    final tracks = List<AudioTrack>.from(
-        MusicPlayerProperties.fromJson(_props).tracks);
+    final tracks =
+        List<AudioTrack>.from(MusicPlayerProperties.fromJson(_props).tracks);
     tracks.add(AudioTrack(
       id: 't${DateTime.now().millisecondsSinceEpoch}',
       title: title,
@@ -547,9 +550,9 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
   }
 
   void _removeTrack(String id) {
-    final tracks = List<AudioTrack>.from(
-        MusicPlayerProperties.fromJson(_props).tracks)
-      ..removeWhere((t) => t.id == id);
+    final tracks =
+        List<AudioTrack>.from(MusicPlayerProperties.fromJson(_props).tracks)
+          ..removeWhere((t) => t.id == id);
     _props['tracks'] = tracks.map((e) => e.toJson()).toList();
     setState(() => _node = _node.copyWith(properties: _props));
   }
@@ -563,7 +566,8 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
       id: 'm${DateTime.now().millisecondsSinceEpoch}',
       url: url,
       type: 'image',
-      caption: _mediaCaption.text.trim().isEmpty ? null : _mediaCaption.text.trim(),
+      caption:
+          _mediaCaption.text.trim().isEmpty ? null : _mediaCaption.text.trim(),
     ));
     _props['items'] = items.map((e) => e.toJson()).toList();
     _mediaUrl.clear();
@@ -706,8 +710,7 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall),
                       trailing: IconButton(
-                        icon: const Icon(Icons.remove_circle_outline,
-                            size: 18),
+                        icon: const Icon(Icons.remove_circle_outline, size: 18),
                         color: theme.colorScheme.error,
                         onPressed: () => _removeMediaItem(item.id),
                       ),
@@ -725,8 +728,7 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
                           ? const SizedBox(
                               width: 14,
                               height: 14,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.music_note),
                       label: const Text('Load my Musicloud tracks'),
@@ -747,14 +749,13 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
                   _section('Manual track'),
                   TextField(
                     controller: _trackTitle,
-                    decoration: const InputDecoration(
-                        hintText: 'Title', isDense: true),
+                    decoration:
+                        const InputDecoration(hintText: 'Title', isDense: true),
                   ),
                   TextField(
                     controller: _trackUrl,
                     decoration: const InputDecoration(
-                        hintText: 'Audio URL (https or blob:)',
-                        isDense: true),
+                        hintText: 'Audio URL (https or blob:)', isDense: true),
                   ),
                   Align(
                     alignment: Alignment.centerRight,
@@ -773,8 +774,7 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall),
                       trailing: IconButton(
-                        icon: const Icon(Icons.remove_circle_outline,
-                            size: 18),
+                        icon: const Icon(Icons.remove_circle_outline, size: 18),
                         color: theme.colorScheme.error,
                         onPressed: () => _removeTrack(track.id),
                       ),
@@ -822,8 +822,7 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
                     setState(() => _node = _node.copyWith(properties: _props));
                   }),
                   _toggle(
-                      'Add Friend',
-                      _props['enableAddFriend'] as bool? ?? true,
+                      'Add Friend', _props['enableAddFriend'] as bool? ?? true,
                       (v) {
                     _props['enableAddFriend'] = v;
                     setState(() => _node = _node.copyWith(properties: _props));
@@ -861,8 +860,7 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
                           QAListProperties.fromJson(_props).pairs[i].question,
                           style: theme.textTheme.bodySmall),
                       trailing: IconButton(
-                        icon: const Icon(Icons.remove_circle_outline,
-                            size: 18),
+                        icon: const Icon(Icons.remove_circle_outline, size: 18),
                         color: theme.colorScheme.error,
                         onPressed: () => _removeQaPair(i),
                       ),
@@ -903,10 +901,8 @@ class _NodePropertyEditorState extends State<_NodePropertyEditor> {
                     _props['showMinis'] = v;
                     setState(() => _node = _node.copyWith(properties: _props));
                   }),
-                  _toggle(
-                      'Show Musicloud',
-                      _props['showMusicloud'] as bool? ?? true,
-                      (v) {
+                  _toggle('Show Musicloud',
+                      _props['showMusicloud'] as bool? ?? true, (v) {
                     _props['showMusicloud'] = v;
                     setState(() => _node = _node.copyWith(properties: _props));
                   }),

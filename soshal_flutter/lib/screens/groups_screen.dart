@@ -281,79 +281,78 @@ class _GroupsScreenState extends State<GroupsScreen> {
         child: const Icon(Icons.add),
       ),
       body: Consumer<GroupsService>(
-              builder: (context, api, _) {
-                if (api.groupsLoading && api.groups.isEmpty) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (api.groups.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.groups_outlined,
-                    title: 'No groups yet',
-                  );
-                }
-                return RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    itemExtent: 72.0,
-                    itemCount: api.groups.length,
-                    itemBuilder: (context, index) {
-                      final g = api.groups[index];
-                      return ListTile(
-                        leading: g.picture.isNotEmpty
-                            ? ClipOval(
-                                child: BlobImage(
-                                  source: g.picture,
-                                  width: 48,
-                                  height: 48,
-                                  errorBuilder: (_) => CircleAvatar(
-                                    child: Text(g.name.isEmpty
-                                        ? '?'
-                                        : g.name[0].toUpperCase()),
-                                  ),
-                                ),
-                              )
-                            : CircleAvatar(
-                                child: Text(g.name.isEmpty
-                                    ? '?'
-                                    : g.name[0].toUpperCase()),
-                              ),
-                        title: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                g.name,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+        builder: (context, api, _) {
+          if (api.groupsLoading && api.groups.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (api.groups.isEmpty) {
+            return const EmptyState(
+              icon: Icons.groups_outlined,
+              title: 'No groups yet',
+            );
+          }
+          return RefreshIndicator(
+            onRefresh: _load,
+            child: ListView.builder(
+              itemExtent: 72.0,
+              itemCount: api.groups.length,
+              itemBuilder: (context, index) {
+                final g = api.groups[index];
+                return ListTile(
+                  leading: g.picture.isNotEmpty
+                      ? ClipOval(
+                          child: BlobImage(
+                            source: g.picture,
+                            width: 48,
+                            height: 48,
+                            errorBuilder: (_) => CircleAvatar(
+                              child: Text(g.name.isEmpty
+                                  ? '?'
+                                  : g.name[0].toUpperCase()),
                             ),
-                            if (g.isPrivate) ...[
-                              const SizedBox(width: 6),
-                              const Icon(
-                                Icons.lock_outline,
-                                size: 16,
-                                color: Colors.amber,
-                              ),
-                            ],
-                          ],
+                          ),
+                        )
+                      : CircleAvatar(
+                          child: Text(
+                              g.name.isEmpty ? '?' : g.name[0].toUpperCase()),
                         ),
-                        subtitle: Text(
-                          '${g.members} members${g.role.isNotEmpty ? ' · ${g.role}' : ''}',
+                  title: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          g.name,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        trailing: g.isMember
-                            ? TextButton(
-                                onPressed: () => _joinOrLeave(g),
-                                child: const Text('Leave'),
-                              )
-                            : TextButton(
-                                onPressed: () => _joinOrLeave(g),
-                                child: const Text('Join'),
-                              ),
-                        onTap: () => context.push('/groups/${g.id}'),
-                      );
-                    },
+                      ),
+                      if (g.isPrivate) ...[
+                        const SizedBox(width: 6),
+                        const Icon(
+                          Icons.lock_outline,
+                          size: 16,
+                          color: Colors.amber,
+                        ),
+                      ],
+                    ],
                   ),
+                  subtitle: Text(
+                    '${g.members} members${g.role.isNotEmpty ? ' · ${g.role}' : ''}',
+                  ),
+                  trailing: g.isMember
+                      ? TextButton(
+                          onPressed: () => _joinOrLeave(g),
+                          child: const Text('Leave'),
+                        )
+                      : TextButton(
+                          onPressed: () => _joinOrLeave(g),
+                          child: const Text('Join'),
+                        ),
+                  onTap: () => context.push('/groups/${g.id}'),
                 );
               },
             ),
+          );
+        },
+      ),
     );
   }
 }

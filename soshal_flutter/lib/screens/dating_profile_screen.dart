@@ -166,14 +166,13 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
       if (!mounted) return;
       setState(() => _location.text = geohash);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Geohash: $geohash '
+          content: Text('Geohash: $geohash '
               '(${location.latitude!.toStringAsFixed(4)}, '
               '${location.longitude!.toStringAsFixed(4)})')));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: SelectableText('Location failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Location failed: $e')));
       }
     }
   }

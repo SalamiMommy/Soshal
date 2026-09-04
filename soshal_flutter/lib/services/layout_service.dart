@@ -60,7 +60,8 @@ class LayoutService extends ChangeNotifier {
     int screenWidth = 360,
     double textScale = 1.0,
   }) async {
-    final metricsChanged = _screenWidth != screenWidth || _textScale != textScale;
+    final metricsChanged =
+        _screenWidth != screenWidth || _textScale != textScale;
     if (metricsChanged) {
       _heights.clear();
       _mediaHeights.clear();

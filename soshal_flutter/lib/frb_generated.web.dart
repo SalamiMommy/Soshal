@@ -425,6 +425,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       ZeroizingString raw);
 
   @protected
+  bool cst_encode_bool(bool raw);
+
+  @protected
   int cst_encode_u_8(int raw);
 
   @protected
@@ -1270,11 +1273,12 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__db__db_delete_setting(
               ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__db__db_execute_raw(PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_, int data_len_) =>
-          wasmModule.wire__crate__ffi__db__db_execute_raw(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__db__db_execute_params(
+          NativePortType port_, String sql, JSAny params) =>
+      wasmModule.wire__crate__ffi__db__db_execute_params(port_, sql, params);
+
+  void wire__crate__ffi__db__db_execute_raw(NativePortType port_, String sql) =>
+      wasmModule.wire__crate__ffi__db__db_execute_raw(port_, sql);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__db__db_expected_schema_version(
@@ -2251,6 +2255,9 @@ class RustLibWire implements BaseWire {
       wasmModule.wire__crate__ffi__identity__identity_verify_nip05(
           port_, ptr_, rust_vec_len_, data_len_);
 
+  void wire__crate__ffi__signer__keyring_available(NativePortType port_) =>
+      wasmModule.wire__crate__ffi__signer__keyring_available(port_);
+
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__marketplace__marketplace_create_escrow(
               PlatformGeneralizedUint8ListPtr ptr_,
@@ -2740,15 +2747,6 @@ class RustLibWire implements BaseWire {
               int data_len_) =>
           wasmModule.wire__crate__ffi__moderation__moderation_get_word_filters(
               ptr_, rust_vec_len_, data_len_);
-
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__moderation__moderation_hybrid_classify_media(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule
-              .wire__crate__ffi__moderation__moderation_hybrid_classify_media(
-                  ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__moderation__moderation_hybrid_classify_text(
@@ -3730,14 +3728,6 @@ class RustLibWire implements BaseWire {
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__search__search_index_post(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__search__search_index_post(
-              ptr_, rust_vec_len_, data_len_);
-
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__search__search_index_posts(
               PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_,
@@ -4059,14 +4049,6 @@ class RustLibWire implements BaseWire {
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__streaming__streaming_get_video_url(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__streaming__streaming_get_video_url(
-              ptr_, rust_vec_len_, data_len_);
-
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__streaming__streaming_mark_story_viewed(
               PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_,
@@ -4105,22 +4087,6 @@ class RustLibWire implements BaseWire {
               int rust_vec_len_,
               int data_len_) =>
           wasmModule.wire__crate__ffi__streaming__streaming_start_live(
-              ptr_, rust_vec_len_, data_len_);
-
-  void wire__crate__ffi__streaming__streaming_start_local_server(
-          NativePortType port_,
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_) =>
-      wasmModule.wire__crate__ffi__streaming__streaming_start_local_server(
-          port_, ptr_, rust_vec_len_, data_len_);
-
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__streaming__streaming_stop_local_server(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__streaming__streaming_stop_local_server(
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
@@ -4990,9 +4956,11 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_,
           int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__db__db_execute_raw(PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_, int data_len_);
+  external void wire__crate__ffi__db__db_execute_params(
+      NativePortType port_, String sql, JSAny params);
+
+  external void wire__crate__ffi__db__db_execute_raw(
+      NativePortType port_, String sql);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__db__db_expected_schema_version(
@@ -5706,6 +5674,9 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
       int rust_vec_len_,
       int data_len_);
 
+  external void wire__crate__ffi__signer__keyring_available(
+      NativePortType port_);
+
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__marketplace__marketplace_create_escrow(
           PlatformGeneralizedUint8ListPtr ptr_,
@@ -6051,12 +6022,6 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__moderation__moderation_get_word_filters(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
-
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__moderation__moderation_hybrid_classify_media(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
@@ -6757,12 +6722,6 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__search__search_index_post(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
-
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__search__search_index_posts(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
@@ -7003,12 +6962,6 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__streaming__streaming_get_video_url(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
-
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__streaming__streaming_mark_story_viewed(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
@@ -7034,18 +6987,6 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__streaming__streaming_start_live(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
-
-  external void wire__crate__ffi__streaming__streaming_start_local_server(
-      NativePortType port_,
-      PlatformGeneralizedUint8ListPtr ptr_,
-      int rust_vec_len_,
-      int data_len_);
-
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__streaming__streaming_stop_local_server(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);

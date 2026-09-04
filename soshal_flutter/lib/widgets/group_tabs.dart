@@ -157,7 +157,8 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
                   if (room == null) {
                     await api.createRoom(widget.groupId, n, t, em, hex, me);
                   } else {
-                    await api.updateRoom(room.id, widget.groupId, n, t, em, hex, me);
+                    await api.updateRoom(
+                        room.id, widget.groupId, n, t, em, hex, me);
                   }
                 } catch (e) {
                   if (mounted) {
@@ -694,17 +695,17 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
                     ?.copyWith(color: Theme.of(context).hintColor),
               ),
               Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      _heartButton(t.id, api),
-                      _reactionRow(t.id, '', api),
-                    ],
-                  ),
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _heartButton(t.id, api),
+                    _reactionRow(t.id, '', api),
+                  ],
                 ),
+              ),
             ],
           ),
         ),
@@ -732,9 +733,9 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
             isThreeLine: true,
           ),
           Padding(
-              padding: const EdgeInsets.only(left: 16, bottom: 4),
-              child: _reactionRow(r.id, r.id, api, quick: _replyEmojis),
-            ),
+            padding: const EdgeInsets.only(left: 16, bottom: 4),
+            child: _reactionRow(r.id, r.id, api, quick: _replyEmojis),
+          ),
         ],
       ),
     );
@@ -794,17 +795,17 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
                     ?.copyWith(color: Theme.of(context).hintColor),
               ),
               Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      _heartButton(t.id, api),
-                      _reactionRow(t.id, '', api),
-                    ],
-                  ),
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _heartButton(t.id, api),
+                    _reactionRow(t.id, '', api),
+                  ],
                 ),
+              ),
             ],
           ),
         ),

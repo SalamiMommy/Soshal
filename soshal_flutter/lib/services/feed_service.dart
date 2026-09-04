@@ -422,8 +422,6 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-
-
   /// Decode feed rows: JSON parsing happens on a background isolate
   /// ([_parseFeedRowsStatic]); decompress (FFI, main-isolate only) + [FeedPost]
   /// construction happen here.

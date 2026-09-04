@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `generate_cache_filename`, `infer_mime_type`
+// These functions are ignored because they are not marked as `pub`: `generate_cache_filename`, `infer_mime_type`, `resolve_allowed_path`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MEDIA_SERVER`, `MediaResult`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `deref`, `fmt`, `fmt`, `initialize`
 
@@ -27,7 +27,8 @@ Future<String> mediaUpload(
 Future<String> mediaFetch({required String url, required String cacheDir}) =>
     RustLib.instance.api.crateFfiMediaMediaFetch(url: url, cacheDir: cacheDir);
 
-/// Load media from cache or disk
+/// Load media from cache or disk (path must resolve inside the media cache
+/// or temp dir; arbitrary file reads are rejected).
 Future<Uint8List> mediaLoadLocal({required String filePath}) =>
     RustLib.instance.api.crateFfiMediaMediaLoadLocal(filePath: filePath);
 
@@ -60,7 +61,7 @@ String mediaGetCachePath() =>
     RustLib.instance.api.crateFfiMediaMediaGetCachePath();
 
 /// Start a local HTTP range server for media playback (sendfile zero-copy).
-/// Binds 127.0.0.1 on an ephemeral port; `/blob/<hash>` serves blob files out
+/// Binds 127.0.0.1 on an ephemeral port; /blob/<hash> serves blob files out
 /// of the chunk-store cache directory.
 BigInt mediaStartLocalServer() =>
     RustLib.instance.api.crateFfiMediaMediaStartLocalServer();

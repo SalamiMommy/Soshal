@@ -69,6 +69,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
   Future<String> shareToFeed({
     required String trackId,
     required String trackPubkey,
+    required String trackD,
     required String message,
     List<String> hashtags = const [],
   }) async {
@@ -76,6 +77,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
       final id = await RustLib.instance.api.crateFfiMusicMusicShareToFeed(
         trackId: trackId,
         trackPubkey: trackPubkey,
+        trackD: trackD,
         message: message,
         hashtags: hashtags,
       );

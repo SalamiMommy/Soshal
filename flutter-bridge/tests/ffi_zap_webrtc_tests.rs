@@ -54,7 +54,10 @@ mod ffi_tests {
         assert_eq!(v[0]["id"], "z2", "newest first (created_at DESC)");
         assert_eq!(v[1]["id"], "z1");
         assert_eq!(v[0]["amount"], 2000);
-        assert_eq!(zap::zap_get_total_msat("evt-1".to_string()).unwrap(), 3000);
+        assert_eq!(
+            zap::zap_get_total_msat("evt-1".to_string()).unwrap(),
+            3_000_000
+        );
         assert_eq!(zap::zap_get_total_msat("missing".to_string()).unwrap(), 0);
         crate::test_util::cleanup(&path);
     }

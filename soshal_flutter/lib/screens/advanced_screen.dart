@@ -137,8 +137,8 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     final snack = ScaffoldMessenger.of(context);
     await sync.runScheduledEpochGc();
     if (!mounted) return;
-    snack.showSnackBar(
-        SnackBar(content: SelectableText('Epoch GC: ${sync.lastError ?? 'ok'}')));
+    snack.showSnackBar(SnackBar(
+        content: SelectableText('Epoch GC: ${sync.lastError ?? 'ok'}')));
   }
 
   Future<void> _stopSync() async {
@@ -154,8 +154,8 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     try {
       final expired = settings.cleanExpiredEphemeral();
       setState(() => _ephemeralResult = 'Expired: ${expired.length}');
-      snack.showSnackBar(
-          SnackBar(content: SelectableText('Cleaned ${expired.length} expired items')));
+      snack.showSnackBar(SnackBar(
+          content: SelectableText('Cleaned ${expired.length} expired items')));
     } catch (e) {
       setState(() => _ephemeralResult = 'Failed: $e');
     }
@@ -316,8 +316,8 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       } catch (_) {}
     }
     if (_nip44TextController.text.trim().isEmpty || pubkey.isEmpty) {
-      snack.showSnackBar(
-          SnackBar(content: SelectableText('Fill plaintext (pubkey optional)')));
+      snack.showSnackBar(SnackBar(
+          content: SelectableText('Fill plaintext (pubkey optional)')));
       return;
     }
     try {
@@ -438,7 +438,8 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _frostResult = res);
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: SelectableText('frost aggregate: $e')));
+      snack.showSnackBar(
+          SnackBar(content: SelectableText('frost aggregate: $e')));
     }
   }
 
@@ -505,7 +506,8 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       if (!mounted) return;
       setState(() => _meshResult = 'geohash peers purged: $n');
     } catch (e) {
-      snack.showSnackBar(SnackBar(content: SelectableText('geohash purge: $e')));
+      snack
+          .showSnackBar(SnackBar(content: SelectableText('geohash purge: $e')));
     }
   }
 
@@ -590,8 +592,9 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
     if (!mounted) return;
     setState(
         () => _zkResult = ok ? 'rollup applied' : 'failed — ${sync.lastError}');
-    snack.showSnackBar(
-        SnackBar(content: SelectableText(ok ? 'ZK rollup applied' : 'ZK rollup failed')));
+    snack.showSnackBar(SnackBar(
+        content:
+            SelectableText(ok ? 'ZK rollup applied' : 'ZK rollup failed')));
   }
 
   @override
@@ -619,631 +622,630 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         Text('Transports', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          ListTile(
-            leading: Icon(
-              _i2p ? Icons.check_circle : Icons.circle_outlined,
-              color: _i2p ? Colors.green : null,
-            ),
-            title: const Text('I2P tunnel (local i2pd SOCKS 7656)'),
+        const SizedBox(height: 4),
+        ListTile(
+          leading: Icon(
+            _i2p ? Icons.check_circle : Icons.circle_outlined,
+            color: _i2p ? Colors.green : null,
           ),
-          ListTile(
-            leading: Icon(
-              _freenet ? Icons.check_circle : Icons.circle_outlined,
-              color: _freenet ? Colors.green : null,
-            ),
-            title: const Text('Freenet gateway (local port 8888)'),
+          title: const Text('I2P tunnel (local i2pd SOCKS 7656)'),
+        ),
+        ListTile(
+          leading: Icon(
+            _freenet ? Icons.check_circle : Icons.circle_outlined,
+            color: _freenet ? Colors.green : null,
           ),
-          const Divider(),
-          Text('Sync engine', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          ListTile(
-            leading: Icon(
-              _syncRunning ? Icons.sync : Icons.sync_disabled,
-              color: _syncRunning ? Colors.green : null,
-            ),
-            title: Text(_syncRunning ? 'Running' : 'Stopped'),
-            subtitle: Text('Outbox: $_outboxSummary'),
+          title: const Text('Freenet gateway (local port 8888)'),
+        ),
+        const Divider(),
+        Text('Sync engine', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        ListTile(
+          leading: Icon(
+            _syncRunning ? Icons.sync : Icons.sync_disabled,
+            color: _syncRunning ? Colors.green : null,
           ),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _runBackgroundSync,
-                  icon: const Icon(Icons.sync),
-                  label: const Text('Run sync pass'),
-                ),
+          title: Text(_syncRunning ? 'Running' : 'Stopped'),
+          subtitle: Text('Outbox: $_outboxSummary'),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _runBackgroundSync,
+                icon: const Icon(Icons.sync),
+                label: const Text('Run sync pass'),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _runEpochGc,
-                  icon: const Icon(Icons.cleaning_services),
-                  label: const Text('Epoch GC'),
-                ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _runEpochGc,
+                icon: const Icon(Icons.cleaning_services),
+                label: const Text('Epoch GC'),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _syncRunning ? _stopSync : null,
-            icon: const Icon(Icons.stop),
-            label: const Text('Stop engine'),
-          ),
-          const Divider(),
-          Text('Storage & DB', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          ListTile(
-            leading: const Icon(Icons.storage),
-            title: const Text('Engine mode'),
-            subtitle: Text(_engineMode ?? 'unknown'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.folder),
-            title: const Text('Database path'),
-            subtitle: SelectableText(_dbPath ?? 'unavailable'),
-          ),
-          const Divider(),
-          Text('Ephemeral media',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _cleanEphemeral,
-            icon: const Icon(Icons.delete_sweep),
-            label: const Text('Clean expired'),
-          ),
-          if (_ephemeralResult != null) ...[
-            const SizedBox(height: 4),
-            Text(_ephemeralResult!, style: const TextStyle(fontSize: 12)),
+            ),
           ],
-          const Divider(),
-          Text('Utilities', style: Theme.of(context).textTheme.titleMedium),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _syncRunning ? _stopSync : null,
+          icon: const Icon(Icons.stop),
+          label: const Text('Stop engine'),
+        ),
+        const Divider(),
+        Text('Storage & DB', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        ListTile(
+          leading: const Icon(Icons.storage),
+          title: const Text('Engine mode'),
+          subtitle: Text(_engineMode ?? 'unknown'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.folder),
+          title: const Text('Database path'),
+          subtitle: SelectableText(_dbPath ?? 'unavailable'),
+        ),
+        const Divider(),
+        Text('Ephemeral media', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _cleanEphemeral,
+          icon: const Icon(Icons.delete_sweep),
+          label: const Text('Clean expired'),
+        ),
+        if (_ephemeralResult != null) ...[
           const SizedBox(height: 4),
-          TextField(
-            controller: _hashController,
-            decoration: const InputDecoration(
-              labelText: 'Text to hash (SHA-256)',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onSubmitted: (_) => _hashText(),
+          Text(_ephemeralResult!, style: const TextStyle(fontSize: 12)),
+        ],
+        const Divider(),
+        Text('Utilities', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        TextField(
+          controller: _hashController,
+          decoration: const InputDecoration(
+            labelText: 'Text to hash (SHA-256)',
+            border: OutlineInputBorder(),
+            isDense: true,
           ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _hashText,
-            icon: const Icon(Icons.tag),
-            label: const Text('Hash'),
+          onSubmitted: (_) => _hashText(),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _hashText,
+          icon: const Icon(Icons.tag),
+          label: const Text('Hash'),
+        ),
+        if (_hashResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText(_hashResult!,
+                style: const TextStyle(fontSize: 12)),
           ),
-          if (_hashResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText(_hashResult!,
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _b64Controller,
-            decoration: const InputDecoration(
-              labelText: 'Base64url text',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _b64Controller,
+          decoration: const InputDecoration(
+            labelText: 'Base64url text',
+            border: OutlineInputBorder(),
+            isDense: true,
           ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _b64Encode,
-                  icon: const Icon(Icons.arrow_downward),
-                  label: const Text('Encode'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _b64Decode,
-                  icon: const Icon(Icons.arrow_upward),
-                  label: const Text('Decode'),
-                ),
-              ),
-            ],
-          ),
-          if (_b64Result != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText(_b64Result!,
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _threadAffinity(true),
-                  icon: const Icon(Icons.speed),
-                  label: const Text('Pin perf cores'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _threadAffinity(false),
-                  icon: const Icon(Icons.energy_savings_leaf),
-                  label: const Text('Pin efficiency'),
-                ),
-              ),
-            ],
-          ),
-          const Divider(),
-          Text('Crypto', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          TextField(
-            controller: _shaController,
-            decoration: const InputDecoration(
-              labelText: 'SHA-256 input',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onSubmitted: (_) => _cryptoSha(),
-          ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _cryptoSha,
-            icon: const Icon(Icons.tag),
-            label: const Text('SHA-256'),
-          ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _cryptoShaBytes,
-            icon: const Icon(Icons.tag),
-            label: const Text('SHA-256 (utf8 + bytes)'),
-          ),
-          if (_shaResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText(_shaResult!,
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _hmacKeyController,
-            decoration: const InputDecoration(
-              labelText: 'HMAC key',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 4),
-          TextField(
-            controller: _hmacMsgController,
-            decoration: const InputDecoration(
-              labelText: 'HMAC message',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _cryptoHmac,
-            icon: const Icon(Icons.key),
-            label: const Text('HMAC-SHA256'),
-          ),
-          if (_hmacResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText(_hmacResult!,
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _hkdfController,
-            decoration: const InputDecoration(
-              labelText: 'HKDF expand (ikm → 32 bytes)',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onSubmitted: (_) => _cryptoHkdf(),
-          ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _cryptoHkdf,
-            icon: const Icon(Icons.unfold_more),
-            label: const Text('HKDF expand'),
-          ),
-          if (_hkdfResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText(_hkdfResult!,
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _randController,
-            decoration: const InputDecoration(
-              labelText: 'Random bytes count (1..=65536)',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onSubmitted: (_) => _cryptoRandom(),
-          ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _cryptoRandom,
-            icon: const Icon(Icons.casino),
-            label: const Text('Random bytes'),
-          ),
-          if (_randResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText(_randResult!,
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _zeroizeController,
-            decoration: const InputDecoration(
-              labelText: 'Zeroize demo input',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onSubmitted: (_) => _cryptoZeroize(),
-          ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _cryptoZeroize,
-            icon: const Icon(Icons.cleaning_services),
-            label: const Text('Zeroize'),
-          ),
-          if (_zeroizeResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText(_zeroizeResult!,
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _nip44TextController,
-            decoration: const InputDecoration(
-              labelText: 'NIP-44 plaintext',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 4),
-          TextField(
-            controller: _nip44PubkeyController,
-            decoration: const InputDecoration(
-              labelText: 'NIP-44 recipient pubkey (empty = self)',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _nip44RoundTrip,
-            icon: const Icon(Icons.lock_reset),
-            label: const Text('NIP-44 encrypt → decrypt'),
-          ),
-          if (_nip44Result != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText(_nip44Result!,
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const Divider(),
-          Text('PQC KEM (experimental)',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pqcKeygen,
-                  icon: const Icon(Icons.vpn_key),
-                  label: const Text('Keygen'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pqcEncaps,
-                  icon: const Icon(Icons.lock),
-                  label: const Text('Encaps'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pqcDecaps,
-                  icon: const Icon(Icons.lock_open),
-                  label: const Text('Decaps'),
-                ),
-              ),
-            ],
-          ),
-          if (_pqcPk != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText('pk: ${prefixHex(_pqcPk!)}',
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          if (_pqcCt != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: SelectableText('ct: ${prefixHex(_pqcCt!)}',
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          if (_pqcSs != null && _pqcDecapsSs != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: SelectableText(
-                'ss match: ${_pqcSs == _pqcDecapsSs} '
-                '(${prefixHex(_pqcDecapsSs!)})',
-                style: const TextStyle(fontSize: 12),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _b64Encode,
+                icon: const Icon(Icons.arrow_downward),
+                label: const Text('Encode'),
               ),
             ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _frostMsgController,
-            decoration: const InputDecoration(
-              labelText: 'FROST message',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _frostKeygen,
-                  icon: const Icon(Icons.groups),
-                  label: const Text('Jury keys (2-of-3)'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _frostAggregate,
-                  icon: const Icon(Icons.how_to_reg),
-                  label: const Text('Aggregate sig'),
-                ),
-              ),
-            ],
-          ),
-          if (_frostResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText('FROST (experimental):\n$_frostResult',
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          if (_frostSharesJson != null && _frostResult == null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText('FROST (experimental): jury keys generated',
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pirGenerate,
-                  icon: const Icon(Icons.search),
-                  label: const Text('PIR query'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pirEvaluate,
-                  icon: const Icon(Icons.functions),
-                  label: const Text('PIR evaluate'),
-                ),
-              ),
-            ],
-          ),
-          if (_pirResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText('PIR (experimental): $_pirResult',
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          if (_pirQueryJson != null && _pirResult == null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText('PIR (experimental): query generated',
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const Divider(),
-          Text('SQL console', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          TextField(
-            controller: _sqlController,
-            decoration: const InputDecoration(
-              labelText: 'SELECT …',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onSubmitted: (_) => _sqlRun(),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _sqlRun,
-                  icon: const Icon(Icons.table_view),
-                  label: const Text('Run query'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _applyZkRollup,
-                  icon: const Icon(Icons.integration_instructions),
-                  label: const Text('Apply ZK rollup'),
-                ),
-              ),
-            ],
-          ),
-          if (_sqlResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText(_sqlResult!,
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          if (_zkResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: SelectableText('ZK: $_zkResult',
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          const Divider(),
-          Text('Telemetry', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _recordTelemetryEvent,
-                  icon: const Icon(Icons.add_alert),
-                  label: const Text('Record event'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _dumpTelemetry,
-                  icon: const Icon(Icons.archive),
-                  label: const Text('Dump (seals)'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ListTile(
-            leading: Icon(
-              _telemetrySealed ? Icons.lock : Icons.lock_open,
-              color: _telemetrySealed ? Colors.orange : Colors.green,
-            ),
-            title: Text(
-                _telemetrySealed ? 'Sealed (post-crash)' : 'Recorder live'),
-            subtitle: Text(_telemetryInfo ?? ''),
-          ),
-          const SizedBox(height: 8),
-          if (_telemetryTranscript != null)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SelectableText(
-                _telemetryTranscript!,
-                style: const TextStyle(fontSize: 12),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _b64Decode,
+                icon: const Icon(Icons.arrow_upward),
+                label: const Text('Decode'),
               ),
             ),
-          const Divider(),
-          Text('DB & Mesh maintenance',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _dbPurge(7 * 24 * 3600),
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('Delete posts >7d'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _dbPurgeAll,
-                  icon: const Icon(Icons.delete_forever),
-                  label: const Text('Delete all posts'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _purgeGeohashPeers,
-            icon: const Icon(Icons.location_off),
-            label: const Text('Purge stale geohash peers (7d)'),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pruneMeshLinks,
-                  icon: const Icon(Icons.link_off),
-                  label: const Text('Prune mesh links'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pruneMeshRoutes,
-                  icon: const Icon(Icons.route),
-                  label: const Text('Prune mesh routes'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _meshNodeId,
-            icon: const Icon(Icons.fingerprint),
-            label: const Text('Skademlia node id (active account)'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _nsecController,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'nsec (signer pubkey derivation probe)',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onSubmitted: (_) => _signerFromNsec(),
-          ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _signerFromNsec,
-            icon: const Icon(Icons.key),
-            label: const Text('Derive pubkey'),
-          ),
-          if (_meshResult != null) ...[
-            const SizedBox(height: 4),
-            SelectableText(_meshResult!, style: const TextStyle(fontSize: 12)),
           ],
-          const Divider(),
-          Text('Diagnostics', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          if (_diagError != null)
-            Text('Unavailable: $_diagError')
-          else if (_diagnostics != null)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SelectableText(
-                const JsonEncoder.withIndent('  ').convert(_diagnostics),
-                style: const TextStyle(fontSize: 12),
+        ),
+        if (_b64Result != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText(_b64Result!,
+                style: const TextStyle(fontSize: 12)),
+          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _threadAffinity(true),
+                icon: const Icon(Icons.speed),
+                label: const Text('Pin perf cores'),
               ),
             ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _load,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Refresh'),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _threadAffinity(false),
+                icon: const Icon(Icons.energy_savings_leaf),
+                label: const Text('Pin efficiency'),
+              ),
+            ),
+          ],
+        ),
+        const Divider(),
+        Text('Crypto', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        TextField(
+          controller: _shaController,
+          decoration: const InputDecoration(
+            labelText: 'SHA-256 input',
+            border: OutlineInputBorder(),
+            isDense: true,
           ),
+          onSubmitted: (_) => _cryptoSha(),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _cryptoSha,
+          icon: const Icon(Icons.tag),
+          label: const Text('SHA-256'),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _cryptoShaBytes,
+          icon: const Icon(Icons.tag),
+          label: const Text('SHA-256 (utf8 + bytes)'),
+        ),
+        if (_shaResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText(_shaResult!,
+                style: const TextStyle(fontSize: 12)),
+          ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _hmacKeyController,
+          decoration: const InputDecoration(
+            labelText: 'HMAC key',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 4),
+        TextField(
+          controller: _hmacMsgController,
+          decoration: const InputDecoration(
+            labelText: 'HMAC message',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _cryptoHmac,
+          icon: const Icon(Icons.key),
+          label: const Text('HMAC-SHA256'),
+        ),
+        if (_hmacResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText(_hmacResult!,
+                style: const TextStyle(fontSize: 12)),
+          ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _hkdfController,
+          decoration: const InputDecoration(
+            labelText: 'HKDF expand (ikm → 32 bytes)',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onSubmitted: (_) => _cryptoHkdf(),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _cryptoHkdf,
+          icon: const Icon(Icons.unfold_more),
+          label: const Text('HKDF expand'),
+        ),
+        if (_hkdfResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText(_hkdfResult!,
+                style: const TextStyle(fontSize: 12)),
+          ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _randController,
+          decoration: const InputDecoration(
+            labelText: 'Random bytes count (1..=65536)',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onSubmitted: (_) => _cryptoRandom(),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _cryptoRandom,
+          icon: const Icon(Icons.casino),
+          label: const Text('Random bytes'),
+        ),
+        if (_randResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText(_randResult!,
+                style: const TextStyle(fontSize: 12)),
+          ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _zeroizeController,
+          decoration: const InputDecoration(
+            labelText: 'Zeroize demo input',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onSubmitted: (_) => _cryptoZeroize(),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _cryptoZeroize,
+          icon: const Icon(Icons.cleaning_services),
+          label: const Text('Zeroize'),
+        ),
+        if (_zeroizeResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText(_zeroizeResult!,
+                style: const TextStyle(fontSize: 12)),
+          ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _nip44TextController,
+          decoration: const InputDecoration(
+            labelText: 'NIP-44 plaintext',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 4),
+        TextField(
+          controller: _nip44PubkeyController,
+          decoration: const InputDecoration(
+            labelText: 'NIP-44 recipient pubkey (empty = self)',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _nip44RoundTrip,
+          icon: const Icon(Icons.lock_reset),
+          label: const Text('NIP-44 encrypt → decrypt'),
+        ),
+        if (_nip44Result != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText(_nip44Result!,
+                style: const TextStyle(fontSize: 12)),
+          ),
+        const Divider(),
+        Text('PQC KEM (experimental)',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pqcKeygen,
+                icon: const Icon(Icons.vpn_key),
+                label: const Text('Keygen'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pqcEncaps,
+                icon: const Icon(Icons.lock),
+                label: const Text('Encaps'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pqcDecaps,
+                icon: const Icon(Icons.lock_open),
+                label: const Text('Decaps'),
+              ),
+            ),
+          ],
+        ),
+        if (_pqcPk != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText('pk: ${prefixHex(_pqcPk!)}',
+                style: const TextStyle(fontSize: 12)),
+          ),
+        if (_pqcCt != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: SelectableText('ct: ${prefixHex(_pqcCt!)}',
+                style: const TextStyle(fontSize: 12)),
+          ),
+        if (_pqcSs != null && _pqcDecapsSs != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: SelectableText(
+              'ss match: ${_pqcSs == _pqcDecapsSs} '
+              '(${prefixHex(_pqcDecapsSs!)})',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _frostMsgController,
+          decoration: const InputDecoration(
+            labelText: 'FROST message',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _frostKeygen,
+                icon: const Icon(Icons.groups),
+                label: const Text('Jury keys (2-of-3)'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _frostAggregate,
+                icon: const Icon(Icons.how_to_reg),
+                label: const Text('Aggregate sig'),
+              ),
+            ),
+          ],
+        ),
+        if (_frostResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText('FROST (experimental):\n$_frostResult',
+                style: const TextStyle(fontSize: 12)),
+          ),
+        if (_frostSharesJson != null && _frostResult == null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText('FROST (experimental): jury keys generated',
+                style: const TextStyle(fontSize: 12)),
+          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pirGenerate,
+                icon: const Icon(Icons.search),
+                label: const Text('PIR query'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pirEvaluate,
+                icon: const Icon(Icons.functions),
+                label: const Text('PIR evaluate'),
+              ),
+            ),
+          ],
+        ),
+        if (_pirResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText('PIR (experimental): $_pirResult',
+                style: const TextStyle(fontSize: 12)),
+          ),
+        if (_pirQueryJson != null && _pirResult == null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText('PIR (experimental): query generated',
+                style: const TextStyle(fontSize: 12)),
+          ),
+        const Divider(),
+        Text('SQL console', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        TextField(
+          controller: _sqlController,
+          decoration: const InputDecoration(
+            labelText: 'SELECT …',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onSubmitted: (_) => _sqlRun(),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _sqlRun,
+                icon: const Icon(Icons.table_view),
+                label: const Text('Run query'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _applyZkRollup,
+                icon: const Icon(Icons.integration_instructions),
+                label: const Text('Apply ZK rollup'),
+              ),
+            ),
+          ],
+        ),
+        if (_sqlResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText(_sqlResult!,
+                style: const TextStyle(fontSize: 12)),
+          ),
+        if (_zkResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SelectableText('ZK: $_zkResult',
+                style: const TextStyle(fontSize: 12)),
+          ),
+        const Divider(),
+        Text('Telemetry', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _recordTelemetryEvent,
+                icon: const Icon(Icons.add_alert),
+                label: const Text('Record event'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _dumpTelemetry,
+                icon: const Icon(Icons.archive),
+                label: const Text('Dump (seals)'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ListTile(
+          leading: Icon(
+            _telemetrySealed ? Icons.lock : Icons.lock_open,
+            color: _telemetrySealed ? Colors.orange : Colors.green,
+          ),
+          title:
+              Text(_telemetrySealed ? 'Sealed (post-crash)' : 'Recorder live'),
+          subtitle: Text(_telemetryInfo ?? ''),
+        ),
+        const SizedBox(height: 8),
+        if (_telemetryTranscript != null)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: SelectableText(
+              _telemetryTranscript!,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        const Divider(),
+        Text('DB & Mesh maintenance',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _dbPurge(7 * 24 * 3600),
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Delete posts >7d'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _dbPurgeAll,
+                icon: const Icon(Icons.delete_forever),
+                label: const Text('Delete all posts'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _purgeGeohashPeers,
+          icon: const Icon(Icons.location_off),
+          label: const Text('Purge stale geohash peers (7d)'),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pruneMeshLinks,
+                icon: const Icon(Icons.link_off),
+                label: const Text('Prune mesh links'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pruneMeshRoutes,
+                icon: const Icon(Icons.route),
+                label: const Text('Prune mesh routes'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _meshNodeId,
+          icon: const Icon(Icons.fingerprint),
+          label: const Text('Skademlia node id (active account)'),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _nsecController,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: 'nsec (signer pubkey derivation probe)',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onSubmitted: (_) => _signerFromNsec(),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _signerFromNsec,
+          icon: const Icon(Icons.key),
+          label: const Text('Derive pubkey'),
+        ),
+        if (_meshResult != null) ...[
+          const SizedBox(height: 4),
+          SelectableText(_meshResult!, style: const TextStyle(fontSize: 12)),
+        ],
+        const Divider(),
+        Text('Diagnostics', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        if (_diagError != null)
+          Text('Unavailable: $_diagError')
+        else if (_diagnostics != null)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: SelectableText(
+              const JsonEncoder.withIndent('  ').convert(_diagnostics),
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _load,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Refresh'),
+        ),
       ],
     );
   }

@@ -92,6 +92,7 @@ mod ffi_aux_modules_tests {
         let e = music::music_share_to_feed(
             "track_1".to_string(),
             "pubkey_1".to_string(),
+            "d_tag_1".to_string(),
             "   ".to_string(),
             Vec::new(),
         )
@@ -101,6 +102,7 @@ mod ffi_aux_modules_tests {
         let e = music::music_share_to_feed(
             "track_1".to_string(),
             "pubkey_1".to_string(),
+            "d_tag_1".to_string(),
             "x".repeat(64001),
             Vec::new(),
         )

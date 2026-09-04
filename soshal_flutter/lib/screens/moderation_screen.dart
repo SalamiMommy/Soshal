@@ -202,409 +202,408 @@ class _ModerationScreenState extends State<ModerationScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         Text('Muted users', style: Theme.of(context).textTheme.titleMedium),
-          Consumer<ModerationService>(
-            builder: (context, mod, _) {
-              if (mod.muted.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('No muted users'),
-                );
-              }
-              return Column(
-                children: [
-                  for (final muted in mod.muted)
-                    ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.volume_off),
-                      title: Text(muted,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.undo),
-                        tooltip: 'Unmute',
-                        onPressed: () async {
-                          final pubkey = _pubkey;
-                          if (pubkey == null) return;
-                          await mod.unmute(pubkey, muted);
-                        },
-                      ),
-                    ),
-                ],
+        Consumer<ModerationService>(
+          builder: (context, mod, _) {
+            if (mod.muted.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('No muted users'),
               );
-            },
-          ),
-          const Divider(height: 32),
-          Text('Blocked users', style: Theme.of(context).textTheme.titleMedium),
-          Consumer<ModerationService>(
-            builder: (context, mod, _) {
-              if (mod.blocked.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('No blocked users'),
-                );
-              }
-              return Column(
-                children: [
-                  for (final blocked in mod.blocked)
-                    ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.block),
-                      title: Text(blocked,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.undo),
-                        tooltip: 'Unblock',
-                        onPressed: () => _unblock(blocked),
-                      ),
+            }
+            return Column(
+              children: [
+                for (final muted in mod.muted)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.volume_off),
+                    title: Text(muted,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.undo),
+                      tooltip: 'Unmute',
+                      onPressed: () async {
+                        final pubkey = _pubkey;
+                        if (pubkey == null) return;
+                        await mod.unmute(pubkey, muted);
+                      },
                     ),
-                ],
+                  ),
+              ],
+            );
+          },
+        ),
+        const Divider(height: 32),
+        Text('Blocked users', style: Theme.of(context).textTheme.titleMedium),
+        Consumer<ModerationService>(
+          builder: (context, mod, _) {
+            if (mod.blocked.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('No blocked users'),
               );
-            },
-          ),
-          const Divider(height: 32),
-          Text('Reports', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          if (_reportsLoading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_reports.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('No reports'),
-            )
-          else
-            for (final report in _reports)
-              ListTile(
-                dense: true,
-                leading: const Icon(Icons.flag_outlined),
-                title: Text(
-                  report['pubkey'] as String? ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  report['reason'] as String? ?? '',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: 'Delete report',
-                  onPressed: () => _deleteReport(report['id'] as String? ?? ''),
-                ),
-              ),
-          const Divider(height: 32),
-          Text('Restriction check',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _checkTarget,
-            decoration: const InputDecoration(
-              hintText: 'Pubkey to check',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            icon: const Icon(Icons.verified_user_outlined),
-            label: const Text('Check'),
-            onPressed: _checkRestriction,
-          ),
-          if (_restrictionResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                'muted: ${_restrictionResult!.muted} · '
-                'blocked: ${_restrictionResult!.blocked} · '
-                'restricted: ${_restrictionResult!.restricted}',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          const Divider(height: 32),
-          Row(
-            children: [
-              Text('Community jury',
-                  style: Theme.of(context).textTheme.titleMedium),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.gavel),
-                tooltip: 'Create jury case',
-                onPressed: _createJuryCase,
-              ),
-            ],
-          ),
-          if (_juryCaseJson != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                _juryCaseJson!,
-                maxLines: 3,
+            }
+            return Column(
+              children: [
+                for (final blocked in mod.blocked)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.block),
+                    title: Text(blocked,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.undo),
+                      tooltip: 'Unblock',
+                      onPressed: () => _unblock(blocked),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+        const Divider(height: 32),
+        Text('Reports', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        if (_reportsLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_reports.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('No reports'),
+          )
+        else
+          for (final report in _reports)
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.flag_outlined),
+              title: Text(
+                report['pubkey'] as String? ?? '',
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12),
+              ),
+              subtitle: Text(
+                report['reason'] as String? ?? '',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Delete report',
+                onPressed: () => _deleteReport(report['id'] as String? ?? ''),
               ),
             ),
-            Text(
-              'FROST jury voting unavailable: threshold signing on roadmap',
-              style: const TextStyle(fontSize: 12),
+        const Divider(height: 32),
+        Text('Restriction check',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _checkTarget,
+          decoration: const InputDecoration(
+            hintText: 'Pubkey to check',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          icon: const Icon(Icons.verified_user_outlined),
+          label: const Text('Check'),
+          onPressed: _checkRestriction,
+        ),
+        if (_restrictionResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'muted: ${_restrictionResult!.muted} · '
+              'blocked: ${_restrictionResult!.blocked} · '
+              'restricted: ${_restrictionResult!.restricted}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        const Divider(height: 32),
+        Row(
+          children: [
+            Text('Community jury',
+                style: Theme.of(context).textTheme.titleMedium),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.gavel),
+              tooltip: 'Create jury case',
+              onPressed: _createJuryCase,
             ),
           ],
-          if (_juryResult != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                _juryResult!,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12),
-              ),
+        ),
+        if (_juryCaseJson != null) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              _juryCaseJson!,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12),
             ),
-          const Divider(height: 32),
-          Row(
-            children: [
-              Text('Word filters',
-                  style: Theme.of(context).textTheme.titleMedium),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.add),
-                tooltip: 'Add filter',
-                onPressed: _addFilter,
-              ),
-            ],
-          ),
-          Consumer<ModerationService>(
-            builder: (context, mod, _) {
-              if (mod.wordFilters.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('No word filters'),
-                );
-              }
-              return Wrap(
-                spacing: 8,
-                children: [
-                  for (final f in mod.wordFilters)
-                    Chip(
-                      label: Text(f),
-                      onDeleted: () => _removeFilter(f),
-                    ),
-                ],
-              );
-            },
-          ),
-          const Divider(height: 32),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('2-Tier Hybrid AI Scanner',
-                  style: Theme.of(context).textTheme.titleMedium),
-              Row(
-                children: [
-                  const Text('Deep Scan (RoBERTa):',
-                      style: TextStyle(fontSize: 12)),
-                  Switch(
-                    value: _forceDeepScan,
-                    onChanged: (v) => setState(() => _forceDeepScan = v),
-                  ),
-                ],
-              ),
-            ],
           ),
           Text(
-            'Tier 1 (N-Gram Subword) + Tier 2 (heuristic embeddings & perceptual image hash; '
-            'real ML model on roadmap)',
-            style: Theme.of(context).textTheme.bodySmall,
+            'FROST jury voting unavailable: threshold signing on roadmap',
+            style: const TextStyle(fontSize: 12),
           ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _testContent,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              hintText: 'Paste content to scan through 2-Tier Hybrid AI',
-              border: OutlineInputBorder(),
+        ],
+        if (_juryResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              _juryResult!,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12),
             ),
           ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            icon: const Icon(Icons.psychology_outlined),
-            label: const Text('Scan with 2-Tier Hybrid AI'),
-            onPressed: () async {
-              final pubkey = _pubkey ?? '';
-              final text = _testContent.text;
-              try {
-                final filtered = await api.shouldFilter(text, pubkey);
-                final hybrid = await api.hybridClassifyText(
-                  text,
-                  forceDeepScan: _forceDeepScan,
-                );
-                if (mounted) {
-                  setState(() {
-                    _filtered = filtered;
-                    _hybridResult = hybrid;
-                  });
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Scan failed: $e')),
-                  );
-                }
-              }
-            },
+        const Divider(height: 32),
+        Row(
+          children: [
+            Text('Word filters',
+                style: Theme.of(context).textTheme.titleMedium),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: 'Add filter',
+              onPressed: _addFilter,
+            ),
+          ],
+        ),
+        Consumer<ModerationService>(
+          builder: (context, mod, _) {
+            if (mod.wordFilters.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('No word filters'),
+              );
+            }
+            return Wrap(
+              spacing: 8,
+              children: [
+                for (final f in mod.wordFilters)
+                  Chip(
+                    label: Text(f),
+                    onDeleted: () => _removeFilter(f),
+                  ),
+              ],
+            );
+          },
+        ),
+        const Divider(height: 32),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('2-Tier Hybrid AI Scanner',
+                style: Theme.of(context).textTheme.titleMedium),
+            Row(
+              children: [
+                const Text('Deep Scan (RoBERTa):',
+                    style: TextStyle(fontSize: 12)),
+                Switch(
+                  value: _forceDeepScan,
+                  onChanged: (v) => setState(() => _forceDeepScan = v),
+                ),
+              ],
+            ),
+          ],
+        ),
+        Text(
+          'Tier 1 (N-Gram Subword) + Tier 2 (heuristic embeddings & perceptual image hash; '
+          'real ML model on roadmap)',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _testContent,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'Paste content to scan through 2-Tier Hybrid AI',
+            border: OutlineInputBorder(),
           ),
-          if (_filtered != null && _hybridResult != null) ...[
-            const SizedBox(height: 12),
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          _hybridResult!.isFlagged || _filtered!
-                              ? Icons.warning_amber_rounded
-                              : Icons.check_circle_outline,
+        ),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          icon: const Icon(Icons.psychology_outlined),
+          label: const Text('Scan with 2-Tier Hybrid AI'),
+          onPressed: () async {
+            final pubkey = _pubkey ?? '';
+            final text = _testContent.text;
+            try {
+              final filtered = await api.shouldFilter(text, pubkey);
+              final hybrid = await api.hybridClassifyText(
+                text,
+                forceDeepScan: _forceDeepScan,
+              );
+              if (mounted) {
+                setState(() {
+                  _filtered = filtered;
+                  _hybridResult = hybrid;
+                });
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Scan failed: $e')),
+                );
+              }
+            }
+          },
+        ),
+        if (_filtered != null && _hybridResult != null) ...[
+          const SizedBox(height: 12),
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        _hybridResult!.isFlagged || _filtered!
+                            ? Icons.warning_amber_rounded
+                            : Icons.check_circle_outline,
+                        color: _hybridResult!.isFlagged || _filtered!
+                            ? Colors.red
+                            : Colors.green,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _hybridResult!.isFlagged
+                            ? 'Flagged (${_hybridResult!.primaryCategory?.toUpperCase() ?? "HAZARD"})'
+                            : (_filtered!
+                                ? 'Filtered by word/block list'
+                                : 'Safe — Content Passes 2-Tier AI'),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
                           color: _hybridResult!.isFlagged || _filtered!
                               ? Colors.red
                               : Colors.green,
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _hybridResult!.isFlagged
-                              ? 'Flagged (${_hybridResult!.primaryCategory?.toUpperCase() ?? "HAZARD"})'
-                              : (_filtered!
-                                  ? 'Filtered by word/block list'
-                                  : 'Safe — Content Passes 2-Tier AI'),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        child: Text(
+                          _hybridResult!.tierEvaluated == 'Tier2Deep'
+                              ? 'Tier 2: RoBERTa'
+                              : 'Tier 1: Fast N-Gram',
                           style: TextStyle(
+                            fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: _hybridResult!.isFlagged || _filtered!
-                                ? Colors.red
-                                : Colors.green,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color:
-                                  Theme.of(context).colorScheme.primary,
-                            ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 16),
+                  _buildScoreRow(
+                    context,
+                    'Spam & Scams',
+                    _hybridResult!.tier1Result.scores.spam,
+                    Colors.orange,
+                  ),
+                  _buildScoreRow(
+                    context,
+                    'CSAM Zero-Tolerance',
+                    _hybridResult!.tier1Result.scores.csam,
+                    Colors.red.shade900,
+                  ),
+                  _buildScoreRow(
+                    context,
+                    'Gore & Violence',
+                    _hybridResult!.tier1Result.scores.gore,
+                    Colors.deepOrange,
+                  ),
+                  _buildScoreRow(
+                    context,
+                    'Bigotry & Hate Speech',
+                    _hybridResult!.tier1Result.scores.bigotry,
+                    Colors.purple,
+                  ),
+                  _buildScoreRow(
+                    context,
+                    'Targeted Harassment',
+                    _hybridResult!.tier1Result.scores.harassment,
+                    Colors.indigo,
+                  ),
+                  if (_hybridResult!.tier2RobertaResult != null) ...[
+                    const Divider(height: 16),
+                    Text(
+                      'RoBERTa Transformer Semantic Scores:',
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    _buildScoreRow(
+                      context,
+                      'RoBERTa Toxicity',
+                      _hybridResult!.tier2RobertaResult!.scores.toxic,
+                      Colors.redAccent,
+                    ),
+                    _buildScoreRow(
+                      context,
+                      'RoBERTa Threat',
+                      _hybridResult!.tier2RobertaResult!.scores.threat,
+                      Colors.deepPurple,
+                    ),
+                    _buildScoreRow(
+                      context,
+                      'RoBERTa Identity Hate',
+                      _hybridResult!.tier2RobertaResult!.scores.identityHate,
+                      Colors.purpleAccent,
+                    ),
+                  ],
+                  if (_hybridResult!.tier1Result.evasionScore > 0.05) ...[
+                    const SizedBox(height: 6),
+                    _buildScoreRow(
+                      context,
+                      'Obfuscation / Evasion Score',
+                      _hybridResult!.tier1Result.evasionScore,
+                      Colors.amber.shade800,
+                    ),
+                  ],
+                  if (_hybridResult!.detectedReasons.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Detection Signals:',
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        for (final r in _hybridResult!.detectedReasons)
+                          Chip(
+                            label:
+                                Text(r, style: const TextStyle(fontSize: 11)),
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
                           ),
-                          child: Text(
-                            _hybridResult!.tierEvaluated == 'Tier2Deep'
-                                ? 'Tier 2: RoBERTa'
-                                : 'Tier 1: Fast N-Gram',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
-                    const Divider(height: 16),
-                    _buildScoreRow(
-                      context,
-                      'Spam & Scams',
-                      _hybridResult!.tier1Result.scores.spam,
-                      Colors.orange,
-                    ),
-                    _buildScoreRow(
-                      context,
-                      'CSAM Zero-Tolerance',
-                      _hybridResult!.tier1Result.scores.csam,
-                      Colors.red.shade900,
-                    ),
-                    _buildScoreRow(
-                      context,
-                      'Gore & Violence',
-                      _hybridResult!.tier1Result.scores.gore,
-                      Colors.deepOrange,
-                    ),
-                    _buildScoreRow(
-                      context,
-                      'Bigotry & Hate Speech',
-                      _hybridResult!.tier1Result.scores.bigotry,
-                      Colors.purple,
-                    ),
-                    _buildScoreRow(
-                      context,
-                      'Targeted Harassment',
-                      _hybridResult!.tier1Result.scores.harassment,
-                      Colors.indigo,
-                    ),
-                    if (_hybridResult!.tier2RobertaResult != null) ...[
-                      const Divider(height: 16),
-                      Text(
-                        'RoBERTa Transformer Semantic Scores:',
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                      const SizedBox(height: 4),
-                      _buildScoreRow(
-                        context,
-                        'RoBERTa Toxicity',
-                        _hybridResult!.tier2RobertaResult!.scores.toxic,
-                        Colors.redAccent,
-                      ),
-                      _buildScoreRow(
-                        context,
-                        'RoBERTa Threat',
-                        _hybridResult!.tier2RobertaResult!.scores.threat,
-                        Colors.deepPurple,
-                      ),
-                      _buildScoreRow(
-                        context,
-                        'RoBERTa Identity Hate',
-                        _hybridResult!.tier2RobertaResult!.scores.identityHate,
-                        Colors.purpleAccent,
-                      ),
-                    ],
-                    if (_hybridResult!.tier1Result.evasionScore > 0.05) ...[
-                      const SizedBox(height: 6),
-                      _buildScoreRow(
-                        context,
-                        'Obfuscation / Evasion Score',
-                        _hybridResult!.tier1Result.evasionScore,
-                        Colors.amber.shade800,
-                      ),
-                    ],
-                    if (_hybridResult!.detectedReasons.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Detection Signals:',
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: [
-                          for (final r in _hybridResult!.detectedReasons)
-                            Chip(
-                              label:
-                                  Text(r, style: const TextStyle(fontSize: 11)),
-                              padding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                        ],
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
             ),
-          ],
+          ),
         ],
+      ],
     );
   }
 

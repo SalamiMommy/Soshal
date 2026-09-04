@@ -105,8 +105,8 @@ class _LockScreenState extends State<LockScreen> {
                 if (shell.permanentLocked)
                   Text(
                     'Account permanently locked after too many failed attempts.',
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.error),
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error),
                     textAlign: TextAlign.center,
                   ),
                 if (shell.lockoutRemaining > 0 && !shell.permanentLocked)
@@ -116,14 +116,16 @@ class _LockScreenState extends State<LockScreen> {
                     !shell.permanentLocked)
                   Text(
                     'Wrong PIN — ${shell.lockAttempts} failed attempt(s)',
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 if (shell.unlockError != null &&
                     shell.lockAttempts == 0 &&
                     !shell.permanentLocked)
                   Text(
                     shell.unlockError!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 if (shell.lockoutRemaining <= 0 && !shell.permanentLocked) ...[
                   const SizedBox(height: 16),

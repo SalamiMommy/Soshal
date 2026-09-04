@@ -64,8 +64,7 @@ class PermissionsService {
   static String get _platform =>
       _hostPlatform ??= ffi.permissionsPlatformCurrent();
 
-  static bool get isAndroid =>
-      debugPlatformIsAndroid ?? _platform == 'android';
+  static bool get isAndroid => debugPlatformIsAndroid ?? _platform == 'android';
 
   static bool get isLinux => debugPlatformIsLinux ?? _platform == 'linux';
 

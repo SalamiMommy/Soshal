@@ -109,9 +109,8 @@ class _AccountsScreenState extends State<AccountsScreen> {
                             final shell = context.read<ShellService>();
                             var unlocked = false;
                             if (!shell.hasPin &&
-                                context
-                                        .read<SettingsService>()
-                                        .getSetting('keychain_unlock_enabled') ==
+                                context.read<SettingsService>().getSetting(
+                                        'keychain_unlock_enabled') ==
                                     'true') {
                               try {
                                 unlocked = await signer

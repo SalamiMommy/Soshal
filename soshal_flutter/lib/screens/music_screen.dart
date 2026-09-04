@@ -123,25 +123,27 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
                               status = 'Publishing…';
                             });
                             try {
-                              final id =
-                                  await context.read<MusicService>().publishTrack(
-                                        mediaSource: mediaSource,
-                                        title: title.text.trim().isEmpty
-                                            ? null
-                                            : title.text.trim(),
-                                        thumbnail: null,
-                                        hashtags: hashtags.text
-                                            .split(',')
-                                            .map((h) => h.trim())
-                                            .where((h) => h.isNotEmpty)
-                                            .toList(),
-                                      );
+                              final id = await context
+                                  .read<MusicService>()
+                                  .publishTrack(
+                                    mediaSource: mediaSource,
+                                    title: title.text.trim().isEmpty
+                                        ? null
+                                        : title.text.trim(),
+                                    thumbnail: null,
+                                    hashtags: hashtags.text
+                                        .split(',')
+                                        .map((h) => h.trim())
+                                        .where((h) => h.isNotEmpty)
+                                        .toList(),
+                                  );
                               if (!sheetContext.mounted) return;
                               Navigator.of(sheetContext).pop();
                               if (!mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: SelectableText('Track published: $id'),
+                                  content:
+                                      SelectableText('Track published: $id'),
                                 ),
                               );
                               await _load();
@@ -367,6 +369,7 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
       final id = await context.read<MusicService>().shareToFeed(
             trackId: _track.id,
             trackPubkey: _track.pubkey,
+            trackD: _track.d,
             message: message,
             hashtags: _track.hashtags,
           );

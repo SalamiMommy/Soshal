@@ -81,15 +81,25 @@ mod bridge_gap_tests {
                 no_client.contains("relay client not initialized"),
                 "{no_client}"
             );
-            let empty_msg =
-                music::music_share_to_feed("id".into(), pk.clone(), "   ".into(), vec![])
-                    .await
-                    .unwrap_err();
+            let empty_msg = music::music_share_to_feed(
+                "id".into(),
+                pk.clone(),
+                "d".into(),
+                "   ".into(),
+                vec![],
+            )
+            .await
+            .unwrap_err();
             assert!(empty_msg.contains("1-64000"), "{empty_msg}");
-            let no_client =
-                music::music_share_to_feed("id".into(), pk, "hi".into(), vec!["a".into()])
-                    .await
-                    .unwrap_err();
+            let no_client = music::music_share_to_feed(
+                "id".into(),
+                pk,
+                "d".into(),
+                "hi".into(),
+                vec!["a".into()],
+            )
+            .await
+            .unwrap_err();
             assert!(
                 no_client.contains("relay client not initialized"),
                 "{no_client}"
