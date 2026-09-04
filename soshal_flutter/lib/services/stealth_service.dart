@@ -60,7 +60,9 @@ class StealthService extends ChangeNotifier with LastErrorMixin {
       final ok = RustLib.instance.api.crateFfiDbDbDeleteSetting(
         key: _whitelistKey,
       );
+      _whitelist = [];
       clearLastError();
+      notifyListeners();
       return ok;
     } catch (e, st) {
       setLastError(e, st);

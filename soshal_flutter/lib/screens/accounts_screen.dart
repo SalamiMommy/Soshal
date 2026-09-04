@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +7,7 @@ import '../services/session_service.dart';
 import '../services/settings_service.dart';
 import '../services/shell_service.dart';
 import '../services/signer_service.dart';
+import '../services/sync_service.dart';
 import '../utils/format.dart';
 import '../widgets/empty_state.dart';
 
@@ -119,6 +122,15 @@ class _AccountsScreenState extends State<AccountsScreen> {
                             }
                             if (!unlocked) {
                               await signer.lock();
+                            }
+                            // Ensure the relay sync runs for the newly active
+                            // account so its feed/DM ingest resumes now.
+                            final relays =
+                                session.activeAccount?.relayList ?? <String>[];
+                            if (relays.isNotEmpty && context.mounted) {
+                              unawaited(context
+                                  .read<SyncService>()
+                                  .start(relays: relays));
                             }
                           },
                           child: const Text('Switch'),

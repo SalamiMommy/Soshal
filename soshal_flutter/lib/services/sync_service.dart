@@ -60,19 +60,18 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
   Future<void> start({required List<String> relays}) async {
     if (relays.isEmpty) return;
     if (_started) return;
-    _started = true;
-    _ensureSubscribed();
     try {
       await RustLib.instance.api.crateFfiSyncSyncStart(
         relaysJson: jsonEncode(relays),
       );
+      _started = true;
+      _ensureSubscribed();
       _gcTimer?.cancel();
       _gcTimer = Timer.periodic(const Duration(days: 1), (_) {
         runScheduledEpochGc();
       });
       clearLastError();
     } catch (e, st) {
-      _started = false;
       setLastError(e, st);
     }
     notifyListeners();
@@ -88,6 +87,9 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
     }
     _gcTimer?.cancel();
     _gcTimer = null;
+    _subscription?.cancel();
+    _subscription = null;
+    _subscribed = false;
     _started = false;
     notifyListeners();
   }

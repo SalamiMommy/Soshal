@@ -37,7 +37,7 @@ void main() {
       await streaming.startMoqBroadcast(streamId: 's-1', title: 'hi');
       expect(streaming.isBroadcasting, isTrue);
       expect(streaming.activeMoqStreamId, 's-1');
-      expect(streaming.nextMoqGroupSeq(), 0, reason: 'broadcast resets seq');
+      expect(streaming.nextMoqGroupSeq(), 1, reason: 'broadcast resets seq');
 
       final pubInv = api.callsOf('crateFfiP2PP2PMoqPublishGroup').single;
       expect(api.namedArg(pubInv, 'streamId'), 's-1');

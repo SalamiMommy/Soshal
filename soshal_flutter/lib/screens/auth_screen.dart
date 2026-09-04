@@ -155,6 +155,12 @@ class _AuthScreenState extends State<AuthScreen> {
       }
       await session.switchAccount(account.pubkey);
       await session.saveSession();
+      // Start the Rust-side background relay sync for the newly active
+      // account so its feed/DM ingest runs.
+      final relays = session.activeAccount?.relayList ?? <String>[];
+      if (relays.isNotEmpty && mounted) {
+        context.read<SyncService>().start(relays: relays);
+      }
       if (mounted) {
         context.go('/feed');
       }

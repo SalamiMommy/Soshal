@@ -430,7 +430,10 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
     final ok = RustLib.instance.api.crateFfiModerationModerationSetWordFilters(
       filtersJson: jsonEncode(filters),
     );
-    await load('');
+    _wordFilters =
+        RustLib.instance.api.crateFfiModerationModerationGetWordFilters();
+    clearLastError();
+    notifyListeners();
     return ok;
   }
 

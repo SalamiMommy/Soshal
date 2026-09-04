@@ -197,8 +197,16 @@ class AppRouter {
           ),
           GoRoute(
             path: '/music/track',
-            builder: (context, state) =>
-                TrackDetailScreen(state.extra as MusicTrack),
+            builder: (context, state) {
+              final track = state.extra as MusicTrack?;
+              if (track == null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (context.mounted) context.go('/music');
+                });
+                return const SizedBox.shrink();
+              }
+              return TrackDetailScreen(track);
+            },
           ),
           GoRoute(
             path: '/music/:pubkey',

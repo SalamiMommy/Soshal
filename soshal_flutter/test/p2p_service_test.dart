@@ -74,7 +74,7 @@ void main() {
       expect(p2p.browsing, isTrue);
 
       final found = await p2p.drainPeers();
-      expect(found.length, 60, reason: 'returns full drain');
+      expect(found.length, 50, reason: 'returns capped drain');
       expect(p2p.peers.length, 50, reason: 'store capped at 50');
       expect(p2p.peers.first.pubkey, 'pk-0');
       expect(p2p.peers.first.quicPort, isNull);

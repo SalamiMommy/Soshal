@@ -566,6 +566,12 @@ class _WidgetRenderer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final allTypes = context.read<ProfileService>().nodeTypes;
+    if (allTypes.isEmpty) {
+      return Text(
+        node.properties['title'] as String? ?? node.type,
+        style: Theme.of(context).textTheme.titleMedium,
+      );
+    }
     final typeInfo = allTypes.firstWhere(
       (t) => t.type == node.type,
       orElse: () => allTypes[0],
@@ -856,7 +862,9 @@ class _GuestbookWidgetState extends State<_GuestbookWidget> {
                             child: Text(
                               entry.name.isNotEmpty
                                   ? entry.name
-                                  : entry.pubkey.substring(0, 12),
+                                  : entry.pubkey.length < 12
+                                      ? entry.pubkey
+                                      : entry.pubkey.substring(0, 12),
                               style:
                                   const TextStyle(fontWeight: FontWeight.bold),
                             ),

@@ -107,14 +107,23 @@ void main() {
       expect(api.callCount('crateFfiPinPinHas'), 1);
     });
 
-    test('initialize swallows FFI errors and stays usable', () async {
+    test('initialize swallows FFI errors, stays usable and retries',
+        () async {
       final shell = ShellService();
       api.stub('crateFfiDbDbGetSetting', (_) => throw Exception('db down'));
 
       await shell.initialize();
 
-      expect(shell.initialized, isTrue);
+      // On load failure the flag stays false so a later call retries
+      // (avoids the PIN-lock state never being established on first try).
+      expect(shell.initialized, isFalse);
       expect(shell.items.length, ShellService.defaultItems.length);
+
+      // A subsequent successful load completes initialization.
+      api.stub('crateFfiDbDbGetSetting', (_) => null);
+      api.stubBool('crateFfiPinPinHas', false);
+      await shell.initialize();
+      expect(shell.initialized, isTrue);
     });
 
     test('unlock verifies PIN, unlocks and notifies', () async {

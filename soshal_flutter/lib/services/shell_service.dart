@@ -139,7 +139,6 @@ class ShellService extends ChangeNotifier {
   /// bridge is up and the user is authenticated.
   Future<void> initialize() async {
     if (_initialized) return;
-    _initialized = true;
     try {
       final saved = RustLib.instance.api.crateFfiDbDbGetSetting(
         key: _sidebarOrderKey,
@@ -175,6 +174,7 @@ class ShellService extends ChangeNotifier {
       if (_locked) {
         await refreshLockout(notify: false);
       }
+      _initialized = true;
       notifyListeners();
     } catch (e) {
       debugPrint('shell init: $e');
@@ -286,6 +286,7 @@ class ShellService extends ChangeNotifier {
         _lockAttempts = 0;
         _lockoutRemaining = 0;
         _unlockError = null;
+        _seenCalls.clear();
       } else {
         _unlockError = 'Wrong PIN';
         _locked = true;

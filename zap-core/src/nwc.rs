@@ -324,7 +324,7 @@ mod tests {
             format!("payment exceeds {}-sat NWC cap", NWC_MAX_PAY_SATS)
         );
         assert!(validate_pay_invoice("lnbc1").is_err());
-        assert!(validate_pay_invoice("lnbc1p").is_ok());
+        assert!(validate_pay_invoice("lnbc10p").is_ok());
         assert!(validate_pay_invoice("").is_err());
         assert!(validate_pay_invoice(&"x".repeat(5000)).is_err());
     }

@@ -493,8 +493,8 @@ class _EventsScreenState extends State<EventsScreen> {
                         onChanged: (v) {
                           _radiusKm = v;
                           setState(() {});
-                          _load();
                         },
+                        onChangeEnd: (_) => _load(),
                       ),
                     ),
                   ),

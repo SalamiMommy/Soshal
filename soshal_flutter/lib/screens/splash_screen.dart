@@ -78,12 +78,15 @@ class _SplashScreenState extends State<SplashScreen> {
               logRuntimeError('keyring unlock: $e', st);
             }
           }
-          if (signer.locked) {
-            if (mounted) {
-              context.go('/auth');
-            }
-            return;
+        }
+        // If the signer is still locked (a PIN user skips the keyring block,
+        // or keychain unlock failed), route through the auth/lock path first
+        // instead of falling through to /feed with no unlocked signing.
+        if (signer.locked) {
+          if (mounted) {
+            context.go('/auth');
           }
+          return;
         }
         // Start the Rust-side background relay sync (feed/messages ingest).
         final relays = sessionService.activeAccount?.relayList ?? <String>[];

@@ -49,12 +49,9 @@ class _LockScreenState extends State<LockScreen> {
     }
   }
 
-  void _pressDigit(ShellService shell, String d) {
-    if (_pin.text.length >= 6) return;
+  void _pressDigit(String d) {
+    if (_pin.text.length >= 12) return;
     _pin.text = _pin.text + d;
-    if (_pin.text.length == 6) {
-      _submit(shell);
-    }
   }
 
   @override
@@ -130,7 +127,7 @@ class _LockScreenState extends State<LockScreen> {
                 if (shell.lockoutRemaining <= 0 && !shell.permanentLocked) ...[
                   const SizedBox(height: 16),
                   _Keypad(
-                    onDigit: (d) => _pressDigit(shell, d),
+                    onDigit: _pressDigit,
                     onBackspace: () {
                       if (_pin.text.isNotEmpty) {
                         _pin.text =

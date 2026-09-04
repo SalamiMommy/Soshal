@@ -64,10 +64,11 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
   Future<void> _delete(BookmarkRow b) async {
     try {
-      await context.read<BookmarksService>().delete(b.id);
+      final removed = await context.read<BookmarksService>().delete(b.id);
+      if (!removed) return;
       _posts.remove(b.eventId);
+      await _load();
       if (mounted) {
-        setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text('Bookmark removed (${shortPubkey(b.eventId)})')),

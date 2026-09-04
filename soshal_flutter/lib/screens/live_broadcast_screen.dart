@@ -134,8 +134,8 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
     final last = _lastFrameAt;
     try {
       if (last != null && now.difference(last) < _frameInterval) return;
-      _lastFrameAt = now;
       if (!_broadcasting) return;
+      _lastFrameAt = now;
       final api = context.read<StreamingService>();
       final plane = image.planes.first;
       final width = image.width;

@@ -377,8 +377,10 @@ class StreamingService extends ChangeNotifier
       ),
     );
     _activeMoqStreamId = streamId;
-    // Reserve seq 0 for bootstrap: next media group uses 1, no collision.
-    _moqGroupCounter = 1;
+    if (_moqGroupCounter == 0) {
+      // Reserve seq 0 for bootstrap: next media group uses 1, no collision.
+      _moqGroupCounter = 1;
+    }
     notifyDeferred();
   }
 
@@ -461,6 +463,7 @@ class StreamingService extends ChangeNotifier
   }
 
   static Uint8List _hexToBytes(String hex) {
+    if (hex.length.isOdd) hex = '0$hex';
     final out = Uint8List(hex.length ~/ 2);
     for (var i = 0; i < out.length; i++) {
       out[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);

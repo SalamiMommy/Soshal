@@ -286,7 +286,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
         notifyListeners();
       }
       clearLastError();
-      return found;
+      return capped;
     } catch (e, st) {
       setLastError(e, st);
       notifyListeners();
@@ -323,7 +323,9 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
       _lastPowerSample = sample;
       _startPowerTimer();
     } catch (_) {
-      // Sampling can fail off-Android / on emulators; keep last state.
+      final backoff = _powerInterval.inSeconds * 2;
+      _powerInterval = Duration(seconds: backoff > 300 ? 300 : backoff);
+      _startPowerTimer();
     }
   }
 

@@ -29,11 +29,15 @@ class ThemeService extends ChangeNotifier {
     if (_loaded) return;
     try {
       final raw = RustLib.instance.api.crateFfiDbDbGetSetting(key: _optionsKey);
+      var bgLevelFromOptions = false;
       if (raw != null && raw.isNotEmpty) {
         try {
           final v = jsonDecode(raw) as Map<String, dynamic>;
           hue = (v['accentHue'] as num?)?.toDouble() ?? hue;
-          bgLevel = v['bgLevel'] as String? ?? bgLevel;
+          if (v.containsKey('bgLevel')) {
+            bgLevel = v['bgLevel'] as String? ?? bgLevel;
+            bgLevelFromOptions = true;
+          }
           customAccent = v['customAccent'] as String? ?? '';
           fontScale = (v['fontSizeScale'] as num?)?.toDouble() ?? 1.0;
           fontFamily = v['fontFamily'] as String? ?? 'default';
@@ -42,13 +46,16 @@ class ThemeService extends ChangeNotifier {
               v['backgroundImage'] as String? ?? defaultBackgroundImage;
         } catch (_) {}
       }
-      final theme = RustLib.instance.api.crateFfiDbDbGetSetting(key: _themeKey);
-      if (theme != null && theme.isNotEmpty) {
-        final t = theme.toLowerCase();
-        if (t == 'dark' || t == 'darker' || t == 'deepest') {
-          bgLevel = t;
-        } else if (t == 'light') {
-          bgLevel = 'light';
+      if (!bgLevelFromOptions) {
+        final theme =
+            RustLib.instance.api.crateFfiDbDbGetSetting(key: _themeKey);
+        if (theme != null && theme.isNotEmpty) {
+          final t = theme.toLowerCase();
+          if (t == 'dark' || t == 'darker' || t == 'deepest') {
+            bgLevel = t;
+          } else if (t == 'light') {
+            bgLevel = 'light';
+          }
         }
       }
     } catch (e) {

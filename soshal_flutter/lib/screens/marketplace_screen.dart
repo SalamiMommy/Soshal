@@ -1470,7 +1470,10 @@ class _PollSectionState extends State<_PollSection> {
   Future<void> _loadPoll(String pollId) async {
     final poll = await _api.pollGet(pollId);
     if (!mounted) return;
-    setState(() => _poll = poll);
+    setState(() {
+      _poll = poll;
+      _options = const [];
+    });
     if (poll != null && widget.myPubkey.isNotEmpty) {
       final voted = await _api.pollHasVoted(pollId, widget.myPubkey);
       if (mounted) setState(() => _hasVoted = voted);

@@ -55,9 +55,15 @@ class _RustNativeImageState extends State<RustNativeImage> {
   Future<void> _loadImage() async {
     final cacheKey = widget.filePathOrUrl;
     if (_imageCache.containsKey(cacheKey)) {
+      final cached = _imageCache[cacheKey];
       if (mounted) {
         setState(() {
-          _decodedImage = _imageCache[cacheKey];
+          if (_decodedImage != null &&
+              _decodedImage != cached &&
+              !_isFromCache) {
+            _decodedImage!.dispose();
+          }
+          _decodedImage = cached;
           _isFromCache = true;
           _isLoading = false;
           _hasError = false;
@@ -99,12 +105,20 @@ class _RustNativeImageState extends State<RustNativeImage> {
 
       if (_imageCache.length >= _maxCacheSize) {
         final oldestKey = _imageCache.keys.first;
-        _imageCache.remove(oldestKey);
+        final evicted = _imageCache.remove(oldestKey);
+        if (evicted != _decodedImage && evicted != null) {
+          evicted.dispose();
+        }
       }
       _imageCache[cacheKey] = frameInfo.image;
 
       if (mounted) {
         setState(() {
+          if (_decodedImage != null &&
+              _decodedImage != frameInfo.image &&
+              !_isFromCache) {
+            _decodedImage!.dispose();
+          }
           _decodedImage = frameInfo.image;
           _isFromCache = true;
           _isLoading = false;

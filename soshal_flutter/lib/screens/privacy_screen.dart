@@ -259,12 +259,25 @@ class _PinDialogState extends State<_PinDialog> {
       _confirmPin.clear();
       return;
     }
-    if (shell.hasPin) {
-      await shell.changePin(_current.text, _newPin.text);
-    } else {
-      await shell.setPin(_newPin.text);
+    try {
+      if (shell.hasPin) {
+        await shell.changePin(_current.text, _newPin.text);
+      } else {
+        await shell.setPin(_newPin.text);
+      }
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: SelectableText('PIN updated')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('PIN change failed: $e')),
+        );
+      }
     }
-    if (context.mounted) Navigator.of(context).pop();
   }
 
   @override

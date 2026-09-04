@@ -118,7 +118,24 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
     _renderTimer?.cancel();
     if (_sessionId == null || !mounted) return;
     final nodes = widget.nodes;
-    if (identical(nodes, _lastRenderedNodes)) {
+    final prev = _lastRenderedNodes;
+    bool same = false;
+    if (prev != null && prev.length == nodes.length) {
+      same = true;
+      for (var i = 0; i < nodes.length; i++) {
+        final a = prev[i];
+        final b = nodes[i];
+        if (a.id != b.id ||
+            a.x != b.x ||
+            a.y != b.y ||
+            a.z != b.z ||
+            a.latencyMs != b.latencyMs) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
       // No state change: idle backoff, then stop the loop entirely.
       _idleTicks++;
       if (_idleTicks >= 8) return;

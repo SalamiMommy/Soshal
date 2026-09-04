@@ -102,8 +102,8 @@ void main() {
       api.stub('crateFfiMinisMinisWasmExecuteFilter',
           (_) => throw Exception('wasm trap'));
       expect(
-        minis.runFilter(pluginId: 'f', text: 't', wasmBytesHex: '00'),
-        '',
+        () => minis.runFilter(pluginId: 'f', text: 't', wasmBytesHex: '00'),
+        throwsStateError,
       );
       expect(minis.lastError, contains('wasm trap'));
       expect(minis.wasmRuntimeUnavailable, isTrue);
@@ -111,12 +111,12 @@ void main() {
       api.stub('crateFfiMinisMinisWasmRankFeed',
           (_) => throw Exception('ranker down'));
       expect(
-        minis.rankFeed(
+        () => minis.rankFeed(
           pluginId: 'f',
           postsJson: const ['{"id":"a"}'],
           wasmBytesHex: '00',
         ),
-        isEmpty,
+        throwsStateError,
       );
       expect(minis.lastError, contains('ranker down'));
       expect(minis.wasmRuntimeUnavailable, isTrue);
@@ -126,7 +126,10 @@ void main() {
       final minis = MinisService();
       api.stub('crateFfiMinisMinisWasmExecuteFilter',
           (_) => throw Exception('trap'));
-      minis.runFilter(pluginId: 'f', text: 't', wasmBytesHex: '00');
+      expect(
+        () => minis.runFilter(pluginId: 'f', text: 't', wasmBytesHex: '00'),
+        throwsStateError,
+      );
       expect(minis.wasmRuntimeUnavailable, isTrue);
 
       api.stubString('crateFfiMinisMinisWasmExecuteFilter', 'CLEAN');

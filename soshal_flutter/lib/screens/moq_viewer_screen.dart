@@ -44,6 +44,12 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   ui.Image? _frameImage;
   int _frameOrd = 0;
   int _appliedOrd = -1;
+  /// Per-track watermark: group_sequence last processed for each track_id.
+  /// MoQ seq values span all tracks from one shared counter, so a single
+  /// global watermark would let a gap on one track suppress valid groups of
+  /// another (ahead audio would permanently skip lower video GOPs). Dedup is
+  /// therefore scoped per track.
+  final Map<int, int> _lastSeqByTrack = {};
   bool _h264DecodeReady = false;
   bool _h264Tried = false;
   bool _h264GotKeyframe = false;
@@ -87,12 +93,9 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
         var gotNewGroup = false;
         for (final group in groups) {
           final seq = (group['group_sequence'] as num?)?.toInt();
-          if (seq == null || (_lastSeq != null && seq <= _lastSeq!)) continue;
-          gotNewGroup = true;
-          // Advance regardless of decode outcome so undecodable groups are
-          // not refetched every window (decoder-not-ready / no frames).
-          _lastSeq = seq;
+          if (seq == null) continue;
           final objects = (group['objects'] as List<dynamic>? ?? const []);
+          var processedAny = false;
           for (final obj in objects) {
             final map = obj as Map<String, dynamic>?;
             final header = map?['header'] as Map<String, dynamic>?;
@@ -102,16 +105,24 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
             if (payload == null) continue;
             final bytes = Uint8List.fromList(payload.cast<int>());
             final trackId = (header?['track_id'] as num?)?.toInt() ?? 0;
+            // Dedup per track so a gap on one track never suppresses valid
+            // lower-seq groups of another. Advance regardless of decode
+            // outcome so undecodable groups are not refetched every window.
+            final lastForTrack = _lastSeqByTrack[trackId];
+            if (lastForTrack != null && seq <= lastForTrack) continue;
+            _lastSeqByTrack[trackId] = seq;
+            _lastSeq = seq;
+            processedAny = true;
             if (trackId == 1) {
               await _decodeH264(
                   seq, bytes, header?['track_type'] == 'VideoKeyframe');
             } else if (trackId == 2) {
               await _feedAac(seq, bytes);
             } else if (header?['track_type'] == 'VideoKeyframe') {
-              _lastSeq = seq;
               _showFrame(bytes);
             }
           }
+          if (processedAny) gotNewGroup = true;
         }
         if (!gotNewGroup) {
           await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -121,6 +132,13 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
         // Drop the subscription flag so the loop re-subscribes after a
         // dropped QUIC connection instead of error-looping forever.
         subscribed = false;
+        // Mid-GOP deltas and audio frames arriving without a fresh keyframe /
+        // config would decode to garbage after a reconnect — force the
+        // decoder to wait for the next keyframe/config and reset the
+        // per-track watermark.
+        _h264GotKeyframe = false;
+        _audioGotConfig = false;
+        _lastSeqByTrack.clear();
         await api.stopMoqStream();
         setState(() => _error = '$e');
         await Future<void>.delayed(const Duration(seconds: 1));

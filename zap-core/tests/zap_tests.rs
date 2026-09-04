@@ -109,7 +109,10 @@ fn bolt11_msat_parsing_units() {
     assert_eq!(parse_msats_from_bolt11("lnbc10n"), Ok(1000));
     assert_eq!(parse_msats_from_bolt11("LNBC123m"), Ok(123 * 100_000_000));
     assert_eq!(parse_msats_from_bolt11("lnbc1u"), Ok(100_000));
-    assert_eq!(parse_msats_from_bolt11("lnbc5p"), Ok(0));
+    assert_eq!(
+        parse_msats_from_bolt11("lnbc5p").unwrap_err(),
+        "BOLT-11 pico amount below msat resolution"
+    );
     assert_eq!(parse_msats_from_bolt11("lnbc1"), Ok(100_000_000_000));
     assert_eq!(bolt11_amount_sats("lnbc10n"), Some(1));
 }

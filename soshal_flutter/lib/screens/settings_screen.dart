@@ -117,8 +117,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       final pubkey = session.activePubkey;
                       if (pubkey != null) {
                         await session.updateRelays(pubkey, _relays);
+                        _publishRelayList();
                       }
-                      _publishRelayList();
                     },
                   ),
                 );

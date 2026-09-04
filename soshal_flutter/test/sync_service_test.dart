@@ -81,8 +81,8 @@ void main() {
         reposts: 0,
         liked: false,
       ));
-      controller.add('{"t":"reaction","event_id":"ev-2","pubkey":"pk-2",'
-          '"content":"+"}');
+      controller.add('{"t":"reaction","event_id":"ev-2","id":"r-1",'
+          '"pubkey":"pk-2","content":"+"}');
       controller.add('{"t":"profile","pubkey":"pk-1"}');
       controller.add('not json');
       await pumpEventQueue();

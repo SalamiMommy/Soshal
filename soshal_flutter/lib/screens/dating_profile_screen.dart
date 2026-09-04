@@ -320,14 +320,14 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
       final picked = await FilePicker.pickFile(type: FileType.image);
       final path = picked?.path;
       if (path == null || !mounted) return;
+      if (_imageHashes.length >= 9) {
+        throw Exception('Max 9 photos');
+      }
       setState(() => _uploadingImage = true);
       final manifest = await context.read<MediaService>().uploadMedia(path);
       final hash = manifest['blob_hash'] as String? ?? '';
       if (hash.length != 64) {
         throw Exception('Image upload failed (bad manifest)');
-      }
-      if (_imageHashes.length >= 9) {
-        throw Exception('Max 9 photos');
       }
       if (!mounted) return;
       setState(() => _imageHashes.add('n$hash'));
