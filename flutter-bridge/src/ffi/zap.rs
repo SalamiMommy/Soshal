@@ -138,6 +138,7 @@ pub fn zap_connect_nwc(nwc_uri: String) -> Result<bool, String> {
     }
     let info = soshal_zap_core::nwc::parse_nwc_uri(&nwc_uri)
         .map_err(|e| format!("invalid NWC URI: {e}"))?;
+    clear_pending_payment();
     *NWC.lock().unwrap_or_else(|e| e.into_inner()) = Some(info.into());
     *NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(ZeroizingString::new(nwc_uri));
     Ok(true).into()
@@ -346,6 +347,13 @@ mod tests {
 
     static NWC_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    #[cfg(test)]
+    fn set_pending_payment_for_test(bolt11: &str, msat: u64) {
+        if let Ok(mut g) = PENDING_PAYMENT.lock() {
+            *g = Some((bolt11.to_string(), msat));
+        }
+    }
+
     const NWC_PUBKEY: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
     const NWC_SECRET: &str = "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
 
@@ -532,5 +540,18 @@ mod tests {
         assert!(json.contains("\"amount_msat\":5000"), "json: {json}");
         let one = zap_fetch_receipts("ev1".to_string(), 1).unwrap();
         assert!(one.len() < json.len(), "limit ignored: {one}");
+    }
+
+    #[test]
+    fn test_connect_nwc_clears_stale_pending_payment() {
+        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = zap_disconnect_nwc();
+        assert!(zap_connect_nwc(NWC_URI.to_string()).unwrap());
+        set_pending_payment_for_test("lnbc1stale", 1000);
+        assert!(pending_payment().is_some());
+        // Reconnect with same URI should clear the stale pending payment.
+        assert!(zap_connect_nwc(NWC_URI.to_string()).unwrap());
+        assert!(pending_payment().is_none());
+        let _ = zap_disconnect_nwc();
     }
 }

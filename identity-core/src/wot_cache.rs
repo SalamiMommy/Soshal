@@ -21,7 +21,13 @@ impl WotCache {
     }
 
     pub fn get(&self, pubkey: &str) -> Option<TrustScore> {
-        let guard = self.entries.lock().ok()?;
+        let mut guard = self.entries.lock().ok()?;
+        if guard.0.contains_key(pubkey) {
+            if let Some(pos) = guard.1.iter().position(|k| k == pubkey) {
+                let k = guard.1.remove(pos).unwrap();
+                guard.1.push_back(k);
+            }
+        }
         guard.0.get(pubkey).copied()
     }
 
@@ -31,6 +37,10 @@ impl WotCache {
                 guard.0.entry(pubkey.clone())
             {
                 e.insert(score);
+                if let Some(pos) = guard.1.iter().position(|k| k == &pubkey) {
+                    let k = guard.1.remove(pos).unwrap();
+                    guard.1.push_back(k);
+                }
                 return;
             }
             while guard.0.len() >= self.capacity && self.capacity > 0 {
@@ -50,5 +60,50 @@ impl WotCache {
             guard.0.clear();
             guard.1.clear();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wot::TrustScore;
+
+    fn score(val: f64) -> TrustScore {
+        TrustScore {
+            score: val,
+            distance: 0,
+            mutual_count: 0,
+        }
+    }
+
+    #[test]
+    fn lru_get_refreshes_recency() {
+        let cache = WotCache::new(3);
+        cache.insert("A".into(), score(1.0));
+        cache.insert("B".into(), score(2.0));
+        cache.insert("C".into(), score(3.0));
+
+        // touch A so it becomes most-recent
+        assert!(cache.get("A").is_some());
+
+        // D should evict B (the true LRU), not A
+        cache.insert("D".into(), score(4.0));
+        assert!(cache.get("B").is_none());
+        assert!(cache.get("A").is_some());
+    }
+
+    #[test]
+    fn lru_reinsert_refreshes_recency() {
+        let cache = WotCache::new(3);
+        cache.insert("A".into(), score(1.0));
+        cache.insert("B".into(), score(2.0));
+        cache.insert("C".into(), score(3.0));
+
+        // re-insert A (same key) refreshes its position
+        cache.insert("A".into(), score(10.0));
+
+        cache.insert("D".into(), score(4.0));
+        assert!(cache.get("B").is_none());
+        assert!(cache.get("A").is_some());
     }
 }

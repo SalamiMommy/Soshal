@@ -829,54 +829,79 @@ pub fn groups_set_password(
     })
 }
 
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+
+static ATTEMPTS: LazyLock<Mutex<HashMap<String, (u32, i64)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+const MAX_ATTEMPTS: u32 = 5;
+const WINDOW_SECS: i64 = 30;
+
 /// Test whether candidate password matches the group's password hash.
 /// Rate-limited per group (5 attempts / 30 s) so the FFI surface cannot be
 /// used as an offline-style guess oracle.
 #[frb(sync, serialize)]
 pub fn groups_verify_password(group_id: String, password: String) -> Result<bool, String> {
-    use std::collections::HashMap;
-    use std::sync::{LazyLock, Mutex};
-    static ATTEMPTS: LazyLock<Mutex<HashMap<String, (u32, i64)>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
-    const MAX_ATTEMPTS: u32 = 5;
-    const WINDOW_SECS: i64 = 30;
-
     let now = soshal_common_core::format::now_secs();
-    let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
-    let entry = attempts.entry(group_id.clone()).or_insert((0, now));
-    if entry.1 + WINDOW_SECS < now {
-        *entry = (0, now);
-    }
-    if entry.0 >= MAX_ATTEMPTS {
-        return Err(format!(
-            "too many password attempts for this group; retry in {}s",
-            entry.1 + WINDOW_SECS - now
-        ));
-    }
-    entry.0 += 1;
-    drop(attempts);
 
-    super::db::with_db_result(|db| {
+    // Phase 1: Check lockout window (no counter increment yet).
+    {
+        let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+        let entry = attempts.entry(group_id.clone()).or_insert((0, now));
+        if entry.1 + WINDOW_SECS <= now {
+            *entry = (0, now);
+        }
+        if entry.0 >= MAX_ATTEMPTS {
+            return Err(format!(
+                "too many password attempts for this group; retry in {}s",
+                entry.1 + WINDOW_SECS - now
+            ));
+        }
+    }
+
+    // Phase 2: Look up group + password hash. Missing groups and
+    // passwordless groups return an error WITHOUT burning an attempt.
+    let stored = super::db::with_db_result(|db| {
         let repo = GroupRepo::new(db);
         let group = repo
             .get_by_id(&group_id)?
             .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
-        let stored = match group.password_hash.as_deref() {
-            Some(h) if !h.is_empty() => h,
-            _ => {
-                // No password on record: mirror groups_join(), which refuses
-                // to "verify" an unset password instead of admitting anything.
-                return Err(soshal_db_core::error::DbError::Oversized(
-                    "group has no password set; cannot verify access".to_string(),
-                ))
-                .into();
-            }
-        };
-        Ok(soshal_groups_core::access::verify_community_password(
-            password.trim(),
-            stored,
-        ))
-    })
+        match group.password_hash.as_deref() {
+            Some(h) if !h.is_empty() => Ok(h.to_string()),
+            _ => Err(soshal_db_core::error::DbError::Oversized(
+                "group has no password set; cannot verify access".to_string(),
+            )),
+        }
+    })?;
+
+    // Phase 3: Increment counter only for a real, verifiable attempt.
+    {
+        let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+        let entry = attempts.entry(group_id.clone()).or_insert((0, now));
+        if entry.1 + WINDOW_SECS <= now {
+            *entry = (0, now);
+        }
+        if entry.0 >= MAX_ATTEMPTS {
+            return Err(format!(
+                "too many password attempts for this group; retry in {}s",
+                entry.1 + WINDOW_SECS - now
+            ));
+        }
+        entry.0 += 1;
+    }
+
+    // Phase 4: Verify password.
+    let ok = soshal_groups_core::access::verify_community_password(password.trim(), &stored);
+
+    // Phase 5: Successful verify resets the counter.
+    if ok {
+        let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = attempts.get_mut(&group_id) {
+            entry.0 = 0;
+        }
+    }
+
+    Ok(ok)
 }
 
 #[cfg(test)]
@@ -1584,5 +1609,122 @@ mod tests {
         let info3: serde_json::Value =
             serde_json::from_str(&groups_get_group_info("pub_grp".to_string()).unwrap()).unwrap();
         assert_eq!(info3["is_private"], false);
+    }
+
+    /// Helper to reset the ATTEMPTS static for a specific group between tests.
+    fn reset_attempts_for(group_id: &str) {
+        if let Ok(mut m) = ATTEMPTS.lock() {
+            m.remove(group_id);
+        }
+    }
+
+    #[test]
+    fn test_verify_passwordless_group_does_not_burn_attempts() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("verify_no_pwd");
+        let owner = "a".repeat(64);
+        create_group("npwd", &owner);
+        reset_attempts_for("npwd");
+
+        // Verify on a passwordless group fails but does NOT burn attempts.
+        let err = groups_verify_password("npwd".to_string(), "anything".to_string()).unwrap_err();
+        assert!(err.contains("no password set"), "err: {err}");
+
+        // 5 more calls should still not lock out — counter was never incremented.
+        for _ in 0..5 {
+            let e = groups_verify_password("npwd".to_string(), "x".to_string()).unwrap_err();
+            assert!(e.contains("no password set"), "err: {e}");
+        }
+        // Verify no lockout error appeared (would contain "too many").
+        let final_err = groups_verify_password("npwd".to_string(), "x".to_string()).unwrap_err();
+        assert!(
+            final_err.contains("no password set"),
+            "unexpected lockout: {final_err}"
+        );
+    }
+
+    #[test]
+    fn test_verify_success_resets_counter() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("verify_success_reset");
+        let owner = "a".repeat(64);
+        insert_user(&owner);
+        groups_create(
+            "pwdok".to_string(),
+            "G".to_string(),
+            String::new(),
+            String::new(),
+            owner,
+            true,
+            Some("Secret123".to_string()),
+        )
+        .unwrap();
+        reset_attempts_for("pwdok");
+
+        // 4 wrong attempts (out of 5 max).
+        for _ in 0..4 {
+            assert!(!groups_verify_password("pwdok".to_string(), "wrong".to_string()).unwrap());
+        }
+        // Correct password succeeds and resets counter.
+        assert!(groups_verify_password("pwdok".to_string(), "Secret123".to_string()).unwrap());
+        // Can do another 4 wrong attempts without lockout (counter reset to 0).
+        for _ in 0..4 {
+            assert!(!groups_verify_password("pwdok".to_string(), "bad".to_string()).unwrap());
+        }
+        // Still not locked out.
+        let r = groups_verify_password("pwdok".to_string(), "nope".to_string());
+        assert!(!r.unwrap(), "should be wrong pw, not locked out");
+    }
+
+    #[test]
+    fn test_verify_boundary_window_reset() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("verify_boundary");
+        let owner = "a".repeat(64);
+        insert_user(&owner);
+        groups_create(
+            "bndry".to_string(),
+            "G".to_string(),
+            String::new(),
+            String::new(),
+            owner,
+            true,
+            Some("Pass1234".to_string()),
+        )
+        .unwrap();
+        reset_attempts_for("bndry");
+
+        // Exhaust all 5 attempts with wrong passwords.
+        for _ in 0..5 {
+            assert!(!groups_verify_password("bndry".to_string(), "wrong".to_string()).unwrap());
+        }
+        // Now locked out.
+        let locked_err =
+            groups_verify_password("bndry".to_string(), "wrong".to_string()).unwrap_err();
+        assert!(locked_err.contains("too many"), "err: {locked_err}");
+
+        // Manually set the window start to exactly WINDOW_SECS ago.
+        let now = soshal_common_core::format::now_secs();
+        {
+            let mut m = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(entry) = m.get_mut("bndry") {
+                // Set timestamp so that entry.1 + WINDOW_SECS == now (exact boundary).
+                entry.1 = now - WINDOW_SECS;
+            }
+        }
+        // The <= check should now reset the window at the exact boundary.
+        // Should return Ok (no lockout), even though the password is wrong.
+        let r = groups_verify_password("bndry".to_string(), "wrong".to_string());
+        assert!(
+            r.is_ok(),
+            "window should have reset at exact boundary, got: {r:?}"
+        );
+        assert!(!r.unwrap(), "password is wrong as expected");
     }
 }

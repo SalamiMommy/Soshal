@@ -178,9 +178,9 @@ pub fn db_expected_schema_version() -> i64 {
     soshal_db_core::schema::SCHEMA_VERSION
 }
 
-/// Force re-run all migrations from scratch. This deletes the _migrations table
-/// and re-runs the full migration sequence. Use with caution - it may fail if
-/// schema changes are not backwards compatible.
+/// Repair a stale/out-of-date schema: wipe all tables and re-run migrations
+/// from scratch.  Refuses to operate when the DB is already at or ahead of the
+/// current `SCHEMA_VERSION` — fresh or current DBs must not be touched.
 #[frb(sync, serialize)]
 pub fn db_force_migrate() -> Result<String, String> {
     with_db(|db| {

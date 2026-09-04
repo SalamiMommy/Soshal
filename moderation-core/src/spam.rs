@@ -149,7 +149,7 @@ fn compute_link_density(text: &str) -> f32 {
             || word.starts_with("t.me/")
             || word.starts_with("wa.me/")
         {
-            url_chars += word.len();
+            url_chars += word.chars().count();
         }
     }
 
@@ -337,5 +337,19 @@ mod tests {
             "Hello everyone! Just deployed the new Nostr relay on my home server. Works great!";
         let v = check_spam(text);
         assert!(!v.is_spam);
+    }
+
+    #[test]
+    fn test_link_density_codepoint_not_byte() {
+        // "ñ" is 2 bytes but 1 codepoint.  URL "https://example.com" = 19 codepoints.
+        // Total non-whitespace: 2 (ññ) + 2 (is) + 1 (a) + 4 (test) + 19 (url) = 28 codepoints.
+        // Link density = 19/28 ≈ 0.6786, below the 0.85 spam threshold.
+        let text = "ññ is a test https://example.com";
+        let d = compute_link_density(text);
+        assert!(
+            (d - 19.0 / 28.0).abs() < f32::EPSILON,
+            "expected ~0.6786, got {d}"
+        );
+        assert!(d < 0.85, "multi-byte post wrongly flagged: density {d}");
     }
 }

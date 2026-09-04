@@ -436,6 +436,14 @@ pub fn p2p_swarm_download(
         serde_json::from_str(&peers_json).map_err(|e| format!("bad peers: {e}"))?;
     let quic_ports: Vec<Option<u16>> =
         serde_json::from_str(&quic_ports_json).map_err(|e| format!("bad quic_ports: {e}"))?;
+    if quic_ports.len() != peers.len() {
+        return Err(format!(
+            "quic_ports length {} does not match peers length {}",
+            quic_ports.len(),
+            peers.len()
+        ))
+        .into();
+    }
     let mut addrs: Vec<SocketAddr> = Vec::with_capacity(peers.len());
     for p in &peers {
         let addr: SocketAddr = p.parse().map_err(|e| format!("bad peer {p}: {e}"))?;
@@ -726,6 +734,16 @@ mod tests {
         )
         .unwrap_err();
         assert!(e.contains("refusing non-private peer"), "got {e}");
+        let e = super::p2p_swarm_download(
+            valid_manifest_json(),
+            "[]".to_string(),
+            "[null]".to_string(),
+            String::new(),
+            1,
+        )
+        .unwrap_err();
+        assert!(e.contains("quic_ports length"), "got {e}");
+        assert!(e.contains("does not match peers length"), "got {e}");
     }
 
     #[tokio::test]

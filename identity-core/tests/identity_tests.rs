@@ -379,10 +379,10 @@ fn wot_cache_lru_and_clear() {
     cache.insert("p2".into(), s2);
     assert_eq!(cache.get("p1").unwrap().score, 0.8);
 
-    // Evicts oldest (p1)
+    // Evicts least-recently-used (p2); p1 was refreshed by get above
     cache.insert("p3".into(), s3);
-    assert!(cache.get("p1").is_none());
-    assert_eq!(cache.get("p2").unwrap().score, 0.4);
+    assert_eq!(cache.get("p1").unwrap().score, 0.8);
+    assert!(cache.get("p2").is_none());
     assert_eq!(cache.get("p3").unwrap().score, 0.1);
 
     cache.clear();

@@ -947,6 +947,7 @@ class GroupVoiceTab extends StatefulWidget {
 class _GroupVoiceTabState extends State<GroupVoiceTab>
     with AutomaticKeepAliveClientMixin {
   final Map<String, List<GroupVoicePresence>> _presence = {};
+  bool _presenceAttempted = false;
   final _name = TextEditingController();
 
   @override
@@ -1084,7 +1085,8 @@ class _GroupVoiceTabState extends State<GroupVoiceTab>
     final me = context.read<SessionService>().activePubkey;
     final g = api.current;
     final isOwner = g != null && g.owner == me;
-    if (_presence.isEmpty && api.voiceChannels.isNotEmpty) {
+    if (!_presenceAttempted && api.voiceChannels.isNotEmpty) {
+      _presenceAttempted = true;
       _loadPresence(api);
     }
     return Column(

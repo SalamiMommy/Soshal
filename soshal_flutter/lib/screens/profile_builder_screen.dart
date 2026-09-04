@@ -356,6 +356,7 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
                             key: ValueKey(node.id),
                             node: node,
                             typeInfo: typeInfo,
+                            index: index,
                             onTap: () => _handleEditWidget(node),
                             onDelete: _handleDeleteWidget,
                           );
@@ -375,6 +376,7 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
 class _WidgetListItem extends StatelessWidget {
   final CustomProfileNode node;
   final NodeTypeInfo typeInfo;
+  final int index;
   final Function(String) onDelete;
   final VoidCallback onTap;
 
@@ -382,6 +384,7 @@ class _WidgetListItem extends StatelessWidget {
     super.key,
     required this.node,
     required this.typeInfo,
+    required this.index,
     required this.onDelete,
     required this.onTap,
   });
@@ -398,7 +401,7 @@ class _WidgetListItem extends StatelessWidget {
         onTap: onTap,
         child: ListTile(
           leading: ReorderableDragStartListener(
-            index: 0,
+            index: index,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(

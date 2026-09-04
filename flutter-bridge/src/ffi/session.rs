@@ -207,11 +207,15 @@ pub fn session_list_accounts() -> Result<String, String> {
 
 /// Register (or clear, when empty) the push token for the active account.
 /// Persists to session.json via the current DB path.
+///
+/// Save-first: the in-memory session is only updated after a successful disk
+/// write.  If `session_save` fails the caller receives the error and the
+/// in-memory state is unchanged.
 #[frb(sync, serialize)]
 pub fn session_register_push_token(token: String) -> Result<bool, String> {
-    let mut session_lock = lock_session()?;
+    let session_lock = lock_session()?;
     let session = session_lock
-        .as_mut()
+        .as_ref()
         .ok_or_else(|| "Session not loaded".to_string())?;
     let active = session
         .active_pubkey
@@ -219,21 +223,29 @@ pub fn session_register_push_token(token: String) -> Result<bool, String> {
         .ok_or_else(|| "No active account".to_string())?;
     let account = session
         .accounts
-        .iter_mut()
+        .iter()
         .find(|a| a.pubkey == active)
         .ok_or_else(|| "Active account not found".to_string())?;
     if account.push_token.as_deref() == Some(token.as_str()) {
         return Ok(true).into();
     }
-    account.push_token = if token.is_empty() { None } else { Some(token) };
-    match super::db::db_path() {
-        Ok(db_path) => {
-            let data = session.clone();
-            drop(session_lock);
-            session_save(db_path, serde_json::to_string(&data).unwrap_or_default())
-        }
-        Err(e) => Err(format!("DB not initialized: {e}")).into(),
+    let new_token = if token.is_empty() { None } else { Some(token) };
+    // Build a clone with the new token applied for the on-disk write.
+    let mut data = session.clone();
+    if let Some(acc) = data.accounts.iter_mut().find(|a| a.pubkey == active) {
+        acc.push_token = new_token.clone();
     }
+    let db_path = super::db::db_path()?;
+    drop(session_lock);
+    session_save(db_path, serde_json::to_string(&data).unwrap_or_default())?;
+    // Save succeeded — commit to in-memory state.
+    let mut session_lock = lock_session()?;
+    if let Some(session) = session_lock.as_mut() {
+        if let Some(acc) = session.accounts.iter_mut().find(|a| a.pubkey == active) {
+            acc.push_token = new_token;
+        }
+    }
+    Ok(true).into()
 }
 
 #[cfg(test)]

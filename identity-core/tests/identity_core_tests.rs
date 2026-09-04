@@ -703,14 +703,14 @@ fn wot_cache_get_insert_clear() {
 }
 
 #[test]
-fn wot_cache_update_does_not_refresh_recency() {
+fn wot_cache_update_refreshes_recency() {
     let cache = WotCache::new(2);
     cache.insert("a".into(), ts(0.1));
     cache.insert("b".into(), ts(0.2));
-    cache.insert("a".into(), ts(0.9)); // update; recency NOT refreshed (early return)
-    cache.insert("c".into(), ts(0.3)); // evicts oldest ("a")
-    assert_eq!(cache.get("a"), None);
-    assert_eq!(cache.get("b").unwrap().score, 0.2);
+    cache.insert("a".into(), ts(0.9)); // update refreshes recency (true LRU)
+    cache.insert("c".into(), ts(0.3)); // evicts least-recently-used ("b")
+    assert_eq!(cache.get("a").unwrap().score, 0.9);
+    assert_eq!(cache.get("b"), None);
     assert_eq!(cache.get("c").unwrap().score, 0.3);
 }
 
