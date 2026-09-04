@@ -22,6 +22,18 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
   List<String> get trendingHashtagsList => _trendingHashtags;
   List<Map<String, dynamic>> get dbTrendingHashtagsList => _dbTrendingHashtags;
 
+  /// Clear all account-scoped search state on account switch so Account B
+  /// never sees Account A's cached results.
+  void resetForAccountSwitch() {
+    _results = [];
+    _trendingProfiles = [];
+    _hashtags = [];
+    _trendingHashtags = [];
+    _dbTrendingHashtags = [];
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Search posts (returns post rows as raw JSON).
   Future<List<SearchResultItem>> searchPosts(String query,
       {int limit = 50}) async {

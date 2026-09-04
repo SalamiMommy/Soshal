@@ -29,6 +29,19 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
   /// Notifications for a category tab (mention/like/reply/message/follow).
   List<AppNotification> byType(String type) => _byType[type] ?? const [];
 
+  /// Clear all account-scoped state on account switch so Account B never sees
+  /// Account A's cached notifications.
+  void resetForAccountSwitch() {
+    _notifications = [];
+    _unread = [];
+    _byType.clear();
+    _byTypeFetchedAt.clear();
+    _unreadCount = 0;
+    _isLoading = false;
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Fetch recent notifications (all types).
   Future<List<AppNotification>> fetchNotifications(String pubkey,
       {int limit = 50}) async {

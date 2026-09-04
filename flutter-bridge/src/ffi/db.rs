@@ -123,10 +123,13 @@ pub fn db_init(db_path: String) -> Result<String, String> {
     if let Err(e) = db.migrate() {
         return Err(format!("migration failed: {e}")).into();
     }
-    // Clean up old DB instance and its temp files if any
+    // Clean up old DB instance and its temp files if any. Do the entire swap
+    // (path + DB) under a single lock acquisition so concurrent `with_db()`
+    // callers never observe a "database not initialized" transient window.
+    let mut db_guard = DB.lock().unwrap_or_else(|e| e.into_inner());
+    let _old_db = db_guard.take();
     let old_path = DB_PATH.lock().unwrap_or_else(|e| e.into_inner()).take();
-    let old_db = DB.lock().unwrap_or_else(|e| e.into_inner()).take();
-    drop(old_db);
+    drop(db_guard);
     if let Some(ref p) = old_path {
         if old_path.as_deref() != Some(&db_path) {
             let temp = std::env::temp_dir().to_string_lossy().to_string();
@@ -142,6 +145,7 @@ pub fn db_init(db_path: String) -> Result<String, String> {
             }
         }
     }
+    // Set new path + DB under fresh locks (single-point, non-interleaved).
     *DB_PATH.lock().unwrap_or_else(|e| e.into_inner()) = Some(db_path.clone());
     *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
     Ok(db_path).into()

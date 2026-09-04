@@ -140,7 +140,12 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       notifyDeferred();
       return _ownProfile!;
     } catch (e, st) {
-      setLastError(e, st);
+      // "No dating profile yet" is the legitimate pre-profile empty state,
+      // not an error: don't spam the SVC ERROR surface while onboarding
+      // screens poll it.
+      if (!'$e'.contains('No dating profile yet')) {
+        setLastError(e, st);
+      }
       _ownProfile = null;
       notifyDeferred();
       rethrow;

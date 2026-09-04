@@ -148,6 +148,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
         _audioGotConfig = false;
         _lastSeqByTrack.clear();
         await api.stopMoqStream();
+        if (!mounted) return;
         setState(() => _error = '$e');
         await Future<void>.delayed(const Duration(seconds: 1));
       }
@@ -232,6 +233,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
     _running = false;
     _streamingService?.stopMoqStream();
     _frameImage?.dispose();
+    _chatInput.dispose();
     H264Codec.release();
     AudioCodec.release();
     super.dispose();

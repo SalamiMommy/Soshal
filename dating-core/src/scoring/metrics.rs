@@ -62,7 +62,17 @@ pub fn score_body_type(self_type: Option<&str>, other_type: Option<&str>) -> f64
                 "muscular" => &muscular[..],
                 _ => &[][..],
             };
-            if similar.contains(&o) {
+            let reverse = match o {
+                "slim" => &slim[..],
+                "athletic" => &athletic[..],
+                "average" => &average[..],
+                "curvy" => &curvy[..],
+                "muscular" => &muscular[..],
+                _ => &[][..],
+            };
+            // Symmetric: scores must not depend on caller order. Two body
+            // types are "similar" if either adjacency list says so.
+            if similar.contains(&o) || reverse.contains(&s) {
                 0.5
             } else {
                 0.0

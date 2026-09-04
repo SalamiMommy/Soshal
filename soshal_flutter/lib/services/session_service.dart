@@ -5,7 +5,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import 'feed_service.dart';
 import 'ffi_bridge.dart';
+import 'messaging_service.dart';
+import 'notifications_service.dart';
+import 'search_service.dart';
 import 'sync_service.dart';
 
 /// Session Service
@@ -20,6 +24,39 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
   /// the old engine before the new account takes over so its events don't
   /// route into the switched account's feed/DM surfaces.
   void attachSync(SyncService sync) => _sync = sync;
+
+  FeedService? _feed;
+  MessagingService? _messaging;
+  NotificationService? _notifications;
+  SearchService? _search;
+
+  /// Attach the account-scoped services (wired from main.dart) so an account
+  /// switch can clear their caches before the new account's data arrives.
+  void attachAccountScopedServices({
+    required FeedService feed,
+    required MessagingService messaging,
+    required NotificationService notifications,
+    required SearchService search,
+  }) {
+    _feed = feed;
+    _messaging = messaging;
+    _notifications = notifications;
+    _search = search;
+  }
+
+  void _resetAccountScopedServices() {
+    _feed?.resetForAccountSwitch();
+    _messaging?.resetForAccountSwitch();
+    _notifications?.resetForAccountSwitch();
+    _search?.resetForAccountSwitch();
+  }
+
+  void reset() {
+    _feed?.resetForAccountSwitch();
+    _messaging?.resetForAccountSwitch();
+    _notifications?.resetForAccountSwitch();
+    _search?.resetForAccountSwitch();
+  }
 
   SessionData? get session => _session;
   String? get activePubkey => _activePubkey;
@@ -181,6 +218,11 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
         activePubkey: pubkey,
         accounts: _session!.accounts,
       );
+
+      // Clear every account-scoped service cache BEFORE the new account's
+      // sync engine starts, so Account B never renders Account A's posts,
+      // DMs, notifications, or search results during the switch gap.
+      _resetAccountScopedServices();
 
       // Restart the sync engine for the newly selected account. The earlier
       // stop() killed the old account's ingest; without this restart the

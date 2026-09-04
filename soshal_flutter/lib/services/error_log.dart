@@ -30,6 +30,17 @@ Future<void> logRuntimeError(Object error, [StackTrace? stack]) async {
     final dir = await getApplicationDocumentsDirectory();
     await dir.create(recursive: true);
     final file = File('${dir.path}/soshal-error.log');
+    // Restrict the log file to owner-only on POSIX so sensitive paths/stack
+    // frames aren't world-readable on shared/Android devices. Best-effort:
+    // on platforms without `sh` this throws and is swallowed.
+    try {
+      await Process.run('sh', [
+        '-c',
+        r'chmod 600 "$1"',
+        'sh',
+        file.path,
+      ]);
+    } catch (_) {}
     await file.writeAsString(buffer.toString(), mode: FileMode.append);
   } catch (e) { debugPrint('error log write: $e'); }
 }

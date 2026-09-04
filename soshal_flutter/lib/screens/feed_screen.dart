@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'dart:convert';
 import 'dart:io';
 import 'package:video_player/video_player.dart';
+import 'package:media_kit/media_kit.dart' as mk;
+import 'package:media_kit_video/media_kit_video.dart';
 import '../services/permissions_service.dart';
 import '../services/bookmarks_service.dart';
 import '../services/feed_service.dart';
@@ -669,7 +671,10 @@ class _FeedPostCardState extends State<FeedPostCard> {
           ],
         ),
       );
-      if (ok != true || !mounted) return;
+      if (ok != true || !mounted) {
+        uri.dispose();
+        return;
+      }
       try {
         await zap.connect(uri.text.trim());
       } catch (e) {
@@ -677,8 +682,10 @@ class _FeedPostCardState extends State<FeedPostCard> {
           ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: SelectableText('Connect failed: $e')));
         }
+        uri.dispose();
         return;
       }
+      uri.dispose();
     }
     await zap.fetchReceipts(widget.post.eventId);
     await zap.fetchTotalMsat(widget.post.eventId);
@@ -788,7 +795,10 @@ class _FeedPostCardState extends State<FeedPostCard> {
           ],
         ),
       ),
-    );
+    ).then((_) {
+      lnurl.dispose();
+      amount.dispose();
+    });
   }
 
   Future<void> _sendZap(
@@ -1026,9 +1036,9 @@ class _FeedPostCardState extends State<FeedPostCard> {
         ],
       ),
     );
-    reason.dispose();
-    if (ok != true || !mounted) return;
+    if (ok != true || !mounted) { reason.dispose(); return; }
     final text = reason.text.trim();
+    reason.dispose();
     if (text.isEmpty) {
       _snack('Reason required');
       return;
@@ -1242,9 +1252,13 @@ class _VideoPlayerWidget extends StatefulWidget {
 
 class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
   VideoPlayerController? _controller;
+  VideoController? _linuxController;
   bool _isInitialized = false;
   String? _error;
   bool _started = false;
+
+  static bool get _playbackSupported =>
+      PermissionsService.isAndroid || PermissionsService.isLinux;
 
   @override
   void initState() {
@@ -1262,6 +1276,11 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         oldWidget.visible &&
         _controller != null) {
       _controller!.pause();
+    } else if (_isInitialized &&
+        !widget.visible &&
+        oldWidget.visible &&
+        _linuxController != null) {
+      _linuxController!.player.pause();
     }
   }
 
@@ -1274,12 +1293,13 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
   /// Resolve the playback URL: if the post references a CAS blob and the
   /// remote URL isn't this device's own server, fetch the blob (local store
   /// first, then a LAN crawl of discovered peers) and play from the local
-  /// range server. Honest failure: no peers / no local copy = error UI.
+  /// range server. Android uses video_player; Linux uses media_kit (mpv).
+  /// Honest failure: no peers / no local copy = error UI.
   Future<void> _prepare() async {
-    if (!PermissionsService.isAndroid) {
+    if (!_playbackSupported) {
       if (mounted) {
         setState(() => _error = 'Video playback is not supported on this '
-            'platform (video_player has no Linux implementation yet).');
+            'platform.');
       }
       return;
     }
@@ -1301,20 +1321,34 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       }
       return;
     }
-    final controller = VideoPlayerController.networkUrl(Uri.parse(url));
-    _controller = controller;
-    try {
-      await controller.initialize();
-      if (mounted) setState(() => _isInitialized = true);
-    } catch (e) {
-      controller.dispose();
-      if (mounted) setState(() => _error = '$e');
+    if (PermissionsService.isAndroid) {
+      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      _controller = controller;
+      try {
+        await controller.initialize();
+        if (mounted) setState(() => _isInitialized = true);
+      } catch (e) {
+        controller.dispose();
+        if (mounted) setState(() => _error = '$e');
+      }
+    } else {
+      final player = mk.Player();
+      final controller = VideoController(player);
+      _linuxController = controller;
+      try {
+        await player.open(mk.Media(url), play: widget.visible);
+        if (mounted) setState(() => _isInitialized = true);
+      } catch (e) {
+        player.dispose();
+        if (mounted) setState(() => _error = '$e');
+      }
     }
   }
 
   @override
   void dispose() {
     _controller?.dispose();
+    _linuxController?.player.dispose();
     super.dispose();
   }
 
@@ -1332,7 +1366,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         ),
       );
     }
-    if (!_isInitialized || _controller == null) {
+    if (!_isInitialized || (_controller == null && _linuxController == null)) {
       if (!_started && widget.visible) _start();
       return Container(
         height: 200,
@@ -1344,6 +1378,47 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         ),
       );
     }
+
+    if (_linuxController != null) {
+      final controller = _linuxController!;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Video(controller: controller, fit: BoxFit.contain),
+              Positioned(
+                right: 8,
+                bottom: 8,
+                child: StreamBuilder<bool>(
+                  stream: controller.player.stream.playing,
+                  initialData: controller.player.state.playing,
+                  builder: (context, snapshot) {
+                    final isPlaying = snapshot.data ?? false;
+                    return IconButton(
+                      icon: Icon(
+                        isPlaying ? Icons.pause : Icons.play_arrow,
+                        color: Colors.white,
+                      ),
+                      onPressed: () {
+                        if (isPlaying) {
+                          controller.player.pause();
+                        } else {
+                          controller.player.play();
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final controller = _controller!;
 
     return ClipRRect(

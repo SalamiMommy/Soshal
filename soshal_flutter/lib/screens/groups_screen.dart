@@ -21,69 +21,88 @@ class GroupsScreen extends StatefulWidget {
 }
 
 Future<String?> showCommunityPasswordDialog(
-    BuildContext context, String groupName) async {
-  final controller = TextEditingController();
-  var obscure = true;
+    BuildContext context, String groupName) {
   return showDialog<String>(
     context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setDialogState) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.lock_outline, color: Colors.amber, size: 24),
-            const SizedBox(width: 8),
-            const Flexible(child: Text('Private Community')),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Enter the password to join "$groupName":',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              obscureText: obscure,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: 'Password',
-                prefixIcon: const Icon(Icons.key_outlined),
-                suffixIcon: IconButton(
-                  icon: Icon(obscure
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined),
-                  onPressed: () => setDialogState(() => obscure = !obscure),
-                ),
-              ),
-              onSubmitted: (val) {
-                if (val.trim().isNotEmpty) {
-                  Navigator.pop(context, val.trim());
-                }
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, null),
-            child: const Text('Cancel'),
+    builder: (_) => _PasswordDialog(groupName: groupName),
+  );
+}
+
+class _PasswordDialog extends StatefulWidget {
+  const _PasswordDialog({required this.groupName});
+
+  final String groupName;
+
+  @override
+  State<_PasswordDialog> createState() => _PasswordDialogState();
+}
+
+class _PasswordDialogState extends State<_PasswordDialog> {
+  final _controller = TextEditingController();
+  var _obscure = true;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit([String? val]) {
+    final pwd = (val ?? _controller.text).trim();
+    if (pwd.isNotEmpty) {
+      Navigator.of(context).pop(pwd);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          const Icon(Icons.lock_outline, color: Colors.amber, size: 24),
+          const SizedBox(width: 8),
+          const Flexible(child: Text('Private Community')),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Enter the password to join "${widget.groupName}":',
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
-          FilledButton(
-            onPressed: () {
-              final pwd = controller.text.trim();
-              if (pwd.isNotEmpty) {
-                Navigator.pop(context, pwd);
-              }
-            },
-            child: const Text('Join'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            obscureText: _obscure,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: 'Password',
+              prefixIcon: const Icon(Icons.key_outlined),
+              suffixIcon: IconButton(
+                icon: Icon(_obscure
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+            onSubmitted: _submit,
           ),
         ],
       ),
-    ),
-  );
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => _submit(),
+          child: const Text('Join'),
+        ),
+      ],
+    );
+  }
 }
 
 class _GroupsScreenState extends State<GroupsScreen> {
@@ -131,142 +150,32 @@ class _GroupsScreenState extends State<GroupsScreen> {
   }
 
   Future<void> _createDialog() async {
-    final name = TextEditingController();
-    final desc = TextEditingController();
-    final pic = TextEditingController();
-    final password = TextEditingController();
-    var isPrivate = false;
-    var obscure = true;
-
-    final ok = await showDialog<bool>(
+    final result = await showDialog<_CreateGroupResult>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Create group'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: name,
-                  decoration: const InputDecoration(labelText: 'Name *'),
-                ),
-                TextField(
-                  controller: desc,
-                  maxLines: 2,
-                  decoration: const InputDecoration(labelText: 'About'),
-                ),
-                TextField(
-                  controller: pic,
-                  decoration: const InputDecoration(
-                    labelText: 'Picture',
-                    hintText: 'pick from device or paste a URL',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    try {
-                      final picked =
-                          await FilePicker.pickFile(type: FileType.image);
-                      final path = picked?.path;
-                      if (path == null || !context.mounted) return;
-                      final manifest =
-                          await context.read<MediaService>().uploadMedia(path);
-                      final hash = manifest['blob_hash'] as String? ?? '';
-                      if (hash.length != 64) {
-                        throw Exception('Bad upload manifest');
-                      }
-                      pic.text = 'n$hash';
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: SelectableText('Upload error: $e')));
-                      }
-                    }
-                  },
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                  label: const Text('Pick image from device'),
-                ),
-                const SizedBox(height: 12),
-                const Divider(),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Private community'),
-                  subtitle: const Text('Require a password to get in'),
-                  value: isPrivate,
-                  onChanged: (v) => setDialogState(() => isPrivate = v),
-                ),
-                if (isPrivate) ...[
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: password,
-                    obscureText: obscure,
-                    decoration: InputDecoration(
-                      labelText: 'Community Password *',
-                      helperText: 'Min. 8 characters required to join',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(
-                        icon: Icon(obscure
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined),
-                        onPressed: () =>
-                            setDialogState(() => obscure = !obscure),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (isPrivate && password.text.trim().length < 8) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Password must be at least 8 characters'),
-                    ),
-                  );
-                  return;
-                }
-                Navigator.pop(context, true);
-              },
-              child: const Text('Create'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => const _CreateGroupDialog(),
     );
-
-    if (ok == true) {
-      if (!mounted) return;
-      try {
-        final session = context.read<SessionService>();
-        final pubkey = session.activePubkey;
-        if (pubkey == null) throw Exception('Sign in to create groups');
-        final id =
-            'grp${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}';
-        await context.read<GroupsService>().create(
-              id,
-              name.text.trim(),
-              desc.text.trim(),
-              pic.text.trim(),
-              pubkey,
-              isPrivate: isPrivate,
-              password: isPrivate ? password.text.trim() : null,
-            );
-        await _load();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: SelectableText('Create failed: $e')));
-        }
+    if (result == null || !result.ok) return;
+    if (!mounted) return;
+    try {
+      final session = context.read<SessionService>();
+      final pubkey = session.activePubkey;
+      if (pubkey == null) throw Exception('Sign in to create groups');
+      final id =
+          'grp${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}';
+      await context.read<GroupsService>().create(
+            id,
+            result.name,
+            result.desc,
+            result.pic,
+            pubkey,
+            isPrivate: result.isPrivate,
+            password: result.isPrivate ? result.password : null,
+          );
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Create failed: $e')));
       }
     }
   }
@@ -353,6 +262,163 @@ class _GroupsScreenState extends State<GroupsScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class _CreateGroupResult {
+  const _CreateGroupResult({
+    required this.ok,
+    this.name = '',
+    this.desc = '',
+    this.pic = '',
+    this.isPrivate = false,
+    this.password = '',
+  });
+
+  final bool ok;
+  final String name;
+  final String desc;
+  final String pic;
+  final bool isPrivate;
+  final String password;
+}
+
+class _CreateGroupDialog extends StatefulWidget {
+  const _CreateGroupDialog();
+
+  @override
+  State<_CreateGroupDialog> createState() => _CreateGroupDialogState();
+}
+
+class _CreateGroupDialogState extends State<_CreateGroupDialog> {
+  final _name = TextEditingController();
+  final _desc = TextEditingController();
+  final _pic = TextEditingController();
+  final _password = TextEditingController();
+  var _isPrivate = false;
+  var _obscure = true;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _desc.dispose();
+    _pic.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  void _pop(bool ok) {
+    if (ok &&
+        _isPrivate &&
+        _password.text.trim().length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password must be at least 8 characters'),
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).pop(_CreateGroupResult(
+      ok: ok,
+      name: _name.text.trim(),
+      desc: _desc.text.trim(),
+      pic: _pic.text.trim(),
+      isPrivate: _isPrivate,
+      password: _password.text.trim(),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create group'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _name,
+              decoration: const InputDecoration(labelText: 'Name *'),
+            ),
+            TextField(
+              controller: _desc,
+              maxLines: 2,
+              decoration: const InputDecoration(labelText: 'About'),
+            ),
+            TextField(
+              controller: _pic,
+              decoration: const InputDecoration(
+                labelText: 'Picture',
+                hintText: 'pick from device or paste a URL',
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () async {
+                try {
+                  final picked =
+                      await FilePicker.pickFile(type: FileType.image);
+                  final path = picked?.path;
+                  if (path == null || !context.mounted) return;
+                  final manifest =
+                      await context.read<MediaService>().uploadMedia(path);
+                  final hash = manifest['blob_hash'] as String? ?? '';
+                  if (hash.length != 64) {
+                    throw Exception('Bad upload manifest');
+                  }
+                  setState(() => _pic.text = 'n$hash');
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: SelectableText('Upload error: $e')));
+                  }
+                }
+              },
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text('Pick image from device'),
+            ),
+            const SizedBox(height: 12),
+            const Divider(),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Private community'),
+              subtitle: const Text('Require a password to get in'),
+              value: _isPrivate,
+              onChanged: (v) => setState(() => _isPrivate = v),
+            ),
+            if (_isPrivate) ...[
+              const SizedBox(height: 4),
+              TextField(
+                controller: _password,
+                obscureText: _obscure,
+                decoration: InputDecoration(
+                  labelText: 'Community Password *',
+                  helperText: 'Min. 8 characters required to join',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => _pop(true),
+          child: const Text('Create'),
+        ),
+      ],
     );
   }
 }

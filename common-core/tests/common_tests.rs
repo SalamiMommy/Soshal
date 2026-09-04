@@ -9,8 +9,8 @@ use soshal_common_core::mime::{detect_mime_type, sniff_mime_type};
 use soshal_common_core::regex_util::{escape_regex, is_match};
 use soshal_common_core::ui_safe::{is_valid_css_color, js_string_literal, short_pk, truncate_str};
 use soshal_common_core::url::{
-    domain, extract, is_private_ip_str, is_valid, is_valid_event_relay_url, is_valid_media_url,
-    is_valid_relay_url, safe_href, sanitize_link_url,
+    domain, extract, is_loopback_host, is_private_ip_str, is_valid, is_valid_event_relay_url,
+    is_valid_media_url, is_valid_relay_url, safe_href, sanitize_link_url,
 };
 
 #[test]
@@ -122,6 +122,25 @@ fn relay_url_validation() {
     assert!(!is_valid_relay_url("wss://0x7f.example.com").0);
     assert!(is_valid_event_relay_url("wss://relay.example.com"));
     assert!(!is_valid_event_relay_url("ws://relay.example.com"));
+}
+
+#[test]
+fn loopback_host_detection() {
+    // Local-node endpoints (Freenet gateway, i2pd SAM) that the relay policy
+    // rejects must be recognizable as loopback for their dedicated allow path.
+    assert!(is_loopback_host("127.0.0.1"));
+    assert!(is_loopback_host("localhost"));
+    assert!(is_loopback_host("LOCALHOST"));
+    assert!(is_loopback_host("::1"));
+    assert!(is_loopback_host("[::1]"));
+    assert!(is_loopback_host("127.1"));
+    assert!(is_loopback_host("127.0.1"));
+    assert!(is_loopback_host("127.8.8.8"));
+    assert!(!is_loopback_host("10.0.0.2"));
+    assert!(!is_loopback_host("192.168.1.10"));
+    assert!(!is_loopback_host("relay.example.com"));
+    assert!(!is_loopback_host(""));
+    assert!(!is_loopback_host("fe80::1"));
 }
 
 #[test]

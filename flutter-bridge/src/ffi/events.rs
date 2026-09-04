@@ -176,6 +176,9 @@ pub fn events_fetch_nearby(
     radius_km: f32,
     limit: i32,
 ) -> Result<String, String> {
+    if !latitude.is_finite() || !longitude.is_finite() {
+        return Err("invalid coordinates".to_string());
+    }
     if radius_km <= 0.0 {
         let json = super::db::db_query_raw(event_rows_sql("", limit))?;
         return super::util::json_ok(events_from_json(json));

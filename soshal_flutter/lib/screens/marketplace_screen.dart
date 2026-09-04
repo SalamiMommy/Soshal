@@ -67,142 +67,24 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
   }
 
   Future<String?> _createDialog() async {
-    final title = TextEditingController();
-    final desc = TextEditingController();
-    final price = TextEditingController();
-    final currency = TextEditingController(text: 'sats');
-    final category = TextEditingController();
-    final condition = TextEditingController(text: 'new');
-    final images = TextEditingController();
-
-    final ok = await showDialog<bool>(
+    final result = await showDialog<_CreateListingResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create listing'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: title,
-                decoration: const InputDecoration(labelText: 'Title *'),
-              ),
-              TextField(
-                controller: desc,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Description'),
-              ),
-              TextField(
-                controller: price,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Price *'),
-              ),
-              TextField(
-                controller: currency,
-                decoration: const InputDecoration(labelText: 'Currency'),
-              ),
-              TextField(
-                controller: category,
-                decoration: const InputDecoration(labelText: 'Category'),
-              ),
-              TextField(
-                controller: condition,
-                decoration: const InputDecoration(labelText: 'Condition'),
-              ),
-              TextField(
-                controller: images,
-                decoration: const InputDecoration(
-                  labelText: 'Images',
-                  hintText: 'pick from device or paste URLs',
-                ),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  try {
-                    final picked =
-                        await FilePicker.pickFile(type: FileType.image);
-                    final path = picked?.path;
-                    if (path == null || !context.mounted) return;
-                    final manifest =
-                        await context.read<MediaService>().uploadMedia(path);
-                    final hash = manifest['blob_hash'] as String? ?? '';
-                    if (hash.length != 64) {
-                      throw Exception('Bad upload manifest');
-                    }
-                    List<String> list = [];
-                    final current = images.text.trim();
-                    if (current.isNotEmpty) {
-                      try {
-                        list = (jsonDecode(current) as List<dynamic>)
-                            .map((e) => e.toString())
-                            .toList();
-                      } catch (_) {
-                        list = current
-                            .split(',')
-                            .map((e) => e.trim())
-                            .where((e) => e.isNotEmpty)
-                            .toList();
-                      }
-                    }
-                    list.add('n$hash');
-                    images.text = jsonEncode(list);
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: SelectableText('Upload error: $e')));
-                    }
-                  }
-                },
-                icon: const Icon(Icons.add_photo_alternate_outlined),
-                label: const Text('Pick image from device'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, null),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Post'),
-          ),
-        ],
-      ),
+      builder: (_) => const _CreateListingDialog(),
     );
-
-    if (ok != true) return null;
-    if (!mounted) return null;
+    if (result == null || !result.ok || !mounted) return null;
     try {
       final session = context.read<SessionService>();
       final pubkey = session.activePubkey;
       if (pubkey == null) throw Exception('Sign in to sell');
-      List<String> imageList = [];
-      try {
-        final parsed = images.text.trim();
-        if (parsed.isNotEmpty) {
-          imageList = (jsonDecode(parsed) as List<dynamic>)
-              .map((e) => e.toString())
-              .toList();
-        }
-      } catch (_) {
-        imageList = images.text
-            .split(',')
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty)
-            .toList();
-      }
       final eventId = await context.read<MarketplaceService>().createListing(
             pubkey,
-            title.text.trim(),
-            desc.text.trim(),
-            int.tryParse(price.text.trim()) ?? 0,
-            currency.text.trim().isEmpty ? 'sats' : currency.text.trim(),
-            category.text.trim(),
-            condition.text.trim().isEmpty ? 'new' : condition.text.trim(),
-            imageList,
+            result.title,
+            result.desc,
+            result.price,
+            result.currency.isEmpty ? 'sats' : result.currency,
+            result.category,
+            result.condition.isEmpty ? 'new' : result.condition,
+            result.images,
             true,
           );
       return eventId;
@@ -289,53 +171,21 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
   }
 
   Future<void> _makeOffer(ListingInfo listing) async {
-    final offerAmount = TextEditingController();
-    final note = TextEditingController();
-    final ok = await showDialog<bool>(
+    final result = await showDialog<_MakeOfferResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Make an offer on "${listing.title}"'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Listed price: ${listing.priceLabel}'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: offerAmount,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Your offer (${listing.currency}) *',
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: note,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Note to seller (optional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Send Offer'),
-          ),
-        ],
+      builder: (_) => _MakeOfferDialog(
+        listingTitle: listing.title,
+        listingCurrency: listing.currency,
+        listedPrice: listing.price,
       ),
     );
-    if (ok == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Offer sent to seller: ${offerAmount.text} ${listing.currency}')),
-      );
-    }
+    if (result == null || !result.ok || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content:
+            Text('Offer sent to seller: ${result.offerAmount} ${listing.currency}'),
+      ),
+    );
   }
 
   Future<void> _buy(ListingInfo listing) async {
@@ -456,47 +306,15 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
   }
 
   Future<void> _editDialog(ListingInfo listing) async {
-    final title = TextEditingController(text: listing.title);
-    final desc = TextEditingController(text: listing.description);
-    final price = TextEditingController(text: listing.price.toString());
-    final ok = await showDialog<bool>(
+    final result = await showDialog<_EditListingResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit listing'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: title,
-                decoration: const InputDecoration(labelText: 'Title *'),
-              ),
-              TextField(
-                controller: desc,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Description'),
-              ),
-              TextField(
-                controller: price,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Price *'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, null),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Save'),
-          ),
-        ],
+      builder: (_) => _EditListingDialog(
+        title: listing.title,
+        desc: listing.description,
+        price: listing.price,
       ),
     );
-    if (ok != true || !mounted) return;
+    if (result == null || !result.ok || !mounted) return;
     try {
       final session = context.read<SessionService>();
       final pubkey = session.activePubkey;
@@ -504,9 +322,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
       final updated = await context.read<MarketplaceService>().updateListing(
             listing.id,
             pubkey,
-            title.text.trim(),
-            desc.text.trim(),
-            int.tryParse(price.text.trim()) ?? listing.price,
+            result.title.trim(),
+            result.desc.trim(),
+            int.tryParse(result.price.trim()) ?? listing.price,
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -881,6 +699,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                         onPressed: () async {
                           try {
                             await api.deleteListing(l.id, pubkey);
+                            if (!context.mounted) return;
                             _sellerListingsFuture = api.sellerListings(pubkey);
                             setState(() {});
                           } catch (e) {
@@ -901,12 +720,174 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
             );
           },
         );
-      },
+},
     );
   }
 }
 
-/// Condition pill with the legacy color mapping (new/like new/good/fair).
+class _CreateListingResult {
+  const _CreateListingResult({
+    required this.ok,
+    this.title = '',
+    this.desc = '',
+    this.price = 0,
+    this.currency = 'sats',
+    this.category = '',
+    this.condition = 'new',
+    this.images = const [],
+  });
+
+  final bool ok;
+  final String title;
+  final String desc;
+  final int price;
+  final String currency;
+  final String category;
+  final String condition;
+  final List<String> images;
+}
+
+class _CreateListingDialog extends StatefulWidget {
+  const _CreateListingDialog();
+
+  @override
+  State<_CreateListingDialog> createState() => _CreateListingDialogState();
+}
+
+class _CreateListingDialogState extends State<_CreateListingDialog> {
+  final _title = TextEditingController();
+  final _desc = TextEditingController();
+  final _price = TextEditingController();
+  final _currency = TextEditingController(text: 'sats');
+  final _category = TextEditingController();
+  final _condition = TextEditingController(text: 'new');
+  final _images = TextEditingController();
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _desc.dispose();
+    _price.dispose();
+    _currency.dispose();
+    _category.dispose();
+    _condition.dispose();
+    _images.dispose();
+    super.dispose();
+  }
+
+  List<String> _imagesList() {
+    final parsed = _images.text.trim();
+    if (parsed.isEmpty) return const [];
+    try {
+      return (jsonDecode(parsed) as List<dynamic>)
+          .map((e) => e.toString())
+          .toList();
+    } catch (_) {
+      return parsed
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final picked = await FilePicker.pickFile(type: FileType.image);
+      final path = picked?.path;
+      if (path == null || !mounted) return;
+      final manifest = await context.read<MediaService>().uploadMedia(path);
+      final hash = manifest['blob_hash'] as String? ?? '';
+      if (hash.length != 64) {
+        throw Exception('Bad upload manifest');
+      }
+      final list = [..._imagesList(), 'n$hash'];
+      setState(() => _images.text = jsonEncode(list));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('Upload error: $e')));
+      }
+    }
+  }
+
+  void _pop(bool ok) {
+    Navigator.of(context).pop(_CreateListingResult(
+      ok: ok,
+      title: _title.text.trim(),
+      desc: _desc.text.trim(),
+      price: int.tryParse(_price.text.trim()) ?? 0,
+      currency: _currency.text.trim(),
+      category: _category.text.trim(),
+      condition: _condition.text.trim(),
+      images: _imagesList(),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create listing'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _title,
+              decoration: const InputDecoration(labelText: 'Title *'),
+            ),
+            TextField(
+              controller: _desc,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Description'),
+            ),
+            TextField(
+              controller: _price,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Price *'),
+            ),
+            TextField(
+              controller: _currency,
+              decoration: const InputDecoration(labelText: 'Currency'),
+            ),
+            TextField(
+              controller: _category,
+              decoration: const InputDecoration(labelText: 'Category'),
+            ),
+            TextField(
+              controller: _condition,
+              decoration: const InputDecoration(labelText: 'Condition'),
+            ),
+            TextField(
+              controller: _images,
+              decoration: const InputDecoration(
+                labelText: 'Images',
+                hintText: 'pick from device or paste URLs',
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _pickImage,
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text('Pick image from device'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => _pop(true),
+          child: const Text('Post'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ConditionChip extends StatelessWidget {
   const _ConditionChip({required this.condition});
 
@@ -1157,32 +1138,13 @@ class _EscrowSectionState extends State<_EscrowSection> {
       );
 
   Future<void> _disputeDialog(EscrowInfo escrow) async {
-    final reason = TextEditingController();
-    final ok = await showDialog<bool>(
+    final result = await showDialog<_DisputeResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Open dispute'),
-        content: TextField(
-          controller: reason,
-          maxLines: 3,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Reason for dispute'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Confirm dispute'),
-          ),
-        ],
-      ),
+      builder: (_) => const _DisputeDialog(),
     );
-    if (ok != true || !mounted) return;
+    if (result == null || !result.ok || !mounted) return;
     await _run('Dispute opened — mediator notified ⚠️', () async {
-      await _api.disputeEscrow(escrow.id, widget.myPubkey, reason.text.trim());
+      await _api.disputeEscrow(escrow.id, widget.myPubkey, result.reason.trim());
     });
   }
 
@@ -1460,56 +1422,16 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
   }
 
   Future<void> _reviewDialog() async {
-    final text = TextEditingController();
-    int stars = 5;
-    final ok = await showDialog<bool>(
+    final result = await showDialog<_PostTextResult>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Review listing'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Wrap(
-                spacing: 4,
-                children: [
-                  for (var i = 1; i <= 5; i++)
-                    IconButton(
-                      icon: Icon(
-                        i <= stars ? Icons.star : Icons.star_border,
-                        color: const Color(0xFFd97706),
-                      ),
-                      onPressed: () => setDialogState(() => stars = i),
-                    ),
-                ],
-              ),
-              TextField(
-                controller: text,
-                maxLines: 3,
-                decoration:
-                    const InputDecoration(hintText: 'Review text (optional)'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Submit'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => const _PostCommentDialog(),
     );
-    if (ok != true || !mounted) return;
+    if (result == null || !result.ok || !mounted) return;
     final submitted = await context.read<MarketplaceService>().reviewListing(
           listingId: widget.listing.id,
           reviewerPubkey: widget.myPubkey,
-          rating: stars,
-          text: text.text.trim(),
+          rating: result.stars,
+          text: result.text.trim(),
         );
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1630,41 +1552,12 @@ class _PollSectionState extends State<_PollSection> {
       _snack('Sign in to create a poll');
       return;
     }
-    final question = TextEditingController();
-    final options = TextEditingController();
-    final ok = await showDialog<bool>(
+    final result = await showDialog<_PollResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create poll'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: question,
-              decoration: const InputDecoration(labelText: 'Question *'),
-            ),
-            TextField(
-              controller: options,
-              decoration: const InputDecoration(
-                labelText: 'Options * (comma-separated)',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Post'),
-          ),
-        ],
-      ),
+      builder: (_) => const _PollDialog(),
     );
-    if (ok != true || !mounted) return;
-    final optionList = options.text
+    if (result == null || !result.ok || !mounted) return;
+    final optionList = result.options
         .split(',')
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
@@ -1676,7 +1569,7 @@ class _PollSectionState extends State<_PollSection> {
     setState(() => _busy = true);
     final poll = await _api.pollCreate(
       userPubkey: widget.myPubkey,
-      question: question.text.trim(),
+      question: result.question,
       optionsJson: jsonEncode(optionList),
     );
     if (!mounted) return;
@@ -1805,6 +1698,389 @@ class _PollSectionState extends State<_PollSection> {
             padding: EdgeInsets.only(top: 6),
             child: LinearProgressIndicator(),
           ),
+      ],
+    );
+  }
+}
+
+class _MakeOfferResult {
+  const _MakeOfferResult({
+    required this.ok,
+    required this.offerAmount,
+    required this.note,
+  });
+
+  final bool ok;
+  final String offerAmount;
+  final String note;
+}
+
+class _MakeOfferDialog extends StatefulWidget {
+  const _MakeOfferDialog({
+    required this.listingTitle,
+    required this.listingCurrency,
+    required this.listedPrice,
+  });
+
+  final String listingTitle;
+  final String listingCurrency;
+  final int listedPrice;
+
+  @override
+  State<_MakeOfferDialog> createState() => _MakeOfferDialogState();
+}
+
+class _MakeOfferDialogState extends State<_MakeOfferDialog> {
+  final _offerAmount = TextEditingController();
+  final _note = TextEditingController();
+
+  @override
+  void dispose() {
+    _offerAmount.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  void _pop(bool ok) {
+    Navigator.of(context).pop(_MakeOfferResult(
+      ok: ok,
+      offerAmount: _offerAmount.text,
+      note: _note.text,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currencyLabel =
+        widget.listingCurrency.isEmpty ? 'sat' : widget.listingCurrency;
+    return AlertDialog(
+      title: Text('Make an offer on "${widget.listingTitle}"'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Listed price: ${widget.listedPrice} $currencyLabel'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _offerAmount,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Your offer (${widget.listingCurrency}) *',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _note,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Note to seller (optional)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => _pop(true),
+          child: const Text('Send Offer'),
+        ),
+      ],
+    );
+  }
+}
+
+class _EditListingResult {
+  const _EditListingResult({
+    required this.ok,
+    required this.title,
+    required this.desc,
+    required this.price,
+  });
+
+  final bool ok;
+  final String title;
+  final String desc;
+  final String price;
+}
+
+class _EditListingDialog extends StatefulWidget {
+  const _EditListingDialog({
+    required this.title,
+    required this.desc,
+    required this.price,
+  });
+
+  final String title;
+  final String desc;
+  final int price;
+
+  @override
+  State<_EditListingDialog> createState() => _EditListingDialogState();
+}
+
+class _EditListingDialogState extends State<_EditListingDialog> {
+  late final TextEditingController _title =
+      TextEditingController(text: widget.title);
+  late final TextEditingController _desc =
+      TextEditingController(text: widget.desc);
+  late final TextEditingController _price =
+      TextEditingController(text: widget.price.toString());
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _desc.dispose();
+    _price.dispose();
+    super.dispose();
+  }
+
+  void _pop(bool ok) {
+    Navigator.of(context).pop(_EditListingResult(
+      ok: ok,
+      title: _title.text,
+      desc: _desc.text,
+      price: _price.text,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit listing'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _title,
+              decoration: const InputDecoration(labelText: 'Title *'),
+            ),
+            TextField(
+              controller: _desc,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Description'),
+            ),
+            TextField(
+              controller: _price,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Price *'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => _pop(true),
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+class _DisputeResult {
+  const _DisputeResult({
+    required this.ok,
+    required this.reason,
+  });
+
+  final bool ok;
+  final String reason;
+}
+
+class _DisputeDialog extends StatefulWidget {
+  const _DisputeDialog();
+
+  @override
+  State<_DisputeDialog> createState() => _DisputeDialogState();
+}
+
+class _DisputeDialogState extends State<_DisputeDialog> {
+  final _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  void _pop(bool ok) {
+    Navigator.of(context).pop(_DisputeResult(
+      ok: ok,
+      reason: _reason.text,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Open dispute'),
+      content: TextField(
+        controller: _reason,
+        maxLines: 3,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: 'Reason for dispute'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => _pop(true),
+          child: const Text('Confirm dispute'),
+        ),
+      ],
+    );
+  }
+}
+
+class _PostTextResult {
+  const _PostTextResult({
+    required this.ok,
+    required this.text,
+    required this.stars,
+  });
+
+  final bool ok;
+  final String text;
+  final int stars;
+}
+
+class _PostCommentDialog extends StatefulWidget {
+  const _PostCommentDialog();
+
+  @override
+  State<_PostCommentDialog> createState() => _PostCommentDialogState();
+}
+
+class _PostCommentDialogState extends State<_PostCommentDialog> {
+  final _text = TextEditingController();
+  int _stars = 5;
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  void _pop(bool ok) {
+    Navigator.of(context).pop(_PostTextResult(
+      ok: ok,
+      text: _text.text,
+      stars: _stars,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Review listing'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Wrap(
+            spacing: 4,
+            children: [
+              for (var i = 1; i <= 5; i++)
+                IconButton(
+                  icon: Icon(
+                    i <= _stars ? Icons.star : Icons.star_border,
+                    color: const Color(0xFFd97706),
+                  ),
+                  onPressed: () => setState(() => _stars = i),
+                ),
+            ],
+          ),
+          TextField(
+            controller: _text,
+            maxLines: 3,
+            decoration:
+                const InputDecoration(hintText: 'Review text (optional)'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => _pop(true),
+          child: const Text('Submit'),
+        ),
+      ],
+    );
+  }
+}
+
+class _PollResult {
+  const _PollResult({required this.ok, this.question = '', this.options = ''});
+
+  final bool ok;
+  final String question;
+  final String options;
+}
+
+class _PollDialog extends StatefulWidget {
+  const _PollDialog();
+
+  @override
+  State<_PollDialog> createState() => _PollDialogState();
+}
+
+class _PollDialogState extends State<_PollDialog> {
+  final _question = TextEditingController();
+  final _options = TextEditingController();
+
+  @override
+  void dispose() {
+    _question.dispose();
+    _options.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create poll'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _question,
+            decoration: const InputDecoration(labelText: 'Question *'),
+          ),
+          TextField(
+            controller: _options,
+            decoration: const InputDecoration(
+              labelText: 'Options * (comma-separated)',
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context)
+              .pop(_PollResult(ok: false)),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_PollResult(
+                ok: true,
+                question: _question.text.trim(),
+                options: _options.text.trim(),
+              )),
+          child: const Text('Post'),
+        ),
       ],
     );
   }

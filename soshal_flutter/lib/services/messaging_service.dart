@@ -26,6 +26,25 @@ class MessagingService extends ChangeNotifier
   Timer? _storeFlushTimer;
   static const _storeFlushInterval = Duration(milliseconds: 250);
   static const _storeFlushBatchSize = 8;
+  static const _maxConversations = 50;
+
+  /// Bound the in-memory conversation cache. Each conversation is itself
+  /// capped at 200 messages, but the number of keys was previously unbounded,
+  /// leaking every conversation ever opened for the app's lifetime.
+  void _evictConversationsIfNeeded() {
+    if (_conversations.length <= _maxConversations) return;
+    final sorted = _conversations.keys.toList()
+      ..sort((a, b) {
+        final ta = _conversationsCacheTime[a] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final tb = _conversationsCacheTime[b] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return ta.compareTo(tb);
+      });
+    while (_conversations.length > _maxConversations) {
+      final victim = sorted.removeAt(0);
+      _conversations.remove(victim);
+      _conversationsCacheTime.remove(victim);
+    }
+  }
 
   Map<String, List<DirectMessage>> get conversations => _conversations;
   Map<String, int> get readWatermarks => _readWatermarks;
@@ -38,6 +57,21 @@ class MessagingService extends ChangeNotifier
     super.dispose();
   }
 
+  /// Clear all account-scoped state when switching accounts so Account B never
+  /// sees Account A's cached conversations, watermarks, or pending ephemeral.
+  void resetForAccountSwitch() {
+    _storeFlushTimer?.cancel();
+    _storeFlushTimer = null;
+    _pendingStores.clear();
+    _conversations.clear();
+    _conversationsCacheTime.clear();
+    _readWatermarks.clear();
+    _pendingEphemeral.clear();
+    _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Insert a DM arriving from the live sync stream (already decrypted by
   /// the bridge). Conversation is keyed by the peer pubkey. Persistence is
   /// batched: a message burst on the stream triggers ONE batch FFI call
@@ -46,6 +80,7 @@ class MessagingService extends ChangeNotifier
     final peer = message.sender;
     if (peer.isEmpty) return;
     final list = _conversations.putIfAbsent(peer, () => []);
+    _evictConversationsIfNeeded();
     if (list.any((m) => m.id == message.id)) return;
     list.add(message);
     if (list.length > 200) {
@@ -95,6 +130,9 @@ class MessagingService extends ChangeNotifier
 
   /// Fetch DMs with a specific contact
   Future<List<DirectMessage>> fetchDMs(String otherPubkey, {int limit = 100}) async {
+    // Snapshot the cached conversation so a transient FFI failure below does
+    // not blank a working conversation after its TTL eviction.
+    final staleSnapshot = _conversations[otherPubkey];
     try {
       final cached = _conversationsCacheTime[otherPubkey];
       if (cached != null && DateTime.now().difference(cached).inSeconds > 5) {
@@ -117,11 +155,17 @@ class MessagingService extends ChangeNotifier
         _conversations[otherPubkey] = messages;
       }
       _conversationsCacheTime[otherPubkey] = DateTime.now();
+      _evictConversationsIfNeeded();
 
       clearLastError();
       notifyDeferred();
       return _conversations[otherPubkey]!;
     } catch (e, st) {
+      // Restore the TTL-evicted cache on failure so a working conversation is
+      // not lost to a transient store round-trip error.
+      if (staleSnapshot != null && !_conversations.containsKey(otherPubkey)) {
+        _conversations[otherPubkey] = staleSnapshot;
+      }
       setLastError(e, st);
       notifyDeferred();
       rethrow;
@@ -133,7 +177,6 @@ class MessagingService extends ChangeNotifier
     String content,
     String recipientPubkey,
     String senderPubkey,
-    String senderSk,
   ) async {
     try {
       final rawResult =
@@ -165,6 +208,7 @@ class MessagingService extends ChangeNotifier
       if (!_conversations.containsKey(recipientPubkey)) {
         _conversations[recipientPubkey] = [];
       }
+      _evictConversationsIfNeeded();
       final convo = _conversations[recipientPubkey]!;
       if (convo.length >= 200) {
         convo.removeRange(0, convo.length - 199);
@@ -448,6 +492,14 @@ class IdentityService extends ChangeNotifier
   late final ModerationService _moderation = ModerationService();
 
   Map<String, ProfileInfo> get profiles => _profiles;
+
+  /// Clear the cached profile map on account switch so Account B doesn't see
+  /// Account A's cached profiles.
+  void resetForAccountSwitch() {
+    _profiles.clear();
+    clearLastError();
+    notifyListeners();
+  }
 
   /// Get user profile
   Future<ProfileInfo> getProfile(String pubkey) async {

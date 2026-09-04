@@ -152,7 +152,7 @@ void main() {
 
       await session.switchAccount('pk-1');
       expect(session.activePubkey, 'pk-1');
-      expect(session.switchAccount('missing'), throwsException);
+      await expectLater(session.switchAccount('missing'), throwsException);
       expect(session.lastError, contains('Account not found'));
     });
 
@@ -167,7 +167,8 @@ void main() {
       await session.removeAccount('pk-1');
       expect(session.hasActiveSession(), isFalse);
       expect(session.getAccounts(), isEmpty);
-      expect(session.activeAccount?.pubkey, '');
+      expect(session.activePubkey, isNull);
+      expect(session.activeAccount, isNull);
     });
 
     test('saveSession encodes current state to FFI', () async {
@@ -200,6 +201,20 @@ void main() {
       return jsonEncode(posts);
     }
 
+    String postsJsonFrom(int n, int base) {
+      final posts = List.generate(n, (i) => {
+            'event_id': 'ev-${base + i}',
+            'pubkey': 'pk-${base + i}',
+            'content': 'post ${base + i}',
+            'created_at': 1700000000 + base + i,
+            'reactions': base + i,
+            'replies': 0,
+            'reposts': 0,
+            'liked': false,
+          });
+      return jsonEncode(posts);
+    }
+
     test('fetchFeed replaces on offset 0 and cap at 100 on paging',
         () async {
       final feed = FeedService();
@@ -207,7 +222,9 @@ void main() {
         final options =
             jsonDecode(api.namedArg(inv, 'optionsJson') as String)
                 as Map<String, dynamic>;
-        return postsJson(options['offset'] == 0 ? 60 : 60);
+        return options['offset'] == 0
+            ? postsJson(60)
+            : postsJsonFrom(60, 100);
       });
 
       await feed.fetchFeed(limit: 60);
@@ -216,8 +233,9 @@ void main() {
 
       await feed.loadMore(limit: 60);
       expect(feed.posts.length, 100, reason: 'capped at 100');
-      expect(feed.posts.first.eventId, 'ev-0');
-      expect(feed.posts.last.content, 'post 59');
+      // 120 unique posts dedup/sorted, cap keeps the newest 100 → front trimmed.
+      expect(feed.posts.first.eventId, 'ev-20');
+      expect(feed.posts.last.content, 'post 159');
     });
 
     test('fetchFeed error sets lastError and rethrows', () async {
@@ -250,6 +268,7 @@ void main() {
     test('live insert dedups and live reaction bumps counters', () async {
       final feed = FeedService();
       api.stubString('crateFfiFeedFeedFetchEvents', '[]');
+      api.stubBool('crateFfiFeedFeedValidateNote', true);
       await feed.fetchFeed();
 
       final post = FeedPost(
@@ -305,11 +324,17 @@ void main() {
 
     test('resolvePubkey accepts hex and npub, rejects garbage', () async {
       final ms = MessagingService();
-      api.stubString('crateFfiAuthAuthNpubDecode', 'ab'.padRight(64, 'cd'));
+      api.stub('crateFfiAuthAuthNpubDecode', (inv) {
+        final npub = api.namedArg(inv, 'npub') as String;
+        if (npub == 'npub1bad') {
+          throw Exception('invalid bech32');
+        }
+        return 'ab' * 32;
+      });
 
-      final hex = 'ab'.padRight(64, 'cd');
+      final hex = 'ab' * 32;
       expect(ms.resolvePubkey(hex), hex);
-      expect(ms.resolvePubkey('npub1test'), 'ab'.padRight(64, 'cd'));
+      expect(ms.resolvePubkey('npub1test'), 'ab' * 32);
       expect(() => ms.resolvePubkey('not-a-key'), throwsException);
       expect(() => ms.resolvePubkey('npub1bad'), throwsException);
     });
@@ -317,7 +342,7 @@ void main() {
     test('sendDM appends own message to conversation', () async {
       final ms = MessagingService();
       api.stubString('crateFfiMessagingMessagingSendDm', 'ev-1');
-      final id = await ms.sendDM('hi', 'peer-1', 'me', 'sk');
+      final id = await ms.sendDM('hi', 'peer-1', 'me');
       expect(id, 'ev-1');
       final conv = ms.conversations['peer-1']!;
       expect(conv.single.content, 'hi');

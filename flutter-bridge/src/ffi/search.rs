@@ -225,8 +225,12 @@ pub async fn search_remote_global(
         .await
     {
         Ok(events) => events,
-        Err(e) => return Err(format!("remote search failed: {e}")).into(),
+        Err(e) => {
+            client.disconnect().await;
+            return Err(format!("remote search failed: {e}")).into();
+        }
     };
+    client.disconnect().await;
     let results: Vec<serde_json::Value> = events
         .into_iter()
         .filter(|e| e.verify().is_ok() && e.kind == Kind::TextNote)

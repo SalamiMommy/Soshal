@@ -67,16 +67,14 @@ pub fn signer_unlock(mut secret: String) -> Result<String, String> {
         }
     };
     let pk = keys.public_key().to_hex();
+    // M2 fix: clear derived caches INSIDE the SIGNER lock to prevent the stale
+    // identity window where another thread could call lan_key() with the old
+    // key between cache clear and key replacement.
+    let mut guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
     clear_derived_cache();
-    // M2 fix: also clear the NIP-44 conversation key cache on unlock so that
-    // switching to a different identity never reuses cached shared secrets from
-    // the previous one. (signer_lock already does this; unlock must match.)
     soshal_crypto_core::nip44::clear_conversation_key_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
-    SIGNER
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .replace(keys);
+    guard.replace(keys);
     Ok(pk).into()
 }
 
@@ -113,10 +111,18 @@ pub fn signer_pubkey() -> Result<String, String> {
 /// different pubkey.
 pub(crate) fn require_identity(expected: &str) -> Result<(), String> {
     let actual = signer_pubkey()?;
-    if actual != expected {
+    // Constant-time comparison: prevents timing side-channel on pubkey check.
+    // `constant_time_eq` returns false for mismatched-length inputs.
+    if !soshal_common_core::util::constant_time_eq(actual.as_bytes(), expected.as_bytes()) {
         return Err("identity mismatch: caller is not the claimed pubkey".to_string());
     }
     Ok(())
+}
+
+/// Constant-time match between a signer's hex pubkey and a caller-supplied
+/// hex pubkey, without leaking prefix-match information via timing.
+fn pubkey_matches(actual_hex: &str, expected_hex: &str) -> bool {
+    soshal_common_core::util::constant_time_eq(actual_hex.as_bytes(), expected_hex.as_bytes())
 }
 
 /// Persist the unlocked secret key to the OS keychain (desktop keyring).
@@ -132,7 +138,7 @@ pub async fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
             Some(k) => k,
             None => return Err("signer locked".to_string()).into(),
         };
-        if keys.public_key().to_hex() != pubkey {
+        if !pubkey_matches(&keys.public_key().to_hex(), &pubkey) {
             return Err("pubkey does not match unlocked signer".to_string()).into();
         }
         zeroize::Zeroizing::new(keys.secret_key().to_secret_hex())
@@ -168,16 +174,15 @@ pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> 
             return Err(format!("stored key invalid: {e}")).into();
         }
     };
-    if keys.public_key().to_hex() != pubkey {
+    if !pubkey_matches(&keys.public_key().to_hex(), &pubkey) {
         return Err("stored key does not match pubkey".to_string()).into();
     }
+    // Clear derived caches INSIDE the SIGNER lock to prevent stale identity window.
+    let mut guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
     clear_derived_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
     soshal_crypto_core::nip44::clear_conversation_key_cache();
-    SIGNER
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .replace(keys);
+    guard.replace(keys);
     Ok(true).into()
 }
 

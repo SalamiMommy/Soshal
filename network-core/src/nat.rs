@@ -167,7 +167,7 @@ impl NatHandle {
     }
 
     pub fn stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true, Ordering::Release);
     }
 }
 
@@ -237,7 +237,7 @@ async fn run_manager(
 ) {
     let mut sessions: HashMap<String, Session> = HashMap::new();
     loop {
-        if stop.load(Ordering::Relaxed) {
+        if stop.load(Ordering::Acquire) {
             eprintln!("nat: stop flag");
             break;
         }
@@ -256,9 +256,21 @@ async fn run_manager(
                         }
                         match gather_session(&pubkey, &stun_urls, &my_pubkey).await {
                             Ok((agent, shared, ufrag, pwd)) => {
-                                let local = shared.local_candidates.lock().unwrap().clone();
-                                let state = shared.state.lock().unwrap().clone();
-                                let connected_addr = shared.connected_addr.lock().unwrap().clone();
+                                let local = shared
+                                    .local_candidates
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .clone();
+                                let state = shared
+                                    .state
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .clone();
+                                let connected_addr = shared
+                                    .connected_addr
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .clone();
                                 let status = NatSessionStatus {
                                     pubkey: pubkey.clone(),
                                     state,
@@ -294,7 +306,10 @@ async fn run_manager(
                         match sessions.get(&pubkey) {
                             Some(session) => {
                                 {
-                                    let remote = session.remote_candidates.lock().unwrap();
+                                    let remote = session
+                                        .remote_candidates
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner());
                                     for raw in &candidates {
                                         if remote.len() + added.len() >= MAX_REMOTE_CANDIDATES {
                                             break;
@@ -347,10 +362,17 @@ async fn run_manager(
                                     continue;
                                 }
                                 {
-                                    let mut remote = session.remote_candidates.lock().unwrap();
+                                    let mut remote = session
+                                        .remote_candidates
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner());
                                     remote.extend(added.clone());
                                 }
-                                *session.shared.state.lock().unwrap() = "checking".to_string();
+                                *session
+                                    .shared
+                                    .state
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner()) = "checking".to_string();
                             }
                             None => {
                                 let _ = result.send(Err("no session for pubkey".to_string()));
@@ -375,7 +397,12 @@ async fn run_manager(
                     NatCommand::Status { result } => {
                         let mut out = Vec::with_capacity(sessions.len());
                         for (pubkey, session) in &sessions {
-                            let state = session.shared.state.lock().unwrap().clone();
+                            let state = session
+                                .shared
+                                .state
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .clone();
                             let connected = if state == "connected" {
                                 match session.agent.get_selected_candidate_pair() {
                                     Some(pair) => {
@@ -384,19 +411,40 @@ async fn run_manager(
                                             pair.remote.address(),
                                             pair.remote.port()
                                         );
-                                        *session.shared.connected_addr.lock().unwrap() =
+                                        *session
+                                            .shared
+                                            .connected_addr
+                                            .lock()
+                                            .unwrap_or_else(|e| e.into_inner()) =
                                             Some(addr.clone());
                                         Some(addr)
                                     }
-                                    None => session.shared.connected_addr.lock().unwrap().clone(),
+                                    None => session
+                                        .shared
+                                        .connected_addr
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner())
+                                        .clone(),
                                 }
                             } else {
-                                session.shared.connected_addr.lock().unwrap().clone()
+                                session
+                                    .shared
+                                    .connected_addr
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .clone()
                             };
-                            let local_candidates =
-                                session.shared.local_candidates.lock().unwrap().clone();
-                            let remote_candidates =
-                                session.remote_candidates.lock().unwrap().clone();
+                            let local_candidates = session
+                                .shared
+                                .local_candidates
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .clone();
+                            let remote_candidates = session
+                                .remote_candidates
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .clone();
                             out.push(NatSessionStatus {
                                 pubkey: pubkey.clone(),
                                 state,
@@ -434,7 +482,7 @@ async fn run_manager(
 async fn prune_failed_sessions(sessions: &mut HashMap<String, Session>) {
     let dead: Vec<String> = sessions
         .iter()
-        .filter(|(_, s)| *s.shared.state.lock().unwrap() == "failed")
+        .filter(|(_, s)| *s.shared.state.lock().unwrap_or_else(|e| e.into_inner()) == "failed")
         .map(|(k, _)| k.clone())
         .collect();
     for pubkey in dead {
@@ -501,7 +549,11 @@ async fn gather_session(
             Box::pin(async move {
                 if let Some(c) = candidate {
                     let raw = c.marshal();
-                    shared.local_candidates.lock().unwrap().push(raw);
+                    shared
+                        .local_candidates
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(raw);
                 } else {
                     // gathering complete (None sentinel)
                 }
@@ -511,7 +563,7 @@ async fn gather_session(
         let on_state: OnConnectionStateChangeHdlrFn = Box::new(move |st| {
             let shared = shared.clone();
             Box::pin(async move {
-                *shared.state.lock().unwrap() = conn_state_str(st);
+                *shared.state.lock().unwrap_or_else(|e| e.into_inner()) = conn_state_str(st);
             })
         });
         agent.on_connection_state_change(on_state);
@@ -523,14 +575,23 @@ async fn gather_session(
     let mut last = 0usize;
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let n = shared.local_candidates.lock().unwrap().len();
+        let n = shared
+            .local_candidates
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len();
         if n == last {
             break;
         }
         last = n;
     }
 
-    if shared.local_candidates.lock().unwrap().is_empty() {
+    if shared
+        .local_candidates
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_empty()
+    {
         return Err(format!(
             "no candidates gathered for {pubkey} (no network interface?)"
         ));

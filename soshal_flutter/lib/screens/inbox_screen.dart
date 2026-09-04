@@ -122,7 +122,6 @@ class _InboxScreenState extends State<InboxScreen> {
         _messageController.text,
         widget.otherPubkey!,
         sessionService.activePubkey!,
-        '', // In real implementation, would get this from secure storage
       );
 
       if (_burn) {
@@ -152,7 +151,7 @@ class _InboxScreenState extends State<InboxScreen> {
         );
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -819,7 +818,7 @@ class _InboxScreenState extends State<InboxScreen> {
       return;
     }
     try {
-      await messagingService.sendDM(content, pubkey, activePubkey, '');
+      await messagingService.sendDM(content, pubkey, activePubkey);
       if (dialogContext.mounted) {
         Navigator.of(dialogContext).pop();
       }

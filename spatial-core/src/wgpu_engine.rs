@@ -49,13 +49,13 @@ impl WgpuMeshEngineSession {
 
     /// Update or insert mesh nodes into the GPU compute queue
     pub fn set_nodes(&self, nodes: Vec<WgpuMeshNode>) {
-        let mut n = self.nodes.lock().unwrap();
+        let mut n = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
         *n = nodes;
     }
 
     /// Step force-directed 3D physics layout simulation step
     pub fn step_simulation(&self, delta_time: f32) {
-        let mut nodes = self.nodes.lock().unwrap();
+        let mut nodes = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
         let len = nodes.len();
         if len == 0 {
             return;
@@ -147,7 +147,7 @@ impl WgpuMeshEngineSession {
             node.z += node.vz * delta_time;
         }
 
-        let mut fc = self.frame_counter.lock().unwrap();
+        let mut fc = self.frame_counter.lock().unwrap_or_else(|e| e.into_inner());
         *fc += 1;
     }
 
@@ -164,7 +164,7 @@ impl WgpuMeshEngineSession {
             return Vec::new();
         }
         let mut buffer = vec![0u8; byte_len];
-        let nodes = self.nodes.lock().unwrap();
+        let nodes = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
 
         // Background color: Dark mesh canvas #0D1117
         for chunk in buffer.chunks_exact_mut(4) {
@@ -211,7 +211,7 @@ impl WgpuEngineManager {
     }
 
     pub fn create_session(&self, width: u32, height: u32) -> i64 {
-        let mut id_guard = self.next_id.lock().unwrap();
+        let mut id_guard = self.next_id.lock().unwrap_or_else(|e| e.into_inner());
         let id = *id_guard;
         *id_guard += 1;
 

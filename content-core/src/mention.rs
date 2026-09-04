@@ -3,12 +3,12 @@ use std::sync::OnceLock;
 
 fn npub_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"nostr:npub1[ac-hj-np-z02-9]{6,82}").expect("valid npub regex"))
+    RE.get_or_init(|| Regex::new(r"nostr:npub1[ac-hj-np-z02-9]{58,82}").expect("valid npub regex"))
 }
 
 fn bech32_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"npub1[ac-hj-np-z02-9]{6,82}").expect("valid bech32 regex"))
+    RE.get_or_init(|| Regex::new(r"npub1[ac-hj-np-z02-9]{58,82}").expect("valid bech32 regex"))
 }
 
 #[derive(Debug, PartialEq)]

@@ -39,6 +39,23 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     _pinnedView = List.unmodifiable(_pinned.toList());
   }
 
+  /// Clear all account-scoped feed state on account switch so Account B never
+  /// sees Account A's cached feed, pins, or reaction-history set.
+  void resetForAccountSwitch() {
+    _posts = [];
+    _rankedPosts = [];
+    _ranked = false;
+    _isLoading = false;
+    _loadingMore = false;
+    _currentOffset = 0;
+    _pinned.clear();
+    _pinnedLoaded = false;
+    _rebuildPinnedView();
+    _seenReactions.clear();
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Fetch feed events with pagination (supports cursor or offset)
   Future<List<FeedPost>> fetchFeed(
       {int limit = 20, int offset = 0, int? cursorCreatedAt, String? cursorId}) async {
@@ -61,7 +78,11 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         _rankedPosts = [];
         _reconcileAfterRefresh();
       } else {
-        _posts.addAll(newPosts);
+        // Deduplicate pagination overlap: overlapping pages (from events
+        // inserted between fetches) previously appended duplicates to the list.
+        final existing = _posts.map((p) => p.eventId).toSet();
+        final fresh = newPosts.where((p) => !existing.contains(p.eventId));
+        _posts.addAll(fresh);
         if (_posts.length > 100) {
           _posts = _posts.sublist(_posts.length - 100);
         }
@@ -474,7 +495,10 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     if (post.eventId.isEmpty) return;
     if (!validateNote(post.content)) return;
     if (_posts.any((p) => p.eventId == post.eventId)) return;
-    _posts.insert(0, post);
+    // Reassign a new list (NOT in-place insert): `context.select` in the feed
+    // screen compares list identity, so an in-place insert was skipped and
+    // live posts never appeared until the next fetchFeed.
+    _posts = [post, ..._posts];
     notifyDeferred();
   }
 
@@ -487,13 +511,20 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   void applyLiveReaction(
       String eventId, String pubkey, String content, String reactionId) {
     if (reactionId.isEmpty || !_seenReactions.add(reactionId)) return;
-    if (_seenReactions.length > 500) _seenReactions.clear();
+    // FIFO eviction (NEVER full clear): a clear wiped the just-added id plus
+    // every prior one, so replays after the boundary re-processed and
+    // permanently inflated counters.
+    if (_seenReactions.length > 500) {
+      while (_seenReactions.length > 450) {
+        _seenReactions.remove(_seenReactions.first);
+      }
+    }
     final index = _posts.indexWhere((p) => p.eventId == eventId);
     if (index < 0) return;
     final p = _posts[index];
     final delta = content == '+' ? 1 : -1;
     final bool liked = content == '+' ? true : content == '-' ? false : p.liked;
-    _posts[index] = FeedPost(
+    final updated = FeedPost(
       eventId: p.eventId,
       pubkey: p.pubkey,
       content: p.content,
@@ -506,6 +537,10 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       profilePicture: p.profilePicture,
       media: p.media,
     );
+    _posts[index] = updated;
+    // Mirror into the ranked view so counters stay fresh when ranked shown.
+    final ri = _rankedPosts.indexWhere((q) => q.eventId == eventId);
+    if (ri >= 0) _rankedPosts[ri] = updated;
     notifyDeferred();
   }
 

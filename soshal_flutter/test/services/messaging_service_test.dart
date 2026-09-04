@@ -209,7 +209,6 @@ void main() {
         'test msg',
         'recipient_pk',
         'sender_pk',
-        'sender_sk',
       );
 
       expect(result, 'eventid123');
@@ -232,7 +231,7 @@ void main() {
       });
 
       expect(
-        () => msg.sendDM('text', 'recipient', 'sender', 'sk'),
+        () => msg.sendDM('text', 'recipient', 'sender'),
         throwsException,
       );
       expect(msg.lastError, isNotNull);

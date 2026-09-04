@@ -235,188 +235,36 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   Future<void> _createDialog() async {
-    final title = TextEditingController();
-    final desc = TextEditingController();
-    final loc = TextEditingController();
-    final now = DateTime.now();
-    var start = now.add(const Duration(hours: 1));
-    var end = start.add(const Duration(hours: 2));
-    String imageUrl = '';
-    String? pickedPath;
-
-    final ok = await showDialog<bool>(
+    final result = await showDialog<_CreateEventResult>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Create event'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: title,
-                  decoration: const InputDecoration(labelText: 'Title *'),
-                ),
-                TextField(
-                  controller: desc,
-                  maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'Description'),
-                ),
-                TextField(
-                  controller: loc,
-                  decoration: const InputDecoration(labelText: 'Location'),
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Start'),
-                  trailing: Text(_fmt(start)),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: start,
-                      firstDate: now,
-                      lastDate: now.add(const Duration(days: 30)),
-                    );
-                    if (picked == null) return;
-                    if (!context.mounted) return;
-                    final time = await showTimePicker(
-                      context: context,
-                      initialTime: TimeOfDay.fromDateTime(start),
-                    );
-                    if (time == null) return;
-                    setDialogState(() {
-                      start = DateTime(picked.year, picked.month, picked.day,
-                          time.hour, time.minute);
-                      end = start.add(const Duration(hours: 2));
-                    });
-                  },
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('End'),
-                  trailing: Text(_fmt(end)),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: end,
-                      firstDate: now,
-                      lastDate: now.add(const Duration(days: 30)),
-                    );
-                    if (picked == null) return;
-                    if (!context.mounted) return;
-                    final time = await showTimePicker(
-                      context: context,
-                      initialTime: TimeOfDay.fromDateTime(end),
-                    );
-                    if (time == null) return;
-                    setDialogState(() {
-                      end = DateTime(picked.year, picked.month, picked.day,
-                          time.hour, time.minute);
-                    });
-                  },
-                ),
-                if (pickedPath == null)
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      try {
-                        final picked =
-                            await FilePicker.pickFile(type: FileType.image);
-                        final path = picked?.path;
-                        if (path == null || !context.mounted) return;
-                        final manifest = await context
-                            .read<MediaService>()
-                            .uploadMedia(path);
-                        final hash = manifest['blob_hash'] as String? ?? '';
-                        if (hash.length != 64) {
-                          throw Exception('Bad upload manifest');
-                        }
-                        setDialogState(() {
-                          pickedPath = path;
-                          imageUrl = 'blob://$hash';
-                        });
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: SelectableText('Photo failed: $e')),
-                          );
-                        }
-                      }
-                    },
-                    icon: const Icon(Icons.image_outlined),
-                    label: const Text('Add photo'),
-                  )
-                else
-                  Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          File(pickedPath!),
-                          height: 120,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        child: IconButton(
-                          icon: const Icon(Icons.close, size: 18),
-                          onPressed: () => setDialogState(() {
-                            pickedPath = null;
-                            imageUrl = '';
-                          }),
-                        ),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Create'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => const _CreateEventDialog(),
     );
-
-    if (ok == true) {
-      if (!mounted) return;
-      try {
-        final session = context.read<SessionService>();
-        final pubkey = session.activePubkey;
-        if (pubkey == null) throw Exception('Sign in to create events');
-        await context.read<EventsService>().create(
-              pubkey,
-              title.text.trim(),
-              desc.text.trim(),
-              loc.text.trim(),
-              0,
-              0,
-              start.millisecondsSinceEpoch ~/ 1000,
-              end.millisecondsSinceEpoch ~/ 1000,
-              imageUrl,
-            );
-        await _load();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Create failed: $e')),
+    if (result == null || !result.ok) return;
+    if (!mounted) return;
+    try {
+      final session = context.read<SessionService>();
+      final pubkey = session.activePubkey;
+      if (pubkey == null) throw Exception('Sign in to create events');
+      await context.read<EventsService>().create(
+            pubkey,
+            result.title,
+            result.desc,
+            result.loc,
+            0,
+            0,
+            result.start!.millisecondsSinceEpoch ~/ 1000,
+            result.end!.millisecondsSinceEpoch ~/ 1000,
+            result.imageUrl,
           );
-        }
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Create failed: $e')),
+        );
       }
     }
   }
-
-  String _fmt(DateTime t) =>
-      '${t.month}/${t.day} ${t.hour}:${t.minute.toString().padLeft(2, '0')}';
 
   String _audienceLabel(_AudienceMode m) {
     if (m == _AudienceMode.all) return 'All';
@@ -805,6 +653,210 @@ class _EventsScreenState extends State<EventsScreen> {
   String _fmtFullDate(DateTime d) =>
       '${_weekdaysFull[d.weekday % 7]}, ${_monthShort[d.month - 1]} '
       '${d.day}, ${d.year}';
+}
+
+class _CreateEventResult {
+  const _CreateEventResult({
+    required this.ok,
+    this.title = '',
+    this.desc = '',
+    this.loc = '',
+    this.start,
+    this.end,
+    this.imageUrl = '',
+  });
+
+  final bool ok;
+  final String title;
+  final String desc;
+  final String loc;
+  final DateTime? start;
+  final DateTime? end;
+  final String imageUrl;
+}
+
+class _CreateEventDialog extends StatefulWidget {
+  const _CreateEventDialog();
+
+  @override
+  State<_CreateEventDialog> createState() => _CreateEventDialogState();
+}
+
+class _CreateEventDialogState extends State<_CreateEventDialog> {
+  final _title = TextEditingController();
+  final _desc = TextEditingController();
+  final _loc = TextEditingController();
+  late final DateTime _now;
+  late DateTime _start;
+  late DateTime _end;
+  String _imageUrl = '';
+  String? _pickedPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _now = DateTime.now();
+    _start = _now.add(const Duration(hours: 1));
+    _end = _start.add(const Duration(hours: 2));
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _desc.dispose();
+    _loc.dispose();
+    super.dispose();
+  }
+
+  static const _monthShort = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _fmt(DateTime t) {
+    final s = t;
+    return '${_monthShort[s.month - 1]} ${s.day} · ${formatClock12h(s)}';
+  }
+
+  Future<void> _pickDate({required bool isStart}) async {
+    final base = isStart ? _start : _end;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: base,
+      firstDate: _now,
+      lastDate: _now.add(const Duration(days: 30)),
+    );
+    if (picked == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(base),
+    );
+    if (time == null || !mounted) return;
+    setState(() {
+      final dt =
+          DateTime(picked.year, picked.month, picked.day, time.hour, time.minute);
+      if (isStart) {
+        _start = dt;
+        if (_end.isBefore(dt)) _end = dt.add(const Duration(hours: 2));
+      } else {
+        _end = dt;
+      }
+    });
+  }
+
+  Future<void> _pickPhoto() async {
+    try {
+      final picked = await FilePicker.pickFile(type: FileType.image);
+      final path = picked?.path;
+      if (path == null || !mounted) return;
+      final manifest = await context.read<MediaService>().uploadMedia(path);
+      final hash = manifest['blob_hash'] as String? ?? '';
+      if (hash.length != 64) {
+        throw Exception('Bad upload manifest');
+      }
+      setState(() {
+        _pickedPath = path;
+        _imageUrl = 'blob://$hash';
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Photo failed: $e')),
+        );
+      }
+    }
+  }
+
+  void _pop(bool ok) {
+    Navigator.of(context).pop(_CreateEventResult(
+      ok: ok,
+      title: _title.text.trim(),
+      desc: _desc.text.trim(),
+      loc: _loc.text.trim(),
+      start: _start,
+      end: _end,
+      imageUrl: _imageUrl,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create event'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _title,
+              decoration: const InputDecoration(labelText: 'Title *'),
+            ),
+            TextField(
+              controller: _desc,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Description'),
+            ),
+            TextField(
+              controller: _loc,
+              decoration: const InputDecoration(labelText: 'Location'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Start'),
+              trailing: Text(_fmt(_start)),
+              onTap: () => _pickDate(isStart: true),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('End'),
+              trailing: Text(_fmt(_end)),
+              onTap: () => _pickDate(isStart: false),
+            ),
+            if (_pickedPath == null)
+              OutlinedButton.icon(
+                onPressed: _pickPhoto,
+                icon: const Icon(Icons.image_outlined),
+                label: const Text('Add photo'),
+              )
+            else
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(
+                      File(_pickedPath!),
+                      height: 120,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () => setState(() {
+                        _pickedPath = null;
+                        _imageUrl = '';
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => _pop(true),
+          child: const Text('Create'),
+        ),
+      ],
+    );
+  }
 }
 
 /// Event detail: RSVP, check-in and attendees.

@@ -124,7 +124,7 @@ pub async fn minis_publish(
     let id = event["id"].as_str().unwrap_or_default().to_string();
     let author_pubkey = event["pubkey"].as_str().unwrap_or_default().to_string();
     let tags_json = serde_json::to_string(&event["tags"]).unwrap_or_else(|_| "[]".to_string());
-    let _ = super::db::upsert_post_row(
+    if let Err(e) = super::db::upsert_post_row(
         id.clone(),
         author_pubkey,
         content,
@@ -132,7 +132,9 @@ pub async fn minis_publish(
         soshal_common_core::format::now_secs(),
         tags_json,
         None,
-    );
+    ) {
+        eprintln!("minis upsert_post_row failed: {e}");
+    }
     let _ = super::network::network_publish_event(signed).await?;
     Ok(id)
 }

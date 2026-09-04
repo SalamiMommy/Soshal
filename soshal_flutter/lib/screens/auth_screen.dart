@@ -520,6 +520,18 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
       // Save session
       await sessionService.saveSession();
 
+      // The session switch invalidates signer keys for any previously
+      // unlocked identity (a different account's keys must never linger in
+      // memory). Re-unlock the just-restored identity with the recovery
+      // phrase in hand before the keychain save below — saving requires the
+      // in-process signer for THIS pubkey to be unlocked.
+      if (await signer.isLocked()) {
+        await authService.restoreFromMnemonic(
+          widget.mnemonic.trim(),
+          '',
+        );
+      }
+
       // Persist the nsec to the OS keychain so future launches can restore
       // the signer without the recovery phrase (desktop keychains only;
       // swallowed when unavailable, e.g. Android without keystore backend).
@@ -552,7 +564,13 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
         widget.onComplete();
       }
     } catch (e, st) {
-      debugPrint('auth_complete failed: $e\n$st');
+      debugPrint('auth_complete failed: $e');
+      // Stack trace not printed in release: it may contain file paths / flow
+      // details near mnemonic handling. Redacted error already surfaced below.
+      assert(() {
+        debugPrint('$st');
+        return true;
+      }());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: SelectableText('Error: $e')),

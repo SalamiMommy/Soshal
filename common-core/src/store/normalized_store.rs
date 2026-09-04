@@ -60,11 +60,29 @@ impl NormalizedStore {
     }
 
     fn notify(&self, delta: EntityDelta) {
-        if let Ok(listeners) = self.listeners.lock() {
-            for listener in listeners.iter() {
-                listener(delta.clone());
-            }
+        // Take the listener list out of the lock, then release the lock
+        // before invoking callbacks. Holding the Mutex across a callback that
+        // re-entered notify() (via upsert_user/update_post_reaction/…) would
+        // deadlock a non-reentrant std::sync::Mutex. Taking the Vec out means
+        // re-entrant notify() calls (from a callback) see an empty list and
+        // return immediately instead of deadlocking.
+        let mut taken = {
+            let mut listeners = match self.listeners.lock() {
+                Ok(l) => l,
+                Err(_) => return,
+            };
+            std::mem::take(&mut *listeners)
+        };
+        for listener in taken.iter() {
+            listener(delta.clone());
         }
+        let mut listeners = self.listeners.lock().unwrap_or_else(|e| e.into_inner());
+        // Merge, not overwrite: a subscribe() that ran while callbacks were
+        // executing pushed onto the live list; overwriting it would lose that
+        // listener. Same poison-recovery convention as the store RwLocks.
+        let mut live = std::mem::take(&mut *listeners);
+        taken.append(&mut live);
+        *listeners = taken;
     }
 
     pub fn upsert_user(&self, user: UserEntity) -> EntityDelta {

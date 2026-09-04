@@ -99,109 +99,114 @@ class _StoriesScreenState extends State<StoriesScreen> {
     final images = TextEditingController();
     bool uploading = false;
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Post a story'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: text,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Story text'),
-              ),
-              TextField(
-                controller: images,
-                decoration: const InputDecoration(
-                  labelText: 'Images',
-                  hintText: 'pick from device or paste URLs',
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Post a story'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: text,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Story text'),
                 ),
+                TextField(
+                  controller: images,
+                  decoration: const InputDecoration(
+                    labelText: 'Images',
+                    hintText: 'pick from device or paste URLs',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: uploading
+                      ? null
+                      : () async {
+                          try {
+                            final picked =
+                                await FilePicker.pickFile(type: FileType.image);
+                            final path = picked?.path;
+                            if (path == null || !context.mounted) return;
+                            setDialogState(() => uploading = true);
+                            final manifest = await context
+                                .read<MediaService>()
+                                .uploadMedia(path);
+                            final hash = manifest['blob_hash'] as String? ?? '';
+                            if (hash.length != 64) {
+                              throw Exception('Bad upload manifest');
+                            }
+                            final list = images.text
+                                .split(',')
+                                .map((e) => e.trim())
+                                .where((e) => e.isNotEmpty)
+                                .toList()
+                              ..add('n$hash');
+                            images.text = list.join(', ');
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  content: SelectableText('Upload error: $e')));
+                            }
+                          } finally {
+                            setDialogState(() => uploading = false);
+                          }
+                        },
+                  icon: uploading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('Pick image from device'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
               ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: uploading
-                    ? null
-                    : () async {
-                        try {
-                          final picked =
-                              await FilePicker.pickFile(type: FileType.image);
-                          final path = picked?.path;
-                          if (path == null || !context.mounted) return;
-                          setDialogState(() => uploading = true);
-                          final manifest = await context
-                              .read<MediaService>()
-                              .uploadMedia(path);
-                          final hash = manifest['blob_hash'] as String? ?? '';
-                          if (hash.length != 64) {
-                            throw Exception('Bad upload manifest');
-                          }
-                          final list = images.text
-                              .split(',')
-                              .map((e) => e.trim())
-                              .where((e) => e.isNotEmpty)
-                              .toList()
-                            ..add('n$hash');
-                          images.text = list.join(', ');
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: SelectableText('Upload error: $e')));
-                          }
-                        } finally {
-                          setDialogState(() => uploading = false);
-                        }
-                      },
-                icon: uploading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.add_photo_alternate_outlined),
-                label: const Text('Pick image from device'),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Post'),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Post'),
-            ),
-          ],
         ),
-      ),
-    );
+      );
 
-    if (ok == true) {
-      if (!mounted) return;
-      try {
-        final session = context.read<SessionService>();
-        final pubkey = session.activePubkey;
-        if (pubkey == null) throw Exception('Sign in to post');
-        final imageList = images.text
-            .split(',')
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty)
-            .toList();
-        await context.read<StreamingService>().postStory(
-              pubkey,
-              text.text.trim(),
-              imageList,
-              24,
-            );
-        await _load();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: SelectableText('Post failed: $e')));
+      if (ok == true) {
+        if (!mounted) return;
+        try {
+          final session = context.read<SessionService>();
+          final pubkey = session.activePubkey;
+          if (pubkey == null) throw Exception('Sign in to post');
+          final imageList = images.text
+              .split(',')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+          await context.read<StreamingService>().postStory(
+                pubkey,
+                text.text.trim(),
+                imageList,
+                24,
+              );
+          await _load();
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: SelectableText('Post failed: $e')));
+          }
         }
       }
+    } finally {
+      text.dispose();
+      images.dispose();
     }
   }
 

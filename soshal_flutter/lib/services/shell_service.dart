@@ -405,7 +405,9 @@ class ShellService extends ChangeNotifier {
   Future<void> stopAudio() async {
     try {
       await _audioPlayer?.stop();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('audio stop: $e');
+    }
     _audioUrl = '';
     _audioTitle = '';
     _audioPlaying = false;

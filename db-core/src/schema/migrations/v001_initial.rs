@@ -112,6 +112,15 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
             PRIMARY KEY (pubkey, blocked_pubkey)
         );
 
+        CREATE TABLE IF NOT EXISTS ignored_notifications (
+            pubkey TEXT NOT NULL,
+            from_pubkey TEXT NOT NULL DEFAULT '',
+            event_id TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (pubkey, kind, from_pubkey, event_id)
+        );
+
         CREATE TABLE IF NOT EXISTS groups (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,

@@ -88,104 +88,117 @@ class _ModerationScreenState extends State<ModerationScreen> {
     final threshold = TextEditingController(text: '2');
     final total = TextEditingController(text: '3');
     final group = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create jury case'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: caseId,
-                decoration: const InputDecoration(labelText: 'Case id'),
-              ),
-              TextField(
-                controller: target,
-                decoration: const InputDecoration(labelText: 'Target pubkey'),
-              ),
-              TextField(
-                controller: reason,
-                decoration: const InputDecoration(labelText: 'Reason'),
-              ),
-              TextField(
-                controller: threshold,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Threshold'),
-              ),
-              TextField(
-                controller: total,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Total jurors'),
-              ),
-              TextField(
-                controller: group,
-                decoration: const InputDecoration(labelText: 'Group pubkey'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
     try {
-      final json = await context.read<ModerationService>().createJuryCase(
-            caseId: caseId.text.trim(),
-            targetPubkey: target.text.trim(),
-            reason: reason.text.trim(),
-            threshold: int.tryParse(threshold.text.trim()) ?? 2,
-            totalJurors: int.tryParse(total.text.trim()) ?? 3,
-            groupPubkey: group.text.trim(),
-          );
-      if (!mounted) return;
-      setState(() {
-        _juryCaseJson = json;
-        _juryResult = null;
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Jury case failed: $e')));
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Create jury case'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: caseId,
+                  decoration: const InputDecoration(labelText: 'Case id'),
+                ),
+                TextField(
+                  controller: target,
+                  decoration: const InputDecoration(labelText: 'Target pubkey'),
+                ),
+                TextField(
+                  controller: reason,
+                  decoration: const InputDecoration(labelText: 'Reason'),
+                ),
+                TextField(
+                  controller: threshold,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Threshold'),
+                ),
+                TextField(
+                  controller: total,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Total jurors'),
+                ),
+                TextField(
+                  controller: group,
+                  decoration: const InputDecoration(labelText: 'Group pubkey'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+      try {
+        final json = await context.read<ModerationService>().createJuryCase(
+              caseId: caseId.text.trim(),
+              targetPubkey: target.text.trim(),
+              reason: reason.text.trim(),
+              threshold: int.tryParse(threshold.text.trim()) ?? 2,
+              totalJurors: int.tryParse(total.text.trim()) ?? 3,
+              groupPubkey: group.text.trim(),
+            );
+        if (!mounted) return;
+        setState(() {
+          _juryCaseJson = json;
+          _juryResult = null;
+        });
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: SelectableText('Jury case failed: $e')));
+        }
       }
+    } finally {
+      caseId.dispose();
+      target.dispose();
+      reason.dispose();
+      threshold.dispose();
+      total.dispose();
+      group.dispose();
     }
   }
 
   Future<void> _addFilter() async {
     final controller = TextEditingController();
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add word filter'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'word or phrase'),
+    try {
+      final value = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Add word filter'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(hintText: 'word or phrase'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Add'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-    if (value == null || value.isEmpty) return;
-    if (!mounted) return;
-    final api = context.read<ModerationService>();
-    await api.setWordFilters([...api.wordFilters, value]);
+      );
+      if (value == null || value.isEmpty) return;
+      if (!mounted) return;
+      final api = context.read<ModerationService>();
+      await api.setWordFilters([...api.wordFilters, value]);
+    } finally {
+      controller.dispose();
+    }
   }
 
   Future<void> _removeFilter(String filter) async {

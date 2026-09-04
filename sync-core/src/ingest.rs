@@ -629,9 +629,22 @@ pub fn handle_batch(
                 _ => {
                     if POST_KIND_ALLOWLIST.contains(&event.kind.as_u16()) {
                         if let Some(row) = post_row(event) {
-                            ensure_author_user(db, &t, event).await?;
-                            rows.push(row);
-                            ok_pos.push(pos);
+                            // Absorb a per-event author-ensure failure like the
+                            // sibling branches above: previously the `?` aborted
+                            // the whole batch transaction (rolling back every
+                            // event) on one bad author write. Skip just this row.
+                            match ensure_author_user(db, &t, event).await {
+                                Ok(()) => {
+                                    rows.push(row);
+                                    ok_pos.push(pos);
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "sync engine: ensure author event {}: {e}",
+                                        event.id.to_hex()
+                                    )
+                                }
+                            }
                         }
                     }
                 }

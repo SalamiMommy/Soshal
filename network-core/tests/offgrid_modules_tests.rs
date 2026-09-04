@@ -181,3 +181,31 @@ fn http3_response_data_shape() {
     assert_eq!(resp.status, 200);
     assert_eq!(resp.body, vec![1, 2, 3]);
 }
+
+#[test]
+fn freenet_loopback_bypasses_ssrf_gate() {
+    use soshal_network_core::freenet_websocket::FreenetWebSocketClient;
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    // Grab a guaranteed-closed loopback port so connect() fails at the
+    // socket level, not before reaching it.
+    let port = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().port()
+    };
+    let url = format!("ws://127.0.0.1:{port}");
+    // Control: the relay SSRF policy rejects this exact URL outright.
+    assert!(!soshal_common_core::url::is_valid_relay_url(&url).0);
+    let client = FreenetWebSocketClient::new(url, String::new());
+    let err = rt.block_on(client.connect()).unwrap_err();
+    // Loopback gateway URLs are user-configured local endpoints: they must
+    // reach the socket layer instead of being rejected by the relay policy.
+    assert!(
+        !err.contains("SSRF"),
+        "loopback URL hit the policy gate: {err}"
+    );
+    assert!(
+        !err.contains("resolves to an internal address"),
+        "loopback URL hit the resolve gate: {err}"
+    );
+}

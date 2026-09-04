@@ -47,101 +47,106 @@ class _ScheduledScreenState extends State<ScheduledScreen> {
     final now = DateTime.now();
     var when = now.add(const Duration(hours: 1));
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Schedule a post'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: content,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: 'Content *',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: hashtags,
-                  decoration: const InputDecoration(
-                    labelText: 'Hashtags',
-                    hintText: '#music #tech',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.schedule),
-                  title: const Text('Schedule for'),
-                  trailing: Text(formatDateTime(when)),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: when,
-                      firstDate: now,
-                      lastDate: now.add(const Duration(days: 365)),
-                    );
-                    if (picked == null) return;
-                    if (!context.mounted) return;
-                    final time = await showTimePicker(
-                      context: context,
-                      initialTime: TimeOfDay.fromDateTime(when),
-                    );
-                    if (time == null) return;
-                    setDialogState(() {
-                      when = DateTime(picked.year, picked.month, picked.day,
-                          time.hour, time.minute);
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Schedule'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (ok != true) return;
-    if (!mounted) return;
-    final pubkey = _pubkey;
-    if (pubkey == null) {
-      _showSnack('Sign in required to schedule posts');
-      return;
-    }
-    if (content.text.trim().isEmpty) {
-      _showSnack('Content required');
-      return;
-    }
-    final tags = hashtags.text
-        .split(RegExp(r'[,\s]+'))
-        .map((s) => s.trim().replaceFirst('#', ''))
-        .where((s) => s.isNotEmpty)
-        .toList();
     try {
-      await context.read<ScheduledService>().create(
-            pubkey: pubkey,
-            content: content.text.trim(),
-            scheduledAt: when.millisecondsSinceEpoch ~/ 1000,
-            hashtags: tags,
-          );
-      await _load();
-    } catch (e) {
-      if (mounted) _showSnack('Schedule failed: $e');
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Schedule a post'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: content,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Content *',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: hashtags,
+                    decoration: const InputDecoration(
+                      labelText: 'Hashtags',
+                      hintText: '#music #tech',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.schedule),
+                    title: const Text('Schedule for'),
+                    trailing: Text(formatDateTime(when)),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: when,
+                        firstDate: now,
+                        lastDate: now.add(const Duration(days: 365)),
+                      );
+                      if (picked == null) return;
+                      if (!context.mounted) return;
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay.fromDateTime(when),
+                      );
+                      if (time == null) return;
+                      setDialogState(() {
+                        when = DateTime(picked.year, picked.month, picked.day,
+                            time.hour, time.minute);
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Schedule'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (ok != true) return;
+      if (!mounted) return;
+      final pubkey = _pubkey;
+      if (pubkey == null) {
+        _showSnack('Sign in required to schedule posts');
+        return;
+      }
+      if (content.text.trim().isEmpty) {
+        _showSnack('Content required');
+        return;
+      }
+      final tags = hashtags.text
+          .split(RegExp(r'[,\s]+'))
+          .map((s) => s.trim().replaceFirst('#', ''))
+          .where((s) => s.isNotEmpty)
+          .toList();
+      try {
+        await context.read<ScheduledService>().create(
+              pubkey: pubkey,
+              content: content.text.trim(),
+              scheduledAt: when.millisecondsSinceEpoch ~/ 1000,
+              hashtags: tags,
+            );
+        await _load();
+      } catch (e) {
+        if (mounted) _showSnack('Schedule failed: $e');
+      }
+    } finally {
+      content.dispose();
+      hashtags.dispose();
     }
   }
 

@@ -245,6 +245,65 @@ pub fn media_clear_cache(cache_dir: String) -> Result<String, String> {
     }
 }
 
+/// Reject sensitive/host-key paths when uploading a local media file to the
+/// chunk store. A compromised Dart caller must not be able to read SSH keys,
+/// cloud credentials, GPG keys, etc. into a blob that a hostile peer could
+/// then exfiltrate over P2P.
+///
+/// Two-layer guard:
+///   Layer 1 — OS-level sensitive directories (/etc, /proc, /sys, …).
+///   Layer 2 — sensitive subdirectories under the user's home dir.
+///
+/// Paths under standard removable/data mount roots (/run/media, /media,
+/// /mnt) bypass the blocklist: udisks automounts external hard drives at
+/// /run/media/<user>, which the blanket /run block previously rejected as a
+/// "system directory" even though it holds ordinary user media.
+fn validate_local_source_path(canon: &Path) -> Result<(), String> {
+    // Layer 0: user media on removable/data mounts is always allowed.
+    const REMOVABLE_ROOTS: &[&str] = &["/run/media", "/media", "/mnt"];
+    if REMOVABLE_ROOTS.iter().any(|root| canon.starts_with(root)) {
+        return Ok(());
+    }
+
+    // Layer 1: block known sensitive OS directories. /run stays listed here:
+    // the removable carve-out above is the only /run subtree that may pass.
+    const BLOCKED_SYSTEM_DIRS: &[&str] = &[
+        "/etc", "/proc", "/sys", "/root", "/boot", "/dev", "/run", "/snap", "/var/lib",
+    ];
+    if BLOCKED_SYSTEM_DIRS
+        .iter()
+        .any(|prefix| canon.starts_with(prefix))
+    {
+        return Err(
+            "file path must not be inside a system directory (/etc, /proc, /sys, …)".to_string(),
+        );
+    }
+
+    // Layer 2: block sensitive subdirectories under the user's home dir.
+    // These hold secret key material that must never enter the chunk store.
+    const BLOCKED_HOME_SUBDIRS: &[&str] = &[
+        ".ssh",
+        ".gnupg",
+        ".aws",
+        ".config",
+        ".local/share/keyrings",
+        ".password-store",
+        ".netrc",
+        ".credentials",
+    ];
+    if let Some(home) = dirs::home_dir() {
+        for sub in BLOCKED_HOME_SUBDIRS {
+            let blocked = home.join(sub);
+            if canon.starts_with(&blocked) {
+                return Err(format!(
+                    "file path must not be inside a sensitive directory (~/{sub})"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Upload media to the local chunk store and return the blob manifest.
 /// The blob is chunked, deduplicated, and stored in the local CAS.
 #[frb(sync, serialize)]
@@ -273,50 +332,8 @@ pub async fn media_upload_blob_file(file_path: String) -> Result<String, String>
         // prevent a compromised Dart caller from reading SSH keys, cloud
         // credentials, GPG keys, etc. into the chunk store (from where they
         // could be exfiltrated via P2P blob requests from a hostile peer).
-        //
-        // H1 fix: two-layer guard:
-        //   Layer 1 — system directories (OS-level sensitive paths).
-        //   Layer 2 — home directory sensitive subdirectories.
         let canon = fs::canonicalize(&file_path).map_err(|e| format!("file path invalid: {e}"))?;
-
-        // Layer 1: block known sensitive OS directories.
-        const BLOCKED_SYSTEM_DIRS: &[&str] = &[
-            "/etc", "/proc", "/sys", "/root", "/boot", "/dev", "/run", "/snap", "/var/lib",
-        ];
-        if BLOCKED_SYSTEM_DIRS
-            .iter()
-            .any(|prefix| canon.starts_with(prefix))
-        {
-            return Err(
-                "file path must not be inside a system directory (/etc, /proc, /sys, …)"
-                    .to_string(),
-            )
-            .into();
-        }
-
-        // Layer 2: block sensitive subdirectories under the user's home dir.
-        // These hold secret key material that must never enter the chunk store.
-        const BLOCKED_HOME_SUBDIRS: &[&str] = &[
-            ".ssh",
-            ".gnupg",
-            ".aws",
-            ".config",
-            ".local/share/keyrings",
-            ".password-store",
-            ".netrc",
-            ".credentials",
-        ];
-        if let Some(home) = dirs::home_dir() {
-            for sub in BLOCKED_HOME_SUBDIRS {
-                let blocked = home.join(sub);
-                if canon.starts_with(&blocked) {
-                    return Err(format!(
-                        "file path must not be inside a sensitive directory (~/{sub})"
-                    ))
-                    .into();
-                }
-            }
-        }
+        validate_local_source_path(&canon)?;
         let file = fs::File::open(&canon).map_err(|e| format!("open file failed: {e}"))?;
         let store = ChunkStore::new(ChunkStore::default_root());
         let manifest = store.store_reader(file)?;
@@ -567,5 +584,83 @@ mod tests {
         assert!(!oversized.is_valid());
         oversized.chunks[0].len = 10;
         assert!(oversized.is_valid());
+    }
+
+    #[test]
+    fn validate_local_source_path_allows_removable_mounts() {
+        for p in [
+            "/run/media/sam/External HD/podcast.mp3",
+            "/run/media/sam/.hidden/track.flac",
+            "/media/sam/USB/rip.wav",
+            "/mnt/data/music/album.ogg",
+        ] {
+            assert!(
+                validate_local_source_path(Path::new(p)).is_ok(),
+                "expected allow: {p}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_local_source_path_blocks_system_dirs() {
+        for p in [
+            "/etc/shadow",
+            "/etc/ssh/ssh_host_ed25519_key",
+            "/proc/1/environ",
+            "/sys/kernel/kexec_crash_loaded",
+            "/root/.ssh/id_ed25519",
+            "/boot/initramfs.img",
+            "/dev/mem",
+            "/run/secrets/kube-token",
+            "/run/user/1000/keyring/secret",
+            "/snap/canonical-test/current/lib",
+            "/var/lib/gpg/private-keys-v1.d/key.gpg",
+        ] {
+            let err = validate_local_source_path(Path::new(p)).unwrap_err();
+            assert!(
+                err.contains("system directory"),
+                "{p}: expected system-dir reject, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_local_source_path_blocks_home_secrets() {
+        let cases = [
+            ".ssh/id_ed25519",
+            ".gnupg/private-keys-v1.d/key.gpg",
+            ".aws/credentials",
+            ".config/foo/token",
+            ".local/share/keyrings/login.keyring",
+            ".password-store/gpg/github.gpg",
+            ".netrc",
+            ".credentials",
+        ];
+        for rel in cases {
+            let blocked = dirs::home_dir().unwrap().join(rel);
+            let err = validate_local_source_path(&blocked).unwrap_err();
+            assert!(
+                err.contains("sensitive directory"),
+                "{rel}: expected home-secrets reject, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_local_source_path_allows_ordinary_user_paths() {
+        let home = dirs::home_dir().unwrap();
+        for p in [
+            home.join("Music").join("track.mp3"),
+            home.join("Desktop").join("notes.txt"),
+            PathBuf::from("/tmp/upload_pending.mp3"),
+            PathBuf::from("/home/other/user/media/x.wav"),
+            PathBuf::from("/data/shared/audio/loop.ogg"),
+        ] {
+            assert!(
+                validate_local_source_path(&p).is_ok(),
+                "expected allow: {}",
+                p.display()
+            );
+        }
     }
 }

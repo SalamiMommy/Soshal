@@ -29,7 +29,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     text: '0000000000000000000000000000000000000000000000000000000000000000',
   );
   final TextEditingController _freenetUrl =
-      TextEditingController(text: 'http://127.0.0.1:8888');
+      TextEditingController(text: 'ws://127.0.0.1:8888');
   final TextEditingController _freenetAuthToken = TextEditingController();
   final TextEditingController _freenetKey = TextEditingController();
   final TextEditingController _freenetStateField =

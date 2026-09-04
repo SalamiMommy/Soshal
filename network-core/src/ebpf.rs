@@ -70,20 +70,20 @@ impl EbpfShaper {
 
     /// Block a peer IP (user-space blocklist; no kernel attach)
     pub fn block_ip(&self, ip: &str) -> bool {
-        let mut ips = self.blocked_ips.lock().unwrap();
+        let mut ips = self.blocked_ips.lock().unwrap_or_else(|e| e.into_inner());
         ips.insert(ip.to_string())
     }
 
     /// Unblock a peer IP address
     pub fn unblock_ip(&self, ip: &str) -> bool {
-        let mut ips = self.blocked_ips.lock().unwrap();
+        let mut ips = self.blocked_ips.lock().unwrap_or_else(|e| e.into_inner());
         ips.remove(ip)
     }
 
     /// User-space packet admission check against blocklist.
     /// Returns `true` if allowed, `false` if dropped (in-process, pre-buffer).
     pub fn inspect_packet(&self, src_ip: &str, _payload_len: usize) -> bool {
-        let ips = self.blocked_ips.lock().unwrap();
+        let ips = self.blocked_ips.lock().unwrap_or_else(|e| e.into_inner());
         if ips.contains(src_ip) {
             self.dropped_packets.fetch_add(1, Ordering::SeqCst);
             false
@@ -97,7 +97,11 @@ impl EbpfShaper {
     pub fn stats(&self) -> EbpfShaperStats {
         let drops = self.dropped_packets.load(Ordering::SeqCst);
         let passes = self.passed_packets.load(Ordering::SeqCst);
-        let blocked = self.blocked_ips.lock().unwrap().len();
+        let blocked = self
+            .blocked_ips
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len();
 
         let nanos_saved = drops.saturating_mul(1_200);
 

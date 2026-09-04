@@ -95,6 +95,21 @@ elif [[ -x "$RNSD_BIN" ]]; then
   echo "  WARNING: rnsd is $(stat -c%s "$RNSD_BIN")B (stub, not a real binary) — not bundled" >&2
 fi
 
+# Bundle libmpv.so.2 (media_kit video backend) if the host provides it.
+# media_kit_libs_video does NOT bundle mpv on Linux — it dlopens system
+# libmpv.so.2 at runtime; without it every video surfaces the old
+# "not supported" error. Soname-stable, co-located with the other .sos so
+# the $ORIGIN/lib rpath resolves it.
+if [[ -f /usr/lib/libmpv.so.2 ]] || [[ -f /usr/lib/x86_64-linux-gnu/libmpv.so.2 ]]; then
+  MPV_LIB=$( [[ -f /usr/lib/libmpv.so.2 ]] && echo /usr/lib/libmpv.so.2 \
+          || echo /usr/lib/x86_64-linux-gnu/libmpv.so.2 )
+  mkdir -p "$STAGE/usr/bin/soshal_flutter/lib"
+  cp "$MPV_LIB" "$STAGE/usr/bin/soshal_flutter/lib/libmpv.so.2"
+  echo "  mpv: bundled libmpv.so.2 for media_kit video"
+else
+  echo "  WARNING: system libmpv.so.2 not found — Linux video playback needs mpv" >&2
+fi
+
 cat > "$STAGE/soshal_flutter.desktop" <<EOF
 [Desktop Entry]
 Name=Soshal

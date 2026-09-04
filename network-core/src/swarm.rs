@@ -70,6 +70,23 @@ pub fn spawn_swarm_download(cfg: SwarmConfig) -> std::thread::JoinHandle<SwarmRe
 }
 
 async fn download(cfg: SwarmConfig) -> SwarmReport {
+    // Validate out_path before opening: canonicalize the parent directory and
+    // reject components that escape it (.. / symlink traversal). The caller
+    // supplies this path (an app cache directory); we must not let a hostiley
+    // supplied path redirect the write elsewhere.
+    if let Err(e) = validate_out_path(&cfg.out_path) {
+        log::warn!("swarm: invalid out_path {}: {e}", cfg.out_path.display());
+        return SwarmReport {
+            failures: cfg.manifest.chunks.len(),
+            failed_hashes: cfg
+                .manifest
+                .chunks
+                .iter()
+                .map(|c| c.blake3.clone())
+                .collect(),
+            ..SwarmReport::default()
+        };
+    }
     let total = cfg.manifest.total_size;
     let chunks = Arc::new(cfg.manifest.chunks.clone());
     if total > crate::blob_grab::MAX_BLOB_FETCH_BYTES {
@@ -274,7 +291,7 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                             }
                         };
                         {
-                            let mut map = map.lock().unwrap();
+                            let mut map = map.lock().unwrap_or_else(|e| e.into_inner());
                             if copy_end > map.len() {
                                 log::debug!(
                                     "swarm: chunk {}: range {}-{} exceeds mmap len {}",
@@ -287,7 +304,7 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                             }
                             map[off..copy_end].copy_from_slice(&data);
                         }
-                        done.lock().unwrap().insert(idx);
+                        done.lock().unwrap_or_else(|e| e.into_inner()).insert(idx);
                     }
                     None => {
                         log::debug!("swarm: chunk {} failed on all peers", chr.blake3);
@@ -329,6 +346,31 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
         report.failures
     );
     report
+}
+
+/// Validate a swarm destination path: it must be absolute, its parent must
+/// not be a symlink, and no normalized component may escape via `..`.
+fn validate_out_path(path: &std::path::Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "out_path has no parent".to_string())?;
+    // Canonicalize the parent (resolves symlinks + `..`), recreating it if
+    // absent, then require the file's own name to be a plain basename.
+    let canon = std::fs::canonicalize(parent).map_err(|e| format!("parent canonicalize: {e}"))?;
+    let file_name = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .ok_or_else(|| "out_path has no file name".to_string())?;
+    if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
+        return Err("out_path file name invalid".to_string());
+    }
+    // Reject if the canonical parent itself is a symlink at write time.
+    if let Ok(m) = std::fs::symlink_metadata(&canon) {
+        if m.file_type().is_symlink() {
+            return Err("out_path parent is a symlink".to_string());
+        }
+    }
+    Ok(())
 }
 
 /// memmap2's API is safe to *call* (no unsafe wrapper), but constructing a

@@ -243,6 +243,24 @@ pub fn is_private_ip_str(host: &str) -> bool {
     }
 }
 
+/// True when `host` is a loopback literal: `localhost`, `127.0.0.1` (and
+/// `127.x.y.z` shorthands), `::1`, or their bracketed IPv6 forms. Used to
+/// allow user-configured LOCAL node addresses (Freenet gateway, i2pd SAM,
+/// app's own servers) that the stricter relay policy would reject.
+pub fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim().trim_start_matches('[').trim_end_matches(']');
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return ip.is_loopback();
+    }
+    // 127.x.y.z shorthand (127.1 == 127.0.0.1) is not a parseable IPv4
+    // literal, so fall back to an inet-form match on the first octet.
+    let (first, rest) = host.split_once('.').unwrap_or(("", ""));
+    first == "127" && rest.split('.').count() <= 3
+}
+
 /// Validates a relay URL a *user* typed into settings: ws/wss schemes, no
 /// embedded credentials, no loopback/private/link-local/unspecified hosts, no
 /// DNS-rebinding domains, hostname must be a real domain (punycode flagged).

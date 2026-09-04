@@ -24,36 +24,34 @@ static VERIFIED_CACHE: RwLock<Option<VerifiedCache>> = RwLock::new(None);
 
 /// Clears the global verified event signature cache to release memory.
 pub fn clear_verified_cache() {
-    if let Ok(mut guard) = VERIFIED_CACHE.write() {
-        *guard = None;
-    }
+    let mut guard = VERIFIED_CACHE.write().unwrap_or_else(|e| e.into_inner());
+    *guard = None;
 }
 
 /// Verifies a Nostr event's Schnorr signature, using an in-memory bounded LRU cache.
 pub fn verify_event(e: &nostr::event::Event) -> bool {
     let key = (*e.id.as_bytes(), *e.sig.as_bytes());
-    if let Ok(guard) = VERIFIED_CACHE.read() {
-        if let Some(cache) = guard.as_ref() {
-            if cache.set.contains(&key) {
-                return true;
-            }
+    let guard = VERIFIED_CACHE.read().unwrap_or_else(|e| e.into_inner());
+    if let Some(cache) = guard.as_ref() {
+        if cache.set.contains(&key) {
+            return true;
         }
     }
+    drop(guard);
     if e.verify().is_ok() {
-        if let Ok(mut guard) = VERIFIED_CACHE.write() {
-            let cache = guard.get_or_insert_with(|| VerifiedCache {
-                set: HashSet::with_capacity(1024),
-                queue: VecDeque::with_capacity(1024),
-            });
-            let max_cap = max_cache_capacity();
-            if cache.set.insert(key) {
-                if cache.set.len() > max_cap {
-                    if let Some(oldest) = cache.queue.pop_front() {
-                        cache.set.remove(&oldest);
-                    }
+        let mut guard = VERIFIED_CACHE.write().unwrap_or_else(|e| e.into_inner());
+        let cache = guard.get_or_insert_with(|| VerifiedCache {
+            set: HashSet::with_capacity(1024),
+            queue: VecDeque::with_capacity(1024),
+        });
+        let max_cap = max_cache_capacity();
+        if cache.set.insert(key) {
+            if cache.set.len() > max_cap {
+                if let Some(oldest) = cache.queue.pop_front() {
+                    cache.set.remove(&oldest);
                 }
-                cache.queue.push_back(key);
             }
+            cache.queue.push_back(key);
         }
         true
     } else {

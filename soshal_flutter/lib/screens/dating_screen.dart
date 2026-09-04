@@ -216,222 +216,31 @@ class _DatingScreenState extends State<DatingScreen>
   }
 
   Future<void> _showFilterDialog(String pubkey) async {
-    final minAge = TextEditingController();
-    final maxAge = TextEditingController();
-    final interests = TextEditingController();
-    final minHeight = TextEditingController();
-    final maxHeight = TextEditingController();
-    int radiusKm = 0;
-    int heightMinCm = 0;
-    int heightMaxCm = 0;
-    String bodyType = '';
-    String smoking = '';
-    String drinking = '';
-    String intent = '';
-    String politics = '';
-    String education = '';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Filter profiles'),
-          content: SizedBox(
-            width: 320,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: minAge,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Min age'),
-                  ),
-                  TextField(
-                    controller: maxAge,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Max age'),
-                  ),
-                  const SizedBox(height: 8),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Radius'),
-                    subtitle:
-                        Text(radiusKm <= 0 ? 'Unlimited' : '$radiusKm km'),
-                    trailing: SizedBox(
-                      width: 120,
-                      child: Slider(
-                        min: 0,
-                        max: 500,
-                        divisions: 10,
-                        value: radiusKm.toDouble(),
-                        label: radiusKm <= 0 ? 'Unlimited' : '$radiusKm km',
-                        onChanged: (v) =>
-                            setDialogState(() => radiusKm = v.round()),
-                      ),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: minHeight,
-                          keyboardType: TextInputType.number,
-                          decoration:
-                              const InputDecoration(labelText: 'Min height cm'),
-                          onChanged: (v) =>
-                              heightMinCm = int.tryParse(v.trim()) ?? 0,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: maxHeight,
-                          keyboardType: TextInputType.number,
-                          decoration:
-                              const InputDecoration(labelText: 'Max height cm'),
-                          onChanged: (v) =>
-                              heightMaxCm = int.tryParse(v.trim()) ?? 0,
-                        ),
-                      ),
-                    ],
-                  ),
-                  _filterDropdown(
-                      'Body type',
-                      bodyType,
-                      const [
-                        '',
-                        'slim',
-                        'athletic',
-                        'average',
-                        'curvy',
-                        'muscular',
-                      ],
-                      (v) => bodyType = v),
-                  _filterDropdown(
-                      'Smoking',
-                      smoking,
-                      const [
-                        '',
-                        'never',
-                        'occasionally',
-                        'regularly',
-                      ],
-                      (v) => smoking = v),
-                  _filterDropdown(
-                      'Drinking',
-                      drinking,
-                      const [
-                        '',
-                        'never',
-                        'socially',
-                        'regularly',
-                      ],
-                      (v) => drinking = v),
-                  _filterDropdown(
-                      'Relationship intent',
-                      intent,
-                      const [
-                        '',
-                        'serious',
-                        'casual',
-                        'still figuring out',
-                      ],
-                      (v) => intent = v),
-                  _filterDropdown(
-                      'Politics',
-                      politics,
-                      const [
-                        '',
-                        'prefer not to say',
-                        'liberal',
-                        'moderate',
-                        'conservative',
-                        'libertarian',
-                        'other',
-                      ],
-                      (v) => politics = v),
-                  _filterDropdown(
-                      'Education',
-                      education,
-                      const [
-                        '',
-                        'high school',
-                        'some college',
-                        'associate',
-                        'trade school',
-                        "bachelor's",
-                        "master's",
-                        'doctorate',
-                      ],
-                      (v) => education = v),
-                  TextField(
-                    controller: interests,
-                    decoration: const InputDecoration(
-                      labelText: 'Interests',
-                      hintText: 'comma separated',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Clear'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Apply'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok == null || !mounted) return;
+    final result =
+        await showDialog<_FilterResult>(context: context, builder: (_) => const _FilterDialog());
+    if (result == null || !mounted) return;
     final api = context.read<DatingService>();
-    if (!ok) {
+    if (!result.ok) {
       await api.fetchProfiles(pubkey);
       return;
     }
-    final list = interests.text
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
     await api.filterProfiles(
       pubkey,
-      minAge: int.tryParse(minAge.text.trim()) ?? 0,
-      maxAge: int.tryParse(maxAge.text.trim()) ?? 0,
-      radiusKm: radiusKm,
-      heightMinCm: heightMinCm,
-      heightMaxCm: heightMaxCm,
-      bodyType: bodyType,
-      smoking: smoking,
-      drinking: drinking,
-      relationshipIntent: intent,
-      politics: politics,
-      education: education,
-      interests: list,
+      minAge: result.minAge,
+      maxAge: result.maxAge,
+      radiusKm: result.radiusKm,
+      heightMinCm: result.heightMinCm,
+      heightMaxCm: result.heightMaxCm,
+      bodyType: result.bodyType,
+      smoking: result.smoking,
+      drinking: result.drinking,
+      relationshipIntent: result.intent,
+      politics: result.politics,
+      education: result.education,
+      interests: result.interests,
     );
   }
 
-  Widget _filterDropdown(
-    String label,
-    String value,
-    List<String> options,
-    ValueChanged<String> onChanged,
-  ) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      decoration: InputDecoration(labelText: label),
-      items: [
-        for (final o in options)
-          DropdownMenuItem(value: o, child: Text(o.isEmpty ? 'Any' : o)),
-      ],
-      onChanged: (v) => onChanged(v ?? ''),
-    );
-  }
 
   Widget _buildBrowse(String pubkey) {
     return Consumer<DatingService>(
@@ -916,30 +725,13 @@ class _DatingScreenState extends State<DatingScreen>
 
   Future<void> _reportCard(
       DatingService api, String pubkey, DatingCard card) async {
-    final reason = TextEditingController();
-    final doIt = await showDialog<bool>(
+    final result = await showDialog<_ReportCardResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Report profile'),
-        content: TextField(
-          controller: reason,
-          decoration: const InputDecoration(labelText: 'Reason'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Report'),
-          ),
-        ],
-      ),
+      builder: (_) => const _ReportDialog(),
     );
-    if (doIt != true || !mounted) return;
+    if (result == null || !result.ok || !mounted) return;
     await api.report(pubkey, card.pubkey,
-        reason.text.trim().isEmpty ? 'reported' : reason.text.trim());
+        result.reason.trim().isEmpty ? 'reported' : result.reason.trim());
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: SelectableText('Reported')),
@@ -1307,6 +1099,325 @@ class _LikesTabState extends State<_LikesTab> {
           },
         );
       },
+    );
+  }
+}
+
+class _FilterResult {
+  const _FilterResult({
+    required this.ok,
+    this.minAge = 0,
+    this.maxAge = 0,
+    this.radiusKm = 0,
+    this.heightMinCm = 0,
+    this.heightMaxCm = 0,
+    this.bodyType = '',
+    this.smoking = '',
+    this.drinking = '',
+    this.intent = '',
+    this.politics = '',
+    this.education = '',
+    this.interests = const [],
+  });
+
+  final bool ok;
+  final int minAge;
+  final int maxAge;
+  final int radiusKm;
+  final int heightMinCm;
+  final int heightMaxCm;
+  final String bodyType;
+  final String smoking;
+  final String drinking;
+  final String intent;
+  final String politics;
+  final String education;
+  final List<String> interests;
+}
+
+/// Filter dialog. Owns its TextEditingControllers so they stay alive through
+/// the dialog's exit transition and are disposed only after the route is
+/// fully removed (disposing them in a `finally` after `showDialog` completes
+/// crashed on every close — the closing animation still rebuilds the
+/// TextFields against disposed controllers).
+class _FilterDialog extends StatefulWidget {
+  const _FilterDialog();
+
+  @override
+  State<_FilterDialog> createState() => _FilterDialogState();
+}
+
+class _FilterDialogState extends State<_FilterDialog> {
+  final _minAge = TextEditingController();
+  final _maxAge = TextEditingController();
+  final _interests = TextEditingController();
+  final _minHeight = TextEditingController();
+  final _maxHeight = TextEditingController();
+  int _radiusKm = 0;
+  int _heightMinCm = 0;
+  int _heightMaxCm = 0;
+  String _bodyType = '';
+  String _smoking = '';
+  String _drinking = '';
+  String _intent = '';
+  String _politics = '';
+  String _education = '';
+
+  @override
+  void dispose() {
+    _minAge.dispose();
+    _maxAge.dispose();
+    _interests.dispose();
+    _minHeight.dispose();
+    _maxHeight.dispose();
+    super.dispose();
+  }
+
+  void _pop(bool ok) {
+    Navigator.of(context).pop(_FilterResult(
+      ok: ok,
+      minAge: int.tryParse(_minAge.text.trim()) ?? 0,
+      maxAge: int.tryParse(_maxAge.text.trim()) ?? 0,
+      radiusKm: _radiusKm,
+      heightMinCm: _heightMinCm,
+      heightMaxCm: _heightMaxCm,
+      bodyType: _bodyType,
+      smoking: _smoking,
+      drinking: _drinking,
+      intent: _intent,
+      politics: _politics,
+      education: _education,
+      interests: _interests.text
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList(),
+    ));
+  }
+
+  Widget _dropdown(
+    String label,
+    String value,
+    List<String> options,
+    ValueChanged<String> onChanged,
+  ) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      decoration: InputDecoration(labelText: label),
+      items: [
+        for (final o in options)
+          DropdownMenuItem(value: o, child: Text(o.isEmpty ? 'Any' : o)),
+      ],
+      onChanged: (v) => onChanged(v ?? ''),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Filter profiles'),
+      content: SizedBox(
+        width: 320,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _minAge,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Min age'),
+              ),
+              TextField(
+                controller: _maxAge,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Max age'),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Radius'),
+                subtitle:
+                    Text(_radiusKm <= 0 ? 'Unlimited' : '$_radiusKm km'),
+                trailing: SizedBox(
+                  width: 120,
+                  child: Slider(
+                    min: 0,
+                    max: 500,
+                    divisions: 10,
+                    value: _radiusKm.toDouble(),
+                    label: _radiusKm <= 0 ? 'Unlimited' : '$_radiusKm km',
+                    onChanged: (v) =>
+                        setState(() => _radiusKm = v.round()),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _minHeight,
+                      keyboardType: TextInputType.number,
+                      decoration:
+                          const InputDecoration(labelText: 'Min height cm'),
+                      onChanged: (v) =>
+                          _heightMinCm = int.tryParse(v.trim()) ?? 0,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _maxHeight,
+                      keyboardType: TextInputType.number,
+                      decoration:
+                          const InputDecoration(labelText: 'Max height cm'),
+                      onChanged: (v) =>
+                          _heightMaxCm = int.tryParse(v.trim()) ?? 0,
+                    ),
+                  ),
+                ],
+              ),
+              _dropdown(
+                  'Body type',
+                  _bodyType,
+                  const [
+                    '',
+                    'slim',
+                    'athletic',
+                    'average',
+                    'curvy',
+                    'muscular',
+                  ],
+                  (v) => setState(() => _bodyType = v)),
+              _dropdown(
+                  'Smoking',
+                  _smoking,
+                  const [
+                    '',
+                    'never',
+                    'occasionally',
+                    'regularly',
+                  ],
+                  (v) => setState(() => _smoking = v)),
+              _dropdown(
+                  'Drinking',
+                  _drinking,
+                  const [
+                    '',
+                    'never',
+                    'socially',
+                    'regularly',
+                  ],
+                  (v) => setState(() => _drinking = v)),
+              _dropdown(
+                  'Relationship intent',
+                  _intent,
+                  const [
+                    '',
+                    'serious',
+                    'casual',
+                    'still figuring out',
+                  ],
+                  (v) => setState(() => _intent = v)),
+              _dropdown(
+                  'Politics',
+                  _politics,
+                  const [
+                    '',
+                    'prefer not to say',
+                    'liberal',
+                    'moderate',
+                    'conservative',
+                    'libertarian',
+                    'other',
+                  ],
+                  (v) => setState(() => _politics = v)),
+              _dropdown(
+                  'Education',
+                  _education,
+                  const [
+                    '',
+                    'high school',
+                    'some college',
+                    'associate',
+                    'trade school',
+                    "bachelor's",
+                    "master's",
+                    'doctorate',
+                  ],
+                  (v) => setState(() => _education = v)),
+              TextField(
+                controller: _interests,
+                decoration: const InputDecoration(
+                  labelText: 'Interests',
+                  hintText: 'comma separated',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _pop(false),
+          child: const Text('Clear'),
+        ),
+        FilledButton(
+          onPressed: () => _pop(true),
+          child: const Text('Apply'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReportCardResult {
+  const _ReportCardResult({required this.ok, required this.reason});
+
+  final bool ok;
+  final String reason;
+}
+
+class _ReportDialog extends StatefulWidget {
+  const _ReportDialog();
+
+  @override
+  State<_ReportDialog> createState() => _ReportDialogState();
+}
+
+class _ReportDialogState extends State<_ReportDialog> {
+  final _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  void _pop(bool ok) {
+    Navigator.of(context).pop(_ReportCardResult(
+      ok: ok,
+      reason: _reason.text.trim(),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Report profile'),
+      content: TextField(
+        controller: _reason,
+        decoration: const InputDecoration(labelText: 'Reason'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => _pop(true),
+          child: const Text('Report'),
+        ),
+      ],
     );
   }
 }

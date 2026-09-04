@@ -459,6 +459,17 @@ pub fn p2p_swarm_download(
 
     let mut st = state_mut();
     let inner = st.get_or_insert_with(P2pState::new);
+    // Reclaim finished-but-never-polled handles so detached worker threads
+    // (and their mmap files) are joined and dropped rather than leaked.
+    let finished: Vec<String> = inner
+        .downloads
+        .iter()
+        .filter(|(_, h)| h.is_finished())
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in finished {
+        inner.downloads.remove(&id);
+    }
     let id = format!("swarm-{}", inner.next_download);
     inner.next_download += 1;
     let handle = spawn_swarm_download(SwarmConfig {

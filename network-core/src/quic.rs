@@ -15,6 +15,7 @@
 
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig, TransportConfig};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::client::WebPkiServerVerifier;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use serde::{Deserialize, Serialize};
@@ -22,7 +23,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 /// Stream request type: chunk fetch or MoQ subscription.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,14 +73,21 @@ impl ServerCertVerifier for HybridCertVerifier {
     ) -> Result<ServerCertVerified, rustls::Error> {
         // Try system certificate validation first
         if let Ok(verified) =
-            try_system_cert_validation(end_entity, intermediates, server_name, now)
+            try_system_cert_validation(end_entity, intermediates, server_name, _ocsp_response, now)
         {
             return Ok(verified);
         }
 
         // Fallback: allow self-signed certificates for mesh-internal communication
         // The real security comes from HMAC beacon authentication at the app layer
-        // This maintains compatibility with the existing mesh trust model
+        // This maintains compatibility with the existing mesh trust model.
+        //
+        // NOTE: The self-signed acceptance here is balanced by actual signature
+        // verification in verify_tls12/13_signature (below), which now runs for
+        // EVERY handshake — including mesh-internal ones. The chain validation is
+        // relaxed (self-signed allowed), but the key agreement transcript signature
+        // is always cryptographically verified, so a passive MITM cannot inject a
+        // forged key into the handshake.
         log::debug!("QUIC: accepting self-signed cert, relying on app-layer HMAC auth");
         Ok(ServerCertVerified::assertion())
     }
@@ -90,13 +98,7 @@ impl ServerCertVerifier for HybridCertVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        // Try proper signature verification
-        if let Ok(valid) = try_signature_verification_tls12(message, cert, dss) {
-            return Ok(valid);
-        }
-
-        // Fallback for mesh-internal self-signed certs
-        Ok(HandshakeSignatureValid::assertion())
+        verify_signature(message, cert, dss, true)
     }
 
     fn verify_tls13_signature(
@@ -105,13 +107,7 @@ impl ServerCertVerifier for HybridCertVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        // Try proper signature verification
-        if let Ok(valid) = try_signature_verification_tls13(message, cert, dss) {
-            return Ok(valid);
-        }
-
-        // Fallback for mesh-internal self-signed certs
-        Ok(HandshakeSignatureValid::assertion())
+        verify_signature(message, cert, dss, false)
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
@@ -123,47 +119,58 @@ impl ServerCertVerifier for HybridCertVerifier {
     }
 }
 
+/// Verify a handshake signature against the certificate's public key,
+/// for both TLS 1.2 and TLS 1.3. Uses rustls's real signature verification
+/// against the certificate's SubjectPublicKeyInfo — this works for mesh
+/// self-signed certs too, proving the peer holds the private key matched to
+/// the presented cert (defeats passive key-injection MITM).
+fn verify_signature(
+    message: &[u8],
+    cert: &CertificateDer<'_>,
+    dss: &DigitallySignedStruct,
+    tls12: bool,
+) -> Result<HandshakeSignatureValid, rustls::Error> {
+    // rustls validates the transcript signature against the certificate's
+    // public key endpoint (webpki). Chain trust is separate (relaxed for the
+    // mesh); this proves possession of the matching private key.
+    let provider = rustls::crypto::ring::default_provider();
+    let algos = provider.signature_verification_algorithms;
+    if tls12 {
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &algos)
+    } else {
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &algos)
+    }
+}
+
+/// Server verifier anchored at the bundled Mozilla root store (webpki-roots).
+/// Hosted/public endpoints presenting a real CA chain validate here. Mesh-
+/// internal self-signed certs have no CA anchor and fail this check, falling
+/// through to the self-signed acceptance path whose real trust anchor is the
+/// app-layer HMAC beacon handshake.
+static WEBPKI_VERIFIER: LazyLock<Arc<WebPkiServerVerifier>> = LazyLock::new(|| {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    WebPkiServerVerifier::builder_with_provider(
+        Arc::new(roots),
+        Arc::new(rustls::crypto::ring::default_provider()),
+    )
+    .build()
+    .expect("webpki server verifier build must succeed")
+});
+
 /// Attempt system certificate validation for known/public endpoints
 fn try_system_cert_validation(
-    _end_entity: &CertificateDer<'_>,
-    _intermediates: &[CertificateDer<'_>],
-    _server_name: &ServerName<'_>,
-    _now: UnixTime,
+    end_entity: &CertificateDer<'_>,
+    intermediates: &[CertificateDer<'_>],
+    server_name: &ServerName<'_>,
+    _ocsp_response: &[u8],
+    now: UnixTime,
 ) -> Result<ServerCertVerified, rustls::Error> {
-    // TODO: Implement proper system certificate validation using rustls-native-certs
-    // For now, this is a placeholder that always fails to fall back to mesh-internal auth
-    // Future implementation should:
-    // 1. Load system root certificates using rustls-native-certs
-    // 2. Build a proper certificate verifier
-    // 3. Validate certificate chain and expiration
-    // 4. Return Ok(Verified) for valid certs, Err for invalid ones
-
-    // This placeholder ensures we can add proper cert validation without breaking mesh functionality
-    Err(rustls::Error::General(
-        "System cert validation not yet implemented".to_string(),
-    ))
-}
-
-/// Attempt TLS 1.2 signature verification
-fn try_signature_verification_tls12(
-    _message: &[u8],
-    _cert: &CertificateDer<'_>,
-    _dss: &DigitallySignedStruct,
-) -> Result<HandshakeSignatureValid, rustls::Error> {
-    // TODO: Implement proper TLS 1.2 signature verification
-    // For now, accept all signatures for mesh-internal compatibility
-    Ok(HandshakeSignatureValid::assertion())
-}
-
-/// Attempt TLS 1.3 signature verification
-fn try_signature_verification_tls13(
-    _message: &[u8],
-    _cert: &CertificateDer<'_>,
-    _dss: &DigitallySignedStruct,
-) -> Result<HandshakeSignatureValid, rustls::Error> {
-    // TODO: Implement proper TLS 1.3 signature verification
-    // For now, accept all signatures for mesh-internal compatibility
-    Ok(HandshakeSignatureValid::assertion())
+    // Chain validation against the bundled Mozilla roots: rejects expired or
+    // wrong-host public certificates. Mesh self-signed certs (no CA chain)
+    // fail here and fall through to the self-signed acceptance path in
+    // HybridCertVerifier::verify_server_cert.
+    WEBPKI_VERIFIER.verify_server_cert(end_entity, intermediates, server_name, &[], now)
 }
 
 /// App-facing handle to the datagram channel (thread-safe, sync).
@@ -205,7 +212,7 @@ impl QuicDatagramHandle {
     }
 
     pub fn stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true, Ordering::Release);
     }
 }
 
@@ -313,7 +320,7 @@ async fn run_channel(
     let mut sweep = tokio::time::interval(std::time::Duration::from_secs(30));
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
-        if stop.load(Ordering::Relaxed) {
+        if stop.load(Ordering::Acquire) {
             break;
         }
         tokio::select! {
@@ -584,10 +591,20 @@ const LIVE_IDLE_FINISH_MS: u64 = 2000;
 const LIVE_DEFAULT_WINDOW_MS: u64 = 5000;
 
 /// Bounded append-only log of encoded MoQ groups for one live stream.
-#[derive(Default)]
 struct LiveStreamLog {
     entries: std::collections::BTreeMap<u64, Arc<Vec<u8>>>,
     watermark: u64,
+    last_activity: std::time::Instant,
+}
+
+impl Default for LiveStreamLog {
+    fn default() -> Self {
+        Self {
+            entries: std::collections::BTreeMap::new(),
+            watermark: 0,
+            last_activity: std::time::Instant::now(),
+        }
+    }
 }
 
 /// Process-wide live stream registry: publishers push encoded groups,
@@ -603,6 +620,15 @@ impl LiveStreamRegistry {
         self.streams.lock().ok()?.get(stream_id).cloned()
     }
 
+    /// Remove a stream from the registry (called when a broadcast ends),
+    /// releasing its buffered groups. No-op if absent.
+    fn remove(&self, stream_id: &str) -> bool {
+        self.streams
+            .lock()
+            .map(|mut s| s.remove(stream_id).is_some())
+            .unwrap_or(false)
+    }
+
     /// Append one encoded group; returns the group counter after append
     /// (monotonic sequence used by subscribers to detect new groups).
     fn push(&self, stream_id: &str, encoded: Vec<u8>) -> Result<u64, String> {
@@ -616,6 +642,25 @@ impl LiveStreamRegistry {
             .streams
             .lock()
             .map_err(|_| "live registry poisoned".to_string())?;
+        // Opportunistic idle-eviction so a completed broadcast's groups are
+        // released instead of lingering; runs from any publisher. Bounded by
+        // LIVE_MAX_STREAMS, so this sweep is cheap.
+        let now = std::time::Instant::now();
+        let idle_cutoff = now.checked_sub(StdDuration::from_secs(10)).unwrap_or(now);
+        let stale: Vec<String> = streams
+            .iter()
+            .filter(|(id, log)| {
+                *id != stream_id
+                    && log
+                        .lock()
+                        .map(|l| l.last_activity < idle_cutoff)
+                        .unwrap_or(false)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in stale {
+            streams.remove(&id);
+        }
         if streams.len() >= LIVE_MAX_STREAMS && !streams.contains_key(stream_id) {
             return Err("live registry full".to_string());
         }
@@ -625,6 +670,7 @@ impl LiveStreamRegistry {
             .map_err(|_| "live stream log poisoned".to_string())?;
         lock.watermark += 1;
         let seq = lock.watermark;
+        lock.last_activity = std::time::Instant::now();
         lock.entries.insert(seq, Arc::new(encoded));
         let mut total_bytes: usize = lock.entries.values().map(|g| g.len()).sum();
         while lock.entries.len() > LIVE_STREAM_HISTORY
@@ -657,6 +703,11 @@ pub fn moq_publish_group(stream_id: &str, encoded: Vec<u8>) -> Result<u64, Strin
 pub fn moq_stream_known(stream_id: &str) -> bool {
     live_registry().get(stream_id).is_some()
 }
+
+/// Remove a live stream from the registry (broadcast ended).
+pub fn moq_stream_remove(stream_id: &str) -> bool {
+    live_registry().remove(stream_id)
+}
 const STREAM_CONNECT_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 const STREAM_EXCHANGE_TIMEOUT: StdDuration = StdDuration::from_secs(15);
 
@@ -674,7 +725,7 @@ pub struct QuicStreamServerHandle {
 
 impl QuicStreamServerHandle {
     pub fn stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true, Ordering::Release);
         self.stop_notify.notify_one();
     }
 }
@@ -776,7 +827,7 @@ async fn run_stream_server(
     loop {
         tokio::select! {
             _ = stop_notify.notified() => {
-                if stop.load(Ordering::Relaxed) {
+                if stop.load(Ordering::Acquire) {
                     break;
                 }
             }
@@ -1303,7 +1354,9 @@ pub fn fetch_quic_chunk(
 /// a fresh socket + full TLS handshake per chunk.
 pub struct QuicChunkPool {
     endpoint: Endpoint,
-    conns: std::sync::Mutex<std::collections::HashMap<SocketAddr, quinn::Connection>>,
+    conns: std::sync::Mutex<
+        std::collections::HashMap<SocketAddr, (quinn::Connection, std::time::Instant)>,
+    >,
 }
 
 impl QuicChunkPool {
@@ -1325,18 +1378,43 @@ impl QuicChunkPool {
         self.conns
             .lock()
             .ok()
-            .and_then(|guard| guard.get(&addr).cloned())
+            .and_then(|guard| guard.get(&addr).map(|(c, _)| c.clone()))
     }
 
     fn store(&self, addr: SocketAddr, conn: &quinn::Connection) {
         if let Ok(mut guard) = self.conns.lock() {
-            guard.insert(addr, conn.clone());
+            guard.insert(addr, (conn.clone(), std::time::Instant::now()));
+        }
+    }
+
+    fn touch(&self, addr: SocketAddr) {
+        if let Ok(mut guard) = self.conns.lock() {
+            if let Some(entry) = guard.get_mut(&addr) {
+                entry.1 = std::time::Instant::now();
+            }
         }
     }
 
     fn evict(&self, addr: SocketAddr) {
         if let Ok(mut guard) = self.conns.lock() {
             guard.remove(&addr);
+        }
+    }
+
+    /// Close and drop connections idle for longer than `idle`, so a pool that
+    /// outlives a swarm download (e.g. cached app-wide) does not hold open
+    /// sockets to transient peers forever. Called opportunistically on fetch.
+    fn evict_idle(&self, idle: std::time::Duration) {
+        if let Ok(mut guard) = self.conns.lock() {
+            let now = std::time::Instant::now();
+            let stale: Vec<SocketAddr> = guard
+                .iter()
+                .filter(|(_, (_, last))| now.saturating_duration_since(*last) > idle)
+                .map(|(a, _)| *a)
+                .collect();
+            for a in stale {
+                guard.remove(&a);
+            }
         }
     }
 
@@ -1352,6 +1430,8 @@ impl QuicChunkPool {
         if !lan::is_private_ip(addr.ip()) {
             return Err("refusing non-private LAN peer".to_string());
         }
+        // Opportunistic idle eviction (keep pool from retaining stale peers).
+        self.evict_idle(std::time::Duration::from_secs(60));
         for attempt in 0..2 {
             let conn = match self.cached(addr) {
                 Some(c) => c,
@@ -1366,6 +1446,7 @@ impl QuicChunkPool {
                     conn
                 }
             };
+            self.touch(addr);
             match exchange_chunk(&conn, key, my_pubkey, req).await {
                 Ok(data) => return Ok(data),
                 Err(_e) if attempt == 0 => {

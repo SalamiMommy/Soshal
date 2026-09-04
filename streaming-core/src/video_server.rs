@@ -29,6 +29,15 @@ impl VideoRegistry {
         }
     }
 
+    /// Remove a video route so the registry does not grow unbounded. Returns
+    /// whether the route existed.
+    pub fn remove(&self, video_id: &str) -> bool {
+        self.routes
+            .write()
+            .map(|mut m| m.remove(video_id).is_some())
+            .unwrap_or(false)
+    }
+
     pub fn get(&self, video_id: &str) -> Option<String> {
         self.routes.read().ok()?.get(video_id).cloned()
     }
@@ -177,6 +186,11 @@ impl LocalVideoServer {
     pub fn register_video(&self, video_id: String, source_path: String) -> String {
         self.registry.register(video_id.clone(), source_path);
         format!("http://127.0.0.1:{}/video/{}", self.port, video_id)
+    }
+
+    /// Remove a registered video route, releasing the entry.
+    pub fn unregister_video(&self, video_id: &str) -> bool {
+        self.registry.remove(video_id)
     }
 }
 

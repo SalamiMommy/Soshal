@@ -90,6 +90,22 @@ fn heal_legacy_schema(conn: &Connection) -> Result<(), crate::error::DbError> {
                AND rowid NOT IN (SELECT rowid FROM posts);",
         ))?;
     }
+
+    // ignored_notifications lives in v001 but pre-squash/older dev databases
+    // already past v1 won't re-run it. Ensure the table exists idempotently so
+    // the Ignore/Mute repo queries never hit a missing table. (Flattened into
+    // v001 per the "no new migrations pre-release" convention; this heals any
+    // database that predates the table.)
+    block_on(conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS ignored_notifications (
+            pubkey TEXT NOT NULL,
+            from_pubkey TEXT NOT NULL DEFAULT '',
+            event_id TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (pubkey, kind, from_pubkey, event_id)
+        );",
+    ))?;
     Ok(())
 }
 

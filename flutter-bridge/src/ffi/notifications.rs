@@ -8,6 +8,7 @@
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 use soshal_db_core::error::DbError;
+use soshal_db_core::repos::ignored_notification::IgnoredNotificationRepo;
 use soshal_db_core::repos::notification::{NotificationRepo, NotificationRow};
 use soshal_db_core::Database;
 
@@ -185,6 +186,102 @@ pub fn notifications_delete(notification_id: String) -> Result<bool, String> {
         &[notification_id],
     )
     .map(|affected| affected > 0)
+    .into()
+}
+
+/// Persist an "ignore user" decision so the user's notifications stay
+/// suppressed across fetches and app restarts.
+#[frb(sync, serialize)]
+pub fn notifications_ignore_user(user_pubkey: String, from_pubkey: String) -> Result<bool, String> {
+    if user_pubkey.is_empty() || from_pubkey.is_empty() {
+        return Err("bad ignore-user args".to_string()).into();
+    }
+    super::db::with_db_result(|db| {
+        let at = soshal_common_core::format::now_secs();
+        IgnoredNotificationRepo::new(db)
+            .ignore_user(&user_pubkey, &from_pubkey, "user", at)
+            .map(|()| true)
+    })
+    .into()
+}
+
+/// Persist a "turn off thread/like notifications" decision.
+#[frb(sync, serialize)]
+pub fn notifications_ignore_thread(user_pubkey: String, event_id: String) -> Result<bool, String> {
+    if user_pubkey.is_empty() || event_id.is_empty() {
+        return Err("bad ignore-thread args".to_string()).into();
+    }
+    super::db::with_db_result(|db| {
+        let at = soshal_common_core::format::now_secs();
+        IgnoredNotificationRepo::new(db)
+            .ignore_thread(&user_pubkey, &event_id, "thread", at)
+            .map(|()| true)
+    })
+    .into()
+}
+
+/// Remove an "ignore user" decision.
+#[frb(sync, serialize)]
+pub fn notifications_unignore_user(
+    user_pubkey: String,
+    from_pubkey: String,
+) -> Result<bool, String> {
+    super::db::with_db_result(|db| {
+        IgnoredNotificationRepo::new(db)
+            .unignore_user(&user_pubkey, &from_pubkey, "user")
+            .map(|()| true)
+    })
+    .into()
+}
+
+/// Remove a "turn off thread" decision.
+#[frb(sync, serialize)]
+pub fn notifications_unignore_thread(
+    user_pubkey: String,
+    event_id: String,
+) -> Result<bool, String> {
+    super::db::with_db_result(|db| {
+        IgnoredNotificationRepo::new(db)
+            .unignore_thread(&user_pubkey, &event_id, "thread")
+            .map(|()| true)
+    })
+    .into()
+}
+
+/// List all ignore rows for the Ignored List dashboard.
+#[frb(sync, serialize)]
+pub fn notifications_list_ignored(user_pubkey: String) -> Result<String, String> {
+    let rows = super::db::with_db_result(|db| IgnoredNotificationRepo::new(db).list(&user_pubkey))?;
+    let items: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|(kind, from_pubkey, event_id, created_at)| {
+            serde_json::json!({
+                "kind": kind,
+                "from_pubkey": from_pubkey,
+                "event_id": event_id,
+                "created_at": created_at,
+            })
+        })
+        .collect();
+    super::util::json_ok(items)
+}
+
+/// Whether a notification (user + optional event) is currently ignored.
+#[frb(sync, serialize)]
+pub fn notifications_is_ignored(
+    user_pubkey: String,
+    kind: String,
+    from_pubkey: String,
+    event_id: String,
+) -> Result<bool, String> {
+    super::db::with_db_result(|db| {
+        IgnoredNotificationRepo::new(db).is_ignored(
+            &user_pubkey,
+            kind.as_str(),
+            from_pubkey.as_str(),
+            event_id.as_str(),
+        )
+    })
     .into()
 }
 

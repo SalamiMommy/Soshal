@@ -92,6 +92,9 @@ class FfiBridge {
     final result = RustLib.instance.api.crateFfiDbDbInit(dbPath: dbPath);
     final currentVersion = db_ffi.dbSchemaVersion();
     final expectedVersion = db_ffi.dbExpectedSchemaVersion();
+    if (kReleaseMode) {
+      return result;
+    }
     debugPrint(
         'Database schema version: $currentVersion, expected: $expectedVersion');
     if (currentVersion > expectedVersion) {

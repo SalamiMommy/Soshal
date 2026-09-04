@@ -10,10 +10,21 @@ use std::sync::{LazyLock, Mutex};
 /// (7680*4320*4 ≈ 132.7 MiB) plus headroom; prevents OOM abort on bogus dims.
 const MAX_FRAME_BUFFER_BYTES: u64 = 256 * 1024 * 1024;
 
+/// A frame buffer region plus its allocation time, used to reclaim leaked
+/// buffers (Dart side skipped `raster_release_frame_buffer`) on the next
+/// allocate call after [`FRAME_BUFFER_TTL`].
+type FrameBuffer = (Box<[u8]>, std::time::Instant);
+
 /// Live frame buffers keyed by pointer address, so `raster_release_frame_buffer`
-/// can reclaim them (replaces the old `mem::forget` permanent leak).
-static FRAME_BUFFERS: LazyLock<Mutex<HashMap<usize, Box<[u8]>>>> =
+/// can reclaim them (replaces the old `mem::forget` permanent leak). Each entry
+/// records its allocation time so stale buffers that were never released (Dart
+/// side skipped the release call) are reclaimed by the allocate-time sweep.
+static FRAME_BUFFERS: LazyLock<Mutex<HashMap<usize, FrameBuffer>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Stale buffer TTL: a frame buffer not released within this window is a
+/// leaked allocation and is reclaimed on the next allocate call.
+const FRAME_BUFFER_TTL: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Frame metadata for decoded video/media buffer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,11 +60,22 @@ pub fn raster_allocate_frame_buffer(
     let buf = vec![0u8; total_bytes].into_boxed_slice();
     let ptr_addr = buf.as_ptr() as usize;
 
+    // Reclaim stale, never-released buffers before inserting the new one so
+    // leaked allocations don't accumulate unboundedly (a missed Dart-side
+    // release currently leaks 256 MiB/frame).
+    let mut registry = FRAME_BUFFERS.lock().unwrap_or_else(|e| e.into_inner());
+    let now = std::time::Instant::now();
+    let stale: Vec<usize> = registry
+        .iter()
+        .filter(|(_, (_, created))| now.saturating_duration_since(*created) > FRAME_BUFFER_TTL)
+        .map(|(ptr, _)| *ptr)
+        .collect();
+    for ptr in stale {
+        registry.remove(&ptr);
+    }
+
     // Tracked allocation: reclaimed via raster_release_frame_buffer(ptr_addr).
-    FRAME_BUFFERS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(ptr_addr, buf);
+    registry.insert(ptr_addr, (buf, now));
 
     Ok(ImpellerFrameBufferInfo {
         width,

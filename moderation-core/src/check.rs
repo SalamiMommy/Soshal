@@ -31,10 +31,10 @@ impl ModerationVerdict {
     }
 
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|_| match &self.category {
-            Some(cat) => format!("{{\"passed\":{},\"category\":\"{}\"}}", self.passed, cat),
-            None => format!("{{\"passed\":{},\"category\":null}}", self.passed),
-        })
+        // `ModerationVerdict` derives Serialize, so this cannot fail for its
+        // Option<String>/i32 fields. Keep a flat fallback instead of an
+        // unescaped format! which could break the JSON structure.
+        serde_json::to_string(self).unwrap_or_else(|_| "{\"passed\":false}".to_string())
     }
 }
 
@@ -129,11 +129,6 @@ const MODERATION_PATTERNS: &[ModerationPattern] = &[
         pattern: r"\bdyke\b",
         category: "homophobic",
         severity: 2,
-    },
-    ModerationPattern {
-        pattern: r"\bqueer\b",
-        category: "homophobic",
-        severity: 1,
     },
     ModerationPattern {
         pattern: r"\b(?:gays?|homo|lesbians?)\b.*\b(?:die|kill|burn|hate|disgusting|sick|wrong|sin|evil|abomination)\b",

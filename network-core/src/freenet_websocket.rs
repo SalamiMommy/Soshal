@@ -80,21 +80,25 @@ impl FreenetWebSocketClient {
 
     /// Connects to the Freenet node
     pub async fn connect(&self) -> Result<(), String> {
-        // SSRF guard: full shared policy for ws/wss URLs — rejects private
-        // IPs, loopback, link-local, hex/decimal/alternative-encoded hosts,
-        // DNS-rebinding domains, and raw IP literals outright.
-        if !soshal_common_core::url::is_valid_relay_url(&self.url).0 {
-            return Err(format!(
-                "Freenet WebSocket blocked: URL does not pass SSRF policy: {}",
-                self.url
-            ));
-        }
         let parsed = url::Url::parse(&self.url)
             .map_err(|e| format!("Invalid Freenet WebSocket URL: {e}"))?;
         if parsed.scheme() != "ws" && parsed.scheme() != "wss" {
             return Err(format!(
                 "Freenet WebSocket blocked: scheme '{}' unsupported; use ws:// or wss://",
                 parsed.scheme()
+            ));
+        }
+        let hostname = parsed.host_str().unwrap_or("").to_string();
+        // The Freenet gateway is a user-configured LOCAL endpoint (typed into
+        // settings, never relay-derived content), so a loopback host bypasses
+        // the relay SSRF policy. Remote hosts keep the full shared policy:
+        // private IPs, loopback, link-local, hex/decimal/alternative-encoded
+        // hosts, DNS-rebinding domains, and raw IP literals all rejected.
+        let loopback = soshal_common_core::url::is_loopback_host(&hostname);
+        if !loopback && !soshal_common_core::url::is_valid_relay_url(&self.url).0 {
+            return Err(format!(
+                "Freenet WebSocket blocked: URL does not pass SSRF policy: {}",
+                self.url
             ));
         }
         let use_tls = parsed.scheme() == "wss";
@@ -121,7 +125,9 @@ impl FreenetWebSocketClient {
         match tokio::net::lookup_host((hostname.as_str(), port)).await {
             Ok(addrs) => {
                 for addr in addrs {
-                    if soshal_common_core::url::is_private_ip_str(&addr.ip().to_string()) {
+                    if !loopback
+                        && soshal_common_core::url::is_private_ip_str(&addr.ip().to_string())
+                    {
                         return Err(format!(
                             "Freenet WebSocket blocked: URL resolves to an internal address: {}",
                             addr.ip()

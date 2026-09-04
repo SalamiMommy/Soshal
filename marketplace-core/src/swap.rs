@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use soshal_common_core::json_util::{json_in, json_out};
+use soshal_common_core::util::constant_time_eq;
 
 use soshal_nostr_core::models::find_tag_values_map;
 
@@ -46,8 +47,12 @@ fn validate_swap_event(input: &ValidateSwapInput) -> ValidateSwapOut {
     };
     // The outer event must be a properly signed Nostr event; unsigned or
     // forged payloads are rejected outright. A successful parse guarantees
-    // well-formed hex id/pubkey/sig fields.
-    if event.pubkey.to_hex() != input.self_pubkey {
+    // well-formed hex id/pubkey/sig fields. Constant-time pubkey comparison
+    // prevents a timing side-channel probing the caller's claimed identity.
+    if !constant_time_eq(
+        event.pubkey.to_hex().as_bytes(),
+        input.self_pubkey.as_bytes(),
+    ) {
         return ValidateSwapOut {
             valid: false,
             d_tag: None,

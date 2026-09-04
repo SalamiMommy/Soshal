@@ -107,6 +107,29 @@ fn validated_session_path_hardened(db_path: &str) -> Result<std::path::PathBuf, 
 /// Validate that a path doesn't escape the expected directory bounds
 /// and has appropriate permissions.
 fn validate_path_security(path: &std::path::Path) -> Result<(), String> {
+    // Reject if any component of the path is a symlink: a symlinked user-
+    // writable parent could redirect the session file write to an arbitrary
+    // location despite canonicalization (TOCTOU hardening).
+    let mut comp = path;
+    let mut components: Vec<&std::path::Path> = Vec::new();
+    while let Some(parent) = comp.parent() {
+        components.push(parent);
+        comp = parent;
+    }
+    for c in components.iter().rev() {
+        if c.as_os_str().is_empty() {
+            continue;
+        }
+        if let Ok(m) = std::fs::symlink_metadata(c) {
+            if m.file_type().is_symlink() {
+                return Err(format!(
+                    "Security: path component {} is a symlink",
+                    c.display()
+                ));
+            }
+        }
+    }
+
     // Check if the path exists
     if path.exists() {
         // Validate file permissions to prevent world-writable files
@@ -241,8 +264,16 @@ pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
             if let Some(acc) = session.accounts.iter_mut().find(|a| a.pubkey == pubkey) {
                 acc.last_used = soshal_common_core::format::now_secs() as u64;
             }
-            // Invalidate unlocked signer keys and secret caches from previous account
-            let _ = super::signer::signer_lock();
+            // Invalidate unlocked signer keys and secret caches from the
+            // PREVIOUS account. Skip when the signer already holds exactly the
+            // target identity (same-account switch, e.g. the onboarding
+            // restore->add->switch->keychain-save sequence): locking there
+            // wipes a just-unlocked key and makes the following keychain save
+            // fail with "signer locked".
+            let target_is_unlocked = super::signer::signer_pubkey().is_ok_and(|pk| pk == pubkey);
+            if !target_is_unlocked {
+                let _ = super::signer::signer_lock();
+            }
             // Persist the switched session so the active account survives
             // process kill before a later explicit session_save.
             let data = session.clone();
@@ -257,6 +288,35 @@ pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
     } else {
         Err("Session not loaded".to_string()).into()
     }
+}
+
+/// Remove an account from the session, persisting the change to disk.
+/// If the removed account was active, the active account is reassigned to the
+/// first remaining account (or cleared if none remain).
+#[frb(sync, serialize)]
+pub fn session_remove_account(pubkey: String) -> Result<bool, String> {
+    let mut session_lock = lock_session()?;
+    let session = match session_lock.as_mut() {
+        Some(s) => s,
+        None => return Err("Session not loaded".to_string()).into(),
+    };
+    let before = session.accounts.len();
+    session.accounts.retain(|a| a.pubkey != pubkey);
+    if session.accounts.len() == before {
+        return Err("Account not found".to_string()).into();
+    }
+    if session.active_pubkey.as_deref() == Some(pubkey.as_str()) {
+        session.active_pubkey = session.accounts.first().map(|a| a.pubkey.clone());
+        // Invalidate unlocked signer keys from the removed active account.
+        let _ = super::signer::signer_lock();
+    }
+    // Persist the removal so it survives process kill (matches add/switch).
+    let data = session.clone();
+    drop(session_lock);
+    if let Ok(db_path) = super::db::db_path() {
+        let _ = session_save(db_path, serde_json::to_string(&data).unwrap_or_default());
+    }
+    Ok(true).into()
 }
 
 /// Get active account
@@ -406,6 +466,58 @@ mod tests {
         assert!(active.contains("\"pubkey\":\"pk2\""), "active: {active}");
         let err = session_switch_account("nobody".to_string()).unwrap_err();
         assert!(err.contains("Account not found"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_switch_to_same_account_keeps_signer_unlocked() {
+        // Onboarding restore->add->switch->keychain-save: switching to the
+        // account the signer already holds must NOT wipe it, or the following
+        // keychain save fails with "signer locked".
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
+        let (dir, db_path) = tmp_session_dir("switch_same_signer");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        assert!(
+            super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).is_ok(),
+            "precondition: signer unlocks"
+        );
+        session_load(db_path).unwrap();
+        session_add_account(pk.clone(), "npub1pk".to_string(), "[]".to_string()).unwrap();
+        assert!(session_switch_account(pk.clone()).unwrap());
+        // Signer must still hold the same identity after the same-account switch.
+        assert_eq!(
+            super::super::signer::signer_pubkey().unwrap(),
+            pk,
+            "same-identity switch must not relock the signer"
+        );
+        super::super::signer::signer_lock().unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_switch_to_other_account_locks_signer() {
+        // Real account change A->B wipes A's keys from memory; the caller
+        // re-unlocks B afterwards (accounts screen unlockFromKeyring).
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
+        let (dir, db_path) = tmp_session_dir("switch_other_signer");
+        let keys_a = soshal_nostr_core::keys::generate_keys();
+        let keys_b = soshal_nostr_core::keys::generate_keys();
+        let pk_a = keys_a.public_key().to_hex();
+        let pk_b = keys_b.public_key().to_hex();
+        assert!(super::super::signer::signer_unlock(keys_a.secret_key().to_secret_hex()).is_ok());
+        session_load(db_path).unwrap();
+        session_add_account(pk_a.clone(), "npub1a".to_string(), "[]".to_string()).unwrap();
+        session_add_account(pk_b.clone(), "npub1b".to_string(), "[]".to_string()).unwrap();
+        assert!(session_switch_account(pk_b.clone()).unwrap());
+        let err = super::super::signer::signer_pubkey().unwrap_err();
+        assert!(
+            err.contains("signer locked"),
+            "A's keys must be wiped: {err}"
+        );
+        super::super::signer::signer_lock().unwrap();
         std::fs::remove_dir_all(&dir).ok();
     }
 

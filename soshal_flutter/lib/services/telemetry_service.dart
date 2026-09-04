@@ -123,6 +123,7 @@ class TelemetryService extends ChangeNotifier with LastErrorMixin {
     PlatformDispatcher.instance.onError = (error, stack) {
       service.recordCrash('platform: $error');
       error_log.logRuntimeError(error, stack);
+      if (kReleaseMode) return true;
       debugPrint('PLATFORM ERROR: $error');
       debugPrintStack(stackTrace: stack, maxFrames: 20);
       return true;

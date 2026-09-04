@@ -148,6 +148,17 @@ Semantics:
 - Playback quality/interop (JPEG track, keyframe gating) unverified on-device;
   build verification pending.
 
+**Feed/mini video on Linux (2026-09)**: `video_player` has no Linux impl —
+feed `_VideoPlayerWidget` + `MiniVideoPlayer` historically hard-gated to
+Android. Now: Android keeps `video_player`; Linux branches to media_kit
+(mpv) via `media_kit_video` `VideoController`/`Video` (`media_kit` +
+`media_kit_video` + `media_kit_libs_video` deps, `MediaKit.ensureInitialized()`
+in main.dart; system `libmpv.so.2` required — `builds/linux/build.sh` bundles
+host libmpv.so.2 into the AppImage alongside the plugin .sos, w/o it video
+still errors). guard-lib-platform: `PermissionsService.isLinux` gate, no
+`Platform.is*` in lib/. `mk.` prefix NOT used for `VideoController` (lives in
+media_kit_video, not media_kit); prefix only `Player`/`Media` (`as mk`).
+
 **frb codegen** (only when FFI signatures change): edit `flutter-bridge/src/ffi/*.rs`,
 then run the post-regen ritual: `flutter_rust_bridge_codegen generate`
 (v2.12.0) in `flutter-bridge`, reapply hand edits to generated glue if any,

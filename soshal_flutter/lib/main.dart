@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 import 'routes/app_router.dart';
 import 'services/ffi_bridge.dart';
@@ -56,6 +57,7 @@ import 'utils/format.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   JustAudioMediaKit.ensureInitialized();
+  MediaKit.ensureInitialized();
   PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024;
   PaintingBinding.instance.imageCache.maximumSize = 100;
 
@@ -165,6 +167,12 @@ class _SoshalAppState extends State<SoshalApp> {
         p2p: context.read<P2pService>(),
       );
       context.read<SessionService>().attachSync(context.read<SyncService>());
+      context.read<SessionService>().attachAccountScopedServices(
+            feed: context.read<FeedService>(),
+            messaging: context.read<MessagingService>(),
+            notifications: context.read<NotificationService>(),
+            search: context.read<SearchService>(),
+          );
       // Tell the Rust network stack we came up on Wi-Fi. Resolves the real
       // local IP + QUIC port; no-ops silently when unavailable.
       await networkService.notifyInterfaceChange();

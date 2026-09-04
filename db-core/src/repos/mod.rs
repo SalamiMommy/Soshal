@@ -15,6 +15,7 @@ pub mod group_join_request;
 pub mod guestbook;
 pub mod hashtag;
 pub mod huddle_post;
+pub mod ignored_notification;
 pub mod limits;
 pub mod link_preview;
 pub mod marketplace_review;

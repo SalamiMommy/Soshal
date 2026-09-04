@@ -61,13 +61,11 @@ pub(crate) enum ResponseKind {
 pub struct LanServerHandle {
     pub port: u16,
     stop: Arc<AtomicBool>,
-    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl LanServerHandle {
     pub fn stop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        let _ = self.thread.take();
+        self.stop.store(true, Ordering::Release);
     }
 }
 
@@ -91,10 +89,10 @@ pub fn start_lan_server_with_store(
     let stop_clone = stop.clone();
     const MAX_CONCURRENT_LAN_CONNS: usize = 16;
     let active_conns = Arc::new(AtomicUsize::new(0));
-    let thread = std::thread::spawn(move || {
+    std::thread::spawn(move || {
         let store = ChunkStore::new(store_root);
         for stream in listener.incoming() {
-            if stop_clone.load(Ordering::Relaxed) {
+            if stop_clone.load(Ordering::Acquire) {
                 break;
             }
             let Ok(stream) = stream else {
@@ -124,11 +122,7 @@ pub fn start_lan_server_with_store(
             }
         }
     });
-    Ok(LanServerHandle {
-        port,
-        stop,
-        thread: Some(thread),
-    })
+    Ok(LanServerHandle { port, stop })
 }
 
 fn handle_conn(stream: TcpStream, key: [u8; 32], store: &ChunkStore) {
