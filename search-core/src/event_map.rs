@@ -38,7 +38,7 @@ pub fn event_to_search_result(input: &EventToSearchResultInput) -> Option<Search
     let title: String;
     let mut subtitle = String::new();
     let mut image_url: Option<String> = None;
-    match kind as u16 {
+    match kind {
         0 => {
             result_type = "user".to_string();
             match serde_json::from_str::<serde_json::Value>(&ev.content) {
@@ -72,7 +72,7 @@ pub fn event_to_search_result(input: &EventToSearchResultInput) -> Option<Search
             title = ev.content.chars().take(80).collect::<String>();
             subtitle = format!("{}...", ev.pubkey.chars().take(8).collect::<String>());
         }
-        KIND_EVENT => {
+        n if n == KIND_EVENT as u32 => {
             result_type = "event".to_string();
             let [d_tag, title_tag] = find_tag_values_map(&ev.tags, ["d", "title"]);
             let d_str = d_tag.unwrap_or("");
@@ -84,7 +84,7 @@ pub fn event_to_search_result(input: &EventToSearchResultInput) -> Option<Search
             };
             subtitle = soshal_common_core::format::truncate(&ev.content, 80);
         }
-        KIND_LISTING => {
+        n if n == KIND_LISTING as u32 => {
             result_type = "listing".to_string();
             let [title_tag, price_tag, image_tag] =
                 find_tag_values_map(&ev.tags, ["title", "price", "image"]);

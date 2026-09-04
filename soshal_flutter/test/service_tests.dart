@@ -266,9 +266,17 @@ void main() {
       feed.insertLivePost(post);
       expect(feed.posts.length, 1);
 
-      feed.applyLiveReaction('ev-1', 'pk-2', '+');
+      feed.applyLiveReaction('ev-1', 'pk-2', '+', 'r1');
       expect(feed.posts.first.reactions, 1);
       expect(feed.posts.first.liked, isTrue);
+      // Same reaction event id is deduped; a distinct id bumps again.
+      feed.applyLiveReaction('ev-1', 'pk-2', '+', 'r1');
+      expect(feed.posts.first.reactions, 1);
+      feed.applyLiveReaction('ev-1', 'pk-2', '+', 'r2');
+      expect(feed.posts.first.reactions, 2);
+      // Unlike decrements and never goes negative.
+      feed.applyLiveReaction('ev-1', 'pk-2', '-', 'r3');
+      expect(feed.posts.first.reactions, 1);
     });
   });
 

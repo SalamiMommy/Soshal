@@ -637,7 +637,7 @@ pub fn marketplace_release_escrow(
         }
         let (buyer_confirmed, seller_confirmed) = repo.get_confirms(&escrow_id)?;
         let disputed = escrow.status == "disputed";
-        let arbitrator_approved = escrow.status == "completed";
+        let arbitrator_approved = false;
         if !soshal_marketplace_core::escrow::can_release(
             buyer_confirmed,
             seller_confirmed,

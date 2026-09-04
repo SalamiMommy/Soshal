@@ -61,9 +61,14 @@ pub fn identicon_png(seed: &str) -> Vec<u8> {
         })
     });
     {
-        let guard = cache.lock().unwrap_or_else(|p| p.into_inner());
+        let mut guard = cache.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(png) = guard.map.get(seed) {
-            return png.clone();
+            let res = png.clone();
+            if let Some(pos) = guard.order.iter().position(|s| s == seed) {
+                guard.order.remove(pos);
+                guard.order.push_back(seed.to_string());
+            }
+            return res;
         }
     }
     let hash = fnv1a(seed);

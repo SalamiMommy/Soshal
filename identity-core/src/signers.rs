@@ -65,12 +65,16 @@ impl Signer {
     }
 }
 
-fn shared_secret(sk: &nostr::key::SecretKey, pk: &PublicKey) -> Result<[u8; 32], String> {
+fn shared_secret(
+    sk: &nostr::key::SecretKey,
+    my_pk_hex: &str,
+    pk: &PublicKey,
+) -> Result<[u8; 32], String> {
     // Cache key must cover BOTH identities: the ECDH result depends on the
     // local secret key as much as the peer's pubkey. Two signers talking to
-    // the same peer must not share a cache slot.
-    let my_pk_hex = Keys::new(sk.clone()).public_key().to_string();
-    let cache_key = (my_pk_hex, pk.to_string());
+    // the same peer must not share a cache slot. Caller passes its own
+    // pubkey hex so no SecretKey clone is needed here.
+    let cache_key = (my_pk_hex.to_string(), pk.to_string());
     {
         let cache = SHARED_SECRET_CACHE
             .lock()
@@ -153,11 +157,12 @@ static SHARED_SECRET_CACHE: std::sync::Mutex<Option<SharedSecretCache>> =
 /// Clear and zeroize all cached per-peer shared secrets. Called on signer
 /// lock/unlock so no derived key material outlives its identity.
 pub fn clear_shared_secret_cache() {
-    if let Ok(mut guard) = SHARED_SECRET_CACHE.lock() {
-        if let Some(mut cache) = guard.take() {
-            for (_, mut key) in cache.map.drain() {
-                key.zeroize();
-            }
+    let mut guard = SHARED_SECRET_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if let Some(mut cache) = guard.take() {
+        for (_, mut key) in cache.map.drain() {
+            key.zeroize();
         }
     }
 }
@@ -206,7 +211,8 @@ impl SigningOps for Signer {
     }
 
     fn nip44_encrypt(&self, to: &PublicKey, content: &str) -> Result<String, String> {
-        let mut key = shared_secret(self.keys.secret_key(), to)?;
+        let my_hex = self.keys.public_key().to_string();
+        let mut key = shared_secret(self.keys.secret_key(), &my_hex, to)?;
         let res = soshal_crypto_core::nip44::encrypt(content.as_bytes(), &key)
             .map_err(|e| format!("encrypt: {e}"));
         key.zeroize();
@@ -214,7 +220,8 @@ impl SigningOps for Signer {
     }
 
     fn nip44_decrypt(&self, from: &PublicKey, payload: &str) -> Result<String, String> {
-        let mut key = shared_secret(self.keys.secret_key(), from)?;
+        let my_hex = self.keys.public_key().to_string();
+        let mut key = shared_secret(self.keys.secret_key(), &my_hex, from)?;
         let res =
             soshal_crypto_core::nip44::decrypt(payload, &key).map_err(|e| format!("decrypt: {e}"));
         key.zeroize();

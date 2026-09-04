@@ -62,11 +62,31 @@ pub async fn feed_rank_posts(events_json: String) -> Result<String, String> {
                     .get("created_at_secs")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0),
-                likes_count: m.get("likes_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                replies_count: m.get("replies_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                zaps_count: m.get("zaps_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                reposts_count: m.get("reposts_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                wot_distance: m.get("wot_distance").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                likes_count: m
+                    .get("likes_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0)
+                    .min(u32::MAX as u64) as u32,
+                replies_count: m
+                    .get("replies_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0)
+                    .min(u32::MAX as u64) as u32,
+                zaps_count: m
+                    .get("zaps_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0)
+                    .min(u32::MAX as u64) as u32,
+                reposts_count: m
+                    .get("reposts_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0)
+                    .min(u32::MAX as u64) as u32,
+                wot_distance: m
+                    .get("wot_distance")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0)
+                    .min(u32::MAX as u64) as u32,
             });
         stats.push(st.unwrap_or(soshal_feed_core::ranking::PostStats {
             created_at_secs: 0.0,

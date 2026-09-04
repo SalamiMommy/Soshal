@@ -35,12 +35,26 @@ pub async fn messaging_send_dm(
     if content.len() > 64000 {
         return Err("content must be ≤64000 chars".to_string()).into();
     }
-    let encrypted = super::signer::signer_nip44_encrypt(content, recipient_pubkey.clone())?;
+    let encrypted = super::signer::signer_nip44_encrypt(content.clone(), recipient_pubkey.clone())?;
     let mut builder = EventBuilder::new(Kind::EncryptedDirectMessage, encrypted);
-    if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), recipient_pubkey]) {
+    if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), recipient_pubkey.clone()]) {
         builder = builder.tag(tag);
     }
     let signed_json = super::signer::sign_builder(builder)?;
+    let sender_pk = super::signer::signer_pubkey()?;
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&signed_json) {
+        if let Some(event_id) = val.get("id").and_then(|v| v.as_str()) {
+            let created_at = val.get("created_at").and_then(|v| v.as_u64()).unwrap_or(0);
+            let _ = messaging_store_dm(
+                event_id.to_string(),
+                sender_pk,
+                recipient_pubkey,
+                content,
+                created_at,
+                "[]".to_string(),
+            );
+        }
+    }
     super::sync::publish_or_enqueue("dm", &signed_json).await?;
     Ok(signed_json).into()
 }
@@ -48,9 +62,12 @@ pub async fn messaging_send_dm(
 /// Deterministic conversation id for a DM pair: sorted pubkeys joined by
 /// `:`, prefixed `conv:`.
 pub(crate) fn conv_id(my_pubkey: &str, other_pubkey: &str) -> String {
-    let mut pair = [my_pubkey, other_pubkey];
-    pair.sort();
-    format!("conv:{}", pair.join(":"))
+    let (first, second) = if my_pubkey <= other_pubkey {
+        (my_pubkey, other_pubkey)
+    } else {
+        (other_pubkey, my_pubkey)
+    };
+    format!("conv:{first}:{second}")
 }
 
 /// Seal DM content at rest (AES-GCM under the signer-derived key) before DB
@@ -154,6 +171,13 @@ pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, Stri
         let mut seen = std::collections::HashSet::new();
         let mut peers: Vec<String> = Vec::new();
         for cid in cids {
+            // Scope to conversations this account is part of: the
+            // `conversations` table (v011) holds rows across ALL accounts on
+            // this device, so skipping the pubkey-scope here would leak the
+            // other accounts' DM partners to the active caller.
+            if !cid.contains(&pubkey) {
+                continue;
+            }
             for p in cid.trim_start_matches("conv:").split(':') {
                 if p != pubkey && seen.insert(p.to_string()) {
                     peers.push(p.to_string());

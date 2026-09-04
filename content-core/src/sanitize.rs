@@ -7,76 +7,44 @@ const MATCH_NOTHING_REGEX: &str = "a^";
 
 // ─── Error / log message sanitization ─────────────────────────────────
 
-/// Returns compiled error sanitization regexes (with backtracking size limits).
-fn error_patterns() -> &'static [Regex] {
-    static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
-    PATTERNS
-        .get_or_init(|| {
-            static FALLBACK_RE: OnceLock<Regex> = OnceLock::new();
-            let build = |pat: &str| -> Regex {
-                RegexBuilder::new(pat)
-                    .size_limit(1_000_000)
-                    .build()
-                    .unwrap_or_else(|_| {
-                        FALLBACK_RE
-                            .get_or_init(|| {
-                                Regex::new(MATCH_NOTHING_REGEX)
-                                    .expect("MATCH_NOTHING_REGEX must compile")
-                            })
-                            .clone()
-                    })
-            };
-            vec![
-                build(r"\bnsec1[ac-hj-np-z02-9]{40,65}\b"),
-                build(
-                    r"(?i)(?:nsec1|private_?key|secret_?key|sk|privkey|seckey)[=:]\s*[a-f0-9]{64}",
-                ),
-                build(r"(?i)(?:api[_-]?key|token|secret|password|passwd)[:\s]+\S{8,}"),
-                build(r"/etc/(?:passwd|shadow|hosts|ssh)\b"),
-                build(r"/proc/self/environ\b"),
-                build(r"(?:mongodb|mysql|postgres|sqlite)://[^\s]+"),
-                build(r"\?[^&\s]+"),
-            ]
+/// Returns compiled error sanitization regex (with backtracking size limit).
+fn error_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| {
+        RegexBuilder::new(
+            r"\bnsec1[ac-hj-np-z02-9]{40,65}\b|(?i)(?:nsec1|private_?key|secret_?key|sk|privkey|seckey)[=:]\s*[a-f0-9]{64}|(?i)(?:api[_-]?key|token|secret|password|passwd)[:\s]+\S{8,}|/etc/(?:passwd|shadow|hosts|ssh)\b|/proc/self/environ\b|(?:mongodb|mysql|postgres|sqlite)://[^\s]+|\?[^&\s]+",
+        )
+        .size_limit(1_000_000)
+        .build()
+        .unwrap_or_else(|_| {
+            Regex::new(MATCH_NOTHING_REGEX).expect("MATCH_NOTHING_REGEX must compile")
         })
-        .as_slice()
+    })
 }
 
-/// Returns compiled log sanitization regexes (with backtracking size limits).
-fn log_patterns() -> &'static [Regex] {
-    static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
-    PATTERNS
-        .get_or_init(|| {
-            let build = |pat: &str| -> Regex {
-                RegexBuilder::new(pat)
-                    .size_limit(1_000_000)
-                    .build()
-                    .unwrap_or_else(|_| {
-                        regex::Regex::new(MATCH_NOTHING_REGEX)
-                            .expect("MATCH_NOTHING_REGEX must compile")
-                    })
-            };
-            vec![
-                build(r"\b[a-fA-F0-9]{64}\b"),
-                build(r"\bnsec1[ac-hj-np-z02-9]{40,65}"),
-                build(r"\b0x[a-fA-F0-9]{64}\b"),
-            ]
+/// Returns compiled log sanitization regex (with backtracking size limit).
+fn log_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| {
+        RegexBuilder::new(
+            r"\b0x[a-fA-F0-9]{64}\b|\b[a-fA-F0-9]{64}\b|\bnsec1[ac-hj-np-z02-9]{40,65}",
+        )
+        .size_limit(1_000_000)
+        .build()
+        .unwrap_or_else(|_| {
+            Regex::new(MATCH_NOTHING_REGEX).expect("MATCH_NOTHING_REGEX must compile")
         })
-        .as_slice()
+    })
 }
 
 /// Redacts sensitive patterns from an error message.
 /// Replaces matches with `[REDACTED]` and truncates to 500 chars.
 pub fn sanitize_error_message(msg: &str) -> String {
-    let mut sanitized = std::borrow::Cow::Borrowed(msg);
-    for pattern in error_patterns() {
-        if let std::borrow::Cow::Owned(replaced) = pattern.replace_all(&sanitized, "[REDACTED]") {
-            sanitized = std::borrow::Cow::Owned(replaced);
-        }
-    }
+    let sanitized = error_pattern().replace_all(msg, "[REDACTED]");
     const MAX_LENGTH: usize = 500;
     if sanitized.len() > MAX_LENGTH {
-        let mut s = sanitized.into_owned();
-        s.truncate(MAX_LENGTH);
+        let boundary = sanitized.floor_char_boundary(MAX_LENGTH);
+        let mut s = sanitized[..boundary].to_string();
         s.push_str("... [truncated]");
         return s;
     }
@@ -86,14 +54,9 @@ pub fn sanitize_error_message(msg: &str) -> String {
 /// Redacts private key patterns from log messages.
 /// Replaces 64-char hex, nsec bech32, and 0x-prefixed hex with `[REDACTED_KEY]`.
 pub fn sanitize_log_message(msg: &str) -> String {
-    let mut sanitized = std::borrow::Cow::Borrowed(msg);
-    for pattern in log_patterns() {
-        if let std::borrow::Cow::Owned(replaced) = pattern.replace_all(&sanitized, "[REDACTED_KEY]")
-        {
-            sanitized = std::borrow::Cow::Owned(replaced);
-        }
-    }
-    sanitized.into_owned()
+    log_pattern()
+        .replace_all(msg, "[REDACTED_KEY]")
+        .into_owned()
 }
 
 /// Strips HTML tags, normalizes whitespace, and truncates notification content.
@@ -151,27 +114,44 @@ fn base64_regex() -> &'static Regex {
     RE.get_or_init(|| compile_re(r"\b[A-Za-z0-9+/]{32,}={0,2}"))
 }
 
+/// Recursively redacts sensitive values in any nested object/array. Value
+/// objects whose key is sensitive are replaced wholesale; containers (objects
+/// and arrays) are descended into so that sensitive keys at any depth are
+/// caught, not just top-level ones.
+fn sanitize_value(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, val) in map.iter_mut() {
+                let lower = key.to_lowercase();
+                if SENSITIVE_KEYS.iter().any(|s| lower.contains(s)) {
+                    *val = serde_json::Value::String("[REDACTED]".to_string());
+                } else {
+                    sanitize_value(val);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr.iter_mut() {
+                sanitize_value(item);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Redacts sensitive values (password, pin, key, secret, token, privateKey,
 /// seed) from a context JSON object. Returns the redacted JSON string, or
-/// `None` if the input is empty, null, or not a JSON object.
+/// `None` if the input is empty, null, or not a JSON object. Redaction is
+/// recursive: nested objects and arrays are scrubbed too.
 pub fn sanitize_context(input_json: &str) -> Option<String> {
     if input_json.is_empty() || input_json == "null" {
         return None;
     }
 
     let mut obj: serde_json::Value = serde_json::from_str(input_json).ok()?;
-
-    if let Some(map) = obj.as_object_mut() {
-        for (key, value) in map.iter_mut() {
-            let lower = key.to_lowercase();
-            if SENSITIVE_KEYS.iter().any(|s| lower.contains(s)) {
-                *value = serde_json::Value::String("[REDACTED]".to_string());
-            }
-        }
-        serde_json::to_string(&obj).ok()
-    } else {
-        None
-    }
+    obj.as_object()?;
+    sanitize_value(&mut obj);
+    serde_json::to_string(&obj).ok()
 }
 
 /// Redacts sensitive patterns (hex keys, base64 blobs) from a detail string.

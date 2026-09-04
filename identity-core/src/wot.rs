@@ -28,20 +28,23 @@ pub struct WotUpdate {
 }
 
 pub fn count_mutual(contacts_a: &[String], contacts_b: &[String]) -> usize {
-    if contacts_b.len() <= 16 {
-        return contacts_a
-            .iter()
-            .filter(|c| contacts_b.iter().any(|b| b == *c))
-            .count();
+    if contacts_a.is_empty() || contacts_b.is_empty() {
+        return 0;
     }
-    let mut set_b = HashSet::with_capacity(contacts_b.len());
-    for s in contacts_b {
-        set_b.insert(s.as_str());
+    let (small, large) = if contacts_a.len() <= contacts_b.len() {
+        (contacts_a, contacts_b)
+    } else {
+        (contacts_b, contacts_a)
+    };
+    let mut set_small = HashSet::with_capacity(small.len());
+    for s in small {
+        set_small.insert(s.as_str());
     }
-    contacts_a
-        .iter()
-        .filter(|c| set_b.contains(c.as_str()))
-        .count()
+    let mut set_large = HashSet::with_capacity(large.len());
+    for l in large {
+        set_large.insert(l.as_str());
+    }
+    set_small.intersection(&set_large).count()
 }
 
 pub fn compute_distance(

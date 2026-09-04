@@ -39,15 +39,29 @@ pub fn bookmarks_list(pubkey: String, limit: i64, offset: i64) -> Result<String,
 #[frb(sync, serialize)]
 pub fn bookmarks_delete(id: String) -> Result<bool, String> {
     let pubkey = super::db::with_db_result(|db| {
-        soshal_db_core::repos::bookmark::BookmarkRepo::new(db).get_by_id(&id)
-    })?
-    .map(|r| r.pubkey)
-    .unwrap_or_default();
-    super::db::with_db_result(|db| {
-        soshal_db_core::repos::bookmark::BookmarkRepo::new(db).delete(&id)?;
-        Ok(true)
+        let repo = soshal_db_core::repos::bookmark::BookmarkRepo::new(db);
+        if let Some(r) = repo.get_by_id(&id)? {
+            return Ok(r.pubkey);
+        }
+        let target_evt = id.strip_prefix("bm:").unwrap_or(&id);
+        let conn = db.conn()?;
+        let found: Option<(String, String)> = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT id, pubkey FROM bookmarks WHERE id = ?1 OR event_id = ?2",
+            libsql::params![id.as_str(), target_evt],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        if let Some((exact_id, pk)) = found {
+            repo.delete(&exact_id)?;
+            return Ok(pk);
+        }
+        Ok(String::new())
     })?;
     if !pubkey.is_empty() {
+        super::db::with_db_result(|db| {
+            soshal_db_core::repos::bookmark::BookmarkRepo::new(db).delete(&id)?;
+            Ok(())
+        })?;
         publish_bookmark_list(&pubkey);
     }
     Ok(true)

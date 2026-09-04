@@ -431,16 +431,24 @@ class _ModerationScreenState extends State<ModerationScreen> {
             onPressed: () async {
               final pubkey = _pubkey ?? '';
               final text = _testContent.text;
-              final filtered = await api.shouldFilter(text, pubkey);
-              final hybrid = await api.hybridClassifyText(
-                text,
-                forceDeepScan: _forceDeepScan,
-              );
-              if (mounted) {
-                setState(() {
-                  _filtered = filtered;
-                  _hybridResult = hybrid;
-                });
+              try {
+                final filtered = await api.shouldFilter(text, pubkey);
+                final hybrid = await api.hybridClassifyText(
+                  text,
+                  forceDeepScan: _forceDeepScan,
+                );
+                if (mounted) {
+                  setState(() {
+                    _filtered = filtered;
+                    _hybridResult = hybrid;
+                  });
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Scan failed: $e')),
+                  );
+                }
               }
             },
           ),
@@ -456,10 +464,10 @@ class _ModerationScreenState extends State<ModerationScreen> {
                     Row(
                       children: [
                         Icon(
-                          _hybridResult!.isFlagged
+                          _hybridResult!.isFlagged || _filtered!
                               ? Icons.warning_amber_rounded
                               : Icons.check_circle_outline,
-                          color: _hybridResult!.isFlagged
+                          color: _hybridResult!.isFlagged || _filtered!
                               ? Colors.red
                               : Colors.green,
                         ),
@@ -467,10 +475,12 @@ class _ModerationScreenState extends State<ModerationScreen> {
                         Text(
                           _hybridResult!.isFlagged
                               ? 'Flagged (${_hybridResult!.primaryCategory?.toUpperCase() ?? "HAZARD"})'
-                              : 'Safe — Content Passes 2-Tier AI',
+                              : (_filtered!
+                                  ? 'Filtered by word/block list'
+                                  : 'Safe — Content Passes 2-Tier AI'),
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: _hybridResult!.isFlagged
+                            color: _hybridResult!.isFlagged || _filtered!
                                 ? Colors.red
                                 : Colors.green,
                           ),

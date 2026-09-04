@@ -131,6 +131,7 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
             msg['event_id'] as String? ?? '',
             msg['pubkey'] as String? ?? '',
             msg['content'] as String? ?? '',
+            msg['id'] as String? ?? '',
           );
         case 'profile':
         default:

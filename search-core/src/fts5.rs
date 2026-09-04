@@ -40,19 +40,19 @@ pub fn format_fts5_query(query: &str) -> String {
     if trimmed.is_empty() {
         return String::new();
     }
-    let cleaned = trimmed.replace(':', " ");
-    let mut out = String::with_capacity(cleaned.len() + 16);
+    let mut out = String::with_capacity(trimmed.len() + 16);
     let mut seen: HashSet<String> = HashSet::new();
     let mut count = 0;
-    for word in cleaned.split_whitespace() {
+    for word in trimmed.split(|c: char| c.is_whitespace() || c == ':') {
         if let Some(t) = sanitize_fts5_term(word) {
-            if seen.insert(t.clone()) {
+            if !seen.contains(&t) {
                 if count > 0 {
                     out.push_str(" AND ");
                 }
                 out.push_str(&t);
                 out.push('*');
                 count += 1;
+                seen.insert(t);
                 if count >= MAX_FTS5_TERMS {
                     break;
                 }

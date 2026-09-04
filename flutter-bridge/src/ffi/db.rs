@@ -184,50 +184,57 @@ pub fn db_expected_schema_version() -> i64 {
 #[frb(sync, serialize)]
 pub fn db_force_migrate() -> Result<String, String> {
     with_db(|db| {
-        let conn = db.conn()?;
+        // Scope the checkout: db.migrate() below checks out its own conn.
+        // Holding this guard across migrate() deadlocks :memory: (max 1)
+        // and splits file DBs across two connections.
+        let tables: Vec<String> = {
+            let conn = db.conn()?;
 
-        let current: i64 = block_on(async {
-            let mut rows = conn
-                .query("SELECT COALESCE(MAX(version), 0) FROM _migrations", ())
-                .await?;
-            if let Some(row) = rows.next().await? {
-                Ok::<i64, libsql::Error>(row.get::<i64>(0)?)
-            } else {
-                Ok(0)
-            }
-        })?;
-        if current >= soshal_db_core::schema::SCHEMA_VERSION {
-            return Err(DbError::Migration(format!(
-                "refusing to wipe: schema already at version {} (current), expected {}",
-                current,
-                soshal_db_core::schema::SCHEMA_VERSION
-            )));
-        }
-
-        let tables: Vec<String> = block_on(async {
-            let mut rows = conn.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", ()).await?;
-            let mut names = Vec::new();
-            while let Some(row) = rows.next().await? {
-                names.push(row.get::<String>(0)?);
-            }
-            Ok::<Vec<String>, libsql::Error>(names)
-        })?;
-
-        let _ = block_on(conn.execute("PRAGMA foreign_keys = OFF", ()));
-        for table in tables.iter().filter(|n| {
-            let mut chars = n.chars();
-            match chars.next() {
-                Some(c) if c.is_ascii_alphabetic() || c == '_' => {
-                    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+            let current: i64 = block_on(async {
+                let mut rows = conn
+                    .query("SELECT COALESCE(MAX(version), 0) FROM _migrations", ())
+                    .await?;
+                if let Some(row) = rows.next().await? {
+                    Ok::<i64, libsql::Error>(row.get::<i64>(0)?)
+                } else {
+                    Ok(0)
                 }
-                _ => false,
+            })?;
+            if current >= soshal_db_core::schema::SCHEMA_VERSION {
+                return Err(DbError::Migration(format!(
+                    "refusing to wipe: schema already at version {} (current), expected {}",
+                    current,
+                    soshal_db_core::schema::SCHEMA_VERSION
+                )));
             }
-        }) {
-            let _ = block_on(conn.execute(&format!("DROP TABLE IF EXISTS {}", table), ()));
-        }
-        let _ = block_on(conn.execute("PRAGMA foreign_keys = ON", ()));
 
-        // Re-run migrations
+            let tables: Vec<String> = block_on(async {
+                let mut rows = conn.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", ()).await?;
+                let mut names = Vec::new();
+                while let Some(row) = rows.next().await? {
+                    names.push(row.get::<String>(0)?);
+                }
+                Ok::<Vec<String>, libsql::Error>(names)
+            })?;
+
+            let _ = block_on(conn.execute("PRAGMA foreign_keys = OFF", ()));
+            for table in tables.iter().filter(|n| {
+                let mut chars = n.chars();
+                match chars.next() {
+                    Some(c) if c.is_ascii_alphabetic() || c == '_' => {
+                        chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    }
+                    _ => false,
+                }
+            }) {
+                let _ = block_on(conn.execute(&format!("DROP TABLE IF EXISTS {}", table), ()));
+            }
+            let _ = block_on(conn.execute("PRAGMA foreign_keys = ON", ()));
+            tables
+        };
+
+        let _ = tables;
+        // Re-run migrations on a fresh checkout (guard above dropped).
         db.migrate()
             .map_err(|e| DbError::Migration(format!("migration failed: {e}")))?;
         Ok("Migration re-run complete".to_string())

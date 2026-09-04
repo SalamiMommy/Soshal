@@ -9,9 +9,7 @@ import 'package:provider/provider.dart';
 import '../services/audio_codec.dart';
 import '../services/h264_codec.dart';
 import '../services/permissions_service.dart';
-import '../services/session_service.dart';
 import '../services/streaming_service.dart';
-import '../utils/format.dart';
 import '../widgets/app_snack.dart';
 import '../widgets/error_state_text.dart';
 
@@ -48,6 +46,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   int _framesPublished = 0;
   int _h264Frames = 0;
   DateTime? _lastFrameAt;
+  bool _frameInFlight = false;
   DateTime? _lastH264At;
   bool _h264Ready = false;
   bool _h264Tried = false;
@@ -125,13 +124,19 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
 
   Future<void> _onFrame(CameraImage image) async {
     if (!mounted) return;
+    // The plugin does not await this callback: once a frame passes the
+    // throttle gate, its awaits (Isolate.run, publish) run to completion
+    // concurrently with later frames. Serialize with an in-flight guard so
+    // encodes/publishes (and MoQ group sequence allocation) cannot overlap.
+    if (_frameInFlight) return;
+    _frameInFlight = true;
     final now = DateTime.now();
     final last = _lastFrameAt;
-    if (last != null && now.difference(last) < _frameInterval) return;
-    _lastFrameAt = now;
-    if (!_broadcasting) return;
-    final api = context.read<StreamingService>();
     try {
+      if (last != null && now.difference(last) < _frameInterval) return;
+      _lastFrameAt = now;
+      if (!_broadcasting) return;
+      final api = context.read<StreamingService>();
       final plane = image.planes.first;
       final width = image.width;
       final height = image.height;
@@ -158,6 +163,8 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
       await _publishH264(image, now, api);
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
+    } finally {
+      _frameInFlight = false;
     }
   }
 
@@ -197,19 +204,6 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
         ),
       );
       if (!mounted) return;
-      if (keyframe) {
-        try {
-          await api.publishMoqObject(
-            streamId: widget.streamId,
-            publisherPubkey: context.read<SessionService>().activePubkey ?? '',
-            trackId: 1,
-            isKeyframe: true,
-            payloadHex: bytesToHex(nal),
-          );
-        } catch (e) {
-          debugPrint('moq object publish: $e');
-        }
-      }
       _h264Frames++;
     }
   }

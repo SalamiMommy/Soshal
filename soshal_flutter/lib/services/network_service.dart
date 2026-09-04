@@ -235,6 +235,13 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final ok =
           await RustLib.instance.api.crateFfiNetworkNetworkAddRelay(url: url);
+      // Keep the local relay list in step so reinitRelays() pushes the
+      // current set instead of a stale snapshot built only from
+      // fetchRelayStatus().
+      if (ok && !_relays.any((r) => r.url == url)) {
+        _relays = [..._relays,
+            RelayInfo(url: url, connected: true, latencyMs: 0, lastEventAt: 0)];
+      }
       clearLastError();
       notifyListeners();
       return ok;
@@ -250,6 +257,9 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     try {
       final ok = await RustLib.instance.api
           .crateFfiNetworkNetworkRemoveRelay(url: url);
+      if (ok) {
+        _relays.removeWhere((r) => r.url == url);
+      }
       clearLastError();
       notifyListeners();
       return ok;

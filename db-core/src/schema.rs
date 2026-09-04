@@ -92,9 +92,16 @@ fn heal_legacy_schema(conn: &Connection) -> Result<(), crate::error::DbError> {
 pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
     block_on(conn.execute_batch("CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')));"))?;
 
-    heal_legacy_schema(conn)?;
+    // Heal + version steps run inside one BEGIN IMMEDIATE txn so a failed
+    // migrate never leaves partial ALTERs committed while steps roll back.
+    block_on(conn.execute_batch("BEGIN IMMEDIATE"))?;
 
-    let current: i64 = block_on(async {
+    if let Err(e) = heal_legacy_schema(conn) {
+        let _ = block_on(conn.execute_batch("ROLLBACK"));
+        return Err(e);
+    }
+
+    let current: i64 = match block_on(async {
         let mut rows = conn
             .query("SELECT COALESCE(MAX(version), 0) FROM _migrations", ())
             .await?;
@@ -103,13 +110,21 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
         } else {
             Ok(0)
         }
-    })?;
+    }) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = block_on(conn.execute_batch("ROLLBACK"));
+            return Err(e);
+        }
+    };
 
     if current >= SCHEMA_VERSION {
+        if let Err(e) = block_on(conn.execute_batch("COMMIT")) {
+            let _ = block_on(conn.execute_batch("ROLLBACK"));
+            return Err(e.into());
+        }
         return Ok(());
     }
-
-    block_on(conn.execute_batch("BEGIN IMMEDIATE"))?;
 
     type StepFn = fn(&Connection) -> Result<(), crate::error::DbError>;
     let steps: &[(i64, StepFn)] = &[

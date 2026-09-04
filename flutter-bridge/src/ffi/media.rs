@@ -81,12 +81,20 @@ pub fn media_decode_image_rgba(
 /// `http(s)://` URL (SSRF-guarded fetch).
 #[frb(serialize)]
 pub async fn media_upload(file_path: String, blossom_server: String) -> Result<String, String> {
-    let (data, fetched_mime) = match soshal_media_core::source::fetch_source_bytes(&file_path).await
-    {
+    // Local file sources must pass the allowed-path guard before reading; URL
+    // sources go through the SSRF-guarded async fetch in fetch_source_bytes.
+    let source = if soshal_media_core::source::is_url_source(&file_path) {
+        file_path.clone()
+    } else {
+        resolve_allowed_path(&file_path, "media upload")?
+            .to_string_lossy()
+            .into_owned()
+    };
+    let (data, fetched_mime) = match soshal_media_core::source::fetch_source_bytes(&source).await {
         Ok(v) => v,
         Err(e) => return Err(e).into(),
     };
-    let mime_type = fetched_mime.unwrap_or_else(|| infer_mime_type(&file_path));
+    let mime_type = fetched_mime.unwrap_or_else(|| infer_mime_type(&source));
     let client =
         soshal_media_core::blossom::BlossomClient::new_pinned_resolve(&blossom_server).await?;
     match client.upload(data, &mime_type).await {

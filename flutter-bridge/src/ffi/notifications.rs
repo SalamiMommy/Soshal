@@ -139,23 +139,20 @@ pub fn notifications_fetch(user_pubkey: String, limit: i32, offset: i32) -> Resu
                 })
             },
         )?;
-        let out: Vec<serde_json::Value> = rows
+        let mut from_pks_set = std::collections::HashSet::new();
+        for r in &rows {
+            if let Some(pk) = &r.from_pubkey {
+                from_pks_set.insert(pk.clone());
+            }
+        }
+        let from_pks: Vec<String> = from_pks_set.into_iter().collect();
+        let users = user_names(db, &from_pks)?;
+        Ok(rows
             .into_iter()
-            .map(|row| {
-                serde_json::json!({
-                    "id": row.id,
-                    "pubkey": row.pubkey,
-                    "type": row.type_,
-                    "event_id": row.event_id,
-                    "from_pubkey": row.from_pubkey,
-                    "content": row.content,
-                    "created_at": row.created_at,
-                    "is_read": if row.is_read { 1 } else { 0 },
-                })
-            })
-            .collect();
-        Ok(super::util::json_ok_or_empty(&out))
+            .map(|r| row_to_item(r, &users))
+            .collect::<Vec<_>>())
     })
+    .map(super::util::json_ok)?
 }
 
 /// Mark notification as read.

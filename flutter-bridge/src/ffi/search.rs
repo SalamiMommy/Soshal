@@ -84,7 +84,35 @@ pub fn search_posts(query: String, limit: i32) -> Result<String, String> {
 /// Search profiles by name/about (kind 0).
 #[frb(sync, serialize)]
 pub fn search_profiles(query: String, limit: i32) -> Result<String, String> {
-    super::util::json_ok(run_search(&query, limit.clamp(1, 100) as i64, Some(0))?)
+    let limit = limit.clamp(1, 100) as i64;
+    let mut results = run_search(&query, limit, Some(0))?;
+    if results.is_empty() && !query.trim().is_empty() {
+        let pattern = format!("%{}%", query.trim().to_lowercase());
+        let json = super::db::db_query_params(
+            "SELECT pubkey, name, about FROM users \
+             WHERE lower(name) LIKE ?1 OR lower(display_name) LIKE ?1 OR lower(about) LIKE ?1 OR pubkey = ?2 \
+             ORDER BY follower_count DESC LIMIT ?3",
+            &[pattern, query.trim().to_string(), limit.to_string()],
+        )?;
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+        for r in rows {
+            if let Some(pk) = r["pubkey"].as_str() {
+                results.push(SearchResult {
+                    id: pk.to_string(),
+                    result_type: "profile".to_string(),
+                    title: r["name"].as_str().unwrap_or("").to_string(),
+                    description: soshal_common_core::format::truncate(
+                        r["about"].as_str().unwrap_or(""),
+                        160,
+                    ),
+                    pubkey: Some(pk.to_string()),
+                    score: 1.0,
+                    created_at: 0,
+                });
+            }
+        }
+    }
+    super::util::json_ok(results)
 }
 
 /// Search hashtags (trending list fallback if no hash-index rows yet). The
@@ -92,7 +120,8 @@ pub fn search_profiles(query: String, limit: i32) -> Result<String, String> {
 /// table, so results are cached per query with a 60 s TTL.
 #[frb(sync, serialize)]
 pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String> {
-    if query.trim().is_empty() {
+    let clean_query = query.trim().trim_start_matches('#');
+    if clean_query.is_empty() {
         return search_trending_hashtags(limit);
     }
     let limit = limit.clamp(1, 100) as usize;
@@ -104,7 +133,7 @@ pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String>
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     {
         let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((ts, tags)) = guard.get(&query) {
+        if let Some((ts, tags)) = guard.get(clean_query) {
             if now.saturating_sub(*ts) < HASHTAGS_TTL_SECS {
                 return Ok(tags.iter().take(limit).cloned().collect());
             }
@@ -112,7 +141,7 @@ pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String>
     }
     let json = super::db::db_query_params(
         "SELECT tag FROM hashtags WHERE tag LIKE ?1 || '%' GROUP BY tag ORDER BY SUM(count) DESC LIMIT 100",
-        &[query.clone()],
+        &[clean_query.to_string()],
     )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let tags: Vec<String> = rows
@@ -120,7 +149,7 @@ pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String>
         .filter_map(|r| r["tag"].as_str().map(|s| s.to_string()))
         .collect();
     let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    guard.insert(query.clone(), (now, tags.clone()));
+    guard.insert(clean_query.to_string(), (now, tags.clone()));
     Ok(tags.into_iter().take(limit).collect())
 }
 

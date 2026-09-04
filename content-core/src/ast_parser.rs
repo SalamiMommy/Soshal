@@ -26,15 +26,15 @@ pub struct ParsedSpan {
 }
 
 pub fn parse_post_ast(raw: &str) -> Vec<ParsedSpan> {
-    let mut spans = Vec::new();
     if raw.is_empty() {
-        return spans;
+        return Vec::new();
     }
+    let mut spans = Vec::with_capacity((raw.len() / 6).max(4));
 
     // Split on whitespace or tokens and construct structured AST spans
     for word in raw.split_inclusive(|c: char| c.is_whitespace()) {
         let trimmed = word.trim();
-        if trimmed.starts_with('@') || trimmed.starts_with("nostr:npub1") {
+        if (trimmed.starts_with('@') && trimmed.len() > 1) || trimmed.starts_with("nostr:npub1") {
             spans.push(ParsedSpan {
                 text: word.to_string(),
                 span_type: SpanType::Mention,

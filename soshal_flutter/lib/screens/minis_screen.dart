@@ -51,16 +51,24 @@ class _MinisScreenState extends State<MinisScreen> {
     final text = _filterText.trim();
     if (text.isEmpty) return;
     final service = context.read<MinisService>();
-    final result = service.runFilter(
-      pluginId: 'content-filter',
-      text: text,
-      wasmBytesHex: '',
-    );
-    if (!mounted) return;
-    setState(() {
-      _wasmRuntimeUnavailable = service.wasmRuntimeUnavailable;
-      _filterResult = _wasmRuntimeUnavailable ? null : result;
-    });
+    try {
+      final result = service.runFilter(
+        pluginId: 'content-filter',
+        text: text,
+        wasmBytesHex: '',
+      );
+      if (!mounted) return;
+      setState(() {
+        _wasmRuntimeUnavailable = service.wasmRuntimeUnavailable;
+        _filterResult = _wasmRuntimeUnavailable ? null : result;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _wasmRuntimeUnavailable = true;
+        _filterResult = null;
+      });
+    }
   }
 
   Future<void> _toggleRank(bool on) async {
@@ -72,17 +80,26 @@ class _MinisScreenState extends State<MinisScreen> {
     if (_minis.isEmpty) return;
     final service = context.read<MinisService>();
     final posts = _minis.map((m) => jsonEncode({'url': m.videoUrl})).toList();
-    final ranked = service.rankFeed(
-      pluginId: 'feed-ranker',
-      postsJson: posts,
-      wasmBytesHex: '',
-    );
-    if (!mounted) return;
-    setState(() {
-      _wasmRuntimeUnavailable = service.wasmRuntimeUnavailable;
-      _ranked = ranked;
-      if (_wasmRuntimeUnavailable) _rankOn = false;
-    });
+    try {
+      final ranked = service.rankFeed(
+        pluginId: 'feed-ranker',
+        postsJson: posts,
+        wasmBytesHex: '',
+      );
+      if (!mounted) return;
+      setState(() {
+        _wasmRuntimeUnavailable = service.wasmRuntimeUnavailable;
+        _ranked = ranked;
+        if (_wasmRuntimeUnavailable) _rankOn = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _wasmRuntimeUnavailable = true;
+        _ranked = [];
+        _rankOn = false;
+      });
+    }
   }
 
   Future<void> _play(MiniItem mini) async {

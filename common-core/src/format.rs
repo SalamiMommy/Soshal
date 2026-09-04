@@ -59,45 +59,29 @@ pub fn seconds_to_ymd(seconds: u64) -> (u32, &'static str, u32) {
     const MONTH_NAMES: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
-    const MONTH_DAYS_COMMON: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    const MONTH_DAYS_LEAP: [u32; 12] = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     const SECS_PER_DAY: u64 = 86_400;
 
     if seconds >= MAX_TIMESTAMP_SECS {
         return (9999, "Dec", 31);
     }
 
-    let mut days_since_epoch = seconds / SECS_PER_DAY;
-    let mut year: u32 = 1970;
-    loop {
-        let is_leap =
-            (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400);
-        let days_in_year: u64 = if is_leap { 366 } else { 365 };
-        if days_since_epoch < days_in_year {
-            break;
-        }
-        days_since_epoch -= days_in_year;
-        year += 1;
-        if year > 9999 {
-            return (9999, "Dec", 31);
-        }
+    // Civil calendar algorithm (Howard Hinnant): O(1) without loops
+    let z = (seconds / SECS_PER_DAY) as i64 + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = (z - era * 146_097) as u32; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 3]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let year = if m <= 2 { y + 1 } else { y } as u32;
+
+    if year > 9999 {
+        return (9999, "Dec", 31);
     }
-    let is_leap = (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400);
-    let month_days = if is_leap {
-        &MONTH_DAYS_LEAP
-    } else {
-        &MONTH_DAYS_COMMON
-    };
-    let mut month_idx: usize = 0;
-    let mut day = days_since_epoch + 1;
-    for (idx, &days) in month_days.iter().enumerate() {
-        if day <= days as u64 {
-            month_idx = idx;
-            break;
-        }
-        day -= days as u64;
-    }
-    (year, MONTH_NAMES[month_idx], day as u32)
+
+    (year, MONTH_NAMES[(m - 1) as usize], d)
 }
 
 pub fn format_timestamp(seconds: u64, now_sec: u64) -> String {

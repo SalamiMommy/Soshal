@@ -139,9 +139,8 @@ pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, Stri
             let stmt = conn
                 .prepare(
                     "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
-                     JOIN users u ON u.pubkey = p.pubkey \
                      WHERE p.kind = ?1 AND p.is_deleted = 0 \
-                     AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(u.contact_pubkeys) THEN u.contact_pubkeys ELSE '[]' END) j WHERE j.value = ?2) \
+                     AND p.pubkey IN (SELECT value FROM json_each((SELECT contact_pubkeys FROM users WHERE pubkey = ?2))) \
                      ORDER BY p.created_at DESC LIMIT 100",
                 )
                 .await?;

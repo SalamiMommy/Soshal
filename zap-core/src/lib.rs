@@ -103,7 +103,15 @@ pub fn parse_msats_from_bolt11(bolt11: &str) -> Result<u64, String> {
 
     let unit = rest.as_bytes().get(digit_len).copied();
     let msats = match unit {
-        Some(b'p') => Some(amount / 10),
+        // Pico-BTC is 0.1 msat: only multiples of 10 are representable.
+        // Truncating (amount/10) would accept sub-msat invoices as 0 msat
+        // free passes — reject the remainder instead.
+        Some(b'p') => {
+            if !amount.is_multiple_of(10) {
+                return Err("BOLT-11 pico amount below msat resolution".to_string());
+            }
+            Some(amount / 10)
+        }
         Some(b'n') => amount.checked_mul(MULT_N as u128),
         Some(b'u') => amount.checked_mul(MULT_U as u128),
         Some(b'm') => amount.checked_mul(MULT_M as u128),

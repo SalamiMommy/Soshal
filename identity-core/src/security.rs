@@ -86,6 +86,11 @@ pub fn apply_pin_attempt(
         return PinVerdict::PermanentlyLocked;
     }
 
+    // Clock-rewind guard: wall-clock skew must not clear an active lockout.
+    // Clamp effective time forward to last observed attempt so setting the
+    // clock back cannot bypass the window.
+    let now = now.max(state.last_attempt_at);
+
     if let Some(until) = state.lockout_until {
         if now < until {
             state.attempt_count += 1;

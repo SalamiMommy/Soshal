@@ -57,7 +57,11 @@ pub fn fetch_feed_window(
             .map_err(|e| e.to_string())?;
 
         let mut rows = stmt
-            .query((limit as i64, start_index as i64, active_pubkey))
+            .query((
+                limit as i64,
+                i64::try_from(start_index).unwrap_or(i64::MAX).max(0),
+                active_pubkey,
+            ))
             .await
             .map_err(|e| e.to_string())?;
 

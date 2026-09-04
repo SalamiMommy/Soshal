@@ -59,7 +59,7 @@ async fn linux_sample() -> PowerStateDto {
     let mut battery_percent = 100;
     let mut cellular = false;
 
-    let Ok(conn) = zbus::Connection::session().await else {
+    let Ok(conn) = zbus::Connection::system().await else {
         return PowerStateDto {
             charging,
             battery_percent,

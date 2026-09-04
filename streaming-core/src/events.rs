@@ -97,9 +97,10 @@ pub fn chatrandom_peer_from_event(ev: &NostrEvent) -> serde_json::Value {
 /// Maps a chatrandom request type to its event kind + content JSON.
 pub fn chatrandom_request_parts(request_type: &str) -> Result<(u16, String), String> {
     let kind = match request_type {
+        "available" => 20030u16,
         "request" => 20031u16,
         "accept" => 20032,
-        _ => return Err("invalid request type, use request/accept".into()),
+        _ => return Err("invalid request type, use available/request/accept".into()),
     };
     let content = serde_json::json!({"type": request_type}).to_string();
     Ok((kind, content))

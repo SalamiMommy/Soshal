@@ -26,8 +26,15 @@ String prefixEllipsis(String s, int n, {String ellipsis = '…'}) =>
     s.length <= n ? s : '${s.substring(0, n)}$ellipsis';
 
 /// Bytes as lowercase hex, each byte zero-padded to 2 chars.
-String bytesToHex(List<int> bytes) =>
-    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+String bytesToHex(List<int> bytes) {
+  const chars = '0123456789abcdef';
+  final buffer = StringBuffer();
+  for (final b in bytes) {
+    buffer.write(chars[(b >> 4) & 0x0f]);
+    buffer.write(chars[b & 0x0f]);
+  }
+  return buffer.toString();
+}
 
 /// Local `yyyy-MM-dd HH:mm` timestamp; empty string when `unix <= 0`.
 String formatTimestamp(int unix) {

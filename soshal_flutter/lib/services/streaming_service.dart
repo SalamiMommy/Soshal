@@ -357,7 +357,8 @@ class StreamingService extends ChangeNotifier
       ),
     );
     _activeMoqStreamId = streamId;
-    _moqGroupCounter = 0;
+    // Reserve seq 0 for bootstrap: next media group uses 1, no collision.
+    _moqGroupCounter = 1;
     notifyDeferred();
   }
 
@@ -367,10 +368,13 @@ class StreamingService extends ChangeNotifier
     _activeMoqStreamId = null;
     if (streamId != null) {
       try {
+        // Allocate fresh seq from counter, never hardcoded 1 (collides
+        // with first media group).
+        final stopSeq = _moqGroupCounter++;
         await publishLiveGroup(
           streamId: streamId,
           group: _controlGroup(
-            groupSeq: 1,
+            groupSeq: stopSeq,
             timestampMs: DateTime.now().millisecondsSinceEpoch,
             payload: utf8.encode('{"start":false}'),
           ),
@@ -387,16 +391,19 @@ class StreamingService extends ChangeNotifier
     required int timestampMs,
     required List<int> payload,
   }) {
+    // Control track 99, type Control: viewers ignore unknown tracks.
+    // Must NOT use track 0 VideoKeyframe with JSON payload — viewer would
+    // try JPEG decode and poison the frame loop.
     return {
       'group_sequence': groupSeq,
       'objects': [
         {
           'header': {
-            'track_id': 0,
+            'track_id': 99,
             'group_sequence': groupSeq,
             'object_sequence': 0,
             'payload_size': payload.length,
-            'track_type': 'VideoKeyframe',
+            'track_type': 'Control',
             'timestamp_ms': timestampMs,
           },
           'payload': payload,

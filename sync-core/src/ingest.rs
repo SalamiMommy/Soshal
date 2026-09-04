@@ -70,13 +70,12 @@ fn p_tags(event: &Event) -> Vec<String> {
 /// Order-preserving union of two comma-separated pubkey lists.
 fn merge_pubkey_lists(stored: &str, incoming: &str) -> String {
     let mut seen = std::collections::HashSet::new();
-    let mut out: Vec<String> = Vec::new();
+    let mut out: Vec<&str> = Vec::new();
     for pk in stored.split(',').chain(incoming.split(',')) {
         let pk = pk.trim();
-        if pk.is_empty() || !seen.insert(pk.to_string()) {
-            continue;
+        if !pk.is_empty() && seen.insert(pk) {
+            out.push(pk);
         }
-        out.push(pk.to_string());
     }
     out.join(",")
 }
@@ -124,8 +123,8 @@ fn post_row(event: &Event) -> Option<PostRow> {
         }
         tags_json.push(vec);
     }
-    let reply_to = es.first().cloned();
-    let root_id = es.get(1).cloned().or_else(|| es.first().cloned());
+    let reply_to = es.last().cloned();
+    let root_id = es.first().cloned();
     let sig = event.sig.to_string();
 
     Some(PostRow {
@@ -301,9 +300,16 @@ async fn handle_impl(
         let addresses_me = has_p_tag(event, my_pubkey);
         let authored_by_me = event.pubkey.to_hex() == my_pubkey;
         if addresses_me || authored_by_me {
+            let recipient = event
+                .tags
+                .iter()
+                .find(|t| t.as_slice().first().map(|s| s == "p").unwrap_or(false))
+                .and_then(|t| t.as_slice().get(1).cloned())
+                .unwrap_or_else(|| my_pubkey.to_string());
             let _ = tx.try_send(SyncUpdate::Dm {
                 id: event.id.to_hex(),
                 sender: event.pubkey.to_hex(),
+                recipient,
                 content: event.content.clone(),
                 created_at: event.created_at.as_secs(),
             });
@@ -803,6 +809,7 @@ mod tests {
         assert_eq!(row.pubkey, keys.public_key().to_hex());
 
         // post_row: reply/root/hashtag/mentioned-pubkey extraction.
+        // NIP-10 order: first e = root, last e = reply.
         let reply = "e1";
         let root = "e0";
         let post = signed_event_with_tags(
@@ -810,8 +817,8 @@ mod tests {
             Kind::TextNote,
             "hi",
             vec![
-                vec!["e".to_string(), reply.to_string()],
                 vec!["e".to_string(), root.to_string()],
+                vec!["e".to_string(), reply.to_string()],
                 vec!["p".to_string(), "pk-target".to_string()],
                 vec!["t".to_string(), "mesh".to_string()],
             ],

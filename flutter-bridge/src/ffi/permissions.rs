@@ -77,7 +77,10 @@ pub fn permissions_notifications_request() -> bool {
 /// Denied with "don't ask again" (no rationale would be shown).
 #[frb(sync, serialize)]
 pub fn permissions_notifications_permanently_denied() -> bool {
-    let denied = !crate::platform::permission_granted(NOTIFICATIONS).unwrap_or(false);
+    // JNI failure must not claim permanent denial (would send users to
+    // settings on a broken bridge): default granted-unknown to true so
+    // denied defaults false, matching the camera/mic variant.
+    let denied = !crate::platform::permission_granted(NOTIFICATIONS).unwrap_or(true);
     denied && !crate::platform::should_show_rationale(NOTIFICATIONS).unwrap_or(false)
 }
 

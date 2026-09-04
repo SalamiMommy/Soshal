@@ -592,7 +592,7 @@ fn react(user_pubkey: &str, target_event_id: &str, content: &str) -> Result<bool
     let now = soshal_common_core::format::now_secs();
     let row = soshal_db_core::repos::reaction::ReactionRow {
         id: format!("reaction:{user_pubkey}:{target_event_id}"),
-        event_id: event_id.clone(),
+        event_id: target_event_id.to_string(),
         pubkey: user_pubkey.to_string(),
         content: Some(content.to_string()),
         created_at: now,

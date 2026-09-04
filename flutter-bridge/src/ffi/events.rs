@@ -250,6 +250,11 @@ pub fn events_create(
     if end_time != 0 && end_time.saturating_sub(start_time) > 7 * 24 * 3600 {
         return Err("events may not span more than 7 days".to_string()).into();
     }
+    // The event is signed with the unlocked signer key, so the claimed
+    // creator must match it: otherwise a caller could attribute a stored row
+    // to an arbitrary (victim) pubkey while the signed event carries a
+    // different one.
+    super::signer::require_identity(&creator_pubkey)?;
     let d_tag = format!("{}-{}", creator_pubkey.get(..12).unwrap_or(""), start_time);
     let content = serde_json::json!({
         "name": title,
@@ -420,10 +425,12 @@ pub fn events_check_in(
     let window = if event.start_time == 0 {
         (now.saturating_sub(2 * 3600), now.saturating_add(2 * 3600))
     } else {
-        (
-            event.start_time.saturating_sub(3600),
-            event.end_time.max(event.start_time),
-        )
+        let end = if event.end_time > event.start_time {
+            event.end_time
+        } else {
+            event.start_time.saturating_add(4 * 3600)
+        };
+        (event.start_time.saturating_sub(3600), end)
     };
     if !can_checkin(window.0, window.1, now, 0) {
         return Err("check-in outside the event window".to_string()).into();
@@ -803,8 +810,6 @@ pub fn events_score_events(
     }
     let events: Vec<EventText> =
         serde_json::from_str(&events_json).map_err(|e| format!("invalid events JSON: {e}"))?;
-    let _my_interests: Vec<String> = serde_json::from_str(&my_interests_json)
-        .map_err(|e| format!("invalid interests JSON: {e}"))?;
     let mut out = serde_json::Map::with_capacity(events.len());
     for ev in events {
         let tags =
@@ -813,7 +818,7 @@ pub fn events_score_events(
             0.0
         } else {
             let json = soshal_events_core::event::interest::compute_interest_score_json(&format!(
-                r#"{{"my_interests":{},"peer_interests":{}}}"#,
+                r#"{{"myInterests":{},"peerInterests":{}}}"#,
                 my_interests_json,
                 serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into()),
             ));

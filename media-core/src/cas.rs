@@ -236,13 +236,17 @@ impl ChunkStore {
         // the sole handle to the region and unmap happens on drop.
         #[allow(unsafe_code)]
         let map = unsafe { memmap2::Mmap::map(&file).ok()? };
-        if self.verified_contains(hash, size, mtime) {
-            return Some(map);
+        // Always re-hash the mapped bytes before trusting a cached (size,mtime)
+        // verdict: on coarse-mtime filesystems a chunk replaced within the
+        // same tick and same byte length would otherwise return stale/corrupt
+        // content under the old verified verdict. The verified cache only
+        // skips the redundant mark_verified write, never the hash.
+        if !self.verified_contains(hash, size, mtime) {
+            if blake3::hash(map.as_ref()).to_hex().as_str() != hash {
+                return None;
+            }
+            self.mark_verified(hash.to_string(), size, mtime);
         }
-        if blake3::hash(map.as_ref()).to_hex().as_str() != hash {
-            return None;
-        }
-        self.mark_verified(hash.to_string(), size, mtime);
         Some(map)
     }
 

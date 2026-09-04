@@ -97,28 +97,28 @@ pub fn media_json_from_tags(tags_json: &str) -> Option<String> {
 }
 
 fn parse_media_json(tags_json: &str) -> Option<String> {
-    let tags: Vec<Vec<String>> = serde_json::from_str(tags_json).ok()?;
+    let tags: Vec<Vec<std::borrow::Cow<'_, str>>> = serde_json::from_str(tags_json).ok()?;
     for tag in tags {
-        if tag.first().map(|s| s.as_str()) != Some("media") {
+        if tag.first().map(|s| s.as_ref()) != Some("media") {
             continue;
         }
         if tag.len() < 5 {
             return None;
         }
-        let media_type = tag[1].clone();
-        if !matches!(media_type.as_str(), "image" | "video" | "audio") {
+        let media_type = &tag[1];
+        if !matches!(media_type.as_ref(), "image" | "video" | "audio") {
             return None;
         }
-        let url = tag[2].clone();
-        let url = if url.is_empty()
-            || is_blob_ref(&url)
-            || soshal_common_core::url::is_valid_media_url(&url)
+        let url = &tag[2];
+        let url_str = if url.is_empty()
+            || is_blob_ref(url)
+            || soshal_common_core::url::is_valid_media_url(url)
         {
-            url
+            url.as_ref()
         } else {
-            String::new()
+            ""
         };
-        let blob_hash = tag[3].clone();
+        let blob_hash = &tag[3];
         if blob_hash.len() != 64 || !blob_hash.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
@@ -126,7 +126,7 @@ fn parse_media_json(tags_json: &str) -> Option<String> {
         return Some(
             serde_json::json!({
                 "type": media_type,
-                "url": url,
+                "url": url_str,
                 "blob_hash": blob_hash,
                 "size": size,
             })

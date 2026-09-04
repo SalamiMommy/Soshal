@@ -108,7 +108,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => SignerService()),
         ChangeNotifierProvider(create: (_) => BackupService()),
         ChangeNotifierProvider(create: (_) => CryptoService()),
-        Provider<MinisService>(create: (_) => MinisService()),
+        ChangeNotifierProvider(create: (_) => MinisService()),
       ],
       child: const SoshalApp(),
     ),

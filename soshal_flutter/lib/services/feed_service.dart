@@ -471,18 +471,26 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     notifyDeferred();
   }
 
+  /// Dedup set for live reactions seen on the stream (keyed by reaction
+  /// event id). Relay replays / duplicate subscriptions must not inflate a
+  /// post's reaction counter on every pass.
+  final Set<String> _seenReactions = {};
+
   /// Apply a live reaction to a cached post (bump the counter if known).
-  void applyLiveReaction(String eventId, String pubkey, String content) {
+  void applyLiveReaction(
+      String eventId, String pubkey, String content, String reactionId) {
+    if (reactionId.isEmpty || !_seenReactions.add(reactionId)) return;
     final index = _posts.indexWhere((p) => p.eventId == eventId);
     if (index < 0) return;
     final p = _posts[index];
+    final delta = content == '+' ? 1 : -1;
     final liked = p.liked || content == '+';
     _posts[index] = FeedPost(
       eventId: p.eventId,
       pubkey: p.pubkey,
       content: p.content,
       createdAt: p.createdAt,
-      reactions: p.reactions + 1,
+      reactions: (p.reactions + delta) < 0 ? 0 : p.reactions + delta,
       replies: p.replies,
       reposts: p.reposts,
       liked: liked,

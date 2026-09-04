@@ -3,6 +3,7 @@ import '../utils/json_ext.dart';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
 import 'media_service.dart';
@@ -11,7 +12,7 @@ import 'p2p_service.dart';
 /// Minis: mini video registry (kind-31020) plus WASI content-filter /
 /// feed-ranker plugin execution. Stateless wrapper — screens own their UI
 /// state.
-class MinisService with LastErrorMixin {
+class MinisService extends ChangeNotifier with LastErrorMixin {
   bool _wasmRuntimeUnavailable = false;
 
   /// True after a plugin call fails: the WASI host is on the roadmap, so
@@ -71,12 +72,20 @@ class MinisService with LastErrorMixin {
         wasmBytesHex: wasmBytesHex,
       );
       clearLastError();
-      _wasmRuntimeUnavailable = false;
+      if (_wasmRuntimeUnavailable) {
+        _wasmRuntimeUnavailable = false;
+        notifyListeners();
+      }
       return result;
     } catch (e, st) {
       setLastError(e, st);
-      _wasmRuntimeUnavailable = true;
-      return '';
+      if (!_wasmRuntimeUnavailable) {
+        _wasmRuntimeUnavailable = true;
+        notifyListeners();
+      }
+      // Honest-err: empty string looked like success. Throw so callers
+      // show "unavailable (roadmap)" instead of empty result.
+      throw StateError('WASI filter unavailable (roadmap): $e');
     }
   }
 
@@ -93,12 +102,18 @@ class MinisService with LastErrorMixin {
         wasmBytesHex: wasmBytesHex,
       );
       clearLastError();
-      _wasmRuntimeUnavailable = false;
+      if (_wasmRuntimeUnavailable) {
+        _wasmRuntimeUnavailable = false;
+        notifyListeners();
+      }
       return ranked;
     } catch (e, st) {
       setLastError(e, st);
-      _wasmRuntimeUnavailable = true;
-      return const [];
+      if (!_wasmRuntimeUnavailable) {
+        _wasmRuntimeUnavailable = true;
+        notifyListeners();
+      }
+      throw StateError('WASI ranker unavailable (roadmap): $e');
     }
   }
 }

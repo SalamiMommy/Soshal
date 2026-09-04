@@ -26,7 +26,12 @@ pub struct GroupInfo {
     pub is_private: bool,
 }
 
-fn row_to_group(row: &soshal_db_core::repos::group::GroupRow, viewer: Option<&str>) -> GroupInfo {
+fn row_to_group(
+    row: &soshal_db_core::repos::group::GroupRow,
+    viewer: Option<&str>,
+    is_member: bool,
+) -> GroupInfo {
+    let is_owner = viewer.map(|v| row.pubkey == v).unwrap_or(false);
     GroupInfo {
         id: row.id.clone(),
         name: row.name.clone(),
@@ -34,11 +39,13 @@ fn row_to_group(row: &soshal_db_core::repos::group::GroupRow, viewer: Option<&st
         picture: row.picture.clone().unwrap_or_default(),
         owner: row.pubkey.clone(),
         members: 0,
-        is_member: viewer.map(|v| row.pubkey == v).unwrap_or(false),
-        role: if row.pubkey == viewer.unwrap_or_default() {
+        is_member: is_owner || is_member,
+        role: if viewer.map(|v| row.pubkey == v).unwrap_or(true) {
             "owner".to_string()
-        } else {
+        } else if is_member {
             "member".to_string()
+        } else {
+            String::new()
         },
         created_at: row.created_at.max(0) as u64,
         is_private: row.access_type == "private" || row.password_hash.is_some(),
@@ -65,7 +72,7 @@ pub fn groups_fetch_groups(user_pubkey: String) -> Result<String, String> {
         let groups: Vec<GroupInfo> = rows
             .iter()
             .map(|r| {
-                let mut g = row_to_group(r, Some(&user_pubkey));
+                let mut g = row_to_group(r, Some(&user_pubkey), true);
                 g.members = counts.get(&r.id).copied().unwrap_or(0) as i32;
                 g
             })
@@ -75,18 +82,28 @@ pub fn groups_fetch_groups(user_pubkey: String) -> Result<String, String> {
     .map(super::util::json_ok)?
 }
 
-/// Get detailed group info by id.
-#[frb(sync, serialize)]
-pub fn groups_get_group_info(group_id: String) -> Result<String, String> {
+fn get_group_info_with_viewer(group_id: &str, viewer: Option<&str>) -> Result<String, String> {
     super::db::with_db_result(|db| {
-        let row = GroupRepo::new(db)
-            .get_by_id(&group_id)?
+        let repo = GroupRepo::new(db);
+        let row = repo
+            .get_by_id(group_id)?
             .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
-        let mut g = row_to_group(&row, Some(&row.pubkey));
-        g.members = member_count(&group_id);
+        let is_member = match viewer {
+            Some(pk) => repo.is_member(group_id, pk).unwrap_or(false),
+            None => false,
+        };
+        let mut g = row_to_group(&row, viewer, is_member);
+        g.members = member_count(group_id);
         Ok(g)
     })
     .map(super::util::json_ok)?
+}
+
+/// Get detailed group info by id.
+#[frb(sync, serialize)]
+pub fn groups_get_group_info(group_id: String) -> Result<String, String> {
+    let viewer = super::signer::signer_pubkey().ok();
+    get_group_info_with_viewer(&group_id, viewer.as_deref())
 }
 
 /// Get group members (pubkeys + roles from the membership table).
@@ -781,7 +798,7 @@ pub fn groups_create(
         GroupRepo::new(db).add_member(&group_id, &creator_pubkey, "owner", now)?;
         Ok(())
     })?;
-    groups_get_group_info(group_id)
+    get_group_info_with_viewer(&group_id, Some(&creator_pubkey))
 }
 
 /// Change or remove group password and update private/open access type (owner only).
@@ -844,10 +861,17 @@ pub fn groups_verify_password(group_id: String, password: String) -> Result<bool
         let group = repo
             .get_by_id(&group_id)?
             .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
-        let stored = group.password_hash.as_deref().unwrap_or("");
-        if stored.is_empty() {
-            return Ok(true);
-        }
+        let stored = match group.password_hash.as_deref() {
+            Some(h) if !h.is_empty() => h,
+            _ => {
+                // No password on record: mirror groups_join(), which refuses
+                // to "verify" an unset password instead of admitting anything.
+                return Err(soshal_db_core::error::DbError::Oversized(
+                    "group has no password set; cannot verify access".to_string(),
+                ))
+                .into();
+            }
+        };
         Ok(soshal_groups_core::access::verify_community_password(
             password.trim(),
             stored,
@@ -911,6 +935,9 @@ mod tests {
     #[test]
     fn test_create_group_and_fetch() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("create");

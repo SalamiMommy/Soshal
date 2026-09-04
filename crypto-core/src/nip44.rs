@@ -28,10 +28,19 @@ const NONCE_LEN: usize = 12;
 const VERSION_LEN: usize = 1;
 pub const VERSION_LEGACY: u8 = 1;
 pub const VERSION_PADDED: u8 = 2;
+/// Plaintext lengths below this use the 2-byte u16 prefix; lengths at or
+/// above use the extended 6-byte prefix (2 zero bytes + u32) per NIP-44 spec
+/// step 4.
+const EXTENDED_PREFIX_THRESHOLD: usize = 65_536;
+/// Length of the small-u16 plaintext prefix.
+const PREFIX_LEN_SMALL: usize = 2;
+/// Length of the extended-u32 plaintext prefix.
+const PREFIX_LEN_EXTENDED: usize = 6;
 
-/// NIP-44 padding: 2-byte big-endian plaintext length, then plaintext, then
-/// zero padding to `calc_padding` total size (32-byte chunks, min 32, scaling
-/// to power-of-two chunks for large plaintexts).
+/// NIP-44 padding: plaintext length prefix (2 bytes for <65536, 6 bytes —
+/// `0x00 0x00` + u32 — otherwise), then plaintext, then zero padding to
+/// `calc_padding` total size (32-byte chunks, min 32, scaling to power-of-two
+/// chunks for large plaintexts).
 pub fn calc_padding(len: usize) -> usize {
     if len <= 32 {
         return 32;
@@ -49,18 +58,51 @@ fn log2_round_down(n: usize) -> usize {
     usize::BITS as usize - 1 - n.leading_zeros() as usize
 }
 
+/// The plaintext length prefix for NIP-44 padding: u16 for lengths below
+/// `EXTENDED_PREFIX_THRESHOLD`, extended 6-byte (`0x00 0x00` + u32) otherwise.
+/// Returns (prefix_bytes, prefix_len).
+fn encode_prefix(len: usize) -> ([u8; PREFIX_LEN_EXTENDED], usize) {
+    if len >= EXTENDED_PREFIX_THRESHOLD {
+        let mut out = [0u8; PREFIX_LEN_EXTENDED];
+        out[2..].copy_from_slice(&(len as u32).to_be_bytes());
+        (out, PREFIX_LEN_EXTENDED)
+    } else {
+        let mut out = [0u8; PREFIX_LEN_EXTENDED];
+        out[..PREFIX_LEN_SMALL].copy_from_slice(&(len as u16).to_be_bytes());
+        (out, PREFIX_LEN_SMALL)
+    }
+}
+
+/// Read the plaintext length from a padded blob, returning
+/// `(unpadded_len, prefix_len)`. Rejects a zero first-two-bytes that is not a
+/// valid extended prefix.
+fn decode_prefix(padded: &[u8]) -> Result<(usize, usize), &'static str> {
+    if padded.len() < 2 {
+        return Err("padded payload too short");
+    }
+    let first_two = u16::from_be_bytes([padded[0], padded[1]]);
+    if first_two == 0 {
+        if padded.len() < PREFIX_LEN_EXTENDED {
+            return Err("padded payload too short");
+        }
+        let len = u32::from_be_bytes([padded[2], padded[3], padded[4], padded[5]]) as usize;
+        if len < EXTENDED_PREFIX_THRESHOLD {
+            return Err("invalid extended padding length");
+        }
+        Ok((len, PREFIX_LEN_EXTENDED))
+    } else {
+        Ok((first_two as usize, PREFIX_LEN_SMALL))
+    }
+}
+
 pub fn pad(plaintext: &[u8]) -> Result<Vec<u8>, &'static str> {
     if plaintext.is_empty() {
         return Err("empty plaintext");
     }
-    // The length prefix is a u16: anything larger would silently truncate,
-    // corrupting the padding and breaking unpad() on the other side.
-    if plaintext.len() > u16::MAX as usize {
-        return Err("plaintext too large");
-    }
+    let (prefix, prefix_len) = encode_prefix(plaintext.len());
     let take = calc_padding(plaintext.len()) - plaintext.len();
-    let mut out = Vec::with_capacity(2 + plaintext.len() + take);
-    out.extend_from_slice(&(plaintext.len() as u16).to_be_bytes());
+    let mut out = Vec::with_capacity(prefix_len + plaintext.len() + take);
+    out.extend_from_slice(&prefix[..prefix_len]);
     out.extend_from_slice(plaintext);
     out.resize(out.len() + take, 0);
     Ok(out)
@@ -68,32 +110,41 @@ pub fn pad(plaintext: &[u8]) -> Result<Vec<u8>, &'static str> {
 
 /// Removes NIP-44 padding; rejects malformed lengths and wrong total size.
 pub fn unpad(padded: &[u8]) -> Result<Vec<u8>, &'static str> {
-    if padded.len() < 2 + 32 {
+    if padded.len() < PREFIX_LEN_SMALL + 32 {
         return Err("padded payload too short");
     }
-    let unpadded_len = u16::from_be_bytes([padded[0], padded[1]]) as usize;
+    let (unpadded_len, prefix_len) = decode_prefix(padded)?;
     if unpadded_len == 0 {
         return Err("empty plaintext");
     }
-    if padded.len() != 2 + calc_padding(unpadded_len) {
+    if padded.len() != prefix_len + calc_padding(unpadded_len) {
         return Err("invalid padding");
     }
-    Ok(padded[2..2 + unpadded_len].to_vec())
+    Ok(padded[prefix_len..prefix_len + unpadded_len].to_vec())
 }
 
 /// Removes NIP-44 padding in-place on a mutable byte vector without extra heap allocations.
 pub fn unpad_in_place(mut padded: Vec<u8>) -> Result<Vec<u8>, &'static str> {
-    if padded.len() < 2 + 32 {
+    if padded.len() < PREFIX_LEN_SMALL + 32 {
+        padded.zeroize();
         return Err("padded payload too short");
     }
-    let unpadded_len = u16::from_be_bytes([padded[0], padded[1]]) as usize;
+    let (unpadded_len, prefix_len) = match decode_prefix(&padded) {
+        Ok(v) => v,
+        Err(e) => {
+            padded.zeroize();
+            return Err(e);
+        }
+    };
     if unpadded_len == 0 {
+        padded.zeroize();
         return Err("empty plaintext");
     }
-    if padded.len() != 2 + calc_padding(unpadded_len) {
+    if padded.len() != prefix_len + calc_padding(unpadded_len) {
+        padded.zeroize();
         return Err("invalid padding");
     }
-    padded.drain(0..2);
+    padded.drain(0..prefix_len);
     padded.truncate(unpadded_len);
     Ok(padded)
 }
@@ -212,20 +263,18 @@ pub fn encrypt(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<String, &'static
     if plaintext.is_empty() {
         return Err("empty plaintext");
     }
-    if plaintext.len() > u16::MAX as usize {
-        return Err("plaintext too large");
-    }
+    let (prefix, prefix_len) = encode_prefix(plaintext.len());
     let mut nonce = [0u8; SALT_LEN];
     getrandom::fill(&mut nonce).map_err(|_| "rng failed")?;
     let ck = derive_conversation_key(key);
     let (mut enc_key_bytes, mut nonce12, mut auth_key_bytes) = spec_derive_keys(&ck, &nonce);
 
     let padded_len = calc_padding(plaintext.len());
-    let mut payload = Vec::with_capacity(VERSION_LEN + SALT_LEN + 2 + padded_len + 32);
+    let mut payload = Vec::with_capacity(VERSION_LEN + SALT_LEN + prefix_len + padded_len + 32);
     payload.push(VERSION_PADDED);
     payload.extend_from_slice(&nonce);
     let cipher_start = payload.len();
-    payload.extend_from_slice(&(plaintext.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&prefix[..prefix_len]);
     payload.extend_from_slice(plaintext);
     let take = padded_len - plaintext.len();
     payload.resize(payload.len() + take, 0);
@@ -251,9 +300,10 @@ pub fn encrypt(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<String, &'static
 /// NIP-44 v2 spec decryption.
 ///
 /// The v2 path is attempted only when the payload is structurally a v2 blob:
-/// `2 ‖ nonce(32) ‖ u16 padded length ‖ padded plaintext ‖ hmac(32)` with the
-/// length field consistent with the total size. A v2-shaped payload that
-/// fails AEAD verification returns `Err` immediately — it is **never**
+/// `2 ‖ nonce(32) ‖ padded length ‖ padded plaintext ‖ hmac(32)` (padded
+/// length prefix is 2 bytes for plaintext <65536, extended 6 bytes otherwise)
+/// with the length field consistent with the total size. A v2-shaped payload
+/// that fails AEAD verification returns `Err` immediately — it is **never**
 /// re-interpreted through the legacy path. Mixing the two would create an
 /// authentication oracle (chosen-ciphertext bypass).
 ///
@@ -274,17 +324,24 @@ pub fn decrypt(payload: &str, key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static s
     decrypt_legacy(&decoded, key)
 }
 
-/// True when the blob matches the exact NIP-44 v2 length layout:
-/// `2 ‖ nonce(32) ‖ padded(≥32, 32-byte multiples) ‖ hmac(32)` — total is
-/// always `67 + 32k` for k ≥ 1 (min 99). The in-blob length prefix cannot be
-/// inspected here: it lives inside the ciphertext region. Legacy blobs are
-/// `49 + plaintext_len` (any length ≥ 50), so this rejects legacy-shaped data
-/// even when the first salt byte collides with the v2 version byte. Blobs
-/// matching both layouts are genuinely ambiguous and stay on the v2 path —
-/// the AEAD tag decides.
+/// True when the blob matches the exact NIP-44 v2 length layout. Two forms:
+/// small plaintext (<65536) is `2 ‖ nonce(32) ‖ padded(2-byte prefix, ≥32,
+/// 32-byte multiples) ‖ hmac(32)` — total `67 + 32k`; large plaintext
+/// (≥65536) is `2 ‖ nonce(32) ‖ padded(6-byte prefix, ≥65536, 32-byte
+/// multiples) ‖ hmac(32)` — total `71 + 32k`. Legacy blobs are
+/// `49 + plaintext_len`, so non-32-aligned shapes fall through to the legacy
+/// path. Blobs matching both a v2 layout and the legacy layout are genuinely
+/// ambiguous and stay on the v2 path — the AEAD tag decides.
 fn is_spec_shape(decoded: &[u8]) -> bool {
-    const V2_FIXED: usize = VERSION_LEN + SALT_LEN + 2 + 32; // 67
-    decoded.len() >= V2_FIXED + 32 && (decoded.len() - V2_FIXED).is_multiple_of(32)
+    // Small layout: fixed part = version(1) + salt(32) + u16 prefix(2) + hmac(32) = 67.
+    const V2_FIXED_SMALL: usize = VERSION_LEN + SALT_LEN + PREFIX_LEN_SMALL + 32; // 67
+                                                                                  // Large layout: fixed part = version(1) + salt(32) + extended prefix(6) + hmac(32) = 71.
+    const V2_FIXED_LARGE: usize = VERSION_LEN + SALT_LEN + PREFIX_LEN_EXTENDED + 32; // 71
+                                                                                     // The large layout's padded region is always ≥ 65536 bytes.
+    const V2_MIN_LARGE: usize = V2_FIXED_LARGE + EXTENDED_PREFIX_THRESHOLD; // 65607
+
+    (decoded.len() >= V2_FIXED_SMALL + 32 && (decoded.len() - V2_FIXED_SMALL).is_multiple_of(32))
+        || (decoded.len() >= V2_MIN_LARGE && (decoded.len() - V2_FIXED_LARGE).is_multiple_of(32))
 }
 
 fn decrypt_spec(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static str> {
@@ -324,8 +381,12 @@ fn decrypt_spec(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static
     enc_key_bytes.zeroize();
     nonce12.zeroize();
 
-    let plaintext = decoded[buffer_range].to_vec();
-    unpad_in_place(plaintext)
+    let plaintext = decoded[buffer_range.clone()].to_vec();
+    // Scrub ciphertext residue: decoded holds decrypted keystream output
+    // until return. Zeroize full buffer before unpad consumes copy.
+    let result = unpad_in_place(plaintext);
+    decoded.zeroize();
+    result
 }
 
 /// Legacy encryption format (pre-spec): random salt, then
@@ -426,9 +487,11 @@ fn decrypt_legacy(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'stat
         return Ok(plaintext);
     }
     if version != VERSION_PADDED {
+        let mut p = plaintext;
+        p.zeroize();
         return Err("unsupported payload version");
     }
-    unpad(&plaintext)
+    unpad_in_place(plaintext)
 }
 
 #[cfg(test)]
@@ -442,6 +505,23 @@ mod tests {
             let pt: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
             let ct = encrypt(&pt, &key).unwrap();
             assert_eq!(decrypt(&ct, &key).unwrap(), pt);
+        }
+    }
+
+    #[test]
+    fn test_extended_prefix_boundary_roundtrip() {
+        // Exercises the 2-byte u16 prefix / 6-byte extended-u32 prefix switch
+        // at the 65536 boundary (spec step 4).
+        let key = [0x42u8; 32];
+        for len in [65_534usize, 65_535, 65_536, 65_537] {
+            let pt: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+            let padded = pad(&pt).unwrap();
+            assert_eq!(unpad(&padded).unwrap(), pt);
+            let ct = encrypt(&pt, &key).unwrap();
+            assert_eq!(decrypt(&ct, &key).unwrap(), pt);
+            // The v2 length layout must detect the extended form.
+            let decoded = general_purpose::STANDARD.decode(&ct).unwrap();
+            assert!(is_spec_shape(&decoded));
         }
     }
 
@@ -546,8 +626,10 @@ mod tests {
         assert!(decrypt("", &key).is_err());
         assert!(decrypt("not base64!!!", &key).is_err());
         assert!(decrypt(&general_purpose::STANDARD.encode([]), &key).is_err());
-        let big = vec![0u8; u16::MAX as usize + 1];
-        assert_eq!(encrypt(&big, &key), Err("plaintext too large"));
+        // Boundary: 65536 plaintext bytes is the first length that uses the
+        // extended 6-byte prefix; must encrypt+decrypt round-trip, not reject.
+        let big = vec![0xABu8; 65_536];
+        assert_eq!(decrypt(&encrypt(&big, &key).unwrap(), &key).unwrap(), big);
     }
 
     #[test]
@@ -558,7 +640,9 @@ mod tests {
         too_short[0] = 0x01;
         assert!(unpad(&too_short).is_err());
         let zero_len = vec![0u8; 34];
-        assert_eq!(unpad(&zero_len), Err("empty plaintext"));
+        // First-two-bytes 0 signals the extended-u32 prefix; a 0 length there
+        // is below the extended threshold and must be rejected.
+        assert!(unpad(&zero_len).is_err());
         assert_eq!(
             unpad_in_place(pad(b"in place").unwrap()).unwrap(),
             b"in place"

@@ -23,15 +23,17 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
 
   SessionData? get session => _session;
   String? get activePubkey => _activePubkey;
-  SessionAccount? get activeAccount => _session?.accounts.firstWhere(
-        (a) => a.pubkey == _activePubkey,
-        orElse: () => SessionAccount(
-          pubkey: '',
-          npub: '',
-          lastUsed: 0,
-          relayList: [],
-        ),
-      );
+  // Null when no account matches: dummy pubkey '' would sign/publish as
+  // empty. Callers must null-check instead of sending anonymous events.
+  SessionAccount? get activeAccount {
+    final s = _session;
+    final pk = _activePubkey;
+    if (s == null || pk == null || pk.isEmpty) return null;
+    for (final a in s.accounts) {
+      if (a.pubkey == pk) return a;
+    }
+    return null;
+  }
 
   /// Load session from storage
   Future<SessionData> loadSession() async {
@@ -172,6 +174,19 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
         activePubkey: pubkey,
         accounts: _session!.accounts,
       );
+
+      // Restart the sync engine for the newly selected account. The earlier
+      // stop() killed the old account's ingest; without this restart the
+      // switched account's feed/DM updates stay silent until app relaunch.
+      final accountRelays = _session!
+          .accounts
+          .firstWhere((a) => a.pubkey == pubkey,
+              orElse: () => _session!.accounts.first)
+          .relayList;
+      final relays = accountRelays.isNotEmpty
+          ? accountRelays
+          : const ['wss://relay.nostr.band', 'wss://nos.lol'];
+      await _sync?.start(relays: relays);
 
       clearLastError();
       notifyListeners();

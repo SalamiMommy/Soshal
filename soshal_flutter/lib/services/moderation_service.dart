@@ -502,7 +502,7 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
       return HybridModerationResult.fromJson(map);
     } catch (e, st) {
       setLastError(e, st);
-      return HybridModerationResult.clean();
+      Error.throwWithStackTrace(e, st);
     }
   }
 
@@ -518,7 +518,9 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
       return AiModerationResult.fromJson(map);
     } catch (e, st) {
       setLastError(e, st);
-      return AiModerationResult.clean();
+      // Honest-err: returning clean() on failure shows Safe for unscanned
+      // content. Rethrow so UI shows scan-error instead of fake-negative.
+      Error.throwWithStackTrace(e, st);
     }
   }
 
@@ -536,7 +538,7 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
       return AiMediaVerdict.fromJson(map);
     } catch (e, st) {
       setLastError(e, st);
-      return AiMediaVerdict.pass();
+      Error.throwWithStackTrace(e, st);
     }
   }
 

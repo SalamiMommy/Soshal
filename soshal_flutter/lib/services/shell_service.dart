@@ -85,7 +85,8 @@ class ShellService extends ChangeNotifier {
   };
 
   List<NavItem> _items = List.of(defaultItems);
-  List<NavItem> get items => List.unmodifiable(_items);
+  late List<NavItem> _cachedItems = List.unmodifiable(_items);
+  List<NavItem> get items => _cachedItems;
 
   bool _rearranging = false;
   bool get rearranging => _rearranging;
@@ -151,6 +152,7 @@ class ShellService extends ChangeNotifier {
               .toList();
           if (loaded.isNotEmpty) {
             _items = loaded;
+            _cachedItems = List.unmodifiable(_items);
           }
         } catch (_) {}
       }
@@ -202,6 +204,7 @@ class ShellService extends ChangeNotifier {
       }
     }
     _items = base;
+    _cachedItems = List.unmodifiable(_items);
     if (persist) saveOrder();
     notifyListeners();
   }
@@ -228,6 +231,7 @@ class ShellService extends ChangeNotifier {
     }
     final moved = _items.removeAt(from);
     _items.insert(to, moved);
+    _cachedItems = List.unmodifiable(_items);
     saveOrder();
     notifyListeners();
   }

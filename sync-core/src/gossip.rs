@@ -58,8 +58,12 @@ impl GossipSyncBridge {
                     }
                 };
                 if fresh {
+                    // Use bridge identity for p-tag-to-me checks: empty
+                    // pubkey would drop all gossip DMs (safe) but also
+                    // breaks own-DM relay via mesh. Read from node.
+                    let my_pubkey = self.node.read().await.self_peer_id.clone();
                     // Ingest into SQLite database
-                    let _ = crate::ingest::handle(db, "", &event, tx);
+                    let _ = crate::ingest::handle(db, &my_pubkey, &event, tx);
                 }
             }
         }

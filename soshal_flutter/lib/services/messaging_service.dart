@@ -16,6 +16,8 @@ class MessagingService extends ChangeNotifier
   static final _hexRegex = RegExp(r'^[0-9a-f]{64}$');
   final Map<String, List<DirectMessage>> _conversations = {};
   final List<EphemeralMedia> _pendingEphemeral = [];
+  late List<EphemeralMedia> _cachedPendingEphemeral =
+      List.unmodifiable(_pendingEphemeral);
 
   /// Live-stream DMs awaiting a batched persist (see [insertLiveDm]).
   final List<DirectMessage> _pendingStores = [];
@@ -24,8 +26,7 @@ class MessagingService extends ChangeNotifier
   static const _storeFlushBatchSize = 8;
 
   Map<String, List<DirectMessage>> get conversations => _conversations;
-  List<EphemeralMedia> get pendingEphemeral =>
-      List.unmodifiable(_pendingEphemeral);
+  List<EphemeralMedia> get pendingEphemeral => _cachedPendingEphemeral;
 
   @override
   void dispose() {
@@ -126,11 +127,20 @@ class MessagingService extends ChangeNotifier
     String senderSk,
   ) async {
     try {
-      final eventId =
+      final rawResult =
           await RustLib.instance.api.crateFfiMessagingMessagingSendDm(
         content: content,
         recipientPubkey: recipientPubkey,
       );
+      var eventId = rawResult;
+      try {
+        if (rawResult.trim().startsWith('{')) {
+          final decoded = jsonDecode(rawResult) as Map<String, dynamic>;
+          if (decoded['id'] is String) {
+            eventId = decoded['id'] as String;
+          }
+        }
+      } catch (_) {}
 
       // Add to local conversation
       final message = DirectMessage(
@@ -352,6 +362,7 @@ class MessagingService extends ChangeNotifier
         ..clear()
         ..addAll(list
             .map((e) => EphemeralMedia.fromJson(e as Map<String, dynamic>)));
+      _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
       clearLastError();
       notifyDeferred();
       return pendingEphemeral;
@@ -371,6 +382,7 @@ class MessagingService extends ChangeNotifier
       final index = _pendingEphemeral.indexWhere((m) => m.id == id);
       if (index >= 0) {
         _pendingEphemeral[index] = media;
+        _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
         notifyDeferred();
       }
       clearLastError();
@@ -387,6 +399,7 @@ class MessagingService extends ChangeNotifier
     try {
       final ok = RustLib.instance.api.crateFfiEphemeralEphemeralDelete(id: id);
       _pendingEphemeral.removeWhere((m) => m.id == id);
+      _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
       clearLastError();
       notifyDeferred();
       return ok;

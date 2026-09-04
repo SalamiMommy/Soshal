@@ -62,8 +62,6 @@ pub async fn chatrandom_fetch(
     });
     if let Some(p) = author {
         filter["authors"] = serde_json::json!([p]);
-    } else {
-        filter["#p"] = serde_json::json!([my_pubkey]);
     }
     let raw = super::network::network_query_events(filter.to_string()).await?;
     let events: Vec<nostr::event::Event> =
@@ -72,6 +70,20 @@ pub async fn chatrandom_fetch(
     for e in events {
         if e.verify().is_err() {
             continue;
+        }
+        let k = e.kind.as_u16();
+        if k == 20031 || k == 20032 {
+            let addresses_me = e.tags.iter().any(|t| {
+                t.as_slice().first().map(|s| s == "p").unwrap_or(false)
+                    && t.as_slice()
+                        .get(1)
+                        .map(|s| s == &my_pubkey)
+                        .unwrap_or(false)
+            });
+            let authored_by_me = e.pubkey.to_hex() == my_pubkey;
+            if !addresses_me && !authored_by_me {
+                continue;
+            }
         }
         out.push(streaming_events::chatrandom_peer_from_event(
             &soshal_nostr_core::models::NostrEvent::from(&e),

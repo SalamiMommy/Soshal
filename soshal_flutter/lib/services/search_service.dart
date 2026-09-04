@@ -62,14 +62,20 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Search mention rows (pubkey/name pairs from kind-3 contact lists).
+  /// Kept separate from _results so typing @mentions does not wipe or dirty
+  /// the main search screen results.
   Future<List<SearchResultItem>> mentions(String query,
       {int limit = 50}) async {
-    return _run(
-      () => RustLib.instance.api.crateFfiSearchSearchMentions(
+    try {
+      final json = RustLib.instance.api.crateFfiSearchSearchMentions(
         query: query,
         limit: limit,
-      ),
-    );
+      );
+      return await runOffThread(() => _parseSearchResults(json));
+    } catch (e, st) {
+      setLastError(e, st);
+      rethrow;
+    }
   }
 
   /// Global search across all indexes (SearchResult rows).

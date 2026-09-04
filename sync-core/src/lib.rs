@@ -46,6 +46,7 @@ pub enum SyncUpdate {
     Dm {
         id: String,
         sender: String,
+        recipient: String,
         content: String,
         created_at: u64,
     },

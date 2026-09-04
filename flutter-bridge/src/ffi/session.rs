@@ -49,6 +49,7 @@ fn validated_session_path(db_path: &str) -> Result<std::path::PathBuf, String> {
     let parent = p
         .parent()
         .ok_or_else(|| "db_path has no parent directory".to_string())?;
+    let _ = std::fs::create_dir_all(parent);
     let canon_parent =
         std::fs::canonicalize(parent).map_err(|e| format!("db_path parent invalid: {e}"))?;
     // Cross-check against the stored DB path set by db_init, if available.

@@ -175,8 +175,8 @@ class _FeedScreenState extends State<FeedScreen> {
       );
     }
     _lastScrollPixels = pos.pixels;
-    if (pos.pixels == pos.maxScrollExtent) {
-      // Load more when scrolling to bottom
+    if (pos.pixels >= pos.maxScrollExtent - 400) {
+      // Load more when scrolling near bottom
       try {
         await context.read<FeedService>().loadMore();
         await _loadTotals();
@@ -205,12 +205,15 @@ class _FeedScreenState extends State<FeedScreen> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () async {
+                final feed = _feed;
+                if (feed == null) return;
                 try {
-                  await context.read<FeedService>().fetchFeed();
+                  await feed.fetchFeed();
                   await _loadTotals();
+                  _scheduleLayout(feed);
                 } catch (e) {
-                  debugPrint('feed load: $e');
-                  if (!context.mounted) return;
+                  debugPrint('feed refresh: $e');
+                  if (!mounted || !context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: SelectableText('Feed load error: $e')));
                 }
@@ -223,6 +226,7 @@ class _FeedScreenState extends State<FeedScreen> {
     } else {
       body = ListView.builder(
         controller: _scrollController,
+        cacheExtent: 600,
         itemCount: feedView.display.length + 1,
         itemExtentBuilder: (index, _) =>
             context.read<LayoutService>().extentFor(index, feedView.display),
@@ -322,7 +326,10 @@ class _FeedPostCardState extends State<FeedPostCard> {
   static String _truncateContent(String raw) {
     if (raw.length <= 320) return raw;
     final chars = raw.characters;
-    return chars.length > 320 ? '${chars.take(320)}…' : raw;
+    if (chars.skip(320).isNotEmpty) {
+      return '${chars.take(320)}…';
+    }
+    return raw;
   }
 
   @override
@@ -934,16 +941,18 @@ class _FeedPostCardState extends State<FeedPostCard> {
   }
 }
 
-/// Memoized blob-resolved URLs per post id — re-scrolls reuse the LAN/local
+/// Memoized blob-resolved URLs per (post id, media) — re-scrolls reuse the LAN/local
 /// result instead of refetching. Bounded LRU eviction prevents memory leak.
 final Map<String, String> _resolvedUrlCache = <String, String>{};
 const int _maxResolvedUrlCacheSize = 256;
 
-void _cacheResolvedUrl(String postId, String url) {
+String _makeResolvedKey(String postId, String mediaId) => '$postId:$mediaId';
+
+void _cacheResolvedUrl(String postId, String mediaId, String url) {
   if (_resolvedUrlCache.length >= _maxResolvedUrlCacheSize) {
     _resolvedUrlCache.remove(_resolvedUrlCache.keys.first);
   }
-  _resolvedUrlCache[postId] = url;
+  _resolvedUrlCache[_makeResolvedKey(postId, mediaId)] = url;
 }
 
 /// Image with the same blob + LAN-crawl fallback as `_VideoPlayerWidget`:
@@ -992,7 +1001,8 @@ class _BlobImageState extends State<_BlobImage> {
   }
 
   Future<void> _prepare() async {
-    final cached = _resolvedUrlCache[widget.postId];
+    final mediaId = widget.blobHash ?? widget.url;
+    final cached = _resolvedUrlCache[_makeResolvedKey(widget.postId, mediaId)];
     if (cached != null) {
       if (mounted) setState(() => _resolved = cached);
       return;
@@ -1004,7 +1014,7 @@ class _BlobImageState extends State<_BlobImage> {
       if (mounted) setState(() => _error = '$e');
       return;
     }
-    _cacheResolvedUrl(widget.postId, url);
+    _cacheResolvedUrl(widget.postId, mediaId, url);
     if (mounted) setState(() => _resolved = url);
   }
 
@@ -1147,7 +1157,8 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       }
       return;
     }
-    final cached = _resolvedUrlCache[widget.postId];
+    final mediaId = widget.blobHash ?? widget.url;
+    final cached = _resolvedUrlCache[_makeResolvedKey(widget.postId, mediaId)];
     var url = cached ?? widget.url;
     if (cached == null) {
       try {
@@ -1155,7 +1166,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       } catch (e) {
         if (mounted) setState(() => _error = '$e');
       }
-      _cacheResolvedUrl(widget.postId, url);
+      _cacheResolvedUrl(widget.postId, mediaId, url);
     }
     if (!SafeUrl.isSafePlaybackUrl(url)) {
       if (mounted) {

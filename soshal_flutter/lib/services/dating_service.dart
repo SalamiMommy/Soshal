@@ -69,8 +69,9 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       final json = RustLib.instance.api.crateFfiDatingDatingFetchMatches(
         userPubkey: userPubkey,
       );
+      final cards = await runOffThread(() => _parseCards(json));
       _matches.clear();
-      _matches.addAll(_parseCards(json));
+      _matches.addAll(cards);
       clearLastError();
       notifyDeferred();
       return _matches;
@@ -86,8 +87,9 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       final json = RustLib.instance.api.crateFfiDatingDatingFetchLikes(
         userPubkey: userPubkey,
       );
+      final cards = await runOffThread(() => _parseCards(json));
       _likes.clear();
-      _likes.addAll(_parseCards(json));
+      _likes.addAll(cards);
       clearLastError();
       notifyDeferred();
       return _likes;
@@ -104,7 +106,7 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         userPubkey: userPubkey,
       );
       clearLastError();
-      return _parseCards(json);
+      return await runOffThread(() => _parseCards(json));
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();

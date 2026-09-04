@@ -61,17 +61,23 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
         SyncUpdate::Dm {
             id,
             sender,
+            recipient,
             content,
             created_at,
         } => {
-            // Keys never cross into sync-core; decrypt + persist here.
-            let plain = match super::signer::signer_nip44_decrypt(content, sender.clone()) {
-                Ok(p) => p,
-                Err(_) => return None, // not decryptable by this account → drop
-            };
-            let recipient = match super::signer::signer_pubkey() {
+            let my_pk = match super::signer::signer_pubkey() {
                 Ok(pk) => pk,
                 Err(_) => return None,
+            };
+            let peer = if sender == my_pk {
+                recipient.clone()
+            } else {
+                sender.clone()
+            };
+            // Keys never cross into sync-core; decrypt + persist here.
+            let plain = match super::signer::signer_nip44_decrypt(content, peer) {
+                Ok(p) => p,
+                Err(_) => return None, // not decryptable by this account → drop
             };
             // Plaintext goes to `messaging_store_dm`, which is the single
             // sealing point (it AES-GCM-seals at rest). Sealing here too
@@ -331,6 +337,7 @@ mod tests {
         let dm = update_json(SyncUpdate::Dm {
             id: "d".into(),
             sender: "p".into(),
+            recipient: "me".into(),
             content: "enc".into(),
             created_at: 3,
         });
@@ -501,7 +508,8 @@ mod tests {
             super::super::signer::signer_nip44_encrypt("hello dm".to_string(), pk.clone()).unwrap();
         let json = update_json(SyncUpdate::Dm {
             id: "dm-1".into(),
-            sender: pk,
+            sender: pk.clone(),
+            recipient: pk,
             content: payload,
             created_at: 1234,
         })

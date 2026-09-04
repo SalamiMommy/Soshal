@@ -85,7 +85,8 @@ pub async fn minis_publish(
     };
     let aud = audience.unwrap_or_else(|| "public".into());
     let content = text_overlay.unwrap_or_default();
-    let mut builder = nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(31020), content);
+    let mut builder =
+        nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(31020), content.clone());
     builder = add_tag(builder, vec!["url".to_string(), url_tag]);
     builder = add_tag(
         builder,
@@ -121,6 +122,17 @@ pub async fn minis_publish(
     let event: serde_json::Value =
         serde_json::from_str(&signed).map_err(|e| format!("parse signed event: {e}"))?;
     let id = event["id"].as_str().unwrap_or_default().to_string();
+    let author_pubkey = event["pubkey"].as_str().unwrap_or_default().to_string();
+    let tags_json = serde_json::to_string(&event["tags"]).unwrap_or_else(|_| "[]".to_string());
+    let _ = super::db::upsert_post_row(
+        id.clone(),
+        author_pubkey,
+        content,
+        31020,
+        soshal_common_core::format::now_secs(),
+        tags_json,
+        None,
+    );
     let _ = super::network::network_publish_event(signed).await?;
     Ok(id)
 }

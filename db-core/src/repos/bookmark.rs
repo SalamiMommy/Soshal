@@ -51,7 +51,7 @@ impl<'a> BookmarkRepo<'a> {
         row: &BookmarkRow,
     ) -> Result<(), crate::error::DbError> {
         tx.execute(
-            "INSERT INTO bookmarks (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET event_id=excluded.event_id",
+            "INSERT INTO bookmarks (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET pubkey=excluded.pubkey, event_id=excluded.event_id, created_at=excluded.created_at",
             params![row.id.as_str(), row.pubkey.as_str(), row.event_id.as_str(), row.created_at],
         )
         .await?;

@@ -48,6 +48,10 @@ impl EpochGarbageCollector {
             });
         }
         let cutoff_timestamp = min_horizon.saturating_sub(gc_threshold_secs);
+        // created_at / horizon columns are INTEGER. Clamp u64 horizon into
+        // i64 range so libsql binds an integer, not TEXT (string compare
+        // would miss index + mis-order rows).
+        let cutoff_i64: i64 = cutoff_timestamp.min(i64::MAX as u64) as i64;
 
         block_on(async {
             conn.execute("BEGIN IMMEDIATE", ())
@@ -70,7 +74,7 @@ impl EpochGarbageCollector {
             let delete_res = conn
                 .execute(
                     "DELETE FROM posts WHERE is_deleted = 1 AND created_at <= ?1",
-                    [cutoff_timestamp.to_string()],
+                    [cutoff_i64],
                 )
                 .await;
 
@@ -91,7 +95,7 @@ impl EpochGarbageCollector {
                         vector_clock_horizon = excluded.vector_clock_horizon,
                         pruned_tombstone_count = pruned_tombstone_count + excluded.pruned_tombstone_count,
                         last_gc_at = datetime('now')",
-                    (domain, cutoff_timestamp.to_string(), pruned_count),
+                    (domain, cutoff_i64, pruned_count),
                 )
                 .await;
 
@@ -100,9 +104,10 @@ impl EpochGarbageCollector {
                 return Err(format!("Epoch tracking update failed: {}", e));
             }
 
-            conn.execute("COMMIT", ())
-                .await
-                .map_err(|e| format!("Commit failed: {}", e))?;
+            if let Err(e) = conn.execute("COMMIT", ()).await {
+                let _ = conn.execute("ROLLBACK", ()).await;
+                return Err(format!("Commit failed: {}", e));
+            }
 
             Ok(pruned_count as u64)
         })

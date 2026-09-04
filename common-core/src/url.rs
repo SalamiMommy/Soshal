@@ -1,4 +1,4 @@
-use regex::Regex;
+use regex::{Regex, RegexSet};
 use std::collections::HashSet;
 use std::sync::OnceLock;
 use url::Url;
@@ -34,55 +34,44 @@ fn url_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"https?://[^\s<>{}|\\^`\[\]]+").expect("valid url regex"))
 }
 
-fn blocked_patterns() -> &'static [Regex] {
-    static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
-    PATTERNS
-        .get_or_init(|| {
-            vec![
-                compile_re(r"(?i)localhost"),
-                compile_re(r"127\.0\.0\.1"),
-                compile_re(r"^127\."), // 127.1 / 127.0.1 loopback shorthand
-                compile_re(r"(?i)0x7f"),
-                compile_re(r"169\.254"),
-                compile_re(r"192\.168\."),
-                compile_re(r"10\."),
-                compile_re(r"172\.(1[6-9]|2[0-9]|3[0-1])\."),
-                compile_re(r"::1"),
-                compile_re(r"(?i)fc00:"),
-                compile_re(r"(?i)fe80:"),
-                compile_re(r"^0\.0\.0\.0$"),
-                compile_re(r"^0$"),
-                compile_re(r"^0[0-7]+\."),
-                compile_re(r"(?i)^0x[0-9a-f]+\."),
-                compile_re(r"^\d{5,}"),
-            ]
-        })
-        .as_slice()
-}
-
-fn dns_rebinding_domains() -> &'static [Regex] {
-    static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
-    PATTERNS
-        .get_or_init(|| {
-            vec![
-                compile_re(r"(?i)\.nip\.io$"),
-                compile_re(r"(?i)\.xip\.io$"),
-                compile_re(r"(?i)\.sslip\.io$"),
-                compile_re(r"(?i)\.localtest\.me$"),
-                compile_re(r"(?i)\.loca\.lt$"),
-                compile_re(r"(?i)\.customer\.your-server\.de$"),
-                compile_re(r"(?i)\.dns\.to$"),
-                compile_re(r"(?i)\.traefik\.me$"),
-                // Bare wildcard-DNS domains (no leading dot) resolve to
-                // loopback for every subdomain — block the apex too.
-                compile_re(r"(?i)^nip\.io$"),
-                compile_re(r"(?i)^xip\.io$"),
-                compile_re(r"(?i)^sslip\.io$"),
-                compile_re(r"(?i)^localtest\.me$"),
-                compile_re(r"(?i)^loca\.lt$"),
-            ]
-        })
-        .as_slice()
+fn host_security_regex_set() -> &'static RegexSet {
+    static SET: OnceLock<RegexSet> = OnceLock::new();
+    SET.get_or_init(|| {
+        RegexSet::new([
+            r"(?i)localhost",
+            r"127\.0\.0\.1",
+            r"^127\.", // 127.1 / 127.0.1 loopback shorthand
+            r"(?i)0x7f",
+            r"^169\.254\.",
+            r"^192\.168\.",
+            r"^10\.",
+            r"^172\.(1[6-9]|2[0-9]|3[0-1])\.",
+            r"::1",
+            r"(?i)fc00:",
+            r"(?i)fe80:",
+            r"^0\.0\.0\.0$",
+            r"^0$",
+            r"^0[0-7]+\.",
+            r"(?i)^0x[0-9a-f]+\.",
+            r"^\d{5,}",
+            r"(?i)\.nip\.io$",
+            r"(?i)\.xip\.io$",
+            r"(?i)\.sslip\.io$",
+            r"(?i)\.localtest\.me$",
+            r"(?i)\.loca\.lt$",
+            r"(?i)\.customer\.your-server\.de$",
+            r"(?i)\.dns\.to$",
+            r"(?i)\.traefik\.me$",
+            // Bare wildcard-DNS domains (no leading dot) resolve to
+            // loopback for every subdomain — block the apex too.
+            r"(?i)^nip\.io$",
+            r"(?i)^xip\.io$",
+            r"(?i)^sslip\.io$",
+            r"(?i)^localtest\.me$",
+            r"(?i)^loca\.lt$",
+        ])
+        .expect("valid host security regex set")
+    })
 }
 
 pub fn extract(text: &str) -> Vec<String> {
@@ -129,17 +118,16 @@ pub fn is_valid_media_url(url: &str) -> bool {
     if is_private_ip_str(hostname) || is_private_ipv6_str(hostname) {
         return false;
     }
-    for pattern in blocked_patterns() {
-        if pattern.is_match(hostname) {
-            return false;
-        }
-    }
-    for pattern in dns_rebinding_domains() {
-        if pattern.is_match(hostname) {
-            return false;
-        }
+    if host_security_regex_set().is_match(hostname) {
+        return false;
     }
     if re_digits_5().is_match(hostname) {
+        return false;
+    }
+    // Single-integer IPv4 forms (decimal/octal, e.g. 2130706433, 017700000001,
+    // short 1234) resolve as IPs on many stacks. Block all pure-digit hosts,
+    // not just 5+ digits.
+    if re_digits_only().is_match(hostname) {
         return false;
     }
     if re_hex_host().is_match(hostname) {
@@ -292,15 +280,8 @@ pub fn is_valid_relay_url(url: &str) -> (bool, bool) {
     {
         return (false, false);
     }
-    for pattern in blocked_patterns() {
-        if pattern.is_match(hostname) {
-            return (false, false);
-        }
-    }
-    for pattern in dns_rebinding_domains() {
-        if pattern.is_match(hostname) {
-            return (false, false);
-        }
+    if host_security_regex_set().is_match(hostname) {
+        return (false, false);
     }
     let punycode = hostname.starts_with("xn--") || hostname.contains(".xn--");
     (true, punycode)

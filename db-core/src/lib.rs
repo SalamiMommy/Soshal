@@ -246,10 +246,12 @@ impl DerefMut for ConnGuard {
 impl Drop for ConnGuard {
     fn drop(&mut self) {
         if let Some(conn) = self.conn.take() {
-            if let Ok(mut state) = self.db.state.lock() {
-                state.conns.push(conn);
-                state.in_use = state.in_use.saturating_sub(1);
-            }
+            // Recover from poison: losing the conn here leaks `in_use`
+            // until pool exhaustion, worse than reusing post-panic state.
+            let mut state = self.db.state.lock().unwrap_or_else(|e| e.into_inner());
+            state.conns.push(conn);
+            state.in_use = state.in_use.saturating_sub(1);
+            drop(state);
             self.db.available.notify_one();
         }
     }
