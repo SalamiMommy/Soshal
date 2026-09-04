@@ -33,7 +33,7 @@ impl<'a> UserRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list FROM users WHERE pubkey = ?1",
+            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey = ?1",
             params![pubkey],
             Self::map_row,
         )
@@ -66,7 +66,7 @@ impl<'a> UserRepo<'a> {
         pubkey: &str,
     ) -> Result<Option<UserRow>, crate::error::DbError> {
         let stmt = tx
-            .prepare("SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list FROM users WHERE pubkey = ?1")
+            .prepare("SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey = ?1")
             .await?;
         let mut rows = stmt.query(params![pubkey]).await?;
         match rows.next().await? {
@@ -165,7 +165,7 @@ impl<'a> UserRepo<'a> {
             &conn,
             "SELECT u.pubkey, u.npub, u.name, u.display_name, u.about, u.picture, u.banner, \
              u.nip05, u.lud16, u.created_at, u.updated_at, u.metadata_json, u.contact_pubkeys, \
-             u.relay_list \
+             u.relay_list, u.follower_count \
              FROM users_fts f JOIN users u ON u.rowid = f.rowid \
              WHERE users_fts MATCH ?1 ORDER BY rank LIMIT ?2",
             params![fts, limit],
@@ -226,6 +226,7 @@ impl<'a> UserRepo<'a> {
             metadata_json: row.get(11)?,
             contact_pubkeys: row.get(12)?,
             relay_list: row.get(13)?,
+            follower_count: row.get(14)?,
         })
     }
 }
@@ -246,4 +247,5 @@ pub struct UserRow {
     pub metadata_json: Option<String>,
     pub contact_pubkeys: String,
     pub relay_list: String,
+    pub follower_count: i64,
 }

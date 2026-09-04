@@ -26,7 +26,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         CREATE TABLE IF NOT EXISTS posts (
             id TEXT PRIMARY KEY,
-            pubkey TEXT NOT NULL REFERENCES users(pubkey),
+            pubkey TEXT NOT NULL REFERENCES users(pubkey) ON DELETE CASCADE,
             content TEXT NOT NULL DEFAULT '',
             kind INTEGER NOT NULL DEFAULT 1,
             created_at INTEGER NOT NULL,
@@ -41,7 +41,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
             is_deleted INTEGER NOT NULL DEFAULT 0,
             scheduled_at INTEGER,
             freenet_key TEXT,
-            is_freenet_native INTEGER NOT NULL DEFAULT 1,
+            is_freenet_native INTEGER NOT NULL DEFAULT 0,
             rsvp_event_id TEXT,
             category TEXT,
             reposts_count INTEGER NOT NULL DEFAULT 0,
@@ -52,7 +52,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
             conversation_id TEXT NOT NULL,
-            pubkey TEXT NOT NULL REFERENCES users(pubkey),
+            pubkey TEXT NOT NULL REFERENCES users(pubkey) ON DELETE CASCADE,
             content TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             tags_json TEXT DEFAULT '[]',
@@ -64,7 +64,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         CREATE TABLE IF NOT EXISTS reactions (
             id TEXT PRIMARY KEY,
             event_id TEXT NOT NULL,
-            pubkey TEXT NOT NULL REFERENCES users(pubkey),
+            pubkey TEXT NOT NULL REFERENCES users(pubkey) ON DELETE CASCADE,
             content TEXT NOT NULL DEFAULT '+',
             created_at INTEGER NOT NULL,
             kind INTEGER NOT NULL DEFAULT 7
@@ -88,7 +88,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         CREATE TABLE IF NOT EXISTS notifications (
             id TEXT PRIMARY KEY,
-            pubkey TEXT NOT NULL REFERENCES users(pubkey),
+            pubkey TEXT NOT NULL REFERENCES users(pubkey) ON DELETE CASCADE,
             type TEXT NOT NULL,
             event_id TEXT,
             from_pubkey TEXT,
@@ -99,14 +99,14 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         CREATE TABLE IF NOT EXISTS bookmarks (
             id TEXT PRIMARY KEY,
-            pubkey TEXT NOT NULL REFERENCES users(pubkey),
+            pubkey TEXT NOT NULL REFERENCES users(pubkey) ON DELETE CASCADE,
             event_id TEXT NOT NULL,
             title TEXT,
             created_at INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS blocks (
-            pubkey TEXT NOT NULL REFERENCES users(pubkey),
+            pubkey TEXT NOT NULL REFERENCES users(pubkey) ON DELETE CASCADE,
             blocked_pubkey TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             PRIMARY KEY (pubkey, blocked_pubkey)
@@ -126,8 +126,8 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         );
 
         CREATE TABLE IF NOT EXISTS group_members (
-            group_id TEXT NOT NULL REFERENCES groups(id),
-            pubkey TEXT NOT NULL REFERENCES users(pubkey),
+            group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            pubkey TEXT NOT NULL REFERENCES users(pubkey) ON DELETE CASCADE,
             role TEXT NOT NULL DEFAULT 'member',
             joined_at INTEGER NOT NULL,
             PRIMARY KEY (group_id, pubkey)
@@ -162,7 +162,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         CREATE TABLE IF NOT EXISTS media_blobs (
             id TEXT PRIMARY KEY,
-            pubkey TEXT NOT NULL REFERENCES users(pubkey),
+            pubkey TEXT NOT NULL REFERENCES users(pubkey) ON DELETE CASCADE,
             url TEXT NOT NULL,
             file_hash TEXT,
             file_size INTEGER,
@@ -173,7 +173,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         CREATE TABLE IF NOT EXISTS group_roles (
             id TEXT PRIMARY KEY,
-            group_id TEXT NOT NULL REFERENCES groups(id),
+            group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
             name TEXT NOT NULL,
             permissions TEXT NOT NULL DEFAULT '[]',
             created_at INTEGER NOT NULL,
@@ -211,7 +211,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         CREATE TABLE IF NOT EXISTS reposts (
             id TEXT PRIMARY KEY,
-            pubkey TEXT NOT NULL REFERENCES users(pubkey),
+            pubkey TEXT NOT NULL REFERENCES users(pubkey) ON DELETE CASCADE,
             event_id TEXT NOT NULL,
             created_at INTEGER NOT NULL
         );
@@ -640,7 +640,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         -- FTS5 sync triggers, rowid-mapped: post updates/deletes hit a single
         -- FTS row instead of scanning on id.
-        CREATE TRIGGER IF NOT EXISTS posts_ai AFTER INSERT ON posts BEGIN
+        CREATE TRIGGER IF NOT EXISTS posts_ai AFTER INSERT ON posts WHEN new.is_deleted = 0 BEGIN
             INSERT OR REPLACE INTO posts_fts(rowid, id, pubkey, content, subject)
             VALUES (new.rowid, new.id, new.pubkey, new.content, new.subject);
         END;

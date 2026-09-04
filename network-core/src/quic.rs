@@ -839,6 +839,7 @@ async fn serve_stream(
                                 }
                                 if let Err(e) = send.finish() {
                                     log::warn!("quic response write: {e}");
+                                    let _ = send.write_all(&[3u8]).await;
                                     return;
                                 }
                                 return;
@@ -876,6 +877,7 @@ async fn serve_stream(
                         }
                         if let Err(e) = send.finish() {
                             log::warn!("quic response write: {e}");
+                            let _ = send.write_all(&[3u8]).await;
                             return;
                         }
                         return;
@@ -989,6 +991,8 @@ async fn auth_stream(recv: &mut quinn::RecvStream, key: &[u8; 32]) -> Result<Vec
     let mut line = Vec::with_capacity(128);
     let mut leftover = Vec::new();
     let mut buf = [0u8; 128];
+    let mut total_bytes = 0usize;
+    const MAX_AUTH_BYTES: usize = 4096;
     tokio::time::timeout(AUTH_TIMEOUT, async {
         loop {
             match recv.read(&mut buf).await {
@@ -1000,6 +1004,10 @@ async fn auth_stream(recv: &mut quinn::RecvStream, key: &[u8; 32]) -> Result<Vec
                         break;
                     }
                     line.extend_from_slice(&buf[..n]);
+                    total_bytes += n;
+                    if total_bytes > MAX_AUTH_BYTES {
+                        return Err("auth too large".into());
+                    }
                     if line.len() > 512 {
                         return Err("handshake line too long".to_string());
                     }

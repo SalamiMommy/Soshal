@@ -405,6 +405,7 @@ mod tests {
         created_at: i64,
         tags_json: &str,
     ) {
+        db::insert_test_user(pubkey);
         db::db_execute_params(
             "INSERT OR IGNORE INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'synced', 0)",
@@ -713,6 +714,10 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("thread");
+        db::insert_test_user("pk1");
+        db::insert_test_user("pk2");
+        db::insert_test_user("pk3");
+        db::insert_test_user("pk4");
         db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES ('root','pk1','root post',1,1000,'[]','synced',0)"

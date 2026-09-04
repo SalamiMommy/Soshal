@@ -96,6 +96,7 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("roundtrip");
         let at = soshal_common_core::format::now_secs() + 3600;
+        db::insert_test_user("pk1");
         let id = scheduled_create(
             "pk1".to_string(),
             "hello scheduled world".to_string(),
@@ -127,6 +128,7 @@ mod tests {
         let _p = tmp_db("order");
         let late = soshal_common_core::format::now_secs() + 7200;
         let early = soshal_common_core::format::now_secs() + 3600;
+        db::insert_test_user("pk1");
         scheduled_create("pk1".to_string(), "later".to_string(), late, vec![]).unwrap();
         scheduled_create("pk1".to_string(), "sooner".to_string(), early, vec![]).unwrap();
         let arr = parse_arr(&scheduled_list("pk1".to_string()).unwrap());
@@ -142,6 +144,8 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("pubkey");
         let at = soshal_common_core::format::now_secs() + 3600;
+        db::insert_test_user("pk1");
+        db::insert_test_user("pk2");
         scheduled_create("pk1".to_string(), "mine".to_string(), at, vec![]).unwrap();
         scheduled_create("pk2".to_string(), "theirs".to_string(), at, vec![]).unwrap();
         let arr = parse_arr(&scheduled_list("pk1".to_string()).unwrap());
@@ -198,6 +202,7 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("delete");
         let at = soshal_common_core::format::now_secs() + 3600;
+        db::insert_test_user("pk1");
         let id = scheduled_create("pk1".to_string(), "draft".to_string(), at, vec![]).unwrap();
         assert!(scheduled_delete(id).unwrap());
         let arr = parse_arr(&scheduled_list("pk1".to_string()).unwrap());

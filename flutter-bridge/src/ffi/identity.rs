@@ -140,6 +140,7 @@ pub fn identity_store_profile(profile: String) -> Result<bool, String> {
         metadata_json: Some(content.to_string()),
         contact_pubkeys: String::from("[]"),
         relay_list: String::from("[]"),
+        follower_count: 0,
     };
     super::db::with_db_result(|db| {
         UserRepo::new(db).upsert(&row)?;
@@ -458,6 +459,7 @@ pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
                 metadata_json: None,
                 contact_pubkeys: String::new(),
                 relay_list: String::from("[]"),
+                follower_count: 0,
             },
         };
         r.contact_pubkeys = updated;
@@ -513,6 +515,7 @@ pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
                 metadata_json: None,
                 contact_pubkeys: String::new(),
                 relay_list: String::from("[]"),
+                follower_count: 0,
             },
         };
         r.contact_pubkeys = updated;
@@ -661,6 +664,7 @@ mod tests {
             metadata_json: None,
             contact_pubkeys: serde_json::json!(["b".repeat(64), "c".repeat(64)]).to_string(),
             relay_list: "[]".into(),
+            follower_count: 0,
         };
         let p = row_to_profile(&row);
         assert_eq!(p.following, 2);

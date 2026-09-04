@@ -113,6 +113,13 @@ impl EigenTrustEngine {
                         row.push((j, 1.0 / (self.pre_trusted_peers.len() as f64).max(1.0)));
                     }
                 }
+                // Normalize fallback row to ensure row-stochasticity
+                let sum: f64 = row.iter().map(|(_, v)| *v).sum();
+                if sum > 0.0 && (sum - 1.0).abs() > f64::EPSILON {
+                    for (_, v) in row.iter_mut() {
+                        *v /= sum;
+                    }
+                }
             }
         }
 

@@ -20,6 +20,16 @@ pub fn unique_pubkey(tag: &str) -> String {
     format!("{}_{}", tag, &kp.public_key[..12])
 }
 
+/// Insert a minimal users row so child tables referencing users(pubkey)
+/// succeed under the enforced foreign_keys pragma.
+pub fn insert_user(pk: &str) {
+    soshal_flutter_bridge::db::db_execute_params(
+        "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]')",
+        &[pk.to_string()],
+    )
+    .unwrap();
+}
+
 pub fn lock() -> MutexGuard<'static, ()> {
     soshal_test_util::test_lock()
 }

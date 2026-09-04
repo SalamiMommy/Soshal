@@ -201,6 +201,25 @@ fn zap_request_digest(req: &PostRow) -> [u8; 32] {
     digest
 }
 
+/// Ensure a users row exists for an event author so child rows referencing
+/// users(pubkey) can be inserted under the enforced foreign_keys pragma.
+/// INSERT OR IGNORE keeps any richer profile row already ingested.
+async fn ensure_author_user(
+    db: &Database,
+    t: &libsql::Transaction,
+    event: &Event,
+) -> Result<(), DbError> {
+    let _ = db;
+    let pubkey = event.pubkey.to_hex();
+    t.execute(
+        "INSERT OR IGNORE INTO users (pubkey, npub, created_at, updated_at, contact_pubkeys, relay_list, follower_count) \
+         VALUES (?1, ?2, ?3, ?3, '', '[]', 0)",
+        libsql::params![pubkey.as_str(), "".to_string(), event.created_at.as_secs() as i64],
+    )
+    .await?;
+    Ok(())
+}
+
 fn user_row(event: &Event) -> Option<UserRow> {
     let meta: serde_json::Value = serde_json::from_str(&event.content).ok()?;
     let pubkey = event.pubkey.to_hex();
@@ -245,6 +264,7 @@ fn user_row(event: &Event) -> Option<UserRow> {
         metadata_json: Some(event.content.clone()),
         contact_pubkeys: String::new(),
         relay_list: String::new(),
+        follower_count: 0,
     })
 }
 
@@ -357,6 +377,7 @@ async fn handle_impl(
                     metadata_json: None,
                     contact_pubkeys: String::new(),
                     relay_list: String::new(),
+                    follower_count: 0,
                 });
             // Merge: kind-3 lists arrive per-relay and are partial views;
             // union with the stored list so contacts seen on other relays
@@ -509,6 +530,7 @@ async fn handle_impl(
         // cached feed stays complete; only kinds with a surface model emit.
         Kind::TextNote => {
             if let Some(row) = post_row(event) {
+                ensure_author_user(db, t, event).await?;
                 PostRepo::new(db).upsert_in(t, &row).await?;
                 if tx
                     .try_send(SyncUpdate::Feed {
@@ -542,6 +564,7 @@ async fn handle_impl(
             // events) is dropped instead of being cached as a feed row.
             if POST_KIND_ALLOWLIST.contains(&event.kind.as_u16()) {
                 if let Some(row) = post_row(event) {
+                    ensure_author_user(db, t, event).await?;
                     PostRepo::new(db).upsert_in(t, &row).await?;
                 }
             }

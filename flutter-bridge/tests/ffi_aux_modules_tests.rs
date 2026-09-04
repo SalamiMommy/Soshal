@@ -10,6 +10,11 @@ mod ffi_aux_modules_tests {
         let path = crate::test_util::init_db("aux", "bookmarks");
         let pubkey = "aux_bookmark_user".to_string();
         let event_id = "aux_event_001".to_string();
+        db::db_execute_params(
+            "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]')",
+            &[pubkey.clone()],
+        )
+        .unwrap();
         let id = bookmarks::bookmarks_save(pubkey.clone(), event_id.clone()).unwrap();
         assert_eq!(id, format!("bm:{event_id}"));
         let list = bookmarks::bookmarks_list(pubkey.clone(), 10, 0).unwrap();

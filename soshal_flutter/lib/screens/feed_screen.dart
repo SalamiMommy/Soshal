@@ -162,6 +162,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _onScroll() async {
+    if (!mounted) return;
     final media = context.read<MediaService>();
     final pos = _scrollController.position;
     final now = DateTime.now();
@@ -883,6 +884,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
   Future<void> _reportPost(String pubkey) async {
     final reason = TextEditingController();
     final ok = await showDialogDeferred<bool>(
+
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Report post'),
@@ -905,6 +907,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
         ],
       ),
     );
+    reason.dispose();
     if (ok != true || !mounted) return;
     final text = reason.text.trim();
     if (text.isEmpty) {

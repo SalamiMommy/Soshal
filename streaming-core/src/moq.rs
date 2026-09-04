@@ -49,7 +49,9 @@ pub fn encode_group_stream_to_writer<W: Write>(
         hdr[12..20].copy_from_slice(&obj.header.object_sequence.to_le_bytes());
         hdr[20] = obj.header.track_type as u8;
         hdr[21..29].copy_from_slice(&obj.header.timestamp_ms.to_le_bytes());
-        hdr[29..33].copy_from_slice(&(obj.payload.len() as u32).to_le_bytes());
+        let len =
+            u32::try_from(obj.payload.len()).map_err(|e| format!("payload too large: {e}"))?;
+        hdr[29..33].copy_from_slice(&len.to_le_bytes());
         out.write_all(&hdr)
             .map_err(|e| format!("moq write failed: {e}"))?;
         if !obj.payload.is_empty() {

@@ -166,18 +166,18 @@ impl<'a> GroupThreadRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM group_threads WHERE id = ?1",
-            [thread_id],
+            "DELETE FROM group_thread_reactions WHERE thread_id = ?1",
+            params![thread_id],
         )?;
         crate::query::execute(
             &conn,
             "DELETE FROM group_thread_replies WHERE thread_id = ?1",
-            [thread_id],
+            params![thread_id],
         )?;
         crate::query::execute(
             &conn,
-            "DELETE FROM group_thread_reactions WHERE thread_id = ?1",
-            [thread_id],
+            "DELETE FROM group_threads WHERE id = ?1",
+            params![thread_id],
         )?;
         Ok(())
     }
@@ -227,13 +227,13 @@ impl<'a> GroupThreadRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM group_thread_replies WHERE id = ?1",
-            [reply_id],
+            "DELETE FROM group_thread_reactions WHERE reply_id = ?1",
+            params![reply_id],
         )?;
         crate::query::execute(
             &conn,
-            "DELETE FROM group_thread_reactions WHERE reply_id = ?1",
-            [reply_id],
+            "DELETE FROM group_thread_replies WHERE id = ?1",
+            params![reply_id],
         )?;
         Ok(())
     }
@@ -274,7 +274,8 @@ impl<'a> GroupThreadRepo<'a> {
         Ok(changed > 0)
     }
 
-    /// Toggle a reaction; returns true when it was added, false when removed.
+    /// Toggle a reaction; returns true when added, false when removed.
+    /// Deletes first if present, otherwise inserts.
     pub fn toggle_reaction(
         &self,
         thread_id: &str,
@@ -282,13 +283,29 @@ impl<'a> GroupThreadRepo<'a> {
         pubkey: &str,
         emoji: &str,
     ) -> Result<bool, crate::error::DbError> {
-        if self.has_reaction(thread_id, reply_id, pubkey, emoji)? {
-            self.remove_reaction(thread_id, reply_id, pubkey, emoji)?;
-            Ok(false)
-        } else {
-            self.add_reaction(thread_id, reply_id, pubkey, emoji)?;
-            Ok(true)
+        let conn = self.db.conn()?;
+        let deleted = crate::query::execute(
+            &conn,
+            "DELETE FROM group_thread_reactions
+             WHERE thread_id = ?1 AND reply_id = ?2 AND pubkey = ?3 AND emoji = ?4",
+            params![thread_id, reply_id, pubkey, emoji],
+        )?;
+        if deleted > 0 {
+            return Ok(false);
         }
+        crate::query::execute(
+            &conn,
+            "INSERT INTO group_thread_reactions (thread_id, reply_id, pubkey, emoji, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                thread_id,
+                reply_id,
+                pubkey,
+                emoji,
+                soshal_common_core::format::now_secs()
+            ],
+        )?;
+        Ok(true)
     }
 
     pub fn has_reaction(

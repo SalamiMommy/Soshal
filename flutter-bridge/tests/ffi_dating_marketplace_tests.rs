@@ -30,6 +30,13 @@ fn cleanup_db(path: &str) {
     let _ = std::fs::remove_file(format!("{path}-wal"));
     let _ = std::fs::remove_file(format!("{path}-shm"));
 }
+fn insert_user(pk: &str) {
+    db::db_execute_params(
+        "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]')",
+        &[pk.to_string()],
+    )
+    .unwrap();
+}
 fn create_profile_g(
     pk: &str,
     name: &str,
@@ -38,6 +45,7 @@ fn create_profile_g(
     seeking: &str,
     interests: &str,
 ) -> String {
+    insert_user(pk);
     let signed = dating::dating_create_profile(
         pk.to_string(),
         name.to_string(),
@@ -74,6 +82,7 @@ fn test_dating_profile_roundtrip() {
     let (secret, alice) = gen_keys();
     let pk = unlock(&secret);
     assert_eq!(pk, alice);
+    insert_user(&alice);
     assert!(dating::dating_create_profile(
         alice.clone(),
         "alice".to_string(),
@@ -191,6 +200,7 @@ fn test_dating_like_is_sign_only() {
     let (secret, alice) = gen_keys();
     let pk = unlock(&secret);
     assert_eq!(pk, alice);
+    insert_user(&alice);
     let fake_id = "a".repeat(64);
     assert!(dating::dating_like(alice.clone(), fake_id.clone()).unwrap());
     assert!(dating::dating_superlike(alice.clone(), fake_id.clone()).unwrap());
@@ -315,7 +325,9 @@ fn test_dating_block_unblock() {
     let path = setup_db("dating_block");
     let (secret, alice) = gen_keys();
     unlock(&secret);
+    insert_user(&alice);
     let bob = "b".repeat(64);
+    insert_user(&bob);
     assert!(dating::dating_block_profile(alice.clone(), bob.clone()).unwrap());
     let rows: Vec<serde_json::Value> = serde_json::from_str(
         &db::db_query_raw(format!(
@@ -372,6 +384,7 @@ fn test_marketplace_listing_roundtrip() {
     let path = setup_db("marketplace_listing");
     let (secret, seller) = gen_keys();
     unlock(&secret);
+    insert_user(&seller);
     assert!(marketplace::marketplace_create_listing(
         seller.clone(),
         String::new(),
@@ -536,6 +549,7 @@ fn test_marketplace_order_escrow_lifecycle() {
     let path = setup_db("marketplace_escrow");
     let (seller_secret, seller) = gen_keys();
     unlock(&seller_secret);
+    insert_user(&seller);
     let signed = marketplace::marketplace_create_listing(
         seller.clone(),
         "guitar".to_string(),
@@ -552,6 +566,7 @@ fn test_marketplace_order_escrow_lifecycle() {
     let listing_id = v["id"].as_str().unwrap().to_string();
     let (buyer_secret, buyer) = gen_keys();
     unlock(&buyer_secret);
+    insert_user(&buyer);
     let order_id =
         marketplace::marketplace_create_order(listing_id.clone(), buyer.clone(), seller.clone())
             .unwrap();

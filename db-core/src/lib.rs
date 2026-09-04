@@ -26,13 +26,13 @@ pub fn max_connections() -> usize {
 
 /// SQLite pragmas applied to every pooled connection.
 #[cfg(test)]
-const PRAGMAS: &str = "PRAGMA page_size=4096; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=OFF; PRAGMA cache_size=-2000; PRAGMA mmap_size=0; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=OFF; PRAGMA wal_autocheckpoint=1000;";
+const PRAGMAS: &str = "PRAGMA page_size=4096; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA cache_size=-2000; PRAGMA mmap_size=0; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=OFF; PRAGMA wal_autocheckpoint=1000;";
 
 #[cfg(all(not(test), target_os = "android"))]
-const PRAGMAS: &str = "PRAGMA page_size=8192; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=OFF; PRAGMA cache_size=-16000; PRAGMA mmap_size=33554432; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA wal_autocheckpoint=2000;";
+const PRAGMAS: &str = "PRAGMA page_size=8192; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA cache_size=-16000; PRAGMA mmap_size=33554432; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA wal_autocheckpoint=2000;";
 
 #[cfg(all(not(test), not(target_os = "android")))]
-const PRAGMAS: &str = "PRAGMA page_size=8192; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=OFF; PRAGMA cache_size=-64000; PRAGMA mmap_size=268435456; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA wal_autocheckpoint=2000;";
+const PRAGMAS: &str = "PRAGMA page_size=8192; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA cache_size=-64000; PRAGMA mmap_size=268435456; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA wal_autocheckpoint=2000;";
 
 pub fn block_on<F: std::future::Future>(fut: F) -> F::Output {
     match tokio::runtime::Handle::try_current() {

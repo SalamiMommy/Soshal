@@ -102,7 +102,9 @@ impl NormalizedStore {
             if like_count_delta > 0 {
                 post.like_count = post.like_count.saturating_add(like_count_delta as u32);
             } else if like_count_delta < 0 {
-                post.like_count = post.like_count.saturating_sub((-like_count_delta) as u32);
+                post.like_count = post
+                    .like_count
+                    .saturating_sub(like_count_delta.unsigned_abs());
             }
 
             let delta = EntityDelta::PostReactionAdded {
@@ -121,16 +123,17 @@ impl NormalizedStore {
     }
 
     pub fn clear(&self) {
-        let mut users = self.users.write().unwrap_or_else(|e| e.into_inner());
-        let mut posts = self.posts.write().unwrap_or_else(|e| e.into_inner());
-
-        // Notify listeners before clearing so they can purge stale caches.
-        if !users.is_empty() || !posts.is_empty() {
+        let cleared = {
+            let mut users = self.users.write().unwrap_or_else(|e| e.into_inner());
+            let mut posts = self.posts.write().unwrap_or_else(|e| e.into_inner());
+            let non_empty = !users.is_empty() || !posts.is_empty();
+            users.clear();
+            posts.clear();
+            non_empty
+        };
+        if cleared {
             self.notify(EntityDelta::StoreCleared);
         }
-
-        users.clear();
-        posts.clear();
     }
 }
 

@@ -208,6 +208,7 @@ mod tests {
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
         assert!(super::super::db::db_init(path.clone()).is_ok());
+        super::super::db::insert_test_user("pk");
         assert!(super::super::db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES ('m1','pk','mini one',31020,100,'[[\"url\",\"https://mini.example/a\"],[\"image\",\"https://img.example/a.png\"]]','pending',0), \

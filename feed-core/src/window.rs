@@ -116,6 +116,7 @@ mod tests {
             metadata_json: None,
             contact_pubkeys: "[]".into(),
             relay_list: "[]".into(),
+            follower_count: 0,
         };
         UserRepo::new(db).upsert(&user).unwrap();
     }
@@ -169,6 +170,7 @@ mod tests {
     #[test]
     fn feed_window_honors_offset_and_limit() {
         let db = soshal_test_util::test_db();
+        insert_test_user(&db, "pk-a");
         for i in 0..5 {
             insert_test_post(&db, &format!("p{i}"), "pk-a", &format!("c{i}"), i as i64);
         }
@@ -183,6 +185,7 @@ mod tests {
     #[test]
     fn feed_window_excludes_deleted_and_non_kind1() {
         let db = soshal_test_util::test_db();
+        insert_test_user(&db, "pk-a");
         insert_test_post(&db, "live", "pk-a", "visible", 300);
         let deleted = PostRow {
             id: "gone".into(),

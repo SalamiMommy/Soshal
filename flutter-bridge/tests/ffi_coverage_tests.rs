@@ -154,6 +154,11 @@ mod ffi_coverage_tests {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("coverage", "events_ffi");
         let pk = unlock_signer();
+        db::db_execute_params(
+            "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]')",
+            &[pk.clone()],
+        )
+        .unwrap();
         let empty_nearby = events::events_fetch_nearby(37.0, -122.0, 10.0, 5).unwrap();
         assert_eq!(empty_nearby, "[]");
         let empty_user = events::events_fetch_user_events(pk.clone(), 5).unwrap();
@@ -268,6 +273,16 @@ mod ffi_coverage_tests {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("coverage", "messaging_cov");
         let pk = unlock_signer();
+        db::db_execute_params(
+            "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]')",
+            &[pk.clone()],
+        )
+        .unwrap();
+        db::db_execute_params(
+            "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]'), (?2, '', '[]'), (?3, '', '[]')",
+            &["peer_a".into(), "peer_b".into(), "me".into()],
+        )
+        .unwrap();
         assert!(messaging::messaging_store_dm(
             "dm1".into(),
             "peer_a".into(),

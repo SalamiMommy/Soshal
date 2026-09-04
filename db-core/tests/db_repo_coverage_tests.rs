@@ -34,6 +34,7 @@ fn insert_test_user(db: &Database, pubkey: &str) {
         metadata_json: None,
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
+        follower_count: 0,
     };
     repo.upsert(&user).unwrap();
 }
@@ -94,6 +95,7 @@ fn bookmark_get_user_bookmarks_paged() {
 #[test]
 fn bookmark_upsert_in_conflict_updates_event_id() {
     let db = new_db();
+    insert_test_user(&db, "pk");
     let repo = BookmarkRepo::new(&db);
     let row = BookmarkRow {
         id: "bm1".into(),
@@ -287,6 +289,8 @@ fn group_user_groups_and_members() {
     let repo = GroupRepo::new(&db);
     repo.upsert(&group_row("g1", "pkOwner", 1000)).unwrap();
     repo.upsert(&group_row("g2", "pkOwner", 2000)).unwrap();
+    insert_test_user(&db, "pkMember");
+    insert_test_user(&db, "pkOther");
     repo.add_member("g1", "pkMember", "member", 100).unwrap();
     repo.add_member("g2", "pkMember", "member", 200).unwrap();
     repo.add_member("g2", "pkOther", "member", 300).unwrap();
@@ -372,6 +376,8 @@ fn media_get_user_media_paged() {
 #[test]
 fn notification_get_unread_filtered() {
     let db = new_db();
+    insert_test_user(&db, "pk");
+    insert_test_user(&db, "pkOther");
     let repo = NotificationRepo::new(&db);
     for (i, read) in [(0, false), (1, true), (2, false)] {
         repo.upsert(&NotificationRow {
@@ -545,6 +551,7 @@ fn post_get_recent_paged_meta_scheduled() {
 #[test]
 fn reaction_upsert_in_conflict_updates_content() {
     let db = new_db();
+    insert_test_user(&db, "pk");
     let repo = ReactionRepo::new(&db);
     let row = ReactionRow {
         id: "r1".into(),
@@ -639,6 +646,8 @@ fn role_assign_member_role() {
     let db = new_db();
     let repo = GroupRepo::new(&db);
     repo.upsert(&group_row("g1", "pkOwner", 1000)).unwrap();
+    insert_test_user(&db, "pkMember");
+    insert_test_user(&db, "pkNobody");
     repo.add_member("g1", "pkMember", "member", 100).unwrap();
     let role_repo = GroupRoleRepo::new(&db);
     role_repo
@@ -715,6 +724,7 @@ fn user_upsert_in_and_get_by_pubkey_in() {
         metadata_json: None,
         contact_pubkeys: r#"["a","b","c"]"#.into(),
         relay_list: "[]".into(),
+        follower_count: 0,
     };
     let conn = db.conn().unwrap();
 

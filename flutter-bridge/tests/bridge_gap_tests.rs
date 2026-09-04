@@ -147,6 +147,11 @@ mod bridge_gap_tests {
         let _g = crate::test_util::lock();
         let db = crate::test_util::init_db("bridge_gap", "bookmarks");
         let (pk, _) = gen_keys();
+        db::db_execute_params(
+            "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]')",
+            &[pk.clone()],
+        )
+        .unwrap();
         let id = bookmarks::bookmarks_save(pk.clone(), "evt1".into()).unwrap();
         assert_eq!(id, "bm:evt1");
         let id2 = bookmarks::bookmarks_save(pk.clone(), "evt2".into()).unwrap();

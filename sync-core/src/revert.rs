@@ -92,6 +92,7 @@ mod tests {
             metadata_json: None,
             contact_pubkeys: String::new(),
             relay_list: String::new(),
+            follower_count: 0,
         }
     }
 

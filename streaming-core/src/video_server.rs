@@ -246,14 +246,24 @@ async fn serve_video_file(
         "HTTP/1.1 200 OK"
     };
 
-    let header = format!(
-        "{status_line}\r\n\
-        Accept-Ranges: bytes\r\n\
-        Content-Type: video/mp4\r\n\
-        Content-Length: {chunk_len}\r\n\
-        Content-Range: bytes {start}-{end}/{total_size}\r\n\
-        Connection: close\r\n\r\n"
-    );
+    let header = if is_range {
+        format!(
+            "{status_line}\r\n\
+            Accept-Ranges: bytes\r\n\
+            Content-Type: video/mp4\r\n\
+            Content-Length: {chunk_len}\r\n\
+            Content-Range: bytes {start}-{end}/{total_size}\r\n\
+            Connection: close\r\n\r\n"
+        )
+    } else {
+        format!(
+            "{status_line}\r\n\
+            Accept-Ranges: bytes\r\n\
+            Content-Type: video/mp4\r\n\
+            Content-Length: {chunk_len}\r\n\
+            Connection: close\r\n\r\n"
+        )
+    };
 
     if socket.write_all(header.as_bytes()).await.is_err() {
         return;
@@ -387,11 +397,7 @@ mod tests {
         let text = String::from_utf8_lossy(&resp);
         assert!(text.starts_with("HTTP/1.1 200 OK"));
         assert!(text.contains(&format!("Content-Length: {}", payload.len())));
-        assert!(text.contains(&format!(
-            "Content-Range: bytes 0-{}/{}\r\n",
-            payload.len() - 1,
-            payload.len()
-        )));
+        assert!(!text.contains("Content-Range"));
         assert!(text.ends_with("full file get payload"));
 
         server.stop();

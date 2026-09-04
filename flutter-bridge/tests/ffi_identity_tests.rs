@@ -103,6 +103,8 @@ mod ffi_identity_tests {
         let path = crate::test_util::init_db("identity", "block");
         let me = crate::test_util::unique_pubkey("me");
         let target = crate::test_util::unique_pubkey("tgt");
+        crate::test_util::insert_user(&me);
+        crate::test_util::insert_user(&target);
         assert!(!identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
         assert!(moderation::moderation_block_user(me.clone(), target.clone()).unwrap());
         assert!(identity::identity_is_blocked(me.clone(), target.clone()).unwrap());

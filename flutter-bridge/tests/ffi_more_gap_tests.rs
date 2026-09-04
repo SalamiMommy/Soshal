@@ -106,6 +106,8 @@ mod ffi_more_gap_tests {
         let db = crate::test_util::init_db("more_gap", "notify");
         let (me, _) = gen_keys();
         let (other, _) = gen_keys();
+        crate::test_util::insert_user(&me);
+        crate::test_util::insert_user(&other);
         assert_eq!(
             notifications::notifications_get_unread_count(me.clone()).unwrap(),
             0

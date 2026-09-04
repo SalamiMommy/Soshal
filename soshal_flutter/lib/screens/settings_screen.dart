@@ -274,7 +274,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 trailing: IconButton(
                   icon: const Icon(Icons.delete),
                   onPressed: () async {
-                    setState(() => _relays.removeAt(index));
+                    final relayUrl = _relays[index];
+                    setState(() => _relays.remove(relayUrl));
                     final session = context.read<SessionService>();
                     final pubkey = session.activePubkey;
                     if (pubkey != null) {

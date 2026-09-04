@@ -1,5 +1,9 @@
 //! Database schema migrations.
 
+// NOTE: Do NOT add new migration files. The app has not been released yet —
+// modify v001_initial.rs directly to flatten all schema changes. Migrations
+// are only needed after the first public release when real user data exists.
+
 pub mod migrations;
 
 use crate::block_on;

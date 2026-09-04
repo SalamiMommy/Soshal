@@ -716,7 +716,17 @@ pub fn groups_voice_channels_delete(channel_id: String, actor: String) -> Result
     })?;
     require_owner(&group_id, &actor)?;
     super::db::with_db_result(|db| {
-        soshal_db_core::repos::voice::GroupVoiceRepo::new(db).delete_channel(&channel_id)?;
+        let conn = db.conn()?;
+        soshal_db_core::block_on(conn.execute(
+            "DELETE FROM group_voice_presence WHERE channel_id = ?1",
+            libsql::params![channel_id.clone()],
+        ))
+        .map_err(soshal_db_core::error::DbError::from)?;
+        soshal_db_core::block_on(conn.execute(
+            "DELETE FROM group_voice_channels WHERE id = ?1",
+            libsql::params![channel_id],
+        ))
+        .map_err(soshal_db_core::error::DbError::from)?;
         Ok(true)
     })
 }
@@ -937,10 +947,7 @@ mod tests {
     }
 
     fn insert_user(pubkey: &str) {
-        super::super::db::db_execute_raw_test(format!(
-            "INSERT INTO users (pubkey, npub, name) VALUES ('{pubkey}','npub1{pubkey}','tester') ON CONFLICT DO UPDATE SET name='tester'"
-        ))
-        .unwrap();
+        crate::ffi::db::insert_test_user(pubkey);
     }
 
     fn create_group(id: &str, owner: &str) {
@@ -967,6 +974,7 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _db = TestDb::init("create");
         let owner = "a".repeat(64);
+        crate::ffi::db::insert_test_user(&owner);
 
         assert_eq!(groups_fetch_groups(owner.clone()).unwrap(), "[]");
 
@@ -1221,6 +1229,7 @@ mod tests {
         // The message sender (active signer) must be a member: post-message
         // now enforces membership.
         let sender_pk = super::super::signer::signer_pubkey().unwrap();
+        crate::ffi::db::insert_test_user(&sender_pk);
         groups_join("g6".to_string(), sender_pk, None).unwrap();
 
         assert_eq!(groups_rooms_list("g6".to_string()).unwrap(), "[]");

@@ -991,6 +991,7 @@ mod tests {
             "images": [],
             "escrowEnabled": false,
         });
+        db::insert_test_user(seller);
         db::db_execute_raw_test(format!(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, category) \
              VALUES ('{id}','{seller}','{}',{KIND_LISTING},{created_at},'[[\"d\",\"{id}\"],[\"t\",\"{category}\"]]','synced',0,'{category}')",
@@ -1000,6 +1001,8 @@ mod tests {
     }
 
     fn insert_escrow(id: &str, listing_id: &str, status: &str) {
+        db::insert_test_user("buyer1");
+        db::insert_test_user("seller1");
         db::db_execute_raw_test(format!(
             "INSERT INTO escrows (id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at) \
              VALUES ('{id}','{listing_id}','buyer1','seller1',5000,'sats','{status}',NULL,100,100)"
@@ -1124,6 +1127,7 @@ mod tests {
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk_hex = keys.public_key().to_hex();
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        db::insert_test_user(&pk_hex);
 
         let signed = marketplace_create_listing(
             pk_hex.clone(),
@@ -1228,6 +1232,7 @@ mod tests {
         )
         .unwrap_err()
         .contains("seller does not own this listing"));
+        db::insert_test_user("buyer1");
         let order_id =
             marketplace_create_order("l1".to_string(), "buyer1".to_string(), spk.clone()).unwrap();
 
@@ -1520,6 +1525,7 @@ mod tests {
         .contains("Listing not found"));
 
         // get_order with malformed content: row still resolves with fallback fields.
+        db::insert_test_user("buyer1");
         db::db_execute_raw_test(format!(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, category) \
              VALUES ('o1','buyer1','garbage',{KIND_ORDER},100,'[]','synced',0,'')"
@@ -1530,6 +1536,7 @@ mod tests {
         assert!(order.contains("\"listing_id\":\"\""), "{order}");
 
         // get_content: non-string content storage (BLOB -> hex) hits to_string fallback path.
+        db::insert_test_user("s");
         db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted, category) \
              VALUES ('blob1','s',x'deadbeef',30402,100,'[]','synced',0,'')"
@@ -1686,6 +1693,8 @@ mod tests {
         // Trending: repost count first, created_at tiebreak.
         insert_listing("t1", "s1", "alpha", 100, "cat", 1000);
         insert_listing("t2", "s2", "beta", 100, "cat", 2000);
+        db::insert_test_user("u1");
+        db::insert_test_user("u2");
         db::db_execute_raw_test(
             "INSERT INTO reposts (id, pubkey, event_id, created_at) VALUES \
              ('rp1','u1','t1',100),('rp2','u1','t2',101),('rp3','u2','t2',102)"
@@ -1727,6 +1736,7 @@ mod tests {
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        db::insert_test_user(&pk);
 
         let long_title = "x".repeat(501);
         assert!(marketplace_create_listing(

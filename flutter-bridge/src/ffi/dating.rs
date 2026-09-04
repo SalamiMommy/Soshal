@@ -1157,6 +1157,9 @@ mod tests {
     fn test_filter_profiles_radius() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_radius", "ffi");
+        crate::ffi::db::insert_test_user("own");
+        crate::ffi::db::insert_test_user("near");
+        crate::ffi::db::insert_test_user("far");
         let insert = |id: &str, pubkey: &str, age: i64, gh: &str, ts: i64| {
             super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
@@ -1180,6 +1183,9 @@ mod tests {
     fn test_filter_profiles_traits_and_height() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_traits", "ffi");
+        crate::ffi::db::insert_test_user("own");
+        crate::ffi::db::insert_test_user("tall");
+        crate::ffi::db::insert_test_user("short");
         let insert = |id: &str, pubkey: &str, height: i64, smoking: &str, ts: i64| {
             super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
@@ -1206,6 +1212,8 @@ mod tests {
     fn test_calculate_score_dealbreakers() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_score", "ffi");
+        crate::ffi::db::insert_test_user("selfpk");
+        crate::ffi::db::insert_test_user("tgtpk");
         let insert = |id: &str, pubkey: &str, smoking: &str, ts: i64| {
             super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
@@ -1238,9 +1246,11 @@ mod tests {
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-        super::super::db::db_execute_raw_test(format!(
-            "INSERT INTO users (pubkey, npub, name) VALUES ('{pk}', 'npub1alice', 'alice') ON CONFLICT DO NOTHING"
-        ))
+        crate::ffi::db::insert_test_user(&pk);
+        super::super::db::db_execute_params(
+            "UPDATE users SET name = ?1 WHERE pubkey = ?2",
+            &["alice".to_string(), pk.clone()],
+        )
         .unwrap();
 
         let err = call_create(
@@ -1360,6 +1370,7 @@ mod tests {
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        crate::ffi::db::insert_test_user(&pk);
         let id64 = "a".repeat(64);
 
         for f in [dating_like, dating_unlike, dating_superlike] {
@@ -1417,6 +1428,11 @@ mod tests {
     fn test_fetch_likes_matches_unmatch() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_graph", "dt");
+        crate::ffi::db::insert_test_user("me");
+        crate::ffi::db::insert_test_user("likera");
+        crate::ffi::db::insert_test_user("likerb");
+        crate::ffi::db::insert_test_user("cand");
+        crate::ffi::db::insert_test_user("candb");
         let insert_post = |id: &str, pubkey: &str, gh: &str, ts: i64| {
             super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
@@ -1477,6 +1493,15 @@ mod tests {
     fn test_calculate_score_and_filter() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_scorefilter", "dt");
+        crate::ffi::db::insert_test_user("selfpk");
+        crate::ffi::db::insert_test_user("tgtpk");
+        crate::ffi::db::insert_test_user("gpk");
+        crate::ffi::db::insert_test_user("cand1");
+        crate::ffi::db::insert_test_user("cand2");
+        crate::ffi::db::insert_test_user("far");
+        for i in 0..55 {
+            crate::ffi::db::insert_test_user(&format!("bulk{i}"));
+        }
         let insert_post = |id: &str, pubkey: &str, gh: &str, interests: &str, ts: i64| {
             super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
@@ -1568,6 +1593,10 @@ mod tests {
         let keys = soshal_nostr_core::keys::generate_keys();
         let me = keys.public_key().to_hex();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        crate::ffi::db::insert_test_user(&me);
+        crate::ffi::db::insert_test_user("likera");
+        crate::ffi::db::insert_test_user("likerb");
+        crate::ffi::db::insert_test_user("likerc");
         let insert_post = |id: &str, pubkey: &str, images: &str, ts: i64| {
             super::super::db::db_execute_raw_test(format!(
                 "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \

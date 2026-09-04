@@ -75,17 +75,19 @@ impl<'a> GroupVoiceRepo<'a> {
 
     pub fn delete_channel(&self, channel_id: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(
-            &conn,
-            "DELETE FROM group_voice_channels WHERE id = ?1",
-            [channel_id],
-        )?;
-        crate::query::execute(
-            &conn,
-            "DELETE FROM group_voice_presence WHERE channel_id = ?1",
-            [channel_id],
-        )?;
-        Ok(())
+        crate::query::with_tx(&conn, |tx| async move {
+            tx.execute(
+                "DELETE FROM group_voice_presence WHERE channel_id = ?1",
+                params![channel_id],
+            )
+            .await?;
+            tx.execute(
+                "DELETE FROM group_voice_channels WHERE id = ?1",
+                params![channel_id],
+            )
+            .await?;
+            Ok(())
+        })
     }
 
     pub fn presence(

@@ -137,6 +137,7 @@ mod tests {
     }
 
     fn insert_post(id: &str, pubkey: &str, content: &str) {
+        crate::ffi::db::insert_test_user(pubkey);
         crate::ffi::db::db_execute_params(
             "INSERT INTO posts (id, pubkey, content, kind, created_at) VALUES (?1, ?2, ?3, 1, 1700000000)",
             &[id.to_string(), pubkey.to_string(), content.to_string()],
@@ -151,6 +152,7 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("crud");
         let pk = "a".repeat(64);
+        crate::ffi::db::insert_test_user(&pk);
         let id = bookmarks_save(pk.clone(), "evt1".into()).unwrap();
         assert_eq!(id, "bm:evt1");
         bookmarks_save(pk.clone(), "evt2".into()).unwrap();

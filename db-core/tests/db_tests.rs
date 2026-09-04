@@ -61,6 +61,7 @@ fn insert_test_user(db: &Database, pubkey: &str) {
         metadata_json: None,
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
+        follower_count: 0,
     };
     repo.upsert(&user).unwrap();
 }
@@ -291,6 +292,7 @@ fn insert_and_read_user() {
         metadata_json: None,
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
+        follower_count: 0,
     };
     repo.upsert(&user).unwrap();
     let found = repo.get_by_pubkey("pk1").unwrap().unwrap();
@@ -325,6 +327,7 @@ fn test_user_ensure_exists_and_search() {
         metadata_json: None,
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
+        follower_count: 0,
     };
     repo.upsert(&updated_user).unwrap();
 
@@ -1739,6 +1742,7 @@ fn test_async_query_api() {
 fn test_message_upsert_batch_empty_and_oversize_skip() {
     let db = Database::open_in_memory().unwrap();
     db.migrate().unwrap();
+    insert_test_user(&db, "pk1");
     let repo = MessageRepo::new(&db);
 
     // Empty slice is a no-op.
@@ -1792,6 +1796,7 @@ fn test_message_upsert_batch_empty_and_oversize_skip() {
 fn test_message_upsert_batch_conflict_update() {
     let db = Database::open_in_memory().unwrap();
     db.migrate().unwrap();
+    insert_test_user(&db, "pk1");
     let repo = MessageRepo::new(&db);
 
     let make = |id: &str, content: &str, created_at: i64| MessageRow {
@@ -2151,6 +2156,7 @@ fn test_group_thread_reaction_toggle_and_sort() {
 fn test_message_cursor_pagination_no_gap_same_ts() {
     let db = Database::open_in_memory().unwrap();
     db.migrate().unwrap();
+    insert_test_user(&db, "pk1");
     let repo = MessageRepo::new(&db);
 
     // 5 messages, 3 sharing the same ts to stress the keyset cursor.
@@ -2218,6 +2224,7 @@ fn test_message_cursor_pagination_no_gap_same_ts() {
 fn test_post_cursor_pagination_no_gap_same_ts() {
     let db = Database::open_in_memory().unwrap();
     db.migrate().unwrap();
+    insert_test_user(&db, "pk1");
     let repo = PostRepo::new(&db);
 
     // 5 posts; ids chosen so id DESC order within a ts group is deterministic

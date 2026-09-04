@@ -218,6 +218,7 @@ mod ffi_media_streaming_tests {
         remove_db(&path);
         assert!(db::db_init(path.clone()).is_ok());
         let pk = unlock_test_signer();
+        crate::test_util::insert_user(&pk);
         let signed = streaming::streaming_post_story(
             pk.clone(),
             "hello stories".to_string(),
@@ -245,6 +246,7 @@ mod ffi_media_streaming_tests {
         remove_db(&path);
         assert!(db::db_init(path.clone()).is_ok());
         let pk = unlock_test_signer();
+        crate::test_util::insert_user(&pk);
         let bad = streaming::streaming_start_live(
             pk.clone(),
             String::new(),

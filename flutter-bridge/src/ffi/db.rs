@@ -998,6 +998,18 @@ pub(crate) fn tmp_db(label: &str, prefix: &str) -> String {
     path
 }
 
+/// Insert a minimal users row so child tables with FOREIGN KEY REFERENCES
+/// users(pubkey) succeed under the now-enforced FK pragma.
+#[cfg(test)]
+pub(crate) fn insert_test_user(pubkey: &str) {
+    db_execute_params(
+        "INSERT OR IGNORE INTO users (pubkey, npub, created_at, updated_at, contact_pubkeys, relay_list, follower_count) \
+         VALUES (?1, ?2, 1000, 1000, '[]', '[]', 0)",
+        &[pubkey.to_string(), format!("npub_{pubkey}")],
+    )
+    .unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

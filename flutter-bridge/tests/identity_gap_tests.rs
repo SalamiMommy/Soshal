@@ -80,6 +80,8 @@ mod identity_gap_tests {
         let db = crate::test_util::init_db("identity_gap", "blocks");
         let me = "a".repeat(64);
         let target = "b".repeat(64);
+        crate::test_util::insert_user(&me);
+        crate::test_util::insert_user(&target);
         assert!(!identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
         assert!(moderation::moderation_block_user(me.clone(), target.clone()).unwrap());
         assert!(identity::identity_is_blocked(me.clone(), target.clone()).unwrap());

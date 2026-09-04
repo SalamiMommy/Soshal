@@ -55,14 +55,14 @@ impl<'a> GroupInviteRepo<'a> {
         )
     }
 
-    pub fn increment_uses(&self, id: &str) -> Result<(), crate::error::DbError> {
+    pub fn increment_uses(&self, id: &str) -> Result<bool, crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(
+        let changed = crate::query::execute(
             &conn,
-            "UPDATE group_invites SET uses = uses + 1 WHERE id=?1",
+            "UPDATE group_invites SET uses = uses + 1 WHERE id=?1 AND (max_uses = 0 OR uses < max_uses)",
             params![id],
         )?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     pub fn delete(&self, id: &str) -> Result<(), crate::error::DbError> {

@@ -16,7 +16,7 @@ impl<'a> ZapRepo<'a> {
         row: &ZapRow,
     ) -> Result<(), crate::error::DbError> {
         tx.execute(
-            "INSERT INTO zaps (id, pubkey, recipient_pubkey, event_id, amount, amount_msat, content, created_at, zap_type) VALUES (?1,?2,?3,?4,?5,?5 * 1000,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, amount_msat=excluded.amount_msat, recipient_pubkey=excluded.recipient_pubkey",
+            "INSERT INTO zaps (id, pubkey, sender_pubkey, recipient_pubkey, event_id, amount, amount_msat, content, created_at, zap_type) VALUES (?1,?2,?2,?3,?4,?5,?5 * 1000,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, amount_msat=excluded.amount_msat, recipient_pubkey=excluded.recipient_pubkey",
             params![
                 row.id.as_str(),
                 row.pubkey.as_str(),

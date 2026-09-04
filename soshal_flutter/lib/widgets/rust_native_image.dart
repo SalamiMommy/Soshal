@@ -112,13 +112,11 @@ class _RustNativeImageState extends State<RustNativeImage> {
       }
       _imageCache[cacheKey] = frameInfo.image;
 
+      if (_decodedImage != null && !_isFromCache) {
+        _decodedImage!.dispose();
+      }
       if (mounted) {
         setState(() {
-          if (_decodedImage != null &&
-              _decodedImage != frameInfo.image &&
-              !_isFromCache) {
-            _decodedImage!.dispose();
-          }
           _decodedImage = frameInfo.image;
           _isFromCache = true;
           _isLoading = false;

@@ -79,7 +79,7 @@ impl MeshEnvelope {
     }
 
     /// Encodes to wire bytes (little-endian, magic prefixed).
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
         let mut out = Vec::with_capacity(4 + 1 + 1 + 2 + 2 + 8 + 4 + self.payload.len());
         out.extend_from_slice(&MAGIC);
         out.push(self.version);
@@ -88,9 +88,11 @@ impl MeshEnvelope {
         out.extend_from_slice(&self.kind.to_le_bytes());
         push_str(&mut out, &self.author);
         out.extend_from_slice(&self.created_at.to_le_bytes());
-        out.extend_from_slice(&(self.payload.len() as u32).to_le_bytes());
+        let len =
+            u32::try_from(self.payload.len()).map_err(|e| format!("payload too large: {e}"))?;
+        out.extend_from_slice(&len.to_le_bytes());
         out.extend_from_slice(&self.payload);
-        out
+        Ok(out)
     }
 
     /// Decodes wire bytes, enforcing all caps. None on any malformation.
@@ -192,20 +194,20 @@ mod tests {
     #[test]
     fn test_roundtrip() {
         let env = sample();
-        let bytes = env.to_bytes();
+        let bytes = env.to_bytes().unwrap();
         assert_eq!(MeshEnvelope::from_bytes(&bytes), Some(env));
     }
 
     #[test]
     fn test_rejects_bad_magic() {
-        let mut bytes = sample().to_bytes();
+        let mut bytes = sample().to_bytes().unwrap();
         bytes[0] = b'x';
         assert_eq!(MeshEnvelope::from_bytes(&bytes), None);
     }
 
     #[test]
     fn test_rejects_unknown_version() {
-        let mut bytes = sample().to_bytes();
+        let mut bytes = sample().to_bytes().unwrap();
         bytes[4] = 99;
         assert_eq!(MeshEnvelope::from_bytes(&bytes), None);
     }
@@ -219,13 +221,13 @@ mod tests {
             0,
             vec![0u8; MAX_PAYLOAD_BYTES + 1],
         );
-        let bytes = env.to_bytes();
+        let bytes = env.to_bytes().unwrap();
         assert_eq!(MeshEnvelope::from_bytes(&bytes), None);
     }
 
     #[test]
     fn test_rejects_truncated() {
-        let bytes = sample().to_bytes();
+        let bytes = sample().to_bytes().unwrap();
         for cut in 0..bytes.len() {
             assert_eq!(MeshEnvelope::from_bytes(&bytes[..cut]), None);
         }
@@ -243,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_rejects_oversized_strings() {
-        let mut bytes = sample().to_bytes();
+        let mut bytes = sample().to_bytes().unwrap();
         let mut pos = 6;
         let _ = take_str(&bytes, &mut pos);
         bytes[pos - 2] = 0xff;

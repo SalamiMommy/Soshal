@@ -176,7 +176,9 @@ impl RelayNode {
         let mut total = 0usize;
         for backend in self.backends.iter_mut() {
             if backend.running() {
-                total += backend.broadcast(env.to_bytes()).unwrap_or(0);
+                total += backend
+                    .broadcast(env.to_bytes().unwrap_or_default())
+                    .unwrap_or(0);
             }
         }
         self.published += 1;
@@ -274,7 +276,7 @@ impl RelayNode {
     }
 
     fn re_broadcast(&mut self, env: MeshEnvelope, source_idx: usize) {
-        let bytes = env.to_bytes();
+        let bytes = env.to_bytes().unwrap();
         for (idx, backend) in self.backends.iter_mut().enumerate() {
             if idx != source_idx && backend.running() {
                 let _ = backend.broadcast(bytes.clone());
@@ -390,7 +392,7 @@ mod tests {
             payload,
         );
         env.hop_count = hop;
-        env.to_bytes()
+        env.to_bytes().unwrap()
     }
 
     #[test]
@@ -483,8 +485,8 @@ mod tests {
         );
         let mut forged = legit.clone();
         forged.payload = b"forged payload".to_vec();
-        s0.lock().unwrap().inbox.push(legit.to_bytes());
-        s0.lock().unwrap().inbox.push(forged.to_bytes());
+        s0.lock().unwrap().inbox.push(legit.to_bytes().unwrap());
+        s0.lock().unwrap().inbox.push(forged.to_bytes().unwrap());
         // Only the signed event is accepted; the forged one is dropped.
         assert_eq!(node.poll(), 1);
         assert_eq!(node.drain_delivered().len(), 1);
@@ -511,7 +513,7 @@ mod tests {
             tampered,
         );
         env.hop_count = 0;
-        s0.lock().unwrap().inbox.push(env.to_bytes());
+        s0.lock().unwrap().inbox.push(env.to_bytes().unwrap());
         assert_eq!(node.poll(), 0, "bad-signature payload must be dropped");
         assert!(node.drain_delivered().is_empty());
     }

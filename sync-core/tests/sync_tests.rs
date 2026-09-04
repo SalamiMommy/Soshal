@@ -474,6 +474,7 @@ fn revert_profile_restores_prior_fields() {
             metadata_json: None,
             contact_pubkeys: String::new(),
             relay_list: String::new(),
+            follower_count: 0,
         })
         .unwrap();
     let payload = format!(

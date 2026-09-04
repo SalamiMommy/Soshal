@@ -16,6 +16,28 @@ fn new_db() -> Database {
     db
 }
 
+fn insert_user(db: &Database, pubkey: &str) {
+    UserRepo::new(db)
+        .upsert(&UserRow {
+            pubkey: pubkey.to_string(),
+            npub: format!("npub_{pubkey}"),
+            name: Some("test".into()),
+            display_name: None,
+            about: None,
+            picture: None,
+            banner: None,
+            nip05: None,
+            lud16: None,
+            created_at: 1000,
+            updated_at: 1000,
+            metadata_json: None,
+            contact_pubkeys: "[]".into(),
+            relay_list: "[]".into(),
+            follower_count: 0,
+        })
+        .unwrap();
+}
+
 fn notif(id: &str, type_: &str, created_at: i64, is_read: bool) -> NotificationRow {
     NotificationRow {
         id: id.into(),
@@ -32,6 +54,7 @@ fn notif(id: &str, type_: &str, created_at: i64, is_read: bool) -> NotificationR
 #[test]
 fn block_upsert_list_is_blocked_delete() {
     let db = new_db();
+    insert_user(&db, "me");
     let repo = BlockRepo::new(&db);
     repo.upsert(&BlockRow {
         pubkey: "me".into(),
@@ -61,6 +84,7 @@ fn block_upsert_list_is_blocked_delete() {
 #[test]
 fn notification_upsert_batch_skips_oversized_and_conflicts_update() {
     let db = new_db();
+    insert_user(&db, "pk");
     let repo = NotificationRepo::new(&db);
     let huge = "x".repeat(64 * 1024 + 1);
     repo.upsert_batch(&[
@@ -90,6 +114,7 @@ fn notification_upsert_batch_skips_oversized_and_conflicts_update() {
 #[test]
 fn notification_get_unread_orders_and_limits() {
     let db = new_db();
+    insert_user(&db, "pk");
     let repo = NotificationRepo::new(&db);
     for i in 0..5 {
         repo.upsert(&notif(&format!("n{i}"), "reply", i, false))
@@ -187,6 +212,7 @@ fn user_upsert_batch_updates() {
         metadata_json: None,
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
+        follower_count: 0,
     };
     repo.upsert_batch(&[mk("pk1", "a"), mk("pk2", "b")])
         .unwrap();

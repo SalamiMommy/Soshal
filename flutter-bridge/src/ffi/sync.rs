@@ -446,6 +446,7 @@ mod tests {
         assert_eq!(v["domain"], "feed");
         assert_eq!(v["pruned_tombstones"], 0);
         // Seed a tombstone at created_at=0.
+        crate::ffi::db::insert_test_user("pk");
         crate::ffi::db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES ('gc-tomb','pk','x',1,0,'[]','synced',1)"
@@ -503,6 +504,7 @@ mod tests {
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let pk = keys.public_key().to_hex();
+        crate::ffi::db::insert_test_user(&pk);
         // Self-DM: payload encrypted to own pubkey decrypts with own key.
         let payload =
             super::super::signer::signer_nip44_encrypt("hello dm".to_string(), pk.clone()).unwrap();

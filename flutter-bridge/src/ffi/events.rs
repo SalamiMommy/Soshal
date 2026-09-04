@@ -663,6 +663,7 @@ mod tests {
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        super::super::db::insert_test_user(&pk);
         let now = soshal_common_core::format::now_secs() as u64;
         let created = events_create(
             pk.clone(),

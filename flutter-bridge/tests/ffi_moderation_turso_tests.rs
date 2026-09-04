@@ -95,6 +95,8 @@ mod ffi_tests {
     fn test_block_unblock_roundtrip() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("moderation", "block");
+        crate::test_util::insert_user("me_pk");
+        crate::test_util::insert_user("target_pk");
         assert!(
             moderation::moderation_block_user("me_pk".to_string(), "target_pk".to_string()).is_ok()
         );

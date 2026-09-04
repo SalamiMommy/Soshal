@@ -570,6 +570,8 @@ fn lan_chunk_pool() -> &'static LanChunkPool {
 impl LanChunkPool {
     fn take(&self, addr: SocketAddr) -> Option<TcpStream> {
         let mut guard = self.conns.lock().ok()?;
+        let now = std::time::Instant::now();
+        guard.retain(|_, c| now.duration_since(c.last_used) <= POOL_IDLE_TIMEOUT);
         let conn = guard.remove(&addr)?;
         if conn.last_used.elapsed() > POOL_IDLE_TIMEOUT {
             return None;
