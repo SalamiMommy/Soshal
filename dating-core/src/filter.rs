@@ -33,10 +33,13 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                 }
                 if let Some(ref seeking) = input.own_seeking {
                     if seeking != "All" {
-                        if let Some(ref other_gender) = profile.gender {
-                            if !gender_map.contains(&other_gender.as_str()) {
-                                return false;
+                        match profile.gender.as_ref() {
+                            Some(g) => {
+                                if !gender_map.contains(&g.as_str()) {
+                                    return false;
+                                }
                             }
+                            None => return false,
                         }
                     }
                 }

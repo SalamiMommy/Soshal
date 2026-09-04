@@ -24,20 +24,20 @@ impl<'a> MessageRepo<'a> {
         &self,
         conversation_id: &str,
         limit: i64,
-        before: Option<i64>,
+        before: Option<(i64, String)>,
     ) -> Result<Vec<MessageRow>, crate::error::DbError> {
         let limit = crate::repos::clamp_limit(limit);
         let conn = self.db.conn()?;
         match before {
-            Some(ts) => crate::query::query(
+            Some((ts, id)) => crate::query::query(
                 &conn,
-                "SELECT id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted FROM messages WHERE conversation_id = ?1 AND is_deleted = 0 AND created_at < ?2 ORDER BY created_at DESC LIMIT ?3",
-                params![conversation_id, ts, limit],
+                "SELECT id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted FROM messages WHERE conversation_id = ?1 AND is_deleted = 0 AND (created_at < ?2 OR (created_at = ?2 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?4",
+                params![conversation_id, ts, id, limit],
                 Self::map_row,
             ),
             None => crate::query::query(
                 &conn,
-                "SELECT id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted FROM messages WHERE conversation_id = ?1 AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?2",
+                "SELECT id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted FROM messages WHERE conversation_id = ?1 AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2",
                 params![conversation_id, limit],
                 Self::map_row,
             ),

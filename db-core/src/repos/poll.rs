@@ -67,7 +67,7 @@ impl<'a> PollRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "INSERT INTO poll_votes (id, poll_id, option_id, voter_pubkey, voted_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET option_id=excluded.option_id",
+            "INSERT INTO poll_votes (id, poll_id, option_id, voter_pubkey, voted_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(poll_id, voter_pubkey) DO UPDATE SET option_id=excluded.option_id, voted_at=excluded.voted_at",
             params![v.id.as_str(), v.poll_id.as_str(), v.option_id, v.voter_pubkey.as_str(), v.voted_at],
         )?;
         Ok(())

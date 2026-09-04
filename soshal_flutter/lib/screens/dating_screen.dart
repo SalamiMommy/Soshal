@@ -534,7 +534,7 @@ class _DatingScreenState extends State<DatingScreen>
                     tooltip: 'Pass',
                     onPressed: () async {
                       await api.pass(pubkey, card.pubkey);
-                      setState(() => _cardIndex++);
+                      if (mounted) setState(() => _cardIndex++);
                     },
                   ),
                   const SizedBox(width: 24),

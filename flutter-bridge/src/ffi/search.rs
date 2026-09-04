@@ -23,6 +23,14 @@ pub struct SearchResult {
     pub created_at: u64,
 }
 
+/// Escape `%`, `_`, and `\` so they are treated as literals in a SQL LIKE
+/// pattern (used with `ESCAPE '\'`).
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchResult>, String> {
     if query.trim().is_empty() {
         return Ok(Vec::new());
@@ -53,12 +61,21 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
             let mut out = Vec::new();
             while let Some(row) = rows.next().await? {
                 let content: String = row.get(2)?;
+                let result_type = match row.get::<i64>(3)? {
+                    0 => "profile".to_string(),
+                    _ => "post".to_string(),
+                };
+                // Profiles are indexed under `profile:<pk>` for FTS storage; the
+                // exposed `id` uses the bare pubkey so it stays consistent with
+                // the search_profiles fallback and search_trending_profiles
+                // (Dart keys profiles by pubkey, not id).
+                let mut id: String = row.get(0)?;
+                if result_type == "profile" {
+                    id = row.get::<String>(1)?;
+                }
                 out.push(SearchResult {
-                    id: row.get(0)?,
-                    result_type: match row.get::<i64>(3)? {
-                        0 => "profile".to_string(),
-                        _ => "post".to_string(),
-                    },
+                    id,
+                    result_type,
                     title: soshal_common_core::format::truncate(&content, 80),
                     description: soshal_common_core::format::truncate(&content, 160),
                     pubkey: Some(row.get(1)?),
@@ -87,10 +104,11 @@ pub fn search_profiles(query: String, limit: i32) -> Result<String, String> {
     let limit = limit.clamp(1, 100) as i64;
     let mut results = run_search(&query, limit, Some(0))?;
     if results.is_empty() && !query.trim().is_empty() {
-        let pattern = format!("%{}%", query.trim().to_lowercase());
+        let pattern = format!("%{}%", escape_like(&query.trim().to_lowercase()));
         let json = super::db::db_query_params(
             "SELECT pubkey, name, about FROM users \
-             WHERE lower(name) LIKE ?1 OR lower(display_name) LIKE ?1 OR lower(about) LIKE ?1 OR pubkey = ?2 \
+             WHERE lower(name) LIKE ?1 ESCAPE '\\' OR lower(display_name) LIKE ?1 ESCAPE '\\' \
+             OR lower(about) LIKE ?1 ESCAPE '\\' OR pubkey = ?2 \
              ORDER BY follower_count DESC LIMIT ?3",
             &[pattern, query.trim().to_string(), limit.to_string()],
         )?;
@@ -443,7 +461,7 @@ mod tests {
         insert_post("post1", "pk1", "soshal post text", 1, 2000);
         let arr = parse_arr(&search_profiles("soshal".to_string(), 10).unwrap());
         assert_eq!(arr.len(), 1, "json: {arr:?}");
-        assert_eq!(arr[0]["id"], "prof1");
+        assert_eq!(arr[0]["id"], "pk1");
         assert_eq!(arr[0]["result_type"], "profile");
         let arr = parse_arr(&search_posts("soshal".to_string(), 10).unwrap());
         assert_eq!(arr.len(), 1);
@@ -496,7 +514,7 @@ mod tests {
         insert_post("prof1", "pk1", "alice soshal builder", 0, 1000);
         let arr = parse_arr(&search_mentions("alice".to_string(), 10).unwrap());
         assert_eq!(arr.len(), 1, "json: {arr:?}");
-        assert_eq!(arr[0]["id"], "prof1");
+        assert_eq!(arr[0]["id"], "pk1");
         assert_eq!(arr[0]["result_type"], "profile");
     }
 
@@ -758,5 +776,14 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(err, "invalid or blocked relay URL: wss://localhost:8000");
+    }
+
+    #[test]
+    fn test_escape_like_special_chars() {
+        assert_eq!(escape_like("100%"), "100\\%");
+        assert_eq!(escape_like("a_b"), "a\\_b");
+        assert_eq!(escape_like("a\\b"), "a\\\\b");
+        assert_eq!(escape_like("%_\\abc"), "\\%\\_\\\\abc");
+        assert_eq!(escape_like("clean"), "clean");
     }
 }

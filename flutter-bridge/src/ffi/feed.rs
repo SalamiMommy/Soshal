@@ -35,6 +35,8 @@ pub struct FeedOptions {
     pub filter_type: String,
     #[serde(default)]
     pub cursor_created_at: Option<i64>,
+    #[serde(default)]
+    pub cursor_id: Option<String>,
 }
 
 /// Aggregate chat reactions from JSON input (delegates to feed-core).
@@ -313,11 +315,14 @@ pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
         let filters = get_custom_word_filters(db);
         let repo = PostRepo::new(db);
-        let rows = if let Some(cursor) = opts.cursor_created_at {
-            repo.get_paged_meta_cursor(cursor, limit)?
-        } else {
-            let offset = opts.offset.max(0) as i64;
-            repo.get_paged_meta(limit, offset)?
+        let rows = match (opts.cursor_created_at, opts.cursor_id) {
+            (Some(cursor), Some(cursor_id)) => {
+                repo.get_paged_meta_cursor(cursor, &cursor_id, limit)?
+            }
+            _ => {
+                let offset = opts.offset.max(0) as i64;
+                repo.get_paged_meta(limit, offset)?
+            }
         };
         let posts: Vec<FeedPost> = rows
             .into_iter()

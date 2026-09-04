@@ -26,6 +26,8 @@ impl<'a> MediaRepo<'a> {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<MediaRow>, crate::error::DbError> {
+        let limit = crate::repos::clamp_limit(limit);
+        let offset = offset.max(0);
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,

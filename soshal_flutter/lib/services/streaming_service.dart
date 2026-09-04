@@ -110,17 +110,27 @@ class StreamingService extends ChangeNotifier
   }
 
   Future<List<StreamRow>> fetchLive({int limit = 50}) async {
-    return _decode(
+    final parsed = await _decode(
       () => RustLib.instance.api
           .crateFfiStreamingStreamingFetchLive(limit: limit),
     );
+    _live
+      ..clear()
+      ..addAll(parsed);
+    notifyDeferred();
+    return parsed;
   }
 
   Future<List<StreamRow>> fetchFollowedLive(String userPubkey) async {
-    return _decode(
+    final parsed = await _decode(
       () => RustLib.instance.api
           .crateFfiStreamingStreamingFetchFollowedLive(userPubkey: userPubkey),
     );
+    _live
+      ..clear()
+      ..addAll(parsed);
+    notifyDeferred();
+    return parsed;
   }
 
   Future<String> startLive(
@@ -186,19 +196,29 @@ class StreamingService extends ChangeNotifier
   }
 
   Future<List<StreamRow>> fetchStories(String userPubkey) async {
-    return _decode(
+    final parsed = await _decode(
       () => RustLib.instance.api.crateFfiStreamingStreamingFetchStories(
         userPubkey: userPubkey,
       ),
     );
+    _stories
+      ..clear()
+      ..addAll(parsed);
+    notifyDeferred();
+    return parsed;
   }
 
   Future<List<StreamRow>> fetchFollowedStories(String viewerPubkey) async {
-    return _decode(
+    final parsed = await _decode(
       () => RustLib.instance.api.crateFfiStreamingStreamingFetchFollowedStories(
         viewerPubkey: viewerPubkey,
       ),
     );
+    _stories
+      ..clear()
+      ..addAll(parsed);
+    notifyDeferred();
+    return parsed;
   }
 
   Future<bool> markStoryViewed(String storyId, String viewerPubkey) async {

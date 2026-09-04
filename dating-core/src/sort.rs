@@ -48,7 +48,7 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
                 pubkey: profile.pubkey.clone(),
                 compatibility_score: score,
                 mutual_friends,
-                distance: if is_contact { 1 } else { 2 },
+                distance: distance_km.round() as u32,
                 liked_by_me: profile.liked_by_me.unwrap_or(false),
                 liked_me: profile.liked_me.unwrap_or(false),
                 liker_total_likes: profile.liker_total_likes.unwrap_or(u32::MAX),

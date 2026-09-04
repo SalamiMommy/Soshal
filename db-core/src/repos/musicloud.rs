@@ -73,7 +73,7 @@ impl<'a> MusicloudRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "UPDATE musiclouds SET liked=?1, likes=CASE WHEN ?1=1 THEN likes+1 ELSE MAX(likes-1, 0) END WHERE id=?2",
+            "UPDATE musiclouds SET liked=?1, likes=CASE WHEN ?1=1 AND liked=0 THEN likes+1 WHEN ?1=0 AND liked=1 THEN MAX(likes-1, 0) ELSE likes END WHERE id=?2",
             params![liked as i64, id],
         )?;
         Ok(())
@@ -173,4 +173,59 @@ pub struct MusicloudCommentRow {
     pub pubkey: String,
     pub content: String,
     pub created_at: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Database;
+
+    fn insert_row(db: &Database, id: &str) {
+        let repo = MusicloudRepo::new(db);
+        let row = MusicloudRow {
+            id: id.into(),
+            pubkey: "pk".into(),
+            audio_url: "https://example.com/a.mp3".into(),
+            title: None,
+            duration: None,
+            text_overlay: None,
+            thumbnail: None,
+            likes: 0,
+            liked: false,
+            bookmarked: false,
+            audience: String::new(),
+            created_at: 1000,
+        };
+        repo.upsert(&row).unwrap();
+    }
+
+    fn likes_of(db: &Database, id: &str) -> i64 {
+        let conn = db.conn().unwrap();
+        crate::query::query_first(
+            &conn,
+            "SELECT likes FROM musiclouds WHERE id=?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap()
+    }
+
+    #[test]
+    fn set_like_is_idempotent() {
+        let db = Database::open_in_memory().unwrap();
+        db.migrate().unwrap();
+        insert_row(&db, "m1");
+        let repo = MusicloudRepo::new(&db);
+
+        repo.set_like("m1", true).unwrap();
+        assert_eq!(likes_of(&db, "m1"), 1);
+        repo.set_like("m1", true).unwrap();
+        assert_eq!(likes_of(&db, "m1"), 1);
+
+        repo.set_like("m1", false).unwrap();
+        assert_eq!(likes_of(&db, "m1"), 0);
+        repo.set_like("m1", false).unwrap();
+        assert_eq!(likes_of(&db, "m1"), 0);
+    }
 }

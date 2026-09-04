@@ -4,21 +4,21 @@ use libsql::params;
 const USER_UPSERT_SQL: &str = "\
 INSERT INTO users (pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count) \
 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14, \
-  CASE \
-    WHEN json_valid(?13) THEN json_array_length(?13) \
-    WHEN ?13 IS NOT NULL AND length(trim(?13)) > 0 THEN (length(?13) - length(replace(?13, ',', '')) + 1) \
-    ELSE 0 \
-  END) \
+  (SELECT COUNT(*) FROM users _fu WHERE _fu.pubkey != ?1 AND (\
+    (json_valid(_fu.contact_pubkeys) AND EXISTS (SELECT 1 FROM json_each(_fu.contact_pubkeys) WHERE value = ?1))\
+    OR\
+    (NOT json_valid(_fu.contact_pubkeys) AND INSTR(',' || _fu.contact_pubkeys || ',', ',' || ?1 || ',') > 0)\
+  ))) \
 ON CONFLICT(pubkey) DO UPDATE SET \
   name=excluded.name, display_name=excluded.display_name, about=excluded.about, \
   picture=excluded.picture, banner=excluded.banner, nip05=excluded.nip05, lud16=excluded.lud16, \
   updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, contact_pubkeys=excluded.contact_pubkeys, \
   relay_list=excluded.relay_list, \
-  follower_count=CASE \
-    WHEN json_valid(excluded.contact_pubkeys) THEN json_array_length(excluded.contact_pubkeys) \
-    WHEN excluded.contact_pubkeys IS NOT NULL AND length(trim(excluded.contact_pubkeys)) > 0 THEN (length(excluded.contact_pubkeys) - length(replace(excluded.contact_pubkeys, ',', '')) + 1) \
-    ELSE 0 \
-  END";
+  follower_count=(SELECT COUNT(*) FROM users _fu WHERE _fu.pubkey != excluded.pubkey AND (\
+    (json_valid(_fu.contact_pubkeys) AND EXISTS (SELECT 1 FROM json_each(_fu.contact_pubkeys) WHERE value = excluded.pubkey))\
+    OR\
+    (NOT json_valid(_fu.contact_pubkeys) AND INSTR(',' || _fu.contact_pubkeys || ',', ',' || excluded.pubkey || ',') > 0)\
+  ))";
 
 pub struct UserRepo<'a> {
     db: &'a Database,

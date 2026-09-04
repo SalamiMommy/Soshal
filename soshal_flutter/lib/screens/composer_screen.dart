@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
 import '../services/feed_service.dart';
 import '../services/media_service.dart';
+import '../services/messaging_service.dart';
 import '../services/search_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
@@ -619,9 +620,18 @@ class _ComposerScreenState extends State<ComposerScreen> {
                 ),
                 TextButton(
                   onPressed: () {
-                    if (controller.text.isNotEmpty) {
-                      setState(() => _mentions.add(controller.text));
-                      Navigator.of(context).pop();
+                    final input = controller.text.trim();
+                    if (input.isNotEmpty) {
+                      try {
+                        final resolved =
+                            context.read<MessagingService>().resolvePubkey(input);
+                        if (resolved.isNotEmpty) {
+                          setState(() => _mentions.add(resolved));
+                          Navigator.of(context).pop();
+                        }
+                      } catch (_) {
+                        // unresolved: do nothing (don't pop)
+                      }
                     }
                   },
                   child: const Text('Add'),

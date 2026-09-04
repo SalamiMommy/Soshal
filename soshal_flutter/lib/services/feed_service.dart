@@ -41,7 +41,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
 
   /// Fetch feed events with pagination (supports cursor or offset)
   Future<List<FeedPost>> fetchFeed(
-      {int limit = 20, int offset = 0, int? cursorCreatedAt}) async {
+      {int limit = 20, int offset = 0, int? cursorCreatedAt, String? cursorId}) async {
     try {
       _isLoading = true;
 
@@ -50,11 +50,12 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         'offset': offset,
         'filter_type': 'all',
         if (cursorCreatedAt != null) 'cursor_created_at': cursorCreatedAt,
+        if (cursorId != null) 'cursor_id': cursorId,
       });
       final json = RustLib.instance.api
           .crateFfiFeedFeedFetchEvents(optionsJson: options);
       final newPosts = await _decodePosts(json);
-      if (offset == 0 && cursorCreatedAt == null) {
+      if (offset == 0 && cursorCreatedAt == null && cursorId == null) {
         _posts = newPosts;
         _ranked = false;
         _rankedPosts = [];
@@ -129,9 +130,13 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     _loadingMore = true;
     try {
       final lastCreatedAt = _posts.isNotEmpty ? _posts.last.createdAt : null;
+      final lastEventId = _posts.isNotEmpty ? _posts.last.eventId : null;
       final offset = _currentOffset + limit;
       await fetchFeed(
-          limit: limit, offset: offset, cursorCreatedAt: lastCreatedAt);
+          limit: limit,
+          offset: offset,
+          cursorCreatedAt: lastCreatedAt,
+          cursorId: lastEventId);
     } finally {
       _loadingMore = false;
     }

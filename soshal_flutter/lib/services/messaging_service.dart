@@ -15,6 +15,7 @@ class MessagingService extends ChangeNotifier
     with LastErrorMixin, DeferredNotify {
   static final _hexRegex = RegExp(r'^[0-9a-f]{64}$');
   final Map<String, List<DirectMessage>> _conversations = {};
+  final Map<String, int> _readWatermarks = {};
   final List<EphemeralMedia> _pendingEphemeral = [];
   late List<EphemeralMedia> _cachedPendingEphemeral =
       List.unmodifiable(_pendingEphemeral);
@@ -26,6 +27,7 @@ class MessagingService extends ChangeNotifier
   static const _storeFlushBatchSize = 8;
 
   Map<String, List<DirectMessage>> get conversations => _conversations;
+  Map<String, int> get readWatermarks => _readWatermarks;
   List<EphemeralMedia> get pendingEphemeral => _cachedPendingEphemeral;
 
   @override
@@ -192,6 +194,7 @@ class MessagingService extends ChangeNotifier
   Future<String> sendGroupDm({
     required String content,
     required List<String> participantPubkeys,
+    String senderPubkey = '',
   }) async {
     try {
       final sorted = [...participantPubkeys]..sort();
@@ -201,7 +204,22 @@ class MessagingService extends ChangeNotifier
         groupId: sorted.join(','),
         participantPubkeysJson: jsonEncode(sorted),
       );
+
+      // Cache sent message locally, keyed by groupId.
+      final groupId = sorted.join(',');
+      final message = DirectMessage(
+        id: eventId,
+        sender: senderPubkey,
+        recipient: groupId,
+        content: content,
+        createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        decrypted: true,
+        isOwn: true,
+      );
+      _conversations.putIfAbsent(groupId, () => []).add(message);
+
       clearLastError();
+      notifyDeferred();
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
@@ -306,10 +324,10 @@ class MessagingService extends ChangeNotifier
   /// Mark conversation as read
   Future<void> markAsRead(String otherPubkey) async {
     try {
-      if (_conversations.containsKey(otherPubkey)) {
-        clearLastError();
-        notifyDeferred();
-      }
+      _readWatermarks[otherPubkey] =
+          DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      clearLastError();
+      notifyDeferred();
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();

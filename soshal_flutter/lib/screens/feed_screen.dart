@@ -1165,6 +1165,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         url = await _resolveBlobUrl(context, widget.url, widget.blobHash);
       } catch (e) {
         if (mounted) setState(() => _error = '$e');
+        return;
       }
       _cacheResolvedUrl(widget.postId, mediaId, url);
     }
@@ -1176,8 +1177,13 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
     }
     final controller = VideoPlayerController.networkUrl(Uri.parse(url));
     _controller = controller;
-    await controller.initialize();
-    if (mounted) setState(() => _isInitialized = true);
+    try {
+      await controller.initialize();
+      if (mounted) setState(() => _isInitialized = true);
+    } catch (e) {
+      controller.dispose();
+      if (mounted) setState(() => _error = '$e');
+    }
   }
 
   @override

@@ -717,27 +717,50 @@ fn user_upsert_in_and_get_by_pubkey_in() {
         relay_list: "[]".into(),
     };
     let conn = db.conn().unwrap();
+
+    // Insert follower rows first so the INSERT subquery above counts them.
+    soshal_db_core::query::execute(
+        &conn,
+        "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('pkj', '', '[\"pkTx\",\"other\"]')",
+        (),
+    )
+    .unwrap();
+    soshal_db_core::query::execute(
+        &conn,
+        "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('pkc', '', 'pkTx,unrelated')",
+        (),
+    )
+    .unwrap();
+    soshal_db_core::query::execute(
+        &conn,
+        "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('pkn', '', '[\"other\"]')",
+        (),
+    )
+    .unwrap();
+
     soshal_db_core::query::with_tx(&conn, |tx| {
         let r = &repo;
         async move {
             r.upsert_in(&tx, &user).await?;
             let found = r.get_by_pubkey_in(&tx, "pkTx").await?.unwrap();
             assert_eq!(found.name.as_deref(), Some("tx"));
+            // second upsert exercises the ON CONFLICT recompute branch
+            r.upsert_in(&tx, &user).await?;
             tx.commit().await?;
             Ok(())
         }
     })
     .unwrap();
-    drop(conn);
+
     let follower_count: i64 = soshal_db_core::query::query_first(
-        &db.conn().unwrap(),
+        &conn,
         "SELECT follower_count FROM users WHERE pubkey = 'pkTx'",
         (),
         |r| r.get(0),
     )
     .unwrap()
     .unwrap();
-    assert_eq!(follower_count, 3, "derived from contact_pubkeys length");
+    assert_eq!(follower_count, 2, "counts other users following pkTx");
 }
 
 #[test]
@@ -774,4 +797,37 @@ fn zap_upsert_in_derives_msats() {
     .unwrap()
     .unwrap();
     assert_eq!(msats, 21_000, "amount * 1000");
+
+    // Re-upsert same id with a new amount: amount_msat must be refreshed,
+    // not left stale from the original insert.
+    let bumped = ZapRow {
+        id: "z1".into(),
+        pubkey: "pkSender".into(),
+        recipient_pubkey: "pkRecv".into(),
+        event_id: Some("ev1".into()),
+        amount: 42,
+        content: Some("thanks".into()),
+        created_at: 1000,
+        zap_type: "public".into(),
+    };
+    let conn = db.conn().unwrap();
+    soshal_db_core::query::with_tx(&conn, |tx| {
+        let r = &repo;
+        async move {
+            r.upsert_in(&tx, &bumped).await?;
+            tx.commit().await?;
+            Ok(())
+        }
+    })
+    .unwrap();
+    drop(conn);
+    let msats: i64 = soshal_db_core::query::query_first(
+        &db.conn().unwrap(),
+        "SELECT amount_msat FROM zaps WHERE id = 'z1'",
+        (),
+        |r| r.get(0),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(msats, 42_000, "amount_msat refreshed on conflict");
 }

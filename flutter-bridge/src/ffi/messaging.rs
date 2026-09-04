@@ -168,24 +168,31 @@ pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, Stri
             (),
             |r| r.get(0),
         )?;
-        let mut seen = std::collections::HashSet::new();
-        let mut peers: Vec<String> = Vec::new();
-        for cid in cids {
-            // Scope to conversations this account is part of: the
-            // `conversations` table (v011) holds rows across ALL accounts on
-            // this device, so skipping the pubkey-scope here would leak the
-            // other accounts' DM partners to the active caller.
-            if !cid.contains(&pubkey) {
-                continue;
-            }
-            for p in cid.trim_start_matches("conv:").split(':') {
-                if p != pubkey && seen.insert(p.to_string()) {
-                    peers.push(p.to_string());
-                }
+        Ok(extract_peers_from_cids(&cids, &pubkey))
+    })
+}
+
+/// Given a list of `conv:<pkA>:<pkB>` conversation ids and a pubkey,
+/// return the unique peer pubkeys (i.e. the other participant in each
+/// conversation the given pubkey belongs to). Uses exact part matching
+/// instead of substring `contains` — hex pubkeys can be prefixes of each
+/// other, so `"abc".contains("ab")` would wrongly include a conversation
+/// for a different account.
+pub(crate) fn extract_peers_from_cids(cids: &[String], pubkey: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut peers: Vec<String> = Vec::new();
+    for cid in cids {
+        let parts: Vec<&str> = cid.trim_start_matches("conv:").split(':').collect();
+        if !parts.contains(&pubkey) {
+            continue;
+        }
+        for p in parts {
+            if p != pubkey && seen.insert(p.to_string()) {
+                peers.push(p.to_string());
             }
         }
-        Ok(peers)
-    })
+    }
+    peers
 }
 
 /// Store a received DM row locally (called by the sync loop after
@@ -351,5 +358,43 @@ mod tests {
     async fn test_empty_content_rejected() {
         let result = messaging_send_dm("".to_string(), "a".repeat(64)).await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_peers_hex_prefix_no_collision() {
+        // pubkey "ab" is a hex prefix of "abcd" — substring `contains` would
+        // wrongly match the "abcd" conversation. Exact part matching must NOT.
+        let cids = vec![
+            conv_id("ab", "ef"),
+            conv_id("abcd", "1234"),
+            conv_id("ab", "5678"),
+        ];
+        let peers = extract_peers_from_cids(&cids, "ab");
+        assert!(
+            peers.contains(&"ef".to_string()),
+            "should include exact match: {peers:?}"
+        );
+        assert!(
+            peers.contains(&"5678".to_string()),
+            "should include second exact match: {peers:?}"
+        );
+        assert!(
+            !peers.contains(&"1234".to_string()),
+            "must NOT include prefix-collision peer: {peers:?}"
+        );
+    }
+
+    #[test]
+    fn test_extract_peers_dedup() {
+        let cids = vec![conv_id("ab", "cd"), conv_id("ab", "cd")];
+        let peers = extract_peers_from_cids(&cids, "ab");
+        assert_eq!(peers, vec!["cd".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_peers_no_match() {
+        let cids = vec![conv_id("ab", "cd")];
+        let peers = extract_peers_from_cids(&cids, "zz");
+        assert!(peers.is_empty());
     }
 }

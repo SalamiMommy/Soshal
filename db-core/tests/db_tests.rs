@@ -1056,6 +1056,50 @@ fn test_poll_crud_and_votes() {
 }
 
 #[test]
+fn test_poll_revote_new_id_updates_option() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = PollRepo::new(&db);
+
+    let poll = PollRow {
+        id: "poll2".into(),
+        pubkey: "pk1".into(),
+        question: "Pick one?".into(),
+        options: "[\"a\",\"b\"]".into(),
+        expires_at: 2000,
+        closed: false,
+        created_at: 1000,
+    };
+    repo.upsert_poll(&poll).unwrap();
+
+    let first = PollVoteRow {
+        id: "v1".into(),
+        poll_id: "poll2".into(),
+        option_id: 1,
+        voter_pubkey: "voter1".into(),
+        voted_at: 1500,
+    };
+    repo.vote(&first).unwrap();
+    assert!(repo.has_voted("poll2", "voter1").unwrap());
+    assert_eq!(repo.option_count("poll2", 1).unwrap(), 1);
+
+    // Re-vote with a DIFFERENT id + new option: must not error (unique
+    // (poll_id, voter_pubkey) conflict) and must switch the stored option.
+    let second = PollVoteRow {
+        id: "v2".into(),
+        poll_id: "poll2".into(),
+        option_id: 2,
+        voter_pubkey: "voter1".into(),
+        voted_at: 1600,
+    };
+    repo.vote(&second).unwrap();
+
+    assert!(repo.has_voted("poll2", "voter1").unwrap());
+    assert_eq!(repo.option_count("poll2", 1).unwrap(), 0);
+    assert_eq!(repo.option_count("poll2", 2).unwrap(), 1);
+}
+
+#[test]
 fn test_spam_report_crud() {
     let db = Database::open_in_memory().unwrap();
     db.migrate().unwrap();
@@ -2101,4 +2145,140 @@ fn test_group_thread_reaction_toggle_and_sort() {
         .unwrap();
     assert!(summary.is_empty());
     assert!(repo.delete_reply("rpl_1").is_ok());
+}
+
+#[test]
+fn test_message_cursor_pagination_no_gap_same_ts() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = MessageRepo::new(&db);
+
+    // 5 messages, 3 sharing the same ts to stress the keyset cursor.
+    let at_new = 3000;
+    let at_boundary = 2000;
+    let at_old = 1000;
+    for (i, (id, ts)) in [
+        ("m10", at_new),
+        ("m9", at_boundary),
+        ("m8", at_boundary),
+        ("m7", at_boundary),
+        ("m6", at_old),
+    ]
+    .iter()
+    .enumerate()
+    {
+        repo.upsert(&MessageRow {
+            id: (*id).into(),
+            conversation_id: "conv:gap".into(),
+            pubkey: "pk1".into(),
+            content: format!("c{}", i),
+            created_at: *ts,
+            tags_json: "[]".into(),
+            reply_to: None,
+            sync_status: "synced".into(),
+            is_deleted: false,
+        })
+        .unwrap();
+    }
+
+    // First page: limit 2, newest first → m10, m9.
+    let page1 = repo
+        .get_conversation("conv:gap", 2, None)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.id)
+        .collect::<Vec<_>>();
+    assert_eq!(page1, vec!["m10", "m9"]);
+
+    // Next page keyset cursor = (created_at=2000, id="m9").
+    let page2 = repo
+        .get_conversation("conv:gap", 2, Some((at_boundary, "m9".to_string())))
+        .unwrap()
+        .into_iter()
+        .map(|m| m.id)
+        .collect::<Vec<_>>();
+    // Same-ts boundary rows follow by id DESC (m8 > m9) then older rows.
+    assert_eq!(page2, vec!["m8", "m7"]);
+
+    // Final page trailing rows after (2000, "m7").
+    let page3 = repo
+        .get_conversation("conv:gap", 2, Some((at_boundary, "m7".to_string())))
+        .unwrap()
+        .into_iter()
+        .map(|m| m.id)
+        .collect::<Vec<_>>();
+    assert_eq!(page3, vec!["m6"]);
+
+    // No dup no skip across all pages.
+    let all: Vec<String> = page1.into_iter().chain(page2).chain(page3).collect();
+    assert_eq!(all, vec!["m10", "m9", "m8", "m7", "m6"]);
+}
+
+#[test]
+fn test_post_cursor_pagination_no_gap_same_ts() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = PostRepo::new(&db);
+
+    // 5 posts; ids chosen so id DESC order within a ts group is deterministic
+    // ("post_c" > "post_b" > "post_a").
+    let at_new = 3000;
+    let at_boundary = 2000;
+    let at_old = 1000;
+    let insert = |id: &str, ts: i64| {
+        repo.upsert(&PostRow {
+            id: id.into(),
+            pubkey: "pk1".into(),
+            content: id.into(),
+            kind: 1,
+            created_at: ts,
+            tags_json: "[]".into(),
+            sig: None,
+            reply_to: None,
+            root_id: None,
+            mentioned_pubkeys: "[]".into(),
+            mentioned_hashtags: "[]".into(),
+            subject: None,
+            sync_status: "synced".into(),
+            is_deleted: false,
+            scheduled_at: None,
+            freenet_key: None,
+            is_freenet_native: true,
+            rsvp_event_id: None,
+        })
+        .unwrap();
+    };
+    insert("post_d", at_new);
+    insert("post_c", at_boundary);
+    insert("post_b", at_boundary);
+    insert("post_a", at_boundary);
+    insert("post_0", at_old);
+
+    // Page 1 starts at the top: cursor timestamp above all rows.
+    let page1 = repo
+        .get_paged_meta_cursor(i64::MAX, "", 2)
+        .unwrap()
+        .into_iter()
+        .map(|p| p.id)
+        .collect::<Vec<_>>();
+    assert_eq!(page1, vec!["post_d", "post_c"]);
+
+    let page2 = repo
+        .get_paged_meta_cursor(at_boundary, "post_c", 2)
+        .unwrap()
+        .into_iter()
+        .map(|p| p.id)
+        .collect::<Vec<_>>();
+    assert_eq!(page2, vec!["post_b", "post_a"]);
+
+    let page3 = repo
+        .get_paged_meta_cursor(at_boundary, "post_a", 2)
+        .unwrap()
+        .into_iter()
+        .map(|p| p.id)
+        .collect::<Vec<_>>();
+    assert_eq!(page3, vec!["post_0"]);
+
+    let all: Vec<String> = page1.into_iter().chain(page2).chain(page3).collect();
+    assert_eq!(all, vec!["post_d", "post_c", "post_b", "post_a", "post_0"]);
 }
