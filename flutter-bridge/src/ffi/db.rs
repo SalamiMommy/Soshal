@@ -218,16 +218,36 @@ pub fn db_force_migrate() -> Result<String, String> {
             })?;
 
             let _ = block_on(conn.execute("PRAGMA foreign_keys = OFF", ()));
-            for table in tables.iter().filter(|n| {
-                let mut chars = n.chars();
-                match chars.next() {
-                    Some(c) if c.is_ascii_alphabetic() || c == '_' => {
-                        chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+            // L6 fix: wrap all DROP statements in a single transaction so that
+            // a mid-loop crash cannot leave the schema partially wiped.
+            // Also quote each table name (defense-in-depth; names are already
+            // filtered by the identifier regex above, but quoting is free).
+            block_on(conn.execute("BEGIN IMMEDIATE", ()))
+                .map_err(|e| DbError::Migration(format!("begin transaction: {e}")))?;
+            let drop_result: Result<(), DbError> = (|| {
+                for table in tables.iter().filter(|n| {
+                    let mut chars = n.chars();
+                    match chars.next() {
+                        Some(c) if c.is_ascii_alphabetic() || c == '_' => {
+                            chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+                        }
+                        _ => false,
                     }
-                    _ => false,
+                }) {
+                    block_on(conn.execute(&format!("DROP TABLE IF EXISTS \"{table}\""), ()))
+                        .map_err(|e| DbError::Migration(format!("drop {table}: {e}")))?;
                 }
-            }) {
-                let _ = block_on(conn.execute(&format!("DROP TABLE IF EXISTS {}", table), ()));
+                Ok(())
+            })();
+            match drop_result {
+                Ok(()) => {
+                    let _ = block_on(conn.execute("COMMIT", ()));
+                }
+                Err(e) => {
+                    let _ = block_on(conn.execute("ROLLBACK", ()));
+                    let _ = block_on(conn.execute("PRAGMA foreign_keys = ON", ()));
+                    return Err(e);
+                }
             }
             let _ = block_on(conn.execute("PRAGMA foreign_keys = ON", ()));
             tables
@@ -316,6 +336,34 @@ fn raw_sql_allowed(sql: &str) -> bool {
             c => norm.push(c),
         }
     }
+
+    // L4 fix: strip SQLite hex string literals (`x'…'` / `X'…'`) before the
+    // keyword check.  Without this, `x'64726f70207461626c65'` (= "drop table")
+    // could encode keyword bytes inside a CAST or column expression and slip
+    // through the blocklist.  Replace each hex literal with a single space so
+    // that surrounding tokens remain correctly delimited.
+    let norm = {
+        let mut out = String::with_capacity(norm.len());
+        let mut nc = norm.chars().peekable();
+        while let Some(c) = nc.next() {
+            if (c == 'x' || c == 'X') && nc.peek() == Some(&'\'') {
+                nc.next(); // consume the opening quote
+                           // consume everything until the closing quote (or end of string)
+                for hc in nc.by_ref() {
+                    if hc == '\'' {
+                        break;
+                    }
+                }
+                if !out.ends_with(' ') {
+                    out.push(' ');
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    };
+
     let lower = norm.trim().to_lowercase();
     // The raw console is only meant for single SELECT/DELETE/UPDATE
     // statements. Reject multi-statement input, schema mutation, writes
@@ -414,9 +462,26 @@ pub fn db_count(table: String) -> Result<i64, String> {
     if !COUNTABLE_TABLES.contains(&table.as_str()) {
         return Err("db: unknown table".to_string());
     }
+    // H2 fix: validate the identifier with the same character-class filter used
+    // in db_storage_stats, and quote it in the SQL string.  The COUNTABLE_TABLES
+    // check above is the primary gate; this is defense-in-depth against any
+    // future allowlist expansion that accidentally includes an unusual name.
+    let valid_ident = {
+        let mut chars = table.chars();
+        match chars.next() {
+            Some(c) if c.is_ascii_alphabetic() || c == '_' => {
+                chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+            }
+            _ => false,
+        }
+    };
+    if !valid_ident {
+        return Err("db: invalid table identifier".to_string());
+    }
     with_db(|db| {
         let conn = db.conn()?;
-        let sql = format!("SELECT COUNT(*) AS c FROM {table}");
+        // Table name is double-quoted (SQL standard identifier quoting).
+        let sql = format!("SELECT COUNT(*) AS c FROM \"{table}\"");
         let count = soshal_db_core::query::query_first(&conn, &sql, (), |r| {
             let n: i64 = r.get(0)?;
             Ok(n)

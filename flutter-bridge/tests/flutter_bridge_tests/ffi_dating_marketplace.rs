@@ -1,5 +1,4 @@
-#[path = "common/mod.rs"]
-mod test_util;
+use crate::test_util;
 
 use soshal_flutter_bridge::*;
 fn lock() -> std::sync::MutexGuard<'static, ()> {

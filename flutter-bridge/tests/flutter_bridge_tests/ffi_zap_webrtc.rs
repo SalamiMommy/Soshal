@@ -1,6 +1,3 @@
-#[path = "common/mod.rs"]
-mod test_util;
-
 // Tests for Zap (NWC/LNURL) and WebRTC FFI bridge modules
 // Run with: cargo test -p soshal-flutter-bridge --test ffi_zap_webrtc_tests
 #[cfg(test)]

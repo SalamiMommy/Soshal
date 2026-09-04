@@ -1,6 +1,3 @@
-#[path = "common/mod.rs"]
-mod test_util;
-
 #[cfg(test)]
 mod ffi_media_streaming_tests {
     use soshal_flutter_bridge::*;

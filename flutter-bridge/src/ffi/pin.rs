@@ -176,11 +176,27 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Verify the PIN with full lockout enforcement. Returns Ok(true) on a
-/// correct PIN, Ok(false) on wrong PIN / lockout / error.
+/// Verify the PIN with full lockout enforcement.
+///
+/// Returns:
+/// - `Ok(true)`  — PIN correct, account unlocked.
+/// - `Ok(false)` — PIN incorrect (wrong digits).
+/// - `Err(_)`    — Account is locked out or permanently locked; the error
+///                 message describes the reason. Callers must distinguish
+///                 this from a wrong PIN to show the correct UI state.
+///
+/// (M3 fix: lockout/permanent-lock errors are no longer masked as Ok(false).)
 #[frb(serialize)]
 pub async fn pin_verify(pin: String) -> Result<bool, String> {
-    Ok(check_pin_with_lockout(&pin).is_ok())
+    match check_pin_with_lockout(&pin) {
+        Ok(()) => Ok(true),
+        // Plain wrong PIN: return Ok(false) so the UI can increment an
+        // on-screen attempt counter without treating it as a hard error.
+        Err(e) if e == "incorrect PIN" => Ok(false),
+        // Lockout or permanent-lock: propagate so the caller can show the
+        // appropriate "try again later" / "account disabled" screen.
+        Err(e) => Err(e),
+    }
 }
 
 /// Clear the PIN after verifying the current one. Async: the lockout check
@@ -317,9 +333,13 @@ mod tests {
         let now = soshal_common_core::util::now_ms() as i64;
         assert!(until > now, "lockoutUntil {until} should be in the future");
         assert_eq!(s["permanentLocked"], false);
+        // M3 fix: a PIN attempt during lockout now returns Err (not Ok(false)).
+        let err = pin_verify("1357".to_string())
+            .await
+            .expect_err("correct PIN should be blocked during lockout");
         assert!(
-            !pin_verify("1357".to_string()).await.unwrap(),
-            "correct PIN blocked during lockout"
+            err.contains("too many incorrect") || err.contains("locked"),
+            "error should describe lockout, got: {err}"
         );
     }
 
@@ -331,14 +351,20 @@ mod tests {
         let _p = fresh_db();
         assert!(pin_set("1357".to_string()).await.unwrap());
         for _ in 0..PIN_HARD_LIMIT {
-            assert!(!pin_verify("0000".to_string()).await.unwrap());
+            // Each attempt returns either Ok(false) (wrong PIN pre-lockout)
+            // or Err (once the account is locked). Both are fine here.
+            let _ = pin_verify("0000".to_string()).await;
         }
         let s = state_json();
         assert_eq!(s["attemptCount"], PIN_HARD_LIMIT);
         assert_eq!(s["permanentLocked"], true);
+        // M3 fix: permanently locked returns Err, not Ok(false).
+        let err = pin_verify("1357".to_string())
+            .await
+            .expect_err("correct PIN should be rejected after permanent lock");
         assert!(
-            !pin_verify("1357".to_string()).await.unwrap(),
-            "correct PIN rejected after permanent lock"
+            err.contains("permanently locked") || err.contains("locked"),
+            "error should describe permanent lock, got: {err}"
         );
     }
 
@@ -356,7 +382,14 @@ mod tests {
         assert!(pin_has().unwrap());
         assert!(pin_clear("97531".to_string()).await.unwrap());
         assert!(!pin_has().unwrap());
-        assert!(!pin_verify("97531".to_string()).await.unwrap());
+        // M3 fix: "no PIN configured" now propagates as Err (not Ok(false)).
+        let err = pin_verify("97531".to_string())
+            .await
+            .expect_err("should error when no PIN is configured");
+        assert!(
+            err.contains("no PIN configured"),
+            "expected 'no PIN configured', got: {err}"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -372,6 +405,13 @@ mod tests {
         })
         .unwrap();
         let _ = p;
-        assert!(!pin_verify("1357".to_string()).await.unwrap());
+        // M3 fix: corrupt storage now propagates as Err (not Ok(false)).
+        let err = pin_verify("1357".to_string())
+            .await
+            .expect_err("corrupt storage should return Err");
+        assert!(
+            err.contains("corrupt") || err.contains("invalid"),
+            "expected corrupt-storage error, got: {err}"
+        );
     }
 }

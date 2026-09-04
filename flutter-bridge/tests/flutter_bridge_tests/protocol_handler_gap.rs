@@ -2,9 +2,6 @@
 //! media local-cache reads, avatar identicon fallback, traversal guards,
 //! relay status without a client.
 
-#[path = "common/mod.rs"]
-mod test_util;
-
 #[cfg(test)]
 mod protocol_handler_gap_tests {
     use soshal_flutter_bridge::*;
@@ -67,7 +64,8 @@ mod protocol_handler_gap_tests {
             assert!(
                 err.contains("Invalid media URL")
                     || err.contains("Fetch failed")
-                    || err.contains("blossom server does not resolve"),
+                    || err.contains("blossom server does not resolve")
+                    || err.contains("Blossom blob hash without a server URL is not supported"),
                 "{err}"
             );
             let err = protocol_handler::protocol_handle_request(

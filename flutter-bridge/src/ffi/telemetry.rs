@@ -26,8 +26,14 @@ pub fn telemetry_init(path: String, capacity_mb: u32) -> Result<(), String> {
 }
 
 /// Append a record. kind: 1=State 2=Ipc 3=Network 4=Ffi 5=App 6=Crash.
+///
+/// `msg` is capped at 4096 bytes (M5 fix): oversized messages are rejected
+/// rather than written, preventing disk exhaustion and ring eviction abuse.
 #[frb(sync, serialize)]
 pub fn telemetry_record(kind: u8, msg: String) -> Result<(), String> {
+    if msg.len() > 4096 {
+        return Err("telemetry message too long (max 4096 bytes)".to_string());
+    }
     let kind = match kind {
         1 => RecordKind::State,
         2 => RecordKind::Ipc,

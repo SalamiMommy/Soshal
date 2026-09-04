@@ -1,6 +1,3 @@
-#[path = "common/mod.rs"]
-mod test_util;
-
 #[cfg(test)]
 mod ffi_tests {
     use soshal_flutter_bridge::*;

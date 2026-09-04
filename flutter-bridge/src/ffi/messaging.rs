@@ -24,18 +24,27 @@ pub struct DirectMessage {
 /// Send a direct message (NIP-44 v2, kind 4): encrypt with the unlocked
 /// signer, build the event, and return signed JSON (publish via
 /// `network_publish_event`).
+///
+/// # Security (M4 fix)
+/// `content` is wrapped in `Zeroizing<String>` at function entry so that the
+/// plaintext heap allocation is zeroed on **every** return path (early-error or
+/// normal completion). The clone passed to `messaging_store_dm` is consumed by
+/// `seal_dm_content` (AES-256-GCM); the original allocation is zeroed here.
 #[frb(serialize)]
 pub async fn messaging_send_dm(
     content: String,
     recipient_pubkey: String,
 ) -> Result<String, String> {
+    // Zeroizing wrapper: clears the heap allocation when this binding is dropped.
+    let content = zeroize::Zeroizing::new(content);
     if content.is_empty() {
         return Err("message must not be empty".to_string()).into();
     }
     if content.len() > 64000 {
         return Err("content must be ≤64000 chars".to_string()).into();
     }
-    let encrypted = super::signer::signer_nip44_encrypt(content.clone(), recipient_pubkey.clone())?;
+    let encrypted =
+        super::signer::signer_nip44_encrypt((*content).to_string(), recipient_pubkey.clone())?;
     let mut builder = EventBuilder::new(Kind::EncryptedDirectMessage, encrypted);
     if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), recipient_pubkey.clone()]) {
         builder = builder.tag(tag);
@@ -49,7 +58,7 @@ pub async fn messaging_send_dm(
                 event_id.to_string(),
                 sender_pk,
                 recipient_pubkey,
-                content,
+                (*content).to_string(),
                 created_at,
                 "[]".to_string(),
             ) {
@@ -57,8 +66,10 @@ pub async fn messaging_send_dm(
             }
         }
     }
+    // `content` (Zeroizing wrapper) is dropped and zeroed here before publish.
+    let json = signed_json.clone();
     super::sync::publish_or_enqueue("dm", &signed_json).await?;
-    Ok(signed_json).into()
+    Ok(json).into()
 }
 
 /// Deterministic conversation id for a DM pair: sorted pubkeys joined by

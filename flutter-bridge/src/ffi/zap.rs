@@ -94,6 +94,22 @@ fn clear_pending_payment() {
 /// Shared NWC URI fixture used by unit and integration tests only.
 /// Not included in release builds to avoid shipping a wallet secret in
 /// the production binary.
+///
+/// # SECURITY — DO NOT REPLACE THE KEY
+///
+/// The `secret=f0f0f0…` value is a **synthetic, all-`f0` pattern** that is
+/// NOT a real Nostr Wallet Connect credential. It is intentionally trivial
+/// so that it cannot accidentally authenticate against any real wallet.
+///
+/// **Never substitute a real NWC secret here.** Doing so would:
+/// 1. Commit a live wallet credential to git history (permanent, public).
+/// 2. Embed it in every debug build's symbol table.
+/// 3. Expose it to anyone who can read the repository.
+///
+/// If you need to run integration tests against a real wallet, use a
+/// dedicated test-only wallet with no real funds and inject the URI via
+/// an environment variable (`TEST_NWC_URI`), never via a source constant.
+// nosec: test-only synthetic key — not a real credential.
 #[cfg(test)]
 pub const NWC_URI: &str = "nostr+walletconnect://abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789?relay=wss://relay.damus.io&secret=f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";
 

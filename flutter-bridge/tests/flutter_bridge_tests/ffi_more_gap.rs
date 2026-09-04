@@ -1,9 +1,6 @@
 //! FFI gap tests (round 2): search index, ephemeral media, notifications,
 //! outbox queue, events reminders/interest scoring.
 
-#[path = "common/mod.rs"]
-mod test_util;
-
 #[cfg(test)]
 mod ffi_more_gap_tests {
     use soshal_flutter_bridge::*;

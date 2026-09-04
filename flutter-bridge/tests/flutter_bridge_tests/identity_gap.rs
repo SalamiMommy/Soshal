@@ -3,9 +3,6 @@
 //! client, so success paths are asserted as far as `relay client not
 //! initialized`.
 
-#[path = "common/mod.rs"]
-mod test_util;
-
 #[cfg(test)]
 mod identity_gap_tests {
     use soshal_flutter_bridge::*;

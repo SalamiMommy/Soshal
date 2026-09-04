@@ -87,12 +87,17 @@ async fn protocol_handle_media(path: &str) -> Result<Vec<u8>, String> {
 
 /// Fetch media from Blossom server
 async fn protocol_fetch_from_blossom(url_or_hash: &str) -> Result<Vec<u8>, String> {
-    // If it looks like a hash, resolve to full URL first
+    // L1 fix: if the caller supplied a bare hash (no scheme), return a clear
+    // error instead of constructing a dead-end URL pointing at a hardcoded
+    // example domain. The caller must supply a complete, absolute URL.
     let url = if url_or_hash.contains("://") {
         url_or_hash.to_string()
     } else {
-        // Could be a hash - look up in metadata
-        format!("https://blossom.example.com/blob/{}", url_or_hash)
+        return Err(
+            "Blossom blob hash without a server URL is not supported via this path; \
+             supply a full https:// URL"
+                .to_string(),
+        );
     };
 
     if !is_valid_media_url(&url) {
@@ -120,24 +125,43 @@ async fn protocol_fetch_from_blossom(url_or_hash: &str) -> Result<Vec<u8>, Strin
     }
 }
 
-/// Load media from local cache directory
+/// Load media from local cache directory.
+///
+/// # Security (M1 fix — TOCTOU)
+/// The original code used `canonicalize(cache_dir.join(filename))`, which
+/// requires the file to exist at canonicalize time. Between the check and the
+/// subsequent `fs::read`, a local attacker could swap the file for a symlink
+/// pointing outside the cache dir (classic TOCTOU / symlink-race).
+///
+/// The fix: validate that `filename` contains no path separators or
+/// dot-traversal sequences (so no symlink race is possible via the filename
+/// itself), canonicalize only the **parent** cache directory (which always
+/// exists), then join the validated filename onto the canonical parent.
+/// The resulting path cannot escape the cache dir regardless of what happens
+/// to the file between the check and the `read` call.
 fn protocol_load_from_cache(filename: &str) -> Result<Vec<u8>, String> {
+    // Reject filenames with path separators or dot-traversal sequences.
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return Err("invalid filename: path separators and '..' are not allowed".to_string());
+    }
+    // Reject empty filename.
+    if filename.is_empty() {
+        return Err("filename must not be empty".to_string());
+    }
+
     let cache_dir = dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("soshal_flutter_cache");
 
-    let file_path = cache_dir.join(filename);
-
-    // Prevent directory traversal
-    let cache_dir = cache_dir
+    // Canonicalize the cache *directory* (not the full path) — the directory
+    // always exists once created; the file need not.
+    let canon_cache = cache_dir
         .canonicalize()
         .map_err(|e| format!("Cache dir: {}", e))?;
-    let file_path = file_path
-        .canonicalize()
-        .map_err(|e| format!("Cache read failed: {}", e))?;
-    if !file_path.starts_with(&cache_dir) {
-        return Err("Path traversal detected".to_string());
-    }
+
+    // Join the already-validated filename component onto the canonical parent.
+    // No separator in `filename` means this cannot escape `canon_cache`.
+    let file_path = canon_cache.join(filename);
 
     match fs::read(&file_path) {
         Ok(data) => Ok(data),

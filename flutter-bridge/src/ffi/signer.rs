@@ -68,6 +68,10 @@ pub fn signer_unlock(mut secret: String) -> Result<String, String> {
     };
     let pk = keys.public_key().to_hex();
     clear_derived_cache();
+    // M2 fix: also clear the NIP-44 conversation key cache on unlock so that
+    // switching to a different identity never reuses cached shared secrets from
+    // the previous one. (signer_lock already does this; unlock must match.)
+    soshal_crypto_core::nip44::clear_conversation_key_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
     SIGNER
         .lock()
@@ -228,7 +232,12 @@ pub fn signer_remove_from_keyring(pubkey: String) -> Result<bool, String> {
 /// Identity-derived symmetric LAN key (HKDF-SHA256 from the unlocked secret),
 /// used by the P2P module for beacon MACs and chunk handshakes. Derived inside
 /// the signer so key bytes never cross FFI.
+///
+/// # Lock ordering
+/// This function acquires `LAN_KEY_CACHE` first, then `SIGNER`. All callers
+/// that touch both statics must follow this order to prevent deadlocks.
 pub(crate) fn lan_key() -> Result<[u8; 32], String> {
+    // LOCK ORDER: LAN_KEY_CACHE → SIGNER (must not be reversed).
     let mut cache = LAN_KEY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(lan) = cache.as_ref() {
         return Ok(*lan);
@@ -258,7 +267,12 @@ pub(crate) fn lan_key() -> Result<[u8; 32], String> {
 
 /// Identity-derived at-rest encryption key (HKDF from the unlocked secret),
 /// used by domain modules to seal key material persisted in SQLite.
+///
+/// # Lock ordering
+/// This function acquires `AT_REST_KEY_CACHE` first, then `SIGNER`.
+/// Must follow the same order as `lan_key` to prevent deadlocks.
 pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
+    // LOCK ORDER: AT_REST_KEY_CACHE → SIGNER (must not be reversed).
     let mut cache = AT_REST_KEY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(rest) = cache.as_ref() {
         return Ok(*rest);
@@ -279,6 +293,14 @@ pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
 
 /// Sign a Schnorr message digest (32 bytes, hex) with the unlocked key.
 /// Returns the 64-byte signature as hex.
+///
+/// # Domain restriction (L2)
+/// The underlying `sign_schnorr_digest` call uses `"blossom-auth"` as a
+/// tagged-hash domain separator. This function is intentionally restricted to
+/// **Blossom HTTP-auth** use (NIP-96 `Authorization: Nostr` header signing).
+/// Do NOT call it for other purposes — different signing contexts require
+/// different domain separators to prevent cross-protocol forgery. Add a new
+/// dedicated function with the correct context tag if a new use case arises.
 #[frb(sync, serialize)]
 pub fn signer_schnorr_sign(message_hex: String) -> Result<String, String> {
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
@@ -297,7 +319,9 @@ pub fn signer_schnorr_sign(message_hex: String) -> Result<String, String> {
     }
 }
 
-/// Sign a text message: hashes with SHA-256 then Schnorr-signs the digest in Rust.
+/// Sign a text message for Blossom HTTP-auth: hashes with SHA-256 then
+/// Schnorr-signs the digest using the `"blossom-auth"` domain separator.
+/// See `signer_schnorr_sign` for the domain restriction note.
 #[frb(sync, serialize)]
 pub fn signer_sign_text(message: String) -> Result<String, String> {
     let hash = soshal_crypto_core::hash::sha256_hex(message.as_bytes());

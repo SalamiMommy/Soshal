@@ -198,20 +198,44 @@ pub fn media_clear_cache(cache_dir: String) -> Result<String, String> {
         return Err("Cache directory does not exist".to_string());
     }
     let canon = std::fs::canonicalize(p).map_err(|e| format!("canonicalize: {e}"))?;
-    if let Ok(db_p) = super::db::db_path() {
-        if !db_p.is_empty() && !db_p.starts_with(':') {
-            if let Some(parent) = std::path::Path::new(&db_p).parent() {
-                if !parent.as_os_str().is_empty() {
-                    if let Ok(canon_parent) = std::fs::canonicalize(parent) {
-                        if !canon.starts_with(&canon_parent)
-                            && !canon.starts_with(std::env::temp_dir())
-                        {
-                            return Err(
-                                "cache_dir must be inside application directory".to_string()
-                            );
+    // M6 fix: always-available safe roots (chunk store + system temp).
+    // These can be checked even before the DB is initialized.
+    let always_safe = [ChunkStore::default_root(), std::env::temp_dir()];
+    let in_safe_root = always_safe.iter().any(|root| canon.starts_with(root));
+    if !in_safe_root {
+        // Not inside a guaranteed-safe root: require the DB to be initialized
+        // so we can verify against the app directory.
+        match super::db::db_path() {
+            Ok(db_p) if !db_p.is_empty() && !db_p.starts_with(':') => {
+                if let Some(parent) = std::path::Path::new(&db_p).parent() {
+                    if !parent.as_os_str().is_empty() {
+                        if let Ok(canon_parent) = std::fs::canonicalize(parent) {
+                            if !canon.starts_with(&canon_parent) {
+                                return Err(
+                                    "cache_dir must be inside application directory or media cache"
+                                        .to_string(),
+                                )
+                                .into();
+                            }
                         }
                     }
                 }
+            }
+            Ok(_) => {
+                // DB path is empty (in-memory): reject — no application dir to check against.
+                return Err(
+                    "cache_dir must be inside the media cache or system temp directory".to_string(),
+                )
+                .into();
+            }
+            Err(_) => {
+                // DB not initialized: reject — no application dir to check against.
+                return Err(
+                    "cache_dir must be inside the media cache or system temp directory \
+                     (database not initialized)"
+                        .to_string(),
+                )
+                .into();
             }
         }
     }
@@ -245,13 +269,21 @@ pub async fn media_upload_blob_file(file_path: String) -> Result<String, String>
         store.save_manifest(&manifest)?;
         manifest
     } else {
-        // Local file path: canonicalize and reject sensitive OS directories to
-        // prevent a compromised Dart caller from exfiltrating files like SSH keys
-        // to an attacker-controlled Blossom server.
+        // Local file path: canonicalize and reject sensitive directories to
+        // prevent a compromised Dart caller from reading SSH keys, cloud
+        // credentials, GPG keys, etc. into the chunk store (from where they
+        // could be exfiltrated via P2P blob requests from a hostile peer).
+        //
+        // H1 fix: two-layer guard:
+        //   Layer 1 — system directories (OS-level sensitive paths).
+        //   Layer 2 — home directory sensitive subdirectories.
         let canon = fs::canonicalize(&file_path).map_err(|e| format!("file path invalid: {e}"))?;
-        // Reject paths inside privileged system directories.
-        const BLOCKED_PREFIXES: &[&str] = &["/etc", "/proc", "/sys", "/root", "/boot", "/dev"];
-        if BLOCKED_PREFIXES
+
+        // Layer 1: block known sensitive OS directories.
+        const BLOCKED_SYSTEM_DIRS: &[&str] = &[
+            "/etc", "/proc", "/sys", "/root", "/boot", "/dev", "/run", "/snap", "/var/lib",
+        ];
+        if BLOCKED_SYSTEM_DIRS
             .iter()
             .any(|prefix| canon.starts_with(prefix))
         {
@@ -260,6 +292,30 @@ pub async fn media_upload_blob_file(file_path: String) -> Result<String, String>
                     .to_string(),
             )
             .into();
+        }
+
+        // Layer 2: block sensitive subdirectories under the user's home dir.
+        // These hold secret key material that must never enter the chunk store.
+        const BLOCKED_HOME_SUBDIRS: &[&str] = &[
+            ".ssh",
+            ".gnupg",
+            ".aws",
+            ".config",
+            ".local/share/keyrings",
+            ".password-store",
+            ".netrc",
+            ".credentials",
+        ];
+        if let Some(home) = dirs::home_dir() {
+            for sub in BLOCKED_HOME_SUBDIRS {
+                let blocked = home.join(sub);
+                if canon.starts_with(&blocked) {
+                    return Err(format!(
+                        "file path must not be inside a sensitive directory (~/{sub})"
+                    ))
+                    .into();
+                }
+            }
         }
         let file = fs::File::open(&canon).map_err(|e| format!("open file failed: {e}"))?;
         let store = ChunkStore::new(ChunkStore::default_root());

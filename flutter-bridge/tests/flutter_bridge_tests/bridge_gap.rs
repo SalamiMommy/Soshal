@@ -1,9 +1,6 @@
 //! FFI gap tests: social (friend suggestions), music (publish/fetch error
 //! paths), headless background sync, bookmarks CRUD + post resolution.
 
-#[path = "common/mod.rs"]
-mod test_util;
-
 #[cfg(test)]
 mod bridge_gap_tests {
     use soshal_flutter_bridge::*;

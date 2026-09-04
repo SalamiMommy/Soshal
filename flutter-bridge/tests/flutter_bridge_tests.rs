@@ -1,5 +1,5 @@
 #[path = "common/mod.rs"]
-mod test_util;
+pub mod test_util;
 
 // Tests for Flutter FFI bridge
 // Run with: cargo test --test flutter_bridge_tests
@@ -401,3 +401,28 @@ mod integration_tests {
         signer::signer_lock().unwrap();
     }
 }
+
+#[path = "flutter_bridge_tests/bridge_gap.rs"]
+mod bridge_gap;
+#[path = "flutter_bridge_tests/ffi_aux_modules.rs"]
+mod ffi_aux_modules;
+#[path = "flutter_bridge_tests/ffi_coverage.rs"]
+mod ffi_coverage;
+#[path = "flutter_bridge_tests/ffi_dating_marketplace.rs"]
+mod ffi_dating_marketplace;
+#[path = "flutter_bridge_tests/ffi_identity.rs"]
+mod ffi_identity;
+#[path = "flutter_bridge_tests/ffi_media_streaming.rs"]
+mod ffi_media_streaming;
+#[path = "flutter_bridge_tests/ffi_moderation_turso.rs"]
+mod ffi_moderation_turso;
+#[path = "flutter_bridge_tests/ffi_more_gap.rs"]
+mod ffi_more_gap;
+#[path = "flutter_bridge_tests/ffi_network.rs"]
+mod ffi_network;
+#[path = "flutter_bridge_tests/ffi_zap_webrtc.rs"]
+mod ffi_zap_webrtc;
+#[path = "flutter_bridge_tests/identity_gap.rs"]
+mod identity_gap;
+#[path = "flutter_bridge_tests/protocol_handler_gap.rs"]
+mod protocol_handler_gap;

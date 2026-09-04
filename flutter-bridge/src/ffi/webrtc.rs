@@ -104,9 +104,30 @@ pub fn webrtc_extract_candidates(sdp: String) -> Result<Vec<String>, String> {
     Ok(extract_candidates(&sdp)).into()
 }
 
-/// Add candidate to SDP
+/// Add a single ICE candidate attribute line to an SDP blob.
+///
+/// # Security (H3 fix)
+/// `candidate` is validated before concatenation to prevent SDP injection:
+/// - Must start with `a=` (only SDP attribute lines carry ICE candidates).
+/// - Must not contain bare CR (`\r`) or LF (`\n`) inside the line body;
+///   an attacker-supplied multi-line string could inject arbitrary SDP
+///   sections that bypass `webrtc_sanitize_sdp`.
 #[frb(sync, serialize)]
 pub fn webrtc_add_candidate_to_sdp(sdp: String, candidate: String) -> Result<String, String> {
+    // Enforce SDP attribute line prefix.
+    if !candidate.starts_with("a=") {
+        return Err("candidate must be an SDP attribute line starting with 'a='".to_string())
+            .into();
+    }
+    // Strip the expected trailing CRLF/LF terminator (if any) and check the
+    // remainder for embedded newlines (injection attempt).
+    let body = candidate.trim_end_matches("\r\n").trim_end_matches('\n');
+    if body.contains('\r') || body.contains('\n') {
+        return Err(
+            "candidate contains an embedded line break (SDP injection rejected)".to_string(),
+        )
+        .into();
+    }
     let mut result = sdp;
     if !result.ends_with('\n') {
         result.push('\n');
@@ -322,6 +343,7 @@ mod tests {
 
     #[test]
     fn test_add_candidate_to_sdp() {
+        // Valid candidates (a= prefix, no embedded newlines)
         assert_eq!(
             webrtc_add_candidate_to_sdp("v=0".to_string(), "a=candidate:1".to_string()).unwrap(),
             "v=0\na=candidate:1"
@@ -329,6 +351,33 @@ mod tests {
         assert_eq!(
             webrtc_add_candidate_to_sdp("v=0\n".to_string(), "a=candidate:2".to_string()).unwrap(),
             "v=0\na=candidate:2"
+        );
+        // H3 fix: must start with a=
+        assert!(
+            webrtc_add_candidate_to_sdp("v=0".to_string(), "candidate:1 …".to_string()).is_err(),
+            "non a= prefix must be rejected"
+        );
+        assert!(
+            webrtc_add_candidate_to_sdp("v=0".to_string(), "m=audio 0 RTP/AVP 0".to_string())
+                .is_err(),
+            "non a= prefix must be rejected"
+        );
+        // H3 fix: embedded CR or LF inside line body must be rejected
+        assert!(
+            webrtc_add_candidate_to_sdp(
+                "v=0".to_string(),
+                "a=candidate:1\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111".to_string()
+            )
+            .is_err(),
+            "embedded CRLF must be rejected"
+        );
+        assert!(
+            webrtc_add_candidate_to_sdp(
+                "v=0".to_string(),
+                "a=candidate:1\na=candidate:2".to_string()
+            )
+            .is_err(),
+            "embedded LF must be rejected"
         );
     }
 
