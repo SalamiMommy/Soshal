@@ -80,6 +80,18 @@ fn compute_compatibility_json_dealbreaker_zeroes() {
         ),
         "0"
     );
+    // Partial mismatch (score 0.5) on a dealbreaker field still rejects.
+    assert_eq!(
+        compute_compatibility_json(r#"{"age":30,"dealbreakers":["age"]}"#, r#"{"age":35}"#),
+        "0"
+    );
+    assert_eq!(
+        compute_compatibility_json(
+            r#"{"smoking":"never","dealbreakers":["smoking"]}"#,
+            r#"{"smoking":"occasionally"}"#
+        ),
+        "0"
+    );
 }
 
 #[test]
@@ -451,9 +463,9 @@ fn sort_tiebreak_liked_me_likes_distance() {
     d.liker_total_likes = Some(10);
     let sorted = sort_dating_profiles(sort_input(vec![a, b, c, d], None));
     assert_eq!(sorted[0].pubkey, "b");
-    assert_eq!(sorted[1].pubkey, "c");
-    assert_eq!(sorted[2].pubkey, "d");
-    assert_eq!(sorted[3].pubkey, "a");
+    assert_eq!(sorted[1].pubkey, "a");
+    assert_eq!(sorted[2].pubkey, "c");
+    assert_eq!(sorted[3].pubkey, "d");
 }
 
 #[test]
@@ -521,11 +533,11 @@ fn sort_contact_distance_and_mutual_friends() {
 }
 
 #[test]
-fn sort_liker_total_likes_defaults_max() {
+fn sort_liker_total_likes_defaults_zero() {
     let sorted = sort_dating_profiles(sort_input(vec![prof("pk1")], None));
     assert!(!sorted[0].liked_by_me);
     assert!(!sorted[0].liked_me);
-    assert_eq!(sorted[0].liker_total_likes, u32::MAX);
+    assert_eq!(sorted[0].liker_total_likes, 0);
 }
 
 #[test]
@@ -568,6 +580,14 @@ fn score_body_type_similarity() {
     assert_eq!(
         metrics::score_body_type(Some("slim"), Some("muscular")),
         0.0
+    );
+    assert_eq!(
+        metrics::score_body_type(Some("muscular"), Some("curvy")),
+        0.5
+    );
+    assert_eq!(
+        metrics::score_body_type(Some("curvy"), Some("muscular")),
+        0.5
     );
     assert_eq!(metrics::score_body_type(Some("bulky"), Some("slim")), 0.0);
     assert_eq!(metrics::score_body_type(None, Some("slim")), 0.5);
@@ -656,6 +676,14 @@ fn score_politics_adjacency() {
     assert_eq!(
         lifestyle::score_politics(Some("anarchist"), Some("liberal")),
         0.0
+    );
+    assert_eq!(
+        lifestyle::score_politics(Some("other"), Some("moderate")),
+        0.5
+    );
+    assert_eq!(
+        lifestyle::score_politics(Some("moderate"), Some("other")),
+        0.5
     );
     assert_eq!(lifestyle::score_politics(None, Some("liberal")), 0.5);
 }

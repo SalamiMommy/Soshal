@@ -63,7 +63,7 @@ pub fn score_politics(self_politics: Option<&str>, other_politics: Option<&str>)
                 return 1.0;
             }
             let liberal = ["moderate"];
-            let moderate = ["liberal", "conservative"];
+            let moderate = ["liberal", "conservative", "other"];
             let conservative = ["moderate", "libertarian"];
             let libertarian = ["conservative", "other"];
             let other = ["moderate", "libertarian"];

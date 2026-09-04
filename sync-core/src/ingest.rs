@@ -306,13 +306,15 @@ async fn handle_impl(
                 .find(|t| t.as_slice().first().map(|s| s == "p").unwrap_or(false))
                 .and_then(|t| t.as_slice().get(1).cloned())
                 .unwrap_or_else(|| my_pubkey.to_string());
-            let _ = tx.try_send(SyncUpdate::Dm {
+            if let Err(e) = tx.try_send(SyncUpdate::Dm {
                 id: event.id.to_hex(),
                 sender: event.pubkey.to_hex(),
                 recipient,
                 content: event.content.clone(),
                 created_at: event.created_at.as_secs(),
-            });
+            }) {
+                eprintln!("sync engine: dm notification dropped: channel full: {e}");
+            }
         }
         return Ok(());
     }
@@ -415,7 +417,7 @@ async fn handle_impl(
                 pubkey: event.pubkey.to_hex(),
                 recipient_pubkey: recipient,
                 event_id: Some(zapped_event),
-                amount: (amount_msats / 1000).min(i64::MAX as u64) as i64,
+                amount: amount_msats.div_ceil(1000).min(i64::MAX as u64) as i64,
                 content: Some(event.content.clone()),
                 created_at: event.created_at.as_secs() as i64,
                 zap_type: "public".to_string(),

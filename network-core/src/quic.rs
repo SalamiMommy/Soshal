@@ -907,7 +907,7 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
         let mut replay: Vec<Arc<Vec<u8>>> = Vec::new();
         let mut replayed_bytes = 0usize;
         for (_, g) in lock.entries.iter() {
-            if !replay.is_empty() && replayed_bytes + g.len() > LIVE_MAX_REPLAY_BYTES {
+            if replayed_bytes + g.len() > LIVE_MAX_REPLAY_BYTES {
                 break;
             }
             replayed_bytes += g.len();
@@ -1137,6 +1137,41 @@ async fn quic_connect(addr: SocketAddr) -> Result<(Endpoint, quinn::Connection),
     Ok((endpoint, conn))
 }
 
+/// Run a `Future` to completion from a sync context. When inside an existing
+/// Tokio runtime the future is **spawned** onto it (avoiding the
+/// "Cannot block the current thread" panic); otherwise it blocks on a
+/// dedicated static runtime.
+fn run_async_blocking<F, T>(fut: F) -> Result<T, String>
+where
+    F: std::future::Future<Output = Result<T, String>> + Send + 'static,
+    T: Send + 'static,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(h) => {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            h.spawn(async move {
+                let result = fut.await;
+                let _ = tx.send(result);
+            });
+            rx.blocking_recv()
+                .map_err(|_| "run_async_blocking: sender dropped".to_string())?
+        }
+        Err(_) => {
+            static SHARED_RT: std::sync::OnceLock<tokio::runtime::Runtime> =
+                std::sync::OnceLock::new();
+            SHARED_RT
+                .get_or_init(|| {
+                    tokio::runtime::Builder::new_multi_thread()
+                        .enable_all()
+                        .worker_threads(2)
+                        .build()
+                        .expect("quic blocking runtime")
+                })
+                .block_on(fut)
+        }
+    }
+}
+
 /// One-shot QUIC stream fetch of a blob range from a peer. Only private
 /// addresses are dialable (SSRF guard on outbound, mirrors TCP fetch). The
 /// HMAC beacon authenticates the client; the response is verified by the
@@ -1153,24 +1188,12 @@ pub fn fetch_quic_chunk(
     if req.hash.len() != 64 || req.length == 0 || req.length > MAX_STREAM_FRAME {
         return Err("bad chunk request".to_string());
     }
-    static SHARED_RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
-    let rt = match tokio::runtime::Handle::try_current() {
-        Ok(h) => h,
-        Err(_) => SHARED_RT
-            .get_or_init(|| {
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .worker_threads(2)
-                    .build()
-                    .expect("quic chunk runtime")
-            })
-            .handle()
-            .clone(),
-    };
-    rt.block_on(async {
+    let my_pubkey = my_pubkey.to_owned();
+    let req = req.clone();
+    run_async_blocking(async move {
         tokio::time::timeout(STREAM_EXCHANGE_TIMEOUT, async {
             let (_endpoint, conn) = quic_connect(addr).await?;
-            exchange_chunk(&conn, key, my_pubkey, req).await
+            exchange_chunk(&conn, key, &my_pubkey, &req).await
         })
         .await
         .map_err(|_| "quic exchange timed out".to_string())?
@@ -1288,24 +1311,12 @@ fn fetch_quic_raw(
     if !lan::is_private_ip(addr.ip()) {
         return Err("refusing non-private LAN peer".to_string());
     }
-    static SHARED_RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
-    let rt = match tokio::runtime::Handle::try_current() {
-        Ok(h) => h,
-        Err(_) => SHARED_RT
-            .get_or_init(|| {
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .worker_threads(2)
-                    .build()
-                    .expect("quic chunk runtime")
-            })
-            .handle()
-            .clone(),
-    };
-    rt.block_on(async {
+    let my_pubkey = my_pubkey.to_owned();
+    let req = req.clone();
+    run_async_blocking(async move {
         tokio::time::timeout(STREAM_EXCHANGE_TIMEOUT, async {
             let (_endpoint, conn) = quic_connect(addr).await?;
-            exchange_chunk(&conn, key, my_pubkey, req).await
+            exchange_chunk(&conn, key, &my_pubkey, &req).await
         })
         .await
         .map_err(|_| "quic exchange timed out".to_string())?
@@ -1357,21 +1368,9 @@ pub fn fetch_quic_moq_groups(
     if stream_id.is_empty() || stream_id.len() > LIVE_MAX_STREAM_ID {
         return Err("bad stream id".to_string());
     }
-    static SHARED_RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
-    let rt = match tokio::runtime::Handle::try_current() {
-        Ok(h) => h,
-        Err(_) => SHARED_RT
-            .get_or_init(|| {
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .worker_threads(2)
-                    .build()
-                    .expect("moq subscribe runtime")
-            })
-            .handle()
-            .clone(),
-    };
-    rt.block_on(async {
+    let my_pubkey = my_pubkey.to_owned();
+    let stream_id = stream_id.to_owned();
+    run_async_blocking(async move {
         tokio::time::timeout(STREAM_EXCHANGE_TIMEOUT, async {
             let socket = UdpSocket::bind(("0.0.0.0", 0)).map_err(|e| format!("udp bind: {e}"))?;
             socket.set_nonblocking(true).ok();
@@ -1394,7 +1393,7 @@ pub fn fetch_quic_moq_groups(
 
             let body = lan::beacon_body(
                 crate::lan_transport::LAN_MAGIC,
-                my_pubkey,
+                &my_pubkey,
                 0,
                 soshal_common_core::format::now_secs() as u64,
                 &hex::encode(lan::fresh_nonce()),

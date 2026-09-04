@@ -1,7 +1,8 @@
 use serde::Deserialize;
+use soshal_nostr_core::models::find_tag_value;
 
 /// Maps notification type to human-readable text.
-pub fn format_content(notif_type: &str, content: &str) -> String {
+pub fn format_content(notif_type: &str, content: &str, tags: &[Vec<String>]) -> String {
     match notif_type {
         "like" | "reaction" => format!("{} reacted to your post", content),
         "repost" => format!("{} reposted your post", content),
@@ -16,7 +17,14 @@ pub fn format_content(notif_type: &str, content: &str) -> String {
         "report" => format!("{} submitted a report", content),
         "vouch" => format!("{} vouched for you", content),
         "poll_end" => format!("A poll has ended: {}", content),
-        "livestream_start" => format!("{} is now live: {}", content, content),
+        "livestream_start" => {
+            let title = find_tag_value(tags, "title").unwrap_or("");
+            if title.is_empty() {
+                format!("{} went live", content)
+            } else {
+                format!("{} is now live: {}", content, title)
+            }
+        }
         "check_in" => format!("{} checked in to an event", content),
         "dating_match" => format!("You matched with {}", content),
         _ => format!("New notification from {}", content),
@@ -32,7 +40,7 @@ pub fn format_content_json(input_json: &str) -> String {
         content: String,
     }
     serde_json::from_str::<Input>(input_json)
-        .map(|i| format_content(&i.notif_type, &i.content))
+        .map(|i| format_content(&i.notif_type, &i.content, &[]))
         .unwrap_or_default()
 }
 

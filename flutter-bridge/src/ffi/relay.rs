@@ -10,7 +10,7 @@ use nostr::event::Event;
 use soshal_relay_core::backends::BackendKind;
 use soshal_relay_core::relay::RelayNode;
 use soshal_sync_core::SyncUpdate;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -19,6 +19,12 @@ static NODE: Mutex<Option<RelayNode>> = Mutex::new(None);
 
 /// Whether the mesh ingest task is alive.
 static MESH_INGEST_ALIVE: AtomicBool = AtomicBool::new(false);
+
+/// Monotonically increasing generation counter. Each `spawn_ingest` call
+/// increments it; the spawned thread captures its generation and exits early
+/// if a newer `spawn_ingest` supersedes it (handles the stop→start race
+/// within the ingest loop's 500 ms sleep).
+static MESH_INGEST_GEN: AtomicU64 = AtomicU64::new(0);
 
 fn node_guard() -> std::sync::MutexGuard<'static, Option<RelayNode>> {
     NODE.lock().unwrap_or_else(|e| e.into_inner())
@@ -145,10 +151,16 @@ fn status() -> String {
 
 /// Poll the node + ingest verified events into sync-core (DB cache + app
 /// stream), mirroring the sync engine's relay ingest path.
+///
+/// Generation counter: each call bumps `MESH_INGEST_GEN` and captures the
+/// value. If a subsequent `spawn_ingest` fires while the old thread is
+/// still sleeping, the old thread detects its generation is stale and
+/// exits, ensuring the fresh thread (with the new account params) takes
+/// over. The `MESH_INGEST_ALIVE` flag is kept for explicit stop, but the
+/// thread also exits on generation mismatch or `!mesh_running()`.
 fn spawn_ingest(db_path: String, my_pubkey: String) {
-    if MESH_INGEST_ALIVE.swap(true, Ordering::Relaxed) {
-        return;
-    }
+    let gen = MESH_INGEST_GEN.fetch_add(1, Ordering::Relaxed) + 1;
+    MESH_INGEST_ALIVE.store(true, Ordering::Relaxed);
     std::thread::spawn(move || {
         let rt = match tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -172,7 +184,13 @@ fn spawn_ingest(db_path: String, my_pubkey: String) {
                 }
             });
             loop {
-                if !MESH_INGEST_ALIVE.load(Ordering::Relaxed) || !mesh_running() {
+                // Exit when: superseded by a newer spawn, stop requested, or
+                // the relay node itself has been torn down.
+                let current_gen = MESH_INGEST_GEN.load(Ordering::Relaxed);
+                if current_gen != gen
+                    || !MESH_INGEST_ALIVE.load(Ordering::Relaxed)
+                    || !mesh_running()
+                {
                     break;
                 }
                 {
@@ -194,7 +212,11 @@ fn spawn_ingest(db_path: String, my_pubkey: String) {
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
             forwarder.abort();
-            MESH_INGEST_ALIVE.store(false, Ordering::Relaxed);
+            // Only reset the alive flag if this thread is still the current
+            // generation — a newer spawn owns the flag.
+            if MESH_INGEST_GEN.load(Ordering::Relaxed) == gen {
+                MESH_INGEST_ALIVE.store(false, Ordering::Relaxed);
+            }
         });
     });
 }

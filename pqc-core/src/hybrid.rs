@@ -133,7 +133,6 @@ pub fn hybrid_decapsulate_bytes(
 
     x25519_ss.zeroize();
     mlkem_ss.zeroize();
-    x25519_sk_arr.zeroize();
     Ok(ss)
 }
 
@@ -156,7 +155,7 @@ pub fn hybrid_encapsulate(pk_hex: &str, domain: &[u8]) -> Result<(String, String
 
 pub fn hybrid_decapsulate(ct_hex: &str, sk_hex: &str, domain: &[u8]) -> Result<String, String> {
     let ct_bytes = hex::decode(ct_hex).map_err(|_| "bad ct hex".to_string())?;
-    let sk_bytes = hex::decode(sk_hex).map_err(|_| "bad sk hex".to_string())?;
+    let sk_bytes = Zeroizing::new(hex::decode(sk_hex).map_err(|_| "bad sk hex".to_string())?);
     if ct_bytes.len() != HYBRID_CT_LEN || sk_bytes.len() != HYBRID_SK_LEN {
         return Err("bad input length".to_string());
     }
@@ -164,6 +163,7 @@ pub fn hybrid_decapsulate(ct_hex: &str, sk_hex: &str, domain: &[u8]) -> Result<S
     let mut sk_arr = [0u8; HYBRID_SK_LEN];
     ct_arr.copy_from_slice(&ct_bytes);
     sk_arr.copy_from_slice(&sk_bytes);
-    let ss = hybrid_decapsulate_bytes(&ct_arr, &sk_arr, domain)?;
-    Ok(hex::encode(ss))
+    let res = hybrid_decapsulate_bytes(&ct_arr, &sk_arr, domain);
+    sk_arr.zeroize();
+    Ok(hex::encode(res?))
 }

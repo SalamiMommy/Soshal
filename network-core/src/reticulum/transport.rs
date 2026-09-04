@@ -141,6 +141,12 @@ impl ReticulumNode {
                 }
                 match udp_clone.recv_from(&mut buf) {
                     Ok((len, src_addr)) => {
+                        // Reject non-private sources early: prevents
+                        // amplification/D.o.S from spoofed public addrs
+                        // being inserted into peers and re-broadcast.
+                        if !crate::lan::is_private_ip(src_addr.ip()) {
+                            continue;
+                        }
                         if let Ok(packet_data) = super::slip::slip_decode(&buf[..len]) {
                             if let Ok(pkt) = ReticulumPacket::from_bytes(&packet_data) {
                                 let mut rx_guard =
@@ -380,6 +386,9 @@ impl ReticulumNode {
     }
 
     /// Processes an inbound Reticulum packet, updating mesh routing tables when appropriate.
+    ///
+    /// NOTE: this entry point carries no source address — callers that can
+    /// verify the sender's IP should do so *before* calling this method.
     pub fn process_packet(&self, pkt: &ReticulumPacket) -> Option<ReticulumPacket> {
         let mut rx_guard = self.rx_count.lock().unwrap_or_else(|e| e.into_inner());
         *rx_guard += 1;
@@ -392,7 +401,23 @@ impl ReticulumNode {
         }
 
         if pkt.destination != self.destination {
-            // Forward packet if hops remain
+            // Dedup: prevent re-broadcast loops through this path.
+            if pkt.packet_type == ReticulumPacketType::Data {
+                if pkt.payload.len() > 262144 {
+                    return None;
+                }
+                let digest = blake3::hash(&pkt.payload).to_hex().to_string();
+                let mut seen = self.seen_data.lock().unwrap_or_else(|e| e.into_inner());
+                if seen.contains(&digest) {
+                    return None;
+                }
+                if seen.len() >= MAX_SEEN_DATA {
+                    seen.pop_front();
+                }
+                seen.push_back(digest);
+            }
+
+            // Forward packet if hops remain (increment_hops returns None at MAX_HOPS)
             pkt.increment_hops()
         } else {
             None

@@ -80,7 +80,7 @@ pub(crate) fn parse_poll_event(ev: &CalendarEventInput, now_ms: f64) -> Option<P
     let exp_tag = find_tag_value(&ev.tags, "expiration");
     let expires_at = match exp_tag {
         Some(s) if s.len() <= 32 => match s.parse::<f64>() {
-            Ok(v) if v.is_finite() => v * 1000.0,
+            Ok(v) if v.is_finite() && v > 0.0 => v * 1000.0,
             _ => now_ms + POLL_EXPIRY_DEFAULT * 1000.0,
         },
         _ => now_ms + POLL_EXPIRY_DEFAULT * 1000.0,

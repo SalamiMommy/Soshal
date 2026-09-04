@@ -405,6 +405,29 @@ pub fn check_zk_trust_proof(
     )
 }
 
+/// Fully-correct variant of [`check_zk_trust_proof`]: also fixes the prover
+/// pubkey and blacklist root, so proof_bytes binds to the prover. Preferred
+/// over [`check_zk_trust_proof`] for non-FFI callers with both values.
+pub fn check_zk_trust_proof_binding(
+    proof_json: &str,
+    prover_pubkey: &str,
+    expected_wot_root: &str,
+    blacklist_root: &str,
+    blacklisted_nullifiers: &[String],
+) -> bool {
+    let Ok(proof) = serde_json::from_str::<soshal_crypto_core::zk_trust::ZkTrustProof>(proof_json)
+    else {
+        return false;
+    };
+    soshal_crypto_core::zk_trust::verify_zk_wot_proof_binding(
+        &proof,
+        prover_pubkey,
+        expected_wot_root,
+        blacklist_root,
+        blacklisted_nullifiers,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

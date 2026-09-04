@@ -19,7 +19,9 @@ pub(crate) fn compute_compatibility_score<P: ProfileScoringFields>(self_p: &P, o
         ($field_name:expr, $score_val:expr, $weight_val:expr) => {
             let score = $score_val;
             let weight = $weight_val.unwrap_or(1.0);
-            if score == 0.0 && dealbreakers.iter().any(|d| d == $field_name) {
+            // Dealbreaker = hard requirement: any mismatch below perfect
+            // (score < 1.0) on a declared dealbreaker field rejects outright.
+            if score < 1.0 && dealbreakers.iter().any(|d| d == $field_name) {
                 return 0;
             }
             total_weighted_score += score * weight;

@@ -298,8 +298,8 @@ fn test_sort_tie_break_by_liker_total_likes() {
         self_contacts: vec![],
         sort_by: None,
     });
-    assert_eq!(sorted[0].pubkey, "quiet", "fewer likes ranked first on tie");
-    assert_eq!(sorted[1].pubkey, "busy");
+    assert_eq!(sorted[0].pubkey, "busy", "more likes ranked first on tie");
+    assert_eq!(sorted[1].pubkey, "quiet");
 }
 
 #[test]
@@ -371,6 +371,14 @@ fn score_body_type_table() {
     assert_eq!(
         metrics::score_body_type(Some("slim"), Some("muscular")),
         0.0
+    );
+    assert_eq!(
+        metrics::score_body_type(Some("muscular"), Some("curvy")),
+        0.5
+    );
+    assert_eq!(
+        metrics::score_body_type(Some("curvy"), Some("muscular")),
+        0.5
     );
     assert_eq!(metrics::score_body_type(Some("bulky"), Some("slim")), 0.0);
 }
@@ -485,6 +493,14 @@ fn score_politics_prefer_not_to_say() {
     assert_eq!(
         lifestyle::score_politics(Some("anarchist"), Some("liberal")),
         0.0
+    );
+    assert_eq!(
+        lifestyle::score_politics(Some("other"), Some("moderate")),
+        0.5
+    );
+    assert_eq!(
+        lifestyle::score_politics(Some("moderate"), Some("other")),
+        0.5
     );
 }
 

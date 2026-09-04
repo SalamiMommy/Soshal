@@ -41,50 +41,70 @@ fn notification_key_json_wrapper() {
 #[test]
 fn format_content_known_types() {
     assert_eq!(
-        format_content("like", "Alice"),
+        format_content("like", "Alice", &[]),
         "Alice reacted to your post"
     );
     assert_eq!(
-        format_content("reaction", "Alice"),
+        format_content("reaction", "Alice", &[]),
         "Alice reacted to your post"
     );
-    assert_eq!(format_content("repost", "Bob"), "Bob reposted your post");
-    assert_eq!(format_content("zap", "Carol"), "Carol zapped your post");
-    assert_eq!(format_content("follow", "Dave"), "Dave followed you");
-    assert_eq!(format_content("mention", "Eve"), "Eve mentioned you");
     assert_eq!(
-        format_content("reply", "Frank"),
+        format_content("repost", "Bob", &[]),
+        "Bob reposted your post"
+    );
+    assert_eq!(
+        format_content("zap", "Carol", &[]),
+        "Carol zapped your post"
+    );
+    assert_eq!(format_content("follow", "Dave", &[]), "Dave followed you");
+    assert_eq!(format_content("mention", "Eve", &[]), "Eve mentioned you");
+    assert_eq!(
+        format_content("reply", "Frank", &[]),
         "Frank replied to your post"
     );
     assert_eq!(
-        format_content("friend_request", "Grace"),
+        format_content("friend_request", "Grace", &[]),
         "Grace sent you a friend request"
     );
-    assert_eq!(format_content("message", "Hank"), "Hank sent you a message");
     assert_eq!(
-        format_content("group_invite", "Ivy"),
+        format_content("message", "Hank", &[]),
+        "Hank sent you a message"
+    );
+    assert_eq!(
+        format_content("group_invite", "Ivy", &[]),
         "Ivy invited you to a group"
     );
     assert_eq!(
-        format_content("event_invite", "Jack"),
+        format_content("event_invite", "Jack", &[]),
         "Jack invited you to an event"
     );
-    assert_eq!(format_content("report", "Kara"), "Kara submitted a report");
-    assert_eq!(format_content("vouch", "Leo"), "Leo vouched for you");
     assert_eq!(
-        format_content("poll_end", "The vote"),
+        format_content("report", "Kara", &[]),
+        "Kara submitted a report"
+    );
+    assert_eq!(format_content("vouch", "Leo", &[]), "Leo vouched for you");
+    assert_eq!(
+        format_content("poll_end", "The vote", &[]),
         "A poll has ended: The vote"
     );
     assert_eq!(
-        format_content("livestream_start", "Mia"),
-        "Mia is now live: Mia"
+        format_content(
+            "livestream_start",
+            "Mia",
+            &[vec!["title".to_string(), "Stream Title".to_string()]]
+        ),
+        "Mia is now live: Stream Title"
     );
     assert_eq!(
-        format_content("check_in", "Mia"),
+        format_content("livestream_start", "Mia", &[]),
+        "Mia went live"
+    );
+    assert_eq!(
+        format_content("check_in", "Mia", &[]),
         "Mia checked in to an event"
     );
     assert_eq!(
-        format_content("dating_match", "Nina"),
+        format_content("dating_match", "Nina", &[]),
         "You matched with Nina"
     );
 }
@@ -92,10 +112,13 @@ fn format_content_known_types() {
 #[test]
 fn format_content_unknown_type_falls_back() {
     assert_eq!(
-        format_content("weird_type", "Ozzy"),
+        format_content("weird_type", "Ozzy", &[]),
         "New notification from Ozzy"
     );
-    assert_eq!(format_content("", "Ozzy"), "New notification from Ozzy");
+    assert_eq!(
+        format_content("", "Ozzy", &[]),
+        "New notification from Ozzy"
+    );
 }
 
 #[test]

@@ -87,7 +87,7 @@ pub fn aggregate_notifications(input: AggregateInput) -> Vec<NotificationOutput>
             7 => "reaction",
             9735 => "zap",
             6 => "repost",
-            k if k == live_stream_kind => "live_stream",
+            k if live_stream_kind != 0 && k == live_stream_kind => "live_stream",
             _ => {
                 if ev.kind == soshal_common_core::consts::KIND_TEXT_NOTE as u32 {
                     if t_tag == Some("friend-request") {

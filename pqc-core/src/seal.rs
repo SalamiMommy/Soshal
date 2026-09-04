@@ -69,7 +69,8 @@ pub fn hybrid_unseal(
     domain: &[u8],
 ) -> Result<Vec<u8>, String> {
     let ct_bytes = hex::decode(ct_hex).map_err(|_| "bad ct hex".to_string())?;
-    let sk_bytes = hex::decode(sk_hex).map_err(|_| "bad sk hex".to_string())?;
+    let sk_bytes =
+        zeroize::Zeroizing::new(hex::decode(sk_hex).map_err(|_| "bad sk hex".to_string())?);
     if ct_bytes.len() != crate::hybrid::HYBRID_CT_LEN
         || sk_bytes.len() != crate::hybrid::HYBRID_SK_LEN
     {
@@ -79,7 +80,9 @@ pub fn hybrid_unseal(
     let mut sk_arr = [0u8; crate::hybrid::HYBRID_SK_LEN];
     ct_arr.copy_from_slice(&ct_bytes);
     sk_arr.copy_from_slice(&sk_bytes);
-    let ss = crate::hybrid::hybrid_decapsulate_bytes(&ct_arr, &sk_arr, domain)?;
+    let res = crate::hybrid::hybrid_decapsulate_bytes(&ct_arr, &sk_arr, domain);
+    sk_arr.zeroize();
+    let ss = res?;
     let ss = Zeroizing::new(ss);
     let derived = hkdf_derive(ss.as_slice(), domain)?;
     let nonce_bytes = hex::decode(nonce_hex).map_err(|_| "bad nonce hex".to_string())?;

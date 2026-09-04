@@ -81,8 +81,9 @@ pub fn kem_decapsulate(ct_hex: &str, sk_hex: &str) -> Result<String, String> {
     let mut sk_arr = [0u8; KEM_SEED_LEN];
     ct_arr.copy_from_slice(&ct_bytes);
     sk_arr.copy_from_slice(&sk_bytes);
-    let mut ss = kem_decapsulate_bytes(&ct_arr, &sk_arr)?;
+    let res = kem_decapsulate_bytes(&ct_arr, &sk_arr);
     sk_arr.zeroize();
+    let mut ss = res?;
     let res = hex::encode(ss);
     ss.zeroize();
     Ok(res)

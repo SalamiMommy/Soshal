@@ -53,7 +53,7 @@ pub fn score_body_type(self_type: Option<&str>, other_type: Option<&str>) -> f64
             let athletic = ["slim", "average", "muscular"];
             let average = ["slim", "athletic", "curvy"];
             let curvy = ["average", "muscular"];
-            let muscular = ["athletic", "average"];
+            let muscular = ["athletic", "average", "curvy"];
             let similar = match s {
                 "slim" => &slim[..],
                 "athletic" => &athletic[..],

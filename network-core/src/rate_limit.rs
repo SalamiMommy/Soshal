@@ -37,7 +37,7 @@ fn rate_limit_check(input: &RateLimitInput) -> RateLimitOutput {
         }
     }
 
-    if now.saturating_sub(input.first_attempt) > input.window_ms {
+    if now.saturating_sub(input.first_attempt) >= input.window_ms {
         let remaining = input.max_attempts.saturating_sub(1);
         return RateLimitOutput {
             allowed: true,

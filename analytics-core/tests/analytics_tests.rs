@@ -89,6 +89,22 @@ fn format_count_small() {
 }
 
 #[test]
+fn format_count_negative_and_nan() {
+    // Negative values clamp to 0 ("no data"), NaN also maps to "0".
+    assert_eq!(format_count(-1.0), "0");
+    assert_eq!(format_count(-999.0), "0");
+    assert_eq!(format_count(f64::NAN), "0");
+    assert_eq!(format_count(f64::NEG_INFINITY), "0");
+}
+
+#[test]
+fn format_count_positive_infinity() {
+    // +Inf satisfies >= 1_000_000 so it formats as "infM" — caller
+    // responsibility to avoid feeding unbounded values.
+    assert_eq!(format_count(f64::INFINITY), "infM");
+}
+
+#[test]
 fn test_format_count_json() {
     let json_in = r#"{"n": 2500.0}"#;
     let res = format_count_json(json_in).unwrap();

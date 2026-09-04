@@ -63,7 +63,7 @@ pub fn tx_mark_applied(db: &Database, id: &str) -> Result<(), String> {
 }
 
 /// Marks a node failed and rolls back its entire dependent closure.
-/// Returns the ids rolled back (including `id` itself), newest-first.
+/// Returns the ids rolled back, newest-first.
 pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
     let conn = db.conn().map_err(|e| e.to_string())?;
     let adj = load_edges(&conn)?;
@@ -117,7 +117,7 @@ pub fn tx_fail(db: &Database, id: &str) -> Result<Vec<String>, String> {
         Ok(rolled_back)
     })
     .map_err(|e| format!("tx_fail: {e}"))?;
-    Ok(rolled_back_after(rolled_back, Vec::new(), id))
+    Ok(rolled_back_after(rolled_back, Vec::new()))
 }
 
 fn load_edges(conn: &Connection) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
@@ -195,11 +195,8 @@ fn reverse_topological(
     Ok(order)
 }
 
-fn rolled_back_after(mut rolled: Vec<String>, order: Vec<String>, failed_id: &str) -> Vec<String> {
+fn rolled_back_after(mut rolled: Vec<String>, order: Vec<String>) -> Vec<String> {
     rolled.extend(order);
-    if !rolled.contains(&failed_id.to_string()) {
-        rolled.push(failed_id.to_string());
-    }
     rolled
 }
 

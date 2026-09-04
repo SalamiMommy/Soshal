@@ -51,7 +51,7 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
                 distance: distance_km.round() as u32,
                 liked_by_me: profile.liked_by_me.unwrap_or(false),
                 liked_me: profile.liked_me.unwrap_or(false),
-                liker_total_likes: profile.liker_total_likes.unwrap_or(u32::MAX),
+                liker_total_likes: profile.liker_total_likes.unwrap_or(0),
             },
             profile.age,
             profile.height,
@@ -83,7 +83,7 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
             if cmp != Ordering::Equal {
                 return cmp;
             }
-            let cmp = a.0.liker_total_likes.cmp(&b.0.liker_total_likes);
+            let cmp = b.0.liker_total_likes.cmp(&a.0.liker_total_likes);
             if cmp != Ordering::Equal {
                 return cmp;
             }

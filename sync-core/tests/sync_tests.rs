@@ -589,7 +589,7 @@ fn epoch_gc_prunes_old_tombstones_keeps_new_and_live() {
     assert_eq!(summary.domain, "posts_feed");
     assert_eq!(summary.epoch_counter, 1);
     assert_eq!(summary.pruned_tombstones, 1);
-    assert_eq!(summary.bytes_reclaimed, 512);
+    assert_eq!(summary.bytes_reclaimed, 206);
     assert!(repo.get_by_id("old_tomb").unwrap().is_none());
     assert!(repo.get_by_id("new_tomb").unwrap().unwrap().is_deleted);
     assert!(!repo.get_by_id("live_old").unwrap().unwrap().is_deleted);

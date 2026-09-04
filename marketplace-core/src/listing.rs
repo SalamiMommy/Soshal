@@ -81,7 +81,7 @@ fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
 
     let price_str = price_str?;
     let price = match price_str.parse::<f64>() {
-        Ok(p) if p.is_finite() && p.abs() <= MAX_PRICE => p,
+        Ok(p) if p.is_finite() && (0.0..=MAX_PRICE).contains(&p) => p,
         _ => return None,
     };
     let currency_str = currency.unwrap_or("USD");

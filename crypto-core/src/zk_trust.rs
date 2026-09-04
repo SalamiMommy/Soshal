@@ -76,6 +76,50 @@ pub fn verify_zk_wot_proof(
     }
 }
 
+/// Fully-correct verification: recomputes the SHA-256 commitment from
+/// prover_pubkey, expected WoT root and blacklist root, plus the nullifier
+/// from prover_pubkey. Binds `proof_bytes_b64` and `blacklist_nullifier_hash`
+/// to the prover — unlike [`verify_zk_wot_proof`], which is structural only.
+pub fn verify_zk_wot_proof_binding(
+    proof: &ZkTrustProof,
+    prover_pubkey: &str,
+    expected_wot_root: &str,
+    blacklist_root: &str,
+    known_blacklisted_nullifiers: &[String],
+) -> bool {
+    use base64::Engine;
+
+    if proof.wot_merkle_root != expected_wot_root {
+        return false;
+    }
+
+    // Reject if nullifier appears in blacklist tree
+    if known_blacklisted_nullifiers.contains(&proof.blacklist_nullifier_hash) {
+        return false;
+    }
+
+    // Recompute and compare the prover nullifier — binds the proof to pubkey
+    let mut nullifier_hasher = Sha256::new();
+    nullifier_hasher.update(b"nullifier:");
+    nullifier_hasher.update(prover_pubkey.as_bytes());
+    let nullifier_h: [u8; 32] = nullifier_hasher.finalize().into();
+    if hex::encode(nullifier_h) != proof.blacklist_nullifier_hash {
+        return false;
+    }
+
+    // Recompute the commitment: SHA256(pubkey ‖ wot_root ‖ blacklist_root)
+    let mut hasher = Sha256::new();
+    hasher.update(prover_pubkey.as_bytes());
+    hasher.update(proof.wot_merkle_root.as_bytes());
+    hasher.update(blacklist_root.as_bytes());
+    let expected_hash: [u8; 32] = hasher.finalize().into();
+
+    match base64::engine::general_purpose::STANDARD.decode(&proof.proof_bytes_b64) {
+        Ok(bytes) => bytes.as_slice() == expected_hash.as_slice(),
+        Err(_) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,5 +137,41 @@ mod tests {
         // Blacklisted nullifier fails
         let blacklisted = vec![proof.blacklist_nullifier_hash.clone()];
         assert!(!verify_zk_wot_proof(&proof, "wot_root_123", &blacklisted));
+
+        // Binding verification: correct prover + roots pass
+        assert!(verify_zk_wot_proof_binding(
+            &proof,
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &[],
+        ));
+
+        // Wrong prover pubkey fails (does not bind to the commitment)
+        assert!(!verify_zk_wot_proof_binding(
+            &proof,
+            "pubkey_mallory",
+            "wot_root_123",
+            "black_root_456",
+            &[],
+        ));
+
+        // Wrong blacklist root fails
+        assert!(!verify_zk_wot_proof_binding(
+            &proof,
+            "pubkey_alice",
+            "wot_root_123",
+            "other_root",
+            &[],
+        ));
+
+        // Blacklisted nullifier fails in binding path too
+        assert!(!verify_zk_wot_proof_binding(
+            &proof,
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &blacklisted,
+        ));
     }
 }

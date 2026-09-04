@@ -361,6 +361,7 @@ fn dsa_sign_verify_tests() {
 
 #[test]
 fn zk_trust_tests() {
+    use soshal_crypto_core::zk_trust::verify_zk_wot_proof_binding;
     let proof = generate_zk_wot_proof("pubkey_bob", "wot_root_abc", "black_root_xy");
     assert!(verify_zk_wot_proof(&proof, "wot_root_abc", &[]));
     assert!(!verify_zk_wot_proof(&proof, "wot_root_xyz", &[]));
@@ -368,6 +369,22 @@ fn zk_trust_tests() {
         &proof,
         "wot_root_abc",
         std::slice::from_ref(&proof.blacklist_nullifier_hash)
+    ));
+    // Binding path: correct pubkey + roots pass
+    assert!(verify_zk_wot_proof_binding(
+        &proof,
+        "pubkey_bob",
+        "wot_root_abc",
+        "black_root_xy",
+        &[],
+    ));
+    // Binding path: swapped pubkey fails
+    assert!(!verify_zk_wot_proof_binding(
+        &proof,
+        "pubkey_eve",
+        "wot_root_abc",
+        "black_root_xy",
+        &[],
     ));
 
     let proof2 = generate_zk_wot_proof("pubkey_bob", "wot_root_abc", "black_root_xy");

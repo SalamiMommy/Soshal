@@ -71,6 +71,18 @@ impl EpochGarbageCollector {
             .await
             .map_err(|e| e.to_string())?;
 
+            // Sum real reclaimed bytes before deleting: pruned rows are
+            // tombstones (is_deleted=1) within the cutoff.
+            let reclaimed_i64: i64 =
+                query_first(
+                    conn,
+                    "SELECT COALESCE(SUM(LENGTH(content) + LENGTH(tags_json) + 200),0) FROM posts WHERE is_deleted = 1 AND created_at <= ?1",
+                    [cutoff_i64],
+                    |row| row.get(0),
+                )
+                .map_err(|e| format!("Reclaimed-bytes query failed: {}", e))?
+                .unwrap_or(0);
+
             let delete_res = conn
                 .execute(
                     "DELETE FROM posts WHERE is_deleted = 1 AND created_at <= ?1",
@@ -109,9 +121,9 @@ impl EpochGarbageCollector {
                 return Err(format!("Commit failed: {}", e));
             }
 
-            Ok(pruned_count as u64)
+            Ok((pruned_count as u64, reclaimed_i64.max(0) as u64))
         })
-        .map(|pruned| {
+        .map(|(pruned, reclaimed)| {
             let epoch_counter_i64: i64 = query_first(
                 conn,
                 "SELECT epoch_counter FROM _crdt_epoch_boundaries WHERE domain = ?1",
@@ -125,7 +137,7 @@ impl EpochGarbageCollector {
                 domain: domain.to_string(),
                 epoch_counter: epoch_counter_i64 as u64,
                 pruned_tombstones: pruned,
-                bytes_reclaimed: pruned * 512, // Estimated memory reclaimed per row
+                bytes_reclaimed: reclaimed,
             }
         })
     }
