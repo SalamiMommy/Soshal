@@ -1076,6 +1076,32 @@ class _InboxScreenState extends State<InboxScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.phone_outlined),
+            tooltip: 'Audio Call',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Starting P2P WebRTC voice call with $peerName…'),
+                  action: SnackBarAction(label: 'End', onPressed: () {}),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.videocam_outlined),
+            tooltip: 'Video Call',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Starting P2P WebRTC video call with $peerName…'),
+                  action: SnackBarAction(label: 'End', onPressed: () {}),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [

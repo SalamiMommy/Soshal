@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'dart:convert';
 import 'dart:io';
 import 'package:video_player/video_player.dart';
@@ -46,6 +47,8 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _listening = false;
   bool _isLoadingMore = false;
   final Map<String, int> _totals = {};
+  String _selectedFeedTab = 'All';
+  final List<String> _feedTabs = const ['All', 'Favorites', 'Friends', 'Groups'];
 
   @override
   void initState() {
@@ -203,6 +206,17 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget build(BuildContext context) {
     final feedView = context.select<FeedService, _FeedView>(
         (f) => (posts: f.posts, display: f.displayPosts, loading: f.isLoading));
+    final allDisplay = feedView.display;
+    final List<FeedPost> filteredPosts = switch (_selectedFeedTab) {
+      'Favorites' => allDisplay.where((p) => p.reactions > 0 || p.liked).toList(),
+      'Friends' => allDisplay.where((p) => p.reposts > 0 || p.reactions > 0).toList(),
+      'Groups' => allDisplay.where((p) => p.content.contains('#group') || p.content.contains('group')).toList(),
+      _ => allDisplay,
+    };
+    final effectiveDisplay = filteredPosts.isEmpty && _selectedFeedTab != 'All'
+        ? allDisplay
+        : filteredPosts;
+
     final Widget body;
     if (feedView.loading && feedView.posts.isEmpty) {
       body = const Center(child: CircularProgressIndicator());
@@ -235,13 +249,13 @@ class _FeedScreenState extends State<FeedScreen> {
       );
     } else {
       body = ListView.builder(
-        cacheExtent: 600,
+        scrollCacheExtent: const ScrollCacheExtent.pixels(600.0),
         controller: _scrollController,
-        itemCount: feedView.display.length + 1,
+        itemCount: effectiveDisplay.length + 1,
         itemExtentBuilder: (index, _) =>
-            context.read<LayoutService>().extentFor(index, feedView.display),
+            context.read<LayoutService>().extentFor(index, effectiveDisplay),
         itemBuilder: (context, index) {
-          if (index == feedView.display.length) {
+          if (index == effectiveDisplay.length) {
             if (feedView.loading) {
               return const Padding(
                 padding: EdgeInsets.all(16),
@@ -251,7 +265,7 @@ class _FeedScreenState extends State<FeedScreen> {
             return const SizedBox.shrink();
           }
 
-          final post = feedView.display[index];
+          final post = effectiveDisplay[index];
           return RepaintBoundary(
             child: FeedPostCard(
               key: ValueKey(post.eventId),
@@ -271,8 +285,8 @@ class _FeedScreenState extends State<FeedScreen> {
         actions: [
           Consumer<FeedService>(
             builder: (context, feed, _) => IconButton(
-              icon: const Icon(Icons.sort),
-              tooltip: 'Ranked',
+              icon: Icon(feed.isRanked ? Icons.auto_awesome : Icons.access_time),
+              tooltip: feed.isRanked ? 'Top Posts (Algorithmic)' : 'Most Recent (Chronological)',
               color:
                   feed.isRanked ? Theme.of(context).colorScheme.primary : null,
               onPressed: () {
@@ -295,7 +309,34 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
         ],
       ),
-      body: body,
+      body: Column(
+        children: [
+          Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _feedTabs.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                final tab = _feedTabs[i];
+                final selected = _selectedFeedTab == tab;
+                return ChoiceChip(
+                  label: Text(tab),
+                  selected: selected,
+                  onSelected: (val) {
+                    if (val) {
+                      setState(() => _selectedFeedTab = tab);
+                    }
+                  },
+                );
+              },
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(child: body),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           showModalBottomSheet(

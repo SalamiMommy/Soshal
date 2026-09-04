@@ -21,7 +21,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 9, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _load();
@@ -134,16 +134,29 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           controller: _tabController,
           isScrollable: true,
           onTap: (i) {
-            const types = ['', 'mention', 'like', 'reply', 'message', 'follow'];
+            const types = [
+              '',
+              'mention',
+              'like',
+              'reply',
+              'follow',
+              'group',
+              'event',
+              'marketplace',
+              'dating',
+            ];
             if (i > 0) _loadType(types[i]);
           },
           tabs: const [
             Tab(text: 'All'),
             Tab(text: 'Mentions'),
             Tab(text: 'Reactions'),
-            Tab(text: 'Replies'),
-            Tab(text: 'Messages'),
-            Tab(text: 'Follows'),
+            Tab(text: 'Comments'),
+            Tab(text: 'Friend Requests'),
+            Tab(text: 'Group Activity'),
+            Tab(text: 'Events'),
+            Tab(text: 'Marketplace'),
+            Tab(text: 'Dating'),
           ],
         ),
       ),
@@ -174,14 +187,32 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 _NotificationList(
                   pubkey: pubkey,
                   unreadOnly: false,
-                  type: 'message',
-                  onRefresh: () => _loadType('message'),
+                  type: 'follow',
+                  onRefresh: () => _loadType('follow'),
                 ),
                 _NotificationList(
                   pubkey: pubkey,
                   unreadOnly: false,
-                  type: 'follow',
-                  onRefresh: () => _loadType('follow'),
+                  type: 'group',
+                  onRefresh: () => _loadType('group'),
+                ),
+                _NotificationList(
+                  pubkey: pubkey,
+                  unreadOnly: false,
+                  type: 'event',
+                  onRefresh: () => _loadType('event'),
+                ),
+                _NotificationList(
+                  pubkey: pubkey,
+                  unreadOnly: false,
+                  type: 'marketplace',
+                  onRefresh: () => _loadType('marketplace'),
+                ),
+                _NotificationList(
+                  pubkey: pubkey,
+                  unreadOnly: false,
+                  type: 'dating',
+                  onRefresh: () => _loadType('dating'),
                 ),
               ],
             ),

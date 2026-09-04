@@ -27,6 +27,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
   final TextEditingController _search = TextEditingController();
   Future<List<ListingInfo>>? _sellerListingsFuture;
   bool _trending = false;
+  int _radiusKm = 25;
+  String _selectedCondition = 'All';
+  final List<String> _conditions = const ['All', 'New', 'Like New', 'Good', 'Fair'];
 
   @override
   void initState() {
@@ -249,9 +252,22 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+          IconButton(
+            icon: const Icon(Icons.bookmark_border),
+            tooltip: 'Save item to Watchlist',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Saved "${detail.title}" to your Watchlist')),
+              );
+            },
+          ),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.chat_outlined, size: 16),
+            label: const Text('Message'),
+            onPressed: () {
+              Navigator.pop(context);
+              context.push('/inbox/${detail.sellerPubkey}');
+            },
           ),
           OutlinedButton(
             onPressed: () {
@@ -524,6 +540,69 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.tune),
+            tooltip: 'Filter by radius and condition',
+            onPressed: () {
+              showModalBottomSheet<void>(
+                context: context,
+                builder: (sheetContext) => StatefulBuilder(
+                  builder: (sheetContext, setSheetState) => SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Marketplace Filters', style: Theme.of(context).textTheme.titleLarge),
+                          const SizedBox(height: 16),
+                          Text('Search Radius: $_radiusKm km', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          Slider(
+                            value: _radiusKm.toDouble(),
+                            min: 5,
+                            max: 100,
+                            divisions: 19,
+                            label: '$_radiusKm km',
+                            onChanged: (v) {
+                              setSheetState(() => _radiusKm = v.round());
+                              setState(() => _radiusKm = v.round());
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          const Text('Item Condition', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              for (final cond in _conditions)
+                                ChoiceChip(
+                                  label: Text(cond),
+                                  selected: _selectedCondition == cond,
+                                  onSelected: (selected) {
+                                    if (selected) {
+                                      setSheetState(() => _selectedCondition = cond);
+                                      setState(() => _selectedCondition = cond);
+                                    }
+                                  },
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: () => Navigator.pop(sheetContext),
+                              child: const Text('Apply Filters'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.search),
             onPressed: _load,
           ),
@@ -617,13 +696,18 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
 
   static const _categories = [
     '',
+    'vehicles',
+    'property rentals',
     'electronics',
+    'apparel & accessories',
+    'home & garden',
+    'sporting goods',
+    'toys & games',
+    'pet supplies',
+    'free stuff',
     'handmade',
     'art',
     'books',
-    'clothing',
-    'tools',
-    'food',
   ];
 
   String _category = '';
@@ -631,19 +715,23 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
   Widget _buildBrowse() {
     return Consumer<MarketplaceService>(
       builder: (context, api, _) {
-        if (api.listings.isEmpty) {
+        final rawListings = api.listings;
+        final listings = _selectedCondition == 'All'
+            ? rawListings
+            : rawListings.where((l) => l.condition.toLowerCase() == _selectedCondition.toLowerCase()).toList();
+        if (listings.isEmpty) {
           return const EmptyState(
             icon: Icons.storefront_outlined,
-            title: 'No listings yet',
+            title: 'No listings match filter',
           );
         }
         return RefreshIndicator(
           onRefresh: _load,
           child: ListView.builder(
             itemExtent: 96.0,
-            itemCount: api.listings.length,
+            itemCount: listings.length,
             itemBuilder: (context, index) {
-              final l = api.listings[index];
+              final l = listings[index];
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 child: ListTile(

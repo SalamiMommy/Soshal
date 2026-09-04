@@ -519,6 +519,25 @@ class _MinisScreenState extends State<MinisScreen> {
                     },
                   ),
                   const Text('Share', style: TextStyle(color: Colors.white, fontSize: 11)),
+                  const SizedBox(height: 16),
+                  // Rotating Audio Disc Thumbnail
+                  GestureDetector(
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Audio: ${mini.videoUrl.split('/').last}')),
+                      );
+                    },
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade900,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white54, width: 2),
+                      ),
+                      child: const Icon(Icons.album, color: Colors.white, size: 22),
+                    ),
+                  ),
                 ],
               ),
             ),

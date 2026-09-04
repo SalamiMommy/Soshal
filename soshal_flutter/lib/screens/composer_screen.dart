@@ -42,6 +42,52 @@ class _ComposerScreenState extends State<ComposerScreen> {
   String? _voiceBlobHash;
   int _voiceSize = 0;
   String _audience = 'public'; // public, friends, fof, only_me
+  String? _feeling; // e.g. "excited", "celebrating", "happy"
+
+  void _pickFeeling() async {
+    const feelings = [
+      '😊 happy',
+      '🎉 celebrating',
+      '🔥 excited',
+      '😴 tired',
+      '🤔 thoughtful',
+      '🎧 listening to music',
+      '☕ relaxing',
+      '✈️ traveling',
+    ];
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('How are you feeling?', style: Theme.of(ctx).textTheme.titleMedium),
+            ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: feelings.map((f) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: ActionChip(
+                    label: Text(f),
+                    onPressed: () => Navigator.pop(ctx, f),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+    if (selected != null) {
+      setState(() => _feeling = selected);
+    }
+  }
 
   /// Pick an audio file, encode it as a voice memo via the Rust storage-core
   /// codec, and attach it to the post as a blob-backed `audio` media tag.
@@ -233,6 +279,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
 
       final tags = <List<String>>[
         if (_audience != 'public') ['audience', _audience],
+        if (_feeling != null) ['feeling', _feeling!],
         ..._tags.map((tag) => ['t', tag]),
         ..._mentions.map((mention) => ['p', mention]),
         if (_pendingMedia != null)
@@ -492,6 +539,11 @@ class _ComposerScreenState extends State<ComposerScreen> {
                   tooltip: 'Mention user',
                 ),
                 IconButton(
+                  icon: const Icon(Icons.mood),
+                  onPressed: _isPosting ? null : _pickFeeling,
+                  tooltip: 'Feeling / Activity',
+                ),
+                IconButton(
                   icon: _uploadingMedia
                       ? const SizedBox(
                           height: 20,
@@ -511,6 +563,14 @@ class _ComposerScreenState extends State<ComposerScreen> {
                 ),
               ],
             ),
+            if (_feeling != null) ...[
+              const SizedBox(height: 8),
+              Chip(
+                avatar: const Icon(Icons.mood, size: 16),
+                label: Text('Feeling $_feeling'),
+                onDeleted: () => setState(() => _feeling = null),
+              ),
+            ],
             if (_voiceBlobHash != null) ...[
               const SizedBox(height: 8),
               Chip(
