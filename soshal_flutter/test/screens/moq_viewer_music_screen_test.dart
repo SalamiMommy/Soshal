@@ -68,7 +68,7 @@ void main() {
       settle: false,
     );
 
-    expect(find.text('Live'), findsOneWidget);
+    expect(find.text('Live Stream'), findsOneWidget);
     expect(find.text('Leave'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('0 frames'), findsOneWidget);

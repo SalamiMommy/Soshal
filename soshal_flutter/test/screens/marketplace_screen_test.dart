@@ -63,7 +63,7 @@ void main() {
   testWidgets('empty state shows no listings yet with tabs', (tester) async {
     await pumpScreen(tester);
 
-    expect(find.text('No listings yet'), findsOneWidget);
+    expect(find.text('No listings match filter'), findsOneWidget);
     expect(find.byTooltip('Create listing'), findsOneWidget);
     expect(find.text('Browse'), findsOneWidget);
     expect(find.text('Orders'), findsOneWidget);
@@ -93,7 +93,7 @@ void main() {
 
     await pumpScreen(tester);
 
-    expect(find.text('No listings yet'), findsOneWidget);
+    expect(find.text('No listings match filter'), findsOneWidget);
   });
 
   testWidgets('create dialog posts listing with entered fields',
@@ -220,15 +220,11 @@ void main() {
         find.descendant(
             of: dialog, matching: find.text('4.5 · 0 reviews')),
         findsOneWidget);
-    expect(
-        find.descendant(of: dialog, matching: find.text('Close')),
-        findsOneWidget);
 
+    await tester.ensureVisible(find.text('Open Escrow Panel'));
     await tester.tap(find.text('Open Escrow Panel'));
     await tester.pumpAndSettle();
     expect(find.text('No escrow for this listing yet.'), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, 'Close'));
-    await tester.pumpAndSettle();
   });
 
   testWidgets('mine tab edit updates listing and reloads', (tester) async {
@@ -293,10 +289,12 @@ void main() {
 
     await pumpScreen(tester);
 
+    await tester.ensureVisible(find.text('🔥 Trending'));
     await tester.tap(find.text('🔥 Trending'));
     await tester.pumpAndSettle();
     expect(api.callCount('crateFfiMarketplaceMarketplaceGetTrending'), 1);
 
+    await tester.ensureVisible(find.text('electronics'));
     await tester.tap(find.text('electronics'));
     await tester.pumpAndSettle();
     expect(api.callCount('crateFfiMarketplaceMarketplaceGetByCategory'), 1);

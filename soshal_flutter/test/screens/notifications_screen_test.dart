@@ -67,9 +67,12 @@ void main() {
       'All',
       'Mentions',
       'Reactions',
-      'Replies',
-      'Messages',
-      'Follows',
+      'Comments',
+      'Friend Requests',
+      'Group Activity',
+      'Events',
+      'Marketplace',
+      'Dating',
     ]) {
       expect(find.text(tab), findsOneWidget);
     }

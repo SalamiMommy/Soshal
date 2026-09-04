@@ -112,7 +112,7 @@ void main() {
 
     expect(find.text('Chat Random'), findsOneWidget);
     expect(find.text('Your Status'), findsOneWidget);
-    expect(find.text('Find a peer'), findsOneWidget);
+    expect(find.text('Start Random Chat'), findsOneWidget);
     expect(find.text('No peers yet. Find a peer above.'), findsOneWidget);
     expect(api.callCount('crateFfiChatrandomChatrandomFetch'), 1);
   });
