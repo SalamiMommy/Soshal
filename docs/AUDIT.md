@@ -52,7 +52,7 @@ feed/DM ingestion + outbox replay dead while the UI reported "running".
 
 ### Verified
 - Gate green at end of round: fmt / clippy `-D warnings` / workspace tests ×3 (2270) /
-  `flutter analyze` 0 issues. Commit hash appended on commit.
+  `flutter analyze` 0 issues. Commit: `9069c4a`.
 
 ## Round 7 — 2026-09-05: hardening follow-up (parallel builders)
 
