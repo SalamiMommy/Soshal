@@ -240,6 +240,7 @@ fn pqc_ratchet_tests() {
         receiving_chain_key: "04".repeat(32),
         receiving_chain_counter: 0,
         skipped: vec![],
+        prev_epoch_skipped: vec![],
     };
     let json_st = serde_json::to_string(&input_state).unwrap();
     assert!(ratchet_state_from_plaintext(json_st.as_bytes()).is_some());
@@ -259,6 +260,7 @@ fn pqc_ratchet_tests() {
         receiving_chain_key: "04".repeat(32),
         receiving_chain_counter: 0,
         skipped: vec![],
+        prev_epoch_skipped: vec![],
     };
     let out_json = ratchet_state_to_json(&out_st).unwrap();
     assert!(out_json.contains("livepk"));
@@ -274,6 +276,53 @@ fn pqc_ratchet_tests() {
     let w_tags = ratchet_wrapper_tags(&out_st, &header_out);
     assert!(!w_tags.is_empty());
     const { assert!(MAX_RATCHET_WINDOW > 0) };
+}
+
+#[test]
+fn pqc_ratchet_prior_epoch_late_message() {
+    let (mut alice, mut bob) = make_ratchet_pair("test-ctx");
+    // epoch 1, seq 0
+    let (a1, h1, c1) = encrypt_ratchet(&alice, "m1").unwrap();
+    let (b1, p1) = decrypt_ratchet(&bob, &h1, &c1).unwrap();
+    assert_eq!(p1, "m1");
+    alice = a1;
+    bob = b1;
+    assert_eq!(bob.chain_counter, 1);
+    // bob misses m2 (epoch 1, seq 1); the ciphered frames are saved for replay
+    let (a2, h2, c2) = encrypt_ratchet(&alice, "m2").unwrap();
+    alice = a2;
+    // bob receives m3 (epoch 1, seq 2) → buffers skipped key for seq 1
+    let (a3, h3, c3) = encrypt_ratchet(&alice, "m3").unwrap();
+    let (b3, p3) = decrypt_ratchet(&bob, &h3, &c3).unwrap();
+    assert_eq!(p3, "m3");
+    alice = a3;
+    bob = b3;
+    assert_eq!(bob.skipped.len(), 1);
+    assert_eq!(bob.skipped[0].seq, 1);
+    // alice learns bob's rotated key (as a real sync would) and starts a new
+    // epoch; bob transitions and the old skipped key moves to the prior-epoch
+    // buffer instead of being dropped
+    let bob_rotated = bob.current_pk.clone();
+    alice.peer_pk = bob_rotated.clone();
+    let (_, h4, c4) = encrypt_ratchet(&alice, "m4").unwrap();
+    let (b4, p4) = decrypt_ratchet(&bob, &h4, &c4).unwrap();
+    assert_eq!(p4, "m4");
+    bob = b4;
+    assert_eq!(bob.chain_counter, 2);
+    assert_eq!(bob.prev_epoch_skipped.len(), 1);
+    assert_eq!(bob.prev_epoch_skipped[0].seq, 1);
+    // the late epoch-1 message now decrypts via the retained key
+    let (b5, p2) = decrypt_ratchet(&bob, &h2, &c2).unwrap();
+    assert_eq!(p2, "m2");
+    bob = b5;
+    assert!(bob.prev_epoch_skipped.is_empty());
+    // one-shot: a replay of the same late frame is rejected
+    match decrypt_ratchet(&bob, &h2, &c2) {
+        Err(e) => assert_eq!(e, "replay"),
+        Ok(_) => panic!("late-message replay was not rejected"),
+    }
+    // the stale epoch-1 header pk was never adopted as the next target
+    assert_eq!(bob.peer_pk, h4.pk);
 }
 
 #[test]

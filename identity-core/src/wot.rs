@@ -87,7 +87,7 @@ pub fn compute_trust_score(
 ) -> TrustScore {
     let mutual = count_mutual(user_contacts, target_contacts);
     let distance = compute_distance(user_pubkey, target_pubkey, user_contacts, mutual);
-    let score = calculate_trust_score(distance, mutual, 1);
+    let score = calculate_trust_score(distance, mutual, mutual);
     TrustScore {
         score,
         distance,

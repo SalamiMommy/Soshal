@@ -15,10 +15,13 @@ use soshal_db_core::repos::message::MessageRepo;
 pub struct DirectMessage {
     pub id: String,
     pub sender: String,
+    pub recipient: String,
     pub content: String,
     pub created_at: u64,
     pub decrypted: bool,
     pub is_own: bool,
+    #[serde(default)]
+    pub tags: String,
 }
 
 /// Send a direct message (NIP-44 v2, kind 4): encrypt with the unlocked
@@ -155,10 +158,16 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
                 Ok::<DirectMessage, soshal_db_core::error::DbError>(DirectMessage {
                     id: row.id,
                     sender: row.pubkey,
+                    recipient: if is_own {
+                        with_pubkey.clone()
+                    } else {
+                        my_pk.clone()
+                    },
                     content,
                     created_at: row.created_at.max(0) as u64,
                     decrypted,
                     is_own,
+                    tags: row.tags_json,
                 })
             })
             .collect::<Result<Vec<DirectMessage>, soshal_db_core::error::DbError>>()?;
@@ -181,7 +190,10 @@ pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, Stri
             (),
             |r| r.get(0),
         )?;
-        Ok(extract_peers_from_cids(&cids, &pubkey))
+        let mut peers = extract_peers_from_cids(&cids, &pubkey);
+        let blocked = soshal_db_core::repos::block::BlockRepo::new(db).list(&pubkey)?;
+        peers.retain(|p| !blocked.contains(p));
+        Ok(peers)
     })
 }
 

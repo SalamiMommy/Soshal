@@ -9,6 +9,8 @@ import 'crypto_service.dart';
 class SignerService extends ChangeNotifier {
   final RustLibApi _api = RustLib.instance.api;
   AppLifecycleListener? _lifecycle;
+  VoidCallback? onLock;
+  VoidCallback? onUnlock;
 
   SignerService() {
     _lifecycle = AppLifecycleListener(
@@ -62,6 +64,7 @@ class SignerService extends ChangeNotifier {
   Future<bool> lock() async {
     final ok = _api.crateFfiSignerSignerLock();
     await refresh();
+    onLock?.call();
     return ok;
   }
 
@@ -69,6 +72,7 @@ class SignerService extends ChangeNotifier {
   Future<String> unlock(String secret) async {
     final pk = _api.crateFfiSignerSignerUnlock(secret: secret);
     await refresh();
+    onUnlock?.call();
     return pk;
   }
 
@@ -80,6 +84,7 @@ class SignerService extends ChangeNotifier {
   Future<bool> unlockFromKeyring(String pubkey) async {
     final ok = await _api.crateFfiSignerSignerUnlockFromKeyring(pubkey: pubkey);
     await refresh();
+    onUnlock?.call();
     return ok;
   }
 

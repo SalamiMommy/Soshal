@@ -154,8 +154,10 @@ mod ffi_aux_modules_tests {
     }
     #[test]
     fn social_ffi_friend_suggestions_no_signer_empty() {
-        // Lock: signer state is process-global across parallel tests.
+        // Lock: signer state is process-global across parallel tests. Force
+        // the closed-signer premise instead of trusting prior-test state.
         let _g = crate::test_util::lock();
+        let _ = signer::signer_lock();
         let got = social::social_friend_suggestions().unwrap();
         assert!(got.is_empty());
     }

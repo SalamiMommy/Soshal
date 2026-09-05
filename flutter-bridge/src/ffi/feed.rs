@@ -7,7 +7,7 @@
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
-use soshal_db_core::repos::post::PostRepo;
+use soshal_db_core::repos::post::{PostMetaRow, PostRepo};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -123,6 +123,63 @@ pub async fn feed_rank_posts(events_json: String) -> Result<String, String> {
         Ok(json) => Ok(json).into(),
         Err(e) => Err(format!("serialization failed: {e}")).into(),
     }
+}
+
+fn feed_engagement_counters(
+    db: &soshal_db_core::Database,
+    ids: &[String],
+) -> std::collections::HashMap<String, FeedPost> {
+    if ids.is_empty() {
+        return std::collections::HashMap::new();
+    }
+    let id_json = serde_json::to_string(ids).unwrap_or_else(|_| "[]".to_string());
+    let active_pubkey: String = super::db::active_pubkey().unwrap_or_default();
+    soshal_db_core::block_on(async {
+        let r: Result<std::collections::HashMap<String, FeedPost>, String> = async {
+            let conn = db.conn().map_err(|e| e.to_string())?;
+            let stmt = conn
+                .prepare(
+                    "SELECT p.id,
+                            (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
+                            (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.kind = 1 AND rp.is_deleted = 0),
+                            (SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id),
+                            EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?2)
+                     FROM posts p
+                     WHERE p.id IN (SELECT value FROM json_each(?1))",
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            let mut out = std::collections::HashMap::new();
+            let mut rows = stmt
+                .query(libsql::params![id_json.as_str(), active_pubkey.as_str()])
+                .await
+                .map_err(|e| e.to_string())?;
+            while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+                let event_id: String = row.get(0).map_err(|e| e.to_string())?;
+                let reactions: i64 = row.get(1).map_err(|e| e.to_string())?;
+                let replies: i64 = row.get(2).map_err(|e| e.to_string())?;
+                let reposts: i64 = row.get(3).map_err(|e| e.to_string())?;
+                let liked: i64 = row.get(4).map_err(|e| e.to_string())?;
+                out.insert(
+                    event_id,
+                    FeedPost {
+                        event_id: String::new(),
+                        pubkey: String::new(),
+                        content: String::new(),
+                        created_at: 0,
+                        reactions: reactions.min(i32::MAX as i64) as i32,
+                        replies: replies.min(i32::MAX as i64) as i32,
+                        reposts: reposts.min(i32::MAX as i64) as i32,
+                        liked: liked != 0,
+                        media_json: None,
+                    },
+                );
+            }
+            Ok(out)
+        }
+        .await;
+        r.unwrap_or_default()
+    })
 }
 
 fn get_custom_word_filters(db: &soshal_db_core::Database) -> Vec<String> {
@@ -318,90 +375,33 @@ pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
         let filters = get_custom_word_filters(db);
         let repo = PostRepo::new(db);
-        let rows = match (opts.cursor_created_at, opts.cursor_id) {
-            (Some(cursor), Some(cursor_id)) => match authors.as_deref() {
+        let mut rows: Vec<PostMetaRow> = Vec::new();
+        if let (Some(cursor), Some(cursor_id)) = (opts.cursor_created_at, opts.cursor_id) {
+            let chunk = match authors.as_deref() {
                 Some(a) => repo.get_paged_meta_cursor_by_authors(cursor, &cursor_id, limit, a)?,
                 None => repo.get_paged_meta_cursor(cursor, &cursor_id, limit)?,
-            },
-            _ => {
-                let offset = opts.offset.max(0) as i64;
-                match authors.as_deref() {
+            };
+            rows.extend(chunk);
+        } else {
+            let mut offset = opts.offset.max(0) as i64;
+            while rows.len() < limit as usize * 4 {
+                let chunk = match authors.as_deref() {
                     Some(a) => repo.get_paged_meta_by_authors(limit, offset, a)?,
                     None => repo.get_paged_meta(limit, offset)?,
+                };
+                if chunk.is_empty() {
+                    break;
                 }
+                offset += chunk.len() as i64;
+                rows.extend(chunk);
             }
-        };
-        // Real engagement counters: one aggregate query over the fetched
-        // page instead of a correlated subquery per row (mirrors
-        // feed_fetch_window). `liked` is scoped to the active account.
-        let active_pubkey: String = soshal_db_core::block_on(async {
-            let r: Result<String, String> = async {
-                let conn = db.conn().map_err(|e| e.to_string())?;
-                let stmt = conn
-                    .prepare("SELECT value FROM settings WHERE key = 'active_pubkey'")
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let mut rows = stmt.query(()).await.map_err(|e| e.to_string())?;
-                match rows.next().await.map_err(|e| e.to_string())? {
-                    Some(row) => Ok(row.get(0).map_err(|e| e.to_string()).unwrap_or_default()),
-                    None => Ok(String::new()),
-                }
-            }
-            .await;
-            r.unwrap_or_default()
-        });
+        }
         let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
-        let id_json = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string());
-        let counters: std::collections::HashMap<String, FeedPost> =
-            soshal_db_core::block_on(async {
-                let r: Result<std::collections::HashMap<String, FeedPost>, String> = async {
-                    let conn = db.conn().map_err(|e| e.to_string())?;
-                    let stmt = conn
-                        .prepare(
-                            "SELECT p.id,
-                                    (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
-                                    (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.is_deleted = 0),
-                                    (SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id),
-                                    EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?2)
-                             FROM posts p
-                             WHERE p.id IN (SELECT value FROM json_each(?1))",
-                        )
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    let mut out = std::collections::HashMap::new();
-                    let mut rows = stmt
-                        .query(libsql::params![id_json.as_str(), active_pubkey.as_str()])
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
-                        let event_id: String = row.get(0).map_err(|e| e.to_string())?;
-                        let reactions: i64 = row.get(1).map_err(|e| e.to_string())?;
-                        let replies: i64 = row.get(2).map_err(|e| e.to_string())?;
-                        let reposts: i64 = row.get(3).map_err(|e| e.to_string())?;
-                        let liked: i64 = row.get(4).map_err(|e| e.to_string())?;
-                        out.insert(
-                            event_id,
-                            FeedPost {
-                                event_id: String::new(),
-                                pubkey: String::new(),
-                                content: String::new(),
-                                created_at: 0,
-                                reactions: reactions.min(i32::MAX as i64) as i32,
-                                replies: replies.min(i32::MAX as i64) as i32,
-                                reposts: reposts.min(i32::MAX as i64) as i32,
-                                liked: liked != 0,
-                                media_json: None,
-                            },
-                        );
-                    }
-                    Ok(out)
-                }
-                .await;
-                r.unwrap_or_default()
-            });
+        let counters = feed_engagement_counters(db, &ids);
         let posts: Vec<FeedPost> = rows
             .into_iter()
             .filter(|row| is_content_clean(&row.content, &filters))
+            .take(limit as usize)
             .map(|row| {
                 let ref_id = row.id.clone();
                 let content = if row.content.starts_with("eNo") || row.content.starts_with("eF4") {
@@ -443,13 +443,14 @@ pub fn feed_fetch_window(start_index: u32, limit: u32, audience: String) -> Resu
         let items = soshal_feed_core::window::fetch_feed_window(
             db,
             start_index as usize,
-            limit as usize,
+            (limit as usize * 4).clamp(1, 800),
             authors.as_deref(),
         )
         .map_err(soshal_db_core::error::DbError::Migration)?;
         let filtered_items: Vec<soshal_feed_core::window::FeedPostItem> = items
             .into_iter()
             .filter(|item| is_content_clean(&item.content, &filters))
+            .take(limit as usize)
             .collect();
         Ok(filtered_items)
     })
@@ -463,19 +464,25 @@ pub fn feed_fetch_thread(event_id: String) -> Result<String, String> {
         let filters = get_custom_word_filters(db);
         let repo = PostRepo::new(db);
         let replies = repo.get_replies_for_root(&event_id)?;
+        let ids: Vec<String> = replies.iter().map(|r| r.id.clone()).collect();
+        let counters = feed_engagement_counters(db, &ids);
         let out: Vec<FeedPost> = replies
             .into_iter()
             .filter(|row| is_content_clean(&row.content, &filters))
-            .map(|row| FeedPost {
-                event_id: row.id,
-                pubkey: row.pubkey,
-                content: row.content,
-                created_at: row.created_at.max(0) as u64,
-                reactions: 0,
-                replies: 0,
-                reposts: 0,
-                liked: false,
-                media_json: soshal_feed_core::query::media_json_from_tags(&row.tags_json),
+            .map(|row| {
+                let ref_id = row.id.clone();
+                let engagement = counters.get(&ref_id);
+                FeedPost {
+                    event_id: row.id,
+                    pubkey: row.pubkey,
+                    content: row.content,
+                    created_at: row.created_at.max(0) as u64,
+                    reactions: engagement.map(|c| c.reactions).unwrap_or(0),
+                    replies: engagement.map(|c| c.replies).unwrap_or(0),
+                    reposts: engagement.map(|c| c.reposts).unwrap_or(0),
+                    liked: engagement.map(|c| c.liked).unwrap_or(false),
+                    media_json: soshal_feed_core::query::media_json_from_tags(&row.tags_json),
+                }
             })
             .collect();
         Ok(out)

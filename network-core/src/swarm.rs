@@ -17,7 +17,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -46,30 +46,40 @@ pub struct SwarmReport {
     pub bytes_downloaded: u64,
     pub failures: usize,
     pub failed_hashes: Vec<String>,
+    pub cancelled: bool,
 }
 
-/// Spawns a swarm download on its own thread + tokio runtime.
-pub fn spawn_swarm_download(cfg: SwarmConfig) -> std::thread::JoinHandle<SwarmReport> {
-    std::thread::spawn(move || {
-        let rt = match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .thread_name("soshal-swarm")
-            .build()
-        {
-            Ok(rt) => rt,
-            Err(e) => {
-                log::warn!("swarm: runtime init failed: {e}");
-                return SwarmReport {
-                    failures: cfg.manifest.chunks.len(),
-                    ..SwarmReport::default()
-                };
-            }
-        };
-        rt.block_on(download(cfg))
-    })
+/// Spawns a swarm download on its own thread + tokio runtime. Returns the
+/// thread handle plus an abort token; setting the token stops fetching and
+/// releases the mmap once the worker observes it.
+pub fn spawn_swarm_download(
+    cfg: SwarmConfig,
+) -> (std::thread::JoinHandle<SwarmReport>, Arc<AtomicBool>) {
+    let abort = Arc::new(AtomicBool::new(false));
+    let thread = std::thread::spawn({
+        let abort = abort.clone();
+        move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("soshal-swarm")
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    log::warn!("swarm: runtime init failed: {e}");
+                    return SwarmReport {
+                        failures: cfg.manifest.chunks.len(),
+                        ..SwarmReport::default()
+                    };
+                }
+            };
+            rt.block_on(download(cfg, abort))
+        }
+    });
+    (thread, abort)
 }
 
-async fn download(cfg: SwarmConfig) -> SwarmReport {
+async fn download(cfg: SwarmConfig, abort: Arc<AtomicBool>) -> SwarmReport {
     // Validate out_path before opening: canonicalize the parent directory and
     // reject components that escape it (.. / symlink traversal). The caller
     // supplies this path (an app cache directory); we must not let a hostiley
@@ -166,8 +176,12 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
         let done = done.clone();
         let next = next.clone();
         let pubkey = pubkey.clone();
+        let abort = abort.clone();
         handles.push(tokio::spawn(async move {
             loop {
+                if abort.load(Ordering::Relaxed) {
+                    break;
+                }
                 // Slot index; emitted exactly once globally.
                 let idx = next.fetch_add(1, Ordering::Relaxed);
                 if idx >= chunks.len() {
@@ -179,6 +193,9 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
                 // one peer; two attempts max per chunk. Prefer QUIC if advertised.
                 let mut got = None;
                 for attempt in 0..2 {
+                    if abort.load(Ordering::Relaxed) {
+                        break;
+                    }
                     let peer_idx = (w + idx + attempt) % peers.len();
                     let peer = peers[peer_idx];
                     let quic_port = quic_ports.get(peer_idx).copied().flatten();
@@ -323,6 +340,7 @@ async fn download(cfg: SwarmConfig) -> SwarmReport {
     let mut report = SwarmReport {
         verified_chunks: verified,
         bytes_downloaded: done_set.iter().map(|&i| chunks[i].len as u64).sum(),
+        cancelled: abort.load(Ordering::Relaxed),
         ..SwarmReport::default()
     };
     report.failures = chunks.len() - verified;
@@ -434,7 +452,7 @@ mod tests {
             my_pubkey: "ab".repeat(32),
             max_parallel: 2,
         };
-        let report = download(cfg).await;
+        let report = download(cfg, Arc::new(AtomicBool::new(false))).await;
         assert_eq!(report.failures, 0);
         assert!(report.failed_hashes.is_empty());
         assert!(!out.exists());
@@ -449,7 +467,7 @@ mod tests {
             my_pubkey: "ab".repeat(32),
             max_parallel: 2,
         };
-        let report = download(cfg).await;
+        let report = download(cfg, Arc::new(AtomicBool::new(false))).await;
         assert_eq!(report.failures, 0);
     }
 
@@ -465,7 +483,7 @@ mod tests {
             my_pubkey: "ab".repeat(32),
             max_parallel: 2,
         };
-        let report = download(cfg).await;
+        let report = download(cfg, Arc::new(AtomicBool::new(false))).await;
         assert_eq!(report.failures, 1);
         assert_eq!(report.failed_hashes, vec!["ef".repeat(32)]);
     }
@@ -473,7 +491,7 @@ mod tests {
     #[test]
     fn swarm_spawn_thread_reports_fast_on_empty() {
         let root = soshal_test_util::tmp_root("swarm_spawn");
-        let handle = spawn_swarm_download(SwarmConfig {
+        let (handle, _) = spawn_swarm_download(SwarmConfig {
             manifest: empty_manifest(),
             out_path: root.join("out.bin"),
             peers: vec![],
@@ -506,7 +524,7 @@ mod tests {
         let quic_ports = vec![Some(quic.port)];
 
         let out = root.join("out.bin");
-        let handle = spawn_swarm_download(SwarmConfig {
+        let (handle, _) = spawn_swarm_download(SwarmConfig {
             manifest: m.clone(),
             out_path: out.clone(),
             peers,
@@ -534,7 +552,7 @@ mod tests {
         let m = store
             .store_reader(std::io::Cursor::new(&[1u8; 300 * 1024]))
             .unwrap();
-        let handle = spawn_swarm_download(SwarmConfig {
+        let (handle, _) = spawn_swarm_download(SwarmConfig {
             manifest: m.clone(),
             out_path: root.join("out2.bin"),
             peers: vec![],
@@ -564,7 +582,7 @@ mod tests {
             SocketAddr::from(([127, 0, 0, 1], server.port)),
         ];
         let out = root.join("out.bin");
-        let handle = spawn_swarm_download(SwarmConfig {
+        let (handle, _) = spawn_swarm_download(SwarmConfig {
             manifest: m.clone(),
             out_path: out.clone(),
             peers,
@@ -593,7 +611,7 @@ mod tests {
         // Single hostile peer: both attempts mismatch → failure report.
         let mut hostile = start_hostile_lan_server();
         let addr = SocketAddr::from(([127, 0, 0, 1], hostile.port));
-        let handle = spawn_swarm_download(SwarmConfig {
+        let (handle, _) = spawn_swarm_download(SwarmConfig {
             manifest: m.clone(),
             out_path: root.join("out1.bin"),
             peers: vec![addr],
@@ -620,7 +638,7 @@ mod tests {
         let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
         let mut hostile_manifest = m.clone();
         hostile_manifest.total_size = 1;
-        let handle = spawn_swarm_download(SwarmConfig {
+        let (handle, _) = spawn_swarm_download(SwarmConfig {
             manifest: hostile_manifest,
             out_path: root.join("out2.bin"),
             peers: vec![addr],

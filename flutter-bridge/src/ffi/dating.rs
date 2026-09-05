@@ -368,6 +368,14 @@ fn self_profile_input(user_pubkey: &str) -> soshal_dating_core::DatingProfileInp
             .filter(|s| !s.is_empty())
             .map(String::from)
     };
+    let stored_weights = v.get("preferenceWeights").and_then(|w| {
+        serde_json::from_value::<soshal_dating_core::PreferenceWeights>(w.clone()).ok()
+    });
+    let dealbreakers = v.get("dealbreakers").and_then(|d| d.as_array()).map(|a| {
+        a.iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect()
+    });
     soshal_dating_core::DatingProfileInput {
         pubkey: user_pubkey.to_string(),
         age: v.get("age").and_then(|a| a.as_f64()),
@@ -380,7 +388,8 @@ fn self_profile_input(user_pubkey: &str) -> soshal_dating_core::DatingProfileInp
                 .filter_map(|x| x.as_str().map(String::from))
                 .collect()
         }),
-        preference_weights: Some(weights),
+        preference_weights: Some(stored_weights.unwrap_or(weights)),
+        dealbreakers,
         ..Default::default()
     }
 }

@@ -8,6 +8,9 @@ pub struct FeedPostItem {
     pub event_id: String,
     pub pubkey: String,
     pub content: String,
+    /// JSON `{"type","url","blob_hash","size"}` when the post carries a
+    /// `["media", ...]` tag (LAN blob-sharing), else `None`.
+    pub media_json: Option<String>,
     pub created_at: i64,
     pub reactions: i64,
     pub replies: i64,
@@ -27,7 +30,11 @@ pub fn fetch_feed_window(
     limit: usize,
     authors: Option<&[String]>,
 ) -> Result<Vec<FeedPostItem>, String> {
-    let limit = soshal_db_core::repos::clamp_limit(limit as i64) as usize;
+    let limit = if limit == 0 {
+        0
+    } else {
+        soshal_db_core::repos::clamp_limit(limit as i64) as usize
+    };
     let conn = db.conn().map_err(|e| e.to_string())?;
     block_on(async {
         let active_pubkey: Option<String> = {
@@ -49,16 +56,16 @@ pub fn fetch_feed_window(
             ""
         };
         let sql = format!(
-            "SELECT p.id, p.pubkey, p.content, p.created_at,
+            "SELECT p.id, p.pubkey, p.content, p.tags_json, p.created_at,
                     COALESCE(u.name, u.display_name), u.picture,
                     (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
-                    (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.is_deleted = 0),
+                    (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.kind = 1 AND rp.is_deleted = 0),
                     (SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id),
                     EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?3)
              FROM posts p
              LEFT JOIN users u ON p.pubkey = u.pubkey
              WHERE p.kind = 1 AND p.is_deleted = 0{author_clause}
-             ORDER BY p.created_at DESC
+             ORDER BY p.created_at DESC, p.id DESC
              LIMIT ?1 OFFSET ?2"
         );
         let stmt = conn.prepare(&sql).await.map_err(|e| e.to_string())?;
@@ -80,17 +87,19 @@ pub fn fetch_feed_window(
             let event_id: String = row.get(0).map_err(|e| e.to_string())?;
             let pubkey: String = row.get(1).map_err(|e| e.to_string())?;
             let content: String = row.get(2).map_err(|e| e.to_string())?;
-            let created_at: i64 = row.get(3).map_err(|e| e.to_string())?;
-            let profile_name: Option<String> = row.get(4).map_err(|e| e.to_string())?;
-            let profile_picture: Option<String> = row.get(5).map_err(|e| e.to_string())?;
-            let reactions: i64 = row.get(6).map_err(|e| e.to_string())?;
-            let replies: i64 = row.get(7).map_err(|e| e.to_string())?;
-            let reposts: i64 = row.get(8).map_err(|e| e.to_string())?;
-            let liked: i64 = row.get(9).map_err(|e| e.to_string())?;
+            let tags_json: String = row.get(3).map_err(|e| e.to_string())?;
+            let created_at: i64 = row.get(4).map_err(|e| e.to_string())?;
+            let profile_name: Option<String> = row.get(5).map_err(|e| e.to_string())?;
+            let profile_picture: Option<String> = row.get(6).map_err(|e| e.to_string())?;
+            let reactions: i64 = row.get(7).map_err(|e| e.to_string())?;
+            let replies: i64 = row.get(8).map_err(|e| e.to_string())?;
+            let reposts: i64 = row.get(9).map_err(|e| e.to_string())?;
+            let liked: i64 = row.get(10).map_err(|e| e.to_string())?;
             out.push(FeedPostItem {
                 event_id,
                 pubkey,
                 content,
+                media_json: super::query::media_json_from_tags(&tags_json),
                 created_at,
                 reactions,
                 replies,
@@ -251,6 +260,7 @@ mod tests {
             event_id: "e1".into(),
             pubkey: "pk".into(),
             content: "hi".into(),
+            media_json: None,
             created_at: 42,
             reactions: 1,
             replies: 2,

@@ -12,11 +12,23 @@ impl<'a> RepostRepo<'a> {
 
     pub fn upsert(&self, r: &RepostRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(
-            &conn,
+        crate::query::with_tx(&conn, |tx| async move {
+            self.upsert_in(&tx, r).await?;
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+
+    pub async fn upsert_in(
+        &self,
+        tx: &libsql::Transaction,
+        r: &RepostRow,
+    ) -> Result<(), crate::error::DbError> {
+        tx.execute(
             "INSERT INTO reposts (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO NOTHING",
             params![r.id.as_str(), r.pubkey.as_str(), r.event_id.as_str(), r.created_at],
-        )?;
+        )
+        .await?;
         Ok(())
     }
 

@@ -341,6 +341,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
         );
       }
 
+      await saveSession();
       clearLastError();
       notifyListeners();
     } catch (e, st) {

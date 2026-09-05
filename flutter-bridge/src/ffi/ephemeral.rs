@@ -68,12 +68,24 @@ pub fn ephemeral_get(id: String) -> Result<String, String> {
     })
 }
 
+fn cleanup_expired_best_effort() {
+    let _ = super::db::with_db_result(|db| {
+        EphemeralMediaRepo::new(db).clean_expired(soshal_common_core::format::now_secs())
+    });
+}
+
 /// All pending media addressed to `pubkey`, newest first, as a JSON array.
 #[frb(sync, serialize)]
 pub fn ephemeral_list_pending(pubkey: String) -> Result<String, String> {
+    cleanup_expired_best_effort();
     super::db::with_db_result(|db| {
+        let now = soshal_common_core::format::now_secs();
         let rows = EphemeralMediaRepo::new(db).get_pending_for_recipient(&pubkey)?;
-        Ok(super::util::json_ok_or_empty(&rows))
+        let filtered: Vec<EphemeralMediaRow> = rows
+            .into_iter()
+            .filter(|r| r.expires_at.map_or(true, |exp| exp > now))
+            .collect();
+        Ok(super::util::json_ok_or_empty(&filtered))
     })
 }
 
@@ -81,8 +93,19 @@ pub fn ephemeral_list_pending(pubkey: String) -> Result<String, String> {
 /// the fresh row. Errors once the media is expired.
 #[frb(sync, serialize)]
 pub fn ephemeral_view(id: String) -> Result<String, String> {
+    cleanup_expired_best_effort();
     super::db::with_db_result(|db| {
-        let row = EphemeralMediaRepo::new(db)
+        let repo = EphemeralMediaRepo::new(db);
+        let now = soshal_common_core::format::now_secs();
+        let existing = repo
+            .get(&id)?
+            .ok_or(soshal_db_core::error::DbError::NotFound)?;
+        if existing.expires_at.map_or(false, |exp| exp < now) || existing.state != "pending" {
+            return Err(soshal_db_core::error::DbError::Migration(
+                "ephemeral media unavailable (expired or burned)".to_string(),
+            ));
+        }
+        let row = repo
             .increment_view_count(&id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
         Ok(row_json(&row))

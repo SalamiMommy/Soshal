@@ -70,6 +70,13 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
                 Ok(pk) => pk,
                 Err(_) => return None,
             };
+            if super::db::with_db_result(|db| {
+                soshal_db_core::repos::block::BlockRepo::new(db).is_blocked(&my_pk, &sender)
+            })
+            .unwrap_or(false)
+            {
+                return None;
+            }
             let peer = if sender == my_pk {
                 recipient.clone()
             } else {

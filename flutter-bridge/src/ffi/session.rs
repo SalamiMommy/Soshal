@@ -570,8 +570,12 @@ mod tests {
         // Onboarding restore->add->switch->keychain-save: switching to the
         // account the signer already holds must NOT wipe it, or the following
         // keychain save fails with "signer locked".
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
-        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let (dir, db_path) = tmp_session_dir("switch_same_signer");
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
@@ -596,8 +600,12 @@ mod tests {
     fn test_switch_to_other_account_locks_signer() {
         // Real account change A->B wipes A's keys from memory; the caller
         // re-unlocks B afterwards (accounts screen unlockFromKeyring).
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
-        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let (dir, db_path) = tmp_session_dir("switch_other_signer");
         let keys_a = soshal_nostr_core::keys::generate_keys();
         let keys_b = soshal_nostr_core::keys::generate_keys();

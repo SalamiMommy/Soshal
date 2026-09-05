@@ -639,10 +639,7 @@ fn test_marketplace_order_escrow_lifecycle() {
         "mediator".to_string(),
         seller.clone()
     )
-    .unwrap());
-    let escrow: serde_json::Value =
-        serde_json::from_str(&marketplace::marketplace_get_escrow(escrow_id).unwrap()).unwrap();
-    assert_eq!(escrow[0]["status"], "refunded");
+    .is_err());
     let escrow2 = marketplace::marketplace_create_escrow(
         order_id.clone(),
         buyer.clone(),

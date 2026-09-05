@@ -721,12 +721,23 @@ pub struct QuicStreamServerHandle {
     pub port: u16,
     stop: Arc<AtomicBool>,
     stop_notify: Arc<tokio::sync::Notify>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl QuicStreamServerHandle {
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Release);
         self.stop_notify.notify_one();
+    }
+}
+
+impl Drop for QuicStreamServerHandle {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        self.stop_notify.notify_one();
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
     }
 }
 
@@ -745,7 +756,7 @@ pub fn start_quic_stream_server_with_store(
     let (port_tx, port_rx) = std::sync::mpsc::channel::<u16>();
     let thread_stop = stop.clone();
     let thread_notify = stop_notify.clone();
-    std::thread::Builder::new()
+    let thread = std::thread::Builder::new()
         .name("soshal-quic-srv".to_string())
         .spawn(move || {
             let rt = match tokio::runtime::Builder::new_current_thread()
@@ -774,6 +785,7 @@ pub fn start_quic_stream_server_with_store(
         port,
         stop,
         stop_notify,
+        thread: Some(thread),
     })
 }
 
@@ -854,7 +866,12 @@ async fn run_stream_server(
             }
         }
     }
-    endpoint.wait_idle().await;
+    // Gracefully close so connections drain promptly even when a long-lived
+    // client (e.g. the process-global QUIC chunk pool) still holds a
+    // connection. The join in Drop must never block forever: a peer that
+    // never acknowledges its close would otherwise strand the thread.
+    endpoint.close(quinn::VarInt::from_u32(0), b"soshal shutdown");
+    drop(endpoint);
 }
 
 /// Accepts bi-streams on one connection and serves each in its own task so
@@ -1606,7 +1623,7 @@ pub fn fetch_quic_moq_groups(
                 let mut len_buf = [0u8; 4];
                 read_exact_async(&mut recv, &mut len_buf).await?;
                 let len = u32::from_le_bytes(len_buf) as usize;
-                if len > MAX_STREAM_FRAME {
+                if len > LIVE_MAX_GROUP_BYTES {
                     return Err("oversized moq frame".to_string());
                 }
                 total_bytes += len;

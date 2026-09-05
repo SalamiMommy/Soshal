@@ -415,6 +415,7 @@ pub(crate) fn resolve_audience_authors(audience: &str) -> Result<Option<Vec<Stri
     let users = wot_graph_users()?;
     let by_distance = wot::get_wot_peers_by_distance(&self_pubkey, &users, level);
     let mut authors: Vec<String> = Vec::new();
+    authors.push(self_pubkey.clone());
     for d in 1..=level {
         if let Some(set) = by_distance.get(&d) {
             authors.extend(set.iter().cloned());

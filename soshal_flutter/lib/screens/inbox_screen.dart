@@ -273,7 +273,7 @@ class _InboxScreenState extends State<InboxScreen> {
     final pubkey = entry.key;
     final messages = entry.value;
     if (messages.isEmpty) return const SizedBox.shrink();
-    final lastMessage = messages.last;
+    final lastMessage = messages.first;
     final preview = lastMessage.decrypted
         ? lastMessage.content
         : '🔒 ${lastMessage.content}';
@@ -998,9 +998,22 @@ class _InboxScreenState extends State<InboxScreen> {
         body: Selector<MessagingService, Map<String, List<DirectMessage>>>(
           selector: (_, s) => s.conversations,
           builder: (context, conversations, _) {
-            final convList = conversations.entries.toList();
+            final convList = conversations.entries.toList()
+              ..sort((a, b) {
+                final ta = a.value.isEmpty
+                    ? 0
+                    : a.value.first.createdAt;
+                final tb = b.value.isEmpty
+                    ? 0
+                    : b.value.first.createdAt;
+                return tb.compareTo(ta);
+              });
+            final requests = convList
+                .where((e) => e.value.any((m) => !m.isOwn && !m.decrypted))
+                .toList();
+            final shown = _showMessageRequests ? requests : convList;
             return ListView.builder(
-              itemCount: 3 + (convList.isEmpty ? 1 : convList.length),
+              itemCount: 3 + (shown.isEmpty ? 1 : shown.length),
               itemBuilder: (context, index) {
                 if (index == 0) return _lanDiscoverySection(context);
                 if (index == 1) return _mediaToolsSection(context);
@@ -1010,7 +1023,7 @@ class _InboxScreenState extends State<InboxScreen> {
                         _ephemeralSection(context, messagingService),
                   );
                 }
-                if (convList.isEmpty) {
+                if (shown.isEmpty) {
                   return _conversationsLoading
                       ? const Padding(
                           padding: EdgeInsets.symmetric(vertical: 24),
@@ -1022,7 +1035,7 @@ class _InboxScreenState extends State<InboxScreen> {
                           child: Text('No conversations yet'),
                         );
                 }
-                return _conversationTile(convList[index - 3]);
+                return _conversationTile(shown[index - 3]);
               },
             );
           },
@@ -1234,7 +1247,6 @@ class _InboxScreenState extends State<InboxScreen> {
 
   Widget _buildMessageBubble(DirectMessage message) {
     final sessionService = context.read<SessionService>();
-    final messagingService = context.read<MessagingService>();
     final isOwn =
         message.isOwn || message.sender == sessionService.activePubkey;
     final content =
@@ -1283,40 +1295,10 @@ class _InboxScreenState extends State<InboxScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  InkWell(
-                    onTap: message.decrypted
-                        ? null
-                        : () async {
-                            try {
-                              final decrypted =
-                                  await messagingService.decryptDM(
-                                message.content,
-                                message.sender,
-                                '',
-                              );
-                              messagingService.updateMessageContent(
-                                widget.otherPubkey,
-                                message,
-                                decrypted,
-                              );
-                              if (mounted) {
-                                setState(() {});
-                              }
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content:
-                                          SelectableText('Decrypt error: $e')),
-                                );
-                              }
-                            }
-                          },
-                    child: Text(
-                      content,
-                      style: TextStyle(
-                        color: isOwn ? scheme.onPrimary : scheme.onSurface,
-                      ),
+                  Text(
+                    content,
+                    style: TextStyle(
+                      color: isOwn ? scheme.onPrimary : scheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 4),

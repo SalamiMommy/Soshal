@@ -5,6 +5,7 @@
 //! achieving 99.99% mesh availability while consuming 50-70% less flash storage.
 
 use raptorq::{Decoder, Encoder, EncodingPacket, ObjectTransmissionInformation};
+use ring::digest;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FountainManifest {
@@ -12,6 +13,8 @@ pub struct FountainManifest {
     pub symbol_size: u16,
     pub num_source_symbols: u32,
     pub oti_data: Vec<u8>,
+    #[serde(default)]
+    pub checksum: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +68,7 @@ pub fn encode_fountain(
         symbol_size,
         num_source_symbols,
         oti_data: oti_bytes,
+        checksum: digest::digest(&digest::SHA256, data).as_ref().to_vec(),
     };
 
     Ok(EncodedFountainPayload { manifest, packets })
@@ -78,8 +82,17 @@ pub fn decode_fountain(
     if manifest.total_len == 0 || manifest.total_len > MAX_FOUNTAIN_LEN as u64 {
         return Err("invalid fountain total length".to_string());
     }
-    if manifest.symbol_size == 0 || manifest.symbol_size > 8192 {
+    if manifest.symbol_size < 16 || manifest.symbol_size > 8192 {
         return Err("invalid fountain symbol size".to_string());
+    }
+    let effective_symbol_size = if manifest.symbol_size >= 64 {
+        manifest.symbol_size - (manifest.symbol_size % 8)
+    } else {
+        manifest.symbol_size
+    };
+    let kt = manifest.total_len.div_ceil(effective_symbol_size as u64);
+    if kt > 56000 {
+        return Err("fountain source symbol count exceeds limit".to_string());
     }
     let oti =
         ObjectTransmissionInformation::with_defaults(manifest.total_len, manifest.symbol_size);
@@ -87,8 +100,19 @@ pub fn decode_fountain(
     let mut decoder = Decoder::new(oti);
 
     for packet_bytes in packets {
+        if packet_bytes.len() < 4 {
+            return Err("fountain packet too short".to_string());
+        }
         let packet = EncodingPacket::deserialize(packet_bytes);
+        if packet.payload_id().source_block_number() >= oti.source_blocks() {
+            return Err("fountain packet source block out of range".to_string());
+        }
         if let Some(result) = decoder.decode(packet) {
+            if !manifest.checksum.is_empty()
+                && digest::digest(&digest::SHA256, &result).as_ref() != manifest.checksum.as_slice()
+            {
+                return Err("fountain payload checksum mismatch".to_string());
+            }
             return Ok(result);
         }
     }
@@ -121,6 +145,7 @@ mod tests {
             symbol_size: 0,
             num_source_symbols: 1,
             oti_data: vec![],
+            checksum: vec![],
         };
         assert!(decode_fountain(&manifest_zero_symbol, &[]).is_err());
 
@@ -129,6 +154,7 @@ mod tests {
             symbol_size: 1024,
             num_source_symbols: 0,
             oti_data: vec![],
+            checksum: vec![],
         };
         assert!(decode_fountain(&manifest_zero_len, &[]).is_err());
 
@@ -137,7 +163,52 @@ mod tests {
             symbol_size: 1024,
             num_source_symbols: 100,
             oti_data: vec![],
+            checksum: vec![],
         };
         assert!(decode_fountain(&manifest_oversized, &[]).is_err());
+
+        let manifest_small_symbol = FountainManifest {
+            total_len: 256,
+            symbol_size: 1,
+            num_source_symbols: 256,
+            oti_data: vec![],
+            checksum: vec![],
+        };
+        assert!(decode_fountain(&manifest_small_symbol, &[]).is_err());
+
+        let manifest_many_symbols = FountainManifest {
+            total_len: 56001 * 16,
+            symbol_size: 16,
+            num_source_symbols: 56001,
+            oti_data: vec![],
+            checksum: vec![],
+        };
+        assert!(decode_fountain(&manifest_many_symbols, &[]).is_err());
+    }
+
+    #[test]
+    fn test_fountain_decode_rejects_malformed_packets() {
+        let original_data =
+            b"Soshal P2P Mesh Rateless Fountain Erasure Coding Test Payload 1234567890".repeat(50);
+        let encoded = encode_fountain(&original_data, 0.30).unwrap();
+
+        let short_packet = vec![vec![0u8, 1u8, 2u8]];
+        assert!(decode_fountain(&encoded.manifest, &short_packet).is_err());
+
+        let mut bad_block = encoded.packets[0].clone();
+        bad_block[0] = 0xFF;
+        assert!(decode_fountain(&encoded.manifest, &[bad_block]).is_err());
+    }
+
+    #[test]
+    fn test_fountain_decode_rejects_checksum_mismatch() {
+        let original_data =
+            b"Soshal P2P Mesh Rateless Fountain Erasure Coding Test Payload 1234567890".repeat(50);
+        let encoded = encode_fountain(&original_data, 0.30).unwrap();
+
+        let mut tampered = encoded.packets.clone();
+        tampered[0][4 + 17] ^= 0xFF;
+        let err = decode_fountain(&encoded.manifest, &tampered).unwrap_err();
+        assert!(err.contains("checksum"));
     }
 }

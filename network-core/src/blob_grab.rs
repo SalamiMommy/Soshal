@@ -34,19 +34,26 @@ static QUIC_POOL: std::sync::OnceLock<
 > = std::sync::OnceLock::new();
 static SHARED_RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
 
-fn chunk_runtime() -> tokio::runtime::Handle {
-    match tokio::runtime::Handle::try_current() {
-        Ok(h) => h,
-        Err(_) => SHARED_RT
-            .get_or_init(|| {
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .worker_threads(2)
-                    .build()
-                    .expect("quic chunk runtime")
-            })
-            .handle()
-            .clone(),
+fn block_on_chunk<F, T>(fut: F) -> Result<T, String>
+where
+    F: std::future::Future<Output = T> + Send + 'static,
+    T: Send + 'static,
+{
+    if let Ok(h) = tokio::runtime::Handle::try_current() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        h.spawn(async move {
+            let _ = tx.send(fut.await);
+        });
+        rx.recv().map_err(|_| "chunk oneshot closed".to_string())
+    } else {
+        let rt = SHARED_RT.get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(2)
+                .build()
+                .expect("quic chunk runtime")
+        });
+        Ok(rt.block_on(fut))
     }
 }
 
@@ -59,7 +66,8 @@ fn fetch_chunk_bytes(
     quic_addr: Option<SocketAddr>,
     chr: ChunkRef,
 ) -> Result<Vec<u8>, String> {
-    match &quic_addr {
+    let my_pubkey = my_pubkey.to_string();
+    match quic_addr {
         Some(qa) => {
             let qres = if chr.len == 0 || chr.len > QUIC_MAX_CHUNK {
                 Err("bad chunk request".to_string())
@@ -70,8 +78,8 @@ fn fetch_chunk_bytes(
                     length: chr.len,
                     want_manifest: false,
                 };
-                let rt = chunk_runtime();
-                let fetched = rt.block_on(async move {
+                let pk = my_pubkey.clone();
+                let fetched = block_on_chunk(async move {
                     let pool = {
                         let guard = QUIC_POOL.get_or_init(|| std::sync::Mutex::new(None));
                         let mut guard = guard.lock().map_err(|_| "quic pool lock".to_string())?;
@@ -82,12 +90,13 @@ fn fetch_chunk_bytes(
                         }
                         guard.as_ref().expect("quic pool").clone()
                     };
-                    let fut = pool.fetch_chunk(*qa, key, my_pubkey, &req);
+                    let fut = pool.fetch_chunk(qa, key, &pk, &req);
                     tokio::time::timeout(QUIC_EXCHANGE_TIMEOUT, fut)
                         .await
                         .map_err(|_| "quic exchange timed out".to_string())
                         .and_then(|r| r)
-                });
+                })
+                .and_then(|r| r);
                 match fetched {
                     Ok(data) if blake3::hash(&data).to_hex().as_str() == chr.blake3 => Ok(data),
                     Ok(_) => Err("chunk hash mismatch after transfer".to_string()),
@@ -98,7 +107,7 @@ fn fetch_chunk_bytes(
                 lan_transport::fetch_verified_chunk(
                     peer.tcp_addr(),
                     key,
-                    my_pubkey,
+                    &my_pubkey,
                     &chr.blake3,
                     chr.offset as usize,
                     chr.len,
@@ -109,7 +118,7 @@ fn fetch_chunk_bytes(
         None => lan_transport::fetch_verified_chunk(
             peer.tcp_addr(),
             key,
-            my_pubkey,
+            &my_pubkey,
             &chr.blake3,
             chr.offset as usize,
             chr.len,

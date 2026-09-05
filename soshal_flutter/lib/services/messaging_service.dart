@@ -87,9 +87,9 @@ class MessagingService extends ChangeNotifier
     final list = _conversations.putIfAbsent(peer, () => []);
     _evictConversationsIfNeeded();
     if (list.any((m) => m.id == message.id)) return;
-    list.add(message);
+    list.insert(0, message);
     if (list.length > 200) {
-      list.removeAt(0);
+      list.removeLast();
     }
     _pendingStores.add(message);
     _storeFlushTimer ??= Timer(_storeFlushInterval, _flushPendingStores);
@@ -226,10 +226,10 @@ class MessagingService extends ChangeNotifier
       }
       _evictConversationsIfNeeded();
       final convo = _conversations[recipientPubkey]!;
-      if (convo.length >= 200) {
-        convo.removeRange(0, convo.length - 199);
+      convo.insert(0, message);
+      if (convo.length > 200) {
+        convo.removeLast();
       }
-      convo.add(message);
 
       clearLastError();
       notifyDeferred();
@@ -395,16 +395,9 @@ class MessagingService extends ChangeNotifier
 
   /// Mark conversation as read
   Future<void> markAsRead(String otherPubkey) async {
-    try {
-      _readWatermarks[otherPubkey] =
-          DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      clearLastError();
-      notifyDeferred();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
+    _readWatermarks[otherPubkey] =
+        DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    notifyDeferred();
   }
 
   /// Register a burn DM (disappearing media) against a sent message.

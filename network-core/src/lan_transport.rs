@@ -61,11 +61,23 @@ pub(crate) enum ResponseKind {
 pub struct LanServerHandle {
     pub port: u16,
     stop: Arc<AtomicBool>,
+    addr: SocketAddr,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl LanServerHandle {
     pub fn stop(&mut self) {
         self.stop.store(true, Ordering::Release);
+    }
+}
+
+impl Drop for LanServerHandle {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = TcpStream::connect_timeout(&self.addr, CONNECT_TIMEOUT);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
     }
 }
 
@@ -87,9 +99,10 @@ pub fn start_lan_server_with_store(
         .port();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_clone = stop.clone();
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     const MAX_CONCURRENT_LAN_CONNS: usize = 16;
     let active_conns = Arc::new(AtomicUsize::new(0));
-    std::thread::spawn(move || {
+    let thread = std::thread::spawn(move || {
         let store = ChunkStore::new(store_root);
         for stream in listener.incoming() {
             if stop_clone.load(Ordering::Acquire) {
@@ -122,7 +135,12 @@ pub fn start_lan_server_with_store(
             }
         }
     });
-    Ok(LanServerHandle { port, stop })
+    Ok(LanServerHandle {
+        port,
+        stop,
+        addr,
+        thread: Some(thread),
+    })
 }
 
 fn handle_conn(stream: TcpStream, key: [u8; 32], store: &ChunkStore) {

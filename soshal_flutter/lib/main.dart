@@ -126,6 +126,9 @@ class SoshalApp extends StatefulWidget {
 }
 
 class _SoshalAppState extends State<SoshalApp> {
+  bool _restartSyncOnUnlock = false;
+  List<String>? _syncRelays;
+
   @override
   void initState() {
     super.initState();
@@ -176,6 +179,25 @@ class _SoshalAppState extends State<SoshalApp> {
         p2p: context.read<P2pService>(),
       );
       context.read<SessionService>().attachSync(context.read<SyncService>());
+      final signerService = context.read<SignerService>();
+      signerService.onLock = () {
+        if (syncService.started) {
+          _restartSyncOnUnlock = true;
+          _syncRelays = context.read<SessionService>().activeAccount?.relayList;
+          unawaited(syncService.stop());
+        }
+      };
+      signerService.onUnlock = () {
+        final session = context.read<SessionService>();
+        if (_restartSyncOnUnlock && session.hasActiveSession()) {
+          _restartSyncOnUnlock = false;
+          unawaited(syncService.start(
+            relays: (_syncRelays?.isNotEmpty ?? false)
+                ? _syncRelays!
+                : const ['wss://relay.nostr.band', 'wss://nos.lol'],
+          ));
+        }
+      };
       context.read<SessionService>().attachAccountScopedServices(
             feed: context.read<FeedService>(),
             messaging: context.read<MessagingService>(),

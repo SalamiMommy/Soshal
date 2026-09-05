@@ -128,10 +128,20 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
 
   Future<double> calculateScore(String userPubkey, String targetPubkey) async {
     try {
+      final prefs = <String, dynamic>{};
+      final own = _ownProfile;
+      if (own != null) {
+        if (own.preferenceWeights.isNotEmpty) {
+          prefs['preferenceWeights'] = own.preferenceWeights;
+        }
+        if (own.dealbreakers.isNotEmpty) {
+          prefs['dealbreakers'] = own.dealbreakers;
+        }
+      }
       final score = RustLib.instance.api.crateFfiDatingDatingCalculateScore(
         userPubkey: userPubkey,
         targetPubkey: targetPubkey,
-        preferencesJson: '{}',
+        preferencesJson: prefs.isEmpty ? '{}' : jsonEncode(prefs),
       );
       clearLastError();
       return score;
@@ -470,6 +480,8 @@ class DatingCard {
   final List<String> interests;
   final double compatibilityScore;
   final int lastSeen;
+  final Map<String, double> preferenceWeights;
+  final List<String> dealbreakers;
 
   DatingCard({
     required this.pubkey,
@@ -493,6 +505,8 @@ class DatingCard {
     required this.interests,
     required this.compatibilityScore,
     required this.lastSeen,
+    this.preferenceWeights = const {},
+    this.dealbreakers = const [],
   });
 
   factory DatingCard.fromJson(Map<String, dynamic> json) {
@@ -525,6 +539,12 @@ class DatingCard {
       compatibilityScore:
           (json['compatibility_score'] as num?)?.toDouble() ?? 0,
       lastSeen: json.intOf('last_seen'),
+      preferenceWeights: (json['preferenceWeights'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(k, (v as num?)?.toDouble() ?? 0)) ??
+          const {},
+      dealbreakers: (json['dealbreakers'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
     );
   }
 }

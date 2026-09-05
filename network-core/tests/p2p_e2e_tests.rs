@@ -35,7 +35,7 @@ fn swarm_download_roundtrip_over_loopback() {
         my_pubkey: "ab".repeat(32),
         max_parallel: 4,
     });
-    let report = handle.join().unwrap();
+    let report = handle.0.join().unwrap();
 
     assert_eq!(report.verified_chunks, manifest.chunks.len());
     assert_eq!(report.failures, 0);
@@ -75,7 +75,7 @@ fn swarm_download_fails_cleanly_without_server() {
         my_pubkey: "ab".repeat(32),
         max_parallel: 2,
     });
-    let report = handle.join().unwrap();
+    let report = handle.0.join().unwrap();
     assert_eq!(report.verified_chunks, 0);
     assert!(report.failures > 0);
     assert!(!report.failed_hashes.is_empty());
@@ -105,6 +105,6 @@ fn swarm_download_rejects_public_peer() {
         my_pubkey: "ab".repeat(32),
         max_parallel: 2,
     });
-    let report = handle.join().unwrap();
+    let report = handle.0.join().unwrap();
     assert!(report.failures > 0);
 }

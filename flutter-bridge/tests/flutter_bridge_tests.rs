@@ -25,6 +25,8 @@ mod ffi_tests {
     }
     #[test]
     fn test_auth_keypair_generation() {
+        // Lock: signer_unlock (auth_generate_keypair) mutates global signer.
+        let _g = crate::test_util::lock();
         let keypair: KeyPairResult =
             serde_json::from_str(&auth::auth_generate_keypair().unwrap()).unwrap();
         assert_eq!(keypair.public_key.len(), 64, "pubkey must be 64 hex chars");
@@ -37,6 +39,8 @@ mod ffi_tests {
     }
     #[test]
     fn test_auth_npub_encode_decode() {
+        // Lock: signer_unlock (auth_generate_keypair) mutates global signer.
+        let _g = crate::test_util::lock();
         let keypair: KeyPairResult =
             serde_json::from_str(&auth::auth_generate_keypair().unwrap()).unwrap();
         let npub = auth::auth_npub_encode(keypair.public_key.clone()).unwrap();
@@ -91,7 +95,10 @@ mod ffi_tests {
 mod integration_tests {
     use soshal_flutter_bridge::*;
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_auth_flow_end_to_end() {
+        // Lock: auth_restore_from_mnemonic mutates the global signer.
+        let _g = crate::test_util::lock();
         let mnemonic = auth::auth_generate_mnemonic().unwrap();
         let restored_kp: KeyPairResult = serde_json::from_str(
             &auth::auth_restore_from_mnemonic(mnemonic, "".to_string())
@@ -105,6 +112,9 @@ mod integration_tests {
     }
     #[test]
     fn test_database_workflow() {
+        // Lock: db_init re-points the process-global handle — must serialize
+        // against every other DB test to avoid mid-flight handle swaps.
+        let _g = crate::test_util::lock();
         let path = soshal_test_util::tmp_path("bridge_flow", "flow.db")
             .to_string_lossy()
             .to_string();

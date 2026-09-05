@@ -40,7 +40,7 @@ fn format_fts5_query_builds_prefix_query() {
         format_fts5_query("  hello   world  "),
         "\"hello\"* AND \"world\"*"
     );
-    assert_eq!(format_fts5_query("a:b c"), "\"a\"* AND \"b\"* AND \"c\"*");
+    assert_eq!(format_fts5_query("a:b c"), "a:\"b\"* AND \"c\"*");
 }
 
 #[test]
@@ -49,10 +49,7 @@ fn format_fts5_query_empty_or_oversize_is_empty() {
     assert_eq!(format_fts5_query("   "), "");
     assert_eq!(format_fts5_query("!!!"), "");
     assert_eq!(format_fts5_query(&"a".repeat(4097)), "");
-    assert_eq!(
-        format_fts5_query("hello:world:"),
-        "\"hello\"* AND \"world\"*"
-    );
+    assert_eq!(format_fts5_query("hello:world:"), "hello:\"world\"*");
 }
 
 #[test]

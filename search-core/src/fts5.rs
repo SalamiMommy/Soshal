@@ -43,21 +43,45 @@ pub fn format_fts5_query(query: &str) -> String {
     let mut out = String::with_capacity(trimmed.len() + 16);
     let mut seen: HashSet<String> = HashSet::new();
     let mut count = 0;
-    for word in trimmed.split(|c: char| c.is_whitespace() || c == ':') {
-        if let Some(t) = sanitize_fts5_term(word) {
-            if !seen.contains(&t) {
-                if count > 0 {
-                    out.push_str(" AND ");
+    for word in trimmed.split_whitespace() {
+        let (field, term) = match word.find(':') {
+            Some(idx) => {
+                let f: String = word[..idx]
+                    .chars()
+                    .filter(|c| c.is_alphanumeric())
+                    .collect();
+                (if f.is_empty() { None } else { Some(f) }, &word[idx + 1..])
+            }
+            None => (None, word),
+        };
+        let Some(t) = sanitize_fts5_term(term) else {
+            continue;
+        };
+        let key = match &field {
+            Some(f) => format!("{f}:{t}"),
+            None => t.clone(),
+        };
+        if !seen.contains(&key) {
+            if count > 0 {
+                out.push_str(" AND ");
+            }
+            match &field {
+                Some(f) => {
+                    out.push_str(f);
+                    out.push_str(":\"");
+                    out.push_str(&t);
+                    out.push_str("\"*");
                 }
-                out.push('"');
-                out.push_str(&t);
-                out.push('"');
-                out.push('*');
-                count += 1;
-                seen.insert(t);
-                if count >= MAX_FTS5_TERMS {
-                    break;
+                None => {
+                    out.push('"');
+                    out.push_str(&t);
+                    out.push_str("\"*");
                 }
+            }
+            count += 1;
+            seen.insert(key);
+            if count >= MAX_FTS5_TERMS {
+                break;
             }
         }
     }

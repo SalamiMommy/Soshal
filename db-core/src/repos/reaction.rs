@@ -24,7 +24,7 @@ impl<'a> ReactionRepo<'a> {
             return Ok(());
         }
         tx.execute(
-            "DELETE FROM reactions WHERE event_id = ?1 AND pubkey = ?2 AND content = '-'",
+            "DELETE FROM reactions WHERE event_id = ?1 AND pubkey = ?2",
             params![row.event_id.as_str(), row.pubkey.as_str()],
         )
         .await?;

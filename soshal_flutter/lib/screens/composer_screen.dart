@@ -265,7 +265,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content:
-                  SelectableText('Signer locked — unlock in Security settings'),
+                  SelectableText('Signer locked — unlock with your keychain or recovery phrase'),
             ),
           );
         }

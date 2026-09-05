@@ -91,12 +91,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final feed = context.read<FeedService>();
       await feed.loadPinnedPosts();
-      final all = await feed.fetchWindow(limit: 200);
+      final own = <FeedPost>[];
+      if (pubkey != null) {
+        const pageSize = 200;
+        const maxPages = 50;
+        for (var page = 0; page < maxPages; page++) {
+          final all = await feed.fetchWindow(
+            startIndex: page * pageSize,
+            limit: pageSize,
+          );
+          own.addAll(all.where((p) => p.pubkey == pubkey));
+          if (all.length < pageSize) break;
+        }
+      }
       if (!mounted) return;
       setState(() {
-        _ownPosts = pubkey == null
-            ? <FeedPost>[]
-            : all.where((p) => p.pubkey == pubkey).toList();
+        _ownPosts = own;
         _postsLoading = false;
       });
     } catch (e) {

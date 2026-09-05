@@ -810,9 +810,19 @@ pub fn marketplace_resolve_escrow(
             ));
         }
         let status = if escrow.status == "disputed" {
-            "completed"
+            if winner_pubkey == escrow.seller_pubkey {
+                "completed"
+            } else {
+                "refunded"
+            }
         } else {
-            "refunded"
+            let (buyer_ok, seller_ok) = repo.get_confirms(&escrow_id)?;
+            if !buyer_ok || !seller_ok {
+                return Err(soshal_db_core::error::DbError::Oversized(
+                    "resolve requires both-party confirmation".to_string(),
+                ));
+            }
+            "completed"
         };
         repo.update_status(&escrow_id, status)?;
         repo.set_note(&escrow_id, "resolved by mediator")?;
@@ -1398,10 +1408,8 @@ mod tests {
         assert!(marketplace_release_escrow(escrow_id.clone(), spk.clone()).is_err());
         assert!(
             marketplace_resolve_escrow(escrow_id.clone(), "mediator".to_string(), spk.clone(),)
-                .unwrap()
+                .is_err()
         );
-        let escrow = marketplace_get_escrow(escrow_id).unwrap();
-        assert!(escrow.contains("\"status\":\"refunded\""), "{escrow}");
 
         let escrow2 =
             marketplace_create_escrow(order_id.clone(), "buyer1".to_string(), spk.clone(), 5000)
@@ -1451,8 +1459,20 @@ mod tests {
         )
         .unwrap());
         let escrow = marketplace_get_escrow(escrow3).unwrap();
-        assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
+        assert!(escrow.contains("\"status\":\"refunded\""), "{escrow}");
         assert!(escrow.contains("resolved by mediator"), "{escrow}");
+        let order5 =
+            marketplace_create_order("l1".to_string(), "buyer1".to_string(), spk.clone()).unwrap();
+        let escrow5 =
+            marketplace_create_escrow(order5, "buyer1".to_string(), spk.clone(), 5000).unwrap();
+        marketplace_dispute_escrow(escrow5.clone(), "buyer1".to_string(), "refund".to_string())
+            .unwrap();
+        assert!(
+            marketplace_resolve_escrow(escrow5.clone(), "mediator".to_string(), spk.clone(),)
+                .unwrap()
+        );
+        let escrow = marketplace_get_escrow(escrow5).unwrap();
+        assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
         signer::signer_lock().unwrap();
     }
 

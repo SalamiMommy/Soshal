@@ -11,6 +11,7 @@ import '../utils/format.dart';
 import '../services/network_service.dart';
 import '../services/session_service.dart';
 import '../services/settings_service.dart';
+import '../services/shell_service.dart';
 import '../services/signer_service.dart';
 
 /// Auth Flow Screen
@@ -122,11 +123,13 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<void> _useExistingAccount(SessionAccount account) async {
     final signer = context.read<SignerService>();
     final session = context.read<SessionService>();
+    final shell = context.read<ShellService>();
+    final pinUser = shell.hasPin;
     final keychainEnabled =
         context.read<SettingsService>().getSetting('keychain_unlock_enabled') ==
             'true';
     try {
-      if (!keychainEnabled) {
+      if (!pinUser && !keychainEnabled) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -139,22 +142,28 @@ class _AuthScreenState extends State<AuthScreen> {
         }
         return;
       }
-      final ok = await signer.unlockFromKeyring(account.pubkey);
-      if (!ok) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: SelectableText(
-                'No stored key for this account — import its recovery phrase '
-                'to recover.',
+      var unlocked = false;
+      if (!pinUser) {
+        unlocked = await signer.unlockFromKeyring(account.pubkey);
+        if (!unlocked) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: SelectableText(
+                  'No stored key for this account — import its recovery phrase '
+                  'to recover.',
+                ),
               ),
-            ),
-          );
+            );
+          }
+          return;
         }
-        return;
       }
       await session.switchAccount(account.pubkey);
       await session.saveSession();
+      if (!unlocked) {
+        await signer.lock();
+      }
       // Start the Rust-side background relay sync for the newly active
       // account so its feed/DM ingest runs.
       final relays = session.activeAccount?.relayList ?? <String>[];
@@ -253,7 +262,7 @@ class _AuthScreenState extends State<AuthScreen> {
     return ConfirmMnemonicWidget(
       mnemonic: mnemonic,
       onComplete: () {
-        // Save session and route to feed
+        setState(() => _mnemonic = null);
         context.go('/feed');
       },
       onBack: () {
@@ -347,7 +356,11 @@ class _GenerateMnemonicWidgetState extends State<GenerateMnemonicWidget> {
               ElevatedButton(
                 onPressed: _isLoading || _mnemonic == null
                     ? null
-                    : () => widget.onNext(_mnemonic!),
+                    : () {
+                        final m = _mnemonic!;
+                        setState(() => _mnemonic = null);
+                        widget.onNext(m);
+                      },
                 child: const Text('Continue'),
               ),
             ],
@@ -390,7 +403,9 @@ class _ImportMnemonicWidgetState extends State<ImportMnemonicWidget> {
       final isValid =
           await authService.validateMnemonic(_mnemonicController.text);
       if (isValid) {
-        widget.onNext(_mnemonicController.text.trim());
+        final text = _mnemonicController.text.trim();
+        _mnemonicController.clear();
+        widget.onNext(text);
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -491,11 +506,40 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
 
       // Add to session
       const defaultRelays = NetworkService.defaultRelays;
-      await sessionService.addAccount(
-        keypair.publicKey,
-        npub,
-        defaultRelays,
-      );
+      if (!sessionService
+          .getAccounts()
+          .any((a) => a.pubkey == keypair.publicKey)) {
+        await sessionService.addAccount(
+          keypair.publicKey,
+          npub,
+          defaultRelays,
+        );
+      }
+
+      if (await signer.isLocked()) {
+        try {
+          await authService.restoreFromMnemonic(
+            widget.mnemonic.trim(),
+            '',
+          );
+        } catch (e) {
+          if (mounted) {
+            setState(() => _isLoading = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const SelectableText(
+                  'Session locked during setup — tap Go to Feed to retry.',
+                ),
+                action: SnackBarAction(
+                  label: 'Retry',
+                  onPressed: _complete,
+                ),
+              ),
+            );
+          }
+          return;
+        }
+      }
 
       // Make the just-created/imported identity active so the next launch
       // auto-logs into it (addAccount only activates when no account is

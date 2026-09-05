@@ -88,6 +88,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
   Widget build(BuildContext context) {
     final pubkey = context.read<SessionService>().activePubkey ?? '';
     final signer = context.read<SignerService>();
+    final shell = context.read<ShellService>();
     return SettingsScaffold(
       title: 'Security',
       children: [
@@ -211,9 +212,9 @@ class _SecurityScreenState extends State<SecurityScreen> {
         ListTile(
           dense: true,
           title: const Text('Unlock from device keychain'),
-          enabled: _keychainUnlockEnabled,
+          enabled: _keychainUnlockEnabled && !shell.hasPin,
           trailing: OutlinedButton(
-            onPressed: _keychainUnlockEnabled
+            onPressed: _keychainUnlockEnabled && !shell.hasPin
                 ? () async {
                     if (pubkey.isEmpty) return;
                     try {

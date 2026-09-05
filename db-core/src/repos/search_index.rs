@@ -44,7 +44,7 @@ impl<'a> SearchIndexRepo<'a> {
         // with trigger inserts and surface as bare `constraint failed`.
         let stmt = tx
             .prepare(
-                "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content, subject) SELECT COALESCE((SELECT rowid FROM posts WHERE id = ?1), ?2), ?1, ?3, ?4, COALESCE((SELECT NULLIF(subject, '') FROM posts WHERE id = ?1), ?5)",
+                "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content, subject, category) SELECT COALESCE((SELECT rowid FROM posts WHERE id = ?1), ?2), ?1, ?3, ?4, COALESCE((SELECT NULLIF(subject, '') FROM posts WHERE id = ?1), ?5), COALESCE((SELECT category FROM posts WHERE id = ?1), '')",
             )
             .await?;
         for row in rows {

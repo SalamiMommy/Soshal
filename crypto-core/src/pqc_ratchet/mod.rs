@@ -104,6 +104,11 @@ pub struct RatchetState {
     pub receiving_chain_counter: i64,
     /// Skipped-key buffer for out-of-order delivery (≤ MAX_RATCHET_WINDOW).
     pub skipped: Vec<SkippedKey>,
+    /// Previous epoch's skipped keys, retained one epoch back so late
+    /// cross-epoch messages still decrypt (≤ MAX_RATCHET_WINDOW). Moved into
+    /// place on each chain-epoch transition; zeroized on use/eviction.
+    #[serde(default)]
+    pub prev_epoch_skipped: Vec<SkippedKey>,
 }
 
 impl Drop for RatchetState {
@@ -113,6 +118,9 @@ impl Drop for RatchetState {
         self.sending_chain_key.zeroize();
         self.receiving_chain_key.zeroize();
         for s in &mut self.skipped {
+            s.key.zeroize();
+        }
+        for s in &mut self.prev_epoch_skipped {
             s.key.zeroize();
         }
     }
@@ -235,6 +243,7 @@ pub fn init_state(
         receiving_chain_key: String::new(),
         receiving_chain_counter: 0,
         skipped: Vec::new(),
+        prev_epoch_skipped: Vec::new(),
     }
 }
 
@@ -346,6 +355,7 @@ pub fn encrypt_ratchet(
         receiving_chain_key: state.receiving_chain_key.clone(),
         receiving_chain_counter: state.receiving_chain_counter,
         skipped: state.skipped.clone(),
+        prev_epoch_skipped: state.prev_epoch_skipped.clone(),
     };
     Ok((out, header, ciphertext))
 }
@@ -376,7 +386,7 @@ pub fn decrypt_ratchet(
     if ciphertext.len() > MAX_RATCHET_CIPHERTEXT {
         return Err("ciphertext too large");
     }
-    if header.chain_counter < state.chain_counter {
+    if header.chain_counter + 1 < state.chain_counter {
         return Err("replay");
     }
     if header.chain_counter > state.chain_counter + 1 {
@@ -406,10 +416,19 @@ pub fn decrypt_ratchet(
         }
         out.chain_counter = header.chain_counter;
         out.receiving_chain_counter = 0;
-        for s in &mut out.skipped {
+        for s in &mut out.prev_epoch_skipped {
             s.key.zeroize();
         }
-        out.skipped.clear();
+        out.prev_epoch_skipped.clear();
+        // Retain the previous epoch's skipped keys (bounded) so a late
+        // message from that epoch can still be opened; older epochs drop.
+        for s in out.skipped.drain(..) {
+            if out.prev_epoch_skipped.len() >= MAX_RATCHET_WINDOW as usize {
+                let mut evicted = out.prev_epoch_skipped.remove(0);
+                evicted.key.zeroize();
+            }
+            out.prev_epoch_skipped.push(s);
+        }
         // Rotate the receiver KEM keypair after every root step and
         // republish the new public key (forward secrecy): a compromised
         // receiver key cannot decrypt future messages.
@@ -427,9 +446,35 @@ pub fn decrypt_ratchet(
         prev_counter = state.receiving_chain_counter;
     }
 
-    // Message-key extraction: chain advance with skipped-key buffer.
+    // Message-key extraction: chain advance with skipped-key buffer. A
+    // message from the immediately-previous epoch opens only from the
+    // retained prior-epoch skipped keys; its header MAC was keyed by the
+    // prior root (not re-verifiable here) and its stale header pk is never
+    // adopted as the next encapsulate target (payload authenticity holds via
+    // the NIP-44 AEAD bound to the retained key).
+    let mut mac_ok = true;
     let msg_key: [u8; 32];
-    if header.seq < prev_counter {
+    if header.chain_counter + 1 == state.chain_counter {
+        let pos = out
+            .prev_epoch_skipped
+            .iter()
+            .position(|s| s.seq == header.seq)
+            .ok_or("replay")?;
+        let mut key_hex = out.prev_epoch_skipped.remove(pos).key;
+        let mut bytes = match hex_decode(&key_hex) {
+            Ok(b) => b,
+            Err(e) => {
+                key_hex.zeroize();
+                return Err(e);
+            }
+        };
+        key_hex.zeroize();
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        bytes.zeroize();
+        msg_key = arr;
+        mac_ok = false;
+    } else if header.seq < prev_counter {
         let pos = out
             .skipped
             .iter()
@@ -490,12 +535,14 @@ pub fn decrypt_ratchet(
     // rejected here — the header pk is the live encapsulate target for our
     // next message, so adopting an unauthenticated pk would let an attacker
     // redirect future ciphertexts to a key only they hold.
-    let mac_key = header_mac_key(&out.root_key)?;
-    if !verify_header_mac(&mac_key, header) {
-        return Err("bad header mac");
+    if mac_ok {
+        let mac_key = header_mac_key(&out.root_key)?;
+        if !verify_header_mac(&mac_key, header) {
+            return Err("bad header mac");
+        }
+        // The peer's header pk is the live target for our next encapsulate.
+        out.peer_pk = header.pk.clone();
     }
-    // The peer's header pk is the live target for our next encapsulate.
-    out.peer_pk = header.pk.clone();
     Ok((out, final_plaintext))
 }
 

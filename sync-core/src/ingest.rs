@@ -19,6 +19,7 @@ use soshal_common_core::consts::{
 /// the relay wire (legacy NIP-04, unknown/junk kinds) is dropped at ingest.
 const POST_KIND_ALLOWLIST: &[u16] = &[
     1,
+    6,
     KIND_REACTION,
     1059,
     KIND_GUESTBOOK,
@@ -42,6 +43,7 @@ use soshal_db_core::repos::hashtag::{HashtagRepo, HashtagRow};
 use soshal_db_core::repos::post::{PostRepo, PostRow};
 use soshal_db_core::repos::reaction::{ReactionRepo, ReactionRow};
 use soshal_db_core::repos::relay::{RelayRepo, RelayRow};
+use soshal_db_core::repos::repost::{RepostRepo, RepostRow};
 use soshal_db_core::repos::settings::SettingsRepo;
 use soshal_db_core::repos::user::{UserRepo, UserRow};
 use soshal_db_core::repos::zap::{ZapRepo, ZapRow};
@@ -143,8 +145,16 @@ fn post_row(event: &Event) -> Option<PostRow> {
         }
         tags_json.push(vec);
     }
-    let reply_to = es.last().cloned();
-    let root_id = es.first().cloned();
+    let reply_to = if event.kind == Kind::TextNote || event.kind == Kind::ZapRequest {
+        es.last().cloned()
+    } else {
+        None
+    };
+    let root_id = if event.kind == Kind::TextNote || event.kind == Kind::ZapRequest {
+        es.first().cloned()
+    } else {
+        None
+    };
     let sig = event.sig.to_string();
 
     Some(PostRow {
@@ -598,6 +608,19 @@ async fn handle_impl(
                 eprintln!("sync update channel full, dropping update");
             }
         }
+        Kind::Repost => {
+            let Some(target) = e_tags(event).first().cloned() else {
+                return Ok(());
+            };
+            ensure_author_user(db, t, event).await?;
+            let row = RepostRow {
+                id: event.id.to_hex(),
+                pubkey: event.pubkey.to_hex(),
+                event_id: target,
+                created_at: event.created_at.as_secs() as i64,
+            };
+            RepostRepo::new(db).upsert_in(t, &row).await?;
+        }
         // Text notes and other app-published kinds all land in `posts` so the
         // cached feed stays complete; only kinds with a surface model emit.
         Kind::TextNote => {
@@ -709,6 +732,7 @@ pub fn handle_batch(
                 | Kind::RelayList
                 | Kind::Bookmarks
                 | Kind::Reaction
+                | Kind::Repost
                 | Kind::EventDeletion => {
                     match handle_impl(db, my_pubkey, event, tx, true, &t).await {
                         Ok(()) => ok_pos.push(pos),
@@ -772,7 +796,7 @@ pub fn watermark_key(kind: Kind) -> Option<&'static str> {
         Kind::EncryptedDirectMessage => Some(WM_DM),
         Kind::Metadata => Some(WM_META),
         Kind::ContactList | Kind::RelayList | Kind::Bookmarks | Kind::ZapReceipt => Some(WM_META),
-        Kind::Reaction => Some(WM_FEED),
+        Kind::Reaction | Kind::Repost => Some(WM_FEED),
         _ => Some(WM_FEED),
     }
 }

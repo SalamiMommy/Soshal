@@ -17,7 +17,15 @@ use soshal_network_core::swarm::{spawn_swarm_download, SwarmConfig, SwarmReport}
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+/// One in-flight swarm download: the worker thread handle plus an abort token
+/// set by `p2p_swarm_cancel` so the worker stops fetching and releases the mmap.
+struct SwarmHandle {
+    join: std::thread::JoinHandle<SwarmReport>,
+    abort: Arc<AtomicBool>,
+}
 
 /// In-process P2P runtime: one advertiser, one browser, one LAN server, one
 /// QUIC stream server, plus in-flight swarm download handles keyed by id.
@@ -26,7 +34,7 @@ struct P2pState {
     browser: Option<MdnsBrowser>,
     lan_server: Option<LanServerHandle>,
     quic_server: Option<QuicStreamServerHandle>,
-    downloads: HashMap<String, std::thread::JoinHandle<SwarmReport>>,
+    downloads: HashMap<String, SwarmHandle>,
     next_download: u64,
 }
 
@@ -254,7 +262,10 @@ pub fn p2p_lan_server_port() -> Result<u16, String> {
 #[frb(sync, serialize)]
 pub fn p2p_lan_server_stop() -> Result<bool, String> {
     if let Some(st) = state_mut().as_mut() {
-        st.lan_server = None; // drop stops the listener thread
+        if let Some(h) = st.lan_server.take() {
+            let mut h = h;
+            h.stop();
+        }
     }
     Ok(true).into()
 }
@@ -403,13 +414,18 @@ pub async fn p2p_fetch_blob_from_peer(
     };
     let key = crate::ffi::signer::lan_key()?;
     let my_pubkey = crate::ffi::signer::signer_pubkey()?;
-    let bytes = soshal_network_core::blob_grab::fetch_blob_from_peer(
-        &peer, key, &my_pubkey, &blob_hash, &out_path,
-    )
+    let path = out_path.clone();
+    let bytes = tokio::task::spawn_blocking(move || {
+        soshal_network_core::blob_grab::fetch_blob_from_peer(
+            &peer, key, &my_pubkey, &blob_hash, &out_path,
+        )
+    })
+    .await
+    .map_err(|e| format!("blob fetch task: {e}"))?
     .map_err(|e| e)?;
     super::util::json_ok(serde_json::json!({
         "success": true,
-        "path": out_path,
+        "path": path,
         "bytes": bytes,
     }))
 }
@@ -464,7 +480,7 @@ pub fn p2p_swarm_download(
     let finished: Vec<String> = inner
         .downloads
         .iter()
-        .filter(|(_, h)| h.is_finished())
+        .filter(|(_, h)| h.join.is_finished())
         .map(|(id, _)| id.clone())
         .collect();
     for id in finished {
@@ -472,7 +488,7 @@ pub fn p2p_swarm_download(
     }
     let id = format!("swarm-{}", inner.next_download);
     inner.next_download += 1;
-    let handle = spawn_swarm_download(SwarmConfig {
+    let (join, abort) = spawn_swarm_download(SwarmConfig {
         manifest,
         out_path: PathBuf::from(out_path),
         peers: addrs,
@@ -481,7 +497,9 @@ pub fn p2p_swarm_download(
         my_pubkey,
         max_parallel: capped,
     });
-    inner.downloads.insert(id.clone(), handle);
+    inner
+        .downloads
+        .insert(id.clone(), SwarmHandle { join, abort });
     Ok(id).into()
 }
 
@@ -494,22 +512,24 @@ pub fn p2p_swarm_poll(id: String) -> Result<P2pSwarmStatusDto, String> {
     let Some(handle) = inner.downloads.remove(&id) else {
         return Err(format!("unknown download {id}")).into();
     };
-    if !handle.is_finished() {
+    if !handle.join.is_finished() {
         inner.downloads.insert(id, handle);
         return Ok(P2pSwarmStatusDto::running()).into();
     }
-    match handle.join() {
+    match handle.join.join() {
         Ok(report) => Ok(P2pSwarmStatusDto::from_report(report)).into(),
         Err(_) => Err(format!("download {id} panicked")).into(),
     }
 }
 
-/// Drop a swarm download handle (detaches the worker thread; the mmap file
-/// keeps whatever chunks landed).
+/// Cancel a swarm download: sets the abort token so the worker stops
+/// fetching and releases the mmap; the thread is detached, not joined.
 #[frb(sync, serialize)]
 pub fn p2p_swarm_cancel(id: String) -> Result<bool, String> {
     if let Some(st) = state_mut().as_mut() {
-        st.downloads.remove(&id);
+        if let Some(h) = st.downloads.remove(&id) {
+            h.abort.store(true, Ordering::Release);
+        }
     }
     Ok(true).into()
 }
@@ -543,8 +563,15 @@ pub fn p2p_power_mode() -> Result<P2pPowerDto, String> {
 /// Tear down all P2P runtime state (mDNS, LAN server, in-flight downloads).
 #[frb(sync, serialize)]
 pub fn p2p_stop_all() -> Result<bool, String> {
-    if let Some(st) = state_mut().take() {
-        drop(st); // advertiser/browser daemons + LAN listener stop on drop
+    if let Some(mut st) = state_mut().take() {
+        if let Some(h) = st.lan_server.take() {
+            let mut h = h;
+            h.stop();
+        }
+        if let Some(h) = st.quic_server.take() {
+            h.stop();
+        }
+        drop(st);
     }
     Ok(true).into()
 }
@@ -553,7 +580,14 @@ pub fn p2p_stop_all() -> Result<bool, String> {
 #[frb(sync, serialize)]
 pub fn p2p_encode_fountain_payload(data: Vec<u8>, redundancy_ratio: f32) -> Result<String, String> {
     let encoded = soshal_storage_core::erasure_fountain::encode_fountain(&data, redundancy_ratio)?;
-    super::util::json_ok(encoded.manifest)
+    super::util::json_ok(serde_json::json!({
+        "manifest": encoded.manifest,
+        "packets": encoded
+            .packets
+            .iter()
+            .map(|p| soshal_crypto_core::base64::base64_encode_bytes(p))
+            .collect::<Vec<_>>(),
+    }))
 }
 
 /// Decodes received Fountain code packets back into original payload.
@@ -846,6 +880,7 @@ mod tests {
             bytes_downloaded: 4096,
             failures: 2,
             failed_hashes: vec!["h1".to_string(), "h2".to_string()],
+            cancelled: false,
         };
         let done = P2pSwarmStatusDto::from_report(report);
         assert_eq!(done.state, "done");
@@ -885,10 +920,12 @@ mod tests {
         let data: Vec<u8> = (0..2000u16).map(|i| (i % 251) as u8).collect();
         let json = super::p2p_encode_fountain_payload(data, 0.3).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["total_len"], 2000);
-        assert_eq!(v["symbol_size"], 1024);
-        assert_eq!(v["num_source_symbols"], 2);
-        assert!(v["oti_data"].is_array());
+        assert_eq!(v["manifest"]["total_len"], 2000);
+        assert_eq!(v["manifest"]["symbol_size"], 1024);
+        assert_eq!(v["manifest"]["num_source_symbols"], 2);
+        assert!(v["manifest"]["oti_data"].is_array());
+        assert!(v["packets"].is_array());
+        assert!(!v["packets"].as_array().unwrap().is_empty());
         let e = super::p2p_encode_fountain_payload(Vec::new(), 0.3).unwrap_err();
         assert!(e.contains("empty payload"), "got {e}");
     }

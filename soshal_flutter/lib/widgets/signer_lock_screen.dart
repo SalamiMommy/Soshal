@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
 import '../services/settings_service.dart';
+import '../services/shell_service.dart';
 import '../services/signer_service.dart';
 
 /// Full-screen signer lock overlay: shown when a session exists but the
@@ -70,6 +71,7 @@ class _SignerLockScreenState extends State<SignerLockScreen> {
     try {
       final keypair = await auth.restoreFromMnemonic(phrase, '');
       if (activePubkey != null && keypair.publicKey != activePubkey) {
+        await signer.lock();
         setState(
             () => _error = 'Recovery phrase does not match the active account');
       } else {
@@ -91,6 +93,8 @@ class _SignerLockScreenState extends State<SignerLockScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final shell = context.read<ShellService>();
+    final showKeychain = _keychainUnlockEnabled && !shell.hasPin;
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
       body: SafeArea(
@@ -123,15 +127,15 @@ class _SignerLockScreenState extends State<SignerLockScreen> {
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 24),
-                  if (_keychainUnlockEnabled)
+                  if (showKeychain)
                     FilledButton.icon(
                       onPressed: _busy ? null : _unlockFromKeychain,
                       icon: const Icon(Icons.key),
                       label: const Text('Unlock from device keychain'),
                     ),
-                  SizedBox(height: _keychainUnlockEnabled ? 24 : 8),
+                  SizedBox(height: showKeychain ? 24 : 8),
                   Text(
-                    _keychainUnlockEnabled
+                    showKeychain
                         ? 'or restore with recovery phrase'
                         : 'Restore with recovery phrase',
                     textAlign: TextAlign.center,

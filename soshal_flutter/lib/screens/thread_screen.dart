@@ -115,7 +115,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
                             itemCount: _thread.length,
                             itemBuilder: (context, index) {
                               final post = _thread[index];
-                              final isRoot = index == 0;
+                              final isRoot = post.eventId == widget.eventId;
                               return ListTile(
                                 title: Text(
                                   post.profileName ??

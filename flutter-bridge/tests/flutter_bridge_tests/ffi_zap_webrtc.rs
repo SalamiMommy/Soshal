@@ -93,7 +93,8 @@ mod ffi_tests {
     }
     #[test]
     fn webrtc_ffi_get_turn_servers_unconfigured_errs() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // DB global: models the shared handle race — MUST hold test_lock.
+        let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("zap_webrtc", "webrtc_turn_empty");
         let expected = "turn provisioning unavailable: no turn_endpoint configured (server endpoint on roadmap)".to_string();
         assert_eq!(webrtc::webrtc_get_turn_servers(None).unwrap_err(), expected);
@@ -105,7 +106,8 @@ mod ffi_tests {
     }
     #[test]
     fn webrtc_ffi_get_turn_servers_from_settings() {
-        let _g = ZAP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // DB global: models the shared handle race — MUST hold test_lock.
+        let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("zap_webrtc", "webrtc_turn");
         assert!(db::db_set_setting(
             "turn_endpoint".to_string(),

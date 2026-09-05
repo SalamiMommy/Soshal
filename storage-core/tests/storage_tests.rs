@@ -73,13 +73,14 @@ fn erasure_fountain_empty_payload_rejected() {
 }
 
 #[test]
-fn erasure_fountain_corrupted_packet_not_detected() {
+fn erasure_fountain_corrupted_packet_detected() {
     let original = fountain_payload();
     let encoded = encode_fountain(&original, 0.5).unwrap();
+    assert!(!encoded.manifest.checksum.is_empty());
     let mut packets = encoded.packets.clone();
     packets[0][4 + 17] ^= 0xFF;
-    let decoded = decode_fountain(&encoded.manifest, &packets).unwrap();
-    assert_ne!(decoded, original);
+    let err = decode_fountain(&encoded.manifest, &packets).unwrap_err();
+    assert!(err.contains("checksum"), "got {err}");
 }
 
 // ---------------------------------------------------------------------------

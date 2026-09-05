@@ -148,11 +148,13 @@ pub fn split_feed_buffer(
     let start = if since_id.is_empty() {
         0
     } else {
-        events
+        match events
             .iter()
             .position(|e| e["id"].as_str() == Some(since_id))
-            .map(|i| i + 1)
-            .unwrap_or(0)
+        {
+            Some(i) => i + 1,
+            None => return (vec![], total),
+        }
     };
     let pending = if start >= total {
         vec![]
@@ -209,9 +211,8 @@ pub fn aggregate_reaction_map(events: &[NostrEvent]) -> serde_json::Map<String, 
     map
 }
 
-/// Counts kind-1 reply events per target post, keyed by the first `e` tag.
-/// Each reply counts once against its referenced post, so deep-thread replies
-/// inflate their immediate parent rather than the root.
+/// Counts kind-1 reply events per target post, keyed by the first `e` tag
+/// (the root reference). Each reply counts once against its root thread.
 pub fn aggregate_reply_map(events: &[NostrEvent]) -> HashMap<String, u64> {
     let mut map = HashMap::new();
     for ev in events {

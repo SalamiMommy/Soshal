@@ -67,7 +67,7 @@ fn run_search(
                  JOIN posts p ON f.rowid = p.rowid \
                  LEFT JOIN users u ON u.pubkey = p.pubkey \
                  WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
-                 AND p.pubkey IN (SELECT value FROM json_each(?4)) ORDER BY rank LIMIT ?3"
+                 AND p.pubkey IN (SELECT value FROM json_each(?4)) ORDER BY rank DESC, p.created_at DESC LIMIT ?3"
             } else {
                 "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at, \
                  CASE WHEN p.kind = 0 THEN COALESCE(u.display_name, u.name, '') ELSE '' END \
@@ -75,7 +75,7 @@ fn run_search(
                  JOIN posts p ON f.rowid = p.rowid \
                  LEFT JOIN users u ON u.pubkey = p.pubkey \
                  WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
-                 ORDER BY rank LIMIT ?3"
+                 ORDER BY rank DESC, p.created_at DESC LIMIT ?3"
             };
             let stmt = conn.prepare(sql).await?;
             let mut rows = match &authors_json {
@@ -131,8 +131,6 @@ fn run_search(
             Ok::<_, libsql::Error>(out)
         })
         .map_err(soshal_db_core::error::DbError::from)?;
-        let mut out = out;
-        out.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         Ok(out)
     })
 }
@@ -537,7 +535,7 @@ mod tests {
         assert_eq!(arr[0]["id"], "p2", "json: {arr:?}");
         let arr = parse_arr(&search_posts("soshal".to_string(), 0, "public".to_string()).unwrap());
         assert_eq!(arr.len(), 1);
-        assert_eq!(arr[0]["id"], "p1");
+        assert_eq!(arr[0]["id"], "p2");
     }
 
     #[test]

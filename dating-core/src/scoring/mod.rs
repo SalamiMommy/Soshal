@@ -55,7 +55,23 @@ fn compute_compatibility_score_inner<P: ProfileScoringFields>(
         relationship_intent: w.relationship_intent.map(clamp_weight),
         distance: w.distance.map(clamp_weight),
     });
-    let dealbreakers = self_p.dealbreakers().unwrap_or(&[]);
+    let dealbreakers: Vec<String> = self_p
+        .dealbreakers()
+        .unwrap_or(&[])
+        .iter()
+        .map(|d| {
+            let mut n = String::with_capacity(d.len() + 4);
+            for c in d.chars() {
+                if c.is_ascii_uppercase() {
+                    n.push('_');
+                    n.push(c.to_ascii_lowercase());
+                } else {
+                    n.push(c);
+                }
+            }
+            n
+        })
+        .collect();
     let mut total_weighted_score = 0.0f64;
     let mut total_weight = 0.0f64;
 
@@ -83,7 +99,7 @@ fn compute_compatibility_score_inner<P: ProfileScoringFields>(
         weights.as_ref().and_then(|w| w.height)
     );
     check_field!(
-        "bodyType",
+        "body_type",
         score_body_type(self_p.body_type(), other_p.body_type()),
         weights.as_ref().and_then(|w| w.body_type)
     );
@@ -123,7 +139,7 @@ fn compute_compatibility_score_inner<P: ProfileScoringFields>(
         weights.as_ref().and_then(|w| w.language)
     );
     check_field!(
-        "relationshipIntent",
+        "relationship_intent",
         score_relationship_intent(self_p.relationship_intent(), other_p.relationship_intent()),
         weights.as_ref().and_then(|w| w.relationship_intent)
     );
