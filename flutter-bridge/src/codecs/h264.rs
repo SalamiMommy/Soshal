@@ -59,6 +59,10 @@ pub fn init_encode(width: i32, height: i32, bitrate: i32, fps: i32) -> bool {
                 return false;
             }
             let fmt = AMediaFormat_new();
+            if fmt.is_null() {
+                AMediaCodec_delete(codec);
+                return false;
+            }
             AMediaFormat_setString(fmt, c"mime".as_ptr(), c"video/avc".as_ptr());
             AMediaFormat_setInt32(fmt, c"width".as_ptr(), width);
             AMediaFormat_setInt32(fmt, c"height".as_ptr(), height);
@@ -155,6 +159,10 @@ pub fn init_decode() -> bool {
                 return false;
             }
             let fmt = AMediaFormat_new();
+            if fmt.is_null() {
+                AMediaCodec_delete(codec);
+                return false;
+            }
             AMediaFormat_setString(fmt, c"mime".as_ptr(), c"video/avc".as_ptr());
             let ok =
                 AMediaCodec_configure(codec, fmt, std::ptr::null_mut(), std::ptr::null_mut(), 0)

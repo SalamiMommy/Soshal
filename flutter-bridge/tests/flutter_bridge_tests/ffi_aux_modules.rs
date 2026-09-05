@@ -191,9 +191,13 @@ mod ffi_aux_modules_tests {
             .unwrap()
             .clone();
         assert_eq!(arr.len(), 2);
+        // The identity gate requires an unlocked signer before switching.
+        let keys = soshal_nostr_core::keys::generate_keys();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         assert!(session::session_switch_account("spk2".to_string()).unwrap());
         let active = session::session_get_active().unwrap();
         assert!(active.contains("\"pubkey\":\"spk2\""));
+        signer::signer_lock().unwrap();
         std::fs::remove_dir_all(&dir).ok();
     }
     #[test]
@@ -208,8 +212,12 @@ mod ffi_aux_modules_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = format!("{dir}/app.db");
         assert!(db::db_init(db_path.clone()).is_ok());
-        let data = r#"{"active_pubkey":"spk1","accounts":[{"pubkey":"spk1","npub":"npub1spk1","last_used":1,"relay_list":[]}]}"#;
-        assert!(session::session_save(db_path.clone(), data.to_string()).unwrap());
+        // Fresh last_used: the idle-timeout check rejects epoch-old fixtures.
+        let data = format!(
+            r#"{{"active_pubkey":"spk1","accounts":[{{"pubkey":"spk1","npub":"npub1spk1","last_used":{},"relay_list":[]}}]}}"#,
+            soshal_common_core::format::now_secs()
+        );
+        assert!(session::session_save(db_path.clone(), data).unwrap());
         let loaded = session::session_load(db_path).unwrap();
         assert!(loaded.contains("\"active_pubkey\":\"spk1\""));
         let active = session::session_get_active().unwrap();

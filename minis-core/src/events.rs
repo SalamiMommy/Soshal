@@ -12,7 +12,7 @@ fn clamp_created_at(v: f64) -> u64 {
 }
 
 fn sanitize_media_url(u: &str) -> String {
-    if u.starts_with("http://") || u.starts_with("https://") {
+    if u.starts_with("http://") || u.starts_with("https://") || u.starts_with("blob://") {
         u.to_string()
     } else {
         String::new()

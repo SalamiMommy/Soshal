@@ -95,7 +95,7 @@ impl ProllyTree {
                 // hit. Honouring a boundary on the very first key keeps node
                 // splits purely content-derived, which is what structural
                 // O(log N) reconciliation relies on.
-                if (boundary && !chunk_keys.is_empty()) || chunk_keys.len() >= 100 {
+                if boundary || chunk_keys.len() >= 100 {
                     let nhash = Self::compute_node_hash(level, &chunk_keys, &chunk_vals);
                     level_nodes.push(ProllyNode {
                         level,

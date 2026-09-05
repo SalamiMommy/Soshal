@@ -22,6 +22,7 @@ pub fn score_smoking(self_smoking: Option<&str>, other_smoking: Option<&str>) ->
                 0.0
             }
         }
+        (None, None) => 1.0,
         _ => 0.5,
     }
 }
@@ -48,6 +49,7 @@ pub fn score_drinking(self_drinking: Option<&str>, other_drinking: Option<&str>)
                 0.0
             }
         }
+        (None, None) => 1.0,
         _ => 0.5,
     }
 }

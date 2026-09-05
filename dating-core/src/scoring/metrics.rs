@@ -38,6 +38,7 @@ pub fn score_age(self_age: Option<f64>, other_age: Option<f64>) -> f64 {
                 0.0
             }
         }
+        (None, None) => 1.0,
         _ => 0.5,
     }
 }
@@ -58,6 +59,7 @@ pub fn score_height(self_height: Option<f64>, other_height: Option<f64>) -> f64 
                 0.0
             }
         }
+        (None, None) => 1.0,
         _ => 0.5,
     }
 }
@@ -98,6 +100,7 @@ pub fn score_body_type(self_type: Option<&str>, other_type: Option<&str>) -> f64
                 0.0
             }
         }
+        (None, None) => 1.0,
         _ => 0.5,
     }
 }

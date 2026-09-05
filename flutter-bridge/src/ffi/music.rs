@@ -490,14 +490,14 @@ mod tests {
             serde_json::from_str::<Vec<serde_json::Value>>(&music_saved().unwrap()).unwrap();
         assert!(empty.is_empty());
         let json = track_json("t1");
-        assert_eq!(music_save(json.to_string()).unwrap(), false);
+        assert!(!music_save(json.to_string()).unwrap());
         let saved: Vec<serde_json::Value> = serde_json::from_str(&music_saved().unwrap()).unwrap();
         assert_eq!(saved.len(), 1);
         assert_eq!(saved[0]["title"], "Song");
         assert_eq!(saved[0]["hostReady"], false);
         assert!(saved[0]["savedAt"].as_i64().unwrap() > 0);
-        assert_eq!(music_save(json.to_string()).unwrap(), false);
-        assert_eq!(music_unsave("t1".to_string()).unwrap(), true);
+        assert!(!music_save(json.to_string()).unwrap());
+        assert!(music_unsave("t1".to_string()).unwrap());
         let after: Vec<serde_json::Value> = serde_json::from_str(&music_saved().unwrap()).unwrap();
         assert!(after.is_empty());
         cleanup(&path);

@@ -137,9 +137,15 @@ impl NatHandle {
     }
 
     pub fn remove(&self, pubkey: &str) {
-        let _ = self.sender.send(NatCommand::Remove {
-            pubkey: pubkey.to_string(),
-        });
+        if self
+            .sender
+            .send(NatCommand::Remove {
+                pubkey: pubkey.to_string(),
+            })
+            .is_err()
+        {
+            log::warn!("NAT manager thread dead, session not cleaned up");
+        }
     }
 
     /// Local ICE credentials (ufrag, pwd) of the session for `pubkey`.

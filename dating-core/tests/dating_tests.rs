@@ -443,7 +443,7 @@ fn score_smoking_and_drinking_tiers() {
     );
     assert_eq!(lifestyle::score_smoking(Some("vape"), Some("never")), 0.0);
     assert_eq!(lifestyle::score_smoking(Some("never"), None), 0.5);
-    assert_eq!(lifestyle::score_smoking(None, None), 0.5);
+    assert_eq!(lifestyle::score_smoking(None, None), 1.0);
     assert_eq!(lifestyle::score_drinking(Some("never"), Some("never")), 1.0);
     assert_eq!(
         lifestyle::score_drinking(Some("never"), Some("socially")),
@@ -539,7 +539,7 @@ fn compute_compatibility_score_dealbreaker_zeroes_early() {
     assert_eq!(compute_compatibility_json(with_dealbreaker, tall), "0");
     assert_eq!(
         compute_compatibility_json(r#"{"age":30,"height":190}"#, tall),
-        "50"
+        "64"
     );
     let age_gap = r#"{"age":25,"dealbreakers":["age"],"height":150}"#;
     assert_eq!(
@@ -550,7 +550,7 @@ fn compute_compatibility_score_dealbreaker_zeroes_early() {
 
 #[test]
 fn compute_compatibility_score_all_unknown_is_50() {
-    assert_eq!(compute_compatibility_json("{}", "{}"), "50");
+    assert_eq!(compute_compatibility_json("{}", "{}"), "73");
 }
 
 #[test]
@@ -559,9 +559,9 @@ fn compute_mutual_score_averages_directions() {
 
     let a = r#"{"age":25,"preferenceWeights":{"age":0}}"#;
     let b = r#"{"age":27,"preferenceWeights":{"age":1}}"#;
-    assert_eq!(compute_compatibility_json(a, b), "50");
-    assert_eq!(compute_compatibility_json(b, a), "54");
-    assert_eq!(compute_mutual_score_json(a, b), "52");
+    assert_eq!(compute_compatibility_json(a, b), "70");
+    assert_eq!(compute_compatibility_json(b, a), "73");
+    assert_eq!(compute_mutual_score_json(a, b), "72");
 }
 
 #[test]

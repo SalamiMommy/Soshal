@@ -200,6 +200,7 @@ mod tests {
             ct: h2.ct,
             seq: 0,
             chain_counter: bob2.chain_counter + 2,
+            header_mac: String::new(),
         };
         assert!(decrypt_ratchet(&bob2, &far_ahead, &ct2).is_err());
     }

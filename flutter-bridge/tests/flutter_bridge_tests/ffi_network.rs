@@ -46,7 +46,11 @@ mod network_ffi_tests {
         assert!(!result);
     }
     #[test]
-    fn network_ffi_verify_zk_wot_proof_valid() {
+    fn network_ffi_verify_zk_wot_proof_fails_closed() {
+        // The legacy 3-arg surface cannot bind the proof to a prover pubkey
+        // after the hardening refactor — it must fail closed (false), never
+        // verify without an identity. Prover-bound callers use
+        // `check_zk_trust_proof_binding` in moderation-core.
         let proof = soshal_crypto_core::zk_trust::generate_zk_wot_proof(
             "pubkey_alice",
             "wot_root_123",
@@ -59,7 +63,7 @@ mod network_ffi_tests {
             "[]".to_string(),
         )
         .unwrap();
-        assert!(result);
+        assert!(!result);
     }
     #[test]
     fn network_ffi_verify_zk_wot_proof_wrong_root_rejected() {

@@ -13,6 +13,8 @@ sha2 = { workspace = true }
 getrandom = { workspace = true }
 blake3 = { workspace = true }
 chacha20poly1305 = { workspace = true }
+hmac = { workspace = true }
+subtle = { workspace = true }
 chacha20 = "0.9"
 aead = { workspace = true }
 zeroize = { workspace = true }

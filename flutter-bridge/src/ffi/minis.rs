@@ -67,7 +67,11 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
                 let reactions = reactors.len() as u64;
                 let liked = me_pubkey
                     .as_ref()
-                    .map(|m| reactors.iter().any(|r| r["pubkey"].as_str() == Some(m.as_str())))
+                    .map(|m| {
+                        reactors
+                            .iter()
+                            .any(|r| r["pubkey"].as_str() == Some(m.as_str()))
+                    })
                     .unwrap_or(false);
                 mapped["reactions"] = serde_json::json!(reactions);
                 mapped["liked"] = serde_json::json!(liked);

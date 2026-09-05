@@ -63,7 +63,9 @@ impl GossipSyncBridge {
                     // breaks own-DM relay via mesh. Read from node.
                     let my_pubkey = self.node.read().await.self_peer_id.clone();
                     // Ingest into SQLite database
-                    let _ = crate::ingest::handle(db, &my_pubkey, &event, tx);
+                    if let Err(e) = crate::ingest::handle(db, &my_pubkey, &event, tx) {
+                        eprintln!("gossip ingest failed: {e}");
+                    }
                 }
             }
         }

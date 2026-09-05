@@ -53,6 +53,7 @@ nostr-sdk = { version = "0.45.1" }
 hex = "0.4"
 base64 = "0.22"
 sha2 = "0.10"
+hmac = "0.12"
 regex = "1"
 rayon = "1.10"
 zeroize = { version = "1.8", features = ["derive", "serde"] }

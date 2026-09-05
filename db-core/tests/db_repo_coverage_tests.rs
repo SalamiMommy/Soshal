@@ -764,16 +764,20 @@ fn user_upsert_in_and_get_by_pubkey_in() {
 
     // Follower counts are materialized incrementally (upsert no longer runs a
     // correlated recount). Recompute from the seeded contact lists above.
+    drop(conn);
     repo.recompute_all_follower_counts().unwrap();
 
-    let follower_count: i64 = soshal_db_core::query::query_first(
-        &conn,
-        "SELECT follower_count FROM users WHERE pubkey = 'pkTx'",
-        (),
-        |r| r.get(0),
-    )
-    .unwrap()
-    .unwrap();
+    let follower_count: i64 = {
+        let conn = db.conn().unwrap();
+        soshal_db_core::query::query_first(
+            &conn,
+            "SELECT follower_count FROM users WHERE pubkey = 'pkTx'",
+            (),
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap()
+    };
     assert_eq!(follower_count, 2, "counts other users following pkTx");
 }
 
@@ -781,14 +785,16 @@ fn user_upsert_in_and_get_by_pubkey_in() {
 fn user_bump_follower_count_and_upsert_batch() {
     let db = new_db();
     let repo = UserRepo::new(&db);
-    let conn = db.conn().unwrap();
 
-    soshal_db_core::query::execute(
-        &conn,
-        "INSERT INTO users (pubkey, npub) VALUES ('alice', ''), ('bob', '')",
-        (),
-    )
-    .unwrap();
+    {
+        let conn = db.conn().unwrap();
+        soshal_db_core::query::execute(
+            &conn,
+            "INSERT INTO users (pubkey, npub) VALUES ('alice', ''), ('bob', '')",
+            (),
+        )
+        .unwrap();
+    }
 
     // Upsert must NOT clobber follower_count (it is not in the ON CONFLICT
     // update clause anymore).
@@ -811,53 +817,68 @@ fn user_bump_follower_count_and_upsert_batch() {
     };
     repo.upsert(&alice).unwrap();
     repo.bump_follower_count("alice", 3).unwrap();
-    let n: i64 = soshal_db_core::query::query_first(
-        &conn,
-        "SELECT follower_count FROM users WHERE pubkey = 'alice'",
-        (),
-        |r| r.get(0),
-    )
-    .unwrap()
-    .unwrap();
+    let n: i64 = {
+        let conn = db.conn().unwrap();
+        soshal_db_core::query::query_first(
+            &conn,
+            "SELECT follower_count FROM users WHERE pubkey = 'alice'",
+            (),
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap()
+    };
     assert_eq!(n, 3, "bump increments the materialized count");
     repo.upsert(&alice).unwrap();
-    let n: i64 = soshal_db_core::query::query_first(
-        &conn,
-        "SELECT follower_count FROM users WHERE pubkey = 'alice'",
-        (),
-        |r| r.get(0),
-    )
-    .unwrap()
-    .unwrap();
+    let n: i64 = {
+        let conn = db.conn().unwrap();
+        soshal_db_core::query::query_first(
+            &conn,
+            "SELECT follower_count FROM users WHERE pubkey = 'alice'",
+            (),
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap()
+    };
     assert_eq!(n, 3, "upsert must preserve the materialized follower count");
     repo.bump_follower_count("alice", -1).unwrap();
     repo.bump_follower_count("alice", -5).unwrap();
-    let n: i64 = soshal_db_core::query::query_first(
-        &conn,
-        "SELECT follower_count FROM users WHERE pubkey = 'alice'",
-        (),
-        |r| r.get(0),
-    )
-    .unwrap()
-    .unwrap();
+    let n: i64 = {
+        let conn = db.conn().unwrap();
+        soshal_db_core::query::query_first(
+            &conn,
+            "SELECT follower_count FROM users WHERE pubkey = 'alice'",
+            (),
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap()
+    };
     assert_eq!(n, 0, "count never goes negative");
 
     // recompute for one follower: bob lists alice (+ self ref ignored).
-    soshal_db_core::query::execute(
-        &conn,
-        "UPDATE users SET contact_pubkeys = '[\"alice\"]' WHERE pubkey = 'bob'",
-        (),
-    )
-    .unwrap();
+    {
+        let conn = db.conn().unwrap();
+        soshal_db_core::query::execute(
+            &conn,
+            "UPDATE users SET contact_pubkeys = '[\"alice\"]' WHERE pubkey = 'bob'",
+            (),
+        )
+        .unwrap();
+    }
     repo.recompute_all_follower_counts().unwrap();
-    let n: i64 = soshal_db_core::query::query_first(
-        &conn,
-        "SELECT follower_count FROM users WHERE pubkey = 'alice'",
-        (),
-        |r| r.get(0),
-    )
-    .unwrap()
-    .unwrap();
+    let n: i64 = {
+        let conn = db.conn().unwrap();
+        soshal_db_core::query::query_first(
+            &conn,
+            "SELECT follower_count FROM users WHERE pubkey = 'alice'",
+            (),
+            |r| r.get(0),
+        )
+        .unwrap()
+        .unwrap()
+    };
     assert_eq!(n, 1, "recompute reflects bob listing alice");
 }
 

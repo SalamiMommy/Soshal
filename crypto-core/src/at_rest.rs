@@ -91,8 +91,11 @@ pub fn open_at_rest_bin(key: &[u8; 32], blob: &[u8]) -> Result<Vec<u8>, String> 
 
 const AT_REST_V2_DOMAIN: &[u8] = b"soshal-at-rest-v2";
 
-/// Opt-in: untagged legacy blobs (v1 hex, pre-tag v2) still open when true.
-pub const ALLOW_UNTAGGED_V1: bool = true;
+/// Untagged legacy blobs (v1 hex, pre-tag v2) are rejected on open. Hard
+/// disabled: v1 blobs are deprecated and must be re-wrapped with the KEM
+/// envelope. Kept as a named constant (rather than a bare false) so the
+/// migration decision is auditable in one place.
+pub const ALLOW_UNTAGGED_V1: bool = false;
 
 const AT_REST_V2_INNER_TAG: &[u8] = b"soshal-at-rest-v2\x00";
 

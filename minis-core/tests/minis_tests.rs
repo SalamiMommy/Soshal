@@ -290,8 +290,8 @@ fn musicloud_duplicate_tags_first_wins() {
         31022,
         "",
         vec![
-            tag("url", "first.mp3"),
-            tag("url", "second.mp3"),
+            tag("url", "blob://aaaa"),
+            tag("url", "blob://bbbb"),
             tag("title", "First Title"),
             tag("title", "Second Title"),
             tag("t", "a"),
@@ -299,12 +299,12 @@ fn musicloud_duplicate_tags_first_wins() {
         ],
     );
     let out = musicloud_from_event(&e).unwrap();
-    assert_eq!(out["audioUrl"], "first.mp3");
+    assert_eq!(out["audioUrl"], "blob://aaaa");
     assert_eq!(out["title"], "First Title");
     assert_eq!(out["hashtags"], serde_json::json!(["a", "b"]));
 
     let typed = musicloud_event_out(&e).unwrap();
-    assert_eq!(typed.audio_url, "first.mp3");
+    assert_eq!(typed.audio_url, "blob://aaaa");
     assert_eq!(typed.title, "First Title");
     assert_eq!(typed.hashtags, vec!["a", "b"]);
 }

@@ -132,6 +132,65 @@ pub struct HeaderOutput {
     pub ct: String,
     pub seq: i64,
     pub chain_counter: i64,
+    /// Keyed MAC over (pk ‖ ct ‖ seq ‖ chain_counter), keyed by a value
+    /// derived from the session root key. Binds `pk` (and the whole header)
+    /// to the session: tampering with the authenticated pk is rejected.
+    pub header_mac: String,
+}
+
+/// HKDF info used to derive the per-header MAC key from the session root key.
+const HEADER_MAC_INFO: &[u8] = b"soshal-ratchet-header-mac";
+
+/// Derives the per-message header MAC key from the current session root key.
+/// The root key is the shared session secret, so only a peer holding it can
+/// produce a valid header MAC.
+fn header_mac_key(root_key: &str) -> Result<[u8; 32], &'static str> {
+    let mut dom = Vec::with_capacity(root_key.len() + HEADER_MAC_INFO.len());
+    dom.extend_from_slice(root_key.as_bytes());
+    dom.extend_from_slice(HEADER_MAC_INFO);
+    let mut k = crate::hash::sha256(&dom);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&k);
+    k.zeroize();
+    Ok(out)
+}
+
+/// Computes the header MAC over the authenticated header fields.
+fn compute_header_mac(key: &[u8; 32], header: &HeaderOutput) -> String {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    type HmacSha256 = Hmac<Sha256>;
+    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
+    mac.update(header.pk.as_bytes());
+    mac.update(header.ct.as_bytes());
+    mac.update(&header.seq.to_le_bytes());
+    mac.update(&header.chain_counter.to_le_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+/// Verifies the header MAC, comparing the tag in constant time.
+fn verify_header_mac(key: &[u8; 32], header: &HeaderOutput) -> bool {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    type HmacSha256 = Hmac<Sha256>;
+    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
+    mac.update(header.pk.as_bytes());
+    mac.update(header.ct.as_bytes());
+    mac.update(&header.seq.to_le_bytes());
+    mac.update(&header.chain_counter.to_le_bytes());
+    let expected = mac.finalize().into_bytes();
+    let provided = match hex::decode(&header.header_mac) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    if provided.len() != expected.len() {
+        return false;
+    }
+    let mut acc = 0u8;
+    for (e, p) in expected.iter().zip(provided.iter()) {
+        acc |= e ^ p;
+    }
+    acc == 0
 }
 
 #[derive(serde::Serialize)]
@@ -260,6 +319,16 @@ pub fn encrypt_ratchet(
         ct: sending_ct.clone(),
         seq,
         chain_counter,
+        header_mac: String::new(),
+    };
+
+    // Bind the header (including its pk) to the session with a keyed MAC
+    // derived from the session root key. A peer holding the root key can
+    // produce this tag; an attacker forging a pk cannot.
+    let mac_key = header_mac_key(&root_key)?;
+    let header = HeaderOutput {
+        header_mac: compute_header_mac(&mac_key, &header),
+        ..header
     };
 
     let out = RatchetOutput {
@@ -415,6 +484,16 @@ pub fn decrypt_ratchet(
         other => other.to_string(),
     };
 
+    // Verify the header MAC before adopting the wire-supplied pk. The MAC is
+    // keyed by the session root key: only a peer who shares the root (i.e. can
+    // decrypt) can produce a valid tag. Forging a pk without the root key is
+    // rejected here — the header pk is the live encapsulate target for our
+    // next message, so adopting an unauthenticated pk would let an attacker
+    // redirect future ciphertexts to a key only they hold.
+    let mac_key = header_mac_key(&out.root_key)?;
+    if !verify_header_mac(&mac_key, header) {
+        return Err("bad header mac");
+    }
     // The peer's header pk is the live target for our next encapsulate.
     out.peer_pk = header.pk.clone();
     Ok((out, final_plaintext))
@@ -469,6 +548,7 @@ pub fn ratchet_wrapper_tags(out: &RatchetOutput, header: &HeaderOutput) -> Vec<V
         vec!["ratchet_ct".to_string(), header.ct.clone()],
         vec!["ratchet_seq".to_string(), header.seq.to_string()],
         vec!["ratchet_cc".to_string(), header.chain_counter.to_string()],
+        vec!["ratchet_header_mac".to_string(), header.header_mac.clone()],
         vec!["ratchet_version".to_string(), header.version.to_string()],
     ]
 }
@@ -504,5 +584,6 @@ pub fn ratchet_header_from_tags(tags: &[Vec<String>]) -> Option<HeaderOutput> {
         ct: h_ct,
         seq,
         chain_counter: cc,
+        header_mac: tag_of("ratchet_header_mac").unwrap_or_default(),
     })
 }

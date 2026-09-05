@@ -1263,7 +1263,13 @@ mod tests {
         let db = soshal_test_util::test_db();
         let keys = Keys::generate();
         let my = keys.public_key().to_hex();
-        let (tx, _rx) = tokio::sync::mpsc::channel::<SyncUpdate>(0);
+        let (tx, _rx) = tokio::sync::mpsc::channel::<SyncUpdate>(1);
+        // Pre-fill the single buffer slot (with the receiver held) so the
+        // DM try_send below fails with Full → the position is excluded from
+        // ok_pos and the watermark must not advance.
+        assert!(tx
+            .try_send(SyncUpdate::Profile { pubkey: my.clone() })
+            .is_ok());
         set_watermark(&db, WM_DM, 1_700_000_000);
 
         let dm = signed_event_with_tags(
@@ -1273,7 +1279,7 @@ mod tests {
             vec![vec!["p".to_string(), my.clone()]],
         );
 
-        // Full channel (capacity 0, no consumer): try_send fails → DM position
+        // Full channel (pre-filled, no consumer): try_send fails → DM position
         // excluded from ok_pos → engine cursor (WM_DM) must not advance.
         let ok_pos = handle_batch(&db, &my, &[dm.clone()], &tx).unwrap();
         assert!(ok_pos.is_empty(), "undelivered DM must not be acknowledged");

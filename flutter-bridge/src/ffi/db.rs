@@ -253,7 +253,8 @@ pub fn db_force_migrate() -> Result<String, String> {
                 Ok::<Vec<String>, libsql::Error>(names)
             })?;
 
-            let _ = block_on(conn.execute("PRAGMA foreign_keys = OFF", ()));
+            block_on(conn.execute("PRAGMA foreign_keys = OFF", ()))
+                .map_err(|e| DbError::Migration(format!("FK disable failed: {e}")))?;
             // L6 fix: wrap all DROP statements in a single transaction so that
             // a mid-loop crash cannot leave the schema partially wiped.
             // Also quote each table name (defense-in-depth; names are already
@@ -277,15 +278,19 @@ pub fn db_force_migrate() -> Result<String, String> {
             })();
             match drop_result {
                 Ok(()) => {
-                    let _ = block_on(conn.execute("COMMIT", ()));
+                    block_on(conn.execute("COMMIT", ()))
+                        .map_err(|e| DbError::Migration(format!("commit failed: {e}")))?;
                 }
                 Err(e) => {
-                    let _ = block_on(conn.execute("ROLLBACK", ()));
-                    let _ = block_on(conn.execute("PRAGMA foreign_keys = ON", ()));
+                    block_on(conn.execute("ROLLBACK", ()))
+                        .map_err(|e| DbError::Migration(format!("rollback failed: {e}")))?;
+                    block_on(conn.execute("PRAGMA foreign_keys = ON", ()))
+                        .map_err(|e| DbError::Migration(format!("FK enable failed: {e}")))?;
                     return Err(e);
                 }
             }
-            let _ = block_on(conn.execute("PRAGMA foreign_keys = ON", ()));
+            block_on(conn.execute("PRAGMA foreign_keys = ON", ()))
+                .map_err(|e| DbError::Migration(format!("FK enable failed: {e}")))?;
             tables
         };
 

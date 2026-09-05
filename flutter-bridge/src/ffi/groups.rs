@@ -852,6 +852,23 @@ static ATTEMPTS: LazyLock<Mutex<HashMap<String, (u32, i64)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 const MAX_ATTEMPTS: u32 = 5;
 const WINDOW_SECS: i64 = 30;
+const MAX_ATTEMPTS_MAP: usize = 1000;
+
+/// Evict expired entries from the ATTEMPTS map and cap its size.
+fn sweep_attempts(now: i64, attempts: &mut HashMap<String, (u32, i64)>) {
+    attempts.retain(|_, (_, ts)| now.saturating_sub(*ts) < WINDOW_SECS);
+    // If still over cap after sweep, drop oldest entries by timestamp.
+    if attempts.len() > MAX_ATTEMPTS_MAP {
+        let mut entries: Vec<_> = attempts
+            .iter()
+            .map(|(k, &(_, ts))| (k.clone(), ts))
+            .collect();
+        entries.sort_by_key(|&(_, ts)| ts);
+        for (key, _) in entries.into_iter().take(attempts.len() - MAX_ATTEMPTS_MAP) {
+            attempts.remove(&key);
+        }
+    }
+}
 
 /// Test whether candidate password matches the group's password hash.
 /// Rate-limited per group (5 attempts / 30 s) so the FFI surface cannot be
@@ -863,6 +880,7 @@ pub fn groups_verify_password(group_id: String, password: String) -> Result<bool
     // Phase 1: Check lockout window (no counter increment yet).
     {
         let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+        sweep_attempts(now, &mut attempts);
         let entry = attempts.entry(group_id.clone()).or_insert((0, now));
         if entry.1 + WINDOW_SECS <= now {
             *entry = (0, now);
@@ -893,6 +911,7 @@ pub fn groups_verify_password(group_id: String, password: String) -> Result<bool
     // Phase 3: Increment counter only for a real, verifiable attempt.
     {
         let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+        sweep_attempts(now, &mut attempts);
         let entry = attempts.entry(group_id.clone()).or_insert((0, now));
         if entry.1 + WINDOW_SECS <= now {
             *entry = (0, now);
@@ -912,6 +931,7 @@ pub fn groups_verify_password(group_id: String, password: String) -> Result<bool
     // Phase 5: Successful verify resets the counter.
     if ok {
         let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+        sweep_attempts(now, &mut attempts);
         if let Some(entry) = attempts.get_mut(&group_id) {
             entry.0 = 0;
         }

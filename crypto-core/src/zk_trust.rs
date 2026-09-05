@@ -9,6 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 
 /// Commitment Envelope (< 200 bytes). Binding only, no zero-knowledge.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -49,12 +50,19 @@ pub fn generate_zk_wot_proof(
     }
 }
 
-/// Verifies the commitment envelope structure. Returns `true` if the
-/// binding matches the expected WoT root and the nullifier is unblacklisted.
-/// NOT zero-knowledge verification.
+/// Verifies the commitment envelope structure AND binds it to the given
+/// prover pubkey. The commitment transcript is
+/// SHA256(prover_pubkey ‖ wot_root ‖ blacklist_root) and the nullifier is
+/// SHA256("nullifier:" ‖ prover_pubkey) — recomputing both makes the proof
+/// non-transferable: a proof minted by one prover cannot be replayed under a
+/// different pubkey. Returns `true` only if the WoT root matches, the
+/// nullifier is unblacklisted, and the implicit prover equals the caller's
+/// pubkey.
 pub fn verify_zk_wot_proof(
     proof: &ZkTrustProof,
+    prover_pubkey: &str,
     expected_wot_root: &str,
+    blacklist_root: &str,
     known_blacklisted_nullifiers: &[String],
 ) -> bool {
     use base64::Engine;
@@ -68,10 +76,41 @@ pub fn verify_zk_wot_proof(
         return false;
     }
 
-    // Verify proof commitment structure
-    let decoded = base64::engine::general_purpose::STANDARD.decode(&proof.proof_bytes_b64);
-    match decoded {
-        Ok(bytes) => bytes.len() == 32,
+    // Bind to the prover: the nullifier must be exactly derived from pubkey.
+    let mut nullifier_hasher = Sha256::new();
+    nullifier_hasher.update(b"nullifier:");
+    nullifier_hasher.update(prover_pubkey.as_bytes());
+    let nullifier_h: [u8; 32] = nullifier_hasher.finalize().into();
+    match hex::decode(&proof.blacklist_nullifier_hash) {
+        Ok(provided) if provided.len() == nullifier_h.len() => {
+            if !bool::from(provided.as_slice().ct_eq(&nullifier_h)) {
+                return false;
+            }
+        }
+        _ => return false,
+    }
+
+    // Recompute the Fiat-Shamir-style commitment transcript over
+    // (prover_pubkey ‖ statement ‖ nonce), mirroring generate_zk_wot_proof,
+    // and constant-time compare against the proof bytes.
+    let mut hasher = Sha256::new();
+    hasher.update(prover_pubkey.as_bytes());
+    hasher.update(proof.wot_merkle_root.as_bytes());
+    hasher.update(blacklist_root.as_bytes());
+    let expected_hash: [u8; 32] = hasher.finalize().into();
+
+    match base64::engine::general_purpose::STANDARD.decode(&proof.proof_bytes_b64) {
+        Ok(bytes) => {
+            if bytes.len() != expected_hash.len() {
+                return false;
+            }
+            // Constant-time comparison of the 32-byte hashes.
+            let mut acc = 0u8;
+            for (e, p) in expected_hash.iter().zip(bytes.iter()) {
+                acc |= e ^ p;
+            }
+            acc == 0
+        }
         Err(_) => false,
     }
 }
@@ -115,7 +154,12 @@ pub fn verify_zk_wot_proof_binding(
     let expected_hash: [u8; 32] = hasher.finalize().into();
 
     match base64::engine::general_purpose::STANDARD.decode(&proof.proof_bytes_b64) {
-        Ok(bytes) => bytes.as_slice() == expected_hash.as_slice(),
+        Ok(bytes) => {
+            if bytes.len() != expected_hash.len() {
+                return false;
+            }
+            bytes.as_slice().ct_eq(expected_hash.as_slice()).into()
+        }
         Err(_) => false,
     }
 }
@@ -129,14 +173,50 @@ mod tests {
         let proof = generate_zk_wot_proof("pubkey_alice", "wot_root_123", "black_root_456");
 
         assert_eq!(proof.wot_merkle_root, "wot_root_123");
-        assert!(verify_zk_wot_proof(&proof, "wot_root_123", &[]));
+        assert!(verify_zk_wot_proof(
+            &proof,
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &[]
+        ));
 
         // Wrong root fails
-        assert!(!verify_zk_wot_proof(&proof, "wrong_root", &[]));
+        assert!(!verify_zk_wot_proof(
+            &proof,
+            "pubkey_alice",
+            "wrong_root",
+            "black_root_456",
+            &[]
+        ));
+
+        // Wrong prover fails (proof is bound to its minting pubkey)
+        assert!(!verify_zk_wot_proof(
+            &proof,
+            "pubkey_mallory",
+            "wot_root_123",
+            "black_root_456",
+            &[]
+        ));
+
+        // Wrong blacklist root fails
+        assert!(!verify_zk_wot_proof(
+            &proof,
+            "pubkey_alice",
+            "wot_root_123",
+            "other_root",
+            &[]
+        ));
 
         // Blacklisted nullifier fails
         let blacklisted = vec![proof.blacklist_nullifier_hash.clone()];
-        assert!(!verify_zk_wot_proof(&proof, "wot_root_123", &blacklisted));
+        assert!(!verify_zk_wot_proof(
+            &proof,
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &blacklisted
+        ));
 
         // Binding verification: correct prover + roots pass
         assert!(verify_zk_wot_proof_binding(

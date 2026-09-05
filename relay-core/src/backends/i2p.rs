@@ -10,17 +10,21 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 /// Inbound queue cap; oldest frames dropped past it.
 const RECEIVED_CAP: usize = 4096;
 /// Cap on concurrent inbound reader threads; connections beyond it are
 /// dropped (bounds per-connection thread/fd DoS).
 const MAX_INBOUND_STREAMS: usize = 64;
+/// Cap on outbound peer connections; oldest idle connections are closed and
+/// evicted when full so the map cannot grow without bound.
+const MAX_OUTBOUND_PEERS: usize = 32;
 
 pub struct I2pBackend {
     session: Option<Arc<soshal_network_core::i2p_sam::I2PSessionManager>>,
     destination: String,
-    peers: Mutex<HashMap<String, TcpStream>>,
+    peers: Mutex<HashMap<String, (TcpStream, Instant)>>,
     listener: Option<std::thread::JoinHandle<()>>,
     running: Arc<AtomicBool>,
     received: Arc<Mutex<VecDeque<Vec<u8>>>>,
@@ -50,10 +54,20 @@ impl I2pBackend {
         let reader = stream
             .try_clone()
             .map_err(|e| format!("stream clone failed: {e}"))?;
-        self.peers
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(destination.to_string(), stream);
+        {
+            let mut peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
+            // Cap outbound peers: evict oldest idle connection when full.
+            if peers.len() >= MAX_OUTBOUND_PEERS {
+                if let Some(oldest_key) = peers
+                    .iter()
+                    .min_by_key(|(_, (_, ts))| *ts)
+                    .map(|(k, _)| k.clone())
+                {
+                    peers.remove(&oldest_key);
+                }
+            }
+            peers.insert(destination.to_string(), (stream, Instant::now()));
+        }
         let received = self.received.clone();
         std::thread::spawn(move || reader_loop(reader, received));
         Ok(())
@@ -125,7 +139,7 @@ impl MeshBackend for I2pBackend {
         let frame = encode_frame(&payload);
         let mut peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
         let mut failed = Vec::new();
-        for (dest, stream) in peers.iter_mut() {
+        for (dest, (stream, _)) in peers.iter_mut() {
             if stream.write_all(&frame).is_err() {
                 failed.push(dest.clone());
             }

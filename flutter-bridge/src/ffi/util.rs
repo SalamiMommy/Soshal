@@ -102,6 +102,11 @@ pub(crate) fn cached_tcp_probe(host: &str, port: u16) -> bool {
 
     let fresh = tcp_probe(host, port);
     if let Ok(mut guard) = cache.lock() {
+        // Sweep stale entries if the map grows large so a flood of distinct
+        // probe targets can't grow the cache without bound.
+        if guard.len() > 256 {
+            guard.retain(|_, (_, ts)| ts.elapsed() < ttl * 2);
+        }
         guard.insert(key, (fresh, Instant::now()));
     }
     fresh

@@ -16,11 +16,20 @@ pub struct SessionAccount {
     pub push_token: Option<String>,
 }
 
+/// Maximum session age before requiring re-authentication (30 days).
+const SESSION_MAX_AGE_SECS: u64 = 30 * 24 * 60 * 60;
+/// Maximum idle time before requiring re-authentication (7 days).
+const SESSION_IDLE_TIMEOUT_SECS: u64 = 7 * 24 * 60 * 60;
+
 /// Session file structure
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SessionData {
     pub active_pubkey: Option<String>,
     pub accounts: Vec<SessionAccount>,
+    /// UNIX timestamp when this session was last loaded from disk.
+    /// Used to enforce session max age.
+    #[serde(default)]
+    pub loaded_at: Option<u64>,
 }
 
 lazy_static::lazy_static! {
@@ -170,6 +179,16 @@ pub fn session_load(db_path: String) -> Result<String, String> {
         match std::fs::read_to_string(&session_path) {
             Ok(content) => match serde_json::from_str::<SessionData>(&content) {
                 Ok(session) => {
+                    // Enforce session max age: reject sessions older than
+                    // SESSION_MAX_AGE_SECS to limit exposure from stolen files.
+                    let now = soshal_common_core::format::now_secs() as u64;
+                    if let Some(loaded_at) = session.loaded_at {
+                        if now.saturating_sub(loaded_at) > SESSION_MAX_AGE_SECS {
+                            return Err("session expired, please re-authenticate".to_string());
+                        }
+                    }
+                    let mut session = session;
+                    session.loaded_at = Some(now);
                     let mut session_lock = lock_session()?;
                     *session_lock = Some(session.clone());
                     super::util::json_ok(session)
@@ -185,6 +204,7 @@ pub fn session_load(db_path: String) -> Result<String, String> {
         let empty = SessionData {
             active_pubkey: None,
             accounts: Vec::new(),
+            loaded_at: Some(soshal_common_core::format::now_secs() as u64),
         };
         let mut session_lock = lock_session()?;
         *session_lock = Some(empty.clone());
@@ -253,6 +273,7 @@ pub fn session_add_account(
             let session = session_lock.get_or_insert_with(|| SessionData {
                 active_pubkey: None,
                 accounts: Vec::new(),
+                loaded_at: Some(soshal_common_core::format::now_secs() as u64),
             });
             if !session.accounts.iter().any(|a| a.pubkey == account.pubkey) {
                 session.accounts.push(account.clone());
@@ -276,6 +297,12 @@ pub fn session_add_account(
 /// Switch to an account
 #[frb(sync, serialize)]
 pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
+    // Identity gate: require the signer to be unlocked before switching.
+    // Prevents a compromised caller from silently swapping the active identity
+    // without proving key ownership.
+    if super::signer::signer_is_locked().unwrap_or(true) {
+        return Err("signer must be unlocked to switch accounts".to_string());
+    }
     let mut session_lock = lock_session()?;
     if let Some(session) = session_lock.as_mut() {
         if session.accounts.iter().any(|a| a.pubkey == pubkey) {
@@ -341,13 +368,54 @@ pub fn session_remove_account(pubkey: String) -> Result<bool, String> {
 /// Get active account
 #[frb(sync, serialize)]
 pub fn session_get_active() -> Result<String, String> {
-    let session_lock = lock_session()?;
-    if let Some(session) = session_lock.as_ref() {
-        if let Some(active_pubkey) = &session.active_pubkey {
+    let mut session_lock = lock_session()?;
+    if let Some(session) = session_lock.as_mut() {
+        if let Some(active_pubkey) = session.active_pubkey.clone() {
+            let now = soshal_common_core::format::now_secs() as u64;
+            // Idle timeout: reject if the active account hasn't been used
+            // within SESSION_IDLE_TIMEOUT_SECS.
+            if let Some(acc) = session.accounts.iter().find(|a| a.pubkey == active_pubkey) {
+                if now.saturating_sub(acc.last_used) > SESSION_IDLE_TIMEOUT_SECS {
+                    return Err("session idle too long, please re-authenticate".to_string());
+                }
+            }
+            // Update last_used; persist only when delta > 1 hour to avoid
+            // write storms on frequent UI reads.
+            let should_persist = session
+                .accounts
+                .iter()
+                .find(|a| a.pubkey == active_pubkey)
+                .map_or(false, |a| now.saturating_sub(a.last_used) > 3600);
+            if should_persist {
+                if let Some(acc) = session
+                    .accounts
+                    .iter_mut()
+                    .find(|a| a.pubkey == active_pubkey)
+                {
+                    acc.last_used = now;
+                }
+                let data = session.clone();
+                drop(session_lock);
+                if let Ok(db_path) = super::db::db_path() {
+                    let _ = session_save(db_path, serde_json::to_string(&data).unwrap_or_default());
+                }
+                // Re-acquire to read the (now-updated) account for the return value.
+                let session_lock = lock_session()?;
+                if let Some(session) = session_lock.as_ref() {
+                    let account = session
+                        .accounts
+                        .iter()
+                        .find(|a| a.pubkey == active_pubkey)
+                        .cloned();
+                    return super::util::json_ok(account);
+                } else {
+                    return Err("Session not loaded".to_string());
+                }
+            }
             let account = session
                 .accounts
                 .iter()
-                .find(|a| &a.pubkey == active_pubkey)
+                .find(|a| a.pubkey == active_pubkey)
                 .cloned();
             super::util::json_ok(account)
         } else {
@@ -476,15 +544,24 @@ mod tests {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let (dir, db_path) = tmp_session_dir("switch");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        assert!(super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).is_ok());
         session_load(db_path).unwrap();
         session_add_account("pk1".to_string(), "npub1pk1".to_string(), "[]".to_string()).unwrap();
         session_add_account("pk2".to_string(), "npub1pk2".to_string(), "[]".to_string()).unwrap();
         assert!(session_switch_account("pk2".to_string()).unwrap());
         let active = session_get_active().unwrap();
         assert!(active.contains("\"pubkey\":\"pk2\""), "active: {active}");
+        // The switch to pk2 (not the unlocked identity) relocked the signer;
+        // re-unlock so the next switch passes the identity gate.
+        assert!(super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).is_ok());
         let err = session_switch_account("nobody".to_string()).unwrap_err();
         assert!(err.contains("Account not found"));
+        super::super::signer::signer_lock().unwrap();
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -546,7 +623,11 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let (dir, db_path) = tmp_session_dir("roundtrip");
-        let data = r#"{"active_pubkey":"pk1","accounts":[{"pubkey":"pk1","npub":"npub1pk1","last_used":1,"relay_list":["wss://relay.a"]}]}"#;
+        // Fresh last_used: the idle-timeout check rejects epoch-old fixtures.
+        let data = format!(
+            r#"{{"active_pubkey":"pk1","accounts":[{{"pubkey":"pk1","npub":"npub1pk1","last_used":{},"relay_list":["wss://relay.a"]}}]}}"#,
+            soshal_common_core::format::now_secs()
+        );
         assert!(session_save(db_path.clone(), data.to_string()).unwrap());
         assert!(dir.join("session.json").exists());
         let loaded = session_load(db_path.clone()).unwrap();
@@ -606,7 +687,7 @@ mod tests {
             .contains("Session not loaded"));
         assert!(session_switch_account("pk1".to_string())
             .unwrap_err()
-            .contains("Session not loaded"));
+            .contains("signer must be unlocked"));
         let err = session_add_account("pk1".to_string(), "npub1pk1".to_string(), "x".to_string())
             .unwrap_err();
         assert!(err.contains("Invalid relays JSON"));

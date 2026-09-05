@@ -405,20 +405,19 @@ pub fn check_text(text: &str) -> String {
 }
 
 /// Verifies incoming zk-SNARK Web-of-Trust moderation proof.
+///
+/// Legacy unbound surface: returns `false` (fails closed). The security
+/// hardening made [`verify_zk_wot_proof`] prover-bound — it requires the
+/// minting prover's pubkey and blacklist root to verify the commitment
+/// transcript. Unbound structural verification was removed, so this entry
+/// cannot verify without a prover identity. Callers with the prover pubkey
+/// and blacklist root must use [`check_zk_trust_proof_binding`].
 pub fn check_zk_trust_proof(
-    proof_json: &str,
-    expected_wot_root: &str,
-    blacklisted_nullifiers: &[String],
+    _proof_json: &str,
+    _expected_wot_root: &str,
+    _blacklisted_nullifiers: &[String],
 ) -> bool {
-    let Ok(proof) = serde_json::from_str::<soshal_crypto_core::zk_trust::ZkTrustProof>(proof_json)
-    else {
-        return false;
-    };
-    soshal_crypto_core::zk_trust::verify_zk_wot_proof(
-        &proof,
-        expected_wot_root,
-        blacklisted_nullifiers,
-    )
+    false
 }
 
 /// Fully-correct variant of [`check_zk_trust_proof`]: also fixes the prover
@@ -450,41 +449,119 @@ mod tests {
     use soshal_crypto_core::zk_trust::generate_zk_wot_proof;
 
     #[test]
-    fn check_zk_trust_proof_valid_generated_proof() {
+    fn check_zk_trust_proof_binding_valid_generated_proof() {
         let proof = generate_zk_wot_proof("pubkey_alice", "wot_root_123", "black_root_456");
         let json = serde_json::to_string(&proof).unwrap();
-        assert!(check_zk_trust_proof(&json, "wot_root_123", &[]));
+        assert!(check_zk_trust_proof_binding(
+            &json,
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &[]
+        ));
     }
 
     #[test]
-    fn check_zk_trust_proof_tampered_bytes_rejected() {
+    fn check_zk_trust_proof_binding_tampered_bytes_rejected() {
         let proof = generate_zk_wot_proof("pubkey_alice", "wot_root_123", "black_root_456");
         let mut short = proof.clone();
         short.proof_bytes_b64 = "AAAA".to_string();
         let json = serde_json::to_string(&short).unwrap();
-        assert!(!check_zk_trust_proof(&json, "wot_root_123", &[]));
+        assert!(!check_zk_trust_proof_binding(
+            &json,
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &[]
+        ));
         let mut invalid = proof;
         invalid.proof_bytes_b64 = "not base64 !!".to_string();
         let json = serde_json::to_string(&invalid).unwrap();
-        assert!(!check_zk_trust_proof(&json, "wot_root_123", &[]));
+        assert!(!check_zk_trust_proof_binding(
+            &json,
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &[]
+        ));
     }
 
     #[test]
-    fn check_zk_trust_proof_malformed_or_empty_rejected() {
-        assert!(!check_zk_trust_proof("", "wot_root_123", &[]));
-        assert!(!check_zk_trust_proof("not json", "wot_root_123", &[]));
-        assert!(!check_zk_trust_proof("{}", "wot_root_123", &[]));
+    fn check_zk_trust_proof_binding_malformed_or_empty_rejected() {
+        assert!(!check_zk_trust_proof_binding(
+            "",
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &[]
+        ));
+        assert!(!check_zk_trust_proof_binding(
+            "not json",
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &[]
+        ));
+        assert!(!check_zk_trust_proof_binding(
+            "{}",
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &[]
+        ));
     }
 
     #[test]
-    fn check_zk_trust_proof_wrong_root_or_blacklisted_rejected() {
+    fn check_zk_trust_proof_binding_wrong_root_or_blacklisted_rejected() {
         let proof = generate_zk_wot_proof("pubkey_alice", "wot_root_123", "black_root_456");
         let json = serde_json::to_string(&proof).unwrap();
-        assert!(!check_zk_trust_proof(&json, "forged_root", &[]));
+        assert!(!check_zk_trust_proof_binding(
+            &json,
+            "pubkey_alice",
+            "forged_root",
+            "black_root_456",
+            &[]
+        ));
         let forged = generate_zk_wot_proof("pubkey_alice", "evil_root", "black_root_456");
         let forged_json = serde_json::to_string(&forged).unwrap();
-        assert!(!check_zk_trust_proof(&forged_json, "wot_root_123", &[]));
+        assert!(!check_zk_trust_proof_binding(
+            &forged_json,
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &[]
+        ));
         let blacklisted = vec![proof.blacklist_nullifier_hash];
-        assert!(!check_zk_trust_proof(&json, "wot_root_123", &blacklisted));
+        assert!(!check_zk_trust_proof_binding(
+            &json,
+            "pubkey_alice",
+            "wot_root_123",
+            "black_root_456",
+            &blacklisted
+        ));
+    }
+
+    #[test]
+    fn check_zk_trust_proof_binding_wrong_prover_rejected() {
+        // Binding: a proof minted by one prover must fail under another pubkey.
+        let proof = generate_zk_wot_proof("pubkey_alice", "wot_root_123", "black_root_456");
+        let json = serde_json::to_string(&proof).unwrap();
+        assert!(!check_zk_trust_proof_binding(
+            &json,
+            "pubkey_evil",
+            "wot_root_123",
+            "black_root_456",
+            &[]
+        ));
+    }
+
+    #[test]
+    fn check_zk_trust_proof_legacy_fails_closed() {
+        // Unbound structural verification was removed in the hardening
+        // refactor; the legacy FFI surface must fail closed rather than
+        // verify without a prover identity.
+        let proof = generate_zk_wot_proof("pubkey_alice", "wot_root_123", "black_root_456");
+        let json = serde_json::to_string(&proof).unwrap();
+        assert!(!check_zk_trust_proof(&json, "wot_root_123", &[]));
     }
 }

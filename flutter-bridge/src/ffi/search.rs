@@ -197,6 +197,17 @@ pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String>
         .filter_map(|r| r["tag"].as_str().map(|s| s.to_string()))
         .collect();
     let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    // Cap hashtag cache at 1000 entries; evict oldest (lowest timestamp) when full.
+    const HASHTAG_CACHE_CAP: usize = 1000;
+    if guard.len() >= HASHTAG_CACHE_CAP {
+        if let Some(oldest_key) = guard
+            .iter()
+            .min_by_key(|(_, (ts, _))| *ts)
+            .map(|(k, _)| k.clone())
+        {
+            guard.remove(&oldest_key);
+        }
+    }
     guard.insert(clean_query.to_string(), (now, tags.clone()));
     Ok(tags.into_iter().take(limit).collect())
 }

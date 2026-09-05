@@ -3789,6 +3789,7 @@ dependencies = [
  "chacha20poly1305",
  "getrandom 0.4.3",
  "hex",
+ "hmac",
  "nostr",
  "ring",
  "serde",
@@ -3797,6 +3798,7 @@ dependencies = [
  "soshal-common-core",
  "soshal-content-core",
  "soshal-pqc-core",
+ "subtle",
  "zeroize",
 ]
 
@@ -3863,6 +3865,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "libsql",
+ "log",
  "nostr",
  "nostr-sdk",
  "rand 0.8.7",

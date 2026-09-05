@@ -7,7 +7,9 @@ use flutter_rust_bridge::frb;
 use soshal_common_core::url::is_valid_media_url;
 use soshal_media_core::cas::ChunkStore;
 use std::fs;
-use std::io::Cursor;
+use std::io::{Cursor, Read, Write};
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
 /// Resolve a Dart-supplied file path to a canonical absolute path, but only
@@ -39,6 +41,31 @@ fn resolve_allowed_path(path: &str, what: &str) -> Result<PathBuf, String> {
     Ok(canon_parent.join(file_name))
 }
 
+/// Open an allowed path read-only with O_NOFOLLOW and verify the opened
+/// inode/device matches the resolved path, defeating TOCTOU symlink
+/// substitution between path resolution and open.
+#[cfg(unix)]
+fn open_allowed_read(full: &Path, what: &str) -> Result<fs::File, String> {
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(full)
+        .map_err(|e| format!("{what} open failed (symlink?): {e}"))?;
+    let file_meta = file
+        .metadata()
+        .map_err(|e| format!("{what} metadata: {e}"))?;
+    let path_meta = fs::metadata(full).map_err(|e| format!("{what} path metadata: {e}"))?;
+    if file_meta.dev() != path_meta.dev() || file_meta.ino() != path_meta.ino() {
+        return Err(format!("{what} path changed between resolution and open"));
+    }
+    Ok(file)
+}
+
+#[cfg(not(unix))]
+fn open_allowed_read(full: &Path, what: &str) -> Result<fs::File, String> {
+    fs::File::open(full).map_err(|e| format!("{what} open failed: {e}"))
+}
+
 lazy_static::lazy_static! {
     static ref MEDIA_SERVER: std::sync::Mutex<Option<soshal_streaming_core::video_server::LocalVideoServer>> =
         std::sync::Mutex::new(None);
@@ -66,8 +93,12 @@ pub fn media_decode_image_rgba(
     max_width: Option<u32>,
     max_height: Option<u32>,
 ) -> Result<DecodedImageRgbaDto, String> {
-    let resolved = resolve_allowed_path(&file_path_or_url, "image decode")?;
-    let bytes = fs::read(&resolved).map_err(|e| format!("Failed to read image file: {e}"))?;
+    let full = resolve_allowed_path(&file_path_or_url, "image decode")?;
+    let file = open_allowed_read(&full, "image decode")?;
+    let mut bytes = Vec::new();
+    let mut file = file;
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("Failed to read image file: {e}"))?;
 
     let frame = soshal_media_core::decoder::decode_to_rgba(&bytes, max_width, max_height)?;
     Ok(DecodedImageRgbaDto {
@@ -86,9 +117,8 @@ pub async fn media_upload(file_path: String, blossom_server: String) -> Result<S
     let source = if soshal_media_core::source::is_url_source(&file_path) {
         file_path.clone()
     } else {
-        resolve_allowed_path(&file_path, "media upload")?
-            .to_string_lossy()
-            .into_owned()
+        let path = resolve_allowed_path(&file_path, "media upload")?;
+        path.to_string_lossy().into_owned()
     };
     let (data, fetched_mime) = match soshal_media_core::source::fetch_source_bytes(&source).await {
         Ok(v) => v,
@@ -160,11 +190,13 @@ pub async fn media_fetch(url: String, cache_dir: String) -> Result<String, Strin
 /// or temp dir; arbitrary file reads are rejected).
 #[frb(serialize)]
 pub fn media_load_local(file_path: String) -> Result<Vec<u8>, String> {
-    let resolved = resolve_allowed_path(&file_path, "media")?;
-    match fs::read(&resolved) {
-        Ok(data) => Ok(data).into(),
-        Err(e) => Err(format!("Failed to read media: {e}")).into(),
-    }
+    let full = resolve_allowed_path(&file_path, "media")?;
+    let file = open_allowed_read(&full, "media")?;
+    let mut data = Vec::new();
+    let mut file = file;
+    file.read_to_end(&mut data)
+        .map_err(|e| format!("Failed to read media: {e}"))?;
+    Ok(data).into()
 }
 
 /// Get MIME type from file path
@@ -334,7 +366,24 @@ pub async fn media_upload_blob_file(file_path: String) -> Result<String, String>
         // could be exfiltrated via P2P blob requests from a hostile peer).
         let canon = fs::canonicalize(&file_path).map_err(|e| format!("file path invalid: {e}"))?;
         validate_local_source_path(&canon)?;
-        let file = fs::File::open(&canon).map_err(|e| format!("open file failed: {e}"))?;
+        // O_NOFOLLOW prevents symlink substitution between canonicalize and open.
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&canon)
+            .map_err(|e| format!("open file failed (symlink?): {e}"))?;
+        // Verify the opened file's inode/device matches the canonical path to
+        // catch a TOCTOU race where a symlink was swapped in between.
+        let file_meta = file
+            .metadata()
+            .map_err(|e| format!("open file metadata failed: {e}"))?;
+        let canonical_meta =
+            fs::metadata(&canon).map_err(|e| format!("canonical metadata failed: {e}"))?;
+        if file_meta.dev() != canonical_meta.dev() || file_meta.ino() != canonical_meta.ino() {
+            return Err(
+                "path changed between validation and open (possible symlink race)".to_string(),
+            );
+        }
         let store = ChunkStore::new(ChunkStore::default_root());
         let manifest = store.store_reader(file)?;
         store.save_manifest(&manifest)?;
@@ -357,8 +406,16 @@ pub fn media_fetch_blob(blob_hash: String, out_path: String) -> Result<String, S
 
     // Reconstruct the blob from chunks
     let data = soshal_media_core::cas::manifest_bytes(&store, &manifest);
-    let resolved = resolve_allowed_path(&out_path, "blob output")?;
-    fs::write(&resolved, data).map_err(|e| format!("write failed: {e}"))?;
+    let full = resolve_allowed_path(&out_path, "blob output")?;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&full)
+        .map_err(|e| format!("blob output open failed (symlink?): {e}"))?;
+    file.write_all(&data)
+        .map_err(|e| format!("write failed: {e}"))?;
 
     serde_json::to_string(&serde_json::json!({
         "success": true,

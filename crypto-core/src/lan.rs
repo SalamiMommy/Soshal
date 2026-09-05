@@ -46,13 +46,16 @@ impl EphemeralSessionKey {
             .map_err(|_| "session key derivation failed")?;
         let mut key = [0u8; KEY_LEN];
         key.copy_from_slice(&okm);
-        Ok(SessionKey { key })
+        Ok(SessionKey {
+            key: zeroize::Zeroizing::new(key),
+        })
     }
 }
 
-/// A per-session symmetric key (ChaCha20-Poly1305).
+/// A per-session symmetric key (ChaCha20-Poly1305). The key bytes are held in
+/// a `Zeroizing` wrapper so they are wiped from memory on drop.
 pub struct SessionKey {
-    key: [u8; KEY_LEN],
+    key: zeroize::Zeroizing<[u8; KEY_LEN]>,
 }
 
 /// Encrypts a frame: random 12-byte nonce prepended to ciphertext+tag.
@@ -62,7 +65,7 @@ pub fn encrypt_frame(key: &SessionKey, plaintext: &[u8]) -> Result<Vec<u8>, &'st
 
     let mut nonce_bytes = [0u8; NONCE_LEN];
     getrandom::fill(&mut nonce_bytes).map_err(|_| "rng failed")?;
-    let cipher = ChaCha20Poly1305::new(chacha20poly1305::Key::from_slice(&key.key));
+    let cipher = ChaCha20Poly1305::new(chacha20poly1305::Key::from_slice(&key.key[..]));
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ct = cipher
         .encrypt(nonce, plaintext)
@@ -82,7 +85,7 @@ pub fn decrypt_frame(key: &SessionKey, frame: &[u8]) -> Result<Vec<u8>, &'static
         return Err("frame too short");
     }
     let (nonce_bytes, ct) = frame.split_at(NONCE_LEN);
-    let cipher = ChaCha20Poly1305::new(chacha20poly1305::Key::from_slice(&key.key));
+    let cipher = ChaCha20Poly1305::new(chacha20poly1305::Key::from_slice(&key.key[..]));
     let nonce = Nonce::from_slice(nonce_bytes);
     cipher
         .decrypt(nonce, ct)

@@ -157,7 +157,7 @@ fn test_dating_profile_roundtrip() {
     assert_eq!(card["name"], "");
     assert_eq!(card["age"], 30);
     assert_eq!(card["bio"], "hello");
-    assert_eq!(card["location"], "gcpuvpmm2");
+    assert_eq!(card["location"], "gcpuv");
     assert_eq!(card["height"], 170.0);
     assert_eq!(card["smoking"], "never");
     assert_eq!(card["interests"], serde_json::json!(["music", "books"]));

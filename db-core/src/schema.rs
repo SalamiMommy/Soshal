@@ -206,9 +206,9 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
     type StepFn = fn(&Connection) -> Result<(), crate::error::DbError>;
     let steps: &[(i64, StepFn)] = &[
         (1, |c| v1_create_tables(c).map_err(Into::into)),
-        (2, |c| v2_group_channels(c)),
+        (2, |c| v2_group_channels(c).map_err(Into::into)),
         (3, |c| v3_group_thread_reactions(c).map_err(Into::into)),
-        (4, |c| v4_group_password(c)),
+        (4, |c| v4_group_password(c).map_err(Into::into)),
         (5, |c| v5_performance_indexes(c).map_err(Into::into)),
         (6, |c| v6_index_cleanup(c).map_err(Into::into)),
         (7, |c| v7_query_optimizations(c).map_err(Into::into)),

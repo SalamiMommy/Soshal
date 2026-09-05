@@ -190,27 +190,38 @@ fn peaks(samples: &[f32], bins: usize) -> Vec<f32> {
     let mut peak_max = 0.0f64;
     let mut acc_sum = 0.0f64;
     let mut acc_count = 0usize;
+    let mut last_raw_sum = 0.0f64;
+    let mut last_raw_count = 0usize;
     for (i, s) in samples.iter().enumerate() {
-        // Integer bucket math (u64: safe on 32-bit targets too) instead of a
-        // per-sample f64 division.
         let bucket = (i as u64 * bins as u64 / total) as usize;
         acc_sum += s.abs() as f64;
         acc_count += 1;
         if bucket == out.len() {
             let mean = acc_sum / acc_count.max(1) as f64;
             let rms = mean.sqrt();
-            // Absolute silence gate: codec warm-up noise / near-silence must
-            // read as 0. Real content RMS (speech~0.02-0.2) sits far above.
             let floored = if rms > 0.01 { rms } else { 0.0 };
             peak_max = peak_max.max(floored);
             out.push(floored as f32);
+            last_raw_sum = acc_sum;
+            last_raw_count = acc_count;
             acc_sum = 0.0;
             acc_count = 0;
         }
     }
+    // Tail: samples whose bucket index exceeds out.len(). Merge raw values
+    // into the last bucket and recompute RMS once (RMS is not additive).
     if acc_count > 0 {
-        let mean = acc_sum / acc_count.max(1) as f64;
-        out.push(mean.sqrt() as f32);
+        let combined_sum = last_raw_sum + acc_sum;
+        let combined_count = last_raw_count + acc_count;
+        let mean = combined_sum / combined_count.max(1) as f64;
+        let rms = mean.sqrt();
+        let floored = if rms > 0.01 { rms } else { 0.0 };
+        if let Some(last) = out.last_mut() {
+            *last = floored as f32;
+        } else {
+            out.push(floored as f32);
+        }
+        peak_max = peak_max.max(floored);
     }
     while out.len() < bins {
         out.push(0.0);
@@ -294,18 +305,15 @@ mod tests {
         out
     }
 
-    /// Pins the known inconsistency at the partial-tail bucket: full buckets
-    /// get the 0.01 RMS floor, the tail (samples % bins != 0) does not.
-    /// Quiet constant samples floor every full bucket to 0, yet the unfloored
-    /// tail survives — documenting current behavior, not fixing it.
+    /// Pins the tail-merge behavior: when samples % bins != 0, tail samples
+    /// are folded into the last main-loop bucket (not dropped). Quiet constant
+    /// samples produce rms < 0.01 in every bucket → all floored to 0.
     #[test]
     fn partial_tail_bucket_skips_silence_floor() {
         let amp = 9.99e-5f32; // sqrt(amp) ~= 0.009995 < 0.01 → floored
         let out = peaks(&[amp; 10], 32);
         assert_eq!(out.len(), 32);
-        assert_eq!(out[0], 0.0, "full bucket must be floored by the 0.01 gate");
-        assert_eq!(out[1], (amp as f64).sqrt() as f32, "tail is unfloored");
-        assert!(out[2..].iter().all(|p| *p == 0.0));
+        assert!(out.iter().all(|p| *p == 0.0), "all buckets floored to 0");
     }
 
     /// Pins the empty-samples early return: zero samples → all-zero bins.
@@ -336,11 +344,10 @@ mod tests {
         let wav = wav_pcm_i16(10, i16::MAX);
         let out = extract_waveform_bytes(&wav, 32).unwrap();
         assert_eq!(out.len(), 32);
-        // Bucket 0 (1 sample) + unfloored tail (9 samples) both land near 1.0
-        // after normalization; the other 30 buckets are padded zeros.
+        // All 10 samples land in bucket 0 via tail-merge; remaining buckets
+        // are zero-padded.
         assert!((out[0] - 1.0).abs() < 1e-5, "bucket 0: {}", out[0]);
-        assert!(out[1] > 0.99, "tail bucket: {}", out[1]);
-        assert!(out[2..].iter().all(|p| *p == 0.0));
+        assert!(out[1..].iter().all(|p| *p == 0.0));
     }
 
     /// Pins the post-normalization <0.001 zero-out: a small-but-nonzero peak

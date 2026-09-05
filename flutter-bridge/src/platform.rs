@@ -30,7 +30,9 @@ mod android {
             if ptr.is_null() {
                 return None;
             }
-            Some(std::mem::transmute_copy(&ptr))
+            // SAFETY: dlsym returns a valid function pointer for `symbol`;
+            // the caller's `T` must match its extern "C" signature exactly.
+            Some(std::mem::transmute(ptr))
         }
     }
 
@@ -257,7 +259,8 @@ mod android {
     /// Fire a runtime permission dialog (Activity.requestPermissions).
     pub fn request_permissions(names: &[&str]) -> Result<(), String> {
         let mut env = attach()?;
-        env.with_local_frame(16, |env| -> Result<(), JniErr> {
+        let frame = (names.len() + 4) as i32; // array + N strings + call args margin
+        env.with_local_frame(frame, |env| -> Result<(), JniErr> {
             let activity = activity(env)?;
             let string_class = env.find_class("java/lang/String")?;
             let array = env.new_object_array(

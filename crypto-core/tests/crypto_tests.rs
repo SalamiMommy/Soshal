@@ -269,6 +269,7 @@ fn pqc_ratchet_tests() {
         ct: "hdrct".into(),
         seq: 7,
         chain_counter: 3,
+        header_mac: String::new(),
     };
     let w_tags = ratchet_wrapper_tags(&out_st, &header_out);
     assert!(!w_tags.is_empty());
@@ -363,11 +364,25 @@ fn dsa_sign_verify_tests() {
 fn zk_trust_tests() {
     use soshal_crypto_core::zk_trust::verify_zk_wot_proof_binding;
     let proof = generate_zk_wot_proof("pubkey_bob", "wot_root_abc", "black_root_xy");
-    assert!(verify_zk_wot_proof(&proof, "wot_root_abc", &[]));
-    assert!(!verify_zk_wot_proof(&proof, "wot_root_xyz", &[]));
+    assert!(verify_zk_wot_proof(
+        &proof,
+        "pubkey_bob",
+        "wot_root_abc",
+        "black_root_xy",
+        &[]
+    ));
     assert!(!verify_zk_wot_proof(
         &proof,
+        "pubkey_bob",
+        "wot_root_xyz",
+        "black_root_xy",
+        &[]
+    ));
+    assert!(!verify_zk_wot_proof(
+        &proof,
+        "pubkey_bob",
         "wot_root_abc",
+        "black_root_xy",
         std::slice::from_ref(&proof.blacklist_nullifier_hash)
     ));
     // Binding path: correct pubkey + roots pass
@@ -392,11 +407,23 @@ fn zk_trust_tests() {
 
     let mut bad_b64 = proof.clone();
     bad_b64.proof_bytes_b64 = "not base64!!!".into();
-    assert!(!verify_zk_wot_proof(&bad_b64, "wot_root_abc", &[]));
+    assert!(!verify_zk_wot_proof(
+        &bad_b64,
+        "pubkey_bob",
+        "wot_root_abc",
+        "black_root_xy",
+        &[]
+    ));
 
     let mut bad_len = proof;
     bad_len.proof_bytes_b64 = base64_encode_bytes(&[0u8; 16]);
-    assert!(!verify_zk_wot_proof(&bad_len, "wot_root_abc", &[]));
+    assert!(!verify_zk_wot_proof(
+        &bad_len,
+        "pubkey_bob",
+        "wot_root_abc",
+        "black_root_xy",
+        &[]
+    ));
 }
 
 #[test]

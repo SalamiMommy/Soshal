@@ -46,10 +46,26 @@ impl WifiDirectManager {
         }
     }
 
-    /// Update status of a peer connection.
+    /// Update status of a peer connection. Disconnected peers are evicted
+    /// immediately to trim connection churn, and the tracked set is
+    /// size-capped so abandoned peers can't grow it unboundedly (Failed
+    /// states stay observable as the peer's last-known state).
     pub async fn set_status(&self, peer_id: &str, status: WifiP2pStatus) {
+        const MAX_TRACKED_LINKS: usize = 256;
         let mut links = self.active_links.write().await;
-        links.insert(peer_id.to_string(), status);
+        match status {
+            WifiP2pStatus::Disconnected => {
+                links.remove(peer_id);
+            }
+            _ => {
+                if !links.contains_key(peer_id) && links.len() >= MAX_TRACKED_LINKS {
+                    if let Some(oldest) = links.keys().next().cloned() {
+                        links.remove(&oldest);
+                    }
+                }
+                links.insert(peer_id.to_string(), status);
+            }
+        }
     }
 
     /// Retrieve status of a peer connection.

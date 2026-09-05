@@ -785,19 +785,18 @@ pub fn network_reconcile_prolly_tree(
 }
 
 /// Verifies a zk-SNARK Web-of-Trust moderation proof.
+///
+/// Legacy 3-arg surface. The security hardening made proof verification
+/// prover-bound (`verify_zk_wot_proof` requires the minting prover's pubkey
+/// and blacklist root); this surface cannot supply them, so it fails closed
+/// with `false` rather than verifying without an identity.
 #[frb(serialize)]
 pub fn network_verify_zk_wot_proof(
-    proof_json: String,
-    expected_wot_root: String,
-    blacklisted_nullifiers_json: String,
+    _proof_json: String,
+    _expected_wot_root: String,
+    _blacklisted_nullifiers_json: String,
 ) -> Result<bool, String> {
-    let nullifiers: Vec<String> =
-        serde_json::from_str(&blacklisted_nullifiers_json).unwrap_or_default();
-    Ok(soshal_moderation_core::check::check_zk_trust_proof(
-        &proof_json,
-        &expected_wot_root,
-        &nullifiers,
-    ))
+    Ok(false)
 }
 
 /// Notifies network-core of local IP interface address changes to trigger QUIC connection migration.

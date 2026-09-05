@@ -63,6 +63,7 @@ hex = { workspace = true }
 zeroize = { workspace = true }
 rand = { workspace = true }
 getrandom = { workspace = true }
+log = "0.4"
 
 [lints]
 workspace = true

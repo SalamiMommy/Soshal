@@ -123,7 +123,9 @@ impl AudioCodecState {
         #[cfg(target_os = "android")]
         {
             if let Some(t) = self.capture_thread.take() {
-                let _ = t.join();
+                if let Err(e) = t.join() {
+                    log::error!("codec thread panicked: {e:?}");
+                }
             }
         }
         #[cfg(target_os = "android")]

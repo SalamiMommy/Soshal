@@ -27,24 +27,24 @@ mod saved_music_tests {
         let empty: Vec<serde_json::Value> =
             serde_json::from_str(&minis::minis_saved().unwrap()).unwrap();
         assert!(empty.is_empty());
-        assert_eq!(minis::minis_save("m1".to_string()).unwrap(), false);
+        assert!(!minis::minis_save("m1".to_string()).unwrap());
         let saved: Vec<serde_json::Value> =
             serde_json::from_str(&minis::minis_saved().unwrap()).unwrap();
         assert_eq!(saved.len(), 1);
         assert_eq!(saved[0]["videoUrl"], "https://mini.example/a");
         assert_eq!(saved[0]["hostReady"], false);
-        assert_eq!(minis::minis_unsave("m1".to_string()).unwrap(), true);
+        assert!(minis::minis_unsave("m1".to_string()).unwrap());
         let after: Vec<serde_json::Value> =
             serde_json::from_str(&minis::minis_saved().unwrap()).unwrap();
         assert!(after.is_empty());
         let t = json!({"id":"t1","pubkey":"pk","audioUrl":"https://example.com/t1.mp3","blobHash":"","mediaSize":123,"title":"Song","thumbnail":"","hashtags":["a"],"d":"soshal_music_1","audience":"public","createdAt":100});
-        assert_eq!(music::music_save(t.to_string()).unwrap(), false);
+        assert!(!music::music_save(t.to_string()).unwrap());
         let tracks: Vec<serde_json::Value> =
             serde_json::from_str(&music::music_saved().unwrap()).unwrap();
         assert_eq!(tracks.len(), 1);
         assert_eq!(tracks[0]["title"], "Song");
         assert_eq!(tracks[0]["hostReady"], false);
-        assert_eq!(music::music_unsave("t1".to_string()).unwrap(), true);
+        assert!(music::music_unsave("t1".to_string()).unwrap());
         let tracks_after: Vec<serde_json::Value> =
             serde_json::from_str(&music::music_saved().unwrap()).unwrap();
         assert!(tracks_after.is_empty());

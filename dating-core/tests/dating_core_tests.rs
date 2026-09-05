@@ -100,14 +100,14 @@ fn compute_compatibility_json_dealbreaker_zeroes() {
 fn compute_compatibility_json_weight_zero_drops_field() {
     let self_p = r#"{"age":25,"height":170,"preferenceWeights":{"age":0}}"#;
     let other = r#"{"age":25,"height":140}"#;
-    assert_eq!(compute_compatibility_json(self_p, other), "45");
+    assert_eq!(compute_compatibility_json(self_p, other), "60");
 }
 
 #[test]
 fn compute_mutual_score_json_averages_directions() {
     let a = r#"{"age":25,"preferenceWeights":{"age":0}}"#;
     let b = r#"{"age":27,"preferenceWeights":{"age":1}}"#;
-    assert_eq!(compute_mutual_score_json(a, b), "52");
+    assert_eq!(compute_mutual_score_json(a, b), "72");
     assert_eq!(
         compute_mutual_score_json(a, a),
         compute_compatibility_json(a, a)
@@ -119,10 +119,10 @@ fn compute_mutual_score_json_averages_directions() {
 fn compute_mutual_score_direct_structs() {
     let a: DatingProfile = serde_json::from_str(r#"{"age":25}"#).unwrap();
     let b: DatingProfile = serde_json::from_str(r#"{"age":60}"#).unwrap();
-    assert_eq!(compute_mutual_score(&a, &b), 46);
+    assert_eq!(compute_mutual_score(&a, &b), 64);
     assert_eq!(compute_mutual_score(&a, &b), compute_mutual_score(&b, &a));
     let same: DatingProfile = serde_json::from_str(r#"{"age":30}"#).unwrap();
-    assert_eq!(compute_mutual_score(&same, &same), 54);
+    assert_eq!(compute_mutual_score(&same, &same), 73);
 }
 
 #[test]
@@ -496,8 +496,8 @@ fn default_interest_weight_dominates() {
     no_overlap.interests = Some(vec!["Hiking".to_string()]);
     let s_shared = compute_mutual_score(&self_p, &shared);
     let s_none = compute_mutual_score(&self_p, &no_overlap);
-    assert!(s_shared >= 55, "shared {s_shared}");
-    assert!(s_none <= 45, "none {s_none}");
+    assert!(s_shared >= 75, "shared {s_shared}");
+    assert!(s_none <= 70, "none {s_none}");
     assert!(s_shared > s_none);
 }
 
@@ -631,7 +631,7 @@ fn score_age_boundaries_and_non_finite() {
     assert_eq!(metrics::score_age(Some(30.0), Some(41.0)), 0.0);
     assert_eq!(metrics::score_age(Some(f64::NAN), Some(30.0)), 0.5);
     assert_eq!(metrics::score_age(Some(30.0), None), 0.5);
-    assert_eq!(metrics::score_age(None, None), 0.5);
+    assert_eq!(metrics::score_age(None, None), 1.0);
 }
 
 #[test]

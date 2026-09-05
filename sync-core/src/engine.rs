@@ -189,16 +189,20 @@ pub async fn build_client(cfg: &SyncConfig) -> Result<Client, String> {
         let port = parsed
             .port()
             .unwrap_or(if parsed.scheme() == "wss" { 443 } else { 80 });
-        if let Ok(addrs) = tokio::net::lookup_host((host, port)).await {
-            let mut any_public = false;
-            for addr in addrs {
-                if soshal_common_core::url::is_private_ip_str(&addr.ip().to_string()) {
-                    any_public = false;
-                    break;
+        // Resolve-and-check only when DNS answers: a hostname that resolves
+        // to private/loopback addresses is dropped (SSRF). An unresolvable
+        // hostname (DNS failure) is kept best-effort — the relay simply fails
+        // to connect and the engine idles, which must stay possible offline.
+        match tokio::net::lookup_host((host, port)).await {
+            Ok(addrs) => {
+                let any_public = addrs
+                    .into_iter()
+                    .any(|a| !soshal_common_core::url::is_private_ip_str(&a.ip().to_string()));
+                if any_public {
+                    relays.push(target);
                 }
-                any_public = true;
             }
-            if any_public {
+            Err(_) => {
                 relays.push(target);
             }
         }

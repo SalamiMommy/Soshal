@@ -717,7 +717,10 @@ mod tests {
         let dir = soshal_test_util::tmp_root("notif_push");
         let db_path = dir.join("app.db").to_string_lossy().to_string();
         db::db_init(db_path.clone()).unwrap();
-        let session = r#"{"active_pubkey":"pk1","accounts":[{"pubkey":"pk1","npub":"npub1pk1","last_used":1,"relay_list":[]}]}"#;
+        let session = format!(
+            r#"{{"active_pubkey":"pk1","accounts":[{{"pubkey":"pk1","npub":"npub1pk1","last_used":{},"relay_list":[]}}]}}"#,
+            soshal_common_core::format::now_secs()
+        );
         session::session_save(db_path.clone(), session.to_string()).unwrap();
         assert!(notifications_register_push("pk1".to_string(), "tok123".to_string()).unwrap());
         let reloaded = session::session_load(db_path.clone()).unwrap();

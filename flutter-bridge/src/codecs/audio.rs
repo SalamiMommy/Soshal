@@ -41,7 +41,9 @@ pub fn release_audio_all() {
         s.capture_thread.take()
     };
     if let Some(t) = join_thread {
-        let _ = t.join();
+        if let Err(e) = t.join() {
+            log::error!("audio codec thread panicked: {e:?}");
+        }
     }
     let mut s = audio_state();
     s.release_audio();
@@ -66,6 +68,10 @@ pub fn init_encode() -> bool {
                 return false;
             }
             let fmt = AMediaFormat_new();
+            if fmt.is_null() {
+                AMediaCodec_delete(codec);
+                return false;
+            }
             AMediaFormat_setString(fmt, c"mime".as_ptr(), c"audio/mp4a-latm".as_ptr());
             AMediaFormat_setInt32(fmt, c"sample-rate".as_ptr(), SAMPLE_RATE);
             AMediaFormat_setInt32(fmt, c"channel-count".as_ptr(), 1);
@@ -161,6 +167,10 @@ pub fn init_decode() -> bool {
                 return false;
             }
             let fmt = AMediaFormat_new();
+            if fmt.is_null() {
+                AMediaCodec_delete(codec);
+                return false;
+            }
             AMediaFormat_setString(fmt, c"mime".as_ptr(), c"audio/mp4a-latm".as_ptr());
             AMediaFormat_setInt32(fmt, c"sample-rate".as_ptr(), SAMPLE_RATE);
             AMediaFormat_setInt32(fmt, c"channel-count".as_ptr(), 1);
@@ -379,7 +389,9 @@ unsafe fn drain_audio_encoder(codec: *mut AMediaCodec) {
             let aac =
                 std::slice::from_raw_parts(buf.offset(info.offset as isize), info.size as usize);
             let is_config = info.flags & AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG != 0;
-            let _ = super::dvr_write_audio(aac, is_config); // DVR mirror; ignore failure
+            if let Err(e) = super::dvr_write_audio(aac, is_config) {
+                log::warn!("DVR audio write failed: {e}");
+            }
             let tag: u8 = if is_config { 2 } else { 1 };
             let mut tagged = Vec::with_capacity(aac.len() + 1);
             tagged.push(tag);
