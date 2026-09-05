@@ -86,6 +86,8 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   void _pausePollAndPowerTimers() {
     _pausePollTimer();
     _pausePowerTimer();
+    if (_lanPort != null) stopLanServer();
+    if (_quicPort != null) stopQuicServer();
   }
 
   void _resumePollAndPowerTimers() {

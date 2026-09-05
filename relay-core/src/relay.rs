@@ -161,6 +161,9 @@ impl RelayNode {
         if payload.len() > crate::envelope::MAX_PAYLOAD_BYTES {
             return Err("payload exceeds mesh cap".to_string());
         }
+        if event_id.len() > 128 || author.len() > 128 {
+            return Err("event id or author exceeds 128-byte cap".to_string());
+        }
         let env = MeshEnvelope::new(
             event_id.to_string(),
             kind,

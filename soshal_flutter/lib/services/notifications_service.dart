@@ -227,6 +227,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         for (final list in _byType.values) {
           list.removeWhere((n) => n.id == notificationId);
         }
+        _recomputeUnreadCount();
       }
       clearLastError();
       notifyListeners();
@@ -244,23 +245,59 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Ignore all notifications from a user.
-  Future<void> ignoreUser(String targetPubkey) async {
-    _notifications.removeWhere((n) => n.fromPubkey == targetPubkey);
-    _unread.removeWhere((n) => n.fromPubkey == targetPubkey);
-    for (final list in _byType.values) {
-      list.removeWhere((n) => n.fromPubkey == targetPubkey);
+  Future<bool> ignoreUser(String targetPubkey, {String? userPubkey}) async {
+    try {
+      var ok = userPubkey == null || userPubkey.isEmpty;
+      if (!ok) {
+        ok = RustLib.instance.api.crateFfiNotificationsNotificationsIgnoreUser(
+          userPubkey: userPubkey,
+          fromPubkey: targetPubkey,
+        );
+      }
+      if (ok) {
+        _notifications.removeWhere((n) => n.fromPubkey == targetPubkey);
+        _unread.removeWhere((n) => n.fromPubkey == targetPubkey);
+        for (final list in _byType.values) {
+          list.removeWhere((n) => n.fromPubkey == targetPubkey);
+        }
+        _recomputeUnreadCount();
+      }
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
     }
-    notifyListeners();
   }
 
   /// Turn off notifications for a thread/post.
-  Future<void> ignoreThread(String eventId) async {
-    _notifications.removeWhere((n) => n.eventId == eventId);
-    _unread.removeWhere((n) => n.eventId == eventId);
-    for (final list in _byType.values) {
-      list.removeWhere((n) => n.eventId == eventId);
+  Future<bool> ignoreThread(String eventId, {String? userPubkey}) async {
+    try {
+      var ok = userPubkey == null || userPubkey.isEmpty;
+      if (!ok) {
+        ok = RustLib.instance.api.crateFfiNotificationsNotificationsIgnoreThread(
+          userPubkey: userPubkey,
+          eventId: eventId,
+        );
+      }
+      if (ok) {
+        _notifications.removeWhere((n) => n.eventId == eventId);
+        _unread.removeWhere((n) => n.eventId == eventId);
+        for (final list in _byType.values) {
+          list.removeWhere((n) => n.eventId == eventId);
+        }
+        _recomputeUnreadCount();
+      }
+      clearLastError();
+      notifyListeners();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
     }
-    notifyListeners();
   }
 
   Future<List<AppNotification>> _fetchCategory(

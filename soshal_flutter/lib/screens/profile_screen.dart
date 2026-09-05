@@ -471,11 +471,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _showMetadataDialog(String pubkey) {
+  Future<void> _showMetadataDialog(String pubkey) async {
     final schemeField = TextEditingController(text: 'nostr');
     final hostField = TextEditingController(text: '');
     final pathField = TextEditingController(text: pubkey);
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -548,6 +548,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
     );
+    schemeField.dispose();
+    hostField.dispose();
+    pathField.dispose();
   }
 
   void _showPrivacyDialog() {

@@ -227,6 +227,7 @@ async fn serve_video_file(
 
     let mut start = 0u64;
     let mut end = total_size.saturating_sub(1);
+    let mut invalid_range = false;
     let is_range = if let Some(hdr) = range_header {
         if let Some(spec) = hdr.split('=').nth(1) {
             let spec = spec.trim();
@@ -243,13 +244,17 @@ async fn serve_video_file(
                             end = e.min(end);
                         }
                     }
+                    true
                 } else if parts.len() > 1 && !parts[1].is_empty() {
                     if let Ok(n) = parts[1].parse::<u64>() {
                         start = total_size.saturating_sub(n);
                         end = total_size.saturating_sub(1);
                     }
+                    true
+                } else {
+                    invalid_range = true;
+                    true
                 }
-                true
             }
         } else {
             false
@@ -257,6 +262,12 @@ async fn serve_video_file(
     } else {
         false
     };
+
+    if invalid_range {
+        let resp = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
+        let _ = socket.write_all(resp.as_bytes()).await;
+        return;
+    }
 
     if is_range && (total_size == 0 || start > end) {
         let resp = format!("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{total_size}\r\nContent-Length: 0\r\n\r\n");

@@ -29,7 +29,6 @@ class H264Codec {
       _supported = ok;
       return ok;
     } catch (_) {
-      _supported = false;
       return false;
     }
   }

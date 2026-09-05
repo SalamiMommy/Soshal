@@ -22,6 +22,7 @@ const COUNTABLE_TABLES: &[&str] = &[
     "banned_members",
     "blocks",
     "bookmarks",
+    "conversations",
     "custom_profile_nodes",
     "custom_profiles",
     "dating_unmatches",
@@ -38,6 +39,7 @@ const COUNTABLE_TABLES: &[&str] = &[
     "group_roles",
     "group_rooms",
     "group_shared_keys",
+    "group_thread_reactions",
     "group_thread_replies",
     "group_threads",
     "group_voice_channels",
@@ -47,6 +49,7 @@ const COUNTABLE_TABLES: &[&str] = &[
     "hashtags",
     "huddle_posts",
     "ignored_entities",
+    "ignored_notifications",
     "link_previews",
     "marketplace_offers",
     "marketplace_reviews",
@@ -55,6 +58,7 @@ const COUNTABLE_TABLES: &[&str] = &[
     "messages",
     "muted_conversations",
     "musicloud_comments",
+    "musicloud_playlist_tracks",
     "musicloud_playlists",
     "musicloud_timed_comments",
     "musiclouds",
@@ -68,6 +72,7 @@ const COUNTABLE_TABLES: &[&str] = &[
     "relays",
     "reminders",
     "reposts",
+    "saved_content",
     "secret_crushes",
     "settings",
     "spam_reports",
@@ -77,6 +82,7 @@ const COUNTABLE_TABLES: &[&str] = &[
     "tx_nodes",
     "users",
     "zaps",
+    "zk_state_rollups",
 ];
 
 fn with_db<T>(f: impl FnOnce(&Database) -> Result<T, DbError>) -> Result<T, String> {

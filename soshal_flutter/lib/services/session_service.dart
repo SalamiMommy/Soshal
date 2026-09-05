@@ -2,7 +2,7 @@ import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'bookmarks_service.dart';
 import 'calls_service.dart';
@@ -26,6 +26,26 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
   String? _activePubkey;
   Future<SessionData>? _loadFuture;
   SyncService? _sync;
+  AppLifecycleListener? _lifecycle;
+
+  SessionService() {
+    _lifecycle = AppLifecycleListener(
+      onHide: _saveIfActive,
+      onPause: _saveIfActive,
+    );
+  }
+
+  void _saveIfActive() {
+    if (_session != null) {
+      saveSession();
+    }
+  }
+
+  @override
+  void dispose() {
+    _lifecycle?.dispose();
+    super.dispose();
+  }
 
   /// Attach the sync engine (wired from main.dart). Account switches stop
   /// the old engine before the new account takes over so its events don't

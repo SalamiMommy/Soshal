@@ -6,7 +6,7 @@ import '../widgets/app_snack.dart';
 
 /// Follow/Following toggle for someone else's profile. Hidden on the
 /// viewer's own profile. Read state from the cached [ProfileInfo.isFollowing]
-/// (kept fresh by [IdentityService.refreshProfile] after each toggle).
+/// (kept fresh by [IdentityService.getProfile] after each toggle).
 class FollowButton extends StatefulWidget {
   final String pubkey;
 
@@ -41,7 +41,7 @@ class _FollowButtonState extends State<FollowButton> {
       } else {
         await identity.followUser(widget.pubkey, me);
       }
-      await identity.refreshProfile(widget.pubkey);
+      await identity.getProfile(widget.pubkey, refresh: true);
       if (!mounted) return;
       final nowFollowing = context
               .read<IdentityService>()

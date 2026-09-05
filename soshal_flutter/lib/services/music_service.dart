@@ -441,7 +441,10 @@ Future<bool> hostTrackBlob(
       final file = await media.fetch(url, cacheDir: await media.getCachePath());
       await media.uploadMedia(file);
       return true;
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('hostTrackBlob: $e');
+      logRuntimeError(e);
+    }
   }
   return false;
 }

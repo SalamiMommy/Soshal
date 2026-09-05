@@ -436,6 +436,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
         },
       ),
     );
+    controller.dispose();
   }
 
   Future<void> _signUnsignedDialog() async {
@@ -503,6 +504,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
         },
       ),
     );
+    controller.dispose();
   }
 
   Future<void> _nip44Dialog() async {
@@ -609,6 +611,8 @@ class _SecurityScreenState extends State<SecurityScreen> {
         },
       ),
     );
+    textController.dispose();
+    pubkeyController.dispose();
   }
 
   Future<void> _signDialog() async {
@@ -679,6 +683,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
         },
       ),
     );
+    controller.dispose();
   }
 
   Future<void> _generateKeypairDialog() async {
@@ -821,5 +826,6 @@ class _SecurityScreenState extends State<SecurityScreen> {
         },
       ),
     );
+    controller.dispose();
   }
 }

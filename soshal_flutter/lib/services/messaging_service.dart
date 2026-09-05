@@ -546,9 +546,9 @@ class IdentityService extends ChangeNotifier
   }
 
   /// Get user profile
-  Future<ProfileInfo> getProfile(String pubkey) async {
+  Future<ProfileInfo> getProfile(String pubkey, {bool refresh = false}) async {
     try {
-      if (_profiles.containsKey(pubkey)) {
+      if (!refresh && _profiles.containsKey(pubkey)) {
         return _profiles[pubkey]!;
       }
 
@@ -556,7 +556,9 @@ class IdentityService extends ChangeNotifier
           .crateFfiIdentityIdentityGetProfile(pubkey: pubkey);
       final profile =
           ProfileInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
-      _profiles[pubkey] = profile;
+      _profiles[pubkey] = refresh
+          ? _mergeProfile(profile, _profiles[pubkey])
+          : profile;
 
       clearLastError();
       notifyDeferred();

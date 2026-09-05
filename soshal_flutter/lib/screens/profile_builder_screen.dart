@@ -348,10 +348,13 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
                           final node = _nodes[index];
                           final allTypes =
                               context.read<ProfileService>().nodeTypes;
-                          final typeInfo = allTypes.firstWhere(
-                            (t) => t.type == node.type,
-                            orElse: () => allTypes[0],
-                          );
+                          final typeInfo = allTypes.isEmpty
+                              ? NodeTypeInfo(
+                                  type: node.type, label: node.type, icon: '')
+                              : allTypes.firstWhere(
+                                  (t) => t.type == node.type,
+                                  orElse: () => allTypes[0],
+                                );
                           return _WidgetListItem(
                             key: ValueKey(node.id),
                             node: node,

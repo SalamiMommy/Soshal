@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:soshal_flutter/ffi/p2p.dart' as moq;
 import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/json_ext.dart';
@@ -17,6 +18,7 @@ class StreamingService extends ChangeNotifier
 
   String? _activeMoqStreamId;
   int _moqGroupCounter = 0;
+  AppLifecycleListener? _lifecycle;
 
   List<StreamRow> get live => _live;
   List<StreamRow> get stories => _stories;
@@ -24,6 +26,13 @@ class StreamingService extends ChangeNotifier
   /// Own broadcast stream id, set while `startMoqBroadcast` is active.
   String? get activeMoqStreamId => _activeMoqStreamId;
   bool get isBroadcasting => _activeMoqStreamId != null;
+
+  StreamingService() {
+    _lifecycle = AppLifecycleListener(
+      onHide: _shutdownOnBackground,
+      onPause: _shutdownOnBackground,
+    );
+  }
 
   /// Monotonic group sequence for the local broadcast (per session).
   int nextMoqGroupSeq() => _moqGroupCounter++;
@@ -368,6 +377,7 @@ class StreamingService extends ChangeNotifier
     required String streamId,
     required String title,
   }) async {
+    if (_moqGroupCounter >= 1) _moqGroupCounter = 0;
     await publishLiveGroup(
       streamId: streamId,
       group: _controlGroup(
@@ -406,6 +416,17 @@ class StreamingService extends ChangeNotifier
       }
     }
     notifyDeferred();
+  }
+
+  Future<void> _shutdownOnBackground() async {
+    if (isBroadcasting) {
+      await stopMoqBroadcast();
+    }
+    try {
+      moq.p2PQuicServerStop();
+    } catch (_) {
+      // server not running — nothing to stop
+    }
   }
 
   static Map<String, dynamic> _controlGroup({
@@ -483,6 +504,12 @@ class StreamingService extends ChangeNotifier
       notifyDeferred();
       rethrow;
     }
+  }
+
+  @override
+  void dispose() {
+    _lifecycle?.dispose();
+    super.dispose();
   }
 }
 

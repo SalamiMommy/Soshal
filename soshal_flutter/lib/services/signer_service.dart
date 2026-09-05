@@ -1,5 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'crypto_service.dart';
 
@@ -8,6 +8,26 @@ import 'crypto_service.dart';
 /// No key bytes ever cross into Dart — keyring ops exchange pubkeys only.
 class SignerService extends ChangeNotifier {
   final RustLibApi _api = RustLib.instance.api;
+  AppLifecycleListener? _lifecycle;
+
+  SignerService() {
+    _lifecycle = AppLifecycleListener(
+      onHide: _lockIfUnlocked,
+      onPause: _lockIfUnlocked,
+    );
+  }
+
+  void _lockIfUnlocked() {
+    if (!_locked) {
+      lock();
+    }
+  }
+
+  @override
+  void dispose() {
+    _lifecycle?.dispose();
+    super.dispose();
+  }
 
   bool _locked = true;
   bool get locked => _locked;

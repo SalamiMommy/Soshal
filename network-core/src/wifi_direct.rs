@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+const MAX_FRAME_BYTES: usize = 1024 * 1024;
+
 /// Configuration for a Wi-Fi Direct / Wi-Fi Aware P2P socket connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WifiP2pConfig {
@@ -97,6 +99,9 @@ impl WifiDirectManager {
         let data = base64::engine::general_purpose::STANDARD
             .decode(&frame.payload_b64)
             .ok()?;
+        if data.len() > MAX_FRAME_BYTES {
+            return None;
+        }
         Some((
             frame.chunk_hash,
             frame.chunk_index,

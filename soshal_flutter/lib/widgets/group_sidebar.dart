@@ -119,103 +119,108 @@ class _GroupSidebarState extends State<GroupSidebar> {
     final name = TextEditingController(text: role?.name ?? '');
     final position =
         TextEditingController(text: (role?.position ?? 1).toString());
-    var color = groupRoleColor(role?.color ?? '#8b5cf6');
-    final perms = groupPermsSet(role?.permissions ?? '[]').toSet();
+    try {
+      var color = groupRoleColor(role?.color ?? '#8b5cf6');
+      final perms = groupPermsSet(role?.permissions ?? '[]').toSet();
 
-    await showDialog<void>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(role == null ? 'New role' : 'Edit role'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: name,
-                  decoration: const InputDecoration(labelText: 'Name *'),
-                ),
-                TextField(
-                  controller: position,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Position'),
-                ),
-                const SizedBox(height: 8),
-                const Text('Color',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final c in groupRoleColors)
-                      GestureDetector(
-                        onTap: () => setDialogState(() => color = c),
-                        child: Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: hexColor(c),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              width: 2,
-                              color: color == c
-                                  ? Colors.white
-                                  : Colors.transparent,
+      await showDialog<void>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(role == null ? 'New role' : 'Edit role'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: name,
+                    decoration: const InputDecoration(labelText: 'Name *'),
+                  ),
+                  TextField(
+                    controller: position,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Position'),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Color',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final c in groupRoleColors)
+                        GestureDetector(
+                          onTap: () => setDialogState(() => color = c),
+                          child: Container(
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: hexColor(c),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                width: 2,
+                                color: color == c
+                                    ? Colors.white
+                                    : Colors.transparent,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Permissions (${perms.length} enabled)',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                for (final (key, label) in groupPermissionKeys)
-                  CheckboxListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    title: Text(label, style: const TextStyle(fontSize: 13)),
-                    value: perms.contains(key),
-                    onChanged: (v) => setDialogState(() {
-                      if (v == true) {
-                        perms.add(key);
-                      } else {
-                        perms.remove(key);
-                      }
-                    }),
+                    ],
                   ),
-              ],
+                  const SizedBox(height: 12),
+                  Text(
+                    'Permissions (${perms.length} enabled)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  for (final (key, label) in groupPermissionKeys)
+                    CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(label, style: const TextStyle(fontSize: 13)),
+                      value: perms.contains(key),
+                      onChanged: (v) => setDialogState(() {
+                        if (v == true) {
+                          perms.add(key);
+                        } else {
+                          perms.remove(key);
+                        }
+                      }),
+                    ),
+                ],
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final n = name.text.trim();
+                  if (n.isEmpty) return;
+                  Navigator.pop(context);
+                  _saveRole(
+                    roleId: role?.id,
+                    name: n,
+                    color: color,
+                    position: int.tryParse(position.text.trim()) ?? 0,
+                    permissions: perms.toList(),
+                  );
+                },
+                child: const Text('Save'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final n = name.text.trim();
-                if (n.isEmpty) return;
-                Navigator.pop(context);
-                _saveRole(
-                  roleId: role?.id,
-                  name: n,
-                  color: color,
-                  position: int.tryParse(position.text.trim()) ?? 0,
-                  permissions: perms.toList(),
-                );
-              },
-              child: const Text('Save'),
-            ),
-          ],
         ),
-      ),
-    );
+      );
+    } finally {
+      name.dispose();
+      position.dispose();
+    }
   }
 
   (String, String) _roleBadge(String role, List<GroupRole> roles) {
@@ -489,97 +494,103 @@ class _GroupSidebarState extends State<GroupSidebar> {
 
   Future<void> _editPasswordDialog(bool isPrivate) async {
     final passwordController = TextEditingController();
-    var obscure = true;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(isPrivate
-              ? 'Change Community Password'
-              : 'Set Community Password'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isPrivate
-                    ? 'Enter a new password or leave blank to make the community public.'
-                    : 'Setting a password will make this community private. Members will need this password to join.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: passwordController,
-                obscureText: obscure,
-                decoration: InputDecoration(
-                  labelText: 'New Password',
-                  helperText: isPrivate
-                      ? 'Min. 8 chars (leave empty to make public)'
-                      : 'Min. 8 characters',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(obscure
-                        ? Icons.visibility_outlined
-                        : Icons.visibility_off_outlined),
-                    onPressed: () => setDialogState(() => obscure = !obscure),
+    try {
+      var obscure = true;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(isPrivate
+                ? 'Change Community Password'
+                : 'Set Community Password'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isPrivate
+                      ? 'Enter a new password or leave blank to make the community public.'
+                      : 'Setting a password will make this community private. Members will need this password to join.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passwordController,
+                  obscureText: obscure,
+                  decoration: InputDecoration(
+                    labelText: 'New Password',
+                    helperText: isPrivate
+                        ? 'Min. 8 chars (leave empty to make public)'
+                        : 'Min. 8 characters',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscure
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined),
+                      onPressed: () =>
+                          setDialogState(() => obscure = !obscure),
+                    ),
                   ),
                 ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final pwd = passwordController.text.trim();
+                  if (pwd.isNotEmpty && pwd.length < 8) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content:
+                            Text('Password must be at least 8 characters'),
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.pop(context, true);
+                },
+                child: const Text('Save'),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final pwd = passwordController.text.trim();
-                if (pwd.isNotEmpty && pwd.length < 8) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Password must be at least 8 characters'),
-                    ),
-                  );
-                  return;
-                }
-                Navigator.pop(context, true);
-              },
-              child: const Text('Save'),
-            ),
-          ],
         ),
-      ),
-    );
+      );
 
-    if (confirmed == true) {
-      if (!mounted) return;
-      try {
-        final pubkey = widget.me;
-        if (pubkey == null) return;
-        final pwd = passwordController.text.trim();
-        await context.read<GroupsService>().setPassword(
-              widget.groupId,
-              pwd.isEmpty ? null : pwd,
-              pubkey,
+      if (confirmed == true) {
+        if (!mounted) return;
+        try {
+          final pubkey = widget.me;
+          if (pubkey == null) return;
+          final pwd = passwordController.text.trim();
+          await context.read<GroupsService>().setPassword(
+                widget.groupId,
+                pwd.isEmpty ? null : pwd,
+                pubkey,
+              );
+          widget.onChanged();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(pwd.isEmpty
+                    ? 'Community is now open (password removed)'
+                    : 'Community password updated'),
+              ),
             );
-        widget.onChanged();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(pwd.isEmpty
-                  ? 'Community is now open (password removed)'
-                  : 'Community password updated'),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Error: $e')),
-          );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: SelectableText('Error: $e')),
+            );
+          }
         }
       }
+    } finally {
+      passwordController.dispose();
     }
   }
 

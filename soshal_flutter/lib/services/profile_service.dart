@@ -789,8 +789,8 @@ class CustomProfileNode {
 
   factory CustomProfileNode.fromJson(Map<String, dynamic> json) {
     return CustomProfileNode(
-      id: json['id'] as String,
-      type: json['type'] as String,
+      id: json.strOf('id'),
+      type: json.strOf('type'),
       styles: SanitizedStyles.fromJson(
           Map<String, dynamic>.from(json['styles'] as Map? ?? const {})),
       position: NodePosition.fromJson(

@@ -137,17 +137,28 @@ impl MeshBackend for I2pBackend {
             return Err("payload exceeds mesh cap".to_string());
         }
         let frame = encode_frame(&payload);
-        let mut peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
+        let snapshot: Vec<(String, TcpStream)> = {
+            let peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
+            peers
+                .iter()
+                .filter_map(|(dest, (stream, _))| {
+                    stream.try_clone().ok().map(|s| (dest.clone(), s))
+                })
+                .collect()
+        };
         let mut failed = Vec::new();
-        for (dest, (stream, _)) in peers.iter_mut() {
-            if stream.write_all(&frame).is_err() {
-                failed.push(dest.clone());
+        for (dest, mut stream) in snapshot {
+            let _ = stream
+                .write_all(&frame)
+                .map_err(|_| failed.push(dest.clone()));
+        }
+        if !failed.is_empty() {
+            let mut peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
+            for dest in &failed {
+                peers.remove(dest);
             }
         }
-        for dest in &failed {
-            peers.remove(dest);
-        }
-        Ok(peers.len())
+        Ok(self.peers.lock().unwrap_or_else(|e| e.into_inner()).len())
     }
     fn recv(&mut self) -> Vec<Vec<u8>> {
         let mut queue = self.received.lock().unwrap_or_else(|e| e.into_inner());

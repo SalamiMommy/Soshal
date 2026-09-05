@@ -901,6 +901,8 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final trackPlaying = context.select<ShellService, bool>(
+        (s) => s.audioPlaying && s.audioTitle == _track.title);
     return Scaffold(
       appBar:
           AppBar(title: Text(_track.title.isEmpty ? 'Track' : _track.title)),
@@ -983,11 +985,7 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                     children: [
                       IconButton.filled(
                         icon: Icon(
-                          context.watch<ShellService>().audioPlaying &&
-                                  context.watch<ShellService>().audioTitle ==
-                                      _track.title
-                              ? Icons.pause
-                              : Icons.play_arrow,
+                          trackPlaying ? Icons.pause : Icons.play_arrow,
                         ),
                         onPressed: () {
                           final shell = context.read<ShellService>();

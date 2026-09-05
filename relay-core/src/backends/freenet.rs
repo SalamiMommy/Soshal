@@ -26,6 +26,9 @@ pub struct FreenetBackend {
     received: Arc<Mutex<VecDeque<Vec<u8>>>>,
     last_state: Option<Vec<u8>>,
     started: bool,
+    connected: bool,
+    backoff: std::time::Duration,
+    reconnect_at: std::time::Instant,
 }
 
 impl Default for FreenetBackend {
@@ -44,6 +47,9 @@ impl FreenetBackend {
             received: Arc::new(Mutex::new(VecDeque::new())),
             last_state: None,
             started: false,
+            connected: false,
+            backoff: std::time::Duration::from_secs(1),
+            reconnect_at: std::time::Instant::now(),
         }
     }
 
@@ -55,6 +61,26 @@ impl FreenetBackend {
         }
         *current = Some(incoming.clone());
         Some(incoming)
+    }
+
+    fn reconnect(&mut self) -> bool {
+        let client = FreenetWebSocketClient::new(self.url.clone(), self.auth_token.clone());
+        match runtime().block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), client.connect())
+                .await
+                .map_err(|_| "freenet connect timed out".to_string())?
+        }) {
+            Ok(()) => {
+                self.client = Some(client);
+                self.connected = true;
+                self.backoff = std::time::Duration::from_secs(1);
+                true
+            }
+            Err(_) => {
+                self.client = None;
+                false
+            }
+        }
     }
 }
 
@@ -71,10 +97,14 @@ impl MeshBackend for FreenetBackend {
         })?;
         self.client = Some(client);
         self.started = true;
+        self.connected = true;
+        self.backoff = std::time::Duration::from_secs(1);
+        self.reconnect_at = std::time::Instant::now();
         Ok(())
     }
     fn stop(&mut self) {
         self.started = false;
+        self.connected = false;
         if let Some(client) = self.client.take() {
             let _ = runtime().block_on(async {
                 tokio::time::timeout(std::time::Duration::from_secs(5), client.disconnect()).await
@@ -109,20 +139,31 @@ impl MeshBackend for FreenetBackend {
     }
     fn recv(&mut self) -> Vec<Vec<u8>> {
         if self.started {
-            if let Some(client) = self.client.as_ref() {
-                if let Ok(state) = runtime().block_on(async {
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(5),
-                        client.get_contract(&self.contract_key, false),
-                    )
-                    .await
-                    .map_err(|_| "freenet get timed out".to_string())?
-                }) {
-                    if let Some(bytes) = Self::state_changed(&mut self.last_state, state.state) {
-                        self.received
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .push_back(bytes);
+            if !self.connected && std::time::Instant::now() >= self.reconnect_at {
+                self.connected = self.reconnect();
+                let delay = self.backoff;
+                self.reconnect_at = std::time::Instant::now() + delay;
+                self.backoff = std::cmp::min(delay * 2, std::time::Duration::from_secs(30));
+            }
+            if self.connected {
+                if let Some(client) = self.client.as_ref() {
+                    if let Ok(state) = runtime().block_on(async {
+                        tokio::time::timeout(
+                            std::time::Duration::from_secs(5),
+                            client.get_contract(&self.contract_key, false),
+                        )
+                        .await
+                        .map_err(|_| "freenet get timed out".to_string())?
+                    }) {
+                        if let Some(bytes) = Self::state_changed(&mut self.last_state, state.state)
+                        {
+                            self.received
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .push_back(bytes);
+                        }
+                    } else {
+                        self.connected = false;
                     }
                 }
             }

@@ -33,8 +33,8 @@ pub struct ChunkStore {
     /// Lazy chunk-hash → owning manifest cache. Resolves peer "do you have
     /// chunk X" requests without re-reading every manifests/*.json.
     index: Arc<RwLock<Option<Arc<ChunkIndex>>>>,
-    /// Verified (hash, size, mtime) entries; immutable chunk files skip the
-    /// full re-hash on repeated reads once verified.
+    /// Verified (hash, size, mtime) entries; every read re-hashes regardless,
+    /// the cache only skips the redundant mark_verified write.
     verified: Arc<Mutex<VerifiedChunks>>,
     /// Manifest LRU: peer-serving re-reads manifests/*.json per chunk request
     /// (both TCP and QUIC bulk paths). Capped FIFO, invalidated on save/clear.
@@ -241,12 +241,10 @@ impl ChunkStore {
         // same tick and same byte length would otherwise return stale/corrupt
         // content under the old verified verdict. The verified cache only
         // skips the redundant mark_verified write, never the hash.
-        if !self.verified_contains(hash, size, mtime) {
-            if blake3::hash(map.as_ref()).to_hex().as_str() != hash {
-                return None;
-            }
-            self.mark_verified(hash.to_string(), size, mtime);
+        if blake3::hash(map.as_ref()).to_hex().as_str() != hash {
+            return None;
         }
+        self.mark_verified(hash.to_string(), size, mtime);
         Some(map)
     }
 
@@ -269,16 +267,9 @@ impl ChunkStore {
         Some(m)
     }
 
-    fn verified_contains(&self, hash: &str, size: u64, mtime: Option<SystemTime>) -> bool {
-        self.verified
-            .lock()
-            .map(|c| c.get(hash).is_some_and(|(s, m)| *s == size && *m == mtime))
-            .unwrap_or(false)
-    }
-
     fn mark_verified(&self, hash: String, size: u64, mtime: Option<SystemTime>) {
         if let Ok(mut cache) = self.verified.lock() {
-            if cache.len() >= 256 {
+            if !cache.contains_key(&hash) && cache.len() >= 256 {
                 if let Some(first_key) = cache.keys().next().cloned() {
                     cache.remove(&first_key);
                 }

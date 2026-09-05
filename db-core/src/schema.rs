@@ -10,13 +10,13 @@ use crate::block_on;
 use crate::libsql::{params, Connection};
 use migrations::{
     create_dating_unmatch_actor_column, v11_index_cleanup, v12_saved_content_playlists,
-    v1_create_tables, v2_group_channels, v3_group_thread_reactions, v4_group_password,
-    v5_performance_indexes, v6_index_cleanup, v7_query_optimizations, v8_index_cleanup,
-    v9_trigger_optimization,
+    v13_category_fts, v1_create_tables, v2_group_channels, v3_group_thread_reactions,
+    v4_group_password, v5_performance_indexes, v6_index_cleanup, v7_query_optimizations,
+    v8_index_cleanup, v9_trigger_optimization,
 };
 
 /// Latest schema version the migration runner produces.
-pub const SCHEMA_VERSION: i64 = 12;
+pub const SCHEMA_VERSION: i64 = 13;
 
 /// Columns added by ALTER TABLE in the pre-squash migrations v008-v013 but
 /// lost when they were collapsed into v001_initial. Legacy databases created
@@ -219,6 +219,7 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
         }),
         (11, |c| v11_index_cleanup(c).map_err(Into::into)),
         (12, |c| v12_saved_content_playlists(c).map_err(Into::into)),
+        (13, |c| v13_category_fts(c).map_err(Into::into)),
     ];
 
     for &(version, step_fn) in steps {

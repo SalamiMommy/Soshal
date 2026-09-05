@@ -43,7 +43,7 @@ pub(crate) fn decode_packets(data: &[u8]) -> Result<crate::MonoF32, String> {
     let est_frames = (data.len() / 32).max(1);
     let mut out = Vec::with_capacity((est_frames * OPUS_FRAME_SIZE).min(MAX_DECODE_OUTPUT_SAMPLES));
     let mut pos = 0usize;
-    let mut pcm = vec![0i16; OPUS_FRAME_SIZE];
+    let mut pcm = vec![0i16; 5760];
     while pos < data.len() {
         if data.len() - pos < 2 {
             return Err("truncated opus length prefix".to_string());

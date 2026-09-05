@@ -353,7 +353,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         );
       },
-    );
+    ).then((_) => controller.dispose());
   }
 
   void _showNwcDialog(ZapService zap) {
@@ -429,7 +429,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-    );
+    ).then((_) => controller.dispose());
   }
 
   void _showLnurlDialog() {
@@ -491,7 +491,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-    );
+    ).then((_) => controller.dispose());
   }
 
   void _showLogoutDialog() {

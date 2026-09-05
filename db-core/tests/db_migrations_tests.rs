@@ -111,6 +111,7 @@ fn full_chain_reaches_schema_version() {
     migrations::create_dating_unmatch_actor_column(&conn).unwrap();
     migrations::v11_index_cleanup(&conn).unwrap();
     migrations::v12_saved_content_playlists(&conn).unwrap();
+    migrations::v13_category_fts(&conn).unwrap();
     assert_eq!(max_version(&conn), SCHEMA_VERSION);
     assert!(table_exists(&conn, "group_rooms"));
     assert!(table_exists(&conn, "group_threads"));

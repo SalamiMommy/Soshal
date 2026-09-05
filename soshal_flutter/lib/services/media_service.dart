@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:soshal_flutter/ffi/media.dart';
 import 'package:soshal_flutter/ffi/p2p.dart';
 import 'package:soshal_flutter/frb_generated.dart';
@@ -17,11 +18,23 @@ import 'error_log.dart';
 class MediaService extends ChangeNotifier with LastErrorMixin {
   int? _localServerPort;
   Future<int>? _localServerStart;
+  AppLifecycleListener? _lifecycle;
   static const int _blobCacheCap = 64;
   final Map<String, String> _blobCache = {};
   final Map<String, Future<String>> _blobInFlight = {};
 
   int? get localServerPort => _localServerPort;
+
+  MediaService() {
+    _lifecycle = AppLifecycleListener(
+      onHide: _stopLocalServerIfRunning,
+      onPause: _stopLocalServerIfRunning,
+    );
+  }
+
+  void _stopLocalServerIfRunning() {
+    if (_localServerPort != null) stopLocalServer();
+  }
 
   /// Fetch a blob by hash from LAN peers (crawl-then-swarm), falling back
   /// through every discovered peer until one succeeds. `peers` maps to
@@ -384,5 +397,11 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
       notifyListeners();
       rethrow;
     }
+  }
+
+  @override
+  void dispose() {
+    _lifecycle?.dispose();
+    super.dispose();
   }
 }

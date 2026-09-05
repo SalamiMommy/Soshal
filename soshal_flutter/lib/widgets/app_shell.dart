@@ -590,15 +590,16 @@ class _NavigationRailView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shell = context.watch<ShellService>();
+    final items = context.select<ShellService, List<NavItem>>((s) => s.items);
+    final shell = context.read<ShellService>();
     final glass = Theme.of(context).extension<AppThemeExtension>()!;
     final rail = NavigationRail(
       scrollable: true,
       backgroundColor: Colors.transparent,
       selectedIndex: _selectedIndex(shell, currentPath),
       onDestinationSelected: (i) {
-        if (i >= 0 && i < shell.items.length) {
-          context.go(ShellService.routeForItem[shell.items[i].id] ?? '/feed');
+        if (i >= 0 && i < items.length) {
+          context.go(ShellService.routeForItem[items[i].id] ?? '/feed');
         }
       },
       extended: true,
@@ -615,7 +616,7 @@ class _NavigationRailView extends StatelessWidget {
         onPressed: () => _showEditTabsDialog(context, shell),
       ),
       destinations: [
-        for (final item in shell.items)
+        for (final item in items)
           NavigationRailDestination(
             icon: Icon(navIconFor(item.id)),
             selectedIcon: Icon(navIconFor(item.id)),

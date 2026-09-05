@@ -21,6 +21,12 @@ class _LockScreenState extends State<LockScreen> {
     _maybeBiometric();
   }
 
+  @override
+  void dispose() {
+    _pin.dispose();
+    super.dispose();
+  }
+
   Future<void> _maybeBiometric() async {
     // Biometric prompt support is platform-FFI wired later; keep the lock
     // PIN-first and honest about the biometric setting.
