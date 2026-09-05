@@ -129,5 +129,15 @@ pub fn voice_duration_secs(data: &[u8]) -> Result<f64, String> {
 
 /// Constants for recorders: samples needed for `secs` of audio.
 pub fn pcm_len_for_secs(secs: f64) -> usize {
-    (secs * OPUS_SAMPLE_RATE as f64).round() as usize
+    // Hostile input guard: non-finite/negative → 0; clamp to 24 h at 48 kHz.
+    const MAX_SECS: f64 = 24.0 * 60.0 * 60.0;
+    let s = if secs.is_finite() {
+        secs.min(MAX_SECS)
+    } else {
+        0.0
+    };
+    if s <= 0.0 {
+        return 0;
+    }
+    (s * OPUS_SAMPLE_RATE as f64).round() as usize
 }

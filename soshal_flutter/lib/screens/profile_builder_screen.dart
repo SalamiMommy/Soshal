@@ -56,13 +56,12 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
               // Legacy shape: bare node array.
               setState(() {
                 _nodes = decoded
-                    .map((e) =>
-                        CustomProfileNode.fromJson(e as Map<String, dynamic>))
+                    .whereType<Map<String, dynamic>>()
+                    .map((e) => CustomProfileNode.fromJson(e))
                     .toList();
               });
-            } else {
-              final profile =
-                  CustomProfile.fromJson(decoded as Map<String, dynamic>);
+            } else if (decoded is Map<String, dynamic>) {
+              final profile = CustomProfile.fromJson(decoded);
               setState(() {
                 _themeId = profile.themeId;
                 _nodes = profile.nodes;
@@ -190,11 +189,13 @@ class _ProfileBuilderScreenState extends State<ProfileBuilderScreen> {
                           .read<ProfileService>()
                           .defaultNode(
                               type: typeInfo.type, index: _nodes.length);
-                      _nodes = [
-                        ..._nodes,
-                        CustomProfileNode.fromJson(
-                            jsonDecode(nodeJson) as Map<String, dynamic>),
-                      ];
+                      final nodeData = jsonDecode(nodeJson);
+                      if (nodeData is Map<String, dynamic>) {
+                        _nodes = [
+                          ..._nodes,
+                          CustomProfileNode.fromJson(nodeData),
+                        ];
+                      }
                     } catch (e) {
                       debugPrint('Failed to create node: $e');
                     }

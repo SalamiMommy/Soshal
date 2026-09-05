@@ -4,12 +4,76 @@ Finding ledger for the periodic full-workspace bug sweeps. Each round lists
 what was found, what was fixed (with file refs), and what was examined and
 cleared. Rounds are cumulative; last-known-good state is shaded green.
 
+## Round 7 — 2026-09-05: hardening follow-up (parallel builders)
+
+Scope: 6 passes — (P1) numeric-truncation across 84 non-test `as` casts, (P2)
+security invariants (SSRF, verified-events, zap amounts, timestamp sanity),
+(P3) unbounded-growth, (P4) Dart async/silent-swallow, (P5) hostile-parse +
+untyped jsonDecode, (P6) clock/time. Fixes applied via parallel
+cavecrew-builders; full gate run at the very end. Commit: pending.
+
+### Fixed (this round)
+
+- **Relay timestamp clamp (`sync-core/src/ingest.rs`)** — P2/P6. Relay
+  `created_at` (u64) flowed unchecked into `i64` DB rows AND into the sync
+  watermark. Feed/paging SQL is bare `ORDER BY created_at DESC` (no `<= now`
+  bound), so a hostile future-dated event pinned its author to the top of the
+  feed; worse, the watermark advance took `max(watermark, ts)` — one
+  now+10-year event would skip every subsequent legit event. Added
+  `sanitize_ts`/`sanitize_ts_u64` (clamp to `[0, now + 300s]`) and applied at
+  all 14 write sites (posts, users, zaps, reactions, reposts, bookmarks,
+  channel DMs, watermark, watermark-advance loop). Future-dated/negative
+  timestamps now land at `now+grace`/0, preserving store ordering for legit
+  events (local publishes are already `≤ now`, so the clamp is a no-op there).
+- `p2p_service.dart` — `_pollInFlight` re-entrancy guard: the async
+  `Timer.periodic` body repled its own `_poll` (unawaited in `run`)
+  producing overlapping batches; a `_pollInFlight` early-return now
+  serializes, reset in `stopPolling`.
+- `profile_renderer_screen.dart` (762, 975) + `profile_builder_screen.dart`
+  (54, 192) — untyped `jsonDecode` → `.whereType<Map<String,dynamic>>` /
+  shape guards (site 59 already try/caught; inner per-profile `catch (_) {}`
+  is a deliberate best-effort skip, left as-is).
+- `audio-core/src/voice.rs:131` — `pcm_len_for_secs` now rejects
+  non-finite/negative/overflowing f64 durations before length math
+  (encode-path panic + absurd buffer guard).
+
+### Cleared (defense-in-depth verified against source)
+
+- **SSRF**: `network-core/src/http3_client.rs` resolves each host, applies
+  `is_private_ip_str` to the POST-DNS addresses, and pins them per-host
+  (`resolve_to_addrs`, `PINNED_CLIENT_CACHE_CAP = 64`) — DNS-rebinding-safe;
+  redirect policy none; size caps. Post-resolve `addr.ip()` checks also in
+  `media-core/src/source.rs`, `blossom.rs`, `identity-core/src/nip05.rs`,
+  `sync-core/src/engine.rs`. `common-core/src/url.rs` regex set covers
+  localhost/127/0x7f/169.254/private/octal/hex/decimal + rebinding domains.
+- **Verified-events**: every relay ingest surface filters `e.verify().is_ok()`
+  — network (309/337), relay, chatrandom, vouch, music, search + p-tag logic
+  in `ingest.rs`.
+- **Zap amounts**: totals from verified receipts only (nwc.rs:188 filters
+  `wallet_pk` + `verify()`); `parse_msats_from_bolt11` overflow/cap-checked;
+  bridge rejects any bolt11 ≠ the requested invoice (zap.rs:239-259).
+- **Codec bounds**: h264/audio MediaCodec paths fully guarded
+  (`need = w*h*4` via checked_mul, offset+size ≤ capacity, `.get().unwrap_or()`
+  reads; `queueInputBuffer` size is `usize` per ndk.rs) — no change.
+- **linkpreview `html.rs:213` `caps.get(0).unwrap()`**: regex mandates a
+  closing `>` so `len-1` cuts ASCII; prefix 5/6 slice on ASCII tag-name
+  boundary — no panic path.
+- **Unbounded growth**: raster `FRAME_BUFFERS` TTL-reclaims; groups
+  `ATTEMPTS` swept + `MAX_ATTEMPTS_MAP=1000`; daemon maps fixed-key;
+  no `mpsc::unbounded_channel`. Watch-only (no change): session `accounts`
+  Vec (no cap, but user-driven), notifications table (no retention, local
+  only).
+
+### Verified
+- Gate green at end of round: fmt / clippy `-D warnings` / workspace tests
+  3× (2270) / `flutter analyze` 0 issues. Commit hash appended on commit.
+
 ## Round 6 — 2026-09-05: full-workspace crash/robustness sweep
 
 Scope: 8 passes — (P1) Rust panic triage, (P2) arithmetic/overflow, (P3)
 byte-offset slicing, (P4) poison/lock audit, (P5) FFI drift Dart↔Rust, (P6)
 Dart runtime crashes, (P7) libsql correctness spot-check, plus a findings
-ledger. Commit pending.
+ledger. Commit: `52af388`.
 
 ### Fixed (this round)
 

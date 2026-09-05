@@ -15,6 +15,25 @@ use soshal_common_core::consts::{
     KIND_STORY, KIND_SWAP, MAX_TAGS,
 };
 
+/// Clock-skew grace applied when clamping relay-supplied timestamps (secs).
+const TS_GRACE_SECS: u64 = 300;
+
+/// Clamp a relay-supplied `created_at` (secs) to `[0, now + grace]` as i64.
+/// Relay events are untrusted: a far-future `created_at` would pin the
+/// author's content at the top of every `ORDER BY created_at DESC` feed and
+/// jam the sync watermark past all subsequent legit events. Storage never
+/// exceeds wall clock + grace; negative/pre-epoch timestamps clamp to 0.
+fn sanitize_ts(secs: u64) -> i64 {
+    let now = soshal_common_core::format::now_secs().max(0) as u64;
+    secs.min(now.saturating_add(TS_GRACE_SECS)) as i64
+}
+
+/// u64 variant for channels/watermarks that carry `created_at` as u64.
+fn sanitize_ts_u64(secs: u64) -> u64 {
+    let now = soshal_common_core::format::now_secs().max(0) as u64;
+    secs.min(now.saturating_add(TS_GRACE_SECS))
+}
+
 /// Kinds permitted to land in the `posts` table. Everything else arriving on
 /// the relay wire (legacy NIP-04, unknown/junk kinds) is dropped at ingest.
 const POST_KIND_ALLOWLIST: &[u16] = &[
@@ -162,7 +181,7 @@ fn post_row(event: &Event) -> Option<PostRow> {
         pubkey: event.pubkey.to_hex(),
         content: event.content.clone(),
         kind: event.kind.as_u16() as u64 as i64,
-        created_at: event.created_at.as_secs() as i64,
+        created_at: sanitize_ts(event.created_at.as_secs()),
         tags_json: serde_json::to_string(&tags_json).unwrap_or_default(),
         sig: Some(sig),
         reply_to,
@@ -244,7 +263,7 @@ async fn ensure_author_user(
     t.execute(
         "INSERT OR IGNORE INTO users (pubkey, npub, created_at, updated_at, contact_pubkeys, relay_list, follower_count) \
          VALUES (?1, ?2, ?3, ?3, '', '[]', 0)",
-        libsql::params![pubkey.as_str(), "".to_string(), event.created_at.as_secs() as i64],
+        libsql::params![pubkey.as_str(), "".to_string(), sanitize_ts(event.created_at.as_secs())],
     )
     .await?;
     Ok(())
@@ -257,7 +276,7 @@ fn user_row(event: &Event) -> Option<UserRow> {
         .ok()
         .map(|p| p.to_bech32().unwrap_or_default())
         .unwrap_or_default();
-    let created = event.created_at.as_secs() as i64;
+    let created = sanitize_ts(event.created_at.as_secs());
     Some(UserRow {
         pubkey,
         npub,
@@ -363,7 +382,7 @@ async fn handle_impl(
                 sender: event.pubkey.to_hex(),
                 recipient,
                 content: event.content.clone(),
-                created_at: event.created_at.as_secs(),
+                created_at: sanitize_ts_u64(event.created_at.as_secs()),
                 tags_json: serde_json::to_string(&event.tags).unwrap_or_else(|_| "[]".to_string()),
             }) {
                 // Fail closed instead of advancing the DM watermark past a
@@ -433,8 +452,8 @@ async fn handle_impl(
                 banner: None,
                 nip05: None,
                 lud16: None,
-                created_at: event.created_at.as_secs() as i64,
-                updated_at: event.created_at.as_secs() as i64,
+                created_at: sanitize_ts(event.created_at.as_secs()),
+                updated_at: sanitize_ts(event.created_at.as_secs()),
                 metadata_json: None,
                 contact_pubkeys: String::new(),
                 relay_list: String::new(),
@@ -527,7 +546,7 @@ async fn handle_impl(
                 amount: amount_msats.div_ceil(1000).min(i64::MAX as u64) as i64,
                 amount_msat: amount_msats.min(i64::MAX as u64) as i64,
                 content: Some(event.content.clone()),
-                created_at: event.created_at.as_secs() as i64,
+                created_at: sanitize_ts(event.created_at.as_secs()),
                 zap_type: "public".to_string(),
             };
             ZapRepo::new(db).upsert_in(t, &row).await?;
@@ -575,7 +594,7 @@ async fn handle_impl(
                         id: event.id.to_hex(),
                         pubkey: event.pubkey.to_hex(),
                         event_id,
-                        created_at: event.created_at.as_secs() as i64,
+                        created_at: sanitize_ts(event.created_at.as_secs()),
                     },
                 )
                 .await?;
@@ -592,7 +611,7 @@ async fn handle_impl(
                 event_id: target.clone(),
                 kind: KIND_REACTION as i64,
                 content: Some(event.content.clone()),
-                created_at: event.created_at.as_secs() as i64,
+                created_at: sanitize_ts(event.created_at.as_secs()),
             };
             ReactionRepo::new(db).upsert_in(t, &row).await?;
             if tx
@@ -601,7 +620,7 @@ async fn handle_impl(
                     event_id: row.event_id,
                     pubkey: row.pubkey,
                     content: row.content.unwrap_or_default(),
-                    created_at: event.created_at.as_secs(),
+                    created_at: sanitize_ts_u64(event.created_at.as_secs()),
                 })
                 .is_err()
             {
@@ -617,7 +636,7 @@ async fn handle_impl(
                 id: event.id.to_hex(),
                 pubkey: event.pubkey.to_hex(),
                 event_id: target,
-                created_at: event.created_at.as_secs() as i64,
+                created_at: sanitize_ts(event.created_at.as_secs()),
             };
             RepostRepo::new(db).upsert_in(t, &row).await?;
         }
@@ -628,7 +647,7 @@ async fn handle_impl(
                 ensure_author_user(db, t, event).await?;
                 PostRepo::new(db).upsert_in(t, &row).await?;
                 let author = event.pubkey.to_hex();
-                let created_at = event.created_at.as_secs() as i64;
+                let created_at = sanitize_ts(event.created_at.as_secs());
                 for tag in soshal_content_core::hashtag::extract(&event.content)
                     .into_iter()
                     .take(MAX_TAGS)
@@ -650,7 +669,7 @@ async fn handle_impl(
                         id: row.id,
                         pubkey: row.pubkey,
                         content: row.content,
-                        created_at: event.created_at.as_secs(),
+                        created_at: sanitize_ts_u64(event.created_at.as_secs()),
                         kind: event.kind.as_u16() as u64,
                     })
                     .is_err()
@@ -886,7 +905,7 @@ mod tests {
         set_watermark(&db, WM_FEED, 1_700_000_000);
         handle(&db, "", &event, &tx).unwrap();
         // Engine contract (engine.rs): cursor advances only on Ok ingest.
-        let cur = watermark(&db, WM_FEED).max(event.created_at.as_secs());
+        let cur = watermark(&db, WM_FEED).max(sanitize_ts_u64(event.created_at.as_secs()));
         set_watermark(&db, WM_FEED, cur);
         assert_eq!(watermark(&db, WM_FEED), 1_700_000_100);
     }
@@ -928,8 +947,8 @@ mod tests {
 
         let mut cur = 0u64;
         for e in [&older, &newer] {
-            if e.created_at.as_secs() > cur {
-                cur = e.created_at.as_secs();
+            if sanitize_ts_u64(e.created_at.as_secs()) > cur {
+                cur = sanitize_ts_u64(e.created_at.as_secs());
             }
         }
         set_watermark(&db, WM_FEED, cur);

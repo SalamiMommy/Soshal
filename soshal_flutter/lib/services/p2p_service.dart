@@ -56,6 +56,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   Timer? _pollTimer;
   Duration? _pollInterval;
   bool _pollingEnabled = false;
+  bool _pollInFlight = false;
 
   List<P2pPeerDto> get peers => _cachedPeers;
   Map<String, P2pSwarmStatusDto> get downloads => _cachedDownloads;
@@ -529,12 +530,18 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     _pollInterval = interval;
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(interval, (_) async {
-      final active = activeDownloadId ??
-          (_downloads.keys.isNotEmpty ? _downloads.keys.first : null);
-      if (active != null) {
-        await swarmStatus(active);
+      if (_pollInFlight) return;
+      _pollInFlight = true;
+      try {
+        final active = activeDownloadId ??
+            (_downloads.keys.isNotEmpty ? _downloads.keys.first : null);
+        if (active != null) {
+          await swarmStatus(active);
+        }
+        await drainPeers();
+      } finally {
+        _pollInFlight = false;
       }
-      await drainPeers();
     });
   }
 
@@ -542,6 +549,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   void stopPolling() {
     _pollingEnabled = false;
     _pollInterval = null;
+    _pollInFlight = false;
     _pollTimer?.cancel();
     _pollTimer = null;
   }

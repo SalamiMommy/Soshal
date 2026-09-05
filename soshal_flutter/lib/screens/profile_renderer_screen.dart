@@ -759,9 +759,13 @@ class _GuestbookWidgetState extends State<_GuestbookWidget> {
             limit: 50,
             onlyApproved: !_isMine,
           );
-      final list = (jsonDecode(json) as List<dynamic>)
-          .map((e) => GuestbookEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final decoded = jsonDecode(json);
+      final list = decoded is List
+          ? decoded
+              .whereType<Map<String, dynamic>>()
+              .map((e) => GuestbookEntry.fromJson(e))
+              .toList()
+          : <GuestbookEntry>[];
       if (mounted) setState(() => _entries = list);
     } catch (e) {
       debugPrint('guestbook load: $e');
@@ -968,10 +972,10 @@ class _FriendGridWidgetState extends State<_FriendGridWidget> {
     final friends = context.read<FriendsService>();
     try {
       final json = await friends.fetchFollows(widget.pubkey);
-      final pubkeys = (jsonDecode(json) as List<dynamic>)
-          .map((e) => e as String)
-          .take(widget.limit)
-          .toList();
+      final decoded = jsonDecode(json);
+      final pubkeys = decoded is List
+          ? decoded.whereType<String>().take(widget.limit).toList()
+          : <String>[];
       final profiles = <ProfileInfo>[];
       for (final pk in pubkeys) {
         try {
