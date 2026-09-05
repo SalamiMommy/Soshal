@@ -105,6 +105,12 @@ NDK clang on PATH is required for ring's build script (probes
 - Cargo target dirs are big (~2GB/ABI); `/tmp` is tmpfs — both build scripts
   default them to disk-backed `$HOME/.cache/soshal-targets/` (override
   `SOSHAL_TARGET_DIR`).
+- **Known-desync (2026-09-05)**: shipped `jniLibs` `.so` predates the round-3/4
+  Rust fixes (relay mesh ingest multi_thread, minis reactions, zap amount_msat,
+  saved_at, i2p/freenet/relay, cas always-rehash, voice 5760 buffer, FTS v013,
+  notifications ignore). Dart↔wire surface still 1:1 (no `#[frb]` signature
+  changes), so no ABI crash — but the binary lacks those fixes until
+  `builds/android/build.sh` re-runs before the next Android ship.
 
 **P2P transports** (network-core): TCP HMAC LAN chunk server (`lan_transport.rs`)
 is the legacy bulk path; QUIC stream channel (`quic.rs` stream section) is the
