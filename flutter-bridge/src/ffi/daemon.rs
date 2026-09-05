@@ -97,6 +97,9 @@ fn asset_name(name: &'static str) -> String {
 /// Absolute path to an extracted daemon binary (empty if missing).
 #[frb(sync, serialize)]
 pub fn daemon_get_daemon_path(daemon_name: String) -> Result<String, String> {
+    if !DAEMONS.contains(&daemon_name.as_str()) {
+        return Err(format!("unknown daemon {daemon_name}"));
+    }
     let path = daemons_dir()?.join(&daemon_name);
     if path.exists() {
         Ok(path.to_string_lossy().into_owned())

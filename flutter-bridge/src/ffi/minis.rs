@@ -60,7 +60,7 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
             if !id.is_empty() {
                 let reactions_json = super::db::db_query_params(
                     "SELECT pubkey, event_id FROM reactions WHERE event_id = ?1 LIMIT 1000",
-                    &[serde_json::to_string(&id).unwrap_or_default()],
+                    &[id.clone()],
                 )?;
                 let reactors: Vec<serde_json::Value> =
                     serde_json::from_str(&reactions_json).unwrap_or_default();

@@ -162,7 +162,7 @@ fn spawn_ingest(db_path: String, my_pubkey: String) {
     let gen = MESH_INGEST_GEN.fetch_add(1, Ordering::Relaxed) + 1;
     MESH_INGEST_ALIVE.store(true, Ordering::Relaxed);
     std::thread::spawn(move || {
-        let rt = match tokio::runtime::Builder::new_current_thread()
+        let rt = match tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
         {

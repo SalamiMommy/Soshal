@@ -8,13 +8,19 @@ use soshal_audio_core::voice::{decode_voice_stream, encode_voice_pcm, voice_dura
 /// Waveform peaks (normalized 0..1) for an audio file or voice-note stream.
 #[frb(serialize)]
 pub async fn storage_get_audio_peaks(path: String) -> Result<Vec<f32>, String> {
-    extract_waveform_path(&path, 64).into()
+    tokio::task::spawn_blocking(move || extract_waveform_path(&path, 64))
+        .await
+        .map_err(|e| format!("spawn_blocking join: {e}"))?
+        .into()
 }
 
 /// Encode mono i16 PCM (48 kHz) into a framed Opus voice-note stream.
 #[frb(serialize)]
 pub async fn storage_encode_voice_pcm(pcm: Vec<i16>) -> Result<Vec<u8>, String> {
-    encode_voice_pcm(&pcm).into()
+    tokio::task::spawn_blocking(move || encode_voice_pcm(&pcm))
+        .await
+        .map_err(|e| format!("spawn_blocking join: {e}"))?
+        .into()
 }
 
 /// Decode a framed Opus voice-note stream to mono i16 PCM.

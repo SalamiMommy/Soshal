@@ -483,17 +483,28 @@ async fn run_manager(
     }
 }
 
-/// Drops sessions whose ICE connectivity checks failed, releasing their
-/// agents and UDP sockets. Called on each manager tick.
+/// Drops sessions in terminal connection states, releasing their agents and
+/// UDP sockets: ICE failures, disconnects, and closed sessions. Live
+/// handshaking ("new"/"checking") and active-connected sessions (which have
+/// no idle TTL here) are kept. Called on each manager tick.
 async fn prune_failed_sessions(sessions: &mut HashMap<String, Session>) {
     let dead: Vec<String> = sessions
         .iter()
-        .filter(|(_, s)| *s.shared.state.lock().unwrap_or_else(|e| e.into_inner()) == "failed")
+        .filter(|(_, s)| {
+            matches!(
+                s.shared
+                    .state
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_str(),
+                "failed" | "disconnected" | "closed"
+            )
+        })
         .map(|(k, _)| k.clone())
         .collect();
     for pubkey in dead {
         if let Some(session) = sessions.remove(&pubkey) {
-            eprintln!("nat: pruning failed session {pubkey}");
+            eprintln!("nat: pruning dead session {pubkey}");
             let _ = session.agent.close().await;
         }
     }

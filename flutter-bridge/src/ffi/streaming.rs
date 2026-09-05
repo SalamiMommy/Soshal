@@ -109,7 +109,7 @@ fn story_from_value(v: &serde_json::Value) -> Option<StoryInfo> {
         content: content_value["text"].as_str().unwrap_or("").to_string(),
         images,
         expires_at: tag_value(&tags, "expiration")
-            .and_then(|e| e.parse::<u64>().ok())
+            .map(|e| e.parse::<u64>().unwrap_or(1))
             .unwrap_or(0),
         views: v["views"].as_i64().unwrap_or(0) as i32,
     })

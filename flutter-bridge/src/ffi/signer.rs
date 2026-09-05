@@ -143,26 +143,39 @@ pub async fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
         }
         zeroize::Zeroizing::new(keys.secret_key().to_secret_hex())
     };
-    let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&pubkey)) {
-        Ok(e) => e,
-        Err(e) => return Err(format!("keychain unavailable: {e}")).into(),
-    };
-    match entry.set_password(&secret) {
-        Ok(_) => Ok(true).into(),
-        Err(e) => Err(format!("keychain write failed: {e}")).into(),
-    }
+    let entry_pubkey = pubkey.clone();
+    tokio::task::spawn_blocking(move || {
+        let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&entry_pubkey)) {
+            Ok(e) => e,
+            Err(e) => return Err(format!("keychain unavailable: {e}")),
+        };
+        entry
+            .set_password(&secret)
+            .map_err(|e| format!("keychain write failed: {e}"))?;
+        Ok::<_, String>(true)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join: {e}"))?
+    .into()
 }
 
 /// Unlock the signer from the OS keychain for the given pubkey.
 #[frb(serialize)]
 pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> {
-    let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&pubkey)) {
-        Ok(e) => e,
-        Err(e) => return Err(format!("keychain unavailable: {e}")).into(),
-    };
-    let mut secret = match entry.get_password() {
-        Ok(s) => s,
-        Err(e) => return Err(format!("no stored key: {e}")).into(),
+    let mut secret = {
+        let entry_pubkey = pubkey.clone();
+        tokio::task::spawn_blocking(move || {
+            let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&entry_pubkey))
+            {
+                Ok(e) => e,
+                Err(e) => return Err(format!("keychain unavailable: {e}")),
+            };
+            entry
+                .get_password()
+                .map_err(|e| format!("no stored key: {e}"))
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking join: {e}"))??
     };
     let keys = match Keys::parse(&secret) {
         Ok(k) => {

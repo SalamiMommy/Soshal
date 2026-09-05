@@ -45,6 +45,19 @@ impl<'a> HashtagRepo<'a> {
         Ok(())
     }
 
+    pub async fn upsert_in(
+        &self,
+        tx: &libsql::Transaction,
+        row: &HashtagRow,
+    ) -> Result<(), crate::error::DbError> {
+        tx.execute(
+            "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES (?1,?2,?3,?4) ON CONFLICT(tag, pubkey) DO UPDATE SET last_used_at=excluded.last_used_at, count=count+1",
+            params![row.tag.as_str(), row.pubkey.as_str(), row.last_used_at, row.count],
+        )
+        .await?;
+        Ok(())
+    }
+
     fn map_row(row: &libsql::Row) -> libsql::Result<HashtagRow> {
         Ok(HashtagRow {
             tag: row.get(0)?,

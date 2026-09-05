@@ -61,13 +61,19 @@ fn run_search(
         let fts_match = fts_query;
         let out = soshal_db_core::block_on(async {
             let sql = if authors.is_some() {
-                "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at FROM posts_fts f \
+                "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at, \
+                 CASE WHEN p.kind = 0 THEN COALESCE(u.display_name, u.name, '') ELSE '' END \
+                 FROM posts_fts f \
                  JOIN posts p ON f.rowid = p.rowid \
+                 LEFT JOIN users u ON u.pubkey = p.pubkey \
                  WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
                  AND p.pubkey IN (SELECT value FROM json_each(?4)) ORDER BY rank LIMIT ?3"
             } else {
-                "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at FROM posts_fts f \
+                "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at, \
+                 CASE WHEN p.kind = 0 THEN COALESCE(u.display_name, u.name, '') ELSE '' END \
+                 FROM posts_fts f \
                  JOIN posts p ON f.rowid = p.rowid \
+                 LEFT JOIN users u ON u.pubkey = p.pubkey \
                  WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
                  ORDER BY rank LIMIT ?3"
             };
@@ -94,13 +100,28 @@ fn run_search(
                 // the search_profiles fallback and search_trending_profiles
                 // (Dart keys profiles by pubkey, not id).
                 let mut id: String = row.get(0)?;
+                let title = if result_type == "profile" {
+                    let name: String = row.get(5)?;
+                    if name.is_empty() {
+                        let pk: String = row.get(1)?;
+                        if pk.len() >= 12 {
+                            pk[..12].to_string()
+                        } else {
+                            pk
+                        }
+                    } else {
+                        name
+                    }
+                } else {
+                    soshal_common_core::format::truncate(&content, 80)
+                };
                 if result_type == "profile" {
                     id = row.get::<String>(1)?;
                 }
                 out.push(SearchResult {
                     id,
                     result_type,
-                    title: soshal_common_core::format::truncate(&content, 80),
+                    title,
                     description: soshal_common_core::format::truncate(&content, 160),
                     pubkey: Some(row.get(1)?),
                     score: 1.0,
@@ -136,7 +157,7 @@ pub fn search_profiles(query: String, limit: i32) -> Result<String, String> {
     if results.is_empty() && !query.trim().is_empty() {
         let pattern = format!("%{}%", escape_like(&query.trim().to_lowercase()));
         let json = super::db::db_query_params(
-            "SELECT pubkey, name, about FROM users \
+            "SELECT pubkey, name, display_name, about FROM users \
              WHERE lower(name) LIKE ?1 ESCAPE '\\' OR lower(display_name) LIKE ?1 ESCAPE '\\' \
              OR lower(about) LIKE ?1 ESCAPE '\\' OR pubkey = ?2 \
              ORDER BY follower_count DESC LIMIT ?3",
@@ -148,7 +169,12 @@ pub fn search_profiles(query: String, limit: i32) -> Result<String, String> {
                 results.push(SearchResult {
                     id: pk.to_string(),
                     result_type: "profile".to_string(),
-                    title: r["name"].as_str().unwrap_or("").to_string(),
+                    title: r["display_name"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .or_else(|| r["name"].as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     description: soshal_common_core::format::truncate(
                         r["about"].as_str().unwrap_or(""),
                         160,
@@ -188,8 +214,8 @@ pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String>
         }
     }
     let json = super::db::db_query_params(
-        "SELECT tag FROM hashtags WHERE tag LIKE ?1 || '%' GROUP BY tag ORDER BY SUM(count) DESC LIMIT 100",
-        &[clean_query.to_string()],
+        "SELECT tag FROM hashtags WHERE tag LIKE ?1 || '%' ESCAPE '\\' GROUP BY tag ORDER BY SUM(count) DESC LIMIT 100",
+        &[escape_like(&clean_query)],
     )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let tags: Vec<String> = rows

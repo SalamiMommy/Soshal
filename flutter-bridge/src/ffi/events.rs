@@ -78,7 +78,10 @@ fn event_from_value(v: &serde_json::Value) -> Option<EventInfo> {
         start_time: c.start_time.unwrap_or(0),
         end_time: c.end_time.unwrap_or(0),
         image: c.image.unwrap_or_default(),
-        attendees: v["attendees"].as_i64().unwrap_or(0) as i32,
+        attendees: v["attendees"]
+            .as_i64()
+            .unwrap_or(0)
+            .clamp(0, i32::MAX as i64) as i32,
         rsvp_status: v["rsvp"].as_str().unwrap_or("").to_string(),
         created_at: v["created_at"].as_i64().unwrap_or(0).max(0) as u64,
     })

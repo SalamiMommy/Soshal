@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use soshal_common_core::consts::{
     KIND_CUSTOM_PROFILE, KIND_EVENT, KIND_EVENT_RSVP, KIND_GUESTBOOK, KIND_GUESTBOOK_APPROVAL,
     KIND_LISTING, KIND_LIVE, KIND_MENTION, KIND_MINIS, KIND_ORDER, KIND_PROFILE, KIND_REACTION,
-    KIND_STORY, KIND_SWAP,
+    KIND_STORY, KIND_SWAP, MAX_TAGS,
 };
 
 /// Kinds permitted to land in the `posts` table. Everything else arriving on
@@ -38,6 +38,7 @@ const POST_KIND_ALLOWLIST: &[u16] = &[
 ];
 use soshal_db_core::error::DbError;
 use soshal_db_core::repos::bookmark::{BookmarkRepo, BookmarkRow};
+use soshal_db_core::repos::hashtag::{HashtagRepo, HashtagRow};
 use soshal_db_core::repos::post::{PostRepo, PostRow};
 use soshal_db_core::repos::reaction::{ReactionRepo, ReactionRow};
 use soshal_db_core::repos::relay::{RelayRepo, RelayRow};
@@ -117,7 +118,7 @@ fn post_row(event: &Event) -> Option<PostRow> {
     let mut ts: Vec<String> = Vec::new();
     let mut tags_json: Vec<&[String]> = Vec::with_capacity(event.tags.len());
     let mut freenet_key: Option<String> = None;
-    for tag in event.tags.iter() {
+    for tag in event.tags.iter().take(MAX_TAGS) {
         let vec = tag.as_slice();
         match vec.first().map(|s| s.as_str()) {
             Some("e") => {
@@ -436,10 +437,19 @@ async fn handle_impl(
             // added to this author's list.
             let before: std::collections::HashSet<String> =
                 split_pubkey_list(&stored_list).into_iter().collect();
-            for added in split_pubkey_list(&row.contact_pubkeys) {
-                if added != pubkey && !before.contains(&added) {
+            let new_list = split_pubkey_list(&row.contact_pubkeys);
+            for added in &new_list {
+                if added != &pubkey && !before.contains(added) {
                     UserRepo::new(db)
-                        .bump_follower_count_in(t, &added, 1)
+                        .bump_follower_count_in(t, added, 1)
+                        .await?;
+                }
+            }
+            let new: std::collections::HashSet<String> = new_list.into_iter().collect();
+            for removed in before.difference(&new) {
+                if removed != &pubkey {
+                    UserRepo::new(db)
+                        .bump_follower_count_in(t, removed, -1)
                         .await?;
                 }
             }
@@ -505,6 +515,7 @@ async fn handle_impl(
                 recipient_pubkey: recipient,
                 event_id: Some(zapped_event),
                 amount: amount_msats.div_ceil(1000).min(i64::MAX as u64) as i64,
+                amount_msat: amount_msats.min(i64::MAX as u64) as i64,
                 content: Some(event.content.clone()),
                 created_at: event.created_at.as_secs() as i64,
                 zap_type: "public".to_string(),
@@ -593,6 +604,24 @@ async fn handle_impl(
             if let Some(row) = post_row(event) {
                 ensure_author_user(db, t, event).await?;
                 PostRepo::new(db).upsert_in(t, &row).await?;
+                let author = event.pubkey.to_hex();
+                let created_at = event.created_at.as_secs() as i64;
+                for tag in soshal_content_core::hashtag::extract(&event.content)
+                    .into_iter()
+                    .take(MAX_TAGS)
+                {
+                    HashtagRepo::new(db)
+                        .upsert_in(
+                            t,
+                            &HashtagRow {
+                                tag,
+                                pubkey: author.clone(),
+                                last_used_at: created_at,
+                                count: 1,
+                            },
+                        )
+                        .await?;
+                }
                 if tx
                     .try_send(SyncUpdate::Feed {
                         id: row.id,

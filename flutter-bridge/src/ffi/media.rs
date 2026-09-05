@@ -149,19 +149,23 @@ pub async fn media_fetch(url: String, cache_dir: String) -> Result<String, Strin
     if cache_dir.is_empty() {
         return Err("cache_dir cannot be empty".to_string()).into();
     }
-    let _ = std::fs::create_dir_all(&cache_dir);
-    let canon_cache =
-        std::fs::canonicalize(&cache_dir).map_err(|e| format!("cache_dir invalid: {e}"))?;
-    let allowed_cache_roots = [ChunkStore::default_root(), std::env::temp_dir()];
-    if !allowed_cache_roots
-        .iter()
-        .any(|root| canon_cache.starts_with(root))
-    {
-        return Err(
-            "cache_dir must be inside the media cache or system temp directory".to_string(),
-        )
-        .into();
-    }
+    let canon_cache = tokio::task::spawn_blocking(move || {
+        let _ = std::fs::create_dir_all(&cache_dir);
+        let canon =
+            std::fs::canonicalize(&cache_dir).map_err(|e| format!("cache_dir invalid: {e}"))?;
+        let allowed_cache_roots = [ChunkStore::default_root(), std::env::temp_dir()];
+        if !allowed_cache_roots
+            .iter()
+            .any(|root| canon.starts_with(root))
+        {
+            return Err(
+                "cache_dir must be inside the media cache or system temp directory".to_string(),
+            );
+        }
+        Ok::<_, String>(canon)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join: {e}"))??;
     let (server, hash) = match url.split_once('/') {
         _ => {
             let scheme_end = url.find("://").map(|i| i + 3).unwrap_or(0);
@@ -177,10 +181,13 @@ pub async fn media_fetch(url: String, cache_dir: String) -> Result<String, Strin
         Ok(data) => {
             let filename = generate_cache_filename(&url);
             let cache_path = canon_cache.join(&filename);
-            match fs::write(&cache_path, &data) {
-                Ok(_) => Ok(cache_path.to_string_lossy().to_string()).into(),
-                Err(e) => Err(format!("Cache write failed: {e}")).into(),
-            }
+            tokio::task::spawn_blocking(move || {
+                fs::write(&cache_path, &data).map_err(|e| format!("Cache write failed: {e}"))?;
+                Ok::<_, String>(cache_path.to_string_lossy().to_string())
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking join: {e}"))?
+            .into()
         }
         Err(e) => Err(format!("Fetch failed: {e}")).into(),
     }
@@ -355,39 +362,48 @@ pub async fn media_upload_blob_file(file_path: String) -> Result<String, String>
     let manifest = if soshal_media_core::source::is_url_source(&file_path) {
         // URL sources require an async fetch.
         let (data, _) = soshal_media_core::source::fetch_source_bytes(&file_path).await?;
-        let store = ChunkStore::new(ChunkStore::default_root());
-        let manifest = store.store_reader(Cursor::new(data))?;
-        store.save_manifest(&manifest)?;
-        manifest
+        tokio::task::spawn_blocking(move || {
+            let store = ChunkStore::new(ChunkStore::default_root());
+            let manifest = store.store_reader(Cursor::new(data))?;
+            store.save_manifest(&manifest)?;
+            Ok::<_, String>(manifest)
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking join: {e}"))??
     } else {
         // Local file path: canonicalize and reject sensitive directories to
         // prevent a compromised Dart caller from reading SSH keys, cloud
         // credentials, GPG keys, etc. into the chunk store (from where they
         // could be exfiltrated via P2P blob requests from a hostile peer).
-        let canon = fs::canonicalize(&file_path).map_err(|e| format!("file path invalid: {e}"))?;
-        validate_local_source_path(&canon)?;
-        // O_NOFOLLOW prevents symlink substitution between canonicalize and open.
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(&canon)
-            .map_err(|e| format!("open file failed (symlink?): {e}"))?;
-        // Verify the opened file's inode/device matches the canonical path to
-        // catch a TOCTOU race where a symlink was swapped in between.
-        let file_meta = file
-            .metadata()
-            .map_err(|e| format!("open file metadata failed: {e}"))?;
-        let canonical_meta =
-            fs::metadata(&canon).map_err(|e| format!("canonical metadata failed: {e}"))?;
-        if file_meta.dev() != canonical_meta.dev() || file_meta.ino() != canonical_meta.ino() {
-            return Err(
-                "path changed between validation and open (possible symlink race)".to_string(),
-            );
-        }
-        let store = ChunkStore::new(ChunkStore::default_root());
-        let manifest = store.store_reader(file)?;
-        store.save_manifest(&manifest)?;
-        manifest
+        tokio::task::spawn_blocking(move || {
+            let canon =
+                fs::canonicalize(&file_path).map_err(|e| format!("file path invalid: {e}"))?;
+            validate_local_source_path(&canon)?;
+            // O_NOFOLLOW prevents symlink substitution between canonicalize and open.
+            let file = fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&canon)
+                .map_err(|e| format!("open file failed (symlink?): {e}"))?;
+            // Verify the opened file's inode/device matches the canonical path to
+            // catch a TOCTOU race where a symlink was swapped in between.
+            let file_meta = file
+                .metadata()
+                .map_err(|e| format!("open file metadata failed: {e}"))?;
+            let canonical_meta =
+                fs::metadata(&canon).map_err(|e| format!("canonical metadata failed: {e}"))?;
+            if file_meta.dev() != canonical_meta.dev() || file_meta.ino() != canonical_meta.ino() {
+                return Err(
+                    "path changed between validation and open (possible symlink race)".to_string(),
+                );
+            }
+            let store = ChunkStore::new(ChunkStore::default_root());
+            let manifest = store.store_reader(file)?;
+            store.save_manifest(&manifest)?;
+            Ok::<_, String>(manifest)
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking join: {e}"))??
     };
     serde_json::to_string(&manifest)
         .map_err(|e| format!("manifest serde: {e}"))
