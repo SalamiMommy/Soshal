@@ -182,6 +182,36 @@ fn is_private_ipv6(addr: std::net::Ipv6Addr) -> bool {
     if let Some(mapped) = addr.to_ipv4_mapped() {
         return is_private_ipv4(mapped);
     }
+    if segs[0] == 0
+        && segs[1] == 0
+        && segs[2] == 0
+        && segs[3] == 0
+        && segs[4] == 0xffff
+        && segs[5] == 0
+    {
+        let v4 = std::net::Ipv4Addr::new(
+            ((segs[6] >> 8) & 0xff) as u8,
+            (segs[6] & 0xff) as u8,
+            ((segs[7] >> 8) & 0xff) as u8,
+            (segs[7] & 0xff) as u8,
+        );
+        return is_private_ipv4(v4);
+    }
+    if segs[0] == 0x64
+        && segs[1] == 0xff9b
+        && (segs[2] == 0 || segs[2] == 1)
+        && segs[3] == 0
+        && segs[4] == 0
+        && segs[5] == 0
+    {
+        let v4 = std::net::Ipv4Addr::new(
+            ((segs[6] >> 8) & 0xff) as u8,
+            (segs[6] & 0xff) as u8,
+            ((segs[7] >> 8) & 0xff) as u8,
+            (segs[7] & 0xff) as u8,
+        );
+        return is_private_ipv4(v4);
+    }
     // Teredo tunneling (2001::/32) relays over NAT64/other clients: poor
     // connectivity and trivially spoofed — never treat as a public address.
     if segs[0] == 0x2001 && segs[1] == 0 {

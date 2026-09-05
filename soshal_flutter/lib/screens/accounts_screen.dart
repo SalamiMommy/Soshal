@@ -118,7 +118,9 @@ class _AccountsScreenState extends State<AccountsScreen> {
                               try {
                                 unlocked = await signer
                                     .unlockFromKeyring(account.pubkey);
-                              } catch (e) { debugPrint('keychain unlock: $e'); }
+                              } catch (e) {
+                                debugPrint('keychain unlock: $e');
+                              }
                             }
                             if (!unlocked) {
                               await signer.lock();

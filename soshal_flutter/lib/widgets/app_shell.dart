@@ -745,7 +745,9 @@ class _IncomingCallBanner extends StatelessWidget {
       mediaType = (jsonDecode(content) as Map<String, dynamic>)['media_type']
               as String? ??
           'voice';
-    } catch (e) { debugPrint('call media parse: $e'); }
+    } catch (e) {
+      debugPrint('call media parse: $e');
+    }
     final short = shortPubkey(peer, head: 6, tail: 4);
     return Positioned(
       top: 8,

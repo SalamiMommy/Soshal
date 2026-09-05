@@ -1,5 +1,25 @@
 //! Physical & background metric compatibility scoring.
 
+/// Scoring for physical distance between two profiles.
+/// Missing distance never scores (caller skips the dimension).
+#[doc(hidden)]
+pub fn score_distance(distance_km: f64) -> f64 {
+    if !distance_km.is_finite() {
+        return 0.5;
+    }
+    if distance_km <= 10.0 {
+        1.0
+    } else if distance_km <= 50.0 {
+        0.8
+    } else if distance_km <= 100.0 {
+        0.6
+    } else if distance_km <= 250.0 {
+        0.4
+    } else {
+        0.2
+    }
+}
+
 #[doc(hidden)]
 pub fn score_age(self_age: Option<f64>, other_age: Option<f64>) -> f64 {
     match (self_age, other_age) {

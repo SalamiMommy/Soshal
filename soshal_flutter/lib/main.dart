@@ -172,6 +172,13 @@ class _SoshalAppState extends State<SoshalApp> {
             messaging: context.read<MessagingService>(),
             notifications: context.read<NotificationService>(),
             search: context.read<SearchService>(),
+            dating: context.read<DatingService>(),
+            marketplace: context.read<MarketplaceService>(),
+            events: context.read<EventsService>(),
+            groups: context.read<GroupsService>(),
+            bookmarks: context.read<BookmarksService>(),
+            moderation: context.read<ModerationService>(),
+            calls: context.read<CallsService>(),
           );
       // Tell the Rust network stack we came up on Wi-Fi. Resolves the real
       // local IP + QUIC port; no-ops silently when unavailable.

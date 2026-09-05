@@ -16,6 +16,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   bool _isLoading = false;
   bool _loadingMore = false;
   int _currentOffset = 0;
+  bool _hasMore = true;
   static const String _pinnedKey = 'pinned_posts';
   final Set<String> _pinned = {};
   bool _pinnedLoaded = false;
@@ -48,6 +49,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     _isLoading = false;
     _loadingMore = false;
     _currentOffset = 0;
+    _hasMore = true;
     _pinned.clear();
     _pinnedLoaded = false;
     _rebuildPinnedView();
@@ -58,7 +60,10 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
 
   /// Fetch feed events with pagination (supports cursor or offset)
   Future<List<FeedPost>> fetchFeed(
-      {int limit = 20, int offset = 0, int? cursorCreatedAt, String? cursorId}) async {
+      {int limit = 20,
+      int offset = 0,
+      int? cursorCreatedAt,
+      String? cursorId}) async {
     try {
       _isLoading = true;
 
@@ -76,6 +81,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         _posts = newPosts;
         _ranked = false;
         _rankedPosts = [];
+        _hasMore = true;
         _reconcileAfterRefresh();
       } else {
         // Deduplicate pagination overlap: overlapping pages (from events
@@ -86,6 +92,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         if (_posts.length > 100) {
           _posts = _posts.sublist(_posts.length - 100);
         }
+        _hasMore = newPosts.length >= limit;
       }
       clearLastError();
       _currentOffset = offset;
@@ -109,10 +116,12 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       final json = RustLib.instance.api.crateFfiFeedFeedFetchWindow(
         startIndex: startIndex,
         limit: limit,
+        audience: '',
       );
       _posts = await _decodePosts(json);
       _ranked = false;
       _rankedPosts = [];
+      _hasMore = true;
       clearLastError();
       _currentOffset = startIndex;
     } catch (e, st) {
@@ -147,7 +156,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
 
   /// Load more posts for infinite scroll
   Future<void> loadMore({int limit = 20}) async {
-    if (_loadingMore) return;
+    if (_loadingMore || !_hasMore) return;
     _loadingMore = true;
     try {
       final lastCreatedAt = _posts.isNotEmpty ? _posts.last.createdAt : null;
@@ -523,7 +532,11 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     if (index < 0) return;
     final p = _posts[index];
     final delta = content == '+' ? 1 : -1;
-    final bool liked = content == '+' ? true : content == '-' ? false : p.liked;
+    final bool liked = content == '+'
+        ? true
+        : content == '-'
+            ? false
+            : p.liked;
     final updated = FeedPost(
       eventId: p.eventId,
       pubkey: p.pubkey,

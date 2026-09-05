@@ -18,10 +18,14 @@ pub struct FeedPostItem {
 }
 
 /// Fetch a bounded slice/window of posts directly from SQLite.
+///
+/// `authors`: `None` = every kind-1 post (public); `Some` = only posts whose
+/// author is in the set (audience filter; empty set matches nothing).
 pub fn fetch_feed_window(
     db: &Database,
     start_index: usize,
     limit: usize,
+    authors: Option<&[String]>,
 ) -> Result<Vec<FeedPostItem>, String> {
     let limit = soshal_db_core::repos::clamp_limit(limit as i64) as usize;
     let conn = db.conn().map_err(|e| e.to_string())?;
@@ -39,31 +43,37 @@ pub fn fetch_feed_window(
             }
         };
 
-        let stmt = conn
-            .prepare(
-                "SELECT p.id, p.pubkey, p.content, p.created_at,
-                        COALESCE(u.name, u.display_name), u.picture,
-                        (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
-                        (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.is_deleted = 0),
-                        (SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id),
-                        EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?3)
-                 FROM posts p
-                 LEFT JOIN users u ON p.pubkey = u.pubkey
-                 WHERE p.kind = 1 AND p.is_deleted = 0
-                 ORDER BY p.created_at DESC
-                 LIMIT ?1 OFFSET ?2",
-            )
-            .await
-            .map_err(|e| e.to_string())?;
+        let author_clause = if authors.is_some() {
+            " AND p.pubkey IN (SELECT value FROM json_each(?4))"
+        } else {
+            ""
+        };
+        let sql = format!(
+            "SELECT p.id, p.pubkey, p.content, p.created_at,
+                    COALESCE(u.name, u.display_name), u.picture,
+                    (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
+                    (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.is_deleted = 0),
+                    (SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id),
+                    EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?3)
+             FROM posts p
+             LEFT JOIN users u ON p.pubkey = u.pubkey
+             WHERE p.kind = 1 AND p.is_deleted = 0{author_clause}
+             ORDER BY p.created_at DESC
+             LIMIT ?1 OFFSET ?2"
+        );
+        let stmt = conn.prepare(&sql).await.map_err(|e| e.to_string())?;
 
-        let mut rows = stmt
-            .query((
-                limit as i64,
-                i64::try_from(start_index).unwrap_or(i64::MAX).max(0),
-                active_pubkey,
-            ))
-            .await
-            .map_err(|e| e.to_string())?;
+        let offset = i64::try_from(start_index).unwrap_or(i64::MAX).max(0);
+        let mut rows = match authors {
+            Some(author_list) => {
+                let authors_json = serde_json::to_string(author_list)
+                    .map_err(|e| format!("serialize authors: {e}"))?;
+                stmt.query((limit as i64, offset, active_pubkey, authors_json))
+                    .await
+            }
+            None => stmt.query((limit as i64, offset, active_pubkey)).await,
+        }
+        .map_err(|e| e.to_string())?;
 
         let mut out = Vec::new();
         while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
@@ -148,7 +158,7 @@ mod tests {
     #[test]
     fn test_feed_window_query() {
         let db = soshal_test_util::test_db();
-        let posts = fetch_feed_window(&db, 0, 10).unwrap();
+        let posts = fetch_feed_window(&db, 0, 10, None).unwrap();
         assert_eq!(posts.len(), 0);
     }
 
@@ -159,7 +169,7 @@ mod tests {
         insert_test_post(&db, "old", "pk-alice", "first", 100);
         insert_test_post(&db, "new", "pk-alice", "second", 200);
 
-        let posts = fetch_feed_window(&db, 0, 10).unwrap();
+        let posts = fetch_feed_window(&db, 0, 10, None).unwrap();
         assert_eq!(posts.len(), 2);
         assert_eq!(posts[0].event_id, "new");
         assert_eq!(posts[1].event_id, "old");
@@ -174,11 +184,11 @@ mod tests {
         for i in 0..5 {
             insert_test_post(&db, &format!("p{i}"), "pk-a", &format!("c{i}"), i as i64);
         }
-        let page = fetch_feed_window(&db, 2, 2).unwrap();
+        let page = fetch_feed_window(&db, 2, 2, None).unwrap();
         assert_eq!(page.len(), 2);
         assert_eq!(page[0].event_id, "p2");
         assert_eq!(page[1].event_id, "p1");
-        let past_end = fetch_feed_window(&db, 100, 10).unwrap();
+        let past_end = fetch_feed_window(&db, 100, 10, None).unwrap();
         assert!(past_end.is_empty());
     }
 
@@ -230,7 +240,7 @@ mod tests {
         };
         PostRepo::new(&db).upsert(&repost).unwrap();
 
-        let posts = fetch_feed_window(&db, 0, 10).unwrap();
+        let posts = fetch_feed_window(&db, 0, 10, None).unwrap();
         assert_eq!(posts.len(), 1);
         assert_eq!(posts[0].event_id, "live");
     }

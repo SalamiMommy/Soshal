@@ -403,12 +403,11 @@ pub fn signer_nip44_encrypt(
 }
 
 /// NIP-44 v2 decrypt a payload from `sender_pubkey` using the unlocked key.
-/// The plaintext crosses FFI zeroized (frb maps Zeroizing<String> to String).
+/// Returns the plaintext String; internal NIP-44 buffers stay zeroized
+/// (remove the Zeroizing<String> wrapper — frb 2.12 serializes it as an
+/// opaque Dart type rather than a String, breaking the callers).
 #[frb(sync, serialize)]
-pub fn signer_nip44_decrypt(
-    payload: String,
-    sender_pubkey: String,
-) -> Result<zeroize::Zeroizing<String>, String> {
+pub fn signer_nip44_decrypt(payload: String, sender_pubkey: String) -> Result<String, String> {
     let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
     match guard.as_ref() {
         Some(keys) => {
@@ -417,7 +416,7 @@ pub fn signer_nip44_decrypt(
                 Err(e) => return Err(format!("invalid sender pubkey: {e}")).into(),
             };
             match nip44::decrypt(keys.secret_key(), &pk, &payload) {
-                Ok(plaintext) => Ok(zeroize::Zeroizing::new(plaintext)).into(),
+                Ok(plaintext) => Ok(plaintext).into(),
                 Err(e) => Err(format!("nip44 decrypt: {e}")).into(),
             }
         }

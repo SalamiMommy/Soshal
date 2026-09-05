@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
+import '../services/messaging_service.dart';
+import '../services/network_service.dart';
 import '../services/session_service.dart';
 import '../services/settings_service.dart';
-import '../services/network_service.dart';
+import '../services/signer_service.dart';
 import '../services/zap_service.dart';
 import '../utils/format.dart';
 import '../utils/dialog_guard.dart';
@@ -219,6 +221,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ListTile(
                 title: const Text('Logout'),
                 onTap: () => _showLogoutDialog(),
+              ),
+            ]),
+            // Danger zone
+            _buildSection('Danger Zone', [
+              ListTile(
+                leading: const Icon(Icons.delete_forever, color: Colors.red),
+                title: const Text(
+                  'Delete Profile',
+                  style: TextStyle(color: Colors.red),
+                ),
+                subtitle: const Text(
+                    'Permanently delete this profile (publishes a deletion '
+                    'request to relays, removes the account, wipes the key)'),
+                onTap: () => _showDeleteProfileFlow(),
               ),
             ]),
           ],
@@ -504,5 +520,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       },
     );
+  }
+
+  /// Delete-profile flow: two confirmations before anything is executed
+  /// (publish NIP-09 tombstones, wipe keychain key, remove account).
+  Future<void> _showDeleteProfileFlow() async {
+    final screenContext = context;
+    final session = context.read<SessionService>();
+    final pubkey = session.activePubkey;
+    if (pubkey == null) {
+      ScaffoldMessenger.of(screenContext)
+          .showSnackBar(const SnackBar(content: Text('No active account')));
+      return;
+    }
+    final first = await showDialog<bool>(
+      context: screenContext,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete profile?'),
+        content: const Text(
+            'This publishes a deletion request to relays, removes this '
+            'account from the device, and wipes the saved key. Content you '
+            'shared before may remain visible to others.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (first != true || !screenContext.mounted) return;
+    final second = await showDialog<bool>(
+      context: screenContext,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete profile forever?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, delete forever'),
+          ),
+        ],
+      ),
+    );
+    if (second != true) return;
+    if (!screenContext.mounted) return;
+    final identity = screenContext.read<IdentityService>();
+    final signer = screenContext.read<SignerService>();
+    try {
+      await identity.deleteProfile(pubkey);
+      try {
+        await signer.removeFromKeyring(pubkey);
+      } catch (e) {
+        debugPrint('delete profile keyring: $e');
+      }
+      await session.removeAccount(pubkey);
+      if (!screenContext.mounted) return;
+      ScaffoldMessenger.of(screenContext)
+          .showSnackBar(const SnackBar(content: Text('Profile deleted')));
+      if (screenContext.read<SessionService>().activeAccount == null) {
+        screenContext.go('/auth');
+      }
+    } catch (e) {
+      if (!screenContext.mounted) return;
+      ScaffoldMessenger.of(screenContext)
+          .showSnackBar(SnackBar(content: SelectableText('Delete failed: $e')));
+    }
   }
 }

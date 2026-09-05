@@ -31,7 +31,12 @@ fn escape_like(s: &str) -> String {
         .replace('_', "\\_")
 }
 
-fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchResult>, String> {
+fn run_search(
+    query: &str,
+    limit: i64,
+    kind: Option<i64>,
+    authors: Option<&[String]>,
+) -> Result<Vec<SearchResult>, String> {
     if query.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -39,6 +44,14 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
     if fts_query.is_empty() {
         return Ok(Vec::new());
     }
+    if let Some(a) = authors {
+        if a.is_empty() {
+            return Ok(Vec::new());
+        }
+    }
+    let authors_json: Option<String> = authors
+        .map(|a| serde_json::to_string(a).map_err(|e| format!("authors: {e}")))
+        .transpose()?;
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         // `format_fts5_query` already produces a safe, prefix-matching AND
@@ -47,17 +60,28 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
         // the AND/prefix semantics (and injecting a literal `AND` term).
         let fts_match = fts_query;
         let out = soshal_db_core::block_on(async {
-            let stmt = conn
-                .prepare(
-                    "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at FROM posts_fts f \
-                     JOIN posts p ON f.rowid = p.rowid \
-                     WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
-                     ORDER BY rank LIMIT ?3",
-                )
-                .await?;
-            let mut rows = stmt
-                .query(libsql::params![fts_match.as_str(), kind, limit])
-                .await?;
+            let sql = if authors.is_some() {
+                "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at FROM posts_fts f \
+                 JOIN posts p ON f.rowid = p.rowid \
+                 WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
+                 AND p.pubkey IN (SELECT value FROM json_each(?4)) ORDER BY rank LIMIT ?3"
+            } else {
+                "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at FROM posts_fts f \
+                 JOIN posts p ON f.rowid = p.rowid \
+                 WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
+                 ORDER BY rank LIMIT ?3"
+            };
+            let stmt = conn.prepare(sql).await?;
+            let mut rows = match &authors_json {
+                Some(j) => {
+                    stmt.query(libsql::params![fts_match.as_str(), kind, limit, j.as_str()])
+                        .await
+                }
+                None => {
+                    stmt.query(libsql::params![fts_match.as_str(), kind, limit])
+                        .await
+                }
+            }?;
             let mut out = Vec::new();
             while let Some(row) = rows.next().await? {
                 let content: String = row.get(2)?;
@@ -94,15 +118,21 @@ fn run_search(query: &str, limit: i64, kind: Option<i64>) -> Result<Vec<SearchRe
 
 /// Search posts by content (kind 1).
 #[frb(sync, serialize)]
-pub fn search_posts(query: String, limit: i32) -> Result<String, String> {
-    super::util::json_ok(run_search(&query, limit.clamp(1, 100) as i64, Some(1))?)
+pub fn search_posts(query: String, limit: i32, audience: String) -> Result<String, String> {
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    super::util::json_ok(run_search(
+        &query,
+        limit.clamp(1, 100) as i64,
+        Some(1),
+        authors.as_deref(),
+    )?)
 }
 
 /// Search profiles by name/about (kind 0).
 #[frb(sync, serialize)]
 pub fn search_profiles(query: String, limit: i32) -> Result<String, String> {
     let limit = limit.clamp(1, 100) as i64;
-    let mut results = run_search(&query, limit, Some(0))?;
+    let mut results = run_search(&query, limit, Some(0), None)?;
     if results.is_empty() && !query.trim().is_empty() {
         let pattern = format!("%{}%", escape_like(&query.trim().to_lowercase()));
         let json = super::db::db_query_params(
@@ -174,13 +204,24 @@ pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String>
 /// Search mentions (profiles matching the query prefix).
 #[frb(sync, serialize)]
 pub fn search_mentions(query: String, limit: i32) -> Result<String, String> {
-    super::util::json_ok(run_search(&query, limit.clamp(1, 50) as i64, Some(0))?)
+    super::util::json_ok(run_search(
+        &query,
+        limit.clamp(1, 50) as i64,
+        Some(0),
+        None,
+    )?)
 }
 
 /// Global search across all indexed kinds.
 #[frb(sync, serialize)]
-pub fn search_global(query: String, limit: i32) -> Result<String, String> {
-    super::util::json_ok(run_search(&query, limit.clamp(1, 100) as i64, None)?)
+pub fn search_global(query: String, limit: i32, audience: String) -> Result<String, String> {
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    super::util::json_ok(run_search(
+        &query,
+        limit.clamp(1, 100) as i64,
+        None,
+        authors.as_deref(),
+    )?)
 }
 
 /// Remote NIP-50 search: query relays for matching text notes. Returns a
@@ -331,6 +372,8 @@ pub fn search_index_posts(rows_json: String) -> Result<bool, String> {
         id: String,
         pubkey: String,
         content: String,
+        #[serde(default)]
+        subject: Option<String>,
         kind: i64,
     }
     let rows: Vec<IndexInput> =
@@ -342,6 +385,9 @@ pub fn search_index_posts(rows_json: String) -> Result<bool, String> {
                 id: r.id,
                 pubkey: r.pubkey,
                 content: soshal_common_core::format::truncate(&r.content, 4096),
+                subject: r
+                    .subject
+                    .map(|s| soshal_common_core::format::truncate(&s, 4096)),
                 kind: r.kind,
                 created_at: soshal_common_core::format::now_secs(),
             })
@@ -365,6 +411,7 @@ pub fn search_index_profile(pubkey: String, name: String, about: String) -> Resu
         id: format!("profile:{pubkey}"),
         pubkey,
         content: soshal_common_core::format::truncate(&content, 4096),
+        subject: None,
         kind: 0,
         created_at: soshal_common_core::format::now_secs(),
     };
@@ -431,7 +478,8 @@ mod tests {
         let _p = tmp_db("posts");
         insert_post("p1", "pk1", "hello caveman world", 1, 1000);
         insert_post("p2", "pk1", "unrelated chatter", 1, 2000);
-        let arr = parse_arr(&search_posts("caveman".to_string(), 10).unwrap());
+        let arr =
+            parse_arr(&search_posts("caveman".to_string(), 10, "public".to_string()).unwrap());
         assert_eq!(arr.len(), 1, "json: {arr:?}");
         assert_eq!(arr[0]["id"], "p1");
         assert_eq!(arr[0]["result_type"], "post");
@@ -447,10 +495,10 @@ mod tests {
         let _p = tmp_db("order");
         insert_post("p1", "pk1", "soshal alpha", 1, 1000);
         insert_post("p2", "pk1", "soshal beta", 1, 2000);
-        let arr = parse_arr(&search_posts("soshal".to_string(), 10).unwrap());
+        let arr = parse_arr(&search_posts("soshal".to_string(), 10, "public".to_string()).unwrap());
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0]["id"], "p2", "json: {arr:?}");
-        let arr = parse_arr(&search_posts("soshal".to_string(), 0).unwrap());
+        let arr = parse_arr(&search_posts("soshal".to_string(), 0, "public".to_string()).unwrap());
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["id"], "p1");
     }
@@ -467,7 +515,7 @@ mod tests {
         assert_eq!(arr.len(), 1, "json: {arr:?}");
         assert_eq!(arr[0]["id"], "pk1");
         assert_eq!(arr[0]["result_type"], "profile");
-        let arr = parse_arr(&search_posts("soshal".to_string(), 10).unwrap());
+        let arr = parse_arr(&search_posts("soshal".to_string(), 10, "public".to_string()).unwrap());
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["id"], "post1");
     }
@@ -480,7 +528,8 @@ mod tests {
         let _p = tmp_db("global");
         insert_post("prof1", "pk1", "soshal alice", 0, 1000);
         insert_post("post1", "pk1", "soshal post", 1, 2000);
-        let arr = parse_arr(&search_global("soshal".to_string(), 10).unwrap());
+        let arr =
+            parse_arr(&search_global("soshal".to_string(), 10, "public".to_string()).unwrap());
         assert_eq!(arr.len(), 2, "json: {arr:?}");
         assert!(arr.iter().any(|r| r["result_type"] == "post"));
         assert!(arr.iter().any(|r| r["result_type"] == "profile"));
@@ -493,9 +542,16 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("empty");
         insert_post("p1", "pk1", "soshal content", 1, 1000);
-        assert!(parse_arr(&search_posts("   ".to_string(), 10).unwrap()).is_empty());
-        assert!(parse_arr(&search_posts(String::new(), 10).unwrap()).is_empty());
-        assert!(parse_arr(&search_global(String::new(), 10).unwrap()).is_empty());
+        assert!(
+            parse_arr(&search_posts("   ".to_string(), 10, "public".to_string()).unwrap())
+                .is_empty()
+        );
+        assert!(
+            parse_arr(&search_posts(String::new(), 10, "public".to_string()).unwrap()).is_empty()
+        );
+        assert!(
+            parse_arr(&search_global(String::new(), 10, "public".to_string()).unwrap()).is_empty()
+        );
     }
 
     #[test]
@@ -505,8 +561,14 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let _p = tmp_db("miss");
         insert_post("p1", "pk1", "soshal content", 1, 1000);
-        assert!(parse_arr(&search_posts("zzzmissing".to_string(), 10).unwrap()).is_empty());
-        assert!(parse_arr(&search_global("zzzmissing".to_string(), 10).unwrap()).is_empty());
+        assert!(parse_arr(
+            &search_posts("zzzmissing".to_string(), 10, "public".to_string()).unwrap()
+        )
+        .is_empty());
+        assert!(parse_arr(
+            &search_global("zzzmissing".to_string(), 10, "public".to_string()).unwrap()
+        )
+        .is_empty());
     }
 
     #[test]
@@ -593,11 +655,15 @@ mod tests {
             search_index_profile("pk9".to_string(), "carol".to_string(), String::new()).unwrap()
         );
         assert_eq!(
-            parse_arr(&search_posts("indexed".to_string(), 10).unwrap()).len(),
+            parse_arr(&search_posts("indexed".to_string(), 10, "public".to_string()).unwrap())
+                .len(),
             1
         );
         assert!(search_remove_indexed("p1".to_string()).unwrap());
-        assert!(parse_arr(&search_posts("indexed".to_string(), 10).unwrap()).is_empty());
+        assert!(
+            parse_arr(&search_posts("indexed".to_string(), 10, "public".to_string()).unwrap())
+                .is_empty()
+        );
     }
 
     #[test]
@@ -609,10 +675,13 @@ mod tests {
         insert_post("p1", "pk1", "caveman world order", 1, 1000);
         insert_post("p2", "pk1", "caveman philosophy", 1, 2000);
         insert_post("p3", "pk1", "world wide web", 1, 3000);
-        let arr = parse_arr(&search_posts("caveman world".to_string(), 10).unwrap());
+        let arr = parse_arr(
+            &search_posts("caveman world".to_string(), 10, "public".to_string()).unwrap(),
+        );
         assert_eq!(arr.len(), 1, "json: {arr:?}");
         assert_eq!(arr[0]["id"], "p1", "both terms ANDed, prefix-matched");
-        let arr = parse_arr(&search_posts("cave wor".to_string(), 10).unwrap());
+        let arr =
+            parse_arr(&search_posts("cave wor".to_string(), 10, "public".to_string()).unwrap());
         assert_eq!(arr.len(), 1, "json: {arr:?}");
         assert_eq!(arr[0]["id"], "p1", "prefix terms still ANDed");
     }
@@ -620,7 +689,7 @@ mod tests {
     #[test]
     fn test_search_errors_when_db_not_initialized() {
         if db::db_path().is_err() {
-            assert!(search_posts("x".to_string(), 10)
+            assert!(search_posts("x".to_string(), 10, "public".to_string())
                 .unwrap_err()
                 .contains("not initialized"));
         }
@@ -634,8 +703,14 @@ mod tests {
         let _p = tmp_db("qed");
         insert_post("p1", "pk1", "soshal content", 1, 1000);
         // Punctuation-only query: FTS sanitizer strips all terms -> empty.
-        assert!(parse_arr(&search_posts("!!!".to_string(), 10).unwrap()).is_empty());
-        assert!(parse_arr(&search_global("!@#$%^".to_string(), 10).unwrap()).is_empty());
+        assert!(
+            parse_arr(&search_posts("!!!".to_string(), 10, "public".to_string()).unwrap())
+                .is_empty()
+        );
+        assert!(
+            parse_arr(&search_global("!@#$%^".to_string(), 10, "public".to_string()).unwrap())
+                .is_empty()
+        );
         // Quote escaping + limit clamp.
         db::db_execute_raw_test(
             "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES \
@@ -718,11 +793,11 @@ mod tests {
         insert_post("b1", "pk2", "seed", 1, 2000);
         let batch = r#"[{"id":"a1","pubkey":"pk1","content":"alpha beta","kind":1},{"id":"b1","pubkey":"pk2","content":"gamma delta","kind":1}]"#;
         assert!(search_index_posts(batch.to_string()).unwrap());
-        let arr = parse_arr(&search_posts("alpha".to_string(), 10).unwrap());
+        let arr = parse_arr(&search_posts("alpha".to_string(), 10, "public".to_string()).unwrap());
         assert_eq!(arr.len(), 1, "json: {arr:?}");
         assert_eq!(arr[0]["id"], "a1");
         assert_eq!(
-            parse_arr(&search_posts("delta".to_string(), 10).unwrap()).len(),
+            parse_arr(&search_posts("delta".to_string(), 10, "public".to_string()).unwrap()).len(),
             1
         );
         // Removing a nonexistent index entry is Ok.

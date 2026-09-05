@@ -177,10 +177,13 @@ fn extract_hashtags_test() {
 
 #[test]
 fn parse_mentions_test() {
-    let result = parse_mentions("hello nostr:npub1pu3v3pzj4j6 end");
+    let result = parse_mentions(
+        "hello nostr:npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6 end",
+    );
     assert_eq!(result.len(), 3);
     assert!(result[1].is_mention);
-    let pks = extract_pubkeys("nostr:npub1pu3v3pzj4j6");
+    let pks =
+        extract_pubkeys("nostr:npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6");
     assert!(!pks.is_empty());
 }
 
@@ -301,9 +304,14 @@ fn ast_parser_post_ast() {
     let lone = parse_post_ast("#");
     assert_eq!(lone.len(), 1);
     assert_eq!(lone[0].span_type, SpanType::Text);
-    let mid = parse_post_ast("tell nostr:npub1pu3v3pzj4j6ok now");
+    let mid = parse_post_ast(
+        "tell nostr:npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6 now",
+    );
     assert_eq!(mid[1].span_type, SpanType::Mention);
-    assert_eq!(mid[1].target.as_deref(), Some("nostr:npub1pu3v3pzj4j6ok"));
+    assert_eq!(
+        mid[1].target.as_deref(),
+        Some("nostr:npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6")
+    );
 }
 
 #[test]
@@ -368,16 +376,24 @@ fn html_sanitize_notif_content() {
 
 #[test]
 fn mention_segments_detail() {
-    let segs = parse_mentions("hi nostr:npub1pu3v3pzj4j6 end");
+    let segs = parse_mentions(
+        "hi nostr:npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6 end",
+    );
     assert_eq!(segs.len(), 3);
     assert_eq!(segs[0].text, "hi ");
     assert!(!segs[0].is_mention);
     assert!(segs[1].is_mention);
-    assert_eq!(segs[1].pubkey.as_deref(), Some("npub1pu3v3pzj4j6"));
+    assert_eq!(
+        segs[1].pubkey.as_deref(),
+        Some("npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6")
+    );
     assert_eq!(segs[2].text, " end");
     assert_eq!(
-        extract_pubkeys("see npub1pu3v3pzj4j6 and nostr:npub1pu3v3pzj4j6"),
-        vec!["npub1pu3v3pzj4j6", "npub1pu3v3pzj4j6"]
+        extract_pubkeys("see npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6 and nostr:npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"),
+        vec![
+            "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6",
+            "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
+        ]
     );
     let invalid = parse_mentions("npub1bobby");
     assert_eq!(invalid.len(), 1);
@@ -548,7 +564,7 @@ fn hashtag_length_cap() {
 #[test]
 fn mention_empty_and_dupes() {
     assert!(parse_mentions("").is_empty());
-    let pks = extract_pubkeys("npub1pu3v3pzj4j6 npub1pu3v3pzj4j6");
+    let pks = extract_pubkeys("npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6 npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6");
     assert_eq!(pks.len(), 2);
 }
 

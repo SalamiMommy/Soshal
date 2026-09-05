@@ -16,12 +16,28 @@ fn add_tag(builder: nostr::event::EventBuilder, tag: Vec<String>) -> nostr::even
 /// a JSON array of mini entries (id, pubkey, videoUrl, blobHash, mediaSize,
 /// textOverlay, thumbnail, audience, createdAt).
 #[frb(sync, serialize)]
-pub fn minis_fetch() -> Result<String, String> {
-    let json = super::db::db_query_raw(
-        "SELECT id, pubkey, content, created_at, tags_json FROM posts \
-         WHERE kind = 31020 AND is_deleted = 0 \
-         ORDER BY created_at DESC LIMIT 200"
-            .to_string(),
+pub fn minis_fetch(audience: String) -> Result<String, String> {
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    if let Some(a) = &authors {
+        if a.is_empty() {
+            return super::util::json_ok(Vec::<serde_json::Value>::new());
+        }
+    }
+    let mut params: Vec<String> = Vec::new();
+    let author_clause = match &authors {
+        Some(a) => {
+            params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+            " AND pubkey IN (SELECT value FROM json_each(?1))"
+        }
+        None => "",
+    };
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT id, pubkey, content, created_at, tags_json FROM posts \
+             WHERE kind = 31020 AND is_deleted = 0{author_clause} \
+             ORDER BY created_at DESC LIMIT 200"
+        ),
+        &params,
     )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let mut out: Vec<serde_json::Value> = Vec::new();
@@ -187,7 +203,7 @@ mod tests {
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
         assert!(super::super::db::db_init(path.clone()).is_ok());
-        let json = minis_fetch().unwrap();
+        let json = minis_fetch("public".to_string()).unwrap();
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
         assert!(rows.is_empty());
         let _ = std::fs::remove_file(&path);
@@ -219,7 +235,7 @@ mod tests {
                 .to_string()
         )
         .is_ok());
-        let json = minis_fetch().unwrap();
+        let json = minis_fetch("public".to_string()).unwrap();
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["videoUrl"], "https://mini.example/b");

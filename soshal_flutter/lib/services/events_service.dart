@@ -22,6 +22,18 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<EventReminder> get reminders => _reminders;
   Map<String, double> get scores => _scores;
 
+  /// Clear all account-scoped state on account switch so Account B never
+  /// sees Account A's cached events, detail, attendees, reminders, or scores.
+  void resetForAccountSwitch() {
+    _events = [];
+    _detail = null;
+    _attendees = [];
+    _reminders = [];
+    _scores = {};
+    clearLastError();
+    notifyListeners();
+  }
+
   List<EventReminder> remindersForEvent(String eventId) =>
       _reminders.where((r) => r.eventId == eventId).toList();
 
@@ -36,6 +48,7 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         longitude: longitude,
         radiusKm: radiusKm,
         limit: limit,
+        audience: 'public',
       ),
     );
   }

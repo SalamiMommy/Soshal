@@ -279,7 +279,8 @@ class _MinisScreenState extends State<MinisScreen> {
         title: const Text('Minis'),
         actions: [
           IconButton(
-            icon: Icon(_reelsMode ? Icons.view_list : Icons.video_collection_outlined),
+            icon: Icon(
+                _reelsMode ? Icons.view_list : Icons.video_collection_outlined),
             tooltip: _reelsMode ? 'Switch to list' : 'Switch to Reels feed',
             onPressed: () => setState(() => _reelsMode = !_reelsMode),
           ),
@@ -297,144 +298,149 @@ class _MinisScreenState extends State<MinisScreen> {
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (_wasmRuntimeUnavailable) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'WASM runtime unavailable (roadmap): plugin '
-                            'execution is simulated in this build.',
-                            style: TextStyle(
-                              fontSize: 12,
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      if (_wasmRuntimeUnavailable) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 16,
                               color: Theme.of(context)
                                   .colorScheme
                                   .onSurfaceVariant,
                             ),
-                          ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'WASM runtime unavailable (roadmap): plugin '
+                                'execution is simulated in this build.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                  ],
-                  Text('Content filter plugin',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  TextField(
-                    onChanged: (v) => setState(() => _filterText = v),
-                    decoration: const InputDecoration(
-                      hintText: 'Text to check with the WASI filter plugin',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  FilledButton.icon(
-                    icon: const Icon(Icons.filter_alt),
-                    label: const Text('Run filter'),
-                    onPressed: _runFilter,
-                  ),
-                  if (_filterResult != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      _filterResult!,
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
-                  const Divider(height: 32),
-                  SwitchListTile(
-                    title: const Text('Rank feed with mini plugin'),
-                    subtitle: const Text(
-                        'Reorders the mini list via the WASI feed-ranker host'),
-                    value: _rankOn,
-                    onChanged: _toggleRank,
-                  ),
-                  if (_rankOn) ...[
-                    const Text(
-                      'Ranked order',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 4),
-                  ],
-                  const Divider(height: 32),
-                  Text('Minis', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  if (display.isEmpty)
-                    EmptyState(
-                      compact: true,
-                      icon: Icons.video_library,
-                      title: 'No minis yet',
-                      body:
-                          'Publish a mini video — it is hosted from device caches, not URL links.',
-                    )
-                  else if (_rankOn && _ranked.isNotEmpty)
-                    for (final url in _ranked) ...[
-                      ListTile(
-                        leading: Icon(
-                          Icons.video_library,
-                          color: Theme.of(context).colorScheme.primary,
+                      Text('Content filter plugin',
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      TextField(
+                        onChanged: (v) => setState(() => _filterText = v),
+                        decoration: const InputDecoration(
+                          hintText: 'Text to check with the WASI filter plugin',
+                          border: OutlineInputBorder(),
                         ),
-                        title: Text(url,
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: const Text('Mini video (ranked)'),
                       ),
-                      const Divider(height: 1),
-                    ]
-                  else
-                    for (var i = 0; i < display.length; i++) ...[
-                      ListTile(
-                        leading: _minis[i].thumbnail.isNotEmpty
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: BlobImage(
-                                  source: _minis[i].thumbnail,
-                                  width: 48,
-                                  height: 48,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_) => Icon(
+                      const SizedBox(height: 8),
+                      FilledButton.icon(
+                        icon: const Icon(Icons.filter_alt),
+                        label: const Text('Run filter'),
+                        onPressed: _runFilter,
+                      ),
+                      if (_filterResult != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _filterResult!,
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                      const Divider(height: 32),
+                      SwitchListTile(
+                        title: const Text('Rank feed with mini plugin'),
+                        subtitle: const Text(
+                            'Reorders the mini list via the WASI feed-ranker host'),
+                        value: _rankOn,
+                        onChanged: _toggleRank,
+                      ),
+                      if (_rankOn) ...[
+                        const Text(
+                          'Ranked order',
+                          style: TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 4),
+                      ],
+                      const Divider(height: 32),
+                      Text('Minis',
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      if (display.isEmpty)
+                        EmptyState(
+                          compact: true,
+                          icon: Icons.video_library,
+                          title: 'No minis yet',
+                          body:
+                              'Publish a mini video — it is hosted from device caches, not URL links.',
+                        )
+                      else if (_rankOn && _ranked.isNotEmpty)
+                        for (final url in _ranked) ...[
+                          ListTile(
+                            leading: Icon(
+                              Icons.video_library,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            title: Text(url,
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle: const Text('Mini video (ranked)'),
+                          ),
+                          const Divider(height: 1),
+                        ]
+                      else
+                        for (var i = 0; i < display.length; i++) ...[
+                          ListTile(
+                            leading: _minis[i].thumbnail.isNotEmpty
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: BlobImage(
+                                      source: _minis[i].thumbnail,
+                                      width: 48,
+                                      height: 48,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_) => Icon(
+                                        Icons.video_library,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                      ),
+                                    ),
+                                  )
+                                : Icon(
                                     Icons.video_library,
                                     color:
                                         Theme.of(context).colorScheme.primary,
                                   ),
-                                ),
-                              )
-                            : Icon(
-                                Icons.video_library,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                        title: Text(
-                          _minis[i].textOverlay.isEmpty
-                              ? (_minis[i].videoUrl.startsWith('blob://')
-                                  ? 'Mini video'
-                                  : _minis[i].videoUrl)
-                              : _minis[i].textOverlay,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          _minis[i].videoUrl.startsWith('blob://')
-                              ? 'Mini video · hosted from device caches'
-                              : 'Mini video · ${_minis[i].videoUrl}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: const Icon(Icons.play_circle_outline),
-                        onTap: () => _play(_minis[i]),
-                      ),
-                      if (i < display.length - 1) const Divider(height: 1),
+                            title: Text(
+                              _minis[i].textOverlay.isEmpty
+                                  ? (_minis[i].videoUrl.startsWith('blob://')
+                                      ? 'Mini video'
+                                      : _minis[i].videoUrl)
+                                  : _minis[i].textOverlay,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              _minis[i].videoUrl.startsWith('blob://')
+                                  ? 'Mini video · hosted from device caches'
+                                  : 'Mini video · ${_minis[i].videoUrl}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: const Icon(Icons.play_circle_outline),
+                            onTap: () => _play(_minis[i]),
+                          ),
+                          if (i < display.length - 1) const Divider(height: 1),
+                        ],
                     ],
-                ],
-              ),
-            ),
+                  ),
+                ),
     );
   }
 
@@ -460,7 +466,10 @@ class _MinisScreenState extends State<MinisScreen> {
                       child: Icon(
                         Icons.play_circle_fill,
                         size: 72,
-                        color: Theme.of(context).colorScheme.primary.withAlpha(200),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withAlpha(200),
                       ),
                     ),
                   ),
@@ -491,7 +500,8 @@ class _MinisScreenState extends State<MinisScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.favorite, color: Colors.white, size: 30),
+                    icon: const Icon(Icons.favorite,
+                        color: Colors.white, size: 30),
                     tooltip: 'Like',
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -499,17 +509,21 @@ class _MinisScreenState extends State<MinisScreen> {
                       );
                     },
                   ),
-                  const Text('Like', style: TextStyle(color: Colors.white, fontSize: 11)),
+                  const Text('Like',
+                      style: TextStyle(color: Colors.white, fontSize: 11)),
                   const SizedBox(height: 16),
                   IconButton(
-                    icon: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 28),
+                    icon: const Icon(Icons.chat_bubble_outline,
+                        color: Colors.white, size: 28),
                     tooltip: 'Comments',
                     onPressed: () => _play(mini),
                   ),
-                  const Text('Comments', style: TextStyle(color: Colors.white, fontSize: 11)),
+                  const Text('Comments',
+                      style: TextStyle(color: Colors.white, fontSize: 11)),
                   const SizedBox(height: 16),
                   IconButton(
-                    icon: const Icon(Icons.share, color: Colors.white, size: 28),
+                    icon:
+                        const Icon(Icons.share, color: Colors.white, size: 28),
                     tooltip: 'Share',
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: mini.videoUrl));
@@ -518,13 +532,16 @@ class _MinisScreenState extends State<MinisScreen> {
                       );
                     },
                   ),
-                  const Text('Share', style: TextStyle(color: Colors.white, fontSize: 11)),
+                  const Text('Share',
+                      style: TextStyle(color: Colors.white, fontSize: 11)),
                   const SizedBox(height: 16),
                   // Rotating Audio Disc Thumbnail
                   GestureDetector(
                     onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Audio: ${mini.videoUrl.split('/').last}')),
+                        SnackBar(
+                            content: Text(
+                                'Audio: ${mini.videoUrl.split('/').last}')),
                       );
                     },
                     child: Container(
@@ -535,7 +552,8 @@ class _MinisScreenState extends State<MinisScreen> {
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white54, width: 2),
                       ),
-                      child: const Icon(Icons.album, color: Colors.white, size: 22),
+                      child: const Icon(Icons.album,
+                          color: Colors.white, size: 22),
                     ),
                   ),
                 ],
@@ -551,7 +569,9 @@ class _MinisScreenState extends State<MinisScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    mini.textOverlay.isNotEmpty ? mini.textOverlay : 'Reels Video',
+                    mini.textOverlay.isNotEmpty
+                        ? mini.textOverlay
+                        : 'Reels Video',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -563,12 +583,14 @@ class _MinisScreenState extends State<MinisScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.music_note, color: Colors.white70, size: 16),
+                      const Icon(Icons.music_note,
+                          color: Colors.white70, size: 16),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           'Original Audio · ${mini.videoUrl.split('/').last}',
-                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 12),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),

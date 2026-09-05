@@ -4,10 +4,17 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'bookmarks_service.dart';
+import 'calls_service.dart';
+import 'dating_service.dart';
 import 'error_log.dart';
+import 'events_service.dart';
 import 'feed_service.dart';
 import 'ffi_bridge.dart';
+import 'groups_service.dart';
+import 'marketplace_service.dart';
 import 'messaging_service.dart';
+import 'moderation_service.dart';
 import 'notifications_service.dart';
 import 'search_service.dart';
 import 'sync_service.dart';
@@ -29,6 +36,13 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
   MessagingService? _messaging;
   NotificationService? _notifications;
   SearchService? _search;
+  DatingService? _dating;
+  MarketplaceService? _marketplace;
+  EventsService? _events;
+  GroupsService? _groups;
+  BookmarksService? _bookmarks;
+  ModerationService? _moderation;
+  CallsService? _calls;
 
   /// Attach the account-scoped services (wired from main.dart) so an account
   /// switch can clear their caches before the new account's data arrives.
@@ -37,11 +51,25 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
     required MessagingService messaging,
     required NotificationService notifications,
     required SearchService search,
+    required DatingService dating,
+    required MarketplaceService marketplace,
+    required EventsService events,
+    required GroupsService groups,
+    required BookmarksService bookmarks,
+    required ModerationService moderation,
+    required CallsService calls,
   }) {
     _feed = feed;
     _messaging = messaging;
     _notifications = notifications;
     _search = search;
+    _dating = dating;
+    _marketplace = marketplace;
+    _events = events;
+    _groups = groups;
+    _bookmarks = bookmarks;
+    _moderation = moderation;
+    _calls = calls;
   }
 
   void _resetAccountScopedServices() {
@@ -49,6 +77,13 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
     _messaging?.resetForAccountSwitch();
     _notifications?.resetForAccountSwitch();
     _search?.resetForAccountSwitch();
+    _dating?.resetForAccountSwitch();
+    _marketplace?.resetForAccountSwitch();
+    _events?.resetForAccountSwitch();
+    _groups?.resetForAccountSwitch();
+    _bookmarks?.resetForAccountSwitch();
+    _moderation?.resetForAccountSwitch();
+    _calls?.resetForAccountSwitch();
   }
 
   void reset() {
@@ -56,6 +91,13 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
     _messaging?.resetForAccountSwitch();
     _notifications?.resetForAccountSwitch();
     _search?.resetForAccountSwitch();
+    _dating?.resetForAccountSwitch();
+    _marketplace?.resetForAccountSwitch();
+    _events?.resetForAccountSwitch();
+    _groups?.resetForAccountSwitch();
+    _bookmarks?.resetForAccountSwitch();
+    _moderation?.resetForAccountSwitch();
+    _calls?.resetForAccountSwitch();
   }
 
   SessionData? get session => _session;
@@ -253,10 +295,23 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
       _session!.accounts.removeWhere((a) => a.pubkey == pubkey);
 
       if (_activePubkey == pubkey) {
-        // Active account removed — stop its sync engine first.
+        // Active account removed — stop its sync engine and clear its
+        // account-scoped caches before the survivor's data arrives.
         await _sync?.stop();
+        _resetAccountScopedServices();
         if (_session!.accounts.isNotEmpty) {
           _activePubkey = _session!.accounts.first.pubkey;
+          // Restart the sync engine for the surviving account; the stop()
+          // above killed the old ingest and without this the survivor's
+          // feed/DM updates stay silent until app relaunch.
+          final accountRelays = _session!.accounts
+              .firstWhere((a) => a.pubkey == _activePubkey,
+                  orElse: () => _session!.accounts.first)
+              .relayList;
+          final relays = accountRelays.isNotEmpty
+              ? accountRelays
+              : const ['wss://relay.nostr.band', 'wss://nos.lol'];
+          await _sync?.start(relays: relays);
         } else {
           _activePubkey = null;
         }

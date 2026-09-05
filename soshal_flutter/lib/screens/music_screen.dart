@@ -407,7 +407,8 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
       _commentCtrl.clear();
       await _loadComments();
       if (!mounted) return;
-      setState(() => _commentStatus = 'Comment posted at ${_playbackPosition.toStringAsFixed(0)}s.');
+      setState(() => _commentStatus =
+          'Comment posted at ${_playbackPosition.toStringAsFixed(0)}s.');
     } catch (e) {
       if (mounted) setState(() => _commentStatus = 'Failed: $e');
     } finally {
@@ -476,13 +477,15 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                       IconButton.filled(
                         icon: Icon(
                           context.watch<ShellService>().audioPlaying &&
-                                  context.watch<ShellService>().audioTitle == _track.title
+                                  context.watch<ShellService>().audioTitle ==
+                                      _track.title
                               ? Icons.pause
                               : Icons.play_arrow,
                         ),
                         onPressed: () {
                           final shell = context.read<ShellService>();
-                          if (shell.audioPlaying && shell.audioTitle == _track.title) {
+                          if (shell.audioPlaying &&
+                              shell.audioTitle == _track.title) {
                             shell.stopAudio();
                           } else {
                             shell.playAudio(_track.audioUrl, _track.title);
@@ -495,10 +498,12 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(_track.title,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis),
-                            Text('${_playbackPosition.toStringAsFixed(1)}s / ${_trackDuration.toStringAsFixed(1)}s',
+                            Text(
+                                '${_playbackPosition.toStringAsFixed(1)}s / ${_trackDuration.toStringAsFixed(1)}s',
                                 style: Theme.of(context).textTheme.bodySmall),
                           ],
                         ),
@@ -512,9 +517,11 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                     onHorizontalDragUpdate: (details) {
                       final box = context.findRenderObject() as RenderBox?;
                       if (box != null) {
-                        final local = details.localPosition.dx.clamp(0.0, box.size.width);
+                        final local =
+                            details.localPosition.dx.clamp(0.0, box.size.width);
                         setState(() {
-                          _playbackPosition = (local / box.size.width) * _trackDuration;
+                          _playbackPosition =
+                              (local / box.size.width) * _trackDuration;
                         });
                       }
                     },
@@ -527,9 +534,11 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                             Expanded(
                               child: Container(
                                 height: 12.0 + ((i * 7 + 13) % 40).toDouble(),
-                                margin: const EdgeInsets.symmetric(horizontal: 1),
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 1),
                                 decoration: BoxDecoration(
-                                  color: (i / 40.0) <= (_playbackPosition / _trackDuration)
+                                  color: (i / 40.0) <=
+                                          (_playbackPosition / _trackDuration)
                                       ? Colors.orangeAccent
                                       : Colors.grey.shade400,
                                   borderRadius: BorderRadius.circular(2),
@@ -545,13 +554,16 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('0:00', style: Theme.of(context).textTheme.bodySmall),
-                      Text('Comment at ${_playbackPosition.toStringAsFixed(0)}s',
+                      Text('0:00',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      Text(
+                          'Comment at ${_playbackPosition.toStringAsFixed(0)}s',
                           style: TextStyle(
                               fontSize: 11,
                               color: Theme.of(context).colorScheme.primary,
                               fontWeight: FontWeight.bold)),
-                      Text('${(_trackDuration / 60).floor()}:${(_trackDuration % 60).floor().toString().padLeft(2, '0')}',
+                      Text(
+                          '${(_trackDuration / 60).floor()}:${(_trackDuration % 60).floor().toString().padLeft(2, '0')}',
                           style: Theme.of(context).textTheme.bodySmall),
                     ],
                   ),

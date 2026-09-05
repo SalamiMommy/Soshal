@@ -82,10 +82,14 @@ impl BlossomClient {
     }
 
     fn with_http(server_url: &str, host: Option<&str>, addrs: &[std::net::SocketAddr]) -> Self {
+        // SECURITY: no_proxy forces direct connections — an env
+        // HTTP(S)_PROXY would resolve the host itself, bypassing the
+        // private-IP/DNS-pin SSRF guards below.
         let mut builder = Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(10));
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .no_proxy();
         if let Some(host) = host {
             // Pin ALL resolved addresses: per-addr `.resolve()` calls
             // overwrite each other, leaving a DNS-rebinding window.
@@ -93,7 +97,16 @@ impl BlossomClient {
                 builder = builder.resolve_to_addrs(host, addrs);
             }
         }
-        let http = builder.build().unwrap_or_else(|_| Client::new());
+        let http = builder
+            .build()
+            // SECURITY: fallback must also ignore env proxies (would bypass
+            // the SSRF guards) — never fall back to a bare Client::new().
+            .unwrap_or_else(|_| {
+                Client::builder()
+                    .no_proxy()
+                    .build()
+                    .expect("no_proxy client")
+            });
         Self {
             http,
             server_url: server_url.trim_end_matches('/').to_string(),

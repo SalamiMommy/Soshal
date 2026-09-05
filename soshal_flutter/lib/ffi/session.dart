@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `lock_session`, `validated_session_path`
+// These functions are ignored because they are not marked as `pub`: `lock_session`, `validate_path_security`, `validated_session_path_hardened`, `validated_session_path`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SESSION`, `SessionAccount`, `SessionData`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `deref`, `fmt`, `fmt`, `initialize`
 
@@ -31,6 +31,12 @@ bool sessionAddAccount(
 bool sessionSwitchAccount({required String pubkey}) =>
     RustLib.instance.api.crateFfiSessionSessionSwitchAccount(pubkey: pubkey);
 
+/// Remove an account from the session, persisting the change to disk.
+/// If the removed account was active, the active account is reassigned to the
+/// first remaining account (or cleared if none remain).
+bool sessionRemoveAccount({required String pubkey}) =>
+    RustLib.instance.api.crateFfiSessionSessionRemoveAccount(pubkey: pubkey);
+
 /// Get active account
 String sessionGetActive() =>
     RustLib.instance.api.crateFfiSessionSessionGetActive();
@@ -39,7 +45,14 @@ String sessionGetActive() =>
 String sessionListAccounts() =>
     RustLib.instance.api.crateFfiSessionSessionListAccounts();
 
+/// Reset in-memory session state (unload).
+bool sessionClear() => RustLib.instance.api.crateFfiSessionSessionClear();
+
 /// Register (or clear, when empty) the push token for the active account.
 /// Persists to session.json via the current DB path.
+///
+/// Save-first: the in-memory session is only updated after a successful disk
+/// write.  If `session_save` fails the caller receives the error and the
+/// in-memory state is unchanged.
 bool sessionRegisterPushToken({required String token}) =>
     RustLib.instance.api.crateFfiSessionSessionRegisterPushToken(token: token);

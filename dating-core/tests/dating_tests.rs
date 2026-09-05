@@ -560,8 +560,8 @@ fn compute_mutual_score_averages_directions() {
     let a = r#"{"age":25,"preferenceWeights":{"age":0}}"#;
     let b = r#"{"age":27,"preferenceWeights":{"age":1}}"#;
     assert_eq!(compute_compatibility_json(a, b), "50");
-    assert_eq!(compute_compatibility_json(b, a), "55");
-    assert_eq!(compute_mutual_score_json(a, b), "53");
+    assert_eq!(compute_compatibility_json(b, a), "54");
+    assert_eq!(compute_mutual_score_json(a, b), "52");
 }
 
 #[test]

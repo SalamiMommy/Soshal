@@ -3478,6 +3478,34 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  WireSyncRust2DartSse wire__crate__ffi__dating__dating_reset_passes(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__dating__dating_reset_passes(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__dating__dating_reset_passesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__dating__dating_reset_passes');
+  late final _wire__crate__ffi__dating__dating_reset_passes =
+      _wire__crate__ffi__dating__dating_reset_passesPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   WireSyncRust2DartSse wire__crate__ffi__dating__dating_superlike(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -3642,6 +3670,30 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__db__db_backup');
   late final _wire__crate__ffi__db__db_backup =
       _wire__crate__ffi__db__db_backupPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__db__db_close(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__db__db_close(ptr_, rust_vec_len_, data_len_);
+  }
+
+  late final _wire__crate__ffi__db__db_closePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__db__db_close');
+  late final _wire__crate__ffi__db__db_close =
+      _wire__crate__ffi__db__db_closePtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -6538,6 +6590,37 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__headless__background_sync_taskPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
+  void wire__crate__ffi__identity__identity_delete_profile(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__identity__identity_delete_profile(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__identity__identity_delete_profilePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__identity__identity_delete_profile',
+      );
+  late final _wire__crate__ffi__identity__identity_delete_profile =
+      _wire__crate__ffi__identity__identity_delete_profilePtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
   WireSyncRust2DartSse wire__crate__ffi__identity__identity_fetch_follows(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -7139,6 +7222,68 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__marketplace__marketplace_dispute_escrow =
       _wire__crate__ffi__marketplace__marketplace_dispute_escrowPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyerPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer',
+      );
+  late final _wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer =
+      _wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyerPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__marketplace__marketplace_escrow_confirm_sellerPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller',
+      );
+  late final _wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller =
+      _wire__crate__ffi__marketplace__marketplace_escrow_confirm_sellerPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -10839,6 +10984,130 @@ class RustLibWire implements BaseWire {
           >();
 
   WireSyncRust2DartSse
+  wire__crate__ffi__notifications__notifications_ignore_thread(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__notifications__notifications_ignore_thread(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__notifications__notifications_ignore_threadPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_ignore_thread',
+      );
+  late final _wire__crate__ffi__notifications__notifications_ignore_thread =
+      _wire__crate__ffi__notifications__notifications_ignore_threadPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__notifications__notifications_ignore_user(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__notifications__notifications_ignore_user(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__notifications__notifications_ignore_userPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_ignore_user',
+      );
+  late final _wire__crate__ffi__notifications__notifications_ignore_user =
+      _wire__crate__ffi__notifications__notifications_ignore_userPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__notifications__notifications_is_ignored(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__notifications__notifications_is_ignored(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__notifications__notifications_is_ignoredPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_is_ignored',
+      );
+  late final _wire__crate__ffi__notifications__notifications_is_ignored =
+      _wire__crate__ffi__notifications__notifications_is_ignoredPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__notifications__notifications_list_ignored(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__notifications__notifications_list_ignored(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__notifications__notifications_list_ignoredPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_list_ignored',
+      );
+  late final _wire__crate__ffi__notifications__notifications_list_ignored =
+      _wire__crate__ffi__notifications__notifications_list_ignoredPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
   wire__crate__ffi__notifications__notifications_mark_all_read(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -10926,6 +11195,68 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__notifications__notifications_register_push =
       _wire__crate__ffi__notifications__notifications_register_pushPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__notifications__notifications_unignore_thread(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__notifications__notifications_unignore_thread(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__notifications__notifications_unignore_threadPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_unignore_thread',
+      );
+  late final _wire__crate__ffi__notifications__notifications_unignore_thread =
+      _wire__crate__ffi__notifications__notifications_unignore_threadPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse
+  wire__crate__ffi__notifications__notifications_unignore_user(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__notifications__notifications_unignore_user(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__notifications__notifications_unignore_userPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_unignore_user',
+      );
+  late final _wire__crate__ffi__notifications__notifications_unignore_user =
+      _wire__crate__ffi__notifications__notifications_unignore_userPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -13006,6 +13337,34 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  WireSyncRust2DartSse wire__crate__ffi__session__session_clear(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__session__session_clear(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__session__session_clearPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__session__session_clear');
+  late final _wire__crate__ffi__session__session_clear =
+      _wire__crate__ffi__session__session_clearPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   WireSyncRust2DartSse wire__crate__ffi__session__session_get_active(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -13118,6 +13477,36 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__session__session_register_push_token =
       _wire__crate__ffi__session__session_register_push_tokenPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__session__session_remove_account(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__session__session_remove_account(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__session__session_remove_accountPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__session__session_remove_account',
+      );
+  late final _wire__crate__ffi__session__session_remove_account =
+      _wire__crate__ffi__session__session_remove_accountPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -15477,7 +15866,6 @@ const int COLOR_FormatYUV420Flexible = 2135033992;
 
 typedef DartPort = ffi.Int64;
 typedef DartDartPort = int;
-
 
 
 typedef __ssize_t = ffi.Long;

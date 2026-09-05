@@ -199,14 +199,33 @@ pub fn session_save(db_path: String, session_data: String) -> Result<bool, Strin
 
     match serde_json::from_str::<SessionData>(&session_data) {
         Ok(session) => match serde_json::to_string_pretty(&session) {
-            Ok(json) => match std::fs::write(&session_path, json) {
-                Ok(_) => {
-                    let mut session_lock = lock_session()?;
-                    *session_lock = Some(session);
-                    Ok(true).into()
+            Ok(json) => {
+                // Atomic write: write to a temp file in the same directory,
+                // then rename over the target (atomic on same filesystem).
+                let tmp_path = std::path::PathBuf::from(format!("{}.tmp", session_path.display()));
+                let write_result = (|| -> std::io::Result<()> {
+                    let mut f = std::fs::OpenOptions::new()
+                        .create(true)
+                        .truncate(true)
+                        .write(true)
+                        .open(&tmp_path)?;
+                    std::io::Write::write_all(&mut f, json.as_bytes())?;
+                    std::io::Write::flush(&mut f)?;
+                    std::fs::rename(&tmp_path, &session_path)
+                })();
+                match write_result {
+                    Ok(_) => {
+                        let mut session_lock = lock_session()?;
+                        *session_lock = Some(session);
+                        Ok(true).into()
+                    }
+                    Err(e) => {
+                        // Best-effort cleanup so no partial state lingers.
+                        let _ = std::fs::remove_file(&tmp_path);
+                        Err(format!("Failed to write session: {}", e)).into()
+                    }
                 }
-                Err(e) => Err(format!("Failed to write session: {}", e)).into(),
-            },
+            }
             Err(e) => Err(format!("Failed to serialize session: {}", e)).into(),
         },
         Err(e) => Err(format!("Invalid session JSON: {}", e)).into(),

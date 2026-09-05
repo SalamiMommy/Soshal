@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -820672997;
+  int get rustContentHash => -741940685;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -296,7 +296,9 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiDatingDatingFetchMatches({required String userPubkey});
 
   String crateFfiDatingDatingFetchProfiles(
-      {required String userPubkey, required int limit});
+      {required String userPubkey,
+      required int limit,
+      required String audience});
 
   String crateFfiDatingDatingFilterProfiles(
       {required String userPubkey,
@@ -330,6 +332,8 @@ abstract class RustLibApi extends BaseApi {
       required String targetPubkey,
       required String reason});
 
+  PlatformInt64 crateFfiDatingDatingResetPasses({required String userPubkey});
+
   bool crateFfiDatingDatingSuperlike(
       {required String userPubkey, required String profileId});
 
@@ -362,6 +366,8 @@ abstract class RustLibApi extends BaseApi {
       required String interestsJson});
 
   String crateFfiDbDbBackup({required String backupPath});
+
+  bool crateFfiDbDbClose();
 
   PlatformInt64 crateFfiDbDbCount({required String table});
 
@@ -466,7 +472,8 @@ abstract class RustLibApi extends BaseApi {
       {required double latitude,
       required double longitude,
       required double radiusKm,
-      required int limit});
+      required int limit,
+      required String audience});
 
   String crateFfiEventsEventsFetchUserEvents(
       {required String userPubkey, required int limit});
@@ -513,7 +520,7 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiFeedFeedFetchThread({required String eventId});
 
   String crateFfiFeedFeedFetchWindow(
-      {required int startIndex, required int limit});
+      {required int startIndex, required int limit, required String audience});
 
   Future<String> crateFfiFeedFeedPublishReply(
       {required String content,
@@ -557,7 +564,8 @@ abstract class RustLibApi extends BaseApi {
       required bool isPrivate,
       String? password});
 
-  String crateFfiGroupsGroupsFetchGroups({required String userPubkey});
+  String crateFfiGroupsGroupsFetchGroups(
+      {required String userPubkey, required String audience});
 
   String crateFfiGroupsGroupsFetchMessages(
       {required String groupId,
@@ -740,6 +748,9 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiNetworkI2PStopSession();
 
+  Future<String> crateFfiIdentityIdentityDeleteProfile(
+      {required String pubkey});
+
   String crateFfiIdentityIdentityFetchFollows({required String pubkey});
 
   String crateFfiIdentityIdentityFollowUser({required String pubkey});
@@ -816,11 +827,17 @@ abstract class RustLibApi extends BaseApi {
       required String disputerPubkey,
       required String reason});
 
+  bool crateFfiMarketplaceMarketplaceEscrowConfirmBuyer(
+      {required String escrowId, required String caller});
+
+  bool crateFfiMarketplaceMarketplaceEscrowConfirmSeller(
+      {required String escrowId, required String caller});
+
   String crateFfiMarketplaceMarketplaceFetchBuyerOrders(
       {required String buyerPubkey});
 
   String crateFfiMarketplaceMarketplaceFetchListings(
-      {required int limit, required int offset});
+      {required int limit, required int offset, required String audience});
 
   String crateFfiMarketplaceMarketplaceFetchSellerListings(
       {required String sellerPubkey});
@@ -829,7 +846,7 @@ abstract class RustLibApi extends BaseApi {
       {required String sellerPubkey});
 
   String crateFfiMarketplaceMarketplaceGetByCategory(
-      {required String category, required int limit});
+      {required String category, required int limit, required String audience});
 
   String crateFfiMarketplaceMarketplaceGetContent({required String listingId});
 
@@ -842,7 +859,8 @@ abstract class RustLibApi extends BaseApi {
 
   String crateFfiMarketplaceMarketplaceGetOrder({required String orderId});
 
-  String crateFfiMarketplaceMarketplaceGetTrending({required int limit});
+  String crateFfiMarketplaceMarketplaceGetTrending(
+      {required int limit, required String audience});
 
   double crateFfiMarketplaceMarketplaceListingRating(
       {required String listingId});
@@ -884,7 +902,7 @@ abstract class RustLibApi extends BaseApi {
       required String text});
 
   String crateFfiMarketplaceMarketplaceSearch(
-      {required String query, required int limit});
+      {required String query, required int limit, required String audience});
 
   bool crateFfiMarketplaceMarketplaceUpdateListing(
       {required String listingId,
@@ -952,7 +970,7 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiMessagingMessagingStoreDms({required String dmsJson});
 
-  String crateFfiMinisMinisFetch();
+  String crateFfiMinisMinisFetch({required String audience});
 
   Future<String> crateFfiMinisMinisPublish(
       {required String mediaSource,
@@ -1044,7 +1062,7 @@ abstract class RustLibApi extends BaseApi {
       required String trackD});
 
   Future<String> crateFfiMusicMusicFetch(
-      {required BigInt limit, String? author});
+      {required BigInt limit, String? author, required String audience});
 
   Future<String> crateFfiMusicMusicPublish(
       {required String mediaSource,
@@ -1149,6 +1167,21 @@ abstract class RustLibApi extends BaseApi {
   int crateFfiNotificationsNotificationsGetUnreadCount(
       {required String userPubkey});
 
+  bool crateFfiNotificationsNotificationsIgnoreThread(
+      {required String userPubkey, required String eventId});
+
+  bool crateFfiNotificationsNotificationsIgnoreUser(
+      {required String userPubkey, required String fromPubkey});
+
+  bool crateFfiNotificationsNotificationsIsIgnored(
+      {required String userPubkey,
+      required String kind,
+      required String fromPubkey,
+      required String eventId});
+
+  String crateFfiNotificationsNotificationsListIgnored(
+      {required String userPubkey});
+
   bool crateFfiNotificationsNotificationsMarkAllRead(
       {required String userPubkey});
 
@@ -1157,6 +1190,12 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateFfiNotificationsNotificationsRegisterPush(
       {required String userPubkey, required String token});
+
+  bool crateFfiNotificationsNotificationsUnignoreThread(
+      {required String userPubkey, required String eventId});
+
+  bool crateFfiNotificationsNotificationsUnignoreUser(
+      {required String userPubkey, required String fromPubkey});
 
   bool crateFfiNotificationsNotificationsUnregisterPush(
       {required String userPubkey});
@@ -1351,7 +1390,7 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiScheduledScheduledList({required String pubkey});
 
   String crateFfiSearchSearchGlobal(
-      {required String query, required int limit});
+      {required String query, required int limit, required String audience});
 
   List<String> crateFfiSearchSearchHashtags(
       {required String query, required int limit});
@@ -1364,7 +1403,8 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiSearchSearchMentions(
       {required String query, required int limit});
 
-  String crateFfiSearchSearchPosts({required String query, required int limit});
+  String crateFfiSearchSearchPosts(
+      {required String query, required int limit, required String audience});
 
   String crateFfiSearchSearchProfiles(
       {required String query, required int limit});
@@ -1385,6 +1425,8 @@ abstract class RustLibApi extends BaseApi {
       required String npub,
       required String relaysJson});
 
+  bool crateFfiSessionSessionClear();
+
   String crateFfiSessionSessionGetActive();
 
   String crateFfiSessionSessionListAccounts();
@@ -1392,6 +1434,8 @@ abstract class RustLibApi extends BaseApi {
   String crateFfiSessionSessionLoad({required String dbPath});
 
   bool crateFfiSessionSessionRegisterPushToken({required String token});
+
+  bool crateFfiSessionSessionRemoveAccount({required String pubkey});
 
   bool crateFfiSessionSessionSave(
       {required String dbPath, required String sessionData});
@@ -1449,9 +1493,10 @@ abstract class RustLibApi extends BaseApi {
       {required String userPubkey});
 
   String crateFfiStreamingStreamingFetchFollowedStories(
-      {required String viewerPubkey});
+      {required String audience});
 
-  String crateFfiStreamingStreamingFetchLive({required int limit});
+  String crateFfiStreamingStreamingFetchLive(
+      {required int limit, required String audience});
 
   String crateFfiStreamingStreamingFetchStories({required String userPubkey});
 
@@ -3515,12 +3560,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateFfiDatingDatingFetchProfiles(
-      {required String userPubkey, required int limit}) {
+      {required String userPubkey,
+      required int limit,
+      required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(userPubkey, serializer);
         sse_encode_i_32(limit, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__dating__dating_fetch_profiles(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -3530,7 +3578,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiDatingDatingFetchProfilesConstMeta,
-      argValues: [userPubkey, limit],
+      argValues: [userPubkey, limit, audience],
       apiImpl: this,
     ));
   }
@@ -3538,7 +3586,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiDatingDatingFetchProfilesConstMeta =>
       const TaskConstMeta(
         debugName: "dating_fetch_profiles",
-        argNames: ["userPubkey", "limit"],
+        argNames: ["userPubkey", "limit", "audience"],
       );
 
   @override
@@ -3784,6 +3832,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  PlatformInt64 crateFfiDatingDatingResetPasses({required String userPubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(userPubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__dating__dating_reset_passes(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_i_64,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDatingDatingResetPassesConstMeta,
+      argValues: [userPubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDatingDatingResetPassesConstMeta =>
+      const TaskConstMeta(
+        debugName: "dating_reset_passes",
+        argNames: ["userPubkey"],
+      );
+
+  @override
   bool crateFfiDatingDatingSuperlike(
       {required String userPubkey, required String profileId}) {
     return handler.executeSync(SyncTask(
@@ -4012,6 +4086,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiDbDbBackupConstMeta => const TaskConstMeta(
         debugName: "db_backup",
         argNames: ["backupPath"],
+      );
+
+  @override
+  bool crateFfiDbDbClose() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__db__db_close(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiDbDbCloseConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiDbDbCloseConstMeta => const TaskConstMeta(
+        debugName: "db_close",
+        argNames: [],
       );
 
   @override
@@ -5006,7 +5104,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       {required double latitude,
       required double longitude,
       required double radiusKm,
-      required int limit}) {
+      required int limit,
+      required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
@@ -5014,6 +5113,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_f_64(longitude, serializer);
         sse_encode_f_32(radiusKm, serializer);
         sse_encode_i_32(limit, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__events__events_fetch_nearby(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -5023,7 +5123,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiEventsEventsFetchNearbyConstMeta,
-      argValues: [latitude, longitude, radiusKm, limit],
+      argValues: [latitude, longitude, radiusKm, limit, audience],
       apiImpl: this,
     ));
   }
@@ -5031,7 +5131,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiEventsEventsFetchNearbyConstMeta =>
       const TaskConstMeta(
         debugName: "events_fetch_nearby",
-        argNames: ["latitude", "longitude", "radiusKm", "limit"],
+        argNames: ["latitude", "longitude", "radiusKm", "limit", "audience"],
       );
 
   @override
@@ -5477,12 +5577,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateFfiFeedFeedFetchWindow(
-      {required int startIndex, required int limit}) {
+      {required int startIndex, required int limit, required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_u_32(startIndex, serializer);
         sse_encode_u_32(limit, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__feed__feed_fetch_window(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -5492,7 +5593,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiFeedFeedFetchWindowConstMeta,
-      argValues: [startIndex, limit],
+      argValues: [startIndex, limit, audience],
       apiImpl: this,
     ));
   }
@@ -5500,7 +5601,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiFeedFeedFetchWindowConstMeta =>
       const TaskConstMeta(
         debugName: "feed_fetch_window",
-        argNames: ["startIndex", "limit"],
+        argNames: ["startIndex", "limit", "audience"],
       );
 
   @override
@@ -5795,11 +5896,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiGroupsGroupsFetchGroups({required String userPubkey}) {
+  String crateFfiGroupsGroupsFetchGroups(
+      {required String userPubkey, required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(userPubkey, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__groups__groups_fetch_groups(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -5809,7 +5912,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiGroupsGroupsFetchGroupsConstMeta,
-      argValues: [userPubkey],
+      argValues: [userPubkey, audience],
       apiImpl: this,
     ));
   }
@@ -5817,7 +5920,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiGroupsGroupsFetchGroupsConstMeta =>
       const TaskConstMeta(
         debugName: "groups_fetch_groups",
-        argNames: ["userPubkey"],
+        argNames: ["userPubkey", "audience"],
       );
 
   @override
@@ -7293,6 +7396,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<String> crateFfiIdentityIdentityDeleteProfile(
+      {required String pubkey}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(pubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__identity__identity_delete_profile(
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiIdentityIdentityDeleteProfileConstMeta,
+      argValues: [pubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiIdentityIdentityDeleteProfileConstMeta =>
+      const TaskConstMeta(
+        debugName: "identity_delete_profile",
+        argNames: ["pubkey"],
+      );
+
+  @override
   String crateFfiIdentityIdentityFetchFollows({required String pubkey}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
@@ -7924,6 +8054,66 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateFfiMarketplaceMarketplaceEscrowConfirmBuyer(
+      {required String escrowId, required String caller}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(escrowId, serializer);
+        sse_encode_String(caller, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMarketplaceMarketplaceEscrowConfirmBuyerConstMeta,
+      argValues: [escrowId, caller],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiMarketplaceMarketplaceEscrowConfirmBuyerConstMeta =>
+          const TaskConstMeta(
+            debugName: "marketplace_escrow_confirm_buyer",
+            argNames: ["escrowId", "caller"],
+          );
+
+  @override
+  bool crateFfiMarketplaceMarketplaceEscrowConfirmSeller(
+      {required String escrowId, required String caller}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(escrowId, serializer);
+        sse_encode_String(caller, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMarketplaceMarketplaceEscrowConfirmSellerConstMeta,
+      argValues: [escrowId, caller],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiMarketplaceMarketplaceEscrowConfirmSellerConstMeta =>
+          const TaskConstMeta(
+            debugName: "marketplace_escrow_confirm_seller",
+            argNames: ["escrowId", "caller"],
+          );
+
+  @override
   String crateFfiMarketplaceMarketplaceFetchBuyerOrders(
       {required String buyerPubkey}) {
     return handler.executeSync(SyncTask(
@@ -7953,12 +8143,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateFfiMarketplaceMarketplaceFetchListings(
-      {required int limit, required int offset}) {
+      {required int limit, required int offset, required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_i_32(limit, serializer);
         sse_encode_i_32(offset, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__marketplace__marketplace_fetch_listings(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -7968,7 +8159,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiMarketplaceMarketplaceFetchListingsConstMeta,
-      argValues: [limit, offset],
+      argValues: [limit, offset, audience],
       apiImpl: this,
     ));
   }
@@ -7976,7 +8167,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiMarketplaceMarketplaceFetchListingsConstMeta =>
       const TaskConstMeta(
         debugName: "marketplace_fetch_listings",
-        argNames: ["limit", "offset"],
+        argNames: ["limit", "offset", "audience"],
       );
 
   @override
@@ -8038,12 +8229,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateFfiMarketplaceMarketplaceGetByCategory(
-      {required String category, required int limit}) {
+      {required String category,
+      required int limit,
+      required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(category, serializer);
         sse_encode_i_32(limit, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__marketplace__marketplace_get_by_category(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -8053,7 +8247,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiMarketplaceMarketplaceGetByCategoryConstMeta,
-      argValues: [category, limit],
+      argValues: [category, limit, audience],
       apiImpl: this,
     ));
   }
@@ -8061,7 +8255,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiMarketplaceMarketplaceGetByCategoryConstMeta =>
       const TaskConstMeta(
         debugName: "marketplace_get_by_category",
-        argNames: ["category", "limit"],
+        argNames: ["category", "limit", "audience"],
       );
 
   @override
@@ -8198,11 +8392,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiMarketplaceMarketplaceGetTrending({required int limit}) {
+  String crateFfiMarketplaceMarketplaceGetTrending(
+      {required int limit, required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_i_32(limit, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__marketplace__marketplace_get_trending(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -8212,7 +8408,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiMarketplaceMarketplaceGetTrendingConstMeta,
-      argValues: [limit],
+      argValues: [limit, audience],
       apiImpl: this,
     ));
   }
@@ -8220,7 +8416,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiMarketplaceMarketplaceGetTrendingConstMeta =>
       const TaskConstMeta(
         debugName: "marketplace_get_trending",
-        argNames: ["limit"],
+        argNames: ["limit", "audience"],
       );
 
   @override
@@ -8518,12 +8714,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateFfiMarketplaceMarketplaceSearch(
-      {required String query, required int limit}) {
+      {required String query, required int limit, required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(query, serializer);
         sse_encode_i_32(limit, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__marketplace__marketplace_search(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -8533,7 +8730,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiMarketplaceMarketplaceSearchConstMeta,
-      argValues: [query, limit],
+      argValues: [query, limit, audience],
       apiImpl: this,
     ));
   }
@@ -8541,7 +8738,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiMarketplaceMarketplaceSearchConstMeta =>
       const TaskConstMeta(
         debugName: "marketplace_search",
-        argNames: ["query", "limit"],
+        argNames: ["query", "limit", "audience"],
       );
 
   @override
@@ -9143,10 +9340,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiMinisMinisFetch() {
+  String crateFfiMinisMinisFetch({required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__minis__minis_fetch(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -9156,14 +9354,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiMinisMinisFetchConstMeta,
-      argValues: [],
+      argValues: [audience],
       apiImpl: this,
     ));
   }
 
   TaskConstMeta get kCrateFfiMinisMinisFetchConstMeta => const TaskConstMeta(
         debugName: "minis_fetch",
-        argNames: [],
+        argNames: ["audience"],
       );
 
   @override
@@ -9874,12 +10072,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<String> crateFfiMusicMusicFetch(
-      {required BigInt limit, String? author}) {
+      {required BigInt limit, String? author, required String audience}) {
     return handler.executeNormal(NormalTask(
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_u_64(limit, serializer);
         sse_encode_opt_String(author, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__music__music_fetch(
             port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -9889,14 +10088,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiMusicMusicFetchConstMeta,
-      argValues: [limit, author],
+      argValues: [limit, author, audience],
       apiImpl: this,
     ));
   }
 
   TaskConstMeta get kCrateFfiMusicMusicFetchConstMeta => const TaskConstMeta(
         debugName: "music_fetch",
-        argNames: ["limit", "author"],
+        argNames: ["limit", "author", "audience"],
       );
 
   @override
@@ -10836,6 +11035,123 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
 
   @override
+  bool crateFfiNotificationsNotificationsIgnoreThread(
+      {required String userPubkey, required String eventId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(userPubkey, serializer);
+        sse_encode_String(eventId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__notifications__notifications_ignore_thread(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiNotificationsNotificationsIgnoreThreadConstMeta,
+      argValues: [userPubkey, eventId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiNotificationsNotificationsIgnoreThreadConstMeta =>
+      const TaskConstMeta(
+        debugName: "notifications_ignore_thread",
+        argNames: ["userPubkey", "eventId"],
+      );
+
+  @override
+  bool crateFfiNotificationsNotificationsIgnoreUser(
+      {required String userPubkey, required String fromPubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(userPubkey, serializer);
+        sse_encode_String(fromPubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__notifications__notifications_ignore_user(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiNotificationsNotificationsIgnoreUserConstMeta,
+      argValues: [userPubkey, fromPubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiNotificationsNotificationsIgnoreUserConstMeta =>
+      const TaskConstMeta(
+        debugName: "notifications_ignore_user",
+        argNames: ["userPubkey", "fromPubkey"],
+      );
+
+  @override
+  bool crateFfiNotificationsNotificationsIsIgnored(
+      {required String userPubkey,
+      required String kind,
+      required String fromPubkey,
+      required String eventId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(userPubkey, serializer);
+        sse_encode_String(kind, serializer);
+        sse_encode_String(fromPubkey, serializer);
+        sse_encode_String(eventId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__notifications__notifications_is_ignored(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiNotificationsNotificationsIsIgnoredConstMeta,
+      argValues: [userPubkey, kind, fromPubkey, eventId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiNotificationsNotificationsIsIgnoredConstMeta =>
+      const TaskConstMeta(
+        debugName: "notifications_is_ignored",
+        argNames: ["userPubkey", "kind", "fromPubkey", "eventId"],
+      );
+
+  @override
+  String crateFfiNotificationsNotificationsListIgnored(
+      {required String userPubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(userPubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__notifications__notifications_list_ignored(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiNotificationsNotificationsListIgnoredConstMeta,
+      argValues: [userPubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiNotificationsNotificationsListIgnoredConstMeta =>
+      const TaskConstMeta(
+        debugName: "notifications_list_ignored",
+        argNames: ["userPubkey"],
+      );
+
+  @override
   bool crateFfiNotificationsNotificationsMarkAllRead(
       {required String userPubkey}) {
     return handler.executeSync(SyncTask(
@@ -10917,6 +11233,65 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "notifications_register_push",
         argNames: ["userPubkey", "token"],
+      );
+
+  @override
+  bool crateFfiNotificationsNotificationsUnignoreThread(
+      {required String userPubkey, required String eventId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(userPubkey, serializer);
+        sse_encode_String(eventId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__notifications__notifications_unignore_thread(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiNotificationsNotificationsUnignoreThreadConstMeta,
+      argValues: [userPubkey, eventId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta
+      get kCrateFfiNotificationsNotificationsUnignoreThreadConstMeta =>
+          const TaskConstMeta(
+            debugName: "notifications_unignore_thread",
+            argNames: ["userPubkey", "eventId"],
+          );
+
+  @override
+  bool crateFfiNotificationsNotificationsUnignoreUser(
+      {required String userPubkey, required String fromPubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(userPubkey, serializer);
+        sse_encode_String(fromPubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire
+            .wire__crate__ffi__notifications__notifications_unignore_user(
+                raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiNotificationsNotificationsUnignoreUserConstMeta,
+      argValues: [userPubkey, fromPubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiNotificationsNotificationsUnignoreUserConstMeta =>
+      const TaskConstMeta(
+        debugName: "notifications_unignore_user",
+        argNames: ["userPubkey", "fromPubkey"],
       );
 
   @override
@@ -12794,12 +13169,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateFfiSearchSearchGlobal(
-      {required String query, required int limit}) {
+      {required String query, required int limit, required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(query, serializer);
         sse_encode_i_32(limit, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__search__search_global(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -12809,14 +13185,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiSearchSearchGlobalConstMeta,
-      argValues: [query, limit],
+      argValues: [query, limit, audience],
       apiImpl: this,
     ));
   }
 
   TaskConstMeta get kCrateFfiSearchSearchGlobalConstMeta => const TaskConstMeta(
         debugName: "search_global",
-        argNames: ["query", "limit"],
+        argNames: ["query", "limit", "audience"],
       );
 
   @override
@@ -12932,12 +13308,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateFfiSearchSearchPosts(
-      {required String query, required int limit}) {
+      {required String query, required int limit, required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(query, serializer);
         sse_encode_i_32(limit, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__search__search_posts(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -12947,14 +13324,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiSearchSearchPostsConstMeta,
-      argValues: [query, limit],
+      argValues: [query, limit, audience],
       apiImpl: this,
     ));
   }
 
   TaskConstMeta get kCrateFfiSearchSearchPostsConstMeta => const TaskConstMeta(
         debugName: "search_posts",
-        argNames: ["query", "limit"],
+        argNames: ["query", "limit", "audience"],
       );
 
   @override
@@ -13126,6 +13503,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateFfiSessionSessionClear() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__session__session_clear(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiSessionSessionClearConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiSessionSessionClearConstMeta =>
+      const TaskConstMeta(
+        debugName: "session_clear",
+        argNames: [],
+      );
+
+  @override
   String crateFfiSessionSessionGetActive() {
     return handler.executeSync(SyncTask(
       callFfi: () {
@@ -13224,6 +13626,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "session_register_push_token",
         argNames: ["token"],
+      );
+
+  @override
+  bool crateFfiSessionSessionRemoveAccount({required String pubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(pubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__session__session_remove_account(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiSessionSessionRemoveAccountConstMeta,
+      argValues: [pubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiSessionSessionRemoveAccountConstMeta =>
+      const TaskConstMeta(
+        debugName: "session_remove_account",
+        argNames: ["pubkey"],
       );
 
   @override
@@ -13831,11 +14259,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateFfiStreamingStreamingFetchFollowedStories(
-      {required String viewerPubkey}) {
+      {required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(viewerPubkey, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire
             .wire__crate__ffi__streaming__streaming_fetch_followed_stories(
@@ -13846,7 +14274,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiStreamingStreamingFetchFollowedStoriesConstMeta,
-      argValues: [viewerPubkey],
+      argValues: [audience],
       apiImpl: this,
     ));
   }
@@ -13854,15 +14282,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiStreamingStreamingFetchFollowedStoriesConstMeta =>
       const TaskConstMeta(
         debugName: "streaming_fetch_followed_stories",
-        argNames: ["viewerPubkey"],
+        argNames: ["audience"],
       );
 
   @override
-  String crateFfiStreamingStreamingFetchLive({required int limit}) {
+  String crateFfiStreamingStreamingFetchLive(
+      {required int limit, required String audience}) {
     return handler.executeSync(SyncTask(
       callFfi: () {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_i_32(limit, serializer);
+        sse_encode_String(audience, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__streaming__streaming_fetch_live(
             raw_.ptr, raw_.rustVecLen, raw_.dataLen);
@@ -13872,7 +14302,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateFfiStreamingStreamingFetchLiveConstMeta,
-      argValues: [limit],
+      argValues: [limit, audience],
       apiImpl: this,
     ));
   }
@@ -13880,7 +14310,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiStreamingStreamingFetchLiveConstMeta =>
       const TaskConstMeta(
         debugName: "streaming_fetch_live",
-        argNames: ["limit"],
+        argNames: ["limit", "audience"],
       );
 
   @override

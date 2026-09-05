@@ -64,6 +64,7 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
             recipient,
             content,
             created_at,
+            tags_json,
         } => {
             let my_pk = match super::signer::signer_pubkey() {
                 Ok(pk) => pk,
@@ -86,19 +87,22 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
             if super::messaging::messaging_store_dm(
                 id.clone(),
                 sender.clone(),
-                recipient,
+                recipient.clone(),
                 plain.to_string(),
                 created_at,
-                "[]".to_string(),
+                tags_json.clone(),
             )
             .is_err()
             {
                 return None;
             }
+            let tags = serde_json::from_str::<serde_json::Value>(&tags_json)
+                .unwrap_or(serde_json::Value::Null);
             Some(
                 serde_json::json!({
-                    "t": "dm", "id": id, "sender": sender,
-                    "content": plain, "created_at": created_at
+                    "t": "dm", "id": id, "sender": sender.clone(),
+                    "recipient": recipient.clone(), "content": plain, "created_at": created_at,
+                    "tags": tags
                 })
                 .to_string(),
             )
@@ -340,6 +344,7 @@ mod tests {
             recipient: "me".into(),
             content: "enc".into(),
             created_at: 3,
+            tags_json: "[[\"p\",\"me\"]]".to_string(),
         });
         assert!(dm.is_none());
     }
@@ -514,6 +519,7 @@ mod tests {
             recipient: pk,
             content: payload,
             created_at: 1234,
+            tags_json: "[[\"p\",\"me\"],[\"e\",\"parent\",\"\",\"reply\"]]".to_string(),
         })
         .expect("decryptable DM must emit JSON and persist");
         assert!(json.contains("\"t\":\"dm\""), "json: {json}");

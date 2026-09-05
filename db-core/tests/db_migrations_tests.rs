@@ -108,6 +108,7 @@ fn full_chain_reaches_schema_version() {
     migrations::v7_query_optimizations(&conn).unwrap();
     migrations::v8_index_cleanup(&conn).unwrap();
     migrations::v9_trigger_optimization(&conn).unwrap();
+    migrations::create_dating_unmatch_actor_column(&conn).unwrap();
     assert_eq!(max_version(&conn), SCHEMA_VERSION);
     assert!(table_exists(&conn, "group_rooms"));
     assert!(table_exists(&conn, "group_threads"));

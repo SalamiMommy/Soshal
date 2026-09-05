@@ -117,6 +117,12 @@ impl LocalVideoServer {
                         return;
                     }
 
+                    if parts[0] != "GET" {
+                        let resp = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Length: 0\r\n\r\n";
+                        let _ = socket.write_all(resp.as_bytes()).await;
+                        return;
+                    }
+
                     let path = parts[1];
                     let range_header = lines
                         .find(|l| l.to_lowercase().starts_with("range:"))
@@ -220,21 +226,31 @@ async fn serve_video_file(
     };
 
     let mut start = 0u64;
-    let mut end = if total_size > 0 { total_size - 1 } else { 0 };
+    let mut end = total_size.saturating_sub(1);
     let is_range = if let Some(hdr) = range_header {
         if let Some(spec) = hdr.split('=').nth(1) {
-            let parts: Vec<&str> = spec.trim().split('-').collect();
-            if !parts.is_empty() && !parts[0].is_empty() {
-                if let Ok(s) = parts[0].parse::<u64>() {
-                    start = s;
+            let spec = spec.trim();
+            if spec.contains(',') {
+                false
+            } else {
+                let parts: Vec<&str> = spec.split('-').collect();
+                if !parts.is_empty() && !parts[0].is_empty() {
+                    if let Ok(s) = parts[0].parse::<u64>() {
+                        start = s;
+                    }
+                    if parts.len() > 1 && !parts[1].is_empty() {
+                        if let Ok(e) = parts[1].parse::<u64>() {
+                            end = e.min(end);
+                        }
+                    }
+                } else if parts.len() > 1 && !parts[1].is_empty() {
+                    if let Ok(n) = parts[1].parse::<u64>() {
+                        start = total_size.saturating_sub(n);
+                        end = total_size.saturating_sub(1);
+                    }
                 }
+                true
             }
-            if parts.len() > 1 && !parts[1].is_empty() {
-                if let Ok(e) = parts[1].parse::<u64>() {
-                    end = e.min(total_size.saturating_sub(1));
-                }
-            }
-            true
         } else {
             false
         }
@@ -242,7 +258,7 @@ async fn serve_video_file(
         false
     };
 
-    if is_range && start > end {
+    if is_range && (total_size == 0 || start > end) {
         let resp = format!("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{total_size}\r\nContent-Length: 0\r\n\r\n");
         let _ = socket.write_all(resp.as_bytes()).await;
         return;

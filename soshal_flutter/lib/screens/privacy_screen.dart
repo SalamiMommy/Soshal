@@ -39,7 +39,9 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       if (saved.isNotEmpty && mounted) {
         setState(() => _level = saved);
       }
-    } catch (e) { debugPrint('privacy load: $e'); }
+    } catch (e) {
+      debugPrint('privacy load: $e');
+    }
   }
 
   Future<void> _save(String level) async {
@@ -121,7 +123,9 @@ class StealthEditorScreenState extends State<StealthEditorScreen> {
     try {
       final items = await context.read<StealthService>().load();
       _field.text = items.join('\n');
-    } catch (e) { debugPrint('privacy load: $e'); }
+    } catch (e) {
+      debugPrint('privacy load: $e');
+    }
   }
 
   Future<void> _save() async {

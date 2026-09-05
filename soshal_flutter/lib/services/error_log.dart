@@ -42,7 +42,9 @@ Future<void> logRuntimeError(Object error, [StackTrace? stack]) async {
       ]);
     } catch (_) {}
     await file.writeAsString(buffer.toString(), mode: FileMode.append);
-  } catch (e) { debugPrint('error log write: $e'); }
+  } catch (e) {
+    debugPrint('error log write: $e');
+  }
 }
 
 /// Standardized error store for services: surfaces to UI via [lastError]

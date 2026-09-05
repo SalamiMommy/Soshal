@@ -44,7 +44,9 @@ class ThemeService extends ChangeNotifier {
           fontColor = v['fontColor'] as String? ?? '';
           backgroundImage =
               v['backgroundImage'] as String? ?? defaultBackgroundImage;
-        } catch (e) { debugPrint('theme options parse: $e'); }
+        } catch (e) {
+          debugPrint('theme options parse: $e');
+        }
       }
       if (!bgLevelFromOptions) {
         final theme =

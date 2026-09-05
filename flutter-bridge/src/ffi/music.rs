@@ -120,13 +120,19 @@ pub async fn music_publish(
 /// Fetch tracks (kind 31022), optionally by author. Returns JSON array of
 /// musicloud entries, newest first.
 #[frb(serialize)]
-pub async fn music_fetch(limit: u64, author: Option<String>) -> Result<String, String> {
+pub async fn music_fetch(
+    limit: u64,
+    author: Option<String>,
+    audience: String,
+) -> Result<String, String> {
     let mut filter = serde_json::json!({
         "kinds": [31022],
         "limit": limit.min(100),
     });
     if let Some(a) = author {
         filter["authors"] = serde_json::json!([a]);
+    } else if let Some(a) = super::identity::resolve_audience_authors(&audience)? {
+        filter["authors"] = serde_json::json!(a);
     }
     let raw = super::network::network_query_events(filter.to_string()).await?;
     let events: Vec<nostr::event::Event> =

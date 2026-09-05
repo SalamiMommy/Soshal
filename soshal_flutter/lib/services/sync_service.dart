@@ -123,10 +123,12 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
           _messaging?.insertLiveDm(DirectMessage(
             id: msg['id'] as String? ?? '',
             sender: msg['sender'] as String? ?? '',
+            recipient: msg['recipient'] as String? ?? '',
             content: msg['content'] as String? ?? '',
             createdAt: (msg['created_at'] as num?)?.toInt() ?? 0,
             decrypted: true,
             isOwn: false,
+            tagsJson: jsonEncode(msg['tags'] ?? const []),
           ));
         case 'reaction':
           _feed?.applyLiveReaction(

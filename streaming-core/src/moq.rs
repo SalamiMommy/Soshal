@@ -41,6 +41,9 @@ pub fn encode_group_stream_to_writer<W: Write>(
     push_u64(out, group.group_sequence)?;
     push_u32(out, group.objects.len() as u32)?;
     for obj in &group.objects {
+        if obj.payload.len() > MAX_OBJECT_PAYLOAD {
+            return Err("moq object oversized".to_string());
+        }
         // Pack the 33-byte per-object header:
         //   [u32 track_id][u64 group_seq][u64 obj_seq][u8 track_type][u64 timestamp_ms][u32 payload_len]
         let mut hdr = [0u8; 33];
@@ -405,17 +408,22 @@ mod tests {
 
     #[test]
     fn test_moq_group_stream_rejects_oversized_group() {
-        // Encode path: total payload bytes past the group cap.
+        // Encode path: total payload bytes past the group cap (each object
+        // individually under the per-object cap to isolate the total check).
         let mut publisher = MoqPublisherSession::new("s".to_string(), "k".to_string());
-        let obj = publisher.create_object(
-            1,
-            MoqTrackType::VideoKeyframe,
-            1,
-            vec![0u8; MAX_GROUP_BYTES + 1],
-        );
+        let mut objects = Vec::new();
+        for _ in 0..9 {
+            let obj = publisher.create_object(
+                1,
+                MoqTrackType::VideoKeyframe,
+                1,
+                vec![0u8; MAX_OBJECT_PAYLOAD],
+            );
+            objects.push(obj);
+        }
         let group = MoqGroup {
             group_sequence: 1,
-            objects: vec![obj],
+            objects,
         };
         assert_eq!(
             encode_group_stream(&group).unwrap_err(),

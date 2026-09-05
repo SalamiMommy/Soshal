@@ -9,13 +9,13 @@ pub mod migrations;
 use crate::block_on;
 use crate::libsql::{params, Connection};
 use migrations::{
-    v1_create_tables, v2_group_channels, v3_group_thread_reactions, v4_group_password,
-    v5_performance_indexes, v6_index_cleanup, v7_query_optimizations, v8_index_cleanup,
-    v9_trigger_optimization,
+    create_dating_unmatch_actor_column, v1_create_tables, v2_group_channels,
+    v3_group_thread_reactions, v4_group_password, v5_performance_indexes, v6_index_cleanup,
+    v7_query_optimizations, v8_index_cleanup, v9_trigger_optimization,
 };
 
 /// Latest schema version the migration runner produces.
-pub const SCHEMA_VERSION: i64 = 9;
+pub const SCHEMA_VERSION: i64 = 10;
 
 /// Columns added by ALTER TABLE in the pre-squash migrations v008-v013 but
 /// lost when they were collapsed into v001_initial. Legacy databases created
@@ -106,6 +106,62 @@ fn heal_legacy_schema(conn: &Connection) -> Result<(), crate::error::DbError> {
             PRIMARY KEY (pubkey, kind, from_pubkey, event_id)
         );",
     ))?;
+
+    // idx_users_follower_count lives in v001 but pre-squash databases skipped
+    // it via the version short-circuit; the counter-ordered feed window scans
+    // without it. CREATE INDEX IF NOT EXISTS is idempotent on legacy DBs, but
+    // heal runs BEFORE the version steps that create `users` on a fresh DB,
+    // so it is guarded on the table existing (v1 already creates the index).
+    let users_table_exists: bool = crate::query::query_first(
+        conn,
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'",
+        (),
+        |r| r.get::<i64>(0),
+    )?
+    .unwrap_or(0)
+        > 0;
+    if users_table_exists {
+        block_on(conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_users_follower_count ON users(follower_count DESC);",
+        ))?;
+    }
+
+    // dating_unmatches moved to a composite (actor_pubkey, pubkey) key in v10
+    // (was target-only). Fresh DBs reach v10 through the version steps, but
+    // legacy databases short-circuit before it (their _migrations version can
+    // exceed SCHEMA_VERSION), so the rebuild must happen here too — else the
+    // actor-scoped repo queries fail on `actor_pubkey`. SQLite cannot ALTER a
+    // PRIMARY KEY, so the table is swapped. Runs only when the table is still
+    // in the old shape (missing the column), so it is idempotent.
+    let table_exists: bool = crate::query::query_first(
+        conn,
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='dating_unmatches'",
+        (),
+        |r| r.get::<i64>(0),
+    )?
+    .unwrap_or(0)
+        > 0;
+    let needs_actor_column: bool = table_exists
+        && crate::query::query_first(
+            conn,
+            "SELECT COUNT(*) FROM pragma_table_info('dating_unmatches') WHERE name='actor_pubkey'",
+            (),
+            |r| r.get::<i64>(0),
+        )?
+        .unwrap_or(0)
+            == 0;
+    if needs_actor_column {
+        block_on(conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS dating_unmatches_new (
+                actor_pubkey TEXT NOT NULL,
+                pubkey TEXT NOT NULL,
+                unmatched_at INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (actor_pubkey, pubkey)
+            );
+            DROP TABLE IF EXISTS dating_unmatches;
+            ALTER TABLE dating_unmatches_new RENAME TO dating_unmatches;",
+        ))?;
+    }
     Ok(())
 }
 
@@ -157,6 +213,9 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
         (7, |c| v7_query_optimizations(c).map_err(Into::into)),
         (8, |c| v8_index_cleanup(c).map_err(Into::into)),
         (9, |c| v9_trigger_optimization(c).map_err(Into::into)),
+        (10, |c| {
+            create_dating_unmatch_actor_column(c).map_err(Into::into)
+        }),
     ];
 
     for &(version, step_fn) in steps {

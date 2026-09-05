@@ -312,12 +312,15 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.podcasts, size: 64, color: Colors.purpleAccent),
+                  const Icon(Icons.podcasts,
+                      size: 64, color: Colors.purpleAccent),
                   const SizedBox(height: 12),
                   const Text('Stage Channel Live',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
-                  const Text('Listen to speakers or raise hand to speak on stage',
+                  const Text(
+                      'Listen to speakers or raise hand to speak on stage',
                       style: TextStyle(color: Colors.grey)),
                   const SizedBox(height: 16),
                   FilledButton.icon(
@@ -325,7 +328,9 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
                     label: const Text('Raise Hand to Speak'),
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Hand raised! Waiting for stage mod approval.')),
+                        const SnackBar(
+                            content: Text(
+                                'Hand raised! Waiting for stage mod approval.')),
                       );
                     },
                   ),
@@ -342,7 +347,8 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
                   const Icon(Icons.volume_up, size: 64, color: Colors.green),
                   const SizedBox(height: 12),
                   const Text('Voice Lounge Connected',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   const Text('WebRTC voice mesh active · 0 members speaking',
                       style: TextStyle(color: Colors.grey)),
@@ -468,8 +474,8 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
       setState(() {});
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: SelectableText('React failed: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: SelectableText('React failed: $e')));
     }
   }
 
@@ -660,8 +666,8 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
       await groups.fetchThreads(widget.groupId);
       if (mounted) setState(() {});
     } catch (e) {
-      messenger.showSnackBar(
-          SnackBar(content: SelectableText('Pin failed: $e')));
+      messenger
+          .showSnackBar(SnackBar(content: SelectableText('Pin failed: $e')));
     }
   }
 
@@ -697,8 +703,8 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
       await groups.fetchThreads(widget.groupId);
       if (mounted) setState(() {});
     } catch (e) {
-      messenger.showSnackBar(
-          SnackBar(content: SelectableText('Delete failed: $e')));
+      messenger
+          .showSnackBar(SnackBar(content: SelectableText('Delete failed: $e')));
     }
   }
 
@@ -1029,7 +1035,9 @@ class _GroupVoiceTabState extends State<GroupVoiceTab>
     for (final ch in api.voiceChannels) {
       try {
         _presence[ch.id] = await api.fetchPresence(ch.id);
-      } catch (e) { debugPrint('voice presence: $e'); }
+      } catch (e) {
+        debugPrint('voice presence: $e');
+      }
     }
     if (mounted) setState(() {});
   }
@@ -1048,8 +1056,8 @@ class _GroupVoiceTabState extends State<GroupVoiceTab>
       }
       await _loadPresence(groups);
     } catch (e) {
-      messenger.showSnackBar(
-          SnackBar(content: SelectableText('Join failed: $e')));
+      messenger
+          .showSnackBar(SnackBar(content: SelectableText('Join failed: $e')));
     }
   }
 
@@ -1062,8 +1070,8 @@ class _GroupVoiceTabState extends State<GroupVoiceTab>
       await groups.voiceLeave(ch.id, me);
       await _loadPresence(groups);
     } catch (e) {
-      messenger.showSnackBar(
-          SnackBar(content: SelectableText('Leave failed: $e')));
+      messenger
+          .showSnackBar(SnackBar(content: SelectableText('Leave failed: $e')));
     }
   }
 

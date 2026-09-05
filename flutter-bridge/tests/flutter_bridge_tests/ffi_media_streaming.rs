@@ -193,7 +193,10 @@ mod ffi_media_streaming_tests {
         let path = db_path("empty");
         remove_db(&path);
         assert!(db::db_init(path.clone()).is_ok());
-        assert_eq!(streaming::streaming_fetch_live(10).unwrap(), "[]");
+        assert_eq!(
+            streaming::streaming_fetch_live(10, "public".to_string()).unwrap(),
+            "[]"
+        );
         assert_eq!(
             streaming::streaming_fetch_followed_live("pk1".to_string()).unwrap(),
             "[]"
@@ -203,7 +206,7 @@ mod ffi_media_streaming_tests {
             "[]"
         );
         assert_eq!(
-            streaming::streaming_fetch_followed_stories("pk1".to_string()).unwrap(),
+            streaming::streaming_fetch_followed_stories("public".to_string()).unwrap(),
             "[]"
         );
         remove_db(&path);
@@ -262,12 +265,12 @@ mod ffi_media_streaming_tests {
         let id = ev["id"].as_str().unwrap().to_string();
         assert_eq!(id.len(), 64);
         assert!(streaming::streaming_end_live(id.clone(), "wrong".to_string()).is_err());
-        let live = streaming::streaming_fetch_live(10).unwrap();
+        let live = streaming::streaming_fetch_live(10, "public".to_string()).unwrap();
         let arr: serde_json::Value = serde_json::from_str(&live).unwrap();
         assert_eq!(arr[0]["id"], id);
         assert_eq!(arr[0]["status"], "live");
         assert!(streaming::streaming_end_live(id.clone(), pk).unwrap());
-        let ended = streaming::streaming_fetch_live(10).unwrap();
+        let ended = streaming::streaming_fetch_live(10, "public".to_string()).unwrap();
         let arr2: serde_json::Value = serde_json::from_str(&ended).unwrap();
         assert_eq!(arr2[0]["id"], id);
         assert_eq!(arr2[0]["status"], "ended");

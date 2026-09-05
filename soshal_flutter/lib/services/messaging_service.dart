@@ -16,6 +16,7 @@ class MessagingService extends ChangeNotifier
   static final _hexRegex = RegExp(r'^[0-9a-f]{64}$');
   final Map<String, List<DirectMessage>> _conversations = {};
   final Map<String, DateTime> _conversationsCacheTime = {};
+  final Map<String, bool> _conversationExhausted = {};
   final Map<String, int> _readWatermarks = {};
   final List<EphemeralMedia> _pendingEphemeral = [];
   late List<EphemeralMedia> _cachedPendingEphemeral =
@@ -35,14 +36,17 @@ class MessagingService extends ChangeNotifier
     if (_conversations.length <= _maxConversations) return;
     final sorted = _conversations.keys.toList()
       ..sort((a, b) {
-        final ta = _conversationsCacheTime[a] ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final tb = _conversationsCacheTime[b] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final ta = _conversationsCacheTime[a] ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final tb = _conversationsCacheTime[b] ??
+            DateTime.fromMillisecondsSinceEpoch(0);
         return ta.compareTo(tb);
       });
     while (_conversations.length > _maxConversations) {
       final victim = sorted.removeAt(0);
       _conversations.remove(victim);
       _conversationsCacheTime.remove(victim);
+      _conversationExhausted.remove(victim);
     }
   }
 
@@ -65,6 +69,7 @@ class MessagingService extends ChangeNotifier
     _pendingStores.clear();
     _conversations.clear();
     _conversationsCacheTime.clear();
+    _conversationExhausted.clear();
     _readWatermarks.clear();
     _pendingEphemeral.clear();
     _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
@@ -89,18 +94,18 @@ class MessagingService extends ChangeNotifier
     _pendingStores.add(message);
     _storeFlushTimer ??= Timer(_storeFlushInterval, _flushPendingStores);
     if (_pendingStores.length >= _storeFlushBatchSize) {
-      _flushPendingStores();
+      unawaited(_flushPendingStores());
     }
     notifyDeferred();
   }
 
-  void _flushPendingStores() {
+  Future<void> _flushPendingStores() async {
     _storeFlushTimer?.cancel();
     _storeFlushTimer = null;
     if (_pendingStores.isEmpty) return;
     final batch = List<DirectMessage>.from(_pendingStores);
     _pendingStores.clear();
-    unawaited(_storeDmBatch(batch));
+    await _storeDmBatch(batch);
   }
 
   Future<void> _storeDmBatch(List<DirectMessage> batch) async {
@@ -113,6 +118,7 @@ class MessagingService extends ChangeNotifier
             'recipient': m.recipient,
             'content': m.content,
             'created_at': m.createdAt,
+            if (m.tagsJson.isNotEmpty) 'tags': m.tagsJson,
           },
       ]);
       RustLib.instance.api.crateFfiMessagingMessagingStoreDms(
@@ -129,10 +135,16 @@ class MessagingService extends ChangeNotifier
   }
 
   /// Fetch DMs with a specific contact
-  Future<List<DirectMessage>> fetchDMs(String otherPubkey, {int limit = 100}) async {
+  Future<List<DirectMessage>> fetchDMs(String otherPubkey,
+      {int limit = 100}) async {
     // Snapshot the cached conversation so a transient FFI failure below does
     // not blank a working conversation after its TTL eviction.
     final staleSnapshot = _conversations[otherPubkey];
+    // End-of-history reached: repeated "load older" calls must no-op.
+    if (_conversationExhausted[otherPubkey] == true &&
+        _conversations.containsKey(otherPubkey)) {
+      return _conversations[otherPubkey]!;
+    }
     try {
       final cached = _conversationsCacheTime[otherPubkey];
       if (cached != null && DateTime.now().difference(cached).inSeconds > 5) {
@@ -143,6 +155,7 @@ class MessagingService extends ChangeNotifier
         return _conversations[otherPubkey]!;
       }
 
+      await _flushPendingStores();
       final json = RustLib.instance.api.crateFfiMessagingMessagingFetchDms(
         withPubkey: otherPubkey,
         limit: limit,
@@ -155,6 +168,7 @@ class MessagingService extends ChangeNotifier
         _conversations[otherPubkey] = messages;
       }
       _conversationsCacheTime[otherPubkey] = DateTime.now();
+      _conversationExhausted[otherPubkey] = messages.length < limit;
       _evictConversationsIfNeeded();
 
       clearLastError();
@@ -192,7 +206,9 @@ class MessagingService extends ChangeNotifier
             eventId = decoded['id'] as String;
           }
         }
-      } catch (e) { debugPrint('dm send decode: $e'); }
+      } catch (e) {
+        debugPrint('dm send decode: $e');
+      }
 
       // Add to local conversation
       final message = DirectMessage(
@@ -347,7 +363,8 @@ class MessagingService extends ChangeNotifier
         recipient: message.recipient,
         content: message.content,
         createdAt: BigInt.from(message.createdAt),
-        tagsJson: jsonEncode(const []),
+        tagsJson:
+            message.tagsJson.isEmpty ? jsonEncode(const []) : message.tagsJson,
       );
       clearLastError();
       return ok;
@@ -493,6 +510,33 @@ class IdentityService extends ChangeNotifier
 
   Map<String, ProfileInfo> get profiles => _profiles;
 
+  /// Merge a freshly-fetched profile over the cached one, keeping cached
+  /// display fields when the incoming value is empty/zero (sparse parse must
+  /// not blank the UI profile until the next complete fetch).
+  ProfileInfo _mergeProfile(ProfileInfo incoming, ProfileInfo? cached) {
+    if (cached == null) return incoming;
+    return ProfileInfo(
+      pubkey: incoming.pubkey,
+      name: incoming.name.isNotEmpty ? incoming.name : cached.name,
+      displayName: incoming.displayName.isNotEmpty
+          ? incoming.displayName
+          : cached.displayName,
+      picture: incoming.picture.isNotEmpty ? incoming.picture : cached.picture,
+      banner: incoming.banner.isNotEmpty ? incoming.banner : cached.banner,
+      about: incoming.about.isNotEmpty ? incoming.about : cached.about,
+      nip05: incoming.nip05,
+      nip05Valid: incoming.nip05Valid,
+      createdAt:
+          incoming.createdAt != 0 ? incoming.createdAt : cached.createdAt,
+      followers:
+          incoming.followers != 0 ? incoming.followers : cached.followers,
+      following:
+          incoming.following != 0 ? incoming.following : cached.following,
+      isFollowing: incoming.isFollowing,
+      wotStatus: incoming.wotStatus,
+    );
+  }
+
   /// Clear the cached profile map on account switch so Account B doesn't see
   /// Account A's cached profiles.
   void resetForAccountSwitch() {
@@ -531,7 +575,7 @@ class IdentityService extends ChangeNotifier
           .crateFfiIdentityIdentityGetProfile(pubkey: pubkey);
       final profile =
           ProfileInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
-      _profiles[pubkey] = profile;
+      _profiles[pubkey] = _mergeProfile(profile, _profiles[pubkey]);
       clearLastError();
       notifyDeferred();
       return profile;
@@ -606,6 +650,25 @@ class IdentityService extends ChangeNotifier
         wotStatus: 'unknown',
       );
 
+      clearLastError();
+      notifyDeferred();
+      return eventId;
+    } catch (e) {
+      setLastError(e);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  /// Publish NIP-09 deletion tombstones for this account's identity events
+  /// (kind 0 metadata, kind 3 contacts, kind 10002 relay list). Queues to
+  /// the outbox when offline.
+  Future<String> deleteProfile(String pubkey) async {
+    try {
+      final eventId =
+          await RustLib.instance.api.crateFfiIdentityIdentityDeleteProfile(
+        pubkey: pubkey,
+      );
       clearLastError();
       notifyDeferred();
       return eventId;
@@ -748,6 +811,7 @@ class DirectMessage {
   final int createdAt;
   final bool decrypted;
   final bool isOwn;
+  final String tagsJson;
 
   DirectMessage({
     required this.id,
@@ -757,6 +821,7 @@ class DirectMessage {
     required this.createdAt,
     required this.decrypted,
     required this.isOwn,
+    this.tagsJson = '',
   });
 
   factory DirectMessage.fromJson(Map<String, dynamic> json) {
@@ -768,6 +833,7 @@ class DirectMessage {
       createdAt: json.intOf('created_at'),
       decrypted: json.boolOf('decrypted'),
       isOwn: json.boolOf('is_own'),
+      tagsJson: json.strOf('tags'),
     );
   }
 
@@ -780,6 +846,7 @@ class DirectMessage {
       createdAt: createdAt,
       decrypted: decrypted ?? this.decrypted,
       isOwn: isOwn,
+      tagsJson: tagsJson,
     );
   }
 }

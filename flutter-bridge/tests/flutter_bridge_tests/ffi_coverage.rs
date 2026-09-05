@@ -156,7 +156,8 @@ mod ffi_coverage_tests {
             &[pk.clone()],
         )
         .unwrap();
-        let empty_nearby = events::events_fetch_nearby(37.0, -122.0, 10.0, 5).unwrap();
+        let empty_nearby =
+            events::events_fetch_nearby(37.0, -122.0, 10.0, 5, "public".into()).unwrap();
         assert_eq!(empty_nearby, "[]");
         let empty_user = events::events_fetch_user_events(pk.clone(), 5).unwrap();
         assert_eq!(empty_user, "[]");
@@ -176,7 +177,7 @@ mod ffi_coverage_tests {
         let v: serde_json::Value = serde_json::from_str(&created).unwrap();
         let event_id = v["id"].as_str().unwrap().to_string();
         assert!(!event_id.is_empty());
-        let nearby = events::events_fetch_nearby(37.5, -122.4, 5000.0, 5).unwrap();
+        let nearby = events::events_fetch_nearby(37.5, -122.4, 5000.0, 5, "public".into()).unwrap();
         let arr: serde_json::Value = serde_json::from_str(&nearby).unwrap();
         assert_eq!(
             arr.as_array().unwrap().len(),

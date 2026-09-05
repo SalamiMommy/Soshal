@@ -49,6 +49,27 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<GroupVoiceChannel> get voiceChannels => _voiceChannels;
   List<GroupVoicePresence> get presence => _presence;
 
+  /// Clear all account-scoped state on account switch so Account B never
+  /// sees Account A's cached groups, members, messages, roles, rooms,
+  /// threads, reactions, or voice presences.
+  void resetForAccountSwitch() {
+    _groups = [];
+    _groupsLoading = false;
+    _current = null;
+    _members = [];
+    _messages = [];
+    _roles = [];
+    _memberRoles = [];
+    _rooms = [];
+    _threads = [];
+    _replies = [];
+    _reactionsByThread.clear();
+    _voiceChannels = [];
+    _presence = [];
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Emoji reactions for a target (thread or reply id).
   List<ThreadReaction> reactionsFor(String targetId) =>
       reactions.where((r) => r.matches(targetId)).toList();
@@ -59,6 +80,7 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     try {
       final json = RustLib.instance.api.crateFfiGroupsGroupsFetchGroups(
         userPubkey: userPubkey,
+        audience: 'public',
       );
       _groups = _decodeGroups(json);
       _groupsLoading = false;

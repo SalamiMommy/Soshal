@@ -11,6 +11,14 @@ fn clamp_created_at(v: f64) -> u64 {
     }
 }
 
+fn sanitize_media_url(u: &str) -> String {
+    if u.starts_with("http://") || u.starts_with("https://") {
+        u.to_string()
+    } else {
+        String::new()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MiniEventOut {
@@ -70,7 +78,7 @@ pub fn media_blob_from_tags(tags: &[Vec<String>]) -> (String, u64) {
 /// `url` tag is missing.
 pub fn mini_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
     let [url, thumb, audience] = find_tag_values_map(&ev.tags, ["url", "image", "audience"]);
-    let url = url.unwrap_or("");
+    let url = sanitize_media_url(url.unwrap_or(""));
     if url.is_empty() {
         return None;
     }
@@ -98,7 +106,7 @@ pub fn mini_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
 /// Maps a kind-31020 mini event to a strongly typed `MiniEventOut` struct.
 pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
     let [url, thumb, audience] = find_tag_values_map(&ev.tags, ["url", "image", "audience"]);
-    let url = url.unwrap_or("");
+    let url = sanitize_media_url(url.unwrap_or(""));
     if url.is_empty() {
         return None;
     }
@@ -113,7 +121,7 @@ pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
     Some(MiniEventOut {
         id: ev.id.clone(),
         pubkey: ev.pubkey.clone(),
-        video_url: url.to_string(),
+        video_url: url,
         blob_hash,
         media_size,
         text_overlay: ev.content.clone(),
@@ -125,7 +133,7 @@ pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
 
 /// Maps a kind-31022 musicloud event to its webview JSON.
 pub fn musicloud_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
-    let mut url = "";
+    let mut url = String::new();
     let mut title = "";
     let mut thumbnail = "";
     let mut d_tag = "";
@@ -135,7 +143,7 @@ pub fn musicloud_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
     for tag in &ev.tags {
         if tag.len() >= 2 {
             match tag[0].as_str() {
-                "url" if url.is_empty() => url = &tag[1],
+                "url" if url.is_empty() => url = sanitize_media_url(&tag[1]),
                 "title" if title.is_empty() => title = &tag[1],
                 "image" if thumbnail.is_empty() => thumbnail = &tag[1],
                 "d" if d_tag.is_empty() => d_tag = &tag[1],
@@ -174,7 +182,7 @@ pub fn musicloud_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
 
 /// Maps a kind-31022 musicloud event to a strongly typed `MusicloudEventOut` struct.
 pub fn musicloud_event_out(ev: &NostrEvent) -> Option<MusicloudEventOut> {
-    let mut url = "";
+    let mut url = String::new();
     let mut title = "";
     let mut thumbnail = "";
     let mut d_tag = "";
@@ -184,7 +192,7 @@ pub fn musicloud_event_out(ev: &NostrEvent) -> Option<MusicloudEventOut> {
     for tag in &ev.tags {
         if tag.len() >= 2 {
             match tag[0].as_str() {
-                "url" if url.is_empty() => url = &tag[1],
+                "url" if url.is_empty() => url = sanitize_media_url(&tag[1]),
                 "title" if title.is_empty() => title = &tag[1],
                 "image" if thumbnail.is_empty() => thumbnail = &tag[1],
                 "d" if d_tag.is_empty() => d_tag = &tag[1],

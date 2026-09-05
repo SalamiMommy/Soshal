@@ -231,7 +231,8 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
         },
       ),
       const SizedBox(height: 12),
-      Text('Topology & Room Mode', style: Theme.of(context).textTheme.labelLarge),
+      Text('Topology & Room Mode',
+          style: Theme.of(context).textTheme.labelLarge),
       const SizedBox(height: 4),
       SegmentedButton<String>(
         segments: const [

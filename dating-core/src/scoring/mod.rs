@@ -10,6 +10,25 @@ use lifestyle::*;
 use metrics::*;
 
 pub(crate) fn compute_compatibility_score<P: ProfileScoringFields>(self_p: &P, other_p: &P) -> u32 {
+    compute_compatibility_score_inner(self_p, other_p, None)
+}
+
+/// Compatibility score plus a distance dimension. `distance_km` of `None`
+/// skips the distance dimension entirely (no neutral drag on geo-less pairs).
+#[doc(hidden)]
+pub(crate) fn compute_compatibility_score_d<P: ProfileScoringFields>(
+    self_p: &P,
+    other_p: &P,
+    distance_km: Option<f64>,
+) -> u32 {
+    compute_compatibility_score_inner(self_p, other_p, distance_km)
+}
+
+fn compute_compatibility_score_inner<P: ProfileScoringFields>(
+    self_p: &P,
+    other_p: &P,
+    distance_km: Option<f64>,
+) -> u32 {
     let weights = self_p.preference_weights();
     let dealbreakers = self_p.dealbreakers().unwrap_or(&[]);
     let mut total_weighted_score = 0.0f64;
@@ -46,7 +65,7 @@ pub(crate) fn compute_compatibility_score<P: ProfileScoringFields>(self_p: &P, o
     check_field!(
         "interests",
         score_interests(self_p.interests(), other_p.interests()),
-        weights.and_then(|w| w.interests)
+        weights.and_then(|w| w.interests).or(Some(2.0))
     );
     check_field!(
         "smoking",
@@ -83,6 +102,13 @@ pub(crate) fn compute_compatibility_score<P: ProfileScoringFields>(self_p: &P, o
         score_relationship_intent(self_p.relationship_intent(), other_p.relationship_intent()),
         weights.and_then(|w| w.relationship_intent)
     );
+    if let Some(km) = distance_km {
+        check_field!(
+            "distance",
+            score_distance(km),
+            weights.and_then(|w| w.distance)
+        );
+    }
     if total_weight == 0.0 {
         return 50;
     }
@@ -91,6 +117,18 @@ pub(crate) fn compute_compatibility_score<P: ProfileScoringFields>(self_p: &P, o
         return 50;
     }
     (avg * 100.0).round() as u32
+}
+
+/// Mutual compatibility score, distance-aware.
+#[doc(hidden)]
+pub fn compute_mutual_score_with_distance<P: ProfileScoringFields>(
+    self_p: &P,
+    other_p: &P,
+    distance_km: Option<f64>,
+) -> u32 {
+    let score_self = compute_compatibility_score_d(self_p, other_p, distance_km);
+    let score_other = compute_compatibility_score_d(other_p, self_p, distance_km);
+    ((score_self + score_other) as f64 / 2.0).round() as u32
 }
 
 /// Compatibility score between two profiles (mutual).

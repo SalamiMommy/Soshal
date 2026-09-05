@@ -3,22 +3,12 @@ use libsql::params;
 
 const USER_UPSERT_SQL: &str = "\
 INSERT INTO users (pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count) \
-VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14, \
-  (SELECT COUNT(*) FROM users _fu WHERE _fu.pubkey != ?1 AND (\
-    (json_valid(_fu.contact_pubkeys) AND EXISTS (SELECT 1 FROM json_each(_fu.contact_pubkeys) WHERE value = ?1))\
-    OR\
-    (NOT json_valid(_fu.contact_pubkeys) AND INSTR(',' || _fu.contact_pubkeys || ',', ',' || ?1 || ',') > 0)\
-  ))) \
+VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15) \
 ON CONFLICT(pubkey) DO UPDATE SET \
   name=excluded.name, display_name=excluded.display_name, about=excluded.about, \
   picture=excluded.picture, banner=excluded.banner, nip05=excluded.nip05, lud16=excluded.lud16, \
   updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, contact_pubkeys=excluded.contact_pubkeys, \
-  relay_list=excluded.relay_list, \
-  follower_count=(SELECT COUNT(*) FROM users _fu WHERE _fu.pubkey != excluded.pubkey AND (\
-    (json_valid(_fu.contact_pubkeys) AND EXISTS (SELECT 1 FROM json_each(_fu.contact_pubkeys) WHERE value = excluded.pubkey))\
-    OR\
-    (NOT json_valid(_fu.contact_pubkeys) AND INSTR(',' || _fu.contact_pubkeys || ',', ',' || excluded.pubkey || ',') > 0)\
-  ))";
+  relay_list=excluded.relay_list";
 
 pub struct UserRepo<'a> {
     db: &'a Database,
@@ -106,6 +96,7 @@ impl<'a> UserRepo<'a> {
                 row.metadata_json.as_deref(),
                 row.contact_pubkeys.as_str(),
                 row.relay_list.as_str(),
+                row.follower_count,
             ],
         )
         .await?;
@@ -135,6 +126,7 @@ impl<'a> UserRepo<'a> {
                     user.metadata_json.as_deref(),
                     user.contact_pubkeys.as_str(),
                     user.relay_list.as_str(),
+                    user.follower_count,
                 ])
                 .await?;
                 stmt.reset();
@@ -152,6 +144,92 @@ impl<'a> UserRepo<'a> {
             params![pubkey],
         )?;
         Ok(())
+    }
+
+    /// Adjust the materialized `follower_count` for the given pubkeys. Called
+    /// when a contact list changes: `+1` for each pubkey newly followed by an
+    /// author, `-1` for each unfollowed. The count is maintained incrementally
+    /// instead of being recomputed on every upsert (which was O(users) per
+    /// contact-list event and stale for everyone except the event author).
+    pub async fn bump_follower_count_in(
+        &self,
+        tx: &libsql::Transaction,
+        pubkey: &str,
+        delta: i64,
+    ) -> Result<(), crate::error::DbError> {
+        tx.execute(
+            "UPDATE users SET follower_count = MAX(0, follower_count + ?2) WHERE pubkey = ?1",
+            params![pubkey, delta],
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub fn bump_follower_count(
+        &self,
+        pubkey: &str,
+        delta: i64,
+    ) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::with_tx(&conn, |tx| async move {
+            self.bump_follower_count_in(&tx, pubkey, delta).await?;
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+
+    /// Re-materialize follower counts for every stored contact list in one
+    /// indexed pass. Self-referential entries are excluded, and unknown
+    /// pubkeys (followed users with no profile row yet) cause an empty
+    /// `INSERT OR IGNORE` sink first so their count can be written.
+    pub fn recompute_all_follower_counts(&self) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        // Reset first so removals from previous lists don't leak into the
+        // recount.
+        crate::query::execute(&conn, "UPDATE users SET follower_count = 0", ())?;
+        let rows = crate::query::query(
+            &conn,
+            "SELECT pubkey, contact_pubkeys FROM users",
+            (),
+            |row| Ok((row.get::<String>(0)?, row.get::<String>(1)?)),
+        )?;
+        let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for (author, list) in rows {
+            let entries: Vec<String> = if list.trim().starts_with('[') {
+                serde_json::from_str::<Vec<String>>(&list).unwrap_or_default()
+            } else {
+                list.split(',')
+                    .map(|p| p.trim().to_string())
+                    .filter(|p| !p.is_empty())
+                    .collect()
+            };
+            for pk in entries {
+                if pk != author {
+                    *counts.entry(pk).or_insert(0) += 1;
+                }
+            }
+        }
+        if counts.is_empty() {
+            return Ok(());
+        }
+        crate::query::with_tx(&conn, |tx| async move {
+            let mut stmt = tx
+                .prepare("INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')")
+                .await?;
+            for pk in counts.keys() {
+                stmt.run(params![pk.as_str()]).await?;
+                stmt.reset();
+            }
+            stmt = tx
+                .prepare("UPDATE users SET follower_count = ?2 WHERE pubkey = ?1")
+                .await?;
+            for (pk, n) in &counts {
+                stmt.run(params![pk.as_str(), *n]).await?;
+                stmt.reset();
+            }
+            tx.commit().await?;
+            Ok(())
+        })
     }
 
     pub fn search(&self, query: &str, limit: i64) -> Result<Vec<UserRow>, crate::error::DbError> {

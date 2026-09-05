@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -820672997;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -741940685;
 
 // Section: executor
 
@@ -2316,10 +2316,14 @@ fn wire__crate__ffi__dating__dating_fetch_profiles_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_user_pubkey = <String>::sse_decode(&mut deserializer);
             let api_limit = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::dating::dating_fetch_profiles(api_user_pubkey, api_limit)?;
+                let output_ok = crate::ffi::dating::dating_fetch_profiles(
+                    api_user_pubkey,
+                    api_limit,
+                    api_audience,
+                )?;
                 Ok(output_ok)
             })())
         },
@@ -2569,6 +2573,36 @@ fn wire__crate__ffi__dating__dating_report_profile_impl(
         },
     )
 }
+fn wire__crate__ffi__dating__dating_reset_passes_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "dating_reset_passes",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::dating::dating_reset_passes(api_user_pubkey)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__dating__dating_superlike_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -2785,6 +2819,35 @@ fn wire__crate__ffi__db__db_backup_impl(
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::db::db_backup(api_backup_path)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__db__db_close_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "db_close",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::db::db_close()?;
                 Ok(output_ok)
             })())
         },
@@ -3910,6 +3973,7 @@ fn wire__crate__ffi__events__events_fetch_nearby_impl(
             let api_longitude = <f64>::sse_decode(&mut deserializer);
             let api_radius_km = <f32>::sse_decode(&mut deserializer);
             let api_limit = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::events::events_fetch_nearby(
@@ -3917,6 +3981,7 @@ fn wire__crate__ffi__events__events_fetch_nearby_impl(
                     api_longitude,
                     api_radius_km,
                     api_limit,
+                    api_audience,
                 )?;
                 Ok(output_ok)
             })())
@@ -4466,9 +4531,11 @@ fn wire__crate__ffi__feed__feed_fetch_window_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_start_index = <u32>::sse_decode(&mut deserializer);
             let api_limit = <u32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::feed::feed_fetch_window(api_start_index, api_limit)?;
+                let output_ok =
+                    crate::ffi::feed::feed_fetch_window(api_start_index, api_limit, api_audience)?;
                 Ok(output_ok)
             })())
         },
@@ -4861,9 +4928,11 @@ fn wire__crate__ffi__groups__groups_fetch_groups_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::groups::groups_fetch_groups(api_user_pubkey)?;
+                let output_ok =
+                    crate::ffi::groups::groups_fetch_groups(api_user_pubkey, api_audience)?;
                 Ok(output_ok)
             })())
         },
@@ -6564,6 +6633,43 @@ fn wire__crate__ffi__network__i2p_stop_session_impl(
         },
     )
 }
+fn wire__crate__ffi__identity__identity_delete_profile_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "identity_delete_profile",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pubkey = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::ffi::identity::identity_delete_profile(api_pubkey).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__ffi__identity__identity_fetch_follows_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -7263,6 +7369,74 @@ fn wire__crate__ffi__marketplace__marketplace_dispute_escrow_impl(
         },
     )
 }
+fn wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "marketplace_escrow_confirm_buyer",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_escrow_id = <String>::sse_decode(&mut deserializer);
+            let api_caller = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::marketplace::marketplace_escrow_confirm_buyer(
+                    api_escrow_id,
+                    api_caller,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "marketplace_escrow_confirm_seller",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_escrow_id = <String>::sse_decode(&mut deserializer);
+            let api_caller = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::marketplace::marketplace_escrow_confirm_seller(
+                    api_escrow_id,
+                    api_caller,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__marketplace__marketplace_fetch_buyer_orders_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -7317,10 +7491,14 @@ fn wire__crate__ffi__marketplace__marketplace_fetch_listings_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_limit = <i32>::sse_decode(&mut deserializer);
             let api_offset = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::marketplace::marketplace_fetch_listings(api_limit, api_offset)?;
+                let output_ok = crate::ffi::marketplace::marketplace_fetch_listings(
+                    api_limit,
+                    api_offset,
+                    api_audience,
+                )?;
                 Ok(output_ok)
             })())
         },
@@ -7411,10 +7589,14 @@ fn wire__crate__ffi__marketplace__marketplace_get_by_category_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_category = <String>::sse_decode(&mut deserializer);
             let api_limit = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::marketplace::marketplace_get_by_category(api_category, api_limit)?;
+                let output_ok = crate::ffi::marketplace::marketplace_get_by_category(
+                    api_category,
+                    api_limit,
+                    api_audience,
+                )?;
                 Ok(output_ok)
             })())
         },
@@ -7593,9 +7775,11 @@ fn wire__crate__ffi__marketplace__marketplace_get_trending_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_limit = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::marketplace::marketplace_get_trending(api_limit)?;
+                let output_ok =
+                    crate::ffi::marketplace::marketplace_get_trending(api_limit, api_audience)?;
                 Ok(output_ok)
             })())
         },
@@ -7967,9 +8151,14 @@ fn wire__crate__ffi__marketplace__marketplace_search_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_query = <String>::sse_decode(&mut deserializer);
             let api_limit = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::marketplace::marketplace_search(api_query, api_limit)?;
+                let output_ok = crate::ffi::marketplace::marketplace_search(
+                    api_query,
+                    api_limit,
+                    api_audience,
+                )?;
                 Ok(output_ok)
             })())
         },
@@ -8713,9 +8902,10 @@ fn wire__crate__ffi__minis__minis_fetch_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::minis::minis_fetch()?;
+                let output_ok = crate::ffi::minis::minis_fetch(api_audience)?;
                 Ok(output_ok)
             })())
         },
@@ -9577,12 +9767,14 @@ fn wire__crate__ffi__music__music_fetch_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_limit = <u64>::sse_decode(&mut deserializer);
             let api_author = <Option<String>>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
                         let output_ok =
-                            crate::ffi::music::music_fetch(api_limit, api_author).await?;
+                            crate::ffi::music::music_fetch(api_limit, api_author, api_audience)
+                                .await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -10777,6 +10969,143 @@ fn wire__crate__ffi__notifications__notifications_get_unread_count_impl(
         },
     )
 }
+fn wire__crate__ffi__notifications__notifications_ignore_thread_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "notifications_ignore_thread",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_event_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::notifications::notifications_ignore_thread(
+                    api_user_pubkey,
+                    api_event_id,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__notifications__notifications_ignore_user_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "notifications_ignore_user",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_from_pubkey = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::notifications::notifications_ignore_user(
+                    api_user_pubkey,
+                    api_from_pubkey,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__notifications__notifications_is_ignored_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "notifications_is_ignored",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_kind = <String>::sse_decode(&mut deserializer);
+            let api_from_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_event_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::notifications::notifications_is_ignored(
+                    api_user_pubkey,
+                    api_kind,
+                    api_from_pubkey,
+                    api_event_id,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__notifications__notifications_list_ignored_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "notifications_list_ignored",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok =
+                    crate::ffi::notifications::notifications_list_ignored(api_user_pubkey)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__notifications__notifications_mark_all_read_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -10867,6 +11196,74 @@ fn wire__crate__ffi__notifications__notifications_register_push_impl(
                 let output_ok = crate::ffi::notifications::notifications_register_push(
                     api_user_pubkey,
                     api_token,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__notifications__notifications_unignore_thread_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "notifications_unignore_thread",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_event_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::notifications::notifications_unignore_thread(
+                    api_user_pubkey,
+                    api_event_id,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__notifications__notifications_unignore_user_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "notifications_unignore_user",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_from_pubkey = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::notifications::notifications_unignore_user(
+                    api_user_pubkey,
+                    api_from_pubkey,
                 )?;
                 Ok(output_ok)
             })())
@@ -13141,9 +13538,11 @@ fn wire__crate__ffi__search__search_global_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_query = <String>::sse_decode(&mut deserializer);
             let api_limit = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::search::search_global(api_query, api_limit)?;
+                let output_ok =
+                    crate::ffi::search::search_global(api_query, api_limit, api_audience)?;
                 Ok(output_ok)
             })())
         },
@@ -13297,9 +13696,11 @@ fn wire__crate__ffi__search__search_posts_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_query = <String>::sse_decode(&mut deserializer);
             let api_limit = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::search::search_posts(api_query, api_limit)?;
+                let output_ok =
+                    crate::ffi::search::search_posts(api_query, api_limit, api_audience)?;
                 Ok(output_ok)
             })())
         },
@@ -13505,6 +13906,35 @@ fn wire__crate__ffi__session__session_add_account_impl(
         },
     )
 }
+fn wire__crate__ffi__session__session_clear_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "session_clear",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::session::session_clear()?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__session__session_get_active_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -13618,6 +14048,36 @@ fn wire__crate__ffi__session__session_register_push_token_impl(
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::session::session_register_push_token(api_token)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__session__session_remove_account_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "session_remove_account",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pubkey = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::session::session_remove_account(api_pubkey)?;
                 Ok(output_ok)
             })())
         },
@@ -14368,11 +14828,11 @@ fn wire__crate__ffi__streaming__streaming_fetch_followed_stories_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_viewer_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok =
-                    crate::ffi::streaming::streaming_fetch_followed_stories(api_viewer_pubkey)?;
+                    crate::ffi::streaming::streaming_fetch_followed_stories(api_audience)?;
                 Ok(output_ok)
             })())
         },
@@ -14400,9 +14860,11 @@ fn wire__crate__ffi__streaming__streaming_fetch_live_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_limit = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::streaming::streaming_fetch_live(api_limit)?;
+                let output_ok =
+                    crate::ffi::streaming::streaming_fetch_live(api_limit, api_audience)?;
                 Ok(output_ok)
             })())
         },
@@ -17897,6 +18359,15 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__dating__dating_reset_passes(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__dating__dating_reset_passes_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__dating__dating_superlike(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -17948,6 +18419,15 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__db__db_backup_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__db__db_close(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__db__db_close_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -18996,6 +19476,21 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_delete_profile(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__identity__identity_delete_profile_impl(
+            port_,
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_fetch_follows(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -19202,6 +19697,32 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__marketplace__marketplace_dispute_escrow_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller_impl(
             ptr_,
             rust_vec_len_,
             data_len_,
@@ -20321,6 +20842,58 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_ignore_thread(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_ignore_thread_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_ignore_user(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_ignore_user_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_is_ignored(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_is_ignored_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_list_ignored(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_list_ignored_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_mark_all_read(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -20353,6 +20926,32 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__notifications__notifications_register_push_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_unignore_thread(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_unignore_thread_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_unignore_user(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_unignore_user_impl(
             ptr_,
             rust_vec_len_,
             data_len_,
@@ -21202,6 +21801,15 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__session__session_clear(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__session__session_clear_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__session__session_get_active(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -21235,6 +21843,15 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__session__session_register_push_token_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__session__session_remove_account(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__session__session_remove_account_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -22994,6 +23611,15 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__dating__dating_reset_passes(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__dating__dating_reset_passes_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__dating__dating_superlike(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -23045,6 +23671,15 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__db__db_backup_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__db__db_close(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__db__db_close_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -24093,6 +24728,21 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__identity__identity_delete_profile(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__identity__identity_delete_profile_impl(
+            port_,
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__identity__identity_fetch_follows(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -24299,6 +24949,32 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__marketplace__marketplace_dispute_escrow_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller_impl(
             ptr_,
             rust_vec_len_,
             data_len_,
@@ -25418,6 +26094,58 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__notifications__notifications_ignore_thread(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_ignore_thread_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__notifications__notifications_ignore_user(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_ignore_user_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__notifications__notifications_is_ignored(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_is_ignored_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__notifications__notifications_list_ignored(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_list_ignored_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__notifications__notifications_mark_all_read(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -25450,6 +26178,32 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__notifications__notifications_register_push_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__notifications__notifications_unignore_thread(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_unignore_thread_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__notifications__notifications_unignore_user(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__notifications__notifications_unignore_user_impl(
             ptr_,
             rust_vec_len_,
             data_len_,
@@ -26299,6 +27053,15 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__session__session_clear(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__session__session_clear_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__session__session_get_active(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -26332,6 +27095,15 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__session__session_register_push_token_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__session__session_remove_account(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__session__session_remove_account_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]

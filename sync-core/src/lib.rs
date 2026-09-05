@@ -43,12 +43,15 @@ pub enum SyncUpdate {
     },
     /// An incoming kind-4 payload addressed to us. `content` is still NIP-44
     /// encrypted; the bridge decrypts before persisting/displaying.
+    /// `tags_json` is the event's tags as a JSON array of arrays so the
+    /// bridge can preserve reply linkage (`e`/`q` tags) into the store.
     Dm {
         id: String,
         sender: String,
         recipient: String,
         content: String,
         created_at: u64,
+        tags_json: String,
     },
     /// A cached reaction to a post.
     Reaction {

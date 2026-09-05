@@ -37,15 +37,16 @@ class _MiniVideoPlayerState extends State<MiniVideoPlayer> {
       return;
     }
     if (PermissionsService.isAndroid) {
-      _androidController = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-        ..initialize().then((_) {
-          if (!mounted) return;
-          setState(() {});
-          _androidController!.play();
-        }).catchError((e) {
-          if (!mounted) return;
-          setState(() => _error = 'Playback failed: $e');
-        });
+      _androidController =
+          VideoPlayerController.networkUrl(Uri.parse(widget.url))
+            ..initialize().then((_) {
+              if (!mounted) return;
+              setState(() {});
+              _androidController!.play();
+            }).catchError((e) {
+              if (!mounted) return;
+              setState(() => _error = 'Playback failed: $e');
+            });
     } else {
       final player = mk.Player();
       _linuxController = VideoController(player);
@@ -74,7 +75,8 @@ class _MiniVideoPlayerState extends State<MiniVideoPlayer> {
             ? Center(
                 child: Text(_error!, style: const TextStyle(color: Colors.red)),
               )
-            : _androidController != null && _androidController!.value.isInitialized
+            : _androidController != null &&
+                    _androidController!.value.isInitialized
                 ? FittedBox(
                     fit: BoxFit.contain,
                     child: SizedBox(

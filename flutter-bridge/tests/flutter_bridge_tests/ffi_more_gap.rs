@@ -31,14 +31,14 @@ mod ffi_more_gap_tests {
             &[pk.clone(), pk2],
         )
         .unwrap();
-        let posts = search::search_posts("nostr".into(), 10).unwrap();
+        let posts = search::search_posts("nostr".into(), 10, "public".into()).unwrap();
         assert!(posts.contains("hello nostr world"), "{posts}");
-        let none = search::search_posts("zzz".into(), 10).unwrap();
+        let none = search::search_posts("zzz".into(), 10, "public".into()).unwrap();
         assert_eq!(none, "[]");
         assert!(search::search_index_profile(pk, "Alice Smith".into(), "bio".into()).unwrap());
         let profiles = search::search_profiles("alice".into(), 10).unwrap();
         assert!(profiles.contains("Alice Smith"), "{profiles}");
-        let global = search::search_global("nostr".into(), 10).unwrap();
+        let global = search::search_global("nostr".into(), 10, "public".into()).unwrap();
         assert!(global.contains("hello nostr world"), "{global}");
         let mentions = search::search_mentions("ali".into(), 10).unwrap();
         assert!(mentions.contains("Alice Smith"), "{mentions}");
@@ -250,7 +250,7 @@ mod ffi_more_gap_tests {
         assert!(sv.get("ev1").is_some(), "{scored}");
         let bad = events::events_score_events("junk".into(), "[]".into()).unwrap_err();
         assert!(bad.contains("invalid events JSON"), "{bad}");
-        let nearby = events::events_fetch_nearby(37.0, -122.0, 5.0, 10).unwrap();
+        let nearby = events::events_fetch_nearby(37.0, -122.0, 5.0, 10, "public".into()).unwrap();
         assert_eq!(nearby, "[]");
         let user_events = events::events_fetch_user_events("a".repeat(64), 10).unwrap();
         assert_eq!(user_events, "[]");

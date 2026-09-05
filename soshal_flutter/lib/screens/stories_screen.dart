@@ -147,8 +147,10 @@ class _StoriesScreenState extends State<StoriesScreen> {
                             images.text = list.join(', ');
                           } catch (e) {
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                  content: SelectableText('Upload error: $e')));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content:
+                                          SelectableText('Upload error: $e')));
                             }
                           } finally {
                             setDialogState(() => uploading = false);

@@ -324,14 +324,15 @@ class _NotificationList extends StatelessWidget {
                           } else if (val == 'ignore_user') {
                             api.ignoreUser(n.fromPubkey);
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('User ignored')),
+                              const SnackBar(content: Text('User ignored')),
                             );
-                          } else if (val == 'ignore_thread' && n.eventId != null) {
+                          } else if (val == 'ignore_thread' &&
+                              n.eventId != null) {
                             api.ignoreThread(n.eventId!);
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text('Thread notifications turned off')),
+                                  content:
+                                      Text('Thread notifications turned off')),
                             );
                           }
                         },
@@ -362,7 +363,8 @@ class _NotificationList extends StatelessWidget {
                               value: 'ignore_thread',
                               child: Row(
                                 children: [
-                                  Icon(Icons.notifications_off_outlined, size: 18),
+                                  Icon(Icons.notifications_off_outlined,
+                                      size: 18),
                                   SizedBox(width: 8),
                                   Text('Turn off thread notifications'),
                                 ],

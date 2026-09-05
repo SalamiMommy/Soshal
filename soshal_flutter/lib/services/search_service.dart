@@ -41,6 +41,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
       () => RustLib.instance.api.crateFfiSearchSearchPosts(
         query: query,
         limit: limit,
+        audience: 'public',
       ),
     );
   }
@@ -97,6 +98,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
       () => RustLib.instance.api.crateFfiSearchSearchGlobal(
         query: query,
         limit: limit,
+        audience: 'public',
       ),
     );
   }

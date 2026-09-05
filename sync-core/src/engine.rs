@@ -25,6 +25,8 @@ const OVERLAP_FEED_SECS: u64 = 120;
 const OVERLAP_DM_SECS: u64 = 300;
 const OVERLAP_META_SECS: u64 = 3600;
 
+const WATERMARK_SKEW_SECS: u64 = 120;
+
 /// Flush watermarks to SQLite at most this often.
 const FLUSH_INTERVAL: Duration = Duration::from_secs(30);
 
@@ -155,8 +157,10 @@ fn ingest_batch(
                 if let Some(key) = watermark_key(event.kind) {
                     let cur = cursors.entry(key).or_insert(0);
                     let created = event.created_at.as_secs();
-                    if created > *cur {
-                        *cur = created;
+                    let now = soshal_common_core::format::now_secs().max(0) as u64;
+                    let capped = created.min(now + WATERMARK_SKEW_SECS);
+                    if capped > *cur {
+                        *cur = capped;
                     }
                 }
             }
@@ -173,8 +177,30 @@ pub async fn build_client(cfg: &SyncConfig) -> Result<Client, String> {
         if !valid {
             continue; // SSRF guard: private/loopback/odd schemes rejected
         }
-        if let Ok(target) = nostr::types::RelayUrl::parse(url) {
-            relays.push(target);
+        let Some(target) = nostr::types::RelayUrl::parse(url).ok() else {
+            continue;
+        };
+        let Ok(parsed) = nostr::types::Url::parse(target.as_str()) else {
+            continue;
+        };
+        let Some(host) = parsed.host_str().map(str::to_string) else {
+            continue;
+        };
+        let port = parsed
+            .port()
+            .unwrap_or(if parsed.scheme() == "wss" { 443 } else { 80 });
+        if let Ok(addrs) = tokio::net::lookup_host((host, port)).await {
+            let mut any_public = false;
+            for addr in addrs {
+                if soshal_common_core::url::is_private_ip_str(&addr.ip().to_string()) {
+                    any_public = false;
+                    break;
+                }
+                any_public = true;
+            }
+            if any_public {
+                relays.push(target);
+            }
         }
     }
     if relays.is_empty() {
@@ -234,9 +260,12 @@ pub async fn engine_loop_with_client(
         let since_dm = Timestamp::from(cursors[WM_DM].saturating_sub(OVERLAP_DM_SECS));
         let since_meta = Timestamp::from(cursors[WM_META].saturating_sub(OVERLAP_META_SECS));
         let filters = vec![
-            Filter::new().kinds([Kind::TextNote]).since(since_feed),
+            Filter::new()
+                .kinds([Kind::TextNote, Kind::EventDeletion])
+                .since(since_feed),
             Filter::new()
                 .kinds([Kind::EncryptedDirectMessage])
+                .custom_tag(SingleLetterTag::LOWERCASE_P, pk.to_hex())
                 .since(since_dm),
             Filter::new().kinds([Kind::Metadata]).since(since_meta),
             // Lists + zaps: contacts (3), relay list (10002), bookmarks

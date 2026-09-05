@@ -108,7 +108,9 @@ mod bridge_gap_tests {
                 no_client.contains("relay client not initialized"),
                 "{no_client}"
             );
-            let no_client = music::music_fetch(10, None).await.unwrap_err();
+            let no_client = music::music_fetch(10, None, "public".into())
+                .await
+                .unwrap_err();
             assert!(
                 no_client.contains("relay client not initialized"),
                 "{no_client}"

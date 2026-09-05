@@ -50,7 +50,12 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _isLoadingMore = false;
   final Map<String, int> _totals = {};
   String _selectedFeedTab = 'All';
-  final List<String> _feedTabs = const ['All', 'Favorites', 'Friends', 'Groups'];
+  final List<String> _feedTabs = const [
+    'All',
+    'Favorites',
+    'Friends',
+    'Groups'
+  ];
 
   @override
   void initState() {
@@ -210,9 +215,14 @@ class _FeedScreenState extends State<FeedScreen> {
         (f) => (posts: f.posts, display: f.displayPosts, loading: f.isLoading));
     final allDisplay = feedView.display;
     final List<FeedPost> filteredPosts = switch (_selectedFeedTab) {
-      'Favorites' => allDisplay.where((p) => p.reactions > 0 || p.liked).toList(),
-      'Friends' => allDisplay.where((p) => p.reposts > 0 || p.reactions > 0).toList(),
-      'Groups' => allDisplay.where((p) => p.content.contains('#group') || p.content.contains('group')).toList(),
+      'Favorites' =>
+        allDisplay.where((p) => p.reactions > 0 || p.liked).toList(),
+      'Friends' =>
+        allDisplay.where((p) => p.reposts > 0 || p.reactions > 0).toList(),
+      'Groups' => allDisplay
+          .where((p) =>
+              p.content.contains('#group') || p.content.contains('group'))
+          .toList(),
       _ => allDisplay,
     };
     final effectiveDisplay = filteredPosts.isEmpty && _selectedFeedTab != 'All'
@@ -287,8 +297,11 @@ class _FeedScreenState extends State<FeedScreen> {
         actions: [
           Consumer<FeedService>(
             builder: (context, feed, _) => IconButton(
-              icon: Icon(feed.isRanked ? Icons.auto_awesome : Icons.access_time),
-              tooltip: feed.isRanked ? 'Top Posts (Algorithmic)' : 'Most Recent (Chronological)',
+              icon:
+                  Icon(feed.isRanked ? Icons.auto_awesome : Icons.access_time),
+              tooltip: feed.isRanked
+                  ? 'Top Posts (Algorithmic)'
+                  : 'Most Recent (Chronological)',
               color:
                   feed.isRanked ? Theme.of(context).colorScheme.primary : null,
               onPressed: () {
@@ -419,7 +432,9 @@ class _FeedPostCardState extends State<FeedPostCard> {
       _totalMsat =
           await context.read<ZapService>().fetchTotalMsat(widget.post.eventId);
       if (mounted) setState(() {});
-    } catch (e) { debugPrint('zap total: $e'); }
+    } catch (e) {
+      debugPrint('zap total: $e');
+    }
   }
 
   @override
@@ -646,7 +661,9 @@ class _FeedPostCardState extends State<FeedPostCard> {
     var connected = false;
     try {
       connected = zap.isConnected;
-    } catch (e) { debugPrint('nwc connect check: $e'); }
+    } catch (e) {
+      debugPrint('nwc connect check: $e');
+    }
     if (!connected) {
       final uri = TextEditingController();
       final ok = await showDialog<bool>(
@@ -907,7 +924,10 @@ class _FeedPostCardState extends State<FeedPostCard> {
                       const SizedBox(height: 4),
                       Text(
                         r.$2,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 10),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(fontSize: 10),
                       ),
                     ],
                   ),
@@ -1013,7 +1033,6 @@ class _FeedPostCardState extends State<FeedPostCard> {
   Future<void> _reportPost(String pubkey) async {
     final reason = TextEditingController();
     final ok = await showDialogDeferred<bool>(
-
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Report post'),
@@ -1036,7 +1055,10 @@ class _FeedPostCardState extends State<FeedPostCard> {
         ],
       ),
     );
-    if (ok != true || !mounted) { reason.dispose(); return; }
+    if (ok != true || !mounted) {
+      reason.dispose();
+      return;
+    }
     final text = reason.text.trim();
     reason.dispose();
     if (text.isEmpty) {

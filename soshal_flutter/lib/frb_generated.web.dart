@@ -1198,6 +1198,14 @@ class RustLibWire implements BaseWire {
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__dating__dating_reset_passes(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__dating__dating_reset_passes(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__dating__dating_superlike(
               PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_,
@@ -1241,6 +1249,12 @@ class RustLibWire implements BaseWire {
       wire__crate__ffi__db__db_backup(PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_, int data_len_) =>
           wasmModule.wire__crate__ffi__db__db_backup(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__db__db_close(PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_, int data_len_) =>
+          wasmModule.wire__crate__ffi__db__db_close(
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
@@ -2134,6 +2148,14 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__network__i2p_stop_session(
               ptr_, rust_vec_len_, data_len_);
 
+  void wire__crate__ffi__identity__identity_delete_profile(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__identity__identity_delete_profile(
+          port_, ptr_, rust_vec_len_, data_len_);
+
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__identity__identity_fetch_follows(
               PlatformGeneralizedUint8ListPtr ptr_,
@@ -2297,6 +2319,24 @@ class RustLibWire implements BaseWire {
               int data_len_) =>
           wasmModule.wire__crate__ffi__marketplace__marketplace_dispute_escrow(
               ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule
+              .wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer(
+                  ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule
+              .wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller(
+                  ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__marketplace__marketplace_fetch_buyer_orders(
@@ -3131,6 +3171,40 @@ class RustLibWire implements BaseWire {
                   ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_ignore_thread(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule
+              .wire__crate__ffi__notifications__notifications_ignore_thread(
+                  ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_ignore_user(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__notifications__notifications_ignore_user(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_is_ignored(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__notifications__notifications_is_ignored(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_list_ignored(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule
+              .wire__crate__ffi__notifications__notifications_list_ignored(
+                  ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__notifications__notifications_mark_all_read(
               PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_,
@@ -3154,6 +3228,24 @@ class RustLibWire implements BaseWire {
               int data_len_) =>
           wasmModule
               .wire__crate__ffi__notifications__notifications_register_push(
+                  ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_unignore_thread(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule
+              .wire__crate__ffi__notifications__notifications_unignore_thread(
+                  ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_unignore_user(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule
+              .wire__crate__ffi__notifications__notifications_unignore_user(
                   ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
@@ -3808,6 +3900,14 @@ class RustLibWire implements BaseWire {
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__session__session_clear(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__session__session_clear(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__session__session_get_active(
               PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_,
@@ -3837,6 +3937,14 @@ class RustLibWire implements BaseWire {
               int rust_vec_len_,
               int data_len_) =>
           wasmModule.wire__crate__ffi__session__session_register_push_token(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__session__session_remove_account(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__session__session_remove_account(
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
@@ -4901,6 +5009,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__dating__dating_reset_passes(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__dating__dating_superlike(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
@@ -4932,6 +5046,10 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__db__db_backup(PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_, int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__db__db_close(PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_, int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
@@ -5584,6 +5702,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_,
           int data_len_);
 
+  external void wire__crate__ffi__identity__identity_delete_profile(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
+
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__identity__identity_fetch_follows(
           PlatformGeneralizedUint8ListPtr ptr_,
@@ -5703,6 +5827,18 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__marketplace__marketplace_dispute_escrow(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__marketplace__marketplace_escrow_confirm_buyer(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__marketplace__marketplace_escrow_confirm_seller(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
@@ -6297,6 +6433,30 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_ignore_thread(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_ignore_user(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_is_ignored(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_list_ignored(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__notifications__notifications_mark_all_read(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
@@ -6310,6 +6470,18 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__notifications__notifications_register_push(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_unignore_thread(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__notifications__notifications_unignore_user(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
@@ -6782,6 +6954,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__session__session_clear(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__session__session_get_active(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
@@ -6801,6 +6979,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__session__session_register_push_token(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__session__session_remove_account(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);

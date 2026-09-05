@@ -1,6 +1,6 @@
 //! Dating profile sorting by compatibility score.
 
-use crate::scoring::compute_mutual_score;
+use crate::scoring::compute_mutual_score_with_distance;
 #[doc(hidden)]
 pub use crate::MAX_PROFILES;
 use crate::{SortProfilesInput, SortedProfileOut};
@@ -33,14 +33,22 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
             .cloned()
             .collect();
 
-        let score = compute_mutual_score(&input.self_profile, profile);
-        let other_coords = profile
-            .location_geohash
-            .as_deref()
-            .and_then(decode_geohash_coords);
-        let distance_km = match (self_coords, other_coords) {
-            (Some((lat1, lon1)), Some((lat2, lon2))) => haversine_km(lat1, lon1, lat2, lon2),
-            _ => f64::from(if is_contact { 1 } else { 2 }),
+        let (score, distance_km) = {
+            let other_coords = profile
+                .location_geohash
+                .as_deref()
+                .and_then(decode_geohash_coords);
+            let distance_km = match (self_coords, other_coords) {
+                (Some((lat1, lon1)), Some((lat2, lon2))) => haversine_km(lat1, lon1, lat2, lon2),
+                _ => f64::from(if is_contact { 1 } else { 2 }),
+            };
+            let with_geo = self_coords.is_some() && other_coords.is_some();
+            let score = if with_geo {
+                compute_mutual_score_with_distance(&input.self_profile, profile, Some(distance_km))
+            } else {
+                compute_mutual_score_with_distance(&input.self_profile, profile, None)
+            };
+            (score, distance_km)
         };
         results.push((
             SortedProfileOut {

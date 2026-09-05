@@ -161,6 +161,24 @@ pub fn db_path() -> Result<String, String> {
     }
 }
 
+/// Active account pubkey from the `settings` table (`''` when absent).
+/// Shared by every audience-filtered fetch surface.
+pub(crate) fn active_pubkey() -> Result<String, String> {
+    with_db_result(|db| {
+        let conn = db.conn()?;
+        soshal_db_core::block_on(async {
+            let stmt = conn
+                .prepare("SELECT value FROM settings WHERE key = 'active_pubkey'")
+                .await?;
+            let mut rows = stmt.query(()).await?;
+            match rows.next().await? {
+                Some(row) => Ok(row.get(0).unwrap_or_default()),
+                None => Ok(String::new()),
+            }
+        })
+    })
+}
+
 /// Close the active database connection and clear the DB path.
 #[frb(sync, serialize)]
 pub fn db_close() -> Result<bool, String> {

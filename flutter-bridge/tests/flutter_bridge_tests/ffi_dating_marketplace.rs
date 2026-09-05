@@ -201,6 +201,15 @@ fn test_dating_like_is_sign_only() {
     assert_eq!(pk, alice);
     insert_user(&alice);
     let fake_id = "a".repeat(64);
+    insert_user(&fake_id);
+    // react() resolves the target pubkey → its profile event id, so the
+    // fake target needs a KIND_PROFILE posts row for the reaction to land.
+    db::db_execute_params(
+        "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+         VALUES (?1, ?2, '{\"age\":30}', 30082, 100, '[]', 'synced', 0)",
+        &["prof_fake".to_string(), fake_id.clone()],
+    )
+    .unwrap();
     assert!(dating::dating_like(alice.clone(), fake_id.clone()).unwrap());
     assert!(dating::dating_superlike(alice.clone(), fake_id.clone()).unwrap());
     assert!(dating::dating_unlike(alice.clone(), fake_id).unwrap());
@@ -225,14 +234,17 @@ fn test_dating_pass_excludes_from_swipes() {
     unlock(&bob_secret);
     let bob_id = create_profile(&bob_pk, "bob", 25, "[]");
     unlock(&alice_secret);
-    let profiles: Vec<serde_json::Value> =
-        serde_json::from_str(&dating::dating_fetch_profiles(alice_pk.clone(), 10).unwrap())
-            .unwrap();
+    let profiles: Vec<serde_json::Value> = serde_json::from_str(
+        &dating::dating_fetch_profiles(alice_pk.clone(), 10, "public".into()).unwrap(),
+    )
+    .unwrap();
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0]["pubkey"], bob_pk);
     assert!(dating::dating_pass(alice_pk.clone(), bob_id).unwrap());
-    let profiles: Vec<serde_json::Value> =
-        serde_json::from_str(&dating::dating_fetch_profiles(alice_pk, 10).unwrap()).unwrap();
+    let profiles: Vec<serde_json::Value> = serde_json::from_str(
+        &dating::dating_fetch_profiles(alice_pk, 10, "public".into()).unwrap(),
+    )
+    .unwrap();
     assert!(profiles.is_empty());
     cleanup_db(&path);
 }
@@ -434,8 +446,10 @@ fn test_marketplace_listing_roundtrip() {
     assert!(marketplace::marketplace_get_content(id.clone())
         .unwrap()
         .contains("rust book"));
-    let all: Vec<serde_json::Value> =
-        serde_json::from_str(&marketplace::marketplace_fetch_listings(10, 0).unwrap()).unwrap();
+    let all: Vec<serde_json::Value> = serde_json::from_str(
+        &marketplace::marketplace_fetch_listings(10, 0, "public".into()).unwrap(),
+    )
+    .unwrap();
     assert_eq!(all.len(), 1);
     let seller_list: Vec<serde_json::Value> = serde_json::from_str(
         &marketplace::marketplace_fetch_seller_listings(seller.clone()).unwrap(),
@@ -443,20 +457,24 @@ fn test_marketplace_listing_roundtrip() {
     .unwrap();
     assert_eq!(seller_list.len(), 1);
     let by_cat: Vec<serde_json::Value> = serde_json::from_str(
-        &marketplace::marketplace_get_by_category("books".to_string(), 10).unwrap(),
+        &marketplace::marketplace_get_by_category("books".to_string(), 10, "public".into())
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(by_cat.len(), 1);
     let trending: Vec<serde_json::Value> =
-        serde_json::from_str(&marketplace::marketplace_get_trending(10).unwrap()).unwrap();
+        serde_json::from_str(&marketplace::marketplace_get_trending(10, "public".into()).unwrap())
+            .unwrap();
     assert_eq!(trending.len(), 1);
-    let found: Vec<serde_json::Value> =
-        serde_json::from_str(&marketplace::marketplace_search("rust".to_string(), 10).unwrap())
-            .unwrap();
+    let found: Vec<serde_json::Value> = serde_json::from_str(
+        &marketplace::marketplace_search("rust".to_string(), 10, "public".into()).unwrap(),
+    )
+    .unwrap();
     assert_eq!(found.len(), 1);
-    let empty: Vec<serde_json::Value> =
-        serde_json::from_str(&marketplace::marketplace_search(" ".to_string(), 10).unwrap())
-            .unwrap();
+    let empty: Vec<serde_json::Value> = serde_json::from_str(
+        &marketplace::marketplace_search(" ".to_string(), 10, "public".into()).unwrap(),
+    )
+    .unwrap();
     assert!(empty.is_empty());
     assert!(marketplace::marketplace_review_listing(
         id.clone(),
@@ -488,17 +506,20 @@ fn test_marketplace_listing_roundtrip() {
         serde_json::from_str(&marketplace::marketplace_get_listing(id.clone()).unwrap()).unwrap();
     assert_eq!(updated["title"], "new title");
     assert_eq!(updated["price"], 6000);
-    let found: Vec<serde_json::Value> =
-        serde_json::from_str(&marketplace::marketplace_search("new".to_string(), 10).unwrap())
-            .unwrap();
+    let found: Vec<serde_json::Value> = serde_json::from_str(
+        &marketplace::marketplace_search("new".to_string(), 10, "public".into()).unwrap(),
+    )
+    .unwrap();
     assert_eq!(found.len(), 1);
     assert!(marketplace::marketplace_delete_listing(id.clone(), "notseller".to_string()).is_err());
     assert!(marketplace::marketplace_delete_listing(id.clone(), seller).unwrap());
     let deleted: serde_json::Value =
         serde_json::from_str(&marketplace::marketplace_get_listing(id).unwrap()).unwrap();
     assert_eq!(deleted["status"], "active");
-    let all: Vec<serde_json::Value> =
-        serde_json::from_str(&marketplace::marketplace_fetch_listings(10, 0).unwrap()).unwrap();
+    let all: Vec<serde_json::Value> = serde_json::from_str(
+        &marketplace::marketplace_fetch_listings(10, 0, "public".into()).unwrap(),
+    )
+    .unwrap();
     assert!(all.is_empty());
     cleanup_db(&path);
 }

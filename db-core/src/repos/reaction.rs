@@ -15,6 +15,19 @@ impl<'a> ReactionRepo<'a> {
         tx: &libsql::Transaction,
         row: &ReactionRow,
     ) -> Result<(), crate::error::DbError> {
+        if row.content.as_deref() == Some("-") {
+            tx.execute(
+                "DELETE FROM reactions WHERE event_id = ?1 AND pubkey = ?2",
+                params![row.event_id.as_str(), row.pubkey.as_str()],
+            )
+            .await?;
+            return Ok(());
+        }
+        tx.execute(
+            "DELETE FROM reactions WHERE event_id = ?1 AND pubkey = ?2 AND content = '-'",
+            params![row.event_id.as_str(), row.pubkey.as_str()],
+        )
+        .await?;
         tx.execute(
             "INSERT INTO reactions (id, pubkey, event_id, kind, content, created_at) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET content=excluded.content",
             params![

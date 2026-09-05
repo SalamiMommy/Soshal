@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `raw_sql_allowed`, `rows_json`, `upsert_post_row`, `verify_restored_schema`, `with_db_result`, `with_db_string`, `with_db`
+// These functions are ignored because they are not marked as `pub`: `active_pubkey`, `raw_sql_allowed`, `rows_json`, `upsert_post_row`, `verify_restored_schema`, `with_db_result`, `with_db_string`, `with_db`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `TempCleanup`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `drop`
 
@@ -18,6 +18,9 @@ String dbInit({required String dbPath}) =>
 /// Get the current database path, or an error if not initialized.
 String dbPath() => RustLib.instance.api.crateFfiDbDbPath();
 
+/// Close the active database connection and clear the DB path.
+bool dbClose() => RustLib.instance.api.crateFfiDbDbClose();
+
 /// Get the current schema version from the _migrations table.
 PlatformInt64 dbSchemaVersion() =>
     RustLib.instance.api.crateFfiDbDbSchemaVersion();
@@ -28,9 +31,9 @@ PlatformInt64 dbSchemaVersion() =>
 PlatformInt64 dbExpectedSchemaVersion() =>
     RustLib.instance.api.crateFfiDbDbExpectedSchemaVersion();
 
-/// Force re-run all migrations from scratch. This deletes the _migrations table
-/// and re-runs the full migration sequence. Use with caution - it may fail if
-/// schema changes are not backwards compatible.
+/// Repair a stale/out-of-date schema: wipe all tables and re-run migrations
+/// from scratch.  Refuses to operate when the DB is already at or ahead of the
+/// current `SCHEMA_VERSION` — fresh or current DBs must not be touched.
 String dbForceMigrate() => RustLib.instance.api.crateFfiDbDbForceMigrate();
 
 /// Execute a raw SELECT query; rows are returned as a JSON array of objects

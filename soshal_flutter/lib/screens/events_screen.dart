@@ -279,18 +279,18 @@ class _EventsScreenState extends State<EventsScreen> {
       appBar: AppBar(
         title: const Text('Events'),
         actions: [
-        IconButton(
-          icon: const Icon(Icons.travel_explore),
-          tooltip: 'Discover by audience',
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const EventsAudienceDiscoveryScreen(),
-              ),
-            );
-          },
-        ),
-        PopupMenuButton<_AudienceMode>(
+          IconButton(
+            icon: const Icon(Icons.travel_explore),
+            tooltip: 'Discover by audience',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const EventsAudienceDiscoveryScreen(),
+                ),
+              );
+            },
+          ),
+          PopupMenuButton<_AudienceMode>(
             tooltip: 'Find events',
             onSelected: (m) {
               setState(() => _audienceMode = m);
@@ -466,7 +466,9 @@ class _EventsScreenState extends State<EventsScreen> {
       if (day != null) {
         (dayEvents[day] ??= []).add(e);
         final status = e.rsvpStatus.toLowerCase();
-        if (status == 'going' || status == 'attending' || status == 'accepted') {
+        if (status == 'going' ||
+            status == 'attending' ||
+            status == 'accepted') {
           (attendingDayEvents[day] ??= []).add(e);
         }
       }
@@ -709,8 +711,18 @@ class _CreateEventDialogState extends State<_CreateEventDialog> {
   }
 
   static const _monthShort = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   String _fmt(DateTime t) {
@@ -733,8 +745,8 @@ class _CreateEventDialogState extends State<_CreateEventDialog> {
     );
     if (time == null || !mounted) return;
     setState(() {
-      final dt =
-          DateTime(picked.year, picked.month, picked.day, time.hour, time.minute);
+      final dt = DateTime(
+          picked.year, picked.month, picked.day, time.hour, time.minute);
       if (isStart) {
         _start = dt;
         if (_end.isBefore(dt)) _end = dt.add(const Duration(hours: 2));
@@ -1410,4 +1422,3 @@ class _EventsAudienceDiscoveryScreenState
     );
   }
 }
-

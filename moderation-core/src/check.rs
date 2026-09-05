@@ -1,4 +1,5 @@
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 pub(crate) const MAX_MODERATION_INPUT_LEN: usize = 256 * 1024;
 
@@ -276,6 +277,24 @@ fn build_result_json(passed: bool, category: Option<&str>) -> String {
     }
 }
 
+/// Whole-token match: `w` must be bounded by non-word chars or string edges
+/// (ASCII alphanumeric + `_` count as word chars).
+fn custom_word_matches(text: &str, w: &str) -> bool {
+    static CACHE: OnceLock<Mutex<HashMap<String, regex::Regex>>> = OnceLock::new();
+    let pattern = format!(r"(?i)\b{}\b", regex::escape(w));
+    let mut guard = CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    if !guard.contains_key(&pattern) {
+        let Ok(re) = regex::Regex::new(&pattern) else {
+            return false;
+        };
+        guard.insert(pattern.clone(), re);
+    }
+    guard.get(&pattern).expect("just inserted").is_match(text)
+}
+
 /// Evaluates content across all layers (CSAM, Gore, Hate/Harassment, Spam, Custom Word Filters).
 pub fn check_text_comprehensive(text: &str, custom_words: &[String]) -> ModerationVerdict {
     let trimmed = text.trim();
@@ -344,7 +363,9 @@ pub fn check_text_comprehensive(text: &str, custom_words: &[String]) -> Moderati
         let normalized = crate::normalize::normalize_basic(trimmed);
         for word in custom_words {
             let w = word.trim().to_ascii_lowercase();
-            if !w.is_empty() && (lower.contains(&w) || normalized.contains(&w)) {
+            if !w.is_empty()
+                && (custom_word_matches(&lower, &w) || custom_word_matches(&normalized, &w))
+            {
                 return ModerationVerdict::flag(
                     "custom",
                     2,

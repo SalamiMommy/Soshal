@@ -63,10 +63,16 @@ fn member_count(group_id: &str) -> i32 {
 
 /// Fetch all groups the user belongs to (DB-backed).
 #[frb(sync, serialize)]
-pub fn groups_fetch_groups(user_pubkey: String) -> Result<String, String> {
+pub fn groups_fetch_groups(user_pubkey: String, audience: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
         let repo = GroupRepo::new(db);
         let rows = repo.get_user_groups(&user_pubkey)?;
+        let owners = super::identity::resolve_audience_authors(&audience)
+            .map_err(soshal_db_core::error::DbError::Migration)?;
+        let rows: Vec<_> = match &owners {
+            Some(a) => rows.into_iter().filter(|r| a.contains(&r.pubkey)).collect(),
+            None => rows,
+        };
         let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
         let counts = repo.member_count_many(&ids)?;
         let groups: Vec<GroupInfo> = rows
@@ -976,7 +982,10 @@ mod tests {
         let owner = "a".repeat(64);
         crate::ffi::db::insert_test_user(&owner);
 
-        assert_eq!(groups_fetch_groups(owner.clone()).unwrap(), "[]");
+        assert_eq!(
+            groups_fetch_groups(owner.clone(), "public".to_string()).unwrap(),
+            "[]"
+        );
 
         let info = groups_create(
             "g1".to_string(),
@@ -995,7 +1004,7 @@ mod tests {
         assert_eq!(v["members"], 1);
         assert_eq!(v["is_private"], false);
 
-        let list = groups_fetch_groups(owner).unwrap();
+        let list = groups_fetch_groups(owner, "public".to_string()).unwrap();
         assert!(list.contains("\"g1\""));
         assert!(list.contains("a test group"));
 

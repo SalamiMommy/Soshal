@@ -127,7 +127,7 @@ fn ingest_contact_list_sets_user_contacts() {
         .unwrap();
     assert_eq!(
         user.contact_pubkeys,
-        format!("{},{}", a.public_key().to_hex(), b.public_key().to_hex())
+        serde_json::json!([a.public_key().to_hex(), b.public_key().to_hex()]).to_string()
     );
 }
 

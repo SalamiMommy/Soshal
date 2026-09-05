@@ -144,7 +144,9 @@ class ScheduledPost {
         if (decoded is List) {
           return decoded.map((e) => e.toString()).toList();
         }
-      } catch (e) { debugPrint('scheduled tag parse: $e'); }
+      } catch (e) {
+        debugPrint('scheduled tag parse: $e');
+      }
     }
     return [];
   }

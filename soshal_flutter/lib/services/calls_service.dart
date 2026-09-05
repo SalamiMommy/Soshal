@@ -34,6 +34,20 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     return DateTime.now().difference(start);
   }
 
+  /// Clear relay signal inbox + in-call state on account switch so Account B
+  /// never sees Account A's call signaling or a stale active call.
+  void resetForAccountSwitch() {
+    _signals.clear();
+    _callId = null;
+    _peer = null;
+    _mediaType = null;
+    _startedAt = null;
+    _timer?.cancel();
+    _timer = null;
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Send a call signal (offer/answer/ice/end) to `targetPubkey`. SDP and
   /// candidates are redacted of private IPs bridge-side. Returns event id.
   Future<String> sendSignal({

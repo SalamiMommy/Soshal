@@ -22,7 +22,8 @@ class MinisService extends ChangeNotifier with LastErrorMixin {
   /// Fetch known minis from the local registry, newest first.
   List<MiniItem> fetchMinis() {
     try {
-      final json = RustLib.instance.api.crateFfiMinisMinisFetch();
+      final json =
+          RustLib.instance.api.crateFfiMinisMinisFetch(audience: 'public');
       final list = (jsonDecode(json) as List<dynamic>)
           .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
           .toList();

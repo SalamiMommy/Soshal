@@ -21,6 +21,17 @@ class MarketplaceService extends ChangeNotifier
   ListingInfo? get current => _current;
   List<OrderInfo> get orders => _orders;
 
+  /// Clear all account-scoped state on account switch so Account B never
+  /// sees Account A's cached listings, current listing, or orders.
+  void resetForAccountSwitch() {
+    _listings = [];
+    _listingsLoading = false;
+    _current = null;
+    _orders = [];
+    clearLastError();
+    notifyListeners();
+  }
+
   Future<List<ListingInfo>> fetchListings(
       {int limit = 50, int offset = 0}) async {
     _listingsLoading = true;
@@ -30,6 +41,7 @@ class MarketplaceService extends ChangeNotifier
         () => RustLib.instance.api.crateFfiMarketplaceMarketplaceFetchListings(
           limit: limit,
           offset: offset,
+          audience: 'public',
         ),
       );
       _listings = result;
@@ -50,6 +62,7 @@ class MarketplaceService extends ChangeNotifier
       () => RustLib.instance.api.crateFfiMarketplaceMarketplaceSearch(
         query: query,
         limit: limit,
+        audience: 'public',
       ),
     );
   }
@@ -69,6 +82,7 @@ class MarketplaceService extends ChangeNotifier
       () => RustLib.instance.api.crateFfiMarketplaceMarketplaceGetByCategory(
         category: category,
         limit: limit,
+        audience: 'public',
       ),
     );
   }
@@ -76,7 +90,8 @@ class MarketplaceService extends ChangeNotifier
   Future<List<ListingInfo>> trending({int limit = 50}) async {
     return _decode(
       () => RustLib.instance.api
-          .crateFfiMarketplaceMarketplaceGetTrending(limit: limit),
+          .crateFfiMarketplaceMarketplaceGetTrending(
+              limit: limit, audience: 'public'),
     );
   }
 
@@ -278,6 +293,40 @@ class MarketplaceService extends ChangeNotifier
         escrowId: escrowId,
         disputerPubkey: disputerPubkey,
         reason: reason,
+      );
+      clearLastError();
+      notifyDeferred();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> confirmEscrowBuyer(String escrowId, String buyerPubkey) async {
+    try {
+      final ok =
+          RustLib.instance.api.crateFfiMarketplaceMarketplaceEscrowConfirmBuyer(
+        escrowId: escrowId,
+        caller: buyerPubkey,
+      );
+      clearLastError();
+      notifyDeferred();
+      return ok;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
+  }
+
+  Future<bool> confirmEscrowSeller(String escrowId, String sellerPubkey) async {
+    try {
+      final ok = RustLib.instance.api
+          .crateFfiMarketplaceMarketplaceEscrowConfirmSeller(
+        escrowId: escrowId,
+        caller: sellerPubkey,
       );
       clearLastError();
       notifyDeferred();

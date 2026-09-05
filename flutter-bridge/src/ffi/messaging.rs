@@ -208,6 +208,16 @@ pub(crate) fn extract_peers_from_cids(cids: &[String], pubkey: &str) -> Vec<Stri
     peers
 }
 
+/// Extract the reply target from a DM's tags JSON (`e` with "reply" marker or
+/// a `q` tag point to the message being replied to; the first such id wins).
+fn reply_to_from_tags_json(tags_json: &str) -> Option<String> {
+    let tags: Vec<Vec<String>> = serde_json::from_str(tags_json).ok()?;
+    tags.iter()
+        .find(|t| matches!(t.first().map(|s| s.as_str()), Some("e") | Some("q")))
+        .and_then(|t| t.get(1).cloned())
+        .filter(|s| !s.is_empty())
+}
+
 /// Store a received DM row locally (called by the sync loop after
 /// `messaging_decrypt_dm` + verification).
 #[frb(sync, serialize)]
@@ -227,8 +237,8 @@ pub fn messaging_store_dm(
         pubkey: sender,
         content,
         created_at: created_at as i64,
-        tags_json,
-        reply_to: None,
+        tags_json: tags_json.clone(),
+        reply_to: reply_to_from_tags_json(&tags_json),
         sync_status: "synced".to_string(),
         is_deleted: false,
     };
@@ -249,6 +259,8 @@ pub fn messaging_store_dms(dms_json: String) -> Result<bool, String> {
         recipient: String,
         content: String,
         created_at: u64,
+        #[serde(default)]
+        tags: Option<String>,
     }
     let dms: Vec<DmIn> =
         serde_json::from_str(&dms_json).map_err(|e| format!("invalid DMs JSON: {e}"))?;
@@ -264,14 +276,19 @@ pub fn messaging_store_dms(dms_json: String) -> Result<bool, String> {
                 let sealed = seal_dm_content_with_key(dm.content.clone(), &key)
                     .map_err(soshal_db_core::error::DbError::Migration)?;
                 let cid = conv_id(&dm.sender, &dm.recipient);
+                let tags_json = dm
+                    .tags
+                    .clone()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "[]".to_string());
                 Ok(soshal_db_core::repos::message::MessageRow {
                     id: dm.id.clone(),
                     conversation_id: cid,
                     pubkey: dm.sender.clone(),
                     content: sealed,
                     created_at: dm.created_at as i64,
-                    tags_json: "[]".to_string(),
-                    reply_to: None,
+                    reply_to: reply_to_from_tags_json(&tags_json),
+                    tags_json,
                     sync_status: "synced".to_string(),
                     is_deleted: false,
                 })

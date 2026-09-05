@@ -47,7 +47,9 @@ class _SecurityScreenState extends State<SecurityScreen> {
     try {
       pubkey = await signer.pubkey();
       locked = await signer.isLocked();
-    } catch (e) { debugPrint('security status fetch: $e'); }
+    } catch (e) {
+      debugPrint('security status fetch: $e');
+    }
     if (mounted) {
       setState(() {
         _pubkey = pubkey;

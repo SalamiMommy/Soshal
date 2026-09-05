@@ -111,16 +111,42 @@ fn events_from_json(json: String) -> Vec<EventInfo> {
         .collect()
 }
 
-fn rsvp_for_user(rows: &[serde_json::Value], my_pk: &str) -> String {
-    for r in rows {
-        let content = r["content"].as_str().unwrap_or("");
-        let owner = r["pubkey"].as_str().unwrap_or("");
-        if owner == my_pk && ["accepted", "declined", "pending"].contains(&content) {
-            return content.to_string();
+fn rsvp_status_for_user(event_id: &str, user_pk: &str) -> String {
+    let json = super::db::db_query_params(
+        &format!(
+            "SELECT content FROM posts p WHERE kind = ?1 AND pubkey = ?2 AND is_deleted = 0 \
+             AND (rsvp_event_id = ?3 OR id LIKE ?4) \
+             AND {RSVP_NOT_SUPERSEDED} \
+             ORDER BY created_at DESC, id DESC LIMIT 1"
+        ),
+        &[
+            KIND_EVENT_RSVP.to_string(),
+            user_pk.to_string(),
+            event_id.to_string(),
+            format!("rsvp:{user_pk}:{event_id}:%"),
+        ],
+    );
+    if let Ok(json) = json {
+        if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
+            if let Some(row) = rows.first() {
+                if let Some(s) = row["content"].as_str() {
+                    if valid_rsvp(s) {
+                        return s.to_string();
+                    }
+                }
+            }
         }
     }
     String::new()
 }
+
+/// A kind-31924 row is superseded when another row for the same event+user
+/// has a later created_at (or equal created_at and greater id); superseded
+/// rows must not count toward attendee totals.
+const RSVP_NOT_SUPERSEDED: &str = "NOT EXISTS (SELECT 1 FROM posts p2 \
+    WHERE p2.kind = ?1 AND p2.rsvp_event_id = p.rsvp_event_id AND p2.pubkey = p.pubkey \
+    AND (p2.created_at > p.created_at \
+         OR (p2.created_at = p.created_at AND p2.id > p.id)))";
 
 /// Attendee counts per event, restricted to the given event ids so the query
 /// hits the `(kind, content, rsvp_event_id)` index instead of scanning the
@@ -132,9 +158,12 @@ fn attendee_counts_for_ids(ids: &[String]) -> std::collections::HashMap<String, 
     }
     let ids_json = serde_json::to_string(ids).unwrap_or_else(|_| "[]".into());
     if let Ok(json) = super::db::db_query_params(
-        "SELECT rsvp_event_id, COUNT(*) FROM posts WHERE kind = ?1 \
-         AND content = 'accepted' AND rsvp_event_id IN (SELECT value FROM json_each(?2)) \
-         GROUP BY rsvp_event_id",
+        &format!(
+            "SELECT rsvp_event_id, COUNT(*) FROM posts p WHERE kind = ?1 \
+             AND content = 'accepted' AND rsvp_event_id IN (SELECT value FROM json_each(?2)) \
+             AND {RSVP_NOT_SUPERSEDED} \
+             GROUP BY rsvp_event_id",
+        ),
         &[KIND_EVENT_RSVP.to_string(), ids_json],
     ) {
         if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
@@ -150,8 +179,10 @@ fn attendee_counts_for_ids(ids: &[String]) -> std::collections::HashMap<String, 
 
 fn attendees_count(event_id: &str) -> i32 {
     if let Ok(json) = super::db::db_query_params(
-        "SELECT COUNT(*) FROM posts WHERE kind = ?1 AND content = 'accepted' \
-         AND rsvp_event_id = ?2",
+        &format!(
+            "SELECT COUNT(*) FROM posts p WHERE kind = ?1 AND content = 'accepted' \
+             AND rsvp_event_id = ?2 AND {RSVP_NOT_SUPERSEDED}",
+        ),
         &[KIND_EVENT_RSVP.to_string(), event_id.to_string()],
     ) {
         if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
@@ -168,19 +199,32 @@ fn attendees_count(event_id: &str) -> i32 {
 /// bounding-box prefilter on the denormalized event_lat/event_lng columns
 /// keeps the fetch set small and fixes the old fetch-then-filter underfill.
 /// `radius_km <= 0` means "anywhere": no geo filter, zero-coordinate
-/// (location-less) events included.
+/// (location-less) events included. `audience` filters to an author set
+/// ("public" = none; empty set = no events).
 #[frb(sync, serialize)]
 pub fn events_fetch_nearby(
     latitude: f64,
     longitude: f64,
     radius_km: f32,
     limit: i32,
+    audience: String,
 ) -> Result<String, String> {
     if !latitude.is_finite() || !longitude.is_finite() {
         return Err("invalid coordinates".to_string());
     }
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    let mut params: Vec<String> = Vec::new();
+    let mut audience_clause = String::new();
+    if let Some(a) = &authors {
+        if a.is_empty() {
+            return super::util::json_ok(Vec::<EventInfo>::new());
+        }
+        audience_clause = " AND p.pubkey IN (SELECT value FROM json_each(?1))".to_string();
+        params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+    }
     if radius_km <= 0.0 {
-        let json = super::db::db_query_raw(event_rows_sql("", limit))?;
+        let filter = format!("{audience_clause} ");
+        let json = super::db::db_query_params(&event_rows_sql(&filter, limit), &params)?;
         return super::util::json_ok(events_from_json(json));
     }
     let radius = radius_km.min(5000.0);
@@ -190,9 +234,9 @@ pub fn events_fetch_nearby(
     let (lon1, lon2) = (longitude - lon_deg, longitude + lon_deg);
     let geo_filter = format!(
         "AND p.event_lat BETWEEN {lat1:.6} AND {lat2:.6} \
-         AND p.event_lng BETWEEN {lon1:.6} AND {lon2:.6} "
+         AND p.event_lng BETWEEN {lon1:.6} AND {lon2:.6} {audience_clause}"
     );
-    let json = super::db::db_query_raw(event_rows_sql(&geo_filter, limit))?;
+    let json = super::db::db_query_params(&event_rows_sql(&geo_filter, limit), &params)?;
     let mut out: Vec<EventInfo> = events_from_json(json);
     let center = (latitude, longitude);
     out.retain(|e| {
@@ -222,7 +266,7 @@ pub fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result<Strin
     for v in rows {
         if let Some(mut e) = event_from_value(&v) {
             e.attendees = counts.get(&e.id).copied().unwrap_or(0);
-            e.rsvp_status = rsvp_for_user(&[v], &user_pubkey);
+            e.rsvp_status = rsvp_status_for_user(&e.id, &user_pubkey);
             out.push(e);
         }
     }
@@ -289,13 +333,14 @@ pub fn events_create(
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
+    let tags_json = signed["tags"].to_string();
     super::db::upsert_post_row(
         event_id.clone(),
         creator_pubkey,
         content.to_string(),
         KIND_EVENT as i64,
         soshal_common_core::format::now_secs(),
-        String::new(),
+        tags_json,
         Some(title),
     )?;
     super::db::db_execute_params(
@@ -305,17 +350,20 @@ pub fn events_create(
     Ok(signed_json).into()
 }
 
-/// Single-row fetch of the event host pubkey + d-tag (avoids the
+/// Single-row fetch of the event host pubkey, kind + d-tag (avoids the
 /// events_get_event + tags_json double query).
-fn event_host_and_d_tag(event_id: &str) -> Option<(String, String)> {
+fn event_host_kind_and_d_tag(event_id: &str) -> Option<(String, u16, String)> {
     let json = super::db::db_query_params(
-        &format!("SELECT pubkey, tags_json FROM posts WHERE kind IN ({EVENT_KINDS}) AND id = ?1"),
+        &format!(
+            "SELECT pubkey, kind, tags_json FROM posts WHERE kind IN ({EVENT_KINDS}) AND id = ?1"
+        ),
         &[event_id.to_string()],
     )
     .ok()?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).ok()?;
     let row = rows.first()?;
     let host = row["pubkey"].as_str().unwrap_or("").to_string();
+    let kind = row["kind"].as_i64().unwrap_or(KIND_EVENT as i64) as u16;
     let d_tag =
         serde_json::from_str::<Vec<Vec<String>>>(row["tags_json"].as_str().unwrap_or_default())
             .ok()
@@ -325,7 +373,7 @@ fn event_host_and_d_tag(event_id: &str) -> Option<(String, String)> {
                     .and_then(|t| t.get(1).cloned())
             })
             .unwrap_or_default();
-    Some((host, d_tag))
+    Some((host, kind, d_tag))
 }
 
 fn valid_rsvp(status: &str) -> bool {
@@ -343,14 +391,9 @@ pub fn events_rsvp(
     if !valid_rsvp(&rsvp_status) {
         return Err("rsvp_status must be accepted/declined/pending".to_string()).into();
     }
-    let (host, event_d) = match event_host_and_d_tag(&event_id) {
+    let (host, event_kind, event_d) = match event_host_kind_and_d_tag(&event_id) {
         Some(v) => v,
         None => return Err("event not found locally (sync relays first)".to_string()).into(),
-    };
-    let d_tag = if event_d.is_empty() {
-        format!("{}-{}", host.get(..12).unwrap_or(""), 0)
-    } else {
-        event_d
     };
     let builder = nostr::event::EventBuilder::new(
         nostr::event::Kind::from_u16(KIND_EVENT_RSVP),
@@ -358,7 +401,7 @@ pub fn events_rsvp(
     )
     .tags(
         vec![
-            vec!["a".to_string(), format!("{KIND_EVENT_RSVP}:{host}:{d_tag}")],
+            vec!["a".to_string(), format!("{event_kind}:{host}:{event_d}")],
             vec!["e".to_string(), event_id.clone()],
         ]
         .into_iter()
@@ -385,30 +428,44 @@ pub fn events_rsvp(
     // would collide across events — event B's RSVP would overwrite event A's
     // row and stale accepted rows would double-count attendees.
     let rsvp_id = format!("rsvp:{}:{}:{}", user_pubkey, event_id, rsvp_status);
-    // Clear any previous status row for this (user, event) so a changed RSVP
-    // cannot leave a stale row (double-counts) behind.
+    // Clear any previous status row for this (user, event) and insert the new
+    // one in a single transaction: a failed insert must not leave the old row
+    // deleted, which would drop the attendee/status entirely.
+    let row = soshal_db_core::repos::post::PostRow {
+        id: rsvp_id.clone(),
+        pubkey: user_pubkey.clone(),
+        content: rsvp_status.clone(),
+        kind: KIND_EVENT_RSVP as i64,
+        created_at: soshal_common_core::format::now_secs(),
+        tags_json: format!(r#"[["a","{event_kind}:{host}:{event_d}"],["e","{event_id}"]]"#),
+        sig: None,
+        reply_to: None,
+        root_id: None,
+        mentioned_pubkeys: String::new(),
+        mentioned_hashtags: String::new(),
+        subject: None,
+        sync_status: "pending".to_string(),
+        is_deleted: false,
+        scheduled_at: None,
+        freenet_key: None,
+        is_freenet_native: false,
+        rsvp_event_id: None,
+    };
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
-        let _ = soshal_db_core::block_on(async {
-            let _ = conn
-                .execute(
-                    "DELETE FROM posts WHERE id LIKE ?1 AND id != ?2",
-                    libsql::params!(format!("rsvp:{user_pubkey}:{event_id}:%"), rsvp_id.clone()),
-                )
-                .await;
-            Ok::<(), soshal_db_core::error::DbError>(())
-        });
-        Ok(())
-    })?;
-    super::db::upsert_post_row(
-        rsvp_id,
-        user_pubkey,
-        rsvp_status,
-        KIND_EVENT_RSVP as i64,
-        soshal_common_core::format::now_secs(),
-        format!(r#"[["a","{KIND_EVENT_RSVP}:{host}:{d_tag}"],["e","{event_id}"]]"#),
-        None,
-    )
+        soshal_db_core::query::with_tx(&conn, |tx| async move {
+            tx.execute(
+                "DELETE FROM posts WHERE id LIKE ?1 AND id != ?2",
+                libsql::params!(format!("rsvp:{user_pubkey}:{event_id}:%"), rsvp_id.clone()),
+            )
+            .await?;
+            soshal_db_core::repos::post::PostRepo::new(db)
+                .upsert_in(&tx, &row)
+                .await?;
+            tx.commit().await?;
+            Ok(())
+        })
+    })
     .map(|_| true)
 }
 
@@ -513,8 +570,8 @@ pub fn events_get_event(event_id: String) -> Result<String, String> {
 pub fn events_get_attendees(event_id: String) -> Result<Vec<String>, String> {
     let json = super::db::db_query_params(
         &format!(
-            "SELECT DISTINCT pubkey FROM posts WHERE kind = {KIND_EVENT_RSVP} AND content = 'accepted' \
-             AND rsvp_event_id = ?1 ORDER BY created_at DESC LIMIT 200"
+            "SELECT DISTINCT pubkey FROM posts p WHERE kind = {KIND_EVENT_RSVP} AND content = 'accepted' \
+             AND rsvp_event_id = ?1 AND {RSVP_NOT_SUPERSEDED} ORDER BY created_at DESC LIMIT 200"
         ),
         &[event_id],
     )?;
@@ -703,7 +760,8 @@ mod tests {
         assert_eq!(mine[0]["id"].as_str().unwrap(), event_id);
 
         let anywhere: Vec<serde_json::Value> =
-            serde_json::from_str(&events_fetch_nearby(0.0, 0.0, 0.0, 10).unwrap()).unwrap();
+            serde_json::from_str(&events_fetch_nearby(0.0, 0.0, 0.0, 10, "public".into()).unwrap())
+                .unwrap();
         assert_eq!(
             anywhere.len(),
             1,

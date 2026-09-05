@@ -86,6 +86,11 @@ class _DatingScreenState extends State<DatingScreen>
             onPressed: () => _showFilterDialog(pubkey),
           ),
           IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Dating settings',
+            onPressed: () => _showSettings(pubkey),
+          ),
+          IconButton(
             icon: const Icon(Icons.person_add_alt),
             tooltip: 'My dating profile',
             onPressed: () => context.push('/dating/me'),
@@ -148,11 +153,15 @@ class _DatingScreenState extends State<DatingScreen>
         children: [
           Row(
             children: [
-              Icon(Icons.lock_outline, color: Theme.of(context).colorScheme.primary),
+              Icon(Icons.lock_outline,
+                  color: Theme.of(context).colorScheme.primary),
               const SizedBox(width: 8),
               Text(
                 'Secret Crush (Up to 9 Picks)',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -185,7 +194,9 @@ class _DatingScreenState extends State<DatingScreen>
                     borderRadius: BorderRadius.circular(12),
                     onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Select friend for Crush Slot #${i + 1}')),
+                        SnackBar(
+                            content:
+                                Text('Select friend for Crush Slot #${i + 1}')),
                       );
                     },
                     child: Column(
@@ -193,16 +204,20 @@ class _DatingScreenState extends State<DatingScreen>
                       children: [
                         CircleAvatar(
                           radius: 24,
-                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                          child: Icon(Icons.add, color: Theme.of(context).colorScheme.primary),
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primaryContainer,
+                          child: Icon(Icons.add,
+                              color: Theme.of(context).colorScheme.primary),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           'Slot #${i + 1}',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 2),
-                        const Text('Empty', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                        const Text('Empty',
+                            style: TextStyle(fontSize: 10, color: Colors.grey)),
                       ],
                     ),
                   ),
@@ -216,8 +231,8 @@ class _DatingScreenState extends State<DatingScreen>
   }
 
   Future<void> _showFilterDialog(String pubkey) async {
-    final result =
-        await showDialog<_FilterResult>(context: context, builder: (_) => const _FilterDialog());
+    final result = await showDialog<_FilterResult>(
+        context: context, builder: (_) => const _FilterDialog());
     if (result == null || !mounted) return;
     final api = context.read<DatingService>();
     if (!result.ok) {
@@ -241,6 +256,86 @@ class _DatingScreenState extends State<DatingScreen>
     );
   }
 
+  /// Dating settings sheet: edit profile or reset the "no" (pass) pile.
+  Future<void> _showSettings(String pubkey) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.badge_outlined),
+              title: const Text('Edit profile'),
+              subtitle: const Text('Update photos, interests, location'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/dating/me');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.restart_alt),
+              title: const Text('Reset profiles you passed'),
+              subtitle: const Text('Swiped "no" profiles re-enter the deck'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pop(context);
+                _resetPasses(pubkey);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _resetPasses(String pubkey) async {
+    final doIt = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset passed profiles?'),
+        content: const Text(
+          'Profiles you swiped "no" on will reappear in your deck. '
+          'Likes and matches are untouched.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (doIt != true || !mounted) return;
+    final api = context.read<DatingService>();
+    try {
+      final n = await api.resetPasses(pubkey);
+      await api.fetchProfiles(pubkey);
+      if (!mounted) return;
+      setState(() => _cardIndex = 0);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: SelectableText(
+            n > 0 ? 'Reset $n passed profiles' : 'No passed profiles to reset',
+          ),
+        ),
+      );
+    } catch (e, st) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Reset error: $e')),
+        );
+      }
+      debugPrint('dating reset passes: $e\n$st');
+    }
+  }
 
   Widget _buildBrowse(String pubkey) {
     return Consumer<DatingService>(
@@ -1236,8 +1331,7 @@ class _FilterDialogState extends State<_FilterDialog> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Radius'),
-                subtitle:
-                    Text(_radiusKm <= 0 ? 'Unlimited' : '$_radiusKm km'),
+                subtitle: Text(_radiusKm <= 0 ? 'Unlimited' : '$_radiusKm km'),
                 trailing: SizedBox(
                   width: 120,
                   child: Slider(
@@ -1246,8 +1340,7 @@ class _FilterDialogState extends State<_FilterDialog> {
                     divisions: 10,
                     value: _radiusKm.toDouble(),
                     label: _radiusKm <= 0 ? 'Unlimited' : '$_radiusKm km',
-                    onChanged: (v) =>
-                        setState(() => _radiusKm = v.round()),
+                    onChanged: (v) => setState(() => _radiusKm = v.round()),
                   ),
                 ),
               ),

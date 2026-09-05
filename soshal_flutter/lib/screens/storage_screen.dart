@@ -52,7 +52,9 @@ class _StorageScreenState extends State<StorageScreen> {
       if (ad.isNotEmpty) _autoDownload = ad.toLowerCase() == 'true';
       final ap = settings.getSetting('auto_play');
       if (ap.isNotEmpty) _autoPlay = ap.toLowerCase() == 'true';
-    } catch (e) { debugPrint('settings read: $e'); }
+    } catch (e) {
+      debugPrint('settings read: $e');
+    }
     if (mounted) setState(() => _loading = false);
   }
 

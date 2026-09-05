@@ -25,6 +25,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
       final json = await RustLib.instance.api.crateFfiMusicMusicFetch(
         limit: BigInt.from(limit),
         author: author,
+        audience: 'public',
       );
       _tracks = await runOffThread(() => _parseTracks(json));
       clearLastError();

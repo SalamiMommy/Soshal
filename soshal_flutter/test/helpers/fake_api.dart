@@ -176,8 +176,9 @@ class FakeApi extends RustLibApi {
       _asyncCall<String>('crateFfiMusicMusicComments', [], {#trackKind: trackKind, #trackPubkey: trackPubkey, #trackD: trackD});
 
   @override
-  Future<String> crateFfiMusicMusicFetch({required BigInt limit, String? author}) =>
-      _asyncCall<String>('crateFfiMusicMusicFetch', [], {#limit: limit, #author: author});
+  Future<String> crateFfiMusicMusicFetch(
+          {required String audience, String? author, required BigInt limit}) =>
+      _asyncCall<String>('crateFfiMusicMusicFetch', [], {#audience: audience, #author: author, #limit: limit});
 
   @override
   Future<String> crateFfiMusicMusicPublish({required String mediaSource, String? title, String? thumbnail, required List<String> hashtags, String? audience}) =>

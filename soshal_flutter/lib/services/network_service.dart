@@ -646,7 +646,9 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
           return addr.address;
         }
       }
-    } catch (e) { debugPrint('network interface list: $e'); }
+    } catch (e) {
+      debugPrint('network interface list: $e');
+    }
     return null;
   }
 

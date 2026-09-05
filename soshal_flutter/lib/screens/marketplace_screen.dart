@@ -29,7 +29,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
   bool _trending = false;
   int _radiusKm = 25;
   String _selectedCondition = 'All';
-  final List<String> _conditions = const ['All', 'New', 'Like New', 'Good', 'Fair'];
+  final List<String> _conditions = const [
+    'All',
+    'New',
+    'Like New',
+    'Good',
+    'Fair'
+  ];
 
   @override
   void initState() {
@@ -139,7 +145,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
             tooltip: 'Save item to Watchlist',
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Saved "${detail.title}" to your Watchlist')),
+                SnackBar(
+                    content: Text('Saved "${detail.title}" to your Watchlist')),
               );
             },
           ),
@@ -182,8 +189,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
     if (result == null || !result.ok || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content:
-            Text('Offer sent to seller: ${result.offerAmount} ${listing.currency}'),
+        content: Text(
+            'Offer sent to seller: ${result.offerAmount} ${listing.currency}'),
       ),
     );
   }
@@ -249,7 +256,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
         try {
           final escrows = await api.escrowsByParticipant(pubkey);
           escrowCount = ' (${escrows.length} total)';
-        } catch (e) { debugPrint('marketplace: $e'); }
+        } catch (e) {
+          debugPrint('marketplace: $e');
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -371,9 +380,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Marketplace Filters', style: Theme.of(context).textTheme.titleLarge),
+                          Text('Marketplace Filters',
+                              style: Theme.of(context).textTheme.titleLarge),
                           const SizedBox(height: 16),
-                          Text('Search Radius: $_radiusKm km', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          Text('Search Radius: $_radiusKm km',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
                           Slider(
                             value: _radiusKm.toDouble(),
                             min: 5,
@@ -386,7 +398,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                             },
                           ),
                           const SizedBox(height: 8),
-                          const Text('Item Condition', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text('Item Condition',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
@@ -397,7 +410,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                                   selected: _selectedCondition == cond,
                                   onSelected: (selected) {
                                     if (selected) {
-                                      setSheetState(() => _selectedCondition = cond);
+                                      setSheetState(
+                                          () => _selectedCondition = cond);
                                       setState(() => _selectedCondition = cond);
                                     }
                                   },
@@ -536,7 +550,11 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
         final rawListings = api.listings;
         final listings = _selectedCondition == 'All'
             ? rawListings
-            : rawListings.where((l) => l.condition.toLowerCase() == _selectedCondition.toLowerCase()).toList();
+            : rawListings
+                .where((l) =>
+                    l.condition.toLowerCase() ==
+                    _selectedCondition.toLowerCase())
+                .toList();
         if (listings.isEmpty) {
           return const EmptyState(
             icon: Icons.storefront_outlined,
@@ -720,7 +738,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
             );
           },
         );
-},
+      },
     );
   }
 }
@@ -1110,7 +1128,9 @@ class _EscrowSectionState extends State<_EscrowSection> {
       for (final o in orders) {
         if (o.listingId == listingId) return o;
       }
-    } catch (e) { debugPrint('marketplace: $e'); }
+    } catch (e) {
+      debugPrint('marketplace: $e');
+    }
     return null;
   }
 
@@ -1137,6 +1157,13 @@ class _EscrowSectionState extends State<_EscrowSection> {
         () => _api.releaseEscrow(escrow.id, widget.listing.sellerPubkey),
       );
 
+  Future<void> _confirm(EscrowInfo escrow, bool isBuyer) => _run(
+        isBuyer ? 'Buyer confirmed ✓' : 'Seller confirmed ✓',
+        () => isBuyer
+            ? _api.confirmEscrowBuyer(escrow.id, escrow.buyerPubkey)
+            : _api.confirmEscrowSeller(escrow.id, escrow.sellerPubkey),
+      );
+
   Future<void> _disputeDialog(EscrowInfo escrow) async {
     final result = await showDialog<_DisputeResult>(
       context: context,
@@ -1144,7 +1171,8 @@ class _EscrowSectionState extends State<_EscrowSection> {
     );
     if (result == null || !result.ok || !mounted) return;
     await _run('Dispute opened — mediator notified ⚠️', () async {
-      await _api.disputeEscrow(escrow.id, widget.myPubkey, result.reason.trim());
+      await _api.disputeEscrow(
+          escrow.id, widget.myPubkey, result.reason.trim());
     });
   }
 
@@ -1303,10 +1331,28 @@ class _EscrowSectionState extends State<_EscrowSection> {
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 6),
-          TextButton.icon(
-            onPressed: enabled ? () => _disputeDialog(e) : null,
-            icon: const Icon(Icons.warning_amber, size: 18),
-            label: const Text('Dispute'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (e.buyerPubkey == widget.myPubkey)
+                OutlinedButton.icon(
+                  onPressed: enabled ? () => _confirm(e, true) : null,
+                  icon: const Icon(Icons.verified_outlined, size: 18),
+                  label: const Text('Confirm as buyer'),
+                ),
+              if (e.sellerPubkey == widget.myPubkey)
+                OutlinedButton.icon(
+                  onPressed: enabled ? () => _confirm(e, false) : null,
+                  icon: const Icon(Icons.verified_outlined, size: 18),
+                  label: const Text('Confirm as seller'),
+                ),
+              TextButton.icon(
+                onPressed: enabled ? () => _disputeDialog(e) : null,
+                icon: const Icon(Icons.warning_amber, size: 18),
+                label: const Text('Dispute'),
+              ),
+            ],
           ),
         ];
       case 'disputed':
@@ -2069,16 +2115,15 @@ class _PollDialogState extends State<_PollDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context)
-              .pop(_PollResult(ok: false)),
+          onPressed: () => Navigator.of(context).pop(_PollResult(ok: false)),
           child: const Text('Cancel'),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_PollResult(
-                ok: true,
-                question: _question.text.trim(),
-                options: _options.text.trim(),
-              )),
+            ok: true,
+            question: _question.text.trim(),
+            options: _options.text.trim(),
+          )),
           child: const Text('Post'),
         ),
       ],

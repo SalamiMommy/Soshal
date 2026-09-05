@@ -20,7 +20,7 @@ impl<'a> NotificationRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read=excluded.is_read",
+            "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read=notifications.is_read",
             params![
                 n.id.as_str(),
                 n.pubkey.as_str(),
@@ -44,7 +44,7 @@ impl<'a> NotificationRepo<'a> {
         }
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
-            let sql = "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read=excluded.is_read";
+            let sql = "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read=notifications.is_read";
             let stmt = tx.prepare(sql).await?;
             for n in notifications {
                 if crate::repos::limits::notification_too_big(n.content.as_deref().unwrap_or("")) {
@@ -77,7 +77,7 @@ impl<'a> NotificationRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE pubkey = ?1 AND is_read = 0 ORDER BY created_at DESC LIMIT ?2",
+            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE pubkey = ?1 AND is_read = 0 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE i.pubkey = notifications.pubkey AND i.kind = notifications.type AND ((i.from_pubkey = COALESCE(notifications.from_pubkey, '') AND i.event_id = '') OR (i.event_id = COALESCE(notifications.event_id, '') AND i.from_pubkey = '') OR (i.from_pubkey = COALESCE(notifications.from_pubkey, '') AND i.event_id = COALESCE(notifications.event_id, '')))) ORDER BY created_at DESC LIMIT ?2",
             params![pubkey, limit],
             |row| {
                 Ok(NotificationRow {
@@ -104,7 +104,7 @@ impl<'a> NotificationRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE pubkey = ?1 AND is_read = 0 AND type = ?2 ORDER BY created_at DESC LIMIT ?3",
+            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE pubkey = ?1 AND is_read = 0 AND type = ?2 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE i.pubkey = notifications.pubkey AND i.kind = notifications.type AND ((i.from_pubkey = COALESCE(notifications.from_pubkey, '') AND i.event_id = '') OR (i.event_id = COALESCE(notifications.event_id, '') AND i.from_pubkey = '') OR (i.from_pubkey = COALESCE(notifications.from_pubkey, '') AND i.event_id = COALESCE(notifications.event_id, '')))) ORDER BY created_at DESC LIMIT ?3",
             params![pubkey, type_, limit],
             |row| {
                 Ok(NotificationRow {

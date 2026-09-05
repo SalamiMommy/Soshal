@@ -112,7 +112,7 @@ class StreamingService extends ChangeNotifier
   Future<List<StreamRow>> fetchLive({int limit = 50}) async {
     final parsed = await _decode(
       () => RustLib.instance.api
-          .crateFfiStreamingStreamingFetchLive(limit: limit),
+          .crateFfiStreamingStreamingFetchLive(limit: limit, audience: 'public'),
     );
     _live
       ..clear()
@@ -211,7 +211,7 @@ class StreamingService extends ChangeNotifier
   Future<List<StreamRow>> fetchFollowedStories(String viewerPubkey) async {
     final parsed = await _decode(
       () => RustLib.instance.api.crateFfiStreamingStreamingFetchFollowedStories(
-        viewerPubkey: viewerPubkey,
+        audience: 'public',
       ),
     );
     _stories
@@ -517,38 +517,38 @@ class StreamRow {
   });
 
   factory StreamRow.fromJson(Map<String, dynamic> json) {
-    final content = json.strOf('content');
-    String parsedTitle = 'Untitled';
-    String parsedSummary = '';
-
-    try {
-      final decoded = jsonDecode(content);
-      if (decoded is Map<String, dynamic>) {
-        parsedTitle = (decoded['title'] as String?) ??
-            (decoded['text'] as String?) ??
-            'Untitled';
-        parsedSummary = (decoded['summary'] as String?) ?? '';
-      } else {
-        final firstLine = content.trim().split('\n').first;
-        parsedTitle = firstLine.isEmpty ? 'Untitled' : firstLine;
-        parsedSummary = content.trim();
-      }
-    } catch (e, st) {
-      debugPrint('moq parse fallback: $e');
-      logRuntimeError('moq parse fallback: $e', st);
-      final firstLine = content.trim().split('\n').first;
-      parsedTitle = firstLine.isEmpty ? 'Untitled' : firstLine;
-      parsedSummary = content.trim();
-    }
+    // Rust emits live streams as StreamInfo (broadcaster_pubkey/title/
+    // description/viewer_count) and stories as StoryInfo (author_pubkey/
+    // content/views). Both flow through this single shared parser.
+    final pubkey = json.strOf('broadcaster_pubkey').isNotEmpty
+        ? json.strOf('broadcaster_pubkey')
+        : (json.strOf('author_pubkey').isNotEmpty
+            ? json.strOf('author_pubkey')
+            : json.strOf('pubkey'));
+    final storyContent = json.strOf('content');
+    final description = json.strOf('description');
+    final title = json.strOf('title').isNotEmpty
+        ? json.strOf('title')
+        : (storyContent.isEmpty
+            ? 'Untitled'
+            : storyContent.trim().split('\n').first);
+    final summary = description.isNotEmpty
+        ? description
+        : (json.strOf('summary').isNotEmpty
+            ? json.strOf('summary')
+            : storyContent);
+    final views = json['viewer_count'] != null
+        ? json.intOf('viewer_count')
+        : json.intOf('views');
 
     return StreamRow(
       id: json.strOf('id'),
-      pubkey: json.strOf('pubkey'),
-      content: content,
+      pubkey: pubkey,
+      content: storyContent,
       createdAt: json.intOf('created_at'),
-      views: json.intOf('views'),
-      title: parsedTitle,
-      summary: parsedSummary,
+      views: views,
+      title: title,
+      summary: summary,
     );
   }
 }

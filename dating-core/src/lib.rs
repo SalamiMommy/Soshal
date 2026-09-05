@@ -33,6 +33,7 @@ pub struct PreferenceWeights {
     pub education: Option<f64>,
     pub language: Option<f64>,
     pub relationship_intent: Option<f64>,
+    pub distance: Option<f64>,
 }
 
 /// A dating profile with preferences, bio, photos and traits.

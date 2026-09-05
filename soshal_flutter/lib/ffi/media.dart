@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `generate_cache_filename`, `infer_mime_type`, `resolve_allowed_path`
+// These functions are ignored because they are not marked as `pub`: `generate_cache_filename`, `infer_mime_type`, `resolve_allowed_path`, `validate_local_source_path`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MEDIA_SERVER`, `MediaResult`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `deref`, `fmt`, `fmt`, `initialize`
 

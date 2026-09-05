@@ -68,17 +68,35 @@ fn p_tags(event: &Event) -> Vec<String> {
         .collect()
 }
 
-/// Order-preserving union of two comma-separated pubkey lists.
-fn merge_pubkey_lists(stored: &str, incoming: &str) -> String {
-    let mut seen = std::collections::HashSet::new();
-    let mut out: Vec<&str> = Vec::new();
-    for pk in stored.split(',').chain(incoming.split(',')) {
-        let pk = pk.trim();
-        if !pk.is_empty() && seen.insert(pk) {
-            out.push(pk);
+fn r_tags(event: &Event) -> Vec<String> {
+    event
+        .tags
+        .iter()
+        .filter(|t| t.kind() == "r")
+        .filter_map(|t| t.content().map(|c| c.to_string()))
+        .collect()
+}
+
+/// Parse a stored/incoming pubkey list. The canonical storage format is a
+/// JSON array (`["a","b"]`, written by identity/kind-1 flows and read via
+/// `json_each`/`serde_json::from_str::<Vec<String>>`), but legacy rows and the
+/// per-event p-tag join are comma-separated. Accept both.
+fn split_pubkey_list(s: &str) -> Vec<String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() || trimmed == "[]" {
+        return Vec::new();
+    }
+    if trimmed.starts_with('[') {
+        if let Ok(v) = serde_json::from_str::<Vec<String>>(trimmed) {
+            return v;
         }
     }
-    out.join(",")
+    trimmed
+        .split(',')
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .map(|p| p.to_string())
+        .collect()
 }
 
 fn has_p_tag(event: &Event, pubkey: &str) -> bool {
@@ -335,8 +353,17 @@ async fn handle_impl(
                 recipient,
                 content: event.content.clone(),
                 created_at: event.created_at.as_secs(),
+                tags_json: serde_json::to_string(&event.tags).unwrap_or_else(|_| "[]".to_string()),
             }) {
+                // Fail closed instead of advancing the DM watermark past a
+                // message the consumer never received: the bridge persists the
+                // DM only when this update is actually delivered, so dropping
+                // it here permanently loses the message. Err → event excluded
+                // from ok_pos → refetched on the next pass.
                 eprintln!("sync engine: dm notification dropped: channel full: {e}");
+                return Err(DbError::Migration(
+                    "DM notification channel full; not advancing watermark".to_string(),
+                ));
             }
         }
         return Ok(());
@@ -345,11 +372,31 @@ async fn handle_impl(
     match event.kind {
         Kind::Metadata => {
             if let Some(row) = user_row(event) {
-                UserRepo::new(db).upsert_in(t, &row).await?;
-                if tx
-                    .try_send(SyncUpdate::Profile { pubkey: row.pubkey })
-                    .is_err()
-                {
+                let repo = UserRepo::new(db);
+                let pubkey = row.pubkey.clone();
+                let mut applied = false;
+                match repo.get_by_pubkey_in(t, &row.pubkey).await? {
+                    None => {
+                        repo.upsert_in(t, &row).await?;
+                        applied = true;
+                    }
+                    Some(stored) => {
+                        // Newer-wins: never regress a stored profile with an
+                        // older metadata replay (relays can redeliver stale
+                        // copies out of order). A kind-0 carries no follow
+                        // graph, so preserve the contacts/relays that kind-3
+                        // merges wrote — a profile redelivery must not wipe
+                        // the merged list.
+                        if row.updated_at > stored.updated_at {
+                            let mut updated = row;
+                            updated.contact_pubkeys = stored.contact_pubkeys;
+                            updated.relay_list = stored.relay_list;
+                            repo.upsert_in(t, &updated).await?;
+                            applied = true;
+                        }
+                    }
+                }
+                if applied && tx.try_send(SyncUpdate::Profile { pubkey }).is_err() {
                     eprintln!("sync update channel full, dropping update");
                 }
             }
@@ -357,35 +404,45 @@ async fn handle_impl(
         Kind::ContactList => {
             let pubkey = event.pubkey.to_hex();
             let repo = UserRepo::new(db);
-            let mut row = repo
-                .get_by_pubkey_in(t, &pubkey)
-                .await?
-                .unwrap_or_else(|| UserRow {
-                    pubkey: pubkey.clone(),
-                    npub: PublicKey::from_hex(&pubkey)
-                        .ok()
-                        .map(|p| p.to_bech32().unwrap_or_default())
-                        .unwrap_or_default(),
-                    name: None,
-                    display_name: None,
-                    about: None,
-                    picture: None,
-                    banner: None,
-                    nip05: None,
-                    lud16: None,
-                    created_at: event.created_at.as_secs() as i64,
-                    updated_at: event.created_at.as_secs() as i64,
-                    metadata_json: None,
-                    contact_pubkeys: String::new(),
-                    relay_list: String::new(),
-                    follower_count: 0,
-                });
-            // Merge: kind-3 lists arrive per-relay and are partial views;
-            // union with the stored list so contacts seen on other relays
-            // are never dropped by a narrower list.
-            row.contact_pubkeys =
-                merge_pubkey_lists(&row.contact_pubkeys, &p_tags(event).join(","));
+            let existing = repo.get_by_pubkey_in(t, &pubkey).await?;
+            let stored_list = existing
+                .as_ref()
+                .map(|r| r.contact_pubkeys.clone())
+                .unwrap_or_default();
+            let mut row = existing.unwrap_or_else(|| UserRow {
+                pubkey: pubkey.clone(),
+                npub: PublicKey::from_hex(&pubkey)
+                    .ok()
+                    .map(|p| p.to_bech32().unwrap_or_default())
+                    .unwrap_or_default(),
+                name: None,
+                display_name: None,
+                about: None,
+                picture: None,
+                banner: None,
+                nip05: None,
+                lud16: None,
+                created_at: event.created_at.as_secs() as i64,
+                updated_at: event.created_at.as_secs() as i64,
+                metadata_json: None,
+                contact_pubkeys: String::new(),
+                relay_list: String::new(),
+                follower_count: 0,
+            });
+            row.contact_pubkeys = serde_json::to_string(&p_tags(event)).unwrap_or_default();
+            row.relay_list = serde_json::to_string(&r_tags(event)).unwrap_or_default();
             repo.upsert_in(t, &row).await?;
+            // Materialized follower counts: bump +1 for each pubkey newly
+            // added to this author's list.
+            let before: std::collections::HashSet<String> =
+                split_pubkey_list(&stored_list).into_iter().collect();
+            for added in split_pubkey_list(&row.contact_pubkeys) {
+                if added != pubkey && !before.contains(&added) {
+                    UserRepo::new(db)
+                        .bump_follower_count_in(t, &added, 1)
+                        .await?;
+                }
+            }
         }
         Kind::ZapRequest => {
             // Store the request so later receipts can bind to it (NIP-57).
@@ -622,10 +679,15 @@ pub fn handle_batch(
                 | Kind::ZapReceipt
                 | Kind::RelayList
                 | Kind::Bookmarks
-                | Kind::Reaction => match handle_impl(db, my_pubkey, event, tx, true, &t).await {
-                    Ok(()) => ok_pos.push(pos),
-                    Err(e) => eprintln!("sync engine: handle kind {}: {e}", event.kind.as_u16()),
-                },
+                | Kind::Reaction
+                | Kind::EventDeletion => {
+                    match handle_impl(db, my_pubkey, event, tx, true, &t).await {
+                        Ok(()) => ok_pos.push(pos),
+                        Err(e) => {
+                            eprintln!("sync engine: handle kind {}: {e}", event.kind.as_u16())
+                        }
+                    }
+                }
                 _ => {
                     if POST_KIND_ALLOWLIST.contains(&event.kind.as_u16()) {
                         if let Some(row) = post_row(event) {
@@ -1135,12 +1197,13 @@ mod tests {
         let row = UserRepo::new(&db).get_by_pubkey(&pk).unwrap().unwrap();
         assert_eq!(
             row.contact_pubkeys,
-            format!("{},{}", "a".repeat(64), "b".repeat(64))
+            serde_json::json!(["a".repeat(64), "b".repeat(64)]).to_string()
         );
         assert_eq!(row.name.as_deref(), Some("alice"));
 
-        // Re-ingest second contact list for same user: union merges, so the
-        // follow set is never narrowed by a partial relay view.
+        // Re-ingest second contact list for same user: NIP-02 replace
+        // semantics — the kind-3 event IS the full follow set, so the list is
+        // REPLACED, not unioned, by a newer event from the same author.
         let cl2 = signed_event_with_tags(
             &keys,
             Kind::ContactList,
@@ -1151,7 +1214,7 @@ mod tests {
         let row = UserRepo::new(&db).get_by_pubkey(&pk).unwrap().unwrap();
         assert_eq!(
             row.contact_pubkeys,
-            format!("{},{},{}", "a".repeat(64), "b".repeat(64), "c".repeat(64))
+            serde_json::json!(["c".repeat(64)]).to_string()
         );
         assert_eq!(row.name.as_deref(), Some("alice"));
     }
@@ -1193,5 +1256,150 @@ mod tests {
         handle_batch(&db, &my, &[meta], &tx).unwrap();
         let row = UserRepo::new(&db).get_by_pubkey(&my).unwrap().unwrap();
         assert_eq!(row.name.as_deref(), Some("bob"));
+    }
+
+    #[test]
+    fn dm_full_channel_fails_closed_watermark_and_redelivery() {
+        let db = soshal_test_util::test_db();
+        let keys = Keys::generate();
+        let my = keys.public_key().to_hex();
+        let (tx, _rx) = tokio::sync::mpsc::channel::<SyncUpdate>(0);
+        set_watermark(&db, WM_DM, 1_700_000_000);
+
+        let dm = signed_event_with_tags(
+            &keys,
+            Kind::EncryptedDirectMessage,
+            "enc",
+            vec![vec!["p".to_string(), my.clone()]],
+        );
+
+        // Full channel (capacity 0, no consumer): try_send fails → DM position
+        // excluded from ok_pos → engine cursor (WM_DM) must not advance.
+        let ok_pos = handle_batch(&db, &my, &[dm.clone()], &tx).unwrap();
+        assert!(ok_pos.is_empty(), "undelivered DM must not be acknowledged");
+        assert_eq!(watermark(&db, WM_DM), 1_700_000_000);
+
+        // Next pass re-fetches the still-pending DM; a live channel delivers.
+        let (tx2, mut rx2) = channel();
+        let ok_pos = handle_batch(&db, &my, &[dm.clone()], &tx2).unwrap();
+        assert_eq!(ok_pos, vec![0]);
+        match rx2.try_recv().unwrap() {
+            SyncUpdate::Dm { content, .. } => assert_eq!(content, "enc"),
+            other => panic!("unexpected update: {other:?}"),
+        }
+        // Delivered → engine cursor would advance past the DM timestamp.
+        let cur = watermark(&db, WM_DM).max(dm.created_at.as_secs());
+        set_watermark(&db, WM_DM, cur);
+        assert_eq!(watermark(&db, WM_DM), dm.created_at.as_secs());
+    }
+
+    #[test]
+    fn batch_kind5_tombstones_relay_path() {
+        let db = soshal_test_util::test_db();
+        let keys = Keys::generate();
+        let my = keys.public_key().to_hex();
+        let (tx, mut rx) = channel();
+
+        // Seed a post authored by `keys`.
+        let post = soshal_test_util::signed_event(&keys, Kind::TextNote, "to delete", 100);
+        handle_batch(&db, &my, &[post.clone()], &tx).unwrap();
+        while rx.try_recv().is_ok() {}
+        let repo = PostRepo::new(&db);
+        assert_eq!(
+            repo.get_by_id(&post.id.to_hex())
+                .unwrap()
+                .map(|r| r.is_deleted),
+            Some(false)
+        );
+
+        // Kind-5 delete from the SAME author is routed through the event
+        // deletion arm (previously the batch route list skipped it → the
+        // tombstone never applied on the relay path).
+        let del = signed_event_with_tags(
+            &keys,
+            Kind::EventDeletion,
+            "",
+            vec![vec!["e".to_string(), post.id.to_hex()]],
+        );
+        handle_batch(&db, &my, &[del.clone()], &tx).unwrap();
+        assert_eq!(
+            repo.get_by_id(&post.id.to_hex())
+                .unwrap()
+                .map(|r| r.is_deleted),
+            Some(true),
+            "kind-5 from the author must tombstone the matching post"
+        );
+
+        // A delete from a DIFFERENT author cannot hide someone else's post.
+        let other = Keys::generate();
+        let del_other = signed_event_with_tags(
+            &other,
+            Kind::EventDeletion,
+            "",
+            vec![vec!["e".to_string(), post.id.to_hex()]],
+        );
+        handle_batch(&db, &my, &[del_other], &tx).unwrap();
+        assert_eq!(
+            repo.get_by_id(&post.id.to_hex())
+                .unwrap()
+                .map(|r| r.is_deleted),
+            Some(true),
+            "foreign kind-5 must not resurrect or re-apply; row stays deleted"
+        );
+    }
+
+    #[test]
+    fn metadata_newer_wins_preserves_contact_list() {
+        let db = soshal_test_util::test_db();
+        let keys = Keys::generate();
+        let my = keys.public_key().to_hex();
+        let (tx, mut rx) = channel();
+
+        // Seed a follow graph (kind-3) for the same author at ts=100 (older than
+        // the metadata events below so ordering is deterministic).
+        let other = Keys::generate().public_key().to_hex();
+        let mut builder = EventBuilder::new(Kind::ContactList, r#"{"name":"ignored-metadata"}"#)
+            .custom_created_at(nostr::types::Timestamp::from(100));
+        builder = builder.tag(Tag::parse(vec!["p".to_string(), other.clone()]).unwrap());
+        let contacts = builder.finalize(&keys).unwrap();
+        handle_batch(&db, &my, &[contacts.clone()], &tx).unwrap();
+        while rx.try_recv().is_ok() {}
+        let row = UserRepo::new(&db).get_by_pubkey(&my).unwrap().unwrap();
+        let contacts_at = |row: &soshal_db_core::repos::user::UserRow| -> Vec<String> {
+            serde_json::from_str::<Vec<String>>(&row.contact_pubkeys).unwrap_or_default()
+        };
+        assert!(
+            contacts_at(&row).contains(&other),
+            "kind-3 must land in the follow graph"
+        );
+
+        // Newer metadata event (later ts): applies, but must NOT wipe the
+        // merged follow graph or relay list.
+        let meta_new = soshal_test_util::signed_event(
+            &keys,
+            Kind::Metadata,
+            r#"{"name":"alice","display_name":"Alice"}"#,
+            500,
+        );
+        handle_batch(&db, &my, &[meta_new.clone()], &tx).unwrap();
+        while rx.try_recv().is_ok() {}
+        let row = UserRepo::new(&db).get_by_pubkey(&my).unwrap().unwrap();
+        assert_eq!(row.name.as_deref(), Some("alice"));
+        assert!(
+            contacts_at(&row).contains(&other),
+            "metadata replay must not wipe the merged follow graph"
+        );
+
+        // STALE metadata event (older ts than the stored 500): ignored.
+        let meta_old =
+            soshal_test_util::signed_event(&keys, Kind::Metadata, r#"{"name":"stale-bob"}"#, 100);
+        handle_batch(&db, &my, &[meta_old.clone()], &tx).unwrap();
+        while rx.try_recv().is_ok() {}
+        let row = UserRepo::new(&db).get_by_pubkey(&my).unwrap().unwrap();
+        assert_eq!(
+            row.name.as_deref(),
+            Some("alice"),
+            "an older metadata replay must not regress the stored profile"
+        );
     }
 }

@@ -44,6 +44,7 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   ui.Image? _frameImage;
   int _frameOrd = 0;
   int _appliedOrd = -1;
+
   /// Per-track watermark: group_sequence last processed for each track_id.
   /// MoQ seq values span all tracks from one shared counter, so a single
   /// global watermark would let a gap on one track suppress valid groups of
@@ -61,9 +62,24 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   bool _modView = false;
   final TextEditingController _chatInput = TextEditingController();
   final List<Map<String, String>> _chatMessages = [
-    {'user': 'ModAlice', 'role': 'mod', 'badge': '🛡️', 'text': 'Welcome to the live stream!'},
-    {'user': 'VIPBob', 'role': 'vip', 'badge': '💎', 'text': 'Hype! Let\'s go!'},
-    {'user': 'SubCarol', 'role': 'sub', 'badge': '⭐', 'text': 'Subscribed for 3 months!'},
+    {
+      'user': 'ModAlice',
+      'role': 'mod',
+      'badge': '🛡️',
+      'text': 'Welcome to the live stream!'
+    },
+    {
+      'user': 'VIPBob',
+      'role': 'vip',
+      'badge': '💎',
+      'text': 'Hype! Let\'s go!'
+    },
+    {
+      'user': 'SubCarol',
+      'role': 'sub',
+      'badge': '⭐',
+      'text': 'Subscribed for 3 months!'
+    },
   ];
 
   @override
@@ -91,7 +107,9 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
             if (!mounted) return;
             setState(() => _subStatus = parsed as String? ?? status);
             subscribed = true;
-          } catch (e) { debugPrint('moq subscribe: $e'); }
+          } catch (e) {
+            debugPrint('moq subscribe: $e');
+          }
         }
         final groups = await api.subscribeLiveFetch(
           addr: widget.addr,
@@ -246,9 +264,11 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
         title: const Text('Live Stream'),
         actions: [
           IconButton(
-            icon: Icon(_showChatOverlay ? Icons.chat : Icons.chat_bubble_outline),
+            icon:
+                Icon(_showChatOverlay ? Icons.chat : Icons.chat_bubble_outline),
             tooltip: 'Toggle Chat Overlay',
-            onPressed: () => setState(() => _showChatOverlay = !_showChatOverlay),
+            onPressed: () =>
+                setState(() => _showChatOverlay = !_showChatOverlay),
           ),
           IconButton(
             icon: Icon(_modView ? Icons.security : Icons.security_outlined),
@@ -257,7 +277,10 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
             onPressed: () {
               setState(() => _modView = !_modView);
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(_modView ? 'Mod View enabled: auto-purge and timeout tools active.' : 'Mod View disabled.')),
+                SnackBar(
+                    content: Text(_modView
+                        ? 'Mod View enabled: auto-purge and timeout tools active.'
+                        : 'Mod View disabled.')),
               );
             },
           ),
@@ -323,7 +346,8 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 2),
                           child: RichText(
                             text: TextSpan(
-                              style: const TextStyle(fontSize: 13, color: Colors.white),
+                              style: const TextStyle(
+                                  fontSize: 13, color: Colors.white),
                               children: [
                                 TextSpan(text: '${m['badge']} '),
                                 TextSpan(
@@ -358,12 +382,14 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
                           ),
                           child: TextField(
                             controller: _chatInput,
-                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 13),
                             decoration: const InputDecoration(
                               hintText: 'Send a message…',
                               hintStyle: TextStyle(color: Colors.white60),
                               border: InputBorder.none,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
                             ),
                           ),
                         ),

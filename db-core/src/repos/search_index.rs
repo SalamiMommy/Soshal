@@ -44,7 +44,7 @@ impl<'a> SearchIndexRepo<'a> {
         // with trigger inserts and surface as bare `constraint failed`.
         let stmt = tx
             .prepare(
-                "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content) SELECT COALESCE((SELECT rowid FROM posts WHERE id = ?1), ?2), ?1, ?3, ?4",
+                "INSERT OR REPLACE INTO posts_fts (rowid, id, pubkey, content, subject) SELECT COALESCE((SELECT rowid FROM posts WHERE id = ?1), ?2), ?1, ?3, ?4, COALESCE((SELECT NULLIF(subject, '') FROM posts WHERE id = ?1), ?5)",
             )
             .await?;
         for row in rows {
@@ -54,6 +54,7 @@ impl<'a> SearchIndexRepo<'a> {
                 neg,
                 row.pubkey.as_str(),
                 row.content.as_str(),
+                row.subject.as_deref().unwrap_or_default(),
             ])
             .await?;
             stmt.reset();
@@ -111,16 +112,19 @@ impl<'a> SearchIndexRepo<'a> {
             id: row.get(0)?,
             pubkey: row.get(1)?,
             content: row.get(2)?,
+            subject: None,
             kind: row.get(3)?,
             created_at: row.get(4)?,
         })
     }
 }
 
+#[derive(Default)]
 pub struct SearchIndexRow {
     pub id: String,
     pub pubkey: String,
     pub content: String,
+    pub subject: Option<String>,
     pub kind: i64,
     pub created_at: i64,
 }

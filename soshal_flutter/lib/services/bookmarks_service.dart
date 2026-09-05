@@ -15,6 +15,14 @@ class BookmarksService extends ChangeNotifier
 
   List<BookmarkRow> get bookmarks => _bookmarks;
 
+  /// Clear all account-scoped state on account switch so Account B never
+  /// sees Account A's cached bookmarks.
+  void resetForAccountSwitch() {
+    _bookmarks = [];
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Save a bookmark for an event. Returns the bookmark id.
   Future<String> save(String pubkey, String eventId) async {
     try {

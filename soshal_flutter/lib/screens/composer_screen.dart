@@ -64,14 +64,16 @@ class _ComposerScreenState extends State<ComposerScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text('How are you feeling?', style: Theme.of(ctx).textTheme.titleMedium),
+              child: Text('How are you feeling?',
+                  style: Theme.of(ctx).textTheme.titleMedium),
             ),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: feelings.map((f) {
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: ActionChip(
                     label: Text(f),
                     onPressed: () => Navigator.pop(ctx, f),
@@ -356,7 +358,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
                   children: [
                     const Text(
                       'New Post',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 4),
                     DropdownButton<String>(
@@ -751,8 +754,9 @@ class _ComposerScreenState extends State<ComposerScreen> {
                     final input = controller.text.trim();
                     if (input.isNotEmpty) {
                       try {
-                        final resolved =
-                            context.read<MessagingService>().resolvePubkey(input);
+                        final resolved = context
+                            .read<MessagingService>()
+                            .resolvePubkey(input);
                         if (resolved.isNotEmpty) {
                           setState(() => _mentions.add(resolved));
                           Navigator.of(context).pop();

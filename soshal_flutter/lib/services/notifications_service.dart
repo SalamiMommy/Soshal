@@ -151,8 +151,14 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         notificationId: notificationId,
       );
       if (ok) {
-        _unreadCount = (_unreadCount - 1).clamp(0, _unreadCount);
         _unread.removeWhere((n) => n.id == notificationId);
+        for (var i = 0; i < _notifications.length; i++) {
+          final n = _notifications[i];
+          if (n.id == notificationId && !n.read) {
+            _notifications[i] = _asRead(n);
+          }
+        }
+        _recomputeUnreadCount();
       }
       clearLastError();
       notifyListeners();
@@ -172,10 +178,15 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         userPubkey: pubkey,
       );
       if (ok) {
-        _unreadCount = 0;
+        _notifications = [
+          for (final n in _notifications)
+            if (!n.read) _asRead(n) else n,
+        ];
+        _unread = [];
         // Read-state changed everywhere; next category fetch must not be
         // served from the TTL cache.
         _byTypeFetchedAt.clear();
+        _recomputeUnreadCount();
       }
       clearLastError();
       notifyListeners();
@@ -282,6 +293,26 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
       notifyListeners();
       rethrow;
     }
+  }
+
+  AppNotification _asRead(AppNotification n) => AppNotification(
+        id: n.id,
+        notificationType: n.notificationType,
+        fromPubkey: n.fromPubkey,
+        fromName: n.fromName,
+        fromAvatar: n.fromAvatar,
+        contentPreview: n.contentPreview,
+        eventId: n.eventId,
+        createdAt: n.createdAt,
+        read: true,
+        actionUrl: n.actionUrl,
+      );
+
+  void _recomputeUnreadCount() {
+    final listed = _notifications.map((n) => n.id).toSet();
+    var count = _notifications.where((n) => !n.read).length;
+    count += _unread.where((n) => !listed.contains(n.id)).length;
+    _unreadCount = count;
   }
 
   /// Whether two notification lists are identical for UI purposes (same

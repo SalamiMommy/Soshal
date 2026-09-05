@@ -37,6 +37,8 @@ pub struct FeedOptions {
     pub cursor_created_at: Option<i64>,
     #[serde(default)]
     pub cursor_id: Option<String>,
+    #[serde(default)]
+    pub audience: String,
 }
 
 /// Aggregate chat reactions from JSON input (delegates to feed-core).
@@ -312,22 +314,96 @@ pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
     let opts: FeedOptions =
         serde_json::from_str(&options_json).map_err(|e| format!("invalid options JSON: {e}"))?;
     let limit = opts.limit.clamp(1, 200) as i64;
+    let authors: Option<Vec<String>> = super::identity::resolve_audience_authors(&opts.audience)?;
     super::db::with_db_result(|db| {
         let filters = get_custom_word_filters(db);
         let repo = PostRepo::new(db);
         let rows = match (opts.cursor_created_at, opts.cursor_id) {
-            (Some(cursor), Some(cursor_id)) => {
-                repo.get_paged_meta_cursor(cursor, &cursor_id, limit)?
-            }
+            (Some(cursor), Some(cursor_id)) => match authors.as_deref() {
+                Some(a) => repo.get_paged_meta_cursor_by_authors(cursor, &cursor_id, limit, a)?,
+                None => repo.get_paged_meta_cursor(cursor, &cursor_id, limit)?,
+            },
             _ => {
                 let offset = opts.offset.max(0) as i64;
-                repo.get_paged_meta(limit, offset)?
+                match authors.as_deref() {
+                    Some(a) => repo.get_paged_meta_by_authors(limit, offset, a)?,
+                    None => repo.get_paged_meta(limit, offset)?,
+                }
             }
         };
+        // Real engagement counters: one aggregate query over the fetched
+        // page instead of a correlated subquery per row (mirrors
+        // feed_fetch_window). `liked` is scoped to the active account.
+        let active_pubkey: String = soshal_db_core::block_on(async {
+            let r: Result<String, String> = async {
+                let conn = db.conn().map_err(|e| e.to_string())?;
+                let stmt = conn
+                    .prepare("SELECT value FROM settings WHERE key = 'active_pubkey'")
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let mut rows = stmt.query(()).await.map_err(|e| e.to_string())?;
+                match rows.next().await.map_err(|e| e.to_string())? {
+                    Some(row) => Ok(row.get(0).map_err(|e| e.to_string()).unwrap_or_default()),
+                    None => Ok(String::new()),
+                }
+            }
+            .await;
+            r.unwrap_or_default()
+        });
+        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+        let id_json = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string());
+        let counters: std::collections::HashMap<String, FeedPost> =
+            soshal_db_core::block_on(async {
+                let r: Result<std::collections::HashMap<String, FeedPost>, String> = async {
+                    let conn = db.conn().map_err(|e| e.to_string())?;
+                    let stmt = conn
+                        .prepare(
+                            "SELECT p.id,
+                                    (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
+                                    (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.is_deleted = 0),
+                                    (SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id),
+                                    EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?2)
+                             FROM posts p
+                             WHERE p.id IN (SELECT value FROM json_each(?1))",
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let mut out = std::collections::HashMap::new();
+                    let mut rows = stmt
+                        .query(libsql::params![id_json.as_str(), active_pubkey.as_str()])
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+                        let event_id: String = row.get(0).map_err(|e| e.to_string())?;
+                        let reactions: i64 = row.get(1).map_err(|e| e.to_string())?;
+                        let replies: i64 = row.get(2).map_err(|e| e.to_string())?;
+                        let reposts: i64 = row.get(3).map_err(|e| e.to_string())?;
+                        let liked: i64 = row.get(4).map_err(|e| e.to_string())?;
+                        out.insert(
+                            event_id,
+                            FeedPost {
+                                event_id: String::new(),
+                                pubkey: String::new(),
+                                content: String::new(),
+                                created_at: 0,
+                                reactions: reactions.min(i32::MAX as i64) as i32,
+                                replies: replies.min(i32::MAX as i64) as i32,
+                                reposts: reposts.min(i32::MAX as i64) as i32,
+                                liked: liked != 0,
+                                media_json: None,
+                            },
+                        );
+                    }
+                    Ok(out)
+                }
+                .await;
+                r.unwrap_or_default()
+            });
         let posts: Vec<FeedPost> = rows
             .into_iter()
             .filter(|row| is_content_clean(&row.content, &filters))
             .map(|row| {
+                let ref_id = row.id.clone();
                 let content = if row.content.starts_with("eNo") || row.content.starts_with("eF4") {
                     let decompressed =
                         soshal_content_core::compress::decompress_json_dict(&row.content);
@@ -339,15 +415,16 @@ pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
                 } else {
                     row.content
                 };
+                let engagement = counters.get(&ref_id);
                 FeedPost {
-                    event_id: row.id,
+                    event_id: ref_id,
                     pubkey: row.pubkey,
                     content,
                     created_at: row.created_at.max(0) as u64,
-                    reactions: 0,
-                    replies: 0,
-                    reposts: 0,
-                    liked: false,
+                    reactions: engagement.map(|c| c.reactions).unwrap_or(0),
+                    replies: engagement.map(|c| c.replies).unwrap_or(0),
+                    reposts: engagement.map(|c| c.reposts).unwrap_or(0),
+                    liked: engagement.map(|c| c.liked).unwrap_or(false),
                     media_json: soshal_feed_core::query::media_json_from_tags(&row.tags_json),
                 }
             })
@@ -359,12 +436,17 @@ pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
 
 /// Fetch a windowed slice of feed posts from DB, filtering moderated items.
 #[frb(sync, serialize)]
-pub fn feed_fetch_window(start_index: u32, limit: u32) -> Result<String, String> {
+pub fn feed_fetch_window(start_index: u32, limit: u32, audience: String) -> Result<String, String> {
+    let authors = super::identity::resolve_audience_authors(&audience)?;
     super::db::with_db_result(|db| {
         let filters = get_custom_word_filters(db);
-        let items =
-            soshal_feed_core::window::fetch_feed_window(db, start_index as usize, limit as usize)
-                .map_err(soshal_db_core::error::DbError::Migration)?;
+        let items = soshal_feed_core::window::fetch_feed_window(
+            db,
+            start_index as usize,
+            limit as usize,
+            authors.as_deref(),
+        )
+        .map_err(soshal_db_core::error::DbError::Migration)?;
         let filtered_items: Vec<soshal_feed_core::window::FeedPostItem> = items
             .into_iter()
             .filter(|item| is_content_clean(&item.content, &filters))
@@ -701,7 +783,7 @@ mod tests {
         insert_post("w1", "pk1", "win", 1, 2000, "[]");
         insert_post("w2", "pk2", "other", 1, 1000, "[]");
         insert_post("w3", "pk2", "reaction", 7, 3000, "[]");
-        let json = feed_fetch_window(0, 2).unwrap();
+        let json = feed_fetch_window(0, 2, String::new()).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -711,7 +793,7 @@ mod tests {
         assert_eq!(arr[0]["event_id"], "w1");
         assert_eq!(arr[0]["profile_name"], "tester");
         assert_eq!(arr[1]["event_id"], "w2");
-        let json = feed_fetch_window(1, 1).unwrap();
+        let json = feed_fetch_window(1, 1, String::new()).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()

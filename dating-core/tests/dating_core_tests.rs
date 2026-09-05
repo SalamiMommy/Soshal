@@ -4,7 +4,9 @@
 use serde_json::json;
 use soshal_dating_core::filter::filter_dating_profiles;
 use soshal_dating_core::icebreaker::generate_icebreakers_json;
-use soshal_dating_core::scoring::{compute_mutual_score, interests, lifestyle, metrics};
+use soshal_dating_core::scoring::{
+    compute_mutual_score, compute_mutual_score_with_distance, interests, lifestyle, metrics,
+};
 use soshal_dating_core::sort::sort_dating_profiles;
 use soshal_dating_core::{
     compute_compatibility_json, compute_mutual_score_json, filter_profiles_json,
@@ -105,7 +107,7 @@ fn compute_compatibility_json_weight_zero_drops_field() {
 fn compute_mutual_score_json_averages_directions() {
     let a = r#"{"age":25,"preferenceWeights":{"age":0}}"#;
     let b = r#"{"age":27,"preferenceWeights":{"age":1}}"#;
-    assert_eq!(compute_mutual_score_json(a, b), "53");
+    assert_eq!(compute_mutual_score_json(a, b), "52");
     assert_eq!(
         compute_mutual_score_json(a, a),
         compute_compatibility_json(a, a)
@@ -117,10 +119,10 @@ fn compute_mutual_score_json_averages_directions() {
 fn compute_mutual_score_direct_structs() {
     let a: DatingProfile = serde_json::from_str(r#"{"age":25}"#).unwrap();
     let b: DatingProfile = serde_json::from_str(r#"{"age":60}"#).unwrap();
-    assert_eq!(compute_mutual_score(&a, &b), 45);
+    assert_eq!(compute_mutual_score(&a, &b), 46);
     assert_eq!(compute_mutual_score(&a, &b), compute_mutual_score(&b, &a));
     let same: DatingProfile = serde_json::from_str(r#"{"age":30}"#).unwrap();
-    assert_eq!(compute_mutual_score(&same, &same), 55);
+    assert_eq!(compute_mutual_score(&same, &same), 54);
 }
 
 #[test]
@@ -446,6 +448,77 @@ fn sort_default_score_desc() {
     });
     assert_eq!(sorted[0].pubkey, "a");
     assert_eq!(sorted[1].pubkey, "b");
+    assert!(sorted[0].compatibility_score > sorted[1].compatibility_score);
+}
+
+#[test]
+fn scoring_distance_steps() {
+    assert_eq!(metrics::score_distance(5.0), 1.0);
+    assert_eq!(metrics::score_distance(10.0), 1.0);
+    assert_eq!(metrics::score_distance(50.0), 0.8);
+    assert_eq!(metrics::score_distance(100.0), 0.6);
+    assert_eq!(metrics::score_distance(250.0), 0.4);
+    assert_eq!(metrics::score_distance(1200.0), 0.2);
+    assert_eq!(metrics::score_distance(f64::NAN), 0.5);
+}
+
+#[test]
+fn mutual_without_geo_skips_distance() {
+    let mut self_p = prof("self");
+    self_p.interests = Some(vec!["Music".to_string()]);
+    let mut other = prof("other");
+    other.interests = Some(vec!["Music".to_string()]);
+    let plain = compute_mutual_score(&self_p, &other);
+    let with_none = compute_mutual_score_with_distance(&self_p, &other, None);
+    assert_eq!(plain, with_none);
+}
+
+#[test]
+fn mutual_with_distance_prefers_near() {
+    let mut self_p = prof("self");
+    self_p.interests = Some(vec!["Music".to_string()]);
+    let mut near = prof("near");
+    near.interests = Some(vec!["Music".to_string()]);
+    let mut far = prof("far");
+    far.interests = Some(vec!["Music".to_string()]);
+    let near_score = compute_mutual_score_with_distance(&self_p, &near, Some(8.0));
+    let far_score = compute_mutual_score_with_distance(&self_p, &far, Some(1200.0));
+    assert!(near_score > far_score, "near {near_score} far {far_score}");
+}
+
+#[test]
+fn default_interest_weight_dominates() {
+    let mut self_p = prof("self");
+    self_p.interests = Some(vec!["Music".to_string()]);
+    let mut shared = prof("shared");
+    shared.interests = Some(vec!["Music".to_string()]);
+    let mut no_overlap = prof("no_overlap");
+    no_overlap.interests = Some(vec!["Hiking".to_string()]);
+    let s_shared = compute_mutual_score(&self_p, &shared);
+    let s_none = compute_mutual_score(&self_p, &no_overlap);
+    assert!(s_shared >= 55, "shared {s_shared}");
+    assert!(s_none <= 45, "none {s_none}");
+    assert!(s_shared > s_none);
+}
+
+#[test]
+fn sort_default_distance_blend_orders_near_first() {
+    let mut self_p = prof("self");
+    self_p.location_geohash = Some("9q8yyk".to_string());
+    self_p.interests = Some(vec!["Music".to_string()]);
+    let mut near = prof("near");
+    near.location_geohash = Some("9q8yyk".to_string());
+    near.interests = Some(vec!["Music".to_string()]);
+    let mut far = prof("far");
+    far.location_geohash = Some("u33dc0".to_string());
+    far.interests = Some(vec!["Music".to_string()]);
+    let sorted = sort_dating_profiles(SortProfilesInput {
+        profiles: vec![far, near],
+        self_profile: self_p,
+        self_contacts: vec![],
+        sort_by: None,
+    });
+    assert_eq!(sorted[0].pubkey, "near");
     assert!(sorted[0].compatibility_score > sorted[1].compatibility_score);
 }
 

@@ -309,9 +309,7 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
   }
 
   void _pop(bool ok) {
-    if (ok &&
-        _isPrivate &&
-        _password.text.trim().length < 8) {
+    if (ok && _isPrivate && _password.text.trim().length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Password must be at least 8 characters'),
@@ -371,8 +369,8 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
                   setState(() => _pic.text = 'n$hash');
                 } catch (e) {
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: SelectableText('Upload error: $e')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: SelectableText('Upload error: $e')));
                   }
                 }
               },
@@ -464,13 +462,19 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       await api.getGroup(widget.groupId);
       try {
         await api.getMembers(widget.groupId);
-      } catch (e) { debugPrint('group members: $e'); }
+      } catch (e) {
+        debugPrint('group members: $e');
+      }
       try {
         await api.fetchMembersWithRoles(widget.groupId);
-      } catch (e) { debugPrint('group roles fetch: $e'); }
+      } catch (e) {
+        debugPrint('group roles fetch: $e');
+      }
       try {
         await api.fetchRoles(widget.groupId);
-      } catch (e) { debugPrint('group roles: $e'); }
+      } catch (e) {
+        debugPrint('group roles: $e');
+      }
       try {
         await api.fetchMessages(widget.groupId);
       } catch (e) {

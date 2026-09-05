@@ -117,30 +117,51 @@ fn story_from_value(v: &serde_json::Value) -> Option<StoryInfo> {
 
 /// Fetch live streams (all locally known + optionally filter to `live`).
 #[frb(sync, serialize)]
-pub fn streaming_fetch_live(limit: i32) -> Result<String, String> {
+pub fn streaming_fetch_live(limit: i32, audience: String) -> Result<String, String> {
     let limit_clamped = limit.clamp(1, 100) as i64;
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    if let Some(a) = &authors {
+        if a.is_empty() {
+            return super::util::json_ok(Vec::<serde_json::Value>::new());
+        }
+    }
+    let authors_json = authors
+        .as_ref()
+        .map(|a| serde_json::to_string(a).map_err(|e| format!("authors: {e}")))
+        .transpose()?;
     let rows = super::db::with_db_result(|db| {
         let conn = db.conn()?;
-        soshal_db_core::query::query(
-            &conn,
+        let sql = if authors_json.is_some() {
             "SELECT id, pubkey, content, created_at, tags_json FROM posts \
-             WHERE kind = ?1 AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?2",
-            [KIND_LIVE as i64, limit_clamped],
-            |r| {
-                let id: String = r.get(0)?;
-                let pubkey: String = r.get(1)?;
-                let content: String = r.get(2)?;
-                let created_at: i64 = r.get(3)?;
-                let tags_json: String = r.get(4)?;
-                Ok(serde_json::json!({
-                    "id": id,
-                    "pubkey": pubkey,
-                    "content": content,
-                    "created_at": created_at,
-                    "tags_json": tags_json,
-                }))
-            },
-        )
+             WHERE kind = ?1 AND is_deleted = 0 \
+             AND pubkey IN (SELECT value FROM json_each(?3)) \
+             ORDER BY created_at DESC LIMIT ?2"
+        } else {
+            "SELECT id, pubkey, content, created_at, tags_json FROM posts \
+             WHERE kind = ?1 AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?2"
+        };
+        let mut bind: Vec<libsql::Value> = vec![
+            libsql::Value::Integer(KIND_LIVE as i64),
+            libsql::Value::Integer(limit_clamped),
+        ];
+        if let Some(j) = &authors_json {
+            bind.push(libsql::Value::Text(j.clone()));
+        }
+        let rows = soshal_db_core::query::query(&conn, sql, libsql::params_from_iter(bind), |r| {
+            let id: String = r.get(0)?;
+            let pubkey: String = r.get(1)?;
+            let content: String = r.get(2)?;
+            let created_at: i64 = r.get(3)?;
+            let tags_json: String = r.get(4)?;
+            Ok(serde_json::json!({
+                "id": id,
+                "pubkey": pubkey,
+                "content": content,
+                "created_at": created_at,
+                "tags_json": tags_json,
+            }))
+        })?;
+        Ok(rows)
     })?;
     super::util::json_ok(
         rows.into_iter()
@@ -404,18 +425,32 @@ pub fn streaming_fetch_stories(user_pubkey: String) -> Result<String, String> {
     )
 }
 
-/// Fetch stories from all accounts the user follows (via contact lists).
+/// Fetch stories across accounts filtered by audience (public = all,
+/// friends/network = reachable author set).
 #[frb(sync, serialize)]
-pub fn streaming_fetch_followed_stories(viewer_pubkey: String) -> Result<String, String> {
+pub fn streaming_fetch_followed_stories(audience: String) -> Result<String, String> {
     let now = soshal_common_core::format::now_secs();
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    if let Some(a) = &authors {
+        if a.is_empty() {
+            return super::util::json_ok(Vec::<serde_json::Value>::new());
+        }
+    }
+    let mut params: Vec<String> = Vec::new();
+    let author_clause = match &authors {
+        Some(a) => {
+            params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+            " AND p.pubkey IN (SELECT value FROM json_each(?1))"
+        }
+        None => "",
+    };
     let json = super::db::db_query_params(
         &format!(
             "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json, 0 AS views FROM posts p \
-             WHERE p.kind = {KIND_STORY} AND p.is_deleted = 0 \
-             AND p.pubkey IN (SELECT value FROM json_each((SELECT contact_pubkeys FROM users WHERE pubkey = ?1))) \
+             WHERE p.kind = {KIND_STORY} AND p.is_deleted = 0{author_clause} \
              ORDER BY p.created_at DESC LIMIT 200"
         ),
-        &[viewer_pubkey],
+        &params,
     )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     super::util::json_ok(

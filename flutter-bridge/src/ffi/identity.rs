@@ -57,6 +57,7 @@ fn row_to_profile(row: &UserRow) -> ProfileInfo {
     p.about = row.about.clone().unwrap_or_default();
     p.nip05 = row.nip05.clone().unwrap_or_default();
     p.created_at = row.created_at.max(0) as u64;
+    p.followers = row.follower_count.max(0) as i32;
     // NOTE: contact_pubkeys holds the row owner's own contacts, so the
     // "does *me* follow this profile" flag can't be derived from this row —
     // it is computed in `identity_get_profile` from the viewer's contacts.
@@ -124,26 +125,38 @@ pub fn identity_store_profile(profile: String) -> Result<bool, String> {
             super::signer::require_identity(pubkey)?;
         }
     }
-    let now = soshal_common_core::format::now_secs();
-    let row = UserRow {
-        pubkey: pubkey.to_string(),
-        npub: soshal_identity_core::keys::npub_encode(pubkey).unwrap_or_default(),
-        name: get("name"),
-        display_name: get("display_name"),
-        about: get("about"),
-        picture: get("picture"),
-        banner: get("banner"),
-        nip05: get("nip05"),
-        lud16: None,
-        created_at: v.get("created_at").and_then(|c| c.as_i64()).unwrap_or(now),
-        updated_at: now,
-        metadata_json: Some(content.to_string()),
-        contact_pubkeys: String::from("[]"),
-        relay_list: String::from("[]"),
-        follower_count: 0,
-    };
     super::db::with_db_result(|db| {
-        UserRepo::new(db).upsert(&row)?;
+        let repo = UserRepo::new(db);
+        let existing = repo.get_by_pubkey(&pubkey)?;
+        let now = soshal_common_core::format::now_secs();
+        let row = UserRow {
+            pubkey: pubkey.to_string(),
+            npub: soshal_identity_core::keys::npub_encode(pubkey).unwrap_or_default(),
+            name: get("name"),
+            display_name: get("display_name"),
+            about: get("about"),
+            picture: get("picture"),
+            banner: get("banner"),
+            nip05: get("nip05"),
+            lud16: None,
+            created_at: v
+                .get("created_at")
+                .and_then(|c| c.as_i64())
+                .or_else(|| existing.as_ref().map(|e| e.created_at))
+                .unwrap_or(now),
+            updated_at: now,
+            metadata_json: Some(content.to_string()),
+            contact_pubkeys: existing
+                .as_ref()
+                .map(|e| e.contact_pubkeys.clone())
+                .unwrap_or_else(|| String::from("[]")),
+            relay_list: existing
+                .as_ref()
+                .map(|e| e.relay_list.clone())
+                .unwrap_or_else(|| String::from("[]")),
+            follower_count: existing.as_ref().map(|e| e.follower_count).unwrap_or(0),
+        };
+        repo.upsert(&row)?;
         Ok(true)
     })
 }
@@ -267,8 +280,18 @@ async fn verify_nip05_fut(nip05: &str) -> Result<(bool, String), String> {
         .pointer(&format!("/names/{name}"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    // Resolve to a genuine public key, not just "a 64-char string". The
+    // identifier must map to a valid hex pubkey (or npub form) — anything
+    // else is not a real NIP-05 registration and fails verification.
     let result = entry.to_lowercase();
-    Ok((result.starts_with("npub1") || result.len() == 64, result))
+    let valid_pubkey = {
+        let mut hex_ok = result.len() == 64 && result.chars().all(|c| c.is_ascii_hexdigit());
+        if hex_ok {
+            hex_ok = nostr::key::PublicKey::from_hex(&result).is_ok();
+        }
+        hex_ok || result.starts_with("npub1")
+    };
+    Ok((valid_pubkey, result))
 }
 
 fn split_nip05(nip05: &str) -> (String, String) {
@@ -333,7 +356,7 @@ struct WotGraphSnapshot {
 
 /// Load the WoT contact graph — only `pubkey` + `contact_pubkeys` columns
 /// (repos have no list-all; light raw query mirrors db.rs helpers).
-fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
+pub(crate) fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
     let current_db = super::db::db_path()?;
     let mut guard = WOT_GRAPH_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(snap) = guard.as_ref() {
@@ -367,6 +390,39 @@ fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
         users: users.clone(),
     });
     Ok(users)
+}
+
+/// Resolve an audience vocabulary value into the reachable author set used
+/// for content filtering across feature tabs:
+/// - `"public"` (default) → `None`, no author filter
+/// - `"friends"` / `"friends_only"` → direct follows (WoT distance 1)
+/// - `"network"` → friends ∪ friends-of-friends (WoT distance 1 + 2)
+///
+/// Empty vector when the active account is absent or has no contacts — the
+/// filter then matches nothing. The reachable set is derived from the cached
+/// contact graph ([`wot_graph_users`], 45 s TTL) and the WoT distance
+/// partition in identity-core.
+pub(crate) fn resolve_audience_authors(audience: &str) -> Result<Option<Vec<String>>, String> {
+    let level = match audience.trim() {
+        "friends" | "friends_only" => 1u32,
+        "network" => 2,
+        _ => return Ok(None),
+    };
+    let self_pubkey = super::db::active_pubkey()?;
+    if self_pubkey.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let users = wot_graph_users()?;
+    let by_distance = wot::get_wot_peers_by_distance(&self_pubkey, &users, level);
+    let mut authors: Vec<String> = Vec::new();
+    for d in 1..=level {
+        if let Some(set) = by_distance.get(&d) {
+            authors.extend(set.iter().cloned());
+        }
+    }
+    authors.sort();
+    authors.dedup();
+    Ok(Some(authors))
 }
 
 /// Drop the cached WoT graph; call when the contact graph mutates
@@ -429,16 +485,17 @@ pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
         Ok(pk) => pk,
         Err(_) => return Err("signer locked".to_string()).into(),
     };
-    let (list, row) = super::db::with_db_result(|db| {
+    let (list, row, was_following) = super::db::with_db_result(|db| {
         let row = UserRepo::new(db).get_by_pubkey(&unlocked)?;
         let mut follows: Vec<String> = match &row {
             Some(r) => serde_json::from_str(&r.contact_pubkeys).unwrap_or_default(),
             None => Vec::new(),
         };
-        if !follows.contains(&pubkey) {
-            follows.push(pubkey);
+        let was_following = follows.contains(&pubkey);
+        if !was_following {
+            follows.push(pubkey.clone());
         }
-        Ok((follows, row))
+        Ok((follows, row, was_following))
     })?;
     let updated = serde_json::to_string(&list).map_err(|e| format!("serialize: {e}"))?;
     super::db::with_db_result(|db| {
@@ -464,6 +521,10 @@ pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
         };
         r.contact_pubkeys = updated;
         UserRepo::new(db).upsert(&r)?;
+        // Materialized follower count: a new follow adds +1 to the target.
+        if !was_following && pubkey != unlocked {
+            UserRepo::new(db).bump_follower_count(&pubkey, 1)?;
+        }
         Ok(())
     })?;
     let mut builder = EventBuilder::new(Kind::ContactList, "");
@@ -487,14 +548,15 @@ pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
         Ok(pk) => pk,
         Err(_) => return Err("signer locked".to_string()).into(),
     };
-    let (list, row) = super::db::with_db_result(|db| {
+    let (list, row, was_following) = super::db::with_db_result(|db| {
         let row = UserRepo::new(db).get_by_pubkey(&unlocked)?;
         let mut follows: Vec<String> = match &row {
             Some(r) => serde_json::from_str(&r.contact_pubkeys).unwrap_or_default(),
             None => Vec::new(),
         };
+        let was_following = follows.contains(&pubkey);
         follows.retain(|f| f != &pubkey);
-        Ok((follows, row))
+        Ok((follows, row, was_following))
     })?;
     let updated = serde_json::to_string(&list).map_err(|e| format!("serialize: {e}"))?;
     super::db::with_db_result(|db| {
@@ -520,6 +582,10 @@ pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
         };
         r.contact_pubkeys = updated;
         UserRepo::new(db).upsert(&r)?;
+        // Materialized follower count: an unfollow removes -1 from the target.
+        if was_following && pubkey != unlocked {
+            UserRepo::new(db).bump_follower_count(&pubkey, -1)?;
+        }
         Ok(())
     })?;
     let mut builder = EventBuilder::new(Kind::ContactList, "");
@@ -605,6 +671,30 @@ pub fn identity_publish_custom_profile(
         .and_then(|v| v["id"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
     Ok(id)
+}
+
+/// Publish a NIP-09 kind-5 deletion tombstone for the active account's
+/// identity events (kind 0 metadata, kind 3 contacts, kind 10002 relay
+/// list). Best-effort: queues to the outbox when offline.
+#[frb(serialize)]
+pub async fn identity_delete_profile(pubkey: String) -> Result<String, String> {
+    let unlocked = match super::signer::signer_pubkey() {
+        Ok(pk) => pk,
+        Err(_) => return Err("signer locked".to_string()).into(),
+    };
+    if unlocked != pubkey {
+        return Err("pubkey does not match unlocked signer".to_string()).into();
+    }
+    let mut builder = EventBuilder::new(Kind::EventDeletion, "profile deleted by user");
+    for kind in ["0", "3", "10002"] {
+        if let Ok(tag) = nostr::event::Tag::parse(vec!["a".to_string(), format!("{kind}:{pubkey}")])
+        {
+            builder = builder.tag(tag);
+        }
+    }
+    let signed_json = super::signer::sign_builder(builder)?;
+    super::sync::publish_or_enqueue("delete_profile", &signed_json).await?;
+    Ok(signed_json).into()
 }
 
 /// Get the local blocked list for a user.
@@ -874,5 +964,38 @@ mod tests {
         let mut pubkeys: Vec<String> = users.iter().map(|u| u.pubkey.clone()).collect();
         pubkeys.sort();
         assert_eq!(pubkeys, vec![p1, p2]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_delete_profile_publishes_kind_five_tombstone() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = crate::ffi::db::tmp_db("identity-delete-profile", "identity");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let locked_err = identity_delete_profile("5".repeat(64)).await.unwrap_err();
+        assert!(locked_err.contains("does not match"), "{locked_err}");
+        let signed = identity_delete_profile(me.clone()).await.unwrap();
+        let event: serde_json::Value = serde_json::from_str(&signed).unwrap();
+        assert_eq!(event["kind"].as_i64(), Some(5));
+        let addrs: Vec<String> = event["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| t.as_array())
+            .filter(|t| t.first().and_then(|x| x.as_str()) == Some("a"))
+            .map(|t| t[1].as_str().unwrap().to_string())
+            .collect();
+        for expected in ["0", "3", "10002"] {
+            let addr = format!("{expected}:{me}");
+            assert!(addrs.contains(&addr), "missing a-tag {addr}: {addrs:?}");
+        }
+        super::super::signer::signer_lock().unwrap();
     }
 }

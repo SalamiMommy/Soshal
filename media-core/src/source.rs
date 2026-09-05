@@ -64,7 +64,10 @@ async fn fetch_url_bytes(url: &str) -> Result<(Vec<u8>, Option<String>), String>
     let mut client_builder = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .connect_timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none());
+        .redirect(reqwest::redirect::Policy::none())
+        // SECURITY: env HTTP(S)_PROXY/ALL_PROXY would make the proxy resolve
+        // the host itself, bypassing DNS pinning + private-IP rejection below.
+        .no_proxy();
     // Pin ALL resolved addresses (per-addr `.resolve()` overwrites each
     // other, leaving a DNS-rebinding window).
     client_builder = client_builder.resolve_to_addrs(&host, &pinned_addrs);

@@ -28,9 +28,10 @@ pub fn at_rest_key(master: &[u8]) -> Result<[u8; 32], String> {
     let mut ikm = sha256(master);
     let okm = hkdf_sha256(&ikm, b"soshal-at-rest-salt", AT_REST_V1_INFO, 32);
     ikm.zeroize();
-    let okm = okm?;
+    let mut okm = okm?;
     let mut key = [0u8; 32];
     key.copy_from_slice(&okm);
+    okm.zeroize();
     Ok(key)
 }
 
@@ -75,10 +76,15 @@ pub fn open_at_rest_bin(key: &[u8; 32], blob: &[u8]) -> Result<Vec<u8>, String> 
     let opening = LessSafeKey::new(unbound);
     let nonce = Nonce::assume_unique_for_key(nonce_arr);
     let mut buf = body.to_vec();
-    let plaintext = opening
-        .open_in_place(nonce, Aad::empty(), &mut buf)
-        .map_err(|_| "decryption failed (tampered or wrong key)".to_string())?;
-    Ok(plaintext.to_vec())
+    let plaintext_len = match opening.open_in_place(nonce, Aad::empty(), &mut buf) {
+        Ok(p) => p.len(),
+        Err(_) => {
+            buf.zeroize();
+            return Err("decryption failed (tampered or wrong key)".to_string());
+        }
+    };
+    buf.truncate(plaintext_len);
+    Ok(buf)
 }
 
 // ─── v2: AES-GCM + hybrid keychain wrap ───────────────────────────────
@@ -98,10 +104,13 @@ pub fn at_rest_key_v2(master: &[u8]) -> Result<[u8; 32], String> {
     if master.is_empty() {
         return Err("at-rest master secret is empty".into());
     }
-    let ikm = sha256(master);
-    let okm = hkdf_sha256(&ikm, b"soshal-at-rest-salt", AT_REST_V2_DOMAIN, 32)?;
+    let mut ikm = sha256(master);
+    let okm = hkdf_sha256(&ikm, b"soshal-at-rest-salt", AT_REST_V2_DOMAIN, 32);
+    ikm.zeroize();
+    let mut okm = okm?;
     let mut key = [0u8; 32];
     key.copy_from_slice(&okm);
+    okm.zeroize();
     Ok(key)
 }
 

@@ -817,6 +817,7 @@ fn test_search_index_no_fts_rowid_collision() {
             content: "first post".into(),
             kind: 1,
             created_at: 100,
+            ..SearchIndexRow::default()
         })
         .unwrap();
     post_repo.upsert(&post("pb", "second post")).unwrap();
@@ -832,6 +833,7 @@ fn test_search_index_no_fts_rowid_collision() {
             content: "carol the profile".into(),
             kind: 0,
             created_at: 100,
+            ..SearchIndexRow::default()
         })
         .unwrap();
     fts_repo.delete("profile:pk1").unwrap();
@@ -1595,15 +1597,14 @@ fn test_dating_unmatch_crud() {
     db.migrate().unwrap();
     let repo = DatingUnmatchRepo::new(&db);
 
-    repo.upsert("u1", 1000).unwrap();
-    assert!(repo.is_unmatched("u1").unwrap());
-    assert_eq!(repo.list().unwrap(), vec!["u1".to_string()]);
+    repo.upsert("actorA", "u1", 1000).unwrap();
+    assert!(repo.is_unmatched("actorA", "u1").unwrap());
+    // Actor-scoped: a different actor does not see actorA's unmatch.
+    assert!(!repo.is_unmatched("actorB", "u1").unwrap());
 
-    repo.upsert("u1", 2000).unwrap();
-    assert_eq!(repo.list().unwrap().len(), 1);
-
-    repo.delete("u1").unwrap();
-    assert!(!repo.is_unmatched("u1").unwrap());
+    repo.upsert("actorA", "u1", 2000).unwrap();
+    repo.delete("actorA", "u1").unwrap();
+    assert!(!repo.is_unmatched("actorA", "u1").unwrap());
 }
 
 #[test]

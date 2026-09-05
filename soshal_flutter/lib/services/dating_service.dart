@@ -20,12 +20,24 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<DatingCard> get likes => _likes;
   DatingCard? get ownProfile => _ownProfile;
 
+  /// Clear all account-scoped state on account switch so Account B never
+  /// sees Account A's cached cards, matches, likes, or own profile.
+  void resetForAccountSwitch() {
+    _cards = [];
+    _matches.clear();
+    _likes.clear();
+    _ownProfile = null;
+    clearLastError();
+    notifyListeners();
+  }
+
   Future<List<DatingCard>> fetchProfiles(String userPubkey,
       {int limit = 50}) async {
     return _decode(
       () => RustLib.instance.api.crateFfiDatingDatingFetchProfiles(
         userPubkey: userPubkey,
         limit: limit,
+        audience: 'public',
       ),
     );
   }
@@ -338,6 +350,23 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       () => RustLib.instance.api.crateFfiDatingDatingBlockProfile(
           userPubkey: userPubkey, targetPubkey: targetPubkey),
     );
+  }
+
+  /// Reset profiles the user swiped "no" on: deletes local `pass` records so
+  /// they re-enter the discover deck. Returns how many were reset.
+  Future<int> resetPasses(String userPubkey) async {
+    try {
+      final n = RustLib.instance.api.crateFfiDatingDatingResetPasses(
+        userPubkey: userPubkey,
+      );
+      clearLastError();
+      notifyDeferred();
+      return n;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyDeferred();
+      rethrow;
+    }
   }
 
   Future<bool> unblock(String userPubkey, String targetPubkey) async {

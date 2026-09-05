@@ -303,6 +303,16 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
   List<String> get blocked => _blocked.toList();
   List<String> get wordFilters => _wordFilters;
 
+  /// Clear all account-scoped state on account switch so Account B never
+  /// sees Account A's muted/blocked lists or word filters.
+  void resetForAccountSwitch() {
+    _muted = {};
+    _blocked = {};
+    _wordFilters = [];
+    clearLastError();
+    notifyListeners();
+  }
+
   bool isBlocked(String pubkey) => _blocked.contains(pubkey);
   bool isMuted(String pubkey) => _muted.contains(pubkey);
 

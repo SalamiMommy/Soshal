@@ -69,7 +69,12 @@ fn card_from_value(v: &serde_json::Value) -> Option<DatingCardInfo> {
         pubkey: v["pubkey"].as_str().unwrap_or("").to_string(),
         name: v["name"].as_str().unwrap_or("").to_string(),
         age: content.age.unwrap_or(0.0) as i32,
-        location: content.location_geohash.unwrap_or_default(),
+        location: content
+            .location_geohash
+            .unwrap_or_default()
+            .chars()
+            .take(5)
+            .collect(),
         gender: content.gender.unwrap_or_default(),
         seeking: content.seeking.unwrap_or_default(),
         height: content.height.unwrap_or(0.0) as f32,
@@ -95,6 +100,8 @@ fn profile_rows_sql(extra: &str, limit: i32) -> String {
         "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
          WHERE p.kind = {KIND_PROFILE} AND p.is_deleted = 0 {extra} \
+         AND p.created_at = (SELECT MAX(created_at) FROM posts p2 \
+                             WHERE p2.pubkey = p.pubkey AND p2.kind = p.kind AND p2.is_deleted = 0) \
          ORDER BY p.created_at DESC LIMIT {}",
         limit.clamp(1, 100)
     )
@@ -138,7 +145,7 @@ fn validate_enum(field: &str, value: &str, allowed: &[&str]) -> Result<(), Strin
 }
 
 /// Resolves the location input: either `lat,lon` (encoded to a geohash at
-/// precision 9) or a raw geohash string. Empty/invalid input is rejected —
+/// precision 5) or a raw geohash string. Empty/invalid input is rejected —
 /// dating profiles require a geohash.
 fn resolve_location(location: &str) -> Result<String, String> {
     let trimmed = location.trim();
@@ -154,7 +161,7 @@ fn resolve_location(location: &str) -> Result<String, String> {
             .trim()
             .parse()
             .map_err(|_| format!("invalid longitude: {}", lon.trim()))?;
-        return soshal_spatial_core::geohash::encode_geohash(lat, lon, 9)
+        return soshal_spatial_core::geohash::encode_geohash(lat, lon, 5)
             .ok_or_else(|| "invalid coordinates (lat -90..=90, lon -180..=180)".to_string());
     }
     if !soshal_spatial_core::geohash::is_valid_geohash(trimmed) {
@@ -257,6 +264,7 @@ fn cards_from_json(
 
 fn cards_by_pubkey(
     pubkeys: &[String],
+    viewer: &str,
     limit: i32,
 ) -> Result<std::collections::HashMap<String, DatingCardInfo>, String> {
     if pubkeys.is_empty() {
@@ -275,9 +283,10 @@ fn cards_by_pubkey(
             "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
              FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
              WHERE p.kind = {KIND_PROFILE} AND p.pubkey IN (SELECT value FROM json_each(?1)) AND p.is_deleted = 0 \
+             AND p.pubkey NOT IN (SELECT blocked_pubkey FROM blocks WHERE pubkey = ?2) \
              ORDER BY p.created_at DESC"
         ),
-        &[ids_json],
+        &[ids_json, viewer.to_string()],
     )?;
     let mut map = std::collections::HashMap::new();
     for card in cards_from_json(json, &std::collections::HashMap::new()) {
@@ -286,20 +295,166 @@ fn cards_by_pubkey(
     Ok(map)
 }
 
+/// Default suggestion weights: shared interests dominate, proximity boosts.
+fn suggestion_weights() -> soshal_dating_core::PreferenceWeights {
+    soshal_dating_core::PreferenceWeights {
+        age: None,
+        height: None,
+        body_type: None,
+        interests: Some(2.0),
+        smoking: None,
+        drinking: None,
+        politics: None,
+        ethnicity: None,
+        education: None,
+        language: None,
+        relationship_intent: None,
+        distance: Some(1.5),
+    }
+}
+
+/// Card → scoring input (shared with `dating_filter_profiles`).
+fn profile_input_from_card(c: &DatingCardInfo) -> soshal_dating_core::DatingProfileInput {
+    soshal_dating_core::DatingProfileInput {
+        pubkey: c.pubkey.clone(),
+        age: Some(f64::from(c.age)),
+        gender: (!c.gender.is_empty()).then(|| c.gender.clone()),
+        seeking: (!c.seeking.is_empty()).then(|| c.seeking.clone()),
+        height: (c.height > 0.0).then(|| f64::from(c.height)),
+        body_type: (!c.body_type.is_empty()).then(|| c.body_type.clone()),
+        smoking: (!c.smoking.is_empty()).then(|| c.smoking.clone()),
+        drinking: (!c.drinking.is_empty()).then(|| c.drinking.clone()),
+        relationship_intent: (!c.relationship_intent.is_empty())
+            .then(|| c.relationship_intent.clone()),
+        politics: (!c.politics.is_empty()).then(|| c.politics.clone()),
+        ethnicity: (!c.ethnicity.is_empty()).then(|| c.ethnicity.clone()),
+        education: (!c.education.is_empty()).then(|| c.education.clone()),
+        language: (!c.language.is_empty()).then(|| c.language.clone()),
+        max_distance_km: (c.max_distance_km > 0.0).then(|| f64::from(c.max_distance_km)),
+        location_geohash: (!c.location.is_empty()).then(|| c.location.clone()),
+        interests: Some(c.interests.clone()),
+        ..Default::default()
+    }
+}
+
+/// Self profile as scoring input: own page content JSON + suggestion weights.
+fn self_profile_input(user_pubkey: &str) -> soshal_dating_core::DatingProfileInput {
+    let weights = suggestion_weights();
+    let fallback = || soshal_dating_core::DatingProfileInput {
+        pubkey: user_pubkey.to_string(),
+        preference_weights: Some(weights.clone()),
+        ..Default::default()
+    };
+    let json = match super::db::db_query_params(
+        &format!(
+            "SELECT content FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0 \
+             ORDER BY created_at DESC LIMIT 1"
+        ),
+        &[user_pubkey.to_string()],
+    ) {
+        Ok(j) => j,
+        Err(_) => return fallback(),
+    };
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+    let Some(content) = rows.first().and_then(|r| r["content"].as_str()) else {
+        return fallback();
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(content) else {
+        return fallback();
+    };
+    let str_opt = |key: &str| {
+        v.get(key)
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+    };
+    soshal_dating_core::DatingProfileInput {
+        pubkey: user_pubkey.to_string(),
+        age: v.get("age").and_then(|a| a.as_f64()),
+        gender: str_opt("gender"),
+        seeking: str_opt("seeking"),
+        location_geohash: str_opt("locationGeohash"),
+        max_distance_km: v.get("maxDistanceKm").and_then(|m| m.as_f64()),
+        interests: v.get("interests").and_then(|i| i.as_array()).map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        }),
+        preference_weights: Some(weights),
+        ..Default::default()
+    }
+}
+
+/// Rank candidate cards by shared interests + proximity (distance-aware mutual
+/// compatibility) and stamp each card's % badge with the blend score.
+fn rank_cards_by_interest_distance(
+    user_pubkey: &str,
+    cards: Vec<DatingCardInfo>,
+) -> Vec<DatingCardInfo> {
+    if cards.is_empty() {
+        return cards;
+    }
+    let profiles: Vec<soshal_dating_core::DatingProfileInput> =
+        cards.iter().map(profile_input_from_card).collect();
+    let sorted =
+        soshal_dating_core::sort::sort_dating_profiles(soshal_dating_core::SortProfilesInput {
+            profiles,
+            self_profile: self_profile_input(user_pubkey),
+            self_contacts: Vec::new(),
+            sort_by: None,
+        });
+    let mut ranked: Vec<DatingCardInfo> = Vec::with_capacity(cards.len());
+    let mut remaining = cards;
+    for s in sorted {
+        if let Some(pos) = remaining.iter().position(|c| c.pubkey == s.pubkey) {
+            let mut card = remaining.remove(pos);
+            card.compatibility_score = s.compatibility_score as f32;
+            ranked.push(card);
+        }
+    }
+    ranked.append(&mut remaining);
+    ranked
+}
+
 /// Fetch dating profiles to swipe on: excludes own profile and profiles the
-/// user already reacted to (liked/passed).
+/// user already reacted to (liked/passed) or blocked. Ranked by shared
+/// interests + proximity (see [rank_cards_by_interest_distance]).
 #[frb(sync, serialize)]
-pub fn dating_fetch_profiles(user_pubkey: String, limit: i32) -> Result<String, String> {
+pub fn dating_fetch_profiles(
+    user_pubkey: String,
+    limit: i32,
+    audience: String,
+) -> Result<String, String> {
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    let mut params: Vec<String> = vec![user_pubkey.clone()];
+    let mut audience_clause = String::new();
+    if let Some(a) = &authors {
+        if a.is_empty() {
+            return super::util::json_ok(Vec::<serde_json::Value>::new());
+        }
+        audience_clause = " AND p.pubkey IN (SELECT value FROM json_each(?2))".to_string();
+        params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+    }
     let json = super::db::db_query_params(
         &profile_rows_sql(
-            "AND p.pubkey != ?1 AND p.id NOT IN \
-             (SELECT event_id FROM reactions WHERE pubkey = ?1) \
-             AND p.id NOT IN (SELECT pubkey FROM dating_unmatches)",
+            &format!(
+                "AND p.pubkey != ?1 AND p.id NOT IN \
+                 (SELECT event_id FROM reactions WHERE pubkey = ?1) \
+                 AND p.pubkey NOT IN (SELECT pubkey FROM dating_unmatches WHERE actor_pubkey = ?1) \
+                 AND p.pubkey NOT IN (SELECT blocked_pubkey FROM blocks WHERE pubkey = ?1){audience_clause}",
+            ),
             limit,
         ),
-        &[user_pubkey],
+        &params,
     )?;
-    super::util::json_ok(cards_from_json(json, &std::collections::HashMap::new()))
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+    let cards = rank_cards_by_interest_distance(
+        user_pubkey.as_str(),
+        rows.into_iter()
+            .filter_map(|v| card_from_value(&v))
+            .collect(),
+    );
+    super::util::json_ok(cards)
 }
 
 /// Fetch a single dating profile by profile event id.
@@ -413,13 +568,19 @@ pub fn dating_create_profile(
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
     super::db::upsert_post_row(
-        event_id,
-        user_pubkey,
+        event_id.clone(),
+        user_pubkey.clone(),
         content.to_string(),
         KIND_PROFILE as i64,
         soshal_common_core::format::now_secs(),
         serde_json::to_string(&vec![vec!["d".to_string(), D_TAG.to_string()]]).unwrap_or_default(),
         Some(name),
+    )?;
+    super::db::db_execute_params(
+        &format!(
+            "UPDATE posts SET is_deleted = 1 WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND id != ?2"
+        ),
+        &[user_pubkey, event_id],
     )?;
     Ok(signed_json).into()
 }
@@ -531,13 +692,19 @@ pub fn dating_update_profile(
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
     super::db::upsert_post_row(
-        event_id,
-        user_pubkey,
+        event_id.clone(),
+        user_pubkey.clone(),
         content.to_string(),
         KIND_PROFILE as i64,
         soshal_common_core::format::now_secs(),
         serde_json::to_string(&vec![vec!["d".to_string(), D_TAG.to_string()]]).unwrap_or_default(),
         None,
+    )?;
+    super::db::db_execute_params(
+        &format!(
+            "UPDATE posts SET is_deleted = 1 WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND id != ?2"
+        ),
+        &[user_pubkey, event_id],
     )?;
     Ok(true).into()
 }
@@ -574,14 +741,30 @@ pub fn dating_delete_profile(user_pubkey: String) -> Result<bool, String> {
     .into()
 }
 
-fn react(user_pubkey: &str, target_event_id: &str, content: &str) -> Result<bool, String> {
+fn react(user_pubkey: &str, profile_pubkey: &str, content: &str) -> Result<bool, String> {
     super::signer::require_identity(user_pubkey)?;
-    if target_event_id.len() != 64 {
+    if profile_pubkey.len() != 64 {
         return Err("invalid profile event id".to_string());
     }
+    // The like/matches/stats reads join `posts p ON p.id = r.event_id`, so the
+    // stored event_id must be the profile *event id*, not the author pubkey.
+    // Resolve the author's newest non-deleted profile event; fail loudly if
+    // none exists rather than writing a reaction that can never surface.
+    let profile_ids = super::db::db_query_params(
+        &format!(
+            "SELECT p.id FROM posts p WHERE p.kind = {KIND_PROFILE} \
+             AND p.pubkey = ?1 AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT 1"
+        ),
+        &[profile_pubkey.to_string()],
+    )?;
+    let profile_event_id = serde_json::from_str::<Vec<serde_json::Value>>(&profile_ids)
+        .ok()
+        .and_then(|r| r.into_iter().next())
+        .and_then(|v| v["id"].as_str().map(|s| s.to_string()))
+        .ok_or_else(|| format!("no profile event for {profile_pubkey}"))?;
     let builder =
         nostr::event::EventBuilder::new(nostr::event::Kind::Reaction, content.to_string()).tags(
-            vec![["e".to_string(), target_event_id.to_string()]]
+            vec![["e".to_string(), profile_event_id.clone()]]
                 .into_iter()
                 .filter_map(|t| nostr::event::Tag::parse(t).ok()),
         );
@@ -591,8 +774,8 @@ fn react(user_pubkey: &str, target_event_id: &str, content: &str) -> Result<bool
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
     let now = soshal_common_core::format::now_secs();
     let row = soshal_db_core::repos::reaction::ReactionRow {
-        id: format!("reaction:{user_pubkey}:{target_event_id}"),
-        event_id: target_event_id.to_string(),
+        id: format!("reaction:{user_pubkey}:{profile_pubkey}"),
+        event_id: profile_event_id,
         pubkey: user_pubkey.to_string(),
         content: Some(content.to_string()),
         created_at: now,
@@ -654,6 +837,18 @@ pub fn dating_pass(user_pubkey: String, profile_id: String) -> Result<bool, Stri
     })
 }
 
+/// Reset all profiles the user swiped "no" on (deletes local `pass` records
+/// so the profiles re-enter the discover deck). Likes/matches/unmatches are
+/// untouched. Returns the number of passes reset.
+#[frb(sync, serialize)]
+pub fn dating_reset_passes(user_pubkey: String) -> Result<i64, String> {
+    let n = super::db::db_execute_params(
+        "DELETE FROM reactions WHERE pubkey = ?1 AND content = 'pass'",
+        &[user_pubkey],
+    )?;
+    Ok(n as i64).into()
+}
+
 /// Fetch profiles that liked the user (`+` reactions on the user's profile
 /// events).
 #[frb(sync, serialize)]
@@ -665,7 +860,7 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
              (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0) \
              ORDER BY r.created_at DESC LIMIT 200"
         ),
-        &[user_pubkey],
+        &[user_pubkey.clone()],
     )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let mut likers: Vec<String> = Vec::new();
@@ -675,7 +870,7 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
             likers.push(pk.to_string());
         }
     }
-    let cards = cards_by_pubkey(&likers, 200)?;
+    let cards = cards_by_pubkey(&likers, &user_pubkey, 200)?;
     let mut out = Vec::new();
     for row in rows {
         if let Some(card) = cards.get(row["pubkey"].as_str().unwrap_or_default()) {
@@ -697,7 +892,7 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
                          AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1)) \
              ORDER BY r.created_at DESC LIMIT 100"
         ),
-        &[user_pubkey],
+        &[user_pubkey.clone()],
     )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let mut owners: Vec<String> = Vec::new();
@@ -707,7 +902,7 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
             owners.push(pk.to_string());
         }
     }
-    let cards = cards_by_pubkey(&owners, 100)?;
+    let cards = cards_by_pubkey(&owners, &user_pubkey, 100)?;
     let mut out = Vec::new();
     for row in rows {
         if let Some(card) = cards.get(row["profile_owner"].as_str().unwrap_or_default()) {
@@ -718,12 +913,18 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
 }
 
 /// Record an unmatch between the user and a dating profile.
+///
+/// Scoped to `user_pubkey`: the suppression entry is per-actor, so an
+/// unmatch under one account never hides the profile from another account
+/// swiping on the same device.
 #[frb(sync, serialize)]
 pub fn dating_unmatch(user_pubkey: String, profile_id: String) -> Result<bool, String> {
-    let _ = user_pubkey;
     super::db::with_db_result(|db| {
-        soshal_db_core::repos::dating_unmatch::DatingUnmatchRepo::new(db)
-            .upsert(&profile_id, soshal_common_core::format::now_secs())?;
+        soshal_db_core::repos::dating_unmatch::DatingUnmatchRepo::new(db).upsert(
+            &user_pubkey,
+            &profile_id,
+            soshal_common_core::format::now_secs(),
+        )?;
         Ok(true)
     })
 }
@@ -795,9 +996,12 @@ pub fn dating_filter_profiles(
     education: String,
     interests_json: String,
 ) -> Result<String, String> {
-    let mut cards: Vec<DatingCardInfo> =
-        serde_json::from_str(&dating_fetch_profiles(user_pubkey.clone(), 100)?)
-            .map_err(|e| format!("parse profiles: {e}"))?;
+    let mut cards: Vec<DatingCardInfo> = serde_json::from_str(&dating_fetch_profiles(
+        user_pubkey.clone(),
+        100,
+        "public".to_string(),
+    )?)
+    .map_err(|e| format!("parse profiles: {e}"))?;
     if !interests_json.is_empty() {
         let interests: Vec<String> = serde_json::from_str(&interests_json).unwrap_or_default();
         if !interests.is_empty() {
@@ -816,29 +1020,8 @@ pub fn dating_filter_profiles(
     let own_seeking = own_card
         .as_ref()
         .and_then(|c| (!c.seeking.is_empty()).then(|| c.seeking.clone()));
-    let profiles: Vec<soshal_dating_core::DatingProfileInput> = cards
-        .iter()
-        .map(|c| soshal_dating_core::DatingProfileInput {
-            pubkey: c.pubkey.clone(),
-            age: Some(f64::from(c.age)),
-            gender: (!c.gender.is_empty()).then(|| c.gender.clone()),
-            seeking: (!c.seeking.is_empty()).then(|| c.seeking.clone()),
-            height: (c.height > 0.0).then(|| f64::from(c.height)),
-            body_type: (!c.body_type.is_empty()).then(|| c.body_type.clone()),
-            smoking: (!c.smoking.is_empty()).then(|| c.smoking.clone()),
-            drinking: (!c.drinking.is_empty()).then(|| c.drinking.clone()),
-            relationship_intent: (!c.relationship_intent.is_empty())
-                .then(|| c.relationship_intent.clone()),
-            politics: (!c.politics.is_empty()).then(|| c.politics.clone()),
-            ethnicity: (!c.ethnicity.is_empty()).then(|| c.ethnicity.clone()),
-            education: (!c.education.is_empty()).then(|| c.education.clone()),
-            language: (!c.language.is_empty()).then(|| c.language.clone()),
-            max_distance_km: (c.max_distance_km > 0.0).then(|| f64::from(c.max_distance_km)),
-            location_geohash: (!c.location.is_empty()).then(|| c.location.clone()),
-            interests: Some(c.interests.clone()),
-            ..Default::default()
-        })
-        .collect();
+    let profiles: Vec<soshal_dating_core::DatingProfileInput> =
+        cards.iter().map(profile_input_from_card).collect();
     let filtered = soshal_dating_core::filter::filter_dating_profiles(
         soshal_dating_core::FilterDatingProfilesInput {
             profiles: profiles.clone(),
@@ -868,10 +1051,7 @@ pub fn dating_filter_profiles(
     let sorted =
         soshal_dating_core::sort::sort_dating_profiles(soshal_dating_core::SortProfilesInput {
             profiles: kept,
-            self_profile: soshal_dating_core::DatingProfileInput {
-                pubkey: user_pubkey,
-                ..Default::default()
-            },
+            self_profile: self_profile_input(&user_pubkey),
             self_contacts: Vec::new(),
             sort_by: None,
         });
@@ -879,7 +1059,9 @@ pub fn dating_filter_profiles(
     let mut out = Vec::new();
     for s in sorted {
         if let Some(pos) = remaining.iter().position(|c| c.pubkey == s.pubkey) {
-            out.push(remaining.remove(pos));
+            let mut card = remaining.remove(pos);
+            card.compatibility_score = s.compatibility_score as f32;
+            out.push(card);
         }
     }
     out.truncate(50);
@@ -1128,7 +1310,7 @@ mod tests {
     fn test_resolve_location() {
         assert_eq!(resolve_location("u33dc0").unwrap(), "u33dc0");
         let encoded = resolve_location("51.5007,-0.1246").unwrap();
-        assert_eq!(encoded, "gcpuvpmm2");
+        assert_eq!(encoded, "gcpuv");
         assert_eq!(resolve_location("").unwrap_err(), "location is required");
         assert!(resolve_location("not a geohash!!").is_err());
         assert!(resolve_location("91,0").is_err());
@@ -1287,7 +1469,7 @@ mod tests {
         let rows_v: Vec<serde_json::Value> = serde_json::from_str(&rows).unwrap();
         let content_v: serde_json::Value =
             serde_json::from_str(rows_v[0]["content"].as_str().unwrap()).unwrap();
-        assert_eq!(content_v["locationGeohash"], "gcpuvpmm2", "{rows}");
+        assert_eq!(content_v["locationGeohash"], "gcpuv", "{rows}");
         assert_eq!(content_v["height"], 170.0);
         assert_eq!(content_v["smoking"], "never");
         assert_eq!(content_v["maxDistanceKm"], 100.0);
@@ -1296,7 +1478,7 @@ mod tests {
             serde_json::from_str(&dating_get_profile(event_id).unwrap()).unwrap();
         assert_eq!(card.name, "alice");
         assert_eq!(card.age, 30);
-        assert_eq!(card.location, "gcpuvpmm2");
+        assert_eq!(card.location, "gcpuv");
         assert_eq!(card.height, 170.0);
         assert_eq!(card.gender, "female");
         assert_eq!(card.interests, vec!["music".to_string(), "art".to_string()]);
@@ -1338,13 +1520,16 @@ mod tests {
             serde_json::from_str(&dating_get_own_profile(pk.clone()).unwrap()).unwrap();
         assert_eq!(updated.bio, "updated bio");
         assert_eq!(updated.age, 30, "update must preserve age");
-        assert_eq!(updated.location, "u33dc0", "update must preserve geohash");
+        assert_eq!(
+            updated.location, "u33dc",
+            "geohash truncated to precision 5"
+        );
         assert_eq!(updated.interests, vec!["sports".to_string()]);
         let cnt = super::super::db::db_query_raw_test(format!(
             "SELECT COUNT(*) AS c FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = '{pk}' AND is_deleted = 0"
         ))
         .unwrap();
-        assert!(cnt.contains("\"c\":2"), "{cnt}");
+        assert!(cnt.contains("\"c\":1"), "{cnt}");
 
         assert!(dating_delete_profile(pk.clone()).unwrap());
         assert_eq!(
@@ -1372,6 +1557,14 @@ mod tests {
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         crate::ffi::db::insert_test_user(&pk);
         let id64 = "a".repeat(64);
+        crate::ffi::db::insert_test_user(&id64);
+        // react() resolves the profile pubkey → profile event id, so the
+        // target needs a posts row of KIND_PROFILE before a reaction lands.
+        assert!(super::super::db::db_execute_raw_test(format!(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+             VALUES ('prof1','{id64}','{{}}',{KIND_PROFILE},100,'[]','synced',0)"
+        ))
+        .is_ok());
 
         for f in [dating_like, dating_unlike, dating_superlike] {
             let err = f(pk.clone(), "short".to_string()).unwrap_err();
@@ -1419,6 +1612,58 @@ mod tests {
         )
         .unwrap();
         assert!(outbox2.contains("\"c\":3"), "{outbox2}");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
+    #[test]
+    fn test_reset_passes() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
+        let path = crate::ffi::db::tmp_db("dating_reset_passes", "dt");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        crate::ffi::db::insert_test_user(&pk);
+        let a = "a".repeat(64);
+        let b = "b".repeat(64);
+        for pubkey in [&a, &b] {
+            crate::ffi::db::insert_test_user(pubkey);
+            assert!(super::super::db::db_execute_raw_test(format!(
+                "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+                 VALUES ('{pubkey}','{pubkey}','{{\"age\":30,\"bio\":\"x\",\"locationGeohash\":\"9q8yyk7qnv\",\"interests\":[\"music\"]}}',{KIND_PROFILE},100,'[]','synced',0)"
+            ))
+            .is_ok());
+        }
+
+        assert!(dating_pass(pk.clone(), a.clone()).unwrap());
+        assert!(dating_pass(pk.clone(), b.clone()).unwrap());
+        let before: Vec<serde_json::Value> = serde_json::from_str(
+            &dating_fetch_profiles(pk.clone(), 100, "public".to_string()).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            before.iter().all(|c| c["pubkey"] != a && c["pubkey"] != b),
+            "passed profiles must be hidden before reset: {before:?}"
+        );
+
+        assert_eq!(dating_reset_passes(pk.clone()).unwrap(), 2);
+        assert_eq!(dating_reset_passes(pk.clone()).unwrap(), 0);
+
+        let after: Vec<serde_json::Value> = serde_json::from_str(
+            &dating_fetch_profiles(pk.clone(), 100, "public".to_string()).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            after.iter().any(|c| c["pubkey"] == a),
+            "profile a must reappear: {after:?}"
+        );
+        assert!(
+            after.iter().any(|c| c["pubkey"] == b),
+            "profile b must reappear: {after:?}"
+        );
+
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
@@ -1476,8 +1721,8 @@ mod tests {
         assert_eq!(mv.len(), 1, "{matches}");
         assert_eq!(mv[0].pubkey, "likera");
 
-        assert!(dating_unmatch("me".to_string(), "cand2".to_string()).unwrap());
-        let profiles = dating_fetch_profiles("me".to_string(), 100).unwrap();
+        assert!(dating_unmatch("me".to_string(), "candb".to_string()).unwrap());
+        let profiles = dating_fetch_profiles("me".to_string(), 100, "public".to_string()).unwrap();
         let pv: Vec<DatingCardInfo> = serde_json::from_str(&profiles).unwrap();
         let pubs: Vec<String> = pv.iter().map(|c| c.pubkey.clone()).collect();
         assert!(pubs.contains(&"cand".to_string()), "{pubs:?}");

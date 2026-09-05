@@ -161,7 +161,9 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
             height: widget.height.toInt(),
           );
           bufferPtr = fb.bufferPtrAddr;
-        } catch (e) { debugPrint('raster buffer: $e'); }
+        } catch (e) {
+          debugPrint('raster buffer: $e');
+        }
 
         final completer = Completer<ui.Image>();
         ui.decodeImageFromPixels(
@@ -186,12 +188,16 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
                 frameTimestampNs:
                     BigInt.from(DateTime.now().microsecondsSinceEpoch * 1000),
               );
-            } catch (e) { debugPrint('raster buffer: $e'); }
+            } catch (e) {
+              debugPrint('raster buffer: $e');
+            }
             // The buffer is consumed by the frame signal; release the Rust
             // allocation so the registry does not grow one entry per frame.
             try {
               await _layout.releaseRasterFrameBuffer(ptrAddr: bufferPtr);
-            } catch (e) { debugPrint('raster buffer: $e'); }
+            } catch (e) {
+              debugPrint('raster buffer: $e');
+            }
           }
         } else {
           img.dispose();

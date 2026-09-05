@@ -173,12 +173,16 @@ fn order_from_value(v: &serde_json::Value) -> Option<OrderInfo> {
     })
 }
 
-fn listings_sql(prelude: &str, limit: i32, offset: i32) -> String {
+fn listings_sql(prelude: &str, limit: i32, offset: i32, authors: Option<&[String]>) -> String {
+    let author_clause = match authors {
+        Some(a) if !a.is_empty() => " AND p.pubkey IN (SELECT value FROM json_each(?1))",
+        _ => "",
+    };
     format!(
         "{prelude} SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 \
+         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0{author_clause} \
          ORDER BY p.created_at DESC LIMIT {} OFFSET {}",
         limit.clamp(1, 200),
         offset.max(0)
@@ -222,13 +226,30 @@ fn db_listings_params(sql: &str, params: &[String]) -> Result<Vec<ListingInfo>, 
 
 /// Fetch all active listings (newest first).
 #[frb(sync, serialize)]
-pub fn marketplace_fetch_listings(limit: i32, offset: i32) -> Result<String, String> {
-    super::util::json_ok(db_listings(listings_sql("", limit, offset))?)
+pub fn marketplace_fetch_listings(
+    limit: i32,
+    offset: i32,
+    audience: String,
+) -> Result<String, String> {
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    if let Some(a) = &authors {
+        if a.is_empty() {
+            return super::util::json_ok(Vec::<ListingInfo>::new());
+        }
+    }
+    let sql = listings_sql("", limit, offset, authors.as_deref());
+    match &authors {
+        Some(a) => super::util::json_ok(db_listings_params(
+            &sql,
+            &[serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?],
+        )?),
+        None => super::util::json_ok(db_listings(sql)?),
+    }
 }
 
 /// Full-text search on listing content (title/description).
 #[frb(sync, serialize)]
-pub fn marketplace_search(query: String, limit: i32) -> Result<String, String> {
+pub fn marketplace_search(query: String, limit: i32, audience: String) -> Result<String, String> {
     if query.trim().is_empty() {
         return Ok("[]".to_string()).into();
     }
@@ -236,18 +257,29 @@ pub fn marketplace_search(query: String, limit: i32) -> Result<String, String> {
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_");
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    if let Some(a) = &authors {
+        if a.is_empty() {
+            return super::util::json_ok(Vec::<ListingInfo>::new());
+        }
+    }
+    let author_clause = match &authors {
+        Some(a) if !a.is_empty() => " AND p.pubkey IN (SELECT value FROM json_each(?2))",
+        _ => "",
+    };
     let sql = format!(
         "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 AND p.content LIKE '%' || ?1 || '%' ESCAPE '\\' \
+         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 AND p.content LIKE '%' || ?1 || '%' ESCAPE '\\' {author_clause} \
          ORDER BY p.created_at DESC LIMIT {}",
         limit.clamp(1, 100)
     );
-    super::util::json_ok(parse_listings(super::db::db_query_params(
-        &sql,
-        &[escaped],
-    )?))
+    let mut params: Vec<String> = vec![escaped];
+    if let Some(a) = &authors {
+        params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+    }
+    super::util::json_ok(parse_listings(super::db::db_query_params(&sql, &params)?))
 }
 
 /// Get listing by id.
@@ -455,35 +487,65 @@ pub fn marketplace_fetch_seller_listings(seller_pubkey: String) -> Result<String
 
 /// Get listings by category (denormalized `category` column, v012).
 #[frb(sync, serialize)]
-pub fn marketplace_get_by_category(category: String, limit: i32) -> Result<String, String> {
+pub fn marketplace_get_by_category(
+    category: String,
+    limit: i32,
+    audience: String,
+) -> Result<String, String> {
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    if let Some(a) = &authors {
+        if a.is_empty() {
+            return super::util::json_ok(Vec::<ListingInfo>::new());
+        }
+    }
+    let author_clause = match &authors {
+        Some(a) if !a.is_empty() => " AND p.pubkey IN (SELECT value FROM json_each(?2))",
+        _ => "",
+    };
     let sql = format!(
         "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 AND p.category = ?1 \
+         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 AND p.category = ?1 {author_clause} \
          ORDER BY p.created_at DESC LIMIT {}",
         limit.clamp(1, 100)
     );
-    super::util::json_ok(parse_listings(super::db::db_query_params(
-        &sql,
-        &[category],
-    )?))
+    let mut params: Vec<String> = vec![category];
+    if let Some(a) = &authors {
+        params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+    }
+    super::util::json_ok(parse_listings(super::db::db_query_params(&sql, &params)?))
 }
 
 /// Trending listings: most reposts/reactions in the local DB, newest first
 /// as tiebreak.
 #[frb(sync, serialize)]
-pub fn marketplace_get_trending(limit: i32) -> Result<String, String> {
-    let json = super::db::db_query_raw(format!(
+pub fn marketplace_get_trending(limit: i32, audience: String) -> Result<String, String> {
+    let authors = super::identity::resolve_audience_authors(&audience)?;
+    if let Some(a) = &authors {
+        if a.is_empty() {
+            return super::util::json_ok(Vec::<ListingInfo>::new());
+        }
+    }
+    let mut params: Vec<String> = Vec::new();
+    let author_clause = match &authors {
+        Some(a) => {
+            let j = serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?;
+            params.push(j);
+            " AND p.pubkey IN (SELECT value FROM json_each(?1))"
+        }
+        None => "",
+    };
+    let sql = format!(
         "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
          p.content, p.tags_json, p.created_at, p.is_deleted \
          FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0 \
+         WHERE p.kind = {KIND_LISTING} AND p.is_deleted = 0{author_clause} \
          ORDER BY p.reposts_count DESC, p.created_at DESC \
          LIMIT {}",
         limit.clamp(1, 100)
-    ))?;
-    super::util::json_ok(parse_listings(json))
+    );
+    super::util::json_ok(parse_listings(super::db::db_query_params(&sql, &params)?))
 }
 
 /// Create an order for a listing (kind 30403 row + local insert).
@@ -657,6 +719,43 @@ pub fn marketplace_release_escrow(
             ));
         }
         repo.update_status(&escrow_id, "completed")?;
+        Ok(true)
+    })
+}
+
+#[frb(sync, serialize)]
+pub fn marketplace_escrow_confirm_buyer(escrow_id: String, caller: String) -> Result<bool, String> {
+    super::db::with_db_result(|db| {
+        let repo = EscrowRepo::new(db);
+        let escrow = repo
+            .get(&escrow_id)?
+            .ok_or(soshal_db_core::error::DbError::NotFound)?;
+        if escrow.buyer_pubkey != caller {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "confirmation must be initiated by the buyer identity".to_string(),
+            ));
+        }
+        repo.set_buyer_confirmed(&escrow_id, true)?;
+        Ok(true)
+    })
+}
+
+#[frb(sync, serialize)]
+pub fn marketplace_escrow_confirm_seller(
+    escrow_id: String,
+    caller: String,
+) -> Result<bool, String> {
+    super::db::with_db_result(|db| {
+        let repo = EscrowRepo::new(db);
+        let escrow = repo
+            .get(&escrow_id)?
+            .ok_or(soshal_db_core::error::DbError::NotFound)?;
+        if escrow.seller_pubkey != caller {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "confirmation must be initiated by the seller identity".to_string(),
+            ));
+        }
+        repo.set_seller_confirmed(&escrow_id, true)?;
         Ok(true)
     })
 }
@@ -1026,29 +1125,32 @@ mod tests {
         insert_listing("l1", "seller1", "rust book", 5000, "books", 2000);
         insert_listing("l2", "seller2", "chess set", 3000, "games", 1000);
 
-        let json = marketplace_fetch_listings(10, 0).unwrap();
+        let json = marketplace_fetch_listings(10, 0, "public".to_string()).unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr.len(), 2, "json: {json}");
         assert_eq!(arr[0]["id"], "l1");
         assert_eq!(arr[0]["title"], "rust book");
         assert_eq!(arr[0]["seller_name"], "");
-        let json = marketplace_fetch_listings(0, 0).unwrap();
+        let json = marketplace_fetch_listings(0, 0, "public".to_string()).unwrap();
         assert_eq!(
             serde_json::from_str::<Vec<serde_json::Value>>(&json)
                 .unwrap()
                 .len(),
             1
         );
-        let json = marketplace_fetch_listings(10, 1).unwrap();
+        let json = marketplace_fetch_listings(10, 1, "public".to_string()).unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr[0]["id"], "l2");
 
-        let json = marketplace_search("rust book".to_string(), 10).unwrap();
+        let json = marketplace_search("rust book".to_string(), 10, "public".to_string()).unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["id"], "l1");
-        assert_eq!(marketplace_search(String::new(), 10).unwrap(), "[]");
-        let json = marketplace_search("zzz".to_string(), 10).unwrap();
+        assert_eq!(
+            marketplace_search(String::new(), 10, "public".to_string()).unwrap(),
+            "[]"
+        );
+        let json = marketplace_search("zzz".to_string(), 10, "public".to_string()).unwrap();
         assert!(serde_json::from_str::<Vec<serde_json::Value>>(&json)
             .unwrap()
             .is_empty());
@@ -1072,16 +1174,18 @@ mod tests {
             .unwrap()
             .is_empty());
 
-        let json = marketplace_get_by_category("books".to_string(), 10).unwrap();
+        let json =
+            marketplace_get_by_category("books".to_string(), 10, "public".to_string()).unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["category"], "books");
-        let json = marketplace_get_by_category("nope".to_string(), 10).unwrap();
+        let json =
+            marketplace_get_by_category("nope".to_string(), 10, "public".to_string()).unwrap();
         assert!(serde_json::from_str::<Vec<serde_json::Value>>(&json)
             .unwrap()
             .is_empty());
 
-        let json = marketplace_get_trending(10).unwrap();
+        let json = marketplace_get_trending(10, "public".to_string()).unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr.len(), 2);
 
@@ -1116,7 +1220,7 @@ mod tests {
         assert!(marketplace_delete_listing("l1".to_string(), "seller1".to_string()).unwrap());
         let info = marketplace_get_listing("l1".to_string()).unwrap();
         assert!(info.contains("\"status\":\"active\""), "{info}");
-        let json = marketplace_fetch_listings(10, 0).unwrap();
+        let json = marketplace_fetch_listings(10, 0, "public".to_string()).unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["id"], "l2");
@@ -1562,7 +1666,7 @@ mod tests {
         );
 
         // Negative offset clamps to 0 (returns all rows).
-        let json = marketplace_fetch_listings(10, -5).unwrap();
+        let json = marketplace_fetch_listings(10, -5, "public".to_string()).unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0]["id"], "l1");
@@ -1688,14 +1792,14 @@ mod tests {
                 3000 + i,
             );
         }
-        let json = marketplace_search("rust book".to_string(), 0).unwrap();
+        let json = marketplace_search("rust book".to_string(), 0, "public".to_string()).unwrap();
         assert_eq!(
             serde_json::from_str::<Vec<serde_json::Value>>(&json)
                 .unwrap()
                 .len(),
             1
         );
-        let json = marketplace_search("rust book".to_string(), 200).unwrap();
+        let json = marketplace_search("rust book".to_string(), 200, "public".to_string()).unwrap();
         assert_eq!(
             serde_json::from_str::<Vec<serde_json::Value>>(&json)
                 .unwrap()
@@ -1714,7 +1818,7 @@ mod tests {
                 .to_string(),
         )
         .unwrap();
-        let json = marketplace_get_trending(10).unwrap();
+        let json = marketplace_get_trending(10, "public".to_string()).unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr[0]["id"], "t2", "{json}");
         assert_eq!(arr[1]["id"], "t1", "{json}");

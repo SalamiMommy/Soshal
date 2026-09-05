@@ -3,18 +3,24 @@ use crate::Database;
 use libsql::params;
 
 const POST_UPSERT_SQL: &str = "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id, category) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18, CASE WHEN ?4 = 30402 THEN (SELECT json_extract(je.value, '$[1]') FROM json_each(CASE WHEN json_valid(?6) THEN ?6 ELSE '[]' END) je WHERE json_extract(je.value, '$[0]') = 't' LIMIT 1) ELSE NULL END) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native, rsvp_event_id=excluded.rsvp_event_id, category=excluded.category WHERE posts.is_deleted = 0";
-const POST_FEED_SQL: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE pubkey IN (SELECT value FROM json_each(?1)) AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3";
+const POST_FEED_SQL: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE pubkey IN (SELECT value FROM json_each(?1)) AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3";
 const POST_SELECT_BY_ID: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE id = ?1";
-const POST_SELECT_BY_PUBKEY: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE pubkey = ?1 AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3";
+const POST_SELECT_BY_PUBKEY: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE pubkey = ?1 AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3";
 const POST_SELECT_REPLIES: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 ORDER BY created_at ASC LIMIT 1000";
-const POST_SELECT_PAGED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2";
+const POST_SELECT_PAGED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 /// Slim feed variant: only the columns the feed surface consumes. Feed pages
 /// are the hottest read path; the 17-column row mapping wastes decode work
 /// on sig/mention/freenet/scheduling columns the UI never sees.
 const POST_SELECT_PAGED_META: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_CURSOR: &str =
     "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
+/// Author-filtered variants of the slim feed pages: `?3`/`?4` is a JSON
+/// array of reachable pubkeys (audience filter: friends / network).
+const POST_SELECT_PAGED_META_AUTHORS: &str =
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey IN (SELECT value FROM json_each(?3)) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
+const POST_SELECT_PAGED_META_CURSOR_AUTHORS: &str =
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey IN (SELECT value FROM json_each(?4)) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
 const POST_SELECT_SCHEDULED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC";
 
 pub struct PostRepo<'a> {
@@ -326,15 +332,31 @@ impl<'a> PostRepo<'a> {
             &conn,
             POST_SELECT_PAGED_META,
             params![limit, offset],
-            |row| {
-                Ok(PostMetaRow {
-                    id: row.get(0)?,
-                    pubkey: row.get(1)?,
-                    content: row.get(2)?,
-                    created_at: row.get(3)?,
-                    tags_json: row.get(4)?,
-                })
-            },
+            Self::map_meta_row,
+        )
+    }
+
+    /// Author-filtered [`Self::get_paged_meta`]: only posts whose author is
+    /// in `authors` (audience filter). Empty `authors` matches nothing.
+    pub fn get_paged_meta_by_authors(
+        &self,
+        limit: i64,
+        offset: i64,
+        authors: &[String],
+    ) -> Result<Vec<PostMetaRow>, crate::error::DbError> {
+        let limit = crate::repos::clamp_limit(limit);
+        let offset = offset.max(0);
+        if authors.is_empty() {
+            return Ok(Vec::new());
+        }
+        let authors_json = serde_json::to_string(authors)
+            .map_err(|e| crate::error::DbError::Migration(e.to_string()))?;
+        let conn = self.db.conn()?;
+        crate::query::query(
+            &conn,
+            POST_SELECT_PAGED_META_AUTHORS,
+            params![limit, offset, authors_json.as_str()],
+            Self::map_meta_row,
         )
     }
 
@@ -352,21 +374,46 @@ impl<'a> PostRepo<'a> {
             &conn,
             POST_SELECT_PAGED_META_CURSOR,
             params![before_created_at, limit, before_id],
-            |row| {
-                Ok(PostMetaRow {
-                    id: row.get(0)?,
-                    pubkey: row.get(1)?,
-                    content: row.get(2)?,
-                    created_at: row.get(3)?,
-                    tags_json: row.get(4)?,
-                })
-            },
+            Self::map_meta_row,
+        )
+    }
+
+    /// Author-filtered cursor variant (see [`Self::get_paged_meta_by_authors`]).
+    pub fn get_paged_meta_cursor_by_authors(
+        &self,
+        before_created_at: i64,
+        before_id: &str,
+        limit: i64,
+        authors: &[String],
+    ) -> Result<Vec<PostMetaRow>, crate::error::DbError> {
+        let limit = crate::repos::clamp_limit(limit);
+        if authors.is_empty() {
+            return Ok(Vec::new());
+        }
+        let authors_json = serde_json::to_string(authors)
+            .map_err(|e| crate::error::DbError::Migration(e.to_string()))?;
+        let conn = self.db.conn()?;
+        crate::query::query(
+            &conn,
+            POST_SELECT_PAGED_META_CURSOR_AUTHORS,
+            params![before_created_at, limit, before_id, authors_json.as_str()],
+            Self::map_meta_row,
         )
     }
 
     pub fn get_scheduled(&self, pubkey: &str) -> Result<Vec<PostRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
         crate::query::query(&conn, POST_SELECT_SCHEDULED, params![pubkey], Self::map_row)
+    }
+
+    fn map_meta_row(row: &libsql::Row) -> libsql::Result<PostMetaRow> {
+        Ok(PostMetaRow {
+            id: row.get(0)?,
+            pubkey: row.get(1)?,
+            content: row.get(2)?,
+            created_at: row.get(3)?,
+            tags_json: row.get(4)?,
+        })
     }
 
     fn map_row(row: &libsql::Row) -> libsql::Result<PostRow> {

@@ -1042,7 +1042,8 @@ class _InboxScreenState extends State<InboxScreen> {
               children: [
                 CircleAvatar(
                   radius: 18,
-                  child: Text(peerName.isNotEmpty ? peerName[0].toUpperCase() : '?'),
+                  child: Text(
+                      peerName.isNotEmpty ? peerName[0].toUpperCase() : '?'),
                 ),
                 Positioned(
                   right: 0,
@@ -1068,7 +1069,9 @@ class _InboxScreenState extends State<InboxScreen> {
                   _peerTyping ? 'typing…' : 'Active now',
                   style: TextStyle(
                     fontSize: 11,
-                    color: _peerTyping ? Theme.of(context).colorScheme.primary : Colors.grey,
+                    color: _peerTyping
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey,
                   ),
                 ),
               ],
@@ -1082,7 +1085,8 @@ class _InboxScreenState extends State<InboxScreen> {
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Starting P2P WebRTC voice call with $peerName…'),
+                  content:
+                      Text('Starting P2P WebRTC voice call with $peerName…'),
                   action: SnackBarAction(label: 'End', onPressed: () {}),
                 ),
               );
@@ -1094,7 +1098,8 @@ class _InboxScreenState extends State<InboxScreen> {
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Starting P2P WebRTC video call with $peerName…'),
+                  content:
+                      Text('Starting P2P WebRTC video call with $peerName…'),
                   action: SnackBarAction(label: 'End', onPressed: () {}),
                 ),
               );
@@ -1177,7 +1182,8 @@ class _InboxScreenState extends State<InboxScreen> {
                         _isRecordingVoice ? Icons.stop_circle : Icons.mic_none,
                         color: _isRecordingVoice ? Colors.red : null,
                       ),
-                      tooltip: _isRecordingVoice ? 'Stop recording' : 'Voice note',
+                      tooltip:
+                          _isRecordingVoice ? 'Stop recording' : 'Voice note',
                       onPressed: () {
                         setState(() => _isRecordingVoice = !_isRecordingVoice);
                         if (!_isRecordingVoice) {
@@ -1197,7 +1203,9 @@ class _InboxScreenState extends State<InboxScreen> {
                           }
                         },
                         decoration: InputDecoration(
-                          hintText: _isRecordingVoice ? 'Recording audio waveform…' : 'Message…',
+                          hintText: _isRecordingVoice
+                              ? 'Recording audio waveform…'
+                              : 'Message…',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(24),
                           ),
@@ -1242,7 +1250,8 @@ class _InboxScreenState extends State<InboxScreen> {
             context: context,
             builder: (sheetContext) => SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
@@ -1252,7 +1261,8 @@ class _InboxScreenState extends State<InboxScreen> {
                           setState(() => _messageReactions[message.id] = emoji);
                           Navigator.pop(sheetContext);
                         },
-                        child: Text(emoji, style: const TextStyle(fontSize: 28)),
+                        child:
+                            Text(emoji, style: const TextStyle(fontSize: 28)),
                       ),
                   ],
                 ),
@@ -1278,7 +1288,8 @@ class _InboxScreenState extends State<InboxScreen> {
                         ? null
                         : () async {
                             try {
-                              final decrypted = await messagingService.decryptDM(
+                              final decrypted =
+                                  await messagingService.decryptDM(
                                 message.content,
                                 message.sender,
                                 '',
@@ -1295,7 +1306,8 @@ class _InboxScreenState extends State<InboxScreen> {
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                      content: SelectableText('Decrypt error: $e')),
+                                      content:
+                                          SelectableText('Decrypt error: $e')),
                                 );
                               }
                             }
@@ -1340,7 +1352,8 @@ class _InboxScreenState extends State<InboxScreen> {
                 right: isOwn ? 12 : null,
                 left: isOwn ? null : 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(10),

@@ -232,8 +232,8 @@ pub async fn zap_fetch_invoice(
     // honor this bolt11, so a provider that returns an invoice for a
     // different amount (or a tampered bolt11 from Dart) cannot be paid.
     let invoice = resp
-        .get("params")
-        .and_then(|p| p.get("invoice"))
+        .get("result")
+        .and_then(|r| r.get("invoice"))
         .and_then(serde_json::Value::as_str)
         .filter(|i| {
             soshal_zap_core::parse_msats_from_bolt11(i).is_ok()
