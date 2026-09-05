@@ -2,6 +2,8 @@
 //! Minis, Musicloud, custom profiles
 
 use flutter_rust_bridge::frb;
+use soshal_db_core::repos::saved::{SavedContentRepo, SavedContentRow};
+use soshal_media_core::cas::ChunkStore;
 use soshal_minis_core::events as minis_events;
 
 fn add_tag(builder: nostr::event::EventBuilder, tag: Vec<String>) -> nostr::event::EventBuilder {
@@ -40,6 +42,7 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
         &params,
     )?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+    let me_pubkey = super::db::active_pubkey().ok();
     let mut out: Vec<serde_json::Value> = Vec::new();
     for row in rows {
         let tags: Vec<Vec<String>> =
@@ -52,7 +55,23 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
             created_at: row["created_at"].as_f64().unwrap_or(0.0),
             kind: 31020,
         };
-        if let Some(mapped) = minis_events::mini_from_event(&ev) {
+        if let Some(mut mapped) = minis_events::mini_from_event(&ev) {
+            let id = row["id"].as_str().unwrap_or_default().to_string();
+            if !id.is_empty() {
+                let reactions_json = super::db::db_query_params(
+                    "SELECT pubkey, event_id FROM reactions WHERE event_id = ?1 LIMIT 1000",
+                    &[serde_json::to_string(&id).unwrap_or_default()],
+                )?;
+                let reactors: Vec<serde_json::Value> =
+                    serde_json::from_str(&reactions_json).unwrap_or_default();
+                let reactions = reactors.len() as u64;
+                let liked = me_pubkey
+                    .as_ref()
+                    .map(|m| reactors.iter().any(|r| r["pubkey"].as_str() == Some(m.as_str())))
+                    .unwrap_or(false);
+                mapped["reactions"] = serde_json::json!(reactions);
+                mapped["liked"] = serde_json::json!(liked);
+            }
             out.push(mapped);
         }
     }
@@ -184,6 +203,99 @@ pub fn minis_wasm_rank_feed(
     Err(wasm_stub_err(&wasm_bytes_hex))
 }
 
+/// Persist a mini (kind-31020 row from the local posts registry) into
+/// `saved_content` for the Saved tab. Returns true when the video blob is
+/// already present in the local chunk store (host-ready for peer fetching);
+/// materialize remote bytes into the CAS first via media upload/fetch if
+/// re-hosting is intended.
+#[frb(sync, serialize)]
+pub fn minis_save(event_id: String) -> Result<bool, String> {
+    if event_id.is_empty() {
+        return Err("event_id must not be empty".into());
+    }
+    let json = super::db::db_query_params(
+        "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE id=?1 AND kind=31020 AND is_deleted=0",
+        &[event_id.clone()],
+    )?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+    let Some(row) = rows.first() else {
+        return Err(format!("mini not found: {event_id}"));
+    };
+    let tags: Vec<Vec<String>> =
+        serde_json::from_str(row["tags_json"].as_str().unwrap_or("[]")).unwrap_or_default();
+    let ev = soshal_nostr_core::models::NostrEvent {
+        id: row["id"].as_str().unwrap_or_default().to_string(),
+        pubkey: row["pubkey"].as_str().unwrap_or_default().to_string(),
+        content: row["content"].as_str().unwrap_or_default().to_string(),
+        tags,
+        created_at: row["created_at"].as_f64().unwrap_or(0.0),
+        kind: 31020,
+    };
+    let Some(mini) = minis_events::mini_from_event(&ev) else {
+        return Err(format!("mini not mapped: {event_id}"));
+    };
+    let blob_hash = mini["blobHash"].as_str().unwrap_or_default().to_string();
+    let host_ready = if blob_hash.len() == 64 {
+        ChunkStore::new(ChunkStore::default_root()).contains(&blob_hash)
+    } else {
+        false
+    };
+    super::db::with_db_result(|db| {
+        SavedContentRepo::new(db).upsert(&SavedContentRow {
+            kind: 31020,
+            id: mini["id"].as_str().unwrap_or_default().to_string(),
+            pubkey: row["pubkey"].as_str().unwrap_or_default().to_string(),
+            d: mini
+                .get("d")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            media_type: "video".to_string(),
+            media_url: mini["videoUrl"].as_str().unwrap_or_default().to_string(),
+            text_overlay: mini["textOverlay"].as_str().unwrap_or_default().to_string(),
+            title: String::new(),
+            thumbnail: mini["thumbnail"].as_str().unwrap_or_default().to_string(),
+            blob_hash,
+            media_size: mini["mediaSize"].as_i64().unwrap_or(0),
+            audience: mini["audience"].as_str().unwrap_or("public").to_string(),
+            hashtags: "[]".to_string(),
+            host_ready,
+            created_at: mini["createdAt"].as_i64().unwrap_or(0),
+            saved_at: soshal_common_core::format::now_secs(),
+        })
+    })?;
+    Ok(host_ready)
+}
+
+/// Remove a previously saved mini from `saved_content`.
+#[frb(sync, serialize)]
+pub fn minis_unsave(event_id: String) -> Result<bool, String> {
+    super::db::with_db_result(|db| SavedContentRepo::new(db).delete(31020, &event_id))?;
+    Ok(true)
+}
+
+/// Return saved minis (saved_content kind 31020) as a JSON array of
+/// mini-shaped entries: id, pubkey, videoUrl, blobHash, mediaSize,
+/// textOverlay, thumbnail, audience, createdAt — plus hostReady and savedAt.
+/// Newest saved first.
+#[frb(sync, serialize)]
+pub fn minis_saved() -> Result<String, String> {
+    let rows = super::db::with_db_result(|db| SavedContentRepo::new(db).list(31020, 200))?;
+    let out: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "id": r.id, "pubkey": r.pubkey, "videoUrl": r.media_url,
+                "blobHash": r.blob_hash, "mediaSize": r.media_size,
+                "textOverlay": r.text_overlay, "thumbnail": r.thumbnail,
+                "audience": r.audience, "createdAt": r.created_at,
+                "hostReady": r.host_ready, "savedAt": r.saved_at,
+            })
+        })
+        .collect();
+    super::util::json_ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,6 +355,49 @@ mod tests {
         assert_eq!(rows[1]["videoUrl"], "https://mini.example/a");
         assert_eq!(rows[1]["thumbnail"], "https://img.example/a.png");
         assert_eq!(rows[1]["blobHash"], "");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
+    #[test]
+    fn saved_roundtrip() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let path = format!(
+            "{}/soshal_minis_{}_{}.db",
+            std::env::temp_dir().to_string_lossy(),
+            std::process::id(),
+            "save"
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+        assert!(super::super::db::db_init(path.clone()).is_ok());
+        super::super::db::insert_test_user("pk");
+        assert!(super::super::db::db_execute_raw_test(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+             VALUES ('m9','pk','save me',31020,500,'[[\"url\",\"https://mini.example/m9\"],[\"media\",\"video\",\"blob://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"12\"]]','pending',0)"
+                .to_string()
+        )
+        .is_ok());
+        let empty = minis_saved().unwrap();
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&empty).unwrap_or_default();
+        assert!(rows.is_empty());
+        assert!(!minis_save("m9".to_string()).unwrap());
+        let saved = minis_saved().unwrap();
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&saved).unwrap_or_default();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["videoUrl"], "https://mini.example/m9");
+        assert_eq!(rows[0]["hostReady"], false);
+        assert!(rows[0]["savedAt"].as_i64().unwrap_or(0) > 0);
+        let err = minis_save("nonexistent".to_string()).unwrap_err();
+        assert!(err.contains("not found"), "unexpected: {err}");
+        assert!(minis_unsave("m9".to_string()).unwrap());
+        let after = minis_saved().unwrap();
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&after).unwrap_or_default();
+        assert!(rows.is_empty());
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));

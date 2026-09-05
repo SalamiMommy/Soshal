@@ -34,6 +34,7 @@ pub mod reminder;
 pub mod repost;
 pub mod role;
 pub mod room;
+pub mod saved;
 pub mod search_index;
 pub mod settings;
 pub mod spam_report;

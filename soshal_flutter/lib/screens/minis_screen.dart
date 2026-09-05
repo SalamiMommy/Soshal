@@ -1,15 +1,19 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../widgets/mini_video_player.dart';
+import '../services/feed_service.dart';
 import '../services/media_service.dart';
 import '../services/minis_service.dart';
 import '../services/p2p_service.dart';
+import '../services/session_service.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/empty_state.dart';
+import '../utils/format.dart';
 
 /// Minis: mini video registry (kind-31020). Each mini is a video hosted
 /// from device caches — the local chunk store first, then LAN peers, with
@@ -22,7 +26,8 @@ class MinisScreen extends StatefulWidget {
   State<MinisScreen> createState() => _MinisScreenState();
 }
 
-class _MinisScreenState extends State<MinisScreen> {
+class _MinisScreenState extends State<MinisScreen>
+    with SingleTickerProviderStateMixin {
   List<MiniItem> _minis = [];
   bool _loading = true;
   String _filterText = '';
@@ -30,21 +35,134 @@ class _MinisScreenState extends State<MinisScreen> {
   bool _rankOn = false;
   List<String> _ranked = [];
   bool _wasmRuntimeUnavailable = false;
+  final Map<String, bool> _likedState = {};
+  final Map<String, int> _likeDelta = {};
+
+  late TabController _tabs;
 
   @override
   void initState() {
     super.initState();
+    _tabs = TabController(length: 4, vsync: this);
+    _tabs.addListener(_onTabChanged);
     _load();
+    _loadSaved();
   }
 
-  Future<void> _load() async {
+  Future<void> _load() => _loadRecent();
+
+  double _hotScore(MiniItem m) {
+    final hours =
+        ((DateTime.now().millisecondsSinceEpoch / 1000) - m.createdAt) / 3600;
+    return m.reactions / math.pow(hours + 2, 1.5).toDouble();
+  }
+
+  void _seedLikeState() {
+    for (final m in _minis) {
+      _likedState[m.id] = m.liked;
+      _likeDelta[m.id] = 0;
+    }
+  }
+
+  Future<void> _loadRecent() async {
     setState(() => _loading = true);
     try {
       _minis = context.read<MinisService>().fetchMinis();
+      _seedLikeState();
     } catch (e) {
       debugPrint('minis load: $e');
     }
     if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _loadTop() async {
+    setState(() => _loading = true);
+    try {
+      _minis = context.read<MinisService>().fetchMinis();
+      _minis.sort((a, b) => _hotScore(b).compareTo(_hotScore(a)));
+      _seedLikeState();
+    } catch (e) {
+      debugPrint('minis load: $e');
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _loadFollowing() async {
+    setState(() => _loading = true);
+    try {
+      _minis = context.read<MinisService>().fetchMinis(audience: 'following');
+      _seedLikeState();
+    } catch (e) {
+      debugPrint('minis load: $e');
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _loadSaved() async {
+    try {
+      await context.read<MinisService>().fetchSavedMinis();
+    } catch (e) {
+      debugPrint('minis saved load: $e');
+    }
+  }
+
+  void _onTabChanged() {
+    if (_tabs.index == 0) _loadTop();
+    if (_tabs.index == 1) _loadRecent();
+    if (_tabs.index == 2) _loadFollowing();
+    if (_tabs.index == 3) _loadSaved();
+  }
+
+  Future<void> _toggleSave(MiniItem mini) async {
+    final service = context.read<MinisService>();
+    final messenger = ScaffoldMessenger.of(context);
+    if (service.isSaved(mini.id)) {
+      await service.unsaveMini(mini.id);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Mini removed from Saved')),
+      );
+      return;
+    }
+    final hosted = await service.saveMini(
+      mini,
+      media: context.read<MediaService>(),
+      p2p: context.read<P2pService>(),
+    );
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(hosted
+            ? 'Mini saved — hosting on this device'
+            : 'Mini saved — blob not yet available on this device'),
+      ),
+    );
+  }
+
+  Future<void> _toggleLike(MiniItem m) async {
+    final me = context.read<SessionService>().activePubkey;
+    if (me == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign in to react')),
+      );
+      return;
+    }
+    final current = _likedState[m.id] ?? m.liked;
+    _likedState[m.id] = !current;
+    _likeDelta[m.id] = (_likeDelta[m.id] ?? 0) + (!current ? 1 : -1);
+    setState(() {});
+    try {
+      await context
+          .read<FeedService>()
+          .createReaction(m.id, current ? '-' : '+', me);
+    } catch (_) {
+      _likedState[m.id] = current;
+      _likeDelta[m.id] = (_likeDelta[m.id] ?? 0) - (!current ? 1 : -1);
+      setState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Reaction error')),
+        );
+      }
+    }
   }
 
   void _runFilter() {
@@ -267,13 +385,13 @@ class _MinisScreenState extends State<MinisScreen> {
 
   @override
   void dispose() {
+    _tabs.dispose();
     _pageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final display = _rankOn && _ranked.isNotEmpty ? _ranked : _minis;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Minis'),
@@ -285,162 +403,284 @@ class _MinisScreenState extends State<MinisScreen> {
             onPressed: () => setState(() => _reelsMode = !_reelsMode),
           ),
         ],
+        bottom: TabBar(
+          controller: _tabs,
+          tabs: const [
+            Tab(text: 'Top'),
+            Tab(text: 'Recent'),
+            Tab(text: 'Following'),
+            Tab(text: 'Saved'),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openUpload,
         tooltip: 'Publish mini',
         child: const Icon(Icons.add),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _reelsMode && _minis.isNotEmpty
-              ? _buildReelsFeed()
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      if (_wasmRuntimeUnavailable) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 16,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'WASM runtime unavailable (roadmap): plugin '
-                                'execution is simulated in this build.',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
+      body: TabBarView(
+        controller: _tabs,
+        children: [
+          _buildForYou(),
+          _buildForYou(),
+          _buildForYou(),
+          _buildSaved(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForYou() {
+    final display = _rankOn && _ranked.isNotEmpty ? _ranked : _minis;
+    return _loading
+        ? const Center(child: CircularProgressIndicator())
+        : _reelsMode && _minis.isNotEmpty
+            ? _buildReelsFeed()
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    if (_wasmRuntimeUnavailable) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 16,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'WASM runtime unavailable (roadmap): plugin '
+                              'execution is simulated in this build.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                               ),
                             ),
-                          ],
-                        ),
-                      ],
-                      Text('Content filter plugin',
-                          style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      TextField(
-                        onChanged: (v) => setState(() => _filterText = v),
-                        decoration: const InputDecoration(
-                          hintText: 'Text to check with the WASI filter plugin',
-                          border: OutlineInputBorder(),
-                        ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      FilledButton.icon(
-                        icon: const Icon(Icons.filter_alt),
-                        label: const Text('Run filter'),
-                        onPressed: _runFilter,
+                    ],
+                    Text('Content filter plugin',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    TextField(
+                      onChanged: (v) => setState(() => _filterText = v),
+                      decoration: const InputDecoration(
+                        hintText: 'Text to check with the WASI filter plugin',
+                        border: OutlineInputBorder(),
                       ),
-                      if (_filterResult != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          _filterResult!,
-                          maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ],
-                      const Divider(height: 32),
-                      SwitchListTile(
-                        title: const Text('Rank feed with mini plugin'),
-                        subtitle: const Text(
-                            'Reorders the mini list via the WASI feed-ranker host'),
-                        value: _rankOn,
-                        onChanged: _toggleRank,
-                      ),
-                      if (_rankOn) ...[
-                        const Text(
-                          'Ranked order',
-                          style: TextStyle(fontSize: 11, color: Colors.grey),
-                        ),
-                        const SizedBox(height: 4),
-                      ],
-                      const Divider(height: 32),
-                      Text('Minis',
-                          style: Theme.of(context).textTheme.titleMedium),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.filter_alt),
+                      label: const Text('Run filter'),
+                      onPressed: _runFilter,
+                    ),
+                    if (_filterResult != null) ...[
                       const SizedBox(height: 8),
-                      if (display.isEmpty)
-                        EmptyState(
-                          compact: true,
-                          icon: Icons.video_library,
-                          title: 'No minis yet',
-                          body:
-                              'Publish a mini video — it is hosted from device caches, not URL links.',
-                        )
-                      else if (_rankOn && _ranked.isNotEmpty)
-                        for (final url in _ranked) ...[
-                          ListTile(
-                            leading: Icon(
+                      Text(
+                        _filterResult!,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                    const Divider(height: 32),
+                    SwitchListTile(
+                      title: const Text('Rank feed with mini plugin'),
+                      subtitle: const Text(
+                          'Reorders the mini list via the WASI feed-ranker host'),
+                      value: _rankOn,
+                      onChanged: _toggleRank,
+                    ),
+                    if (_rankOn) ...[
+                      const Text(
+                        'Ranked order',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    const Divider(height: 32),
+                    Text('Minis',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    if (display.isEmpty)
+                      EmptyState(
+                        compact: true,
+                        icon: Icons.video_library,
+                        title: 'No minis yet',
+                        body:
+                            'Publish a mini video — it is hosted from device caches, not URL links.',
+                      )
+                    else if (_rankOn && _ranked.isNotEmpty)
+                      for (final url in _ranked) ...[
+                        ListTile(
+                          leading: Icon(
+                            Icons.video_library,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          title: Text(url,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: const Text('Mini video (ranked)'),
+                        ),
+                        const Divider(height: 1),
+                      ]
+                    else
+                      for (var i = 0; i < display.length; i++) ...[
+                        ListTile(
+                          leading: _minis[i].thumbnail.isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: BlobImage(
+                                    source: _minis[i].thumbnail,
+                                    width: 48,
+                                    height: 48,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_) => Icon(
+                                      Icons.video_library,
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.video_library,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                          title: Text(
+                            _minis[i].textOverlay.isEmpty
+                                ? (_minis[i].videoUrl.startsWith('blob://')
+                                    ? 'Mini video'
+                                    : _minis[i].videoUrl)
+                                : _minis[i].textOverlay,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            _minis[i].videoUrl.startsWith('blob://')
+                                ? 'Mini video · hosted from device caches'
+                                : 'Mini video · ${_minis[i].videoUrl}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (!_rankOn)
+                                Builder(
+                                  builder: (ctx) {
+                                    final saved = ctx
+                                        .watch<MinisService>()
+                                        .isSaved(_minis[i].id);
+                                    return IconButton(
+                                      icon: Icon(
+                                        saved
+                                            ? Icons.bookmark
+                                            : Icons.bookmark_border,
+                                      ),
+                                      tooltip: saved
+                                          ? 'Unsave'
+                                          : 'Save (and host on this device)',
+                                      onPressed: () => _toggleSave(_minis[i]),
+                                    );
+                                  },
+                                ),
+                              IconButton(
+                                icon: const Icon(Icons.play_circle_outline),
+                                tooltip: 'Play',
+                                onPressed: () => _play(_minis[i]),
+                              ),
+                            ],
+                          ),
+                          onTap: () => _play(_minis[i]),
+                        ),
+                        if (i < display.length - 1) const Divider(height: 1),
+                      ],
+                  ],
+                ),
+              );
+  }
+
+  Widget _buildSaved() {
+    final saved = context.watch<MinisService>().savedMinis;
+    return RefreshIndicator(
+      onRefresh: _loadSaved,
+      child: saved.isEmpty
+          ? ListView(
+              children: const [
+                SizedBox(height: 120),
+                EmptyState(
+                  icon: Icons.bookmark_border,
+                  title: 'No saved minis',
+                  body:
+                      'Tap the bookmark on a mini that you like — saving also '
+                      'hosts its video from your device for other users.',
+                ),
+              ],
+            )
+          : ListView.separated(
+              itemCount: saved.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final mini = saved[index];
+                return ListTile(
+                  leading: mini.thumbnail.isNotEmpty
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: BlobImage(
+                            source: mini.thumbnail,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_) => Icon(
                               Icons.video_library,
                               color: Theme.of(context).colorScheme.primary,
                             ),
-                            title: Text(url,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                            subtitle: const Text('Mini video (ranked)'),
                           ),
-                          const Divider(height: 1),
-                        ]
-                      else
-                        for (var i = 0; i < display.length; i++) ...[
-                          ListTile(
-                            leading: _minis[i].thumbnail.isNotEmpty
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: BlobImage(
-                                      source: _minis[i].thumbnail,
-                                      width: 48,
-                                      height: 48,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_) => Icon(
-                                        Icons.video_library,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary,
-                                      ),
-                                    ),
-                                  )
-                                : Icon(
-                                    Icons.video_library,
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
-                                  ),
-                            title: Text(
-                              _minis[i].textOverlay.isEmpty
-                                  ? (_minis[i].videoUrl.startsWith('blob://')
-                                      ? 'Mini video'
-                                      : _minis[i].videoUrl)
-                                  : _minis[i].textOverlay,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              _minis[i].videoUrl.startsWith('blob://')
-                                  ? 'Mini video · hosted from device caches'
-                                  : 'Mini video · ${_minis[i].videoUrl}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            trailing: const Icon(Icons.play_circle_outline),
-                            onTap: () => _play(_minis[i]),
-                          ),
-                          if (i < display.length - 1) const Divider(height: 1),
-                        ],
+                        )
+                      : Icon(Icons.video_library,
+                          color: Theme.of(context).colorScheme.primary),
+                  title: Text(
+                    mini.textOverlay.isEmpty
+                        ? (mini.videoUrl.startsWith('blob://')
+                            ? 'Mini video'
+                            : mini.videoUrl)
+                        : mini.textOverlay,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    'Saved mini · ${relativeTime(mini.createdAt)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.bookmark),
+                        tooltip: 'Unsave',
+                        onPressed: () => _toggleSave(mini),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.play_circle_outline),
+                        tooltip: 'Play',
+                        onPressed: () => _play(mini),
+                      ),
                     ],
                   ),
-                ),
+                  onTap: () => _play(mini),
+                );
+              },
+            ),
     );
   }
 
@@ -451,6 +691,9 @@ class _MinisScreenState extends State<MinisScreen> {
       itemCount: _minis.length,
       itemBuilder: (context, index) {
         final mini = _minis[index];
+        final liked = _likedState[mini.id] ?? mini.liked;
+        final count =
+            (mini.reactions + (_likeDelta[mini.id] ?? 0)).clamp(0, 1 << 30);
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -500,17 +743,17 @@ class _MinisScreenState extends State<MinisScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.favorite,
-                        color: Colors.white, size: 30),
-                    tooltip: 'Like',
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Liked mini')),
-                      );
-                    },
+                    icon: Icon(
+                      liked ? Icons.favorite : Icons.favorite_border,
+                      color: liked ? Colors.pinkAccent : Colors.white,
+                      size: 30,
+                    ),
+                    tooltip: liked ? 'Unlike' : 'Like',
+                    onPressed: () => _toggleLike(mini),
                   ),
-                  const Text('Like',
-                      style: TextStyle(color: Colors.white, fontSize: 11)),
+                  Text('$count',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 11)),
                   const SizedBox(height: 16),
                   IconButton(
                     icon: const Icon(Icons.chat_bubble_outline,
@@ -533,6 +776,24 @@ class _MinisScreenState extends State<MinisScreen> {
                     },
                   ),
                   const Text('Share',
+                      style: TextStyle(color: Colors.white, fontSize: 11)),
+                  const SizedBox(height: 16),
+                  Builder(
+                    builder: (ctx) {
+                      final saved = ctx.watch<MinisService>().isSaved(mini.id);
+                      return IconButton(
+                        icon: Icon(
+                          saved ? Icons.bookmark : Icons.bookmark_outline,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                        tooltip:
+                            saved ? 'Unsave' : 'Save (and host on this device)',
+                        onPressed: () => _toggleSave(mini),
+                      );
+                    },
+                  ),
+                  const Text('Save',
                       style: TextStyle(color: Colors.white, fontSize: 11)),
                   const SizedBox(height: 16),
                   // Rotating Audio Disc Thumbnail

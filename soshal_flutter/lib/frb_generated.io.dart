@@ -8639,6 +8639,86 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__minis__minis_publishPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
+  WireSyncRust2DartSse wire__crate__ffi__minis__minis_save(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__minis__minis_save(ptr_, rust_vec_len_, data_len_);
+  }
+
+  late final _wire__crate__ffi__minis__minis_savePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__minis__minis_save');
+  late final _wire__crate__ffi__minis__minis_save =
+      _wire__crate__ffi__minis__minis_savePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__minis__minis_saved(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__minis__minis_saved(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__minis__minis_savedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__minis__minis_saved');
+  late final _wire__crate__ffi__minis__minis_saved =
+      _wire__crate__ffi__minis__minis_savedPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__minis__minis_unsave(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__minis__minis_unsave(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__minis__minis_unsavePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__minis__minis_unsave');
+  late final _wire__crate__ffi__minis__minis_unsave =
+      _wire__crate__ffi__minis__minis_unsavePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   WireSyncRust2DartSse wire__crate__ffi__minis__minis_wasm_execute_filter(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -9362,6 +9442,206 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__music__music_fetchPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
+  WireSyncRust2DartSse wire__crate__ffi__music__music_playlist_add_track(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__music__music_playlist_add_track(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__music__music_playlist_add_trackPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__music__music_playlist_add_track',
+      );
+  late final _wire__crate__ffi__music__music_playlist_add_track =
+      _wire__crate__ffi__music__music_playlist_add_trackPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__music__music_playlist_create(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__music__music_playlist_create(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__music__music_playlist_createPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__music__music_playlist_create');
+  late final _wire__crate__ffi__music__music_playlist_create =
+      _wire__crate__ffi__music__music_playlist_createPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__music__music_playlist_delete(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__music__music_playlist_delete(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__music__music_playlist_deletePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__music__music_playlist_delete');
+  late final _wire__crate__ffi__music__music_playlist_delete =
+      _wire__crate__ffi__music__music_playlist_deletePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__music__music_playlist_list(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__music__music_playlist_list(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__music__music_playlist_listPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__music__music_playlist_list');
+  late final _wire__crate__ffi__music__music_playlist_list =
+      _wire__crate__ffi__music__music_playlist_listPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__music__music_playlist_remove_track(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__music__music_playlist_remove_track(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__music__music_playlist_remove_trackPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__music__music_playlist_remove_track',
+      );
+  late final _wire__crate__ffi__music__music_playlist_remove_track =
+      _wire__crate__ffi__music__music_playlist_remove_trackPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__music__music_playlist_rename(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__music__music_playlist_rename(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__music__music_playlist_renamePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__music__music_playlist_rename');
+  late final _wire__crate__ffi__music__music_playlist_rename =
+      _wire__crate__ffi__music__music_playlist_renamePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__music__music_playlist_tracks(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__music__music_playlist_tracks(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__music__music_playlist_tracksPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__music__music_playlist_tracks');
+  late final _wire__crate__ffi__music__music_playlist_tracks =
+      _wire__crate__ffi__music__music_playlist_tracksPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   void wire__crate__ffi__music__music_publish(
     int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -9391,6 +9671,58 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__music__music_publishPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
+  WireSyncRust2DartSse wire__crate__ffi__music__music_save(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__music__music_save(ptr_, rust_vec_len_, data_len_);
+  }
+
+  late final _wire__crate__ffi__music__music_savePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__music__music_save');
+  late final _wire__crate__ffi__music__music_save =
+      _wire__crate__ffi__music__music_savePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__music__music_saved(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__music__music_saved(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__music__music_savedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__music__music_saved');
+  late final _wire__crate__ffi__music__music_saved =
+      _wire__crate__ffi__music__music_savedPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   void wire__crate__ffi__music__music_share_to_feed(
     int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -9419,6 +9751,34 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__music__music_share_to_feed =
       _wire__crate__ffi__music__music_share_to_feedPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
+  WireSyncRust2DartSse wire__crate__ffi__music__music_unsave(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__music__music_unsave(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__music__music_unsavePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__music__music_unsave');
+  late final _wire__crate__ffi__music__music_unsave =
+      _wire__crate__ffi__music__music_unsavePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
 
   void wire__crate__ffi__network__freenet_connect(
     int port_,
@@ -15866,6 +16226,7 @@ const int COLOR_FormatYUV420Flexible = 2135033992;
 
 typedef DartPort = ffi.Int64;
 typedef DartDartPort = int;
+
 
 
 typedef __ssize_t = ffi.Long;

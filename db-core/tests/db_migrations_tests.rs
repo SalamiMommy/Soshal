@@ -109,6 +109,8 @@ fn full_chain_reaches_schema_version() {
     migrations::v8_index_cleanup(&conn).unwrap();
     migrations::v9_trigger_optimization(&conn).unwrap();
     migrations::create_dating_unmatch_actor_column(&conn).unwrap();
+    migrations::v11_index_cleanup(&conn).unwrap();
+    migrations::v12_saved_content_playlists(&conn).unwrap();
     assert_eq!(max_version(&conn), SCHEMA_VERSION);
     assert!(table_exists(&conn, "group_rooms"));
     assert!(table_exists(&conn, "group_threads"));
@@ -117,7 +119,10 @@ fn full_chain_reaches_schema_version() {
     assert!(table_exists(&conn, "group_voice_channels"));
     assert!(table_exists(&conn, "group_voice_presence"));
     assert!(table_exists(&conn, "zk_state_rollups"));
-    assert!(index_exists(&conn, "idx_posts_user_timeline"));
+    assert!(!index_exists(&conn, "idx_posts_user_timeline"));
+    assert!(!index_exists(&conn, "idx_posts_kind"));
+    assert!(!index_exists(&conn, "idx_posts_kind_content_rsvp"));
+    assert!(index_exists(&conn, "idx_posts_kind_rsvp"));
     assert!(index_exists(&conn, "idx_messages_conversation_asc"));
     assert!(index_exists(&conn, "idx_reactions_event_pubkey"));
     assert!(index_exists(&conn, "idx_reposts_event_pubkey"));

@@ -428,3 +428,5 @@ mod ffi_zap_webrtc;
 mod identity_gap;
 #[path = "flutter_bridge_tests/protocol_handler_gap.rs"]
 mod protocol_handler_gap;
+#[path = "flutter_bridge_tests/saved_music_test.rs"]
+mod saved_music_test;

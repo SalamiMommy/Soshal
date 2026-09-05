@@ -22,13 +22,124 @@ class MusicloudScreen extends StatefulWidget {
   State<MusicloudScreen> createState() => _MusicloudScreenState();
 }
 
-class _MusicloudScreenState extends State<MusicloudScreen> {
+class _MusicloudScreenState extends State<MusicloudScreen>
+    with SingleTickerProviderStateMixin {
   bool _loading = true;
+  late TabController _tabs;
+  final Map<String, List<MusicTrack>> _playlistTracks = {};
+  final Set<String> _loadingPlaylists = {};
 
   @override
   void initState() {
     super.initState();
+    _tabs = TabController(length: 3, vsync: this);
+    _tabs.addListener(_onTabChanged);
     _load();
+    _warm();
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (_tabs.index == 1) {
+      _loadSaved();
+    } else if (_tabs.index == 2) {
+      _loadPlaylists();
+    }
+  }
+
+  Future<void> _warm() async {
+    final service = context.read<MusicService>();
+    try {
+      await service.fetchSavedTracks();
+    } catch (e) {
+      debugPrint('musicloud saved warm: $e');
+    }
+    try {
+      await service.fetchPlaylists();
+    } catch (e) {
+      debugPrint('musicloud playlists warm: $e');
+    }
+  }
+
+  Future<void> _loadSaved() async {
+    try {
+      await context.read<MusicService>().fetchSavedTracks();
+    } catch (e) {
+      debugPrint('musicloud saved load: $e');
+    }
+  }
+
+  Future<void> _loadPlaylists() async {
+    try {
+      await context.read<MusicService>().fetchPlaylists();
+    } catch (e) {
+      debugPrint('musicloud playlists load: $e');
+    }
+  }
+
+  Future<void> _toggleSaveTrack(MusicTrack track) async {
+    final service = context.read<MusicService>();
+    final messenger = ScaffoldMessenger.of(context);
+    if (service.isTrackSaved(track.id)) {
+      await service.unsaveTrack(track.id);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Track removed from Saved')),
+      );
+      return;
+    }
+    final hosted = await service.saveTrack(
+      track,
+      media: context.read<MediaService>(),
+      p2p: context.read<P2pService>(),
+    );
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(hosted
+            ? 'Track saved — hosting on this device'
+            : 'Track saved — audio not yet available on this device'),
+      ),
+    );
+  }
+
+  Future<void> _togglePlaylist(String playlistId) async {
+    if (_playlistTracks.containsKey(playlistId)) {
+      setState(() => _playlistTracks.remove(playlistId));
+      return;
+    }
+    setState(() => _loadingPlaylists.add(playlistId));
+    try {
+      final tracks =
+          await context.read<MusicService>().fetchPlaylistTracks(playlistId);
+      if (mounted) setState(() => _playlistTracks[playlistId] = tracks);
+    } catch (e) {
+      debugPrint('playlist tracks load: $e');
+    }
+    if (mounted) setState(() => _loadingPlaylists.remove(playlistId));
+  }
+
+  Future<void> _removeFromPlaylist(String playlistId, MusicTrack track) async {
+    final service = context.read<MusicService>();
+    try {
+      await service.removeFromPlaylist(playlistId, track.id);
+      await service.fetchPlaylists();
+      final current = _playlistTracks[playlistId];
+      if (current != null) {
+        setState(() => _playlistTracks[playlistId] =
+            current.where((t) => t.id != track.id).toList());
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Track removed from playlist')),
+        );
+      }
+    } catch (e) {
+      debugPrint('playlist remove: $e');
+    }
   }
 
   Future<void> _load() async {
@@ -207,87 +318,282 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tracks = context.select((MusicService s) => s.tracks);
-    final error = context.select((MusicService s) => s.lastError);
     return Scaffold(
-      appBar: AppBar(title: const Text('Musicloud')),
+      appBar: AppBar(
+        title: const Text('Musicloud'),
+        bottom: TabBar(
+          controller: _tabs,
+          tabs: const [
+            Tab(text: 'Browse'),
+            Tab(text: 'Saved'),
+            Tab(text: 'Playlists'),
+          ],
+        ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openUpload,
         tooltip: 'Publish track',
         child: const Icon(Icons.add),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: tracks.isEmpty
-                  ? ListView(
-                      children: [
-                        const SizedBox(height: 120),
-                        EmptyState(
-                          icon: Icons.music_note,
-                          title: 'No songs found',
-                          body:
-                              'Be the first to publish an audio track on Musicloud — tap +.',
-                        ),
-                      ],
-                    )
-                  : ListView.separated(
-                      itemCount: tracks.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final track = tracks[index];
-                        return ListTile(
-                          leading: track.thumbnail.isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: BlobImage(
-                                    source: track.thumbnail,
-                                    width: 48,
-                                    height: 48,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_) => _trackIcon(context),
-                                  ),
-                                )
-                              : _trackIcon(context),
-                          title: Text(
-                            track.title.isEmpty
-                                ? 'Untitled track'
-                                : track.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            [
-                              shortPubkey(track.pubkey),
-                              relativeTime(track.createdAt),
-                              if (track.hashtags.isNotEmpty)
-                                track.hashtags.map((h) => '#$h').join(' '),
-                            ].join(' · '),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.play_circle_outline),
-                            tooltip: 'Play',
-                            onPressed: () => _play(track),
-                          ),
-                          onTap: () {
-                            context.push('/music/track', extra: track);
-                          },
-                        );
-                      },
-                    ),
+      body: TabBarView(
+        controller: _tabs,
+        children: [
+          _buildBrowse(),
+          _buildSaved(),
+          _buildPlaylists(),
+        ],
+      ),
+      bottomNavigationBar: Builder(
+        builder: (ctx) {
+          final error = ctx.select((MusicService s) => s.lastError);
+          if (error == null || error.isEmpty) return const SizedBox.shrink();
+          return Material(
+            color: Theme.of(ctx).colorScheme.errorContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: ErrorStateText('Error: $error'),
             ),
-      bottomNavigationBar: error != null && error.isNotEmpty
-          ? Material(
-              color: Theme.of(context).colorScheme.errorContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: ErrorStateText('Error: $error'),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildBrowse() {
+    final tracks = context.select((MusicService s) => s.tracks);
+    return _loading
+        ? const Center(child: CircularProgressIndicator())
+        : RefreshIndicator(
+            onRefresh: _load,
+            child: tracks.isEmpty
+                ? ListView(
+                    children: [
+                      const SizedBox(height: 120),
+                      EmptyState(
+                        icon: Icons.music_note,
+                        title: 'No songs found',
+                        body:
+                            'Be the first to publish an audio track on Musicloud — tap +.',
+                      ),
+                    ],
+                  )
+                : ListView.separated(
+                    itemCount: tracks.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) => _trackTile(tracks[index]),
+                  ),
+          );
+  }
+
+  Widget _buildSaved() {
+    final saved = context.select((MusicService s) => s.savedTracks);
+    return RefreshIndicator(
+      onRefresh: _loadSaved,
+      child: saved.isEmpty
+          ? ListView(
+              children: const [
+                SizedBox(height: 120),
+                EmptyState(
+                  icon: Icons.bookmark_border,
+                  title: 'No saved tracks',
+                  body:
+                      'Tap the bookmark on a song that you like — saving also '
+                      'hosts its audio from your device for other users.',
+                ),
+              ],
+            )
+          : ListView.separated(
+              itemCount: saved.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) => _trackTile(saved[index]),
+            ),
+    );
+  }
+
+  Widget _buildPlaylists() {
+    final playlists = context.select((MusicService s) => s.playlists);
+    return RefreshIndicator(
+      onRefresh: _loadPlaylists,
+      child: ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('My playlists',
+                      style: Theme.of(context).textTheme.titleMedium),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: 'New playlist',
+                  onPressed: _promptCreatePlaylist,
+                ),
+              ],
+            ),
+          ),
+          if (playlists.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 120),
+              child: EmptyState(
+                icon: Icons.queue_music,
+                title: 'No playlists yet',
+                body: 'Create a playlist to organise songs you love. '
+                    'Use “Add to playlist” on any track.',
               ),
             )
-          : null,
+          else
+            for (final playlist in playlists) _playlistTile(playlist),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _promptCreatePlaylist() async {
+    final result = await promptCreatePlaylistDialog(context);
+    if (result == null || !mounted) return;
+    try {
+      await context.read<MusicService>().createPlaylist(
+            title: result.name,
+            isPrivate: result.isPrivate,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Playlist “${result.name}” created')),
+        );
+      }
+    } catch (e) {
+      debugPrint('playlist create: $e');
+    }
+  }
+
+  Widget _playlistTile(MusicPlaylist playlist) {
+    final tracks = _playlistTracks[playlist.id];
+    final loading = _loadingPlaylists.contains(playlist.id);
+    return ExpansionTile(
+      key: PageStorageKey(playlist.id),
+      initiallyExpanded: _playlistTracks.containsKey(playlist.id),
+      leading: const Icon(Icons.queue_music),
+      title: Text(playlist.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        '${playlist.trackCount} tracks · '
+        '${playlist.isPrivate ? 'Private' : 'Public'}',
+      ),
+      onExpansionChanged: (expanded) {
+        if (expanded) _togglePlaylist(playlist.id);
+      },
+      trailing: const Icon(Icons.expand_more),
+      children: loading
+          ? const [
+              Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ]
+          : (tracks ?? const <MusicTrack>[]).isEmpty
+              ? const [
+                  ListTile(
+                    title: Text('No tracks in this playlist yet.'),
+                  ),
+                ]
+              : [
+                  for (final track in tracks ?? const <MusicTrack>[])
+                    _playlistTrackTile(playlist, track),
+                ],
+    );
+  }
+
+  Widget _playlistTrackTile(MusicPlaylist playlist, MusicTrack track) {
+    return ListTile(
+      leading: const Icon(Icons.music_note),
+      title: Text(
+        track.title.isEmpty ? 'Untitled track' : track.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        shortPubkey(track.pubkey),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.remove_circle_outline),
+            tooltip: 'Remove from playlist',
+            onPressed: () => _removeFromPlaylist(playlist.id, track),
+          ),
+          IconButton(
+            icon: const Icon(Icons.play_circle_outline),
+            tooltip: 'Play',
+            onPressed: () => _play(track),
+          ),
+        ],
+      ),
+      onTap: () => context.push('/music/track', extra: track),
+    );
+  }
+
+  Widget _trackTile(MusicTrack track) {
+    return ListTile(
+      leading: track.thumbnail.isNotEmpty
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: BlobImage(
+                source: track.thumbnail,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                errorBuilder: (_) => _trackIcon(context),
+              ),
+            )
+          : _trackIcon(context),
+      title: Text(
+        track.title.isEmpty ? 'Untitled track' : track.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        [
+          shortPubkey(track.pubkey),
+          relativeTime(track.createdAt),
+          if (track.hashtags.isNotEmpty)
+            track.hashtags.map((h) => '#$h').join(' '),
+        ].join(' · '),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Builder(
+            builder: (ctx) {
+              final saved = ctx.watch<MusicService>().isTrackSaved(track.id);
+              return IconButton(
+                icon: Icon(saved ? Icons.bookmark : Icons.bookmark_border),
+                tooltip: saved ? 'Unsave' : 'Save (and host on this device)',
+                onPressed: () => _toggleSaveTrack(track),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.play_circle_outline),
+            tooltip: 'Play',
+            onPressed: () => _play(track),
+          ),
+        ],
+      ),
+      onTap: () {
+        context.push('/music/track', extra: track);
+      },
     );
   }
 
@@ -301,6 +607,151 @@ class _MusicloudScreenState extends State<MusicloudScreen> {
         child: Icon(Icons.music_note,
             color: Theme.of(context).colorScheme.primary),
       );
+}
+
+/// Dialog prompting for a playlist name + privacy. Returns null when
+/// cancelled.
+Future<({String name, bool isPrivate})?> promptCreatePlaylistDialog(
+  BuildContext context,
+) async {
+  final controller = TextEditingController();
+  var isPrivate = true;
+  final id = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setDialogState) => AlertDialog(
+        title: const Text('New playlist'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Playlist name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              title: const Text('Private'),
+              subtitle: const Text('Private playlists are only visible to you'),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              value: isPrivate,
+              onChanged: (v) => setDialogState(() => isPrivate = v),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final title = controller.text.trim();
+              if (title.isEmpty) return;
+              Navigator.of(dialogContext).pop('$title\u0000$isPrivate');
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    ),
+  );
+  controller.dispose();
+  if (id == null) return null;
+  return (
+    name: id.split('\u0000').first,
+    isPrivate: id.split('\u0000').last == 'true'
+  );
+}
+
+/// Bottom sheet to pick a playlist (or create one) and add [track] to it.
+Future<void> showAddToPlaylistSheet(
+  BuildContext context,
+  MusicService service,
+  MusicTrack track,
+) async {
+  final playlists = await service.fetchPlaylists();
+  if (!context.mounted) return;
+  await showModalBottomSheet<void>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Add to playlist',
+                style: Theme.of(sheetContext).textTheme.titleLarge),
+          ),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                if (playlists.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text('No playlists yet — create one below.'),
+                  ),
+                for (final playlist in playlists)
+                  ListTile(
+                    leading: const Icon(Icons.queue_music),
+                    title: Text(playlist.title,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text('${playlist.trackCount} tracks'),
+                    onTap: () async {
+                      final ok =
+                          await service.addToPlaylist(playlist.id, track);
+                      if (sheetContext.mounted) {
+                        Navigator.of(sheetContext).pop();
+                      }
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(ok
+                              ? 'Added to “${playlist.title}”'
+                              : 'Already in “${playlist.title}”'),
+                        ),
+                      );
+                    },
+                  ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.add),
+                  title: const Text('New playlist…'),
+                  onTap: () async {
+                    final result =
+                        await promptCreatePlaylistDialog(sheetContext);
+                    if (result == null || !sheetContext.mounted) return;
+                    final id = await service.createPlaylist(
+                      title: result.name,
+                      isPrivate: result.isPrivate,
+                    );
+                    final ok = await service.addToPlaylist(id, track);
+                    if (sheetContext.mounted) {
+                      Navigator.of(sheetContext).pop();
+                    }
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(ok
+                            ? 'Added to “${result.name}”'
+                            : 'Already in “${result.name}”'),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 /// Track detail: share-to-feed form + comment thread.
@@ -354,6 +805,38 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
       debugPrint('comments load: $e');
     }
     if (mounted) setState(() => _commentsLoading = false);
+  }
+
+  Future<void> _toggleSaveTrack() async {
+    final service = context.read<MusicService>();
+    final messenger = ScaffoldMessenger.of(context);
+    if (service.isTrackSaved(_track.id)) {
+      await service.unsaveTrack(_track.id);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Track removed from Saved')),
+      );
+      return;
+    }
+    final hosted = await service.saveTrack(
+      _track,
+      media: context.read<MediaService>(),
+      p2p: context.read<P2pService>(),
+    );
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(hosted
+            ? 'Track saved — hosting on this device'
+            : 'Track saved — audio not yet available on this device'),
+      ),
+    );
+  }
+
+  void _addToPlaylist() {
+    showAddToPlaylistSheet(
+      context,
+      context.read<MusicService>(),
+      _track,
+    );
   }
 
   Future<void> _share() async {
@@ -450,16 +933,40 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                   ],
                 ),
               ),
-              FilledButton.icon(
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: _track.audioUrl));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Audio URL copied to clipboard')),
-                  );
-                },
-                icon: const Icon(Icons.copy),
-                label: const Text('Copy URL'),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Builder(
+                    builder: (ctx) {
+                      final saved =
+                          ctx.watch<MusicService>().isTrackSaved(_track.id);
+                      return FilledButton.tonalIcon(
+                        onPressed: _toggleSaveTrack,
+                        icon: Icon(
+                            saved ? Icons.bookmark : Icons.bookmark_border),
+                        label: Text(saved ? 'Saved' : 'Save'),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  FilledButton.tonalIcon(
+                    onPressed: _addToPlaylist,
+                    icon: const Icon(Icons.queue_music),
+                    label: const Text('Add to playlist'),
+                  ),
+                  const SizedBox(height: 4),
+                  FilledButton.tonalIcon(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: _track.audioUrl));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Audio URL copied to clipboard')),
+                      );
+                    },
+                    icon: const Icon(Icons.copy),
+                    label: const Text('Copy URL'),
+                  ),
+                ],
               ),
             ],
           ),

@@ -10,6 +10,8 @@ mod v007_query_optimizations;
 mod v008_index_cleanup;
 mod v009_trigger_optimization;
 mod v010_dating_unmatch_actor;
+mod v011_index_cleanup;
+mod v012_saved_content_playlists;
 
 pub use v001_initial::v1_create_tables;
 pub use v002_group_channels::v2_group_channels;
@@ -21,3 +23,5 @@ pub use v007_query_optimizations::v7_query_optimizations;
 pub use v008_index_cleanup::v8_index_cleanup;
 pub use v009_trigger_optimization::v9_trigger_optimization;
 pub use v010_dating_unmatch_actor::create_dating_unmatch_actor_column;
+pub use v011_index_cleanup::v11_index_cleanup;
+pub use v012_saved_content_playlists::v12_saved_content_playlists;

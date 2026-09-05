@@ -19,11 +19,18 @@ class MinisService extends ChangeNotifier with LastErrorMixin {
   /// execution is simulated and errors are expected.
   bool get wasmRuntimeUnavailable => _wasmRuntimeUnavailable;
 
+  List<MiniItem> _saved = [];
+
+  /// Minis the user saved locally for the Saved tab.
+  List<MiniItem> get savedMinis => _saved;
+
+  bool isSaved(String id) => _saved.any((m) => m.id == id);
+
   /// Fetch known minis from the local registry, newest first.
-  List<MiniItem> fetchMinis() {
+  List<MiniItem> fetchMinis({String audience = 'public'}) {
     try {
       final json =
-          RustLib.instance.api.crateFfiMinisMinisFetch(audience: 'public');
+          RustLib.instance.api.crateFfiMinisMinisFetch(audience: audience);
       final list = (jsonDecode(json) as List<dynamic>)
           .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -32,6 +39,67 @@ class MinisService extends ChangeNotifier with LastErrorMixin {
     } catch (e, st) {
       setLastError(e, st);
       rethrow;
+    }
+  }
+
+  /// Saved minis from the local `saved_content` store, newest saved first.
+  Future<List<MiniItem>> fetchSavedMinis() async {
+    try {
+      final json = RustLib.instance.api.crateFfiMinisMinisSaved();
+      final list = (jsonDecode(json) as List<dynamic>)
+          .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+      _saved = list;
+      clearLastError();
+      notifyListeners();
+      return list;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Save a mini: materialize its video blob into the local chunk store (so
+  /// this device can serve it to peers, "hosting"), then persist the entry.
+  /// Returns true when the blob was hosted on this device; false means the
+  /// entry was saved but the blob is not yet available locally.
+  Future<bool> saveMini(
+    MiniItem mini, {
+    required MediaService media,
+    required P2pService p2p,
+  }) async {
+    try {
+      final hosted = await hostMiniBlob(mini, media, p2p);
+      RustLib.instance.api.crateFfiMinisMinisSave(eventId: mini.id);
+      final json = RustLib.instance.api.crateFfiMinisMinisSaved();
+      final list = (jsonDecode(json) as List<dynamic>)
+          .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+      _saved = list;
+      clearLastError();
+      notifyListeners();
+      return hosted;
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Remove a mini from the Saved tab.
+  Future<void> unsaveMini(String id) async {
+    try {
+      RustLib.instance.api.crateFfiMinisMinisUnsave(eventId: id);
+      final json = RustLib.instance.api.crateFfiMinisMinisSaved();
+      _saved = (jsonDecode(json) as List<dynamic>)
+          .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+      clearLastError();
+      notifyListeners();
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
     }
   }
 
@@ -130,6 +198,8 @@ class MiniItem {
   final String thumbnail;
   final String audience;
   final int createdAt;
+  final int reactions;
+  final bool liked;
 
   MiniItem({
     required this.id,
@@ -141,6 +211,8 @@ class MiniItem {
     required this.thumbnail,
     required this.audience,
     required this.createdAt,
+    required this.reactions,
+    required this.liked,
   });
 
   factory MiniItem.fromJson(Map<String, dynamic> json) => MiniItem(
@@ -153,6 +225,8 @@ class MiniItem {
         thumbnail: json.strOf('thumbnail'),
         audience: json.strOrNull('audience') ?? 'public',
         createdAt: json.intOf('createdAt'),
+        reactions: json.intOf('reactions'),
+        liked: json.boolOf('liked'),
       );
 }
 
@@ -183,4 +257,38 @@ Future<String?> resolveMiniPlaybackUrl(
     }
   }
   return mini.videoUrl.isNotEmpty ? mini.videoUrl : null;
+}
+
+/// Hosts a mini's video on this device: the blob must live in the local
+/// chunk store (CAS) so peers can fetch it from this device. Uses the local
+/// CAS copy when present, otherwise pulls it from LAN peers (which absorbs
+/// it into the CAS), otherwise downloads the http(s) URL fallback and
+/// re-uploads it. Returns whether the blob is now hosted locally.
+Future<bool> hostMiniBlob(
+  MiniItem mini,
+  MediaService media,
+  P2pService p2p,
+) async {
+  if (mini.blobHash.isEmpty) return false;
+  final local = await media.fetchBlobQuiet(mini.blobHash);
+  if (local != null) return true;
+  try {
+    await media.fetchBlobFromLan(
+      mini.blobHash,
+      peers: p2p.peers,
+      outPath: '${Directory.systemTemp.path}/${mini.blobHash}',
+    );
+    return true;
+  } catch (_) {
+    // Fall through to the URL fallback.
+  }
+  final url = mini.videoUrl;
+  if (url.startsWith('http')) {
+    try {
+      final file = await media.fetch(url, cacheDir: await media.getCachePath());
+      await media.uploadMedia(file);
+      return true;
+    } catch (_) {}
+  }
+  return false;
 }

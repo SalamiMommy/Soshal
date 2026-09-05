@@ -9,13 +9,14 @@ pub mod migrations;
 use crate::block_on;
 use crate::libsql::{params, Connection};
 use migrations::{
-    create_dating_unmatch_actor_column, v1_create_tables, v2_group_channels,
-    v3_group_thread_reactions, v4_group_password, v5_performance_indexes, v6_index_cleanup,
-    v7_query_optimizations, v8_index_cleanup, v9_trigger_optimization,
+    create_dating_unmatch_actor_column, v11_index_cleanup, v12_saved_content_playlists,
+    v1_create_tables, v2_group_channels, v3_group_thread_reactions, v4_group_password,
+    v5_performance_indexes, v6_index_cleanup, v7_query_optimizations, v8_index_cleanup,
+    v9_trigger_optimization,
 };
 
 /// Latest schema version the migration runner produces.
-pub const SCHEMA_VERSION: i64 = 10;
+pub const SCHEMA_VERSION: i64 = 12;
 
 /// Columns added by ALTER TABLE in the pre-squash migrations v008-v013 but
 /// lost when they were collapsed into v001_initial. Legacy databases created
@@ -205,9 +206,9 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
     type StepFn = fn(&Connection) -> Result<(), crate::error::DbError>;
     let steps: &[(i64, StepFn)] = &[
         (1, |c| v1_create_tables(c).map_err(Into::into)),
-        (2, |c| v2_group_channels(c).map_err(Into::into)),
+        (2, |c| v2_group_channels(c)),
         (3, |c| v3_group_thread_reactions(c).map_err(Into::into)),
-        (4, |c| v4_group_password(c).map_err(Into::into)),
+        (4, |c| v4_group_password(c)),
         (5, |c| v5_performance_indexes(c).map_err(Into::into)),
         (6, |c| v6_index_cleanup(c).map_err(Into::into)),
         (7, |c| v7_query_optimizations(c).map_err(Into::into)),
@@ -216,6 +217,8 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
         (10, |c| {
             create_dating_unmatch_actor_column(c).map_err(Into::into)
         }),
+        (11, |c| v11_index_cleanup(c).map_err(Into::into)),
+        (12, |c| v12_saved_content_playlists(c).map_err(Into::into)),
     ];
 
     for &(version, step_fn) in steps {

@@ -2701,6 +2701,26 @@ class RustLibWire implements BaseWire {
           port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__minis__minis_save(PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_, int data_len_) =>
+          wasmModule.wire__crate__ffi__minis__minis_save(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__minis__minis_saved(PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_, int data_len_) =>
+          wasmModule.wire__crate__ffi__minis__minis_saved(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__minis__minis_unsave(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__minis__minis_unsave(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__minis__minis_wasm_execute_filter(
               PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_,
@@ -2893,6 +2913,62 @@ class RustLibWire implements BaseWire {
       wasmModule.wire__crate__ffi__music__music_fetch(
           port_, ptr_, rust_vec_len_, data_len_);
 
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_add_track(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__music__music_playlist_add_track(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_create(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__music__music_playlist_create(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_delete(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__music__music_playlist_delete(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_list(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__music__music_playlist_list(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_remove_track(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__music__music_playlist_remove_track(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_rename(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__music__music_playlist_rename(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_tracks(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__music__music_playlist_tracks(
+              ptr_, rust_vec_len_, data_len_);
+
   void wire__crate__ffi__music__music_publish(
           NativePortType port_,
           PlatformGeneralizedUint8ListPtr ptr_,
@@ -2901,6 +2977,18 @@ class RustLibWire implements BaseWire {
       wasmModule.wire__crate__ffi__music__music_publish(
           port_, ptr_, rust_vec_len_, data_len_);
 
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_save(PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_, int data_len_) =>
+          wasmModule.wire__crate__ffi__music__music_save(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_saved(PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_, int data_len_) =>
+          wasmModule.wire__crate__ffi__music__music_saved(
+              ptr_, rust_vec_len_, data_len_);
+
   void wire__crate__ffi__music__music_share_to_feed(
           NativePortType port_,
           PlatformGeneralizedUint8ListPtr ptr_,
@@ -2908,6 +2996,14 @@ class RustLibWire implements BaseWire {
           int data_len_) =>
       wasmModule.wire__crate__ffi__music__music_share_to_feed(
           port_, ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_unsave(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__music__music_unsave(
+              ptr_, rust_vec_len_, data_len_);
 
   void wire__crate__ffi__network__network_add_relay(
           NativePortType port_,
@@ -6097,6 +6193,20 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__minis__minis_save(PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_, int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__minis__minis_saved(PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_, int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__minis__minis_unsave(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__minis__minis_wasm_execute_filter(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
@@ -6231,14 +6341,70 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
   external void wire__crate__ffi__music__music_fetch(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_add_track(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_create(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_delete(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_list(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_remove_track(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_rename(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_playlist_tracks(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
   external void wire__crate__ffi__music__music_publish(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_save(PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_, int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_saved(PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_, int data_len_);
 
   external void wire__crate__ffi__music__music_share_to_feed(
       NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_,
       int rust_vec_len_,
       int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__music__music_unsave(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
 
   external void wire__crate__ffi__network__network_add_relay(
       NativePortType port_,

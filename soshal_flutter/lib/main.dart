@@ -28,6 +28,7 @@ import 'services/network_service.dart';
 import 'services/p2p_service.dart';
 import 'services/moderation_service.dart';
 import 'services/ebpf_service.dart';
+import 'services/error_log.dart';
 import 'services/logging_scaffold_messenger.dart';
 import 'services/telemetry_service.dart';
 import 'services/layout_service.dart';
@@ -141,15 +142,23 @@ class _SoshalAppState extends State<SoshalApp> {
       // Bring up bundled networking daemons (i2pd, freenet, rnsd) so the
       // local transports are live before any screen needs them. No-op on
       // desktop (no bundled assets) and when already running.
-      try {
-        unawaited(DaemonService.startDaemons());
-        // Android 13+: foreground-service notification needs the runtime
-        // permission to be visible (service runs regardless). Fire once on
-        // startup when the daemons are coming up.
-        unawaited(PermissionsService.ensureNotifications());
-      } catch (e) {
-        debugPrint('Error autolaunching daemons: $e');
-      }
+      // Android 13+: foreground-service notification needs the runtime
+      // permission to be visible (service runs regardless). Fire once on
+      // startup when the daemons are coming up.
+      unawaited(() async {
+        try {
+          await DaemonService.startDaemons();
+        } catch (e, st) {
+          logRuntimeError('startDaemons: $e\n$st');
+        }
+      }());
+      unawaited(() async {
+        try {
+          await PermissionsService.ensureNotifications();
+        } catch (e, st) {
+          logRuntimeError('ensureNotifications: $e\n$st');
+        }
+      }());
       context.read<TelemetryService>().init();
       context.read<ShellService>().initialize();
       context.read<ThemeService>().load();
@@ -207,8 +216,8 @@ class _SoshalAppState extends State<SoshalApp> {
       } catch (e) {
         debugPrint('initial deep link: $e');
       }
-    } catch (e) {
-      debugPrint('Error initializing FFI bridge: $e');
+    } catch (e, st) {
+      logRuntimeError('Error initializing FFI bridge: $e', st);
     }
   }
 

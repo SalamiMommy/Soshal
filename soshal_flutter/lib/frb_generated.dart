@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -741940685;
+  int get rustContentHash => -443388222;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -978,6 +978,12 @@ abstract class RustLibApi extends BaseApi {
       String? thumbnail,
       String? audience});
 
+  bool crateFfiMinisMinisSave({required String eventId});
+
+  String crateFfiMinisMinisSaved();
+
+  bool crateFfiMinisMinisUnsave({required String eventId});
+
   String crateFfiMinisMinisWasmExecuteFilter(
       {required String pluginId,
       required String text,
@@ -1064,6 +1070,24 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateFfiMusicMusicFetch(
       {required BigInt limit, String? author, required String audience});
 
+  bool crateFfiMusicMusicPlaylistAddTrack(
+      {required String playlistId, required String trackJson});
+
+  String crateFfiMusicMusicPlaylistCreate(
+      {required String title, required bool isPrivate});
+
+  bool crateFfiMusicMusicPlaylistDelete({required String playlistId});
+
+  String crateFfiMusicMusicPlaylistList();
+
+  bool crateFfiMusicMusicPlaylistRemoveTrack(
+      {required String playlistId, required String trackId});
+
+  bool crateFfiMusicMusicPlaylistRename(
+      {required String playlistId, required String title});
+
+  String crateFfiMusicMusicPlaylistTracks({required String playlistId});
+
   Future<String> crateFfiMusicMusicPublish(
       {required String mediaSource,
       String? title,
@@ -1071,12 +1095,18 @@ abstract class RustLibApi extends BaseApi {
       required List<String> hashtags,
       String? audience});
 
+  bool crateFfiMusicMusicSave({required String trackJson});
+
+  String crateFfiMusicMusicSaved();
+
   Future<String> crateFfiMusicMusicShareToFeed(
       {required String trackId,
       required String trackPubkey,
       required String trackD,
       required String message,
       required List<String> hashtags});
+
+  bool crateFfiMusicMusicUnsave({required String trackId});
 
   Future<bool> crateFfiNetworkNetworkAddRelay({required String url});
 
@@ -9397,6 +9427,80 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateFfiMinisMinisSave({required String eventId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(eventId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__minis__minis_save(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMinisMinisSaveConstMeta,
+      argValues: [eventId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMinisMinisSaveConstMeta => const TaskConstMeta(
+        debugName: "minis_save",
+        argNames: ["eventId"],
+      );
+
+  @override
+  String crateFfiMinisMinisSaved() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__minis__minis_saved(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMinisMinisSavedConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMinisMinisSavedConstMeta => const TaskConstMeta(
+        debugName: "minis_saved",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiMinisMinisUnsave({required String eventId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(eventId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__minis__minis_unsave(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMinisMinisUnsaveConstMeta,
+      argValues: [eventId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMinisMinisUnsaveConstMeta => const TaskConstMeta(
+        debugName: "minis_unsave",
+        argNames: ["eventId"],
+      );
+
+  @override
   String crateFfiMinisMinisWasmExecuteFilter(
       {required String pluginId,
       required String text,
@@ -10099,6 +10203,195 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateFfiMusicMusicPlaylistAddTrack(
+      {required String playlistId, required String trackJson}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(playlistId, serializer);
+        sse_encode_String(trackJson, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__music__music_playlist_add_track(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMusicMusicPlaylistAddTrackConstMeta,
+      argValues: [playlistId, trackJson],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMusicMusicPlaylistAddTrackConstMeta =>
+      const TaskConstMeta(
+        debugName: "music_playlist_add_track",
+        argNames: ["playlistId", "trackJson"],
+      );
+
+  @override
+  String crateFfiMusicMusicPlaylistCreate(
+      {required String title, required bool isPrivate}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(title, serializer);
+        sse_encode_bool(isPrivate, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__music__music_playlist_create(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMusicMusicPlaylistCreateConstMeta,
+      argValues: [title, isPrivate],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMusicMusicPlaylistCreateConstMeta =>
+      const TaskConstMeta(
+        debugName: "music_playlist_create",
+        argNames: ["title", "isPrivate"],
+      );
+
+  @override
+  bool crateFfiMusicMusicPlaylistDelete({required String playlistId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(playlistId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__music__music_playlist_delete(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMusicMusicPlaylistDeleteConstMeta,
+      argValues: [playlistId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMusicMusicPlaylistDeleteConstMeta =>
+      const TaskConstMeta(
+        debugName: "music_playlist_delete",
+        argNames: ["playlistId"],
+      );
+
+  @override
+  String crateFfiMusicMusicPlaylistList() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__music__music_playlist_list(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMusicMusicPlaylistListConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMusicMusicPlaylistListConstMeta =>
+      const TaskConstMeta(
+        debugName: "music_playlist_list",
+        argNames: [],
+      );
+
+  @override
+  bool crateFfiMusicMusicPlaylistRemoveTrack(
+      {required String playlistId, required String trackId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(playlistId, serializer);
+        sse_encode_String(trackId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__music__music_playlist_remove_track(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMusicMusicPlaylistRemoveTrackConstMeta,
+      argValues: [playlistId, trackId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMusicMusicPlaylistRemoveTrackConstMeta =>
+      const TaskConstMeta(
+        debugName: "music_playlist_remove_track",
+        argNames: ["playlistId", "trackId"],
+      );
+
+  @override
+  bool crateFfiMusicMusicPlaylistRename(
+      {required String playlistId, required String title}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(playlistId, serializer);
+        sse_encode_String(title, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__music__music_playlist_rename(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMusicMusicPlaylistRenameConstMeta,
+      argValues: [playlistId, title],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMusicMusicPlaylistRenameConstMeta =>
+      const TaskConstMeta(
+        debugName: "music_playlist_rename",
+        argNames: ["playlistId", "title"],
+      );
+
+  @override
+  String crateFfiMusicMusicPlaylistTracks({required String playlistId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(playlistId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__music__music_playlist_tracks(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMusicMusicPlaylistTracksConstMeta,
+      argValues: [playlistId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMusicMusicPlaylistTracksConstMeta =>
+      const TaskConstMeta(
+        debugName: "music_playlist_tracks",
+        argNames: ["playlistId"],
+      );
+
+  @override
   Future<String> crateFfiMusicMusicPublish(
       {required String mediaSource,
       String? title,
@@ -10130,6 +10423,55 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiMusicMusicPublishConstMeta => const TaskConstMeta(
         debugName: "music_publish",
         argNames: ["mediaSource", "title", "thumbnail", "hashtags", "audience"],
+      );
+
+  @override
+  bool crateFfiMusicMusicSave({required String trackJson}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(trackJson, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__music__music_save(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMusicMusicSaveConstMeta,
+      argValues: [trackJson],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMusicMusicSaveConstMeta => const TaskConstMeta(
+        debugName: "music_save",
+        argNames: ["trackJson"],
+      );
+
+  @override
+  String crateFfiMusicMusicSaved() {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__music__music_saved(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMusicMusicSavedConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMusicMusicSavedConstMeta => const TaskConstMeta(
+        debugName: "music_saved",
+        argNames: [],
       );
 
   @override
@@ -10165,6 +10507,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "music_share_to_feed",
         argNames: ["trackId", "trackPubkey", "trackD", "message", "hashtags"],
+      );
+
+  @override
+  bool crateFfiMusicMusicUnsave({required String trackId}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(trackId, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__music__music_unsave(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiMusicMusicUnsaveConstMeta,
+      argValues: [trackId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiMusicMusicUnsaveConstMeta => const TaskConstMeta(
+        debugName: "music_unsave",
+        argNames: ["trackId"],
       );
 
   @override
