@@ -125,6 +125,6 @@ fn spawn_engine_thread_exits_with_no_usable_relays() {
     c.relays = vec![];
     let (tx, _rx) = tokio::sync::mpsc::channel::<SyncUpdate>(16);
     let stop = Arc::new(AtomicBool::new(false));
-    let handle = spawn_engine(c, tx, stop);
+    let handle = spawn_engine(c, tx, stop, || {});
     handle.join().unwrap();
 }

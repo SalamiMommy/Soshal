@@ -4,6 +4,56 @@ Finding ledger for the periodic full-workspace bug sweeps. Each round lists
 what was found, what was fixed (with file refs), and what was examined and
 cleared. Rounds are cumulative; last-known-good state is shaded green.
 
+## Round 8 — 2026-09-05: sync-engine liveness (Rust truth + Dart watchdog)
+
+Finding: the background sync engine could die silently. `flutter-bridge/src/ffi/sync.rs::STOP`
+(a `static Mutex<Option<Arc<AtomicBool>>>`) was populated at `sync_start` but never cleared
+when the engine thread exited for a non-stop reason (tokio runtime init failure,
+`build_client`/`subscribe` error, or relay stream end `Ok(None)`). `sync_running()` therefore
+stayed `true` forever; Dart `SyncService._started` stayed true and `start()` is idempotent;
+no watchdog existed → after any relay failure the app ran to restart with background
+feed/DM ingestion + outbox replay dead while the UI reported "running".
+
+### Fixed
+- `sync-core/src/engine.rs` — `spawn_engine` now takes an `on_exit` callback invoked on the
+  engine thread after the loop terminates for any reason (incl. runtime-init failure).
+- `flutter-bridge/src/ffi/sync.rs` — `sync_start` installs the STOP Arc BEFORE spawning (so a
+  fast-failing thread can clear it) and passes an `on_exit` that removes the static via
+  `Arc::ptr_eq` compare-and-clear (only clears if the static still holds this generation, so a
+  concurrent restart is never clobbered). `sync_running()` now reflects genuine engine liveness.
+- `soshal_flutter/lib/services/sync_service.dart` — 60 s watchdog (`_engineWatchdog`): when the
+  Rust engine self-clears, it tears down the local stream/timers and restarts with the relays
+  captured at start (`_relays`, cleared on `stop()`/sign-out so the watchdog never fights
+  sign-out). Reuses the `_gcTimer` pattern; no notify storms (1 check/min, only on failure).
+- `sync-core/tests/engine_gap_tests.rs` — 4-arg `spawn_engine` call updated (`|| {}`).
+
+### Cleared (verified against source this round)
+- FTS5 (search-core/fts5.rs) + user search (db-core/repos/user.rs) — terms are
+  alphanumeric-only after stripping, so quotes/`AND`/`OR`/`NEAR`/`*` cannot be smuggled into
+  the MATCH parser; field names filtered identically. `settings get_many` placeholders built
+  from caller-fixed key lists only.
+- Marketplace price/amount → u64: `price.max(0.0) as u64` + saturating float casts (negative →
+  0, NaN → 0, ±Inf saturates); publish gate rejects `price == 0`. Infinity price is a cosmetic
+  watch, not a defect.
+- serde_json `Value` indexing `unwrap()`s (`groups-core/group_enc/seal.rs:77`,
+  `flutter-bridge/src/ffi/*.rs`) — all inside `#[cfg(test)]` blocks.
+- Production `.expect()` sites — compile-time-constant regex/parametrized invariants only
+  (`db-core` conn-present, const regex set, HMAC-any-key); `groups-core/access.rs` "hash
+  success" is test-only.
+- Round-7 watermark clamp completeness — the production watermark advance already skew-caps in
+  `engine.rs` (`capped = created.min(now + WATERMARK_SKEW_SECS)`, applied to feed/DM/meta);
+  round-7's `ingest.rs` edits capped the storage layer + test parity. No residual future-date jam.
+- Scheduled posts — fire-time `created_at` is `≤ now` by construction (futurity gate at
+  scheduled.rs), so the ingest clamp is a no-op for them.
+- Cross-account bleed — `session_service._resetAccountScopedServices` + per-service cache clears
+  (`messaging_service`, `feed_service` pinned/reactions) exist on account switch.
+- Watch-only: session `accounts` Vec (no cap, user-driven), local notifications table (no
+  retention), marketplace infinity price — all low-risk, no change.
+
+### Verified
+- Gate green at end of round: fmt / clippy `-D warnings` / workspace tests ×3 (2270) /
+  `flutter analyze` 0 issues. Commit hash appended on commit.
+
 ## Round 7 — 2026-09-05: hardening follow-up (parallel builders)
 
 Scope: 6 passes — (P1) numeric-truncation across 84 non-test `as` casts, (P2)

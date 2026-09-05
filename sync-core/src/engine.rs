@@ -48,10 +48,14 @@ pub struct SyncConfig {
 
 /// Spawn the background engine on its own thread + runtime. `stop` flips to
 /// end the loop; the racing tokio runtime is dropped when the loop exits.
+/// `on_exit` runs on the engine thread after the loop terminates for any
+/// reason (stop flag, relay stream end, or startup/subscribe error) so the
+/// caller can reconcile engine liveness state.
 pub fn spawn_engine(
     cfg: SyncConfig,
     tx: tokio::sync::mpsc::Sender<SyncUpdate>,
     stop: Arc<AtomicBool>,
+    on_exit: impl FnOnce() + Send + 'static,
 ) -> std::thread::JoinHandle<()> {
     use rustls::crypto::ring;
     let _ = ring::default_provider().install_default();
@@ -64,6 +68,7 @@ pub fn spawn_engine(
             Ok(rt) => rt,
             Err(e) => {
                 eprintln!("sync engine: runtime init failed: {e}");
+                on_exit();
                 return;
             }
         };
@@ -72,6 +77,8 @@ pub fn spawn_engine(
                 eprintln!("sync engine: {e}");
             }
         });
+        drop(rt);
+        on_exit();
     })
 }
 

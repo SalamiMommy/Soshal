@@ -155,6 +155,15 @@ pub async fn sync_start(relays_json: String) -> Result<String, String> {
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<SyncUpdate>(256);
     let stop = Arc::new(AtomicBool::new(false));
+
+    // Install the stop flag BEFORE spawning: a fast-failing engine thread may
+    // exit before `spawn_engine` returns, and its on_exit must find the
+    // static populated (or a newer generation) to clear reconcilably.
+    {
+        let mut guard = STOP.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(stop.clone());
+    }
+    let exit_stop = stop.clone();
     spawn_engine(
         SyncConfig {
             db_path,
@@ -163,9 +172,21 @@ pub async fn sync_start(relays_json: String) -> Result<String, String> {
             socks_proxy: super::network::i2p_socks_addr().map(|a| a.to_string()),
         },
         tx,
-        stop.clone(),
+        stop,
+        move || {
+            // Engine loop terminated (stop flag, relay stream end, or a
+            // startup/subscribe error). Clear the static so `sync_running()`
+            // reports the truth and, if it is still this generation's flag, a
+            // later `sync_start` is the only writer. A newer Arc in the static
+            // means a restart already happened — leave it untouched.
+            let mut guard = STOP.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(cur) = guard.as_ref() {
+                if Arc::ptr_eq(cur, &exit_stop) {
+                    *guard = None;
+                }
+            }
+        },
     );
-    *STOP.lock().unwrap_or_else(|e| e.into_inner()) = Some(stop);
 
     // Forwarder thread: engine update → JSON → StreamSink. DM decryption
     // happens here (signer lock is per-call, not held across awaits).

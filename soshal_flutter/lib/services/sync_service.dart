@@ -19,10 +19,20 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
   StreamSubscription<String>? _subscription;
   Timer? _notifyDebounceTimer;
   Timer? _gcTimer;
+  Timer? _watchdogTimer;
   FeedService? _feed;
   MessagingService? _messaging;
   bool _started = false;
   bool _subscribed = false;
+
+  /// Relays captured at last successful start; empty once stopped. The
+  /// watchdog re-uses them to restart a Rust engine that died unexpectedly
+  /// (relay failure / stream end / runtime init failure).
+  List<String> _relays = const [];
+
+  /// Watchdog poll interval: how often we check whether the Rust engine is
+  /// still alive and restart it when not.
+  static const Duration _watchdogInterval = Duration(seconds: 60);
 
   /// How far back deletions must be acknowledged before tombstones go away.
   static const int _gcConsensusWindowSecs = 7 * 24 * 3600;
@@ -64,11 +74,16 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
       await RustLib.instance.api.crateFfiSyncSyncStart(
         relaysJson: jsonEncode(relays),
       );
+      _relays = List.of(relays);
       _ensureSubscribed();
       _started = true;
       _gcTimer?.cancel();
       _gcTimer = Timer.periodic(const Duration(days: 1), (_) {
         runScheduledEpochGc();
+      });
+      _watchdogTimer?.cancel();
+      _watchdogTimer = Timer.periodic(_watchdogInterval, (_) {
+        _engineWatchdog();
       });
       clearLastError();
     } catch (e, st) {
@@ -85,13 +100,36 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
     } catch (e, st) {
       setLastError(e, st);
     }
+    _teardownLocal();
+    notifyListeners();
+  }
+
+  /// Cancel local timers + stream sub and reset engine bookkeeping. Does not
+  /// touch the Rust engine itself.
+  void _teardownLocal() {
     _gcTimer?.cancel();
     _gcTimer = null;
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
     _subscription?.cancel();
     _subscription = null;
     _subscribed = false;
     _started = false;
-    notifyListeners();
+    _relays = const [];
+  }
+
+  /// Periodic liveness check: if the Rust engine died for a non-stop reason
+  /// (it self-clears via spawn_engine's on_exit), restart it with the relays
+  /// captured at start. No-op when stopped (relays cleared) or alive.
+  void _engineWatchdog() {
+    final relays = _relays;
+    if (relays.isEmpty) return;
+    if (syncRunning()) return;
+    _subscription?.cancel();
+    _subscription = null;
+    _subscribed = false;
+    _started = false;
+    unawaited(start(relays: relays));
   }
 
   void _ensureSubscribed() {
@@ -297,6 +335,7 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
   @override
   void dispose() {
     _notifyDebounceTimer?.cancel();
+    _watchdogTimer?.cancel();
     _gcTimer?.cancel();
     _subscription?.cancel();
     super.dispose();
