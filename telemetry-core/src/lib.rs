@@ -278,6 +278,11 @@ impl Recorder {
             if total == 0 || total > ENTRY_MAX_TOTAL || pos + total as u64 > end {
                 break;
             }
+            // Entry body is 17 bytes beyond the length prefix; a forged small
+            // `total` (but > 4) must not walk reads past `end`/the map.
+            if pos + ENTRY_HEADER as u64 > end {
+                break;
+            }
             let kind = RecordKind::from_u8(self.mmap[pos as usize + 4]);
             let ts = u64::from_le_bytes(
                 self.mmap[pos as usize + 5..pos as usize + 13]
@@ -379,7 +384,10 @@ fn read_header(mmap: &MmapMut) -> Result<HeaderView, String> {
     }
     let sealed = mmap[24] != 0;
     let head = u64::from_le_bytes(mmap[25..33].try_into().unwrap());
-    let len = u64::from_le_bytes(mmap[33..41].try_into().unwrap());
+    // The header digest is a plain checksum (forgeable by any local writer),
+    // so never trust `len` to stay within the ring: clamp to mapped bytes.
+    let available = mmap.len() as u64 - HEADER_LEN as u64;
+    let len = u64::from_le_bytes(mmap[33..41].try_into().unwrap()).min(available);
     Ok(HeaderView { head, len, sealed })
 }
 

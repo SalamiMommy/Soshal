@@ -11,7 +11,7 @@ import 'error_log.dart';
 /// Relay-based WebRTC signaling (kinds 20001-20004) plus in-call state:
 /// call id, peer, media type, and an elapsed-call timer. Media transport
 /// itself is gated behind the backend; this service only moves signals.
-class CallsService extends ChangeNotifier with LastErrorMixin {
+class CallsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   final List<CallSignal> _signals = [];
 
   String? _callId;
@@ -45,7 +45,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     _timer?.cancel();
     _timer = null;
     clearLastError();
-    notifyListeners();
+    notifyDeferred();
   }
 
   /// Send a call signal (offer/answer/ice/end) to `targetPubkey`. SDP and
@@ -68,11 +68,11 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
         mediaType: mediaType,
       );
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return eventId;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -89,11 +89,11 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
             .map((e) => CallSignal.fromJson(e as Map<String, dynamic>))
             .toList());
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return List.unmodifiable(_signals);
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -110,7 +110,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
       return out;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -124,7 +124,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
       return out;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -137,7 +137,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
       return out;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -151,7 +151,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
       return out;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -165,7 +165,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
       return out;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -179,7 +179,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
       return out;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -195,7 +195,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
       return out;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -209,7 +209,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
       return out;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -232,7 +232,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     );
     _resumeTick();
     clearLastError();
-    notifyListeners();
+    notifyDeferred();
   }
 
   void _pauseTick() {
@@ -248,7 +248,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
       final now = DateTime.now();
       if (now.second == lastTick.second) return;
       lastTick = now;
-      notifyListeners();
+      notifyDeferred();
     });
   }
 
@@ -261,7 +261,7 @@ class CallsService extends ChangeNotifier with LastErrorMixin {
     _peer = null;
     _mediaType = null;
     _startedAt = null;
-    notifyListeners();
+    notifyDeferred();
   }
 
   @override

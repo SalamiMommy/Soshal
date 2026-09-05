@@ -36,6 +36,9 @@ pub fn generate_node_id(pubkey: &str, static_nonce: u64, dynamic_nonce: u64) -> 
 
 /// Checks if a 256-bit hash has at least `bits` leading zero bits.
 pub fn check_leading_zeros(hash: &[u8; 32], bits: u32) -> bool {
+    if bits > 256 {
+        return false;
+    }
     let full_bytes = (bits / 8) as usize;
     let rem_bits = bits % 8;
 

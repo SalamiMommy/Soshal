@@ -67,6 +67,8 @@ fn fetch_chunk_bytes(
     chr: ChunkRef,
 ) -> Result<Vec<u8>, String> {
     let my_pubkey = my_pubkey.to_string();
+    let offset =
+        usize::try_from(chr.offset).map_err(|_| "chunk offset out of range".to_string())?;
     match quic_addr {
         Some(qa) => {
             let qres = if chr.len == 0 || chr.len > QUIC_MAX_CHUNK {
@@ -74,7 +76,7 @@ fn fetch_chunk_bytes(
             } else {
                 let req = crate::lan_transport::LanChunkRequest {
                     hash: chr.blake3.clone(),
-                    offset: chr.offset as usize,
+                    offset,
                     length: chr.len,
                     want_manifest: false,
                 };
@@ -109,7 +111,7 @@ fn fetch_chunk_bytes(
                     key,
                     &my_pubkey,
                     &chr.blake3,
-                    chr.offset as usize,
+                    offset,
                     chr.len,
                 )
                 .map_err(|te| format!("{e}; tcp: {te}"))

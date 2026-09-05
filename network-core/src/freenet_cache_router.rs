@@ -85,11 +85,14 @@ pub fn process_freenet_cache_command(
                 );
                 if let Some(manifest) = store.load_manifest(hash) {
                     if let Some(bytes) = store.blob_slice(&manifest, *chunk_offset, *chunk_length) {
+                        let Ok(total_size) = usize::try_from(manifest.total_size) else {
+                            return None;
+                        };
                         let data_b64 = soshal_crypto_core::base64::base64_encode_bytes(&bytes);
                         return Some(FreenetP2PCommand::MediaBlobResponse {
                             hash: hash.clone(),
                             offset: *chunk_offset,
-                            total_size: manifest.total_size as usize,
+                            total_size,
                             data_b64,
                         });
                     }

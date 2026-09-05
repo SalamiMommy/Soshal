@@ -45,6 +45,9 @@ pub fn encode_fountain(
     if !redundancy_ratio.is_finite() || !(0.0..=10.0).contains(&redundancy_ratio) {
         return Err("redundancy_ratio must be a finite float between 0.0 and 10.0".to_string());
     }
+    if data.is_empty() || data.len() > MAX_FOUNTAIN_LEN {
+        return Err("fountain payload length out of range".to_string());
+    }
 
     let symbol_size = 1024u16;
     let encoder = Encoder::with_defaults(data, symbol_size);

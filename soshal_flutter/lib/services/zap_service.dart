@@ -8,7 +8,7 @@ import 'error_log.dart';
 
 /// Zap Service
 /// NIP-57 zaps via a NWC connection: connect, receipts and totals.
-class ZapService extends ChangeNotifier with LastErrorMixin {
+class ZapService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   String? _nwcStatus;
   String? _nwcPubkey;
   int _totalMsat = 0;
@@ -31,11 +31,11 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
         await refreshStatus();
       }
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -49,11 +49,11 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
         _nwcPubkey = null;
       }
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -68,10 +68,10 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
         _nwcPubkey = null;
       }
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
     }
   }
 
@@ -83,11 +83,11 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
       );
       _totalMsat = msat.toInt();
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _totalMsat;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -103,7 +103,7 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
       return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return {};
     }
   }
@@ -121,11 +121,11 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
           .map((e) => ZapReceipt.fromJson(e as Map<String, dynamic>))
           .toList();
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _receipts;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -139,7 +139,7 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
       return json;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -163,7 +163,7 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
       return json;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -178,7 +178,7 @@ class ZapService extends ChangeNotifier with LastErrorMixin {
       return json;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }

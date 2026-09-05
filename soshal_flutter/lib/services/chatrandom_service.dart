@@ -9,7 +9,7 @@ import 'social_entry.dart';
 /// Chat Random Service
 /// Interest-based random pairing: kind-20030 availability announcements and
 /// kind-20031/20032 request/accept events over the shared relay client.
-class ChatrandomService extends ChangeNotifier with LastErrorMixin {
+class ChatrandomService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   List<ChatrandomPeer> _peers = [];
 
   List<ChatrandomPeer> get peers => _peers;
@@ -44,7 +44,7 @@ class ChatrandomService extends ChangeNotifier with LastErrorMixin {
       return id;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }
@@ -75,11 +75,11 @@ class ChatrandomService extends ChangeNotifier with LastErrorMixin {
       }
       _peers = peers;
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return _peers;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       rethrow;
     }
   }

@@ -116,6 +116,7 @@ class _WgpuMeshCanvasWidgetState extends State<WgpuMeshCanvasWidget> {
 
   Future<void> _renderTick() async {
     _renderTimer?.cancel();
+    _renderTimer = null;
     if (_sessionId == null || !mounted) return;
     final nodes = widget.nodes;
     final prev = _lastRenderedNodes;

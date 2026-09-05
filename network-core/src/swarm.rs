@@ -335,7 +335,7 @@ async fn download(cfg: SwarmConfig, abort: Arc<AtomicBool>) -> SwarmReport {
         let _ = h.await;
     }
 
-    let done_set = done.lock().unwrap();
+    let done_set = done.lock().unwrap_or_else(|e| e.into_inner());
     let verified = done_set.len();
     let mut report = SwarmReport {
         verified_chunks: verified,

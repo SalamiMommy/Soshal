@@ -70,6 +70,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   Timer? _powerTimer;
   AppLifecycleListener? _lifecycle;
   bool _appActive = true;
+  bool _disposed = false;
   Duration _powerInterval = const Duration(seconds: 30);
   PowerStateDto? _lastPowerSample;
 
@@ -307,6 +308,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   Future<void> _pollPower() async {
     try {
       final sample = await powerSampleOsState();
+      if (_disposed) return;
       await updatePower(
         charging: sample.charging,
         batteryPercent: sample.batteryPercent,
@@ -325,6 +327,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
       _lastPowerSample = sample;
       _startPowerTimer();
     } catch (_) {
+      if (_disposed) return;
       final backoff = _powerInterval.inSeconds * 2;
       _powerInterval = Duration(seconds: backoff > 300 ? 300 : backoff);
       _startPowerTimer();
@@ -556,6 +559,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
 
   @override
   void dispose() {
+    _disposed = true;
     _pollTimer?.cancel();
     _powerTimer?.cancel();
     _lifecycle?.dispose();
