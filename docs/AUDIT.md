@@ -10,7 +10,7 @@ Scope: 6 passes — (P1) numeric-truncation across 84 non-test `as` casts, (P2)
 security invariants (SSRF, verified-events, zap amounts, timestamp sanity),
 (P3) unbounded-growth, (P4) Dart async/silent-swallow, (P5) hostile-parse +
 untyped jsonDecode, (P6) clock/time. Fixes applied via parallel
-cavecrew-builders; full gate run at the very end. Commit: pending.
+cavecrew-builders; full gate run at the very end. Commit: `1db740d`.
 
 ### Fixed (this round)
 
