@@ -15,6 +15,7 @@ import '../utils/safe_url.dart';
 import '../services/shell_service.dart';
 import '../utils/blob_resolver.dart';
 import '../utils/format.dart';
+import '../utils/media_upload.dart';
 import '../widgets/blob_image.dart';
 
 /// ProfileRendererScreen. Displays custom profile widgets with optional
@@ -1040,8 +1041,8 @@ class _MusicPlayerWidget extends StatelessWidget {
   Future<void> _play(BuildContext context, AudioTrack track) async {
     final shell = context.read<ShellService>();
     var url = track.url;
-    if (url.startsWith('blob:')) {
-      final hash = url.substring(5);
+    final hash = mediaBlobHash(url);
+    if (hash != null) {
       final media = context.read<MediaService>();
       final p2p = context.read<P2pService>();
       final path = await resolveBlobPath(media, p2p, hash);

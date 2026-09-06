@@ -1,10 +1,10 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/media_service.dart';
 import '../services/session_service.dart';
 import '../services/streaming_service.dart';
 import '../utils/format.dart';
+import '../utils/media_upload.dart';
 import '../widgets/empty_state.dart';
 
 /// Stories: followed authors' stories, mark viewed, post your own.
@@ -126,24 +126,22 @@ class _StoriesScreenState extends State<StoriesScreen> {
                       ? null
                       : () async {
                           try {
-                            final picked =
-                                await FilePicker.pickFile(type: FileType.image);
-                            final path = picked?.path;
+                            final path = await pickMediaPath();
                             if (path == null || !context.mounted) return;
                             setDialogState(() => uploading = true);
-                            final manifest = await context
-                                .read<MediaService>()
-                                .uploadMedia(path);
-                            final hash = manifest['blob_hash'] as String? ?? '';
-                            if (hash.length != 64) {
-                              throw Exception('Bad upload manifest');
-                            }
+                            final hash = await uploadMediaBlob(
+                              (p) => context
+                                  .read<MediaService>()
+                                  .uploadMedia(p),
+                              path: path,
+                              errorMessage: 'Bad upload manifest',
+                            );
                             final list = images.text
                                 .split(',')
                                 .map((e) => e.trim())
                                 .where((e) => e.isNotEmpty)
                                 .toList()
-                              ..add('n$hash');
+                              ..add(blobUri(hash));
                             images.text = list.join(', ');
                           } catch (e) {
                             if (context.mounted) {

@@ -5,16 +5,18 @@ import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/blob_resolver.dart';
 import '../utils/safe_url.dart';
+import '../utils/media_upload.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 import 'media_service.dart';
 import 'p2p_service.dart';
 import 'social_entry.dart';
+import '../utils/service_guard.dart';
 
 /// Musicloud: kind-31022 track publishing, fetching, sharing to feed and
 /// comment threads. All FFI calls are async — always awaited.
-class MusicService extends ChangeNotifier with LastErrorMixin {
+class MusicService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   List<MusicTrack> _tracks = [];
 
   List<MusicTrack> get tracks => _tracks;
@@ -28,23 +30,16 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
   bool isTrackSaved(String id) => _savedTracks.any((t) => t.id == id);
 
   /// Fetch tracks (kind 31022), optionally filtered by author pubkey.
-  Future<List<MusicTrack>> fetchTracks({String? author, int limit = 50}) async {
-    try {
-      final json = await RustLib.instance.api.crateFfiMusicMusicFetch(
-        limit: BigInt.from(limit),
-        author: author,
-        audience: 'public',
-      );
-      _tracks = await runOffThread(() => _parseTracks(json));
-      clearLastError();
-      notifyListeners();
-      return _tracks;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<MusicTrack>> fetchTracks({String? author, int limit = 50}) =>
+      guard(() async {
+        final json = await RustLib.instance.api.crateFfiMusicMusicFetch(
+          limit: BigInt.from(limit),
+          author: author,
+          audience: 'public',
+        );
+        _tracks = await runOffThread(() => _parseTracks(json));
+        return _tracks;
+      });
 
   /// Publish a track (kind 31022). `mediaSource` is a local audio file path
   /// or an https media URL; the bytes are chunked into the local CAS and the
@@ -56,23 +51,16 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
     String? thumbnail,
     List<String> hashtags = const [],
     String? audience,
-  }) async {
-    try {
-      final id = await RustLib.instance.api.crateFfiMusicMusicPublish(
-        mediaSource: mediaSource,
-        title: title,
-        thumbnail: thumbnail,
-        hashtags: hashtags,
-        audience: audience,
-      );
-      clearLastError();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() async {
+        return await RustLib.instance.api.crateFfiMusicMusicPublish(
+          mediaSource: mediaSource,
+          title: title,
+          thumbnail: thumbnail,
+          hashtags: hashtags,
+          audience: audience,
+        );
+      }, notifyOnSuccess: false);
 
   /// Share a track to the feed as a kind-1 text note. Returns the event id.
   Future<String> shareToFeed({
@@ -81,23 +69,16 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
     required String trackD,
     required String message,
     List<String> hashtags = const [],
-  }) async {
-    try {
-      final id = await RustLib.instance.api.crateFfiMusicMusicShareToFeed(
-        trackId: trackId,
-        trackPubkey: trackPubkey,
-        trackD: trackD,
-        message: message,
-        hashtags: hashtags,
-      );
-      clearLastError();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() async {
+        return await RustLib.instance.api.crateFfiMusicMusicShareToFeed(
+          trackId: trackId,
+          trackPubkey: trackPubkey,
+          trackD: trackD,
+          message: message,
+          hashtags: hashtags,
+        );
+      }, notifyOnSuccess: false);
 
   /// Publish a comment on a track. Returns the comment event id.
   Future<String> comment({
@@ -105,59 +86,37 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
     required String trackPubkey,
     required String trackD,
     required String content,
-  }) async {
-    try {
-      final id = await RustLib.instance.api.crateFfiMusicMusicComment(
-        trackKind: trackKind,
-        trackPubkey: trackPubkey,
-        trackD: trackD,
-        content: content,
-      );
-      clearLastError();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() async {
+        return await RustLib.instance.api.crateFfiMusicMusicComment(
+          trackKind: trackKind,
+          trackPubkey: trackPubkey,
+          trackD: trackD,
+          content: content,
+        );
+      }, notifyOnSuccess: false);
 
   /// Fetch comments for a track. Returns JSON array of mini event outputs.
   Future<List<TrackComment>> fetchComments({
     int trackKind = 31022,
     required String trackPubkey,
     required String trackD,
-  }) async {
-    try {
-      final json = await RustLib.instance.api.crateFfiMusicMusicComments(
-        trackKind: trackKind,
-        trackPubkey: trackPubkey,
-        trackD: trackD,
-      );
-      final comments = await runOffThread(() => _parseComments(json));
-      clearLastError();
-      return comments;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() async {
+        final json = await RustLib.instance.api.crateFfiMusicMusicComments(
+          trackKind: trackKind,
+          trackPubkey: trackPubkey,
+          trackD: trackD,
+        );
+        return await runOffThread(() => _parseComments(json));
+      }, notifyOnSuccess: false);
 
   /// Saved tracks from the local `saved_content` store, newest saved first.
-  Future<List<MusicTrack>> fetchSavedTracks() async {
-    try {
-      final json = RustLib.instance.api.crateFfiMusicMusicSaved();
-      _savedTracks = await runOffThread(() => _parseTracks(json));
-      clearLastError();
-      notifyListeners();
-      return _savedTracks;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<MusicTrack>> fetchSavedTracks() => guard(() async {
+        final json = RustLib.instance.api.crateFfiMusicMusicSaved();
+        _savedTracks = await runOffThread(() => _parseTracks(json));
+        return _savedTracks;
+      });
 
   /// Save a track: materialize its audio blob into the local chunk store (so
   /// this device can serve it to peers), then persist the entry. Returns true
@@ -193,70 +152,46 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// The user's playlists, newest first.
-  Future<List<MusicPlaylist>> fetchPlaylists() async {
-    try {
-      final json = RustLib.instance.api.crateFfiMusicMusicPlaylistList();
-      _playlists = await runOffThread(
-        () => (jsonDecode(json) as List<dynamic>)
-            .map((e) => MusicPlaylist.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      );
-      clearLastError();
-      notifyListeners();
-      return _playlists;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<MusicPlaylist>> fetchPlaylists() => guard(() async {
+        final json = RustLib.instance.api.crateFfiMusicMusicPlaylistList();
+        _playlists = await runOffThread(
+          () => (jsonDecode(json) as List<dynamic>)
+              .map((e) => MusicPlaylist.fromJson(e as Map<String, dynamic>))
+              .toList(),
+        );
+        return _playlists;
+      });
 
   /// Create a playlist. Returns the new playlist id.
   Future<String> createPlaylist({
     required String title,
     required bool isPrivate,
-  }) async {
-    try {
-      final id = RustLib.instance.api.crateFfiMusicMusicPlaylistCreate(
-        title: title,
-        isPrivate: isPrivate,
-      );
-      await fetchPlaylists();
-      clearLastError();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() async {
+        final id = RustLib.instance.api.crateFfiMusicMusicPlaylistCreate(
+          title: title,
+          isPrivate: isPrivate,
+        );
+        await fetchPlaylists();
+        return id;
+      }, notifyOnSuccess: false);
 
   /// Rename a playlist.
   Future<void> renamePlaylist(String playlistId, String title) async {
-    try {
+    await guard(() async {
       RustLib.instance.api.crateFfiMusicMusicPlaylistRename(
           playlistId: playlistId, title: title);
       await fetchPlaylists();
-      clearLastError();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    }, notifyOnSuccess: false);
   }
 
   /// Delete a playlist and its tracks.
   Future<void> deletePlaylist(String playlistId) async {
-    try {
+    await guard(() async {
       RustLib.instance.api
           .crateFfiMusicMusicPlaylistDelete(playlistId: playlistId);
       await fetchPlaylists();
-      clearLastError();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    }, notifyOnSuccess: false);
   }
 
   /// Add a track to a playlist (de-duplicated by track id).
@@ -277,33 +212,21 @@ class MusicService extends ChangeNotifier with LastErrorMixin {
 
   /// Remove a track from a playlist.
   Future<void> removeFromPlaylist(String playlistId, String trackId) async {
-    try {
+    await guard(() {
       RustLib.instance.api.crateFfiMusicMusicPlaylistRemoveTrack(
         playlistId: playlistId,
         trackId: trackId,
       );
-      clearLastError();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    }, notifyOnSuccess: false);
   }
 
   /// A playlist's tracks in insertion order.
-  Future<List<MusicTrack>> fetchPlaylistTracks(String playlistId) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiMusicMusicPlaylistTracks(playlistId: playlistId);
-      final list = await runOffThread(() => _parseTracks(json));
-      clearLastError();
-      return list;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<MusicTrack>> fetchPlaylistTracks(String playlistId) =>
+      guard(() async {
+        final json = RustLib.instance.api
+            .crateFfiMusicMusicPlaylistTracks(playlistId: playlistId);
+        return await runOffThread(() => _parseTracks(json));
+      }, notifyOnSuccess: false);
 }
 
 /// A Musicloud track (kind 31022), serialized via `musicloud_from_event`.
@@ -395,9 +318,9 @@ Map<String, dynamic> trackToJson(MusicTrack t) => {
 
 /// Resolves a track's audio to a playable URL: local CAS blob first, then
 /// LAN peer fetch, then an http(s) URL as fallback (blob-first, URL
-/// fallback). `blob://` references are never returned — they are only
-/// meaningful to the chunk store, not to the media player. Returns null
-/// when nothing reachable is available.
+/// fallback). Blob refs (`blob://`, `n<hash>`, bare hex) are never returned —
+/// they are only meaningful to the chunk store, not to the media player.
+/// Returns null when nothing reachable is available.
 Future<String?> resolveTrackPlaybackUrl(
   MusicTrack track,
   MediaService media,
@@ -416,7 +339,7 @@ Future<String?> resolveTrackPlaybackUrl(
   }
   final url = track.audioUrl;
   if (url.isNotEmpty &&
-      !url.startsWith('blob://') &&
+      mediaBlobHash(url) == null &&
       SafeUrl.isSafeMediaUrl(url)) {
     return url;
   }

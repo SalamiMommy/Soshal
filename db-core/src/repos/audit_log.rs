@@ -18,9 +18,7 @@ pub struct AuditLogRepo<'a> {
 }
 
 impl<'a> AuditLogRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn insert(&self, row: &AuditLogRow) -> Result<(), DbError> {
         let conn = self.db.conn()?;

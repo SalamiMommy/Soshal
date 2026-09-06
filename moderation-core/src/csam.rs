@@ -63,12 +63,7 @@ fn get_csam_regex_set() -> &'static CsamRegexSet {
     SET.get_or_init(|| {
         let patterns: Vec<&str> = CSAM_PATTERNS.iter().map(|p| p.pattern).collect();
         let rules: Vec<&'static str> = CSAM_PATTERNS.iter().map(|p| p.rule).collect();
-        let set = regex::RegexSetBuilder::new(patterns)
-            .case_insensitive(true)
-            .size_limit(1 << 30)
-            .dfa_size_limit(1 << 30)
-            .build()
-            .unwrap_or_else(|_| regex::RegexSet::empty());
+        let set = crate::regex_util::build_regex_set(patterns);
         CsamRegexSet { set, rules }
     })
 }

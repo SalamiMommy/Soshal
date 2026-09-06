@@ -89,7 +89,7 @@ pub async fn calls_fetch_signals(my_pubkey: String) -> Result<String, String> {
         if !p_tags.iter().any(|p| p == &my_pubkey) {
             continue;
         }
-        if e.verify().is_err() {
+        if !soshal_nostr_core::models::verify_event(&e) {
             continue;
         }
         let call_id = e
@@ -187,10 +187,8 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn send_signal_requires_unlocked_signer() {
-        let _g = CALLS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&CALLS_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         super::super::signer::signer_lock().unwrap();
         let err = calls_send_signal(
             "offer".into(),
@@ -208,10 +206,8 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn send_signal_publishes_signed_event_via_network() {
-        let _g = CALLS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&CALLS_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let err = calls_send_signal(

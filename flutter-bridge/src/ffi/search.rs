@@ -197,19 +197,14 @@ pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String>
         return search_trending_hashtags(limit);
     }
     let limit = limit.clamp(1, 100) as usize;
-    use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
-    type HashtagCache = HashMap<String, (i64, Vec<String>)>;
-    static CACHE: OnceLock<Mutex<HashtagCache>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<super::util::TtlCache<String, Vec<String>>>> = OnceLock::new();
     let now = soshal_common_core::format::now_secs();
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    {
-        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((ts, tags)) = guard.get(clean_query) {
-            if now.saturating_sub(*ts) < HASHTAGS_TTL_SECS {
-                return Ok(tags.iter().take(limit).cloned().collect());
-            }
-        }
+    let mut cache = crate::ffi::util::lock(
+        CACHE.get_or_init(|| Mutex::new(super::util::TtlCache::new(HASHTAGS_TTL_SECS, 1000))),
+    );
+    if let Some(tags) = cache.get(clean_query, now) {
+        return Ok(tags.iter().take(limit).cloned().collect());
     }
     let json = super::db::db_query_params(
         "SELECT tag FROM hashtags WHERE tag LIKE ?1 || '%' ESCAPE '\\' GROUP BY tag ORDER BY SUM(count) DESC LIMIT 100",
@@ -220,19 +215,7 @@ pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String>
         .into_iter()
         .filter_map(|r| r["tag"].as_str().map(|s| s.to_string()))
         .collect();
-    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    // Cap hashtag cache at 1000 entries; evict oldest (lowest timestamp) when full.
-    const HASHTAG_CACHE_CAP: usize = 1000;
-    if guard.len() >= HASHTAG_CACHE_CAP {
-        if let Some(oldest_key) = guard
-            .iter()
-            .min_by_key(|(_, (ts, _))| *ts)
-            .map(|(k, _)| k.clone())
-        {
-            guard.remove(&oldest_key);
-        }
-    }
-    guard.insert(clean_query.to_string(), (now, tags.clone()));
+    cache.insert(clean_query.to_string(), tags.clone(), now);
     Ok(tags.into_iter().take(limit).collect())
 }
 
@@ -309,7 +292,7 @@ pub async fn search_remote_global(
     client.disconnect().await;
     let results: Vec<serde_json::Value> = events
         .into_iter()
-        .filter(|e| e.verify().is_ok() && e.kind == Kind::TextNote)
+        .filter(|e| soshal_nostr_core::models::verify_event(e) && e.kind == Kind::TextNote)
         .map(|e| {
             serde_json::json!({
                 "id": e.id.to_hex(),
@@ -329,16 +312,14 @@ const HASHTAGS_TTL_SECS: i64 = 60;
 
 fn cached_trending_hashtags(limit: i64) -> Result<Vec<String>, String> {
     use std::sync::{Mutex, OnceLock};
-    type HashtagCache = Option<(i64, Vec<String>)>;
-    static CACHE: OnceLock<Mutex<HashtagCache>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<super::util::TtlCache<(), Vec<String>>>> = OnceLock::new();
     let now = soshal_common_core::format::now_secs();
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
-    {
-        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((ts, tags)) = guard.as_ref() {
-            if now.saturating_sub(*ts) < HASHTAGS_TTL_SECS && tags.len() >= limit as usize {
-                return Ok(tags[..limit as usize].to_vec());
-            }
+    let mut cache = crate::ffi::util::lock(
+        CACHE.get_or_init(|| Mutex::new(super::util::TtlCache::new(HASHTAGS_TTL_SECS, 1))),
+    );
+    if let Some(tags) = cache.get(&(), now) {
+        if tags.len() >= limit as usize {
+            return Ok(tags[..limit as usize].to_vec());
         }
     }
     const TRENDING_HASHTAGS_SQL: &str =
@@ -357,8 +338,7 @@ fn cached_trending_hashtags(limit: i64) -> Result<Vec<String>, String> {
         .map_err(soshal_db_core::error::DbError::from)?;
         Ok(out)
     })?;
-    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    *guard = Some((now, tags.clone()));
+    cache.insert((), tags.clone(), now);
     Ok(tags.into_iter().take(limit as usize).collect())
 }
 
@@ -507,9 +487,7 @@ mod tests {
 
     #[test]
     fn test_search_posts_happy() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("posts");
         insert_post("p1", "pk1", "hello caveman world", 1, 1000);
         insert_post("p2", "pk1", "unrelated chatter", 1, 2000);
@@ -524,9 +502,7 @@ mod tests {
 
     #[test]
     fn test_search_posts_newest_first_and_limit_clamp() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("order");
         insert_post("p1", "pk1", "soshal alpha", 1, 1000);
         insert_post("p2", "pk1", "soshal beta", 1, 2000);
@@ -540,9 +516,7 @@ mod tests {
 
     #[test]
     fn test_search_profiles_filters_kind() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("profiles");
         insert_post("prof1", "pk1", "alice soshal builder", 0, 1000);
         insert_post("post1", "pk1", "soshal post text", 1, 2000);
@@ -557,9 +531,7 @@ mod tests {
 
     #[test]
     fn test_search_global_matches_both_kinds() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("global");
         insert_post("prof1", "pk1", "soshal alice", 0, 1000);
         insert_post("post1", "pk1", "soshal post", 1, 2000);
@@ -572,9 +544,7 @@ mod tests {
 
     #[test]
     fn test_search_empty_query_returns_empty() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("empty");
         insert_post("p1", "pk1", "soshal content", 1, 1000);
         assert!(
@@ -591,9 +561,7 @@ mod tests {
 
     #[test]
     fn test_search_no_match_returns_empty() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("miss");
         insert_post("p1", "pk1", "soshal content", 1, 1000);
         assert!(parse_arr(
@@ -608,9 +576,7 @@ mod tests {
 
     #[test]
     fn test_search_mentions_matches_profile() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("mentions");
         insert_post("prof1", "pk1", "alice soshal builder", 0, 1000);
         let arr = parse_arr(&search_mentions("alice".to_string(), 10).unwrap());
@@ -621,9 +587,7 @@ mod tests {
 
     #[test]
     fn test_search_hashtags_prefix_ordered() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("hashtags");
         db::db_execute_raw_test(
             "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES \
@@ -637,9 +601,7 @@ mod tests {
 
     #[test]
     fn test_hashtags_empty_falls_back_to_trending() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("trending");
         db::db_execute_raw_test(
             "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES \
@@ -655,9 +617,7 @@ mod tests {
 
     #[test]
     fn test_search_trending_profiles_order() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("trendprof");
         db::db_execute_raw_test(
             "INSERT INTO users (pubkey, npub, name, contact_pubkeys) VALUES \
@@ -674,9 +634,7 @@ mod tests {
 
     #[test]
     fn test_index_and_remove_roundtrip() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("index");
         insert_post("p1", "pk1", "seed body", 1, 1000);
         let batch = serde_json::json!([{
@@ -703,9 +661,7 @@ mod tests {
 
     #[test]
     fn test_search_multi_term_keeps_and_and_prefix() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("multi");
         insert_post("p1", "pk1", "caveman world order", 1, 1000);
         insert_post("p2", "pk1", "caveman philosophy", 1, 2000);
@@ -732,9 +688,7 @@ mod tests {
 
     #[test]
     fn test_search_query_and_hashtag_edges() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("qed");
         insert_post("p1", "pk1", "soshal content", 1, 1000);
         // Punctuation-only query: FTS sanitizer strips all terms -> empty.
@@ -778,9 +732,7 @@ mod tests {
 
     #[test]
     fn test_search_index_and_profile_edges() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("idxedge");
         // Long post content truncated to 4096 + ellipsis.
         let long = format!("needle{}", "x".repeat(5000));

@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn test_init_and_info_json() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&TEST_LOCK);
         let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_record_and_read_all() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&TEST_LOCK);
         let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_record_unknown_kind_errors() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&TEST_LOCK);
         let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn test_uninitialized_errors() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&TEST_LOCK);
         reset();
         assert!(telemetry_record(1, "x".to_string()).is_err());
         assert!(telemetry_info_json().is_err());
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_crash_seals_and_blocks_writes() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&TEST_LOCK);
         let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn test_clear_wipes_entries() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&TEST_LOCK);
         let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn test_dump_encrypted() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&TEST_LOCK);
         let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_reopen_persists_records() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&TEST_LOCK);
         let p = soshal_test_util::tmp_path("telemetry", "rec.bin");
         reset();
         init(&p);

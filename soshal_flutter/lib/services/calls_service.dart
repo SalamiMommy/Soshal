@@ -6,12 +6,14 @@ import 'dart:convert';
 import 'package:flutter/widgets.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Calls Service
 /// Relay-based WebRTC signaling (kinds 20001-20004) plus in-call state:
 /// call id, peer, media type, and an elapsed-call timer. Media transport
 /// itself is gated behind the backend; this service only moves signals.
-class CallsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
+class CallsService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   final List<CallSignal> _signals = [];
 
   String? _callId;
@@ -57,162 +59,82 @@ class CallsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     String? sdp,
     String? candidate,
     String? mediaType,
-  }) async {
-    try {
-      final eventId = await RustLib.instance.api.crateFfiCallsCallsSendSignal(
-        signalType: signalType,
-        targetPubkey: targetPubkey,
-        callId: callId,
-        sdp: sdp,
-        candidate: candidate,
-        mediaType: mediaType,
-      );
-      clearLastError();
-      notifyDeferred();
-      return eventId;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() async {
+        return await RustLib.instance.api.crateFfiCallsCallsSendSignal(
+          signalType: signalType,
+          targetPubkey: targetPubkey,
+          callId: callId,
+          sdp: sdp,
+          candidate: candidate,
+          mediaType: mediaType,
+        );
+      }, onNotify: notifyDeferred);
 
   /// Fetch call signals addressed to me (verified, p-tag filtered).
-  Future<List<CallSignal>> fetchSignals(String myPubkey) async {
-    try {
-      final json = await RustLib.instance.api
-          .crateFfiCallsCallsFetchSignals(myPubkey: myPubkey);
-      final list = jsonDecode(json) as List<dynamic>;
-      _signals
-        ..clear()
-        ..addAll(list
-            .map((e) => CallSignal.fromJson(e as Map<String, dynamic>))
-            .toList());
-      clearLastError();
-      notifyDeferred();
-      return List.unmodifiable(_signals);
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<CallSignal>> fetchSignals(String myPubkey) => guard(() async {
+        final json = await RustLib.instance.api
+            .crateFfiCallsCallsFetchSignals(myPubkey: myPubkey);
+        final list = jsonDecode(json) as List<dynamic>;
+        _signals
+          ..clear()
+          ..addAll(list
+              .map((e) => CallSignal.fromJson(e as Map<String, dynamic>))
+              .toList());
+        return List.unmodifiable(_signals);
+      }, onNotify: notifyDeferred);
 
   /// Sanitize an SDP session description for relay publication (private IPs
   /// redacted). Sync FFI.
-  String sanitizeSdp(String sdp, {bool forceRelay = false}) {
-    try {
-      final out = RustLib.instance.api.crateFfiWebrtcWebrtcSanitizeSdp(
-        sdp: sdp,
-        forceRelay: forceRelay,
-      );
-      clearLastError();
-      return out;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  String sanitizeSdp(String sdp, {bool forceRelay = false}) =>
+      guardSync(() {
+        return RustLib.instance.api.crateFfiWebrtcWebrtcSanitizeSdp(
+          sdp: sdp,
+          forceRelay: forceRelay,
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// ICE server configuration JSON for the given privacy level. Sync FFI.
-  String iceConfig(String privacyLevel) {
-    try {
-      final out = RustLib.instance.api
-          .crateFfiWebrtcWebrtcGetIceConfig(privacyLevel: privacyLevel);
-      clearLastError();
-      return out;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  String iceConfig(String privacyLevel) => guardSync(() {
+        return RustLib.instance.api
+            .crateFfiWebrtcWebrtcGetIceConfig(privacyLevel: privacyLevel);
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Default STUN servers. Sync FFI.
-  List<String> stunServers() {
-    try {
-      final out = RustLib.instance.api.crateFfiWebrtcWebrtcGetStunServers();
-      clearLastError();
-      return out;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  List<String> stunServers() => guardSync(() {
+        return RustLib.instance.api.crateFfiWebrtcWebrtcGetStunServers();
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Configured TURN servers JSON (empty list when unprovisioned). Sync FFI.
-  String turnServers({String? authToken}) {
-    try {
-      final out = RustLib.instance.api
-          .crateFfiWebrtcWebrtcGetTurnServers(authToken: authToken);
-      clearLastError();
-      return out;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  String turnServers({String? authToken}) => guardSync(() {
+        return RustLib.instance.api
+            .crateFfiWebrtcWebrtcGetTurnServers(authToken: authToken);
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Peer connection config JSON for a privacy level. Sync FFI.
-  String createPeerConfig(String privacyLevel) {
-    try {
-      final out = RustLib.instance.api
-          .crateFfiWebrtcWebrtcCreatePeerConfig(privacyLevel: privacyLevel);
-      clearLastError();
-      return out;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  String createPeerConfig(String privacyLevel) => guardSync(() {
+        return RustLib.instance.api
+            .crateFfiWebrtcWebrtcCreatePeerConfig(privacyLevel: privacyLevel);
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Extract ICE candidates from an SDP. Sync FFI.
-  List<String> extractCandidates(String sdp) {
-    try {
-      final out =
-          RustLib.instance.api.crateFfiWebrtcWebrtcExtractCandidates(sdp: sdp);
-      clearLastError();
-      return out;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  List<String> extractCandidates(String sdp) => guardSync(() {
+        return RustLib.instance.api
+            .crateFfiWebrtcWebrtcExtractCandidates(sdp: sdp);
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Append an ICE candidate line to an SDP. Sync FFI.
-  String addCandidateToSdp(String sdp, String candidate) {
-    try {
-      final out = RustLib.instance.api.crateFfiWebrtcWebrtcAddCandidateToSdp(
-        sdp: sdp,
-        candidate: candidate,
-      );
-      clearLastError();
-      return out;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  String addCandidateToSdp(String sdp, String candidate) => guardSync(() {
+        return RustLib.instance.api.crateFfiWebrtcWebrtcAddCandidateToSdp(
+          sdp: sdp,
+          candidate: candidate,
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Basic SDP validity check. Sync FFI.
-  bool validateSdp(String sdp) {
-    try {
-      final out =
-          RustLib.instance.api.crateFfiWebrtcWebrtcValidateSdp(sdp: sdp);
-      clearLastError();
-      return out;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  bool validateSdp(String sdp) => guardSync(() {
+        return RustLib.instance.api.crateFfiWebrtcWebrtcValidateSdp(sdp: sdp);
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Begin tracking an active call (starts the elapsed timer). Ticks are
   /// paused while the app is backgrounded; elapsed wall time keeps counting.

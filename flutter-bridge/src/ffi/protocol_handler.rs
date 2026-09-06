@@ -438,9 +438,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_handle_avatar_falls_back_to_identicon_on_invalid_picture_url() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("proto_avatar", "proto");
         let now = soshal_common_core::format::now_secs();
         let row = soshal_db_core::repos::user::UserRow {

@@ -4,12 +4,13 @@
 //! are deduped by payload digest and re-broadcast once at hop+1 (ceiling
 //! MAX_HOP_COUNT). Delivered payloads are queued for the app to drain.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 
 use sha2::{Digest, Sha256};
 
 use crate::backends::{BackendKind, MeshBackend};
 use crate::envelope::MeshEnvelope;
+use soshal_common_core::bounded::BoundedSet;
 
 /// Recent-event ring buffer size (re-broadcastable history).
 const RECENT_CAPACITY: usize = 10_000;
@@ -44,8 +45,7 @@ fn valid_event_payload(payload: &[u8]) -> bool {
 pub struct RelayNode {
     backends: Vec<Box<dyn MeshBackend>>,
     recent: VecDeque<MeshEnvelope>,
-    seen: HashSet<String>,
-    seen_order: VecDeque<String>,
+    seen: BoundedSet<String>,
     delivered: VecDeque<Vec<u8>>,
     published: u64,
     received: u64,
@@ -63,8 +63,7 @@ impl RelayNode {
         Self {
             backends: Vec::new(),
             recent: VecDeque::new(),
-            seen: HashSet::new(),
-            seen_order: VecDeque::new(),
+            seen: BoundedSet::new(SEEN_CAPACITY),
             delivered: VecDeque::new(),
             published: 0,
             received: 0,
@@ -290,14 +289,7 @@ impl RelayNode {
     }
 
     fn note_seen(&mut self, id: String) {
-        if self.seen.insert(id.clone()) {
-            self.seen_order.push_back(id);
-            while self.seen_order.len() > SEEN_CAPACITY {
-                if let Some(oldest) = self.seen_order.pop_front() {
-                    self.seen.remove(&oldest);
-                }
-            }
-        }
+        self.seen.insert(id);
     }
 
     /// Connects an I2P peer by destination hash on the I2P backend

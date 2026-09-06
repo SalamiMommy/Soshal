@@ -6,9 +6,7 @@ pub struct FriendBackupRepo<'a> {
 }
 
 impl<'a> FriendBackupRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn upsert(&self, b: &FriendBackupRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

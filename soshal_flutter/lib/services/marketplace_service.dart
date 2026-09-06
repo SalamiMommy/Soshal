@@ -6,11 +6,12 @@ import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Marketplace Service
 /// NIP-15 style listings, orders and escrow through the bridge.
 class MarketplaceService extends ChangeNotifier
-    with LastErrorMixin, DeferredNotify {
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   List<ListingInfo> _listings = [];
   bool _listingsLoading = false;
   ListingInfo? _current;
@@ -95,20 +96,12 @@ class MarketplaceService extends ChangeNotifier
     );
   }
 
-  Future<ListingInfo> getListing(String listingId) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiMarketplaceMarketplaceGetListing(listingId: listingId);
-      _current = ListingInfo.fromJson(jsonDecode(json));
-      clearLastError();
-      notifyDeferred();
-      return _current!;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<ListingInfo> getListing(String listingId) => guard(() {
+        final json = RustLib.instance.api
+            .crateFfiMarketplaceMarketplaceGetListing(listingId: listingId);
+        _current = ListingInfo.fromJson(jsonDecode(json));
+        return _current!;
+      }, onNotify: notifyDeferred);
 
   Future<String> createListing(
     String sellerPubkey,
@@ -120,28 +113,21 @@ class MarketplaceService extends ChangeNotifier
     String condition,
     List<String> images,
     bool shippingAvailable,
-  ) async {
-    try {
-      final eventId =
-          RustLib.instance.api.crateFfiMarketplaceMarketplaceCreateListing(
-        sellerPubkey: sellerPubkey,
-        title: title,
-        description: description,
-        price: BigInt.from(price),
-        currency: currency,
-        category: category,
-        condition: condition,
-        imagesJson: jsonEncode(images),
-        shippingAvailable: shippingAvailable,
-      );
-      clearLastError();
-      return eventId;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiMarketplaceMarketplaceCreateListing(
+          sellerPubkey: sellerPubkey,
+          title: title,
+          description: description,
+          price: BigInt.from(price),
+          currency: currency,
+          category: category,
+          condition: condition,
+          imagesJson: jsonEncode(images),
+          shippingAvailable: shippingAvailable,
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<bool> updateListing(
     String listingId,
@@ -149,63 +135,39 @@ class MarketplaceService extends ChangeNotifier
     String title,
     String description,
     int price,
-  ) async {
-    try {
-      final ok =
-          RustLib.instance.api.crateFfiMarketplaceMarketplaceUpdateListing(
-        listingId: listingId,
-        sellerPubkey: sellerPubkey,
-        title: title,
-        description: description,
-        price: BigInt.from(price),
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiMarketplaceMarketplaceUpdateListing(
+          listingId: listingId,
+          sellerPubkey: sellerPubkey,
+          title: title,
+          description: description,
+          price: BigInt.from(price),
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<bool> deleteListing(String listingId, String sellerPubkey) async {
-    try {
-      final ok =
-          RustLib.instance.api.crateFfiMarketplaceMarketplaceDeleteListing(
-        listingId: listingId,
-        sellerPubkey: sellerPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> deleteListing(String listingId, String sellerPubkey) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiMarketplaceMarketplaceDeleteListing(
+          listingId: listingId,
+          sellerPubkey: sellerPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<String> createOrder(
     String listingId,
     String buyerPubkey,
     String sellerPubkey,
-  ) async {
-    try {
-      final orderId =
-          RustLib.instance.api.crateFfiMarketplaceMarketplaceCreateOrder(
-        listingId: listingId,
-        buyerPubkey: buyerPubkey,
-        sellerPubkey: sellerPubkey,
-      );
-      clearLastError();
-      return orderId;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiMarketplaceMarketplaceCreateOrder(
+          listingId: listingId,
+          buyerPubkey: buyerPubkey,
+          sellerPubkey: sellerPubkey,
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<List<OrderInfo>> buyerOrders(String buyerPubkey) async {
     return _decodeOrders(
@@ -216,42 +178,25 @@ class MarketplaceService extends ChangeNotifier
   }
 
   /// Full order detail by id (fresh DB read, not the orders-tab cache).
-  Future<OrderInfo> getOrder(String orderId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiMarketplaceMarketplaceGetOrder(
-        orderId: orderId,
-      );
-      final order =
-          OrderInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
-      clearLastError();
-      return order;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<OrderInfo> getOrder(String orderId) => guard(() {
+        final json = RustLib.instance.api.crateFfiMarketplaceMarketplaceGetOrder(
+          orderId: orderId,
+        );
+        return OrderInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Full escrow detail by id (fresh DB read).
-  Future<EscrowInfo> getEscrow(String escrowId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiMarketplaceMarketplaceGetEscrow(
-        escrowId: escrowId,
-      );
-      final decoded = jsonDecode(json);
-      final map = decoded is List<dynamic>
-          ? (decoded.isEmpty ? null : decoded.first as Map<String, dynamic>)
-          : decoded as Map<String, dynamic>;
-      if (map == null) throw Exception('Escrow not found');
-      final escrow = EscrowInfo.fromJson(map);
-      clearLastError();
-      return escrow;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<EscrowInfo> getEscrow(String escrowId) => guard(() {
+        final json = RustLib.instance.api.crateFfiMarketplaceMarketplaceGetEscrow(
+          escrowId: escrowId,
+        );
+        final decoded = jsonDecode(json);
+        final map = decoded is List<dynamic>
+            ? (decoded.isEmpty ? null : decoded.first as Map<String, dynamic>)
+            : decoded as Map<String, dynamic>;
+        if (map == null) throw Exception('Escrow not found');
+        return EscrowInfo.fromJson(map);
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<List<OrderInfo>> sellerOrders(String sellerPubkey) async {
     return _decodeOrders(
@@ -267,130 +212,79 @@ class MarketplaceService extends ChangeNotifier
     String buyerPubkey,
     String sellerPubkey,
     int amount,
-  ) async {
-    try {
-      final escrowId =
-          RustLib.instance.api.crateFfiMarketplaceMarketplaceCreateEscrow(
-        orderId: orderId,
-        buyerPubkey: buyerPubkey,
-        sellerPubkey: sellerPubkey,
-        amount: BigInt.from(amount),
-      );
-      clearLastError();
-      return escrowId;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiMarketplaceMarketplaceCreateEscrow(
+          orderId: orderId,
+          buyerPubkey: buyerPubkey,
+          sellerPubkey: sellerPubkey,
+          amount: BigInt.from(amount),
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<bool> disputeEscrow(
-      String escrowId, String disputerPubkey, String reason) async {
-    try {
-      final ok =
-          RustLib.instance.api.crateFfiMarketplaceMarketplaceDisputeEscrow(
-        escrowId: escrowId,
-        disputerPubkey: disputerPubkey,
-        reason: reason,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+          String escrowId, String disputerPubkey, String reason) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiMarketplaceMarketplaceDisputeEscrow(
+          escrowId: escrowId,
+          disputerPubkey: disputerPubkey,
+          reason: reason,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<bool> confirmEscrowBuyer(String escrowId, String buyerPubkey) async {
-    try {
-      final ok =
-          RustLib.instance.api.crateFfiMarketplaceMarketplaceEscrowConfirmBuyer(
-        escrowId: escrowId,
-        caller: buyerPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> confirmEscrowBuyer(String escrowId, String buyerPubkey) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiMarketplaceMarketplaceEscrowConfirmBuyer(
+          escrowId: escrowId,
+          caller: buyerPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<bool> confirmEscrowSeller(String escrowId, String sellerPubkey) async {
-    try {
-      final ok = RustLib.instance.api
-          .crateFfiMarketplaceMarketplaceEscrowConfirmSeller(
-        escrowId: escrowId,
-        caller: sellerPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> confirmEscrowSeller(
+          String escrowId, String sellerPubkey) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiMarketplaceMarketplaceEscrowConfirmSeller(
+          escrowId: escrowId,
+          caller: sellerPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<bool> releaseEscrow(String escrowId, String sellerPubkey) async {
-    try {
-      final ok =
-          RustLib.instance.api.crateFfiMarketplaceMarketplaceReleaseEscrow(
-        escrowId: escrowId,
-        sellerPubkey: sellerPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> releaseEscrow(String escrowId, String sellerPubkey) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiMarketplaceMarketplaceReleaseEscrow(
+          escrowId: escrowId,
+          sellerPubkey: sellerPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<bool> resolveEscrow(
     String escrowId,
     String mediatorPubkey,
     String winnerPubkey,
-  ) async {
-    try {
-      final ok =
-          RustLib.instance.api.crateFfiMarketplaceMarketplaceResolveEscrow(
-        escrowId: escrowId,
-        mediatorPubkey: mediatorPubkey,
-        winnerPubkey: winnerPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiMarketplaceMarketplaceResolveEscrow(
+          escrowId: escrowId,
+          mediatorPubkey: mediatorPubkey,
+          winnerPubkey: winnerPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
   /// Latest escrow for a listing (null when none exists yet).
-  Future<EscrowInfo?> getEscrowByListing(String listingId) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiMarketplaceMarketplaceGetEscrowByListing(
-              listingId: listingId);
-      if (json.trim() == 'null') return null;
-      return EscrowInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<EscrowInfo?> getEscrowByListing(String listingId) =>
+      guard(() {
+        final json = RustLib.instance.api
+            .crateFfiMarketplaceMarketplaceGetEscrowByListing(
+                listingId: listingId);
+        if (json.trim() == 'null') return null;
+        return EscrowInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
+      }, onNotify: notifyDeferred,
+          clearOnSuccess: false,
+          notifyOnSuccess: false);
 
   /// Full parsed content JSON of a listing's kind-30402 post. Fields the
   /// bridge's ListingInfo mapping drops (geohash, tags, escrowEnabled, …)
@@ -602,18 +496,12 @@ class MarketplaceService extends ChangeNotifier
   }
 
   /// Escrow rows where `pubkey` participates as buyer or seller (JSON).
-  Future<List<EscrowInfo>> escrowsByParticipant(String pubkey) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiDbDbGetEscrowsByParticipant(pubkey: pubkey);
-      clearLastError();
-      return await runOffThread(() => _parseEscrows(json));
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<EscrowInfo>> escrowsByParticipant(String pubkey) =>
+      guard(() async {
+        final json = RustLib.instance.api
+            .crateFfiDbDbGetEscrowsByParticipant(pubkey: pubkey);
+        return await runOffThread(() => _parseEscrows(json));
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 }
 
 /// Marketplace listing.

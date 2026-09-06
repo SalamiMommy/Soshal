@@ -2,12 +2,28 @@ use crate::repos::limits;
 use crate::Database;
 use libsql::params;
 
+macro_rules! post_columns {
+    () => {
+        "id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id"
+    };
+}
+
+macro_rules! post_columns_no_rsvp {
+    () => {
+        "id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native"
+    };
+}
+
 const POST_UPSERT_SQL: &str = "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id, category) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18, CASE WHEN ?4 = 30402 THEN (SELECT json_extract(je.value, '$[1]') FROM json_each(CASE WHEN json_valid(?6) THEN ?6 ELSE '[]' END) je WHERE json_extract(je.value, '$[0]') = 't' LIMIT 1) ELSE NULL END) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native, rsvp_event_id=excluded.rsvp_event_id, category=excluded.category WHERE posts.is_deleted = 0";
-const POST_FEED_SQL: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE pubkey IN (SELECT value FROM json_each(?1)) AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3";
-const POST_SELECT_BY_ID: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE id = ?1";
-const POST_SELECT_BY_PUBKEY: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE pubkey = ?1 AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3";
-const POST_SELECT_REPLIES: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 ORDER BY created_at ASC LIMIT 1000";
-const POST_SELECT_PAGED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
+const POST_FEED_SQL: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE pubkey IN (SELECT value FROM json_each(?1)) AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
+const POST_SELECT_BY_ID: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE id = ?1");
+const POST_SELECT_BY_PUBKEY: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE pubkey = ?1 AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
+const POST_SELECT_REPLIES: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 ORDER BY created_at ASC LIMIT 1000");
+const POST_SELECT_PAGED: &str = concat!(
+    "SELECT ",
+    post_columns!(),
+    " FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2"
+);
 /// Slim feed variant: only the columns the feed surface consumes. Feed pages
 /// are the hottest read path; the 17-column row mapping wastes decode work
 /// on sig/mention/freenet/scheduling columns the UI never sees.
@@ -21,16 +37,14 @@ const POST_SELECT_PAGED_META_AUTHORS: &str =
     "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey IN (SELECT value FROM json_each(?3)) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_CURSOR_AUTHORS: &str =
     "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey IN (SELECT value FROM json_each(?4)) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
-const POST_SELECT_SCHEDULED: &str = "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native FROM posts WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC";
+const POST_SELECT_SCHEDULED: &str = concat!("SELECT ", post_columns_no_rsvp!(), " FROM posts WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC");
 
 pub struct PostRepo<'a> {
     db: &'a Database,
 }
 
 impl<'a> PostRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn get_by_id(&self, id: &str) -> Result<Option<PostRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
@@ -48,7 +62,11 @@ impl<'a> PostRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE id IN (SELECT value FROM json_each(?1))",
+            concat!(
+                "SELECT ",
+                post_columns!(),
+                " FROM posts WHERE id IN (SELECT value FROM json_each(?1))"
+            ),
             params![ids_json.as_str()],
             Self::map_row,
         )
@@ -64,7 +82,11 @@ impl<'a> PostRepo<'a> {
     ) -> Result<Vec<PostRow>, crate::error::DbError> {
         crate::query::query_async(
             t,
-            "SELECT id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id FROM posts WHERE kind = 9734 AND reply_to = ?1 ORDER BY created_at DESC LIMIT 8",
+            concat!(
+                "SELECT ",
+                post_columns!(),
+                " FROM posts WHERE kind = 9734 AND reply_to = ?1 ORDER BY created_at DESC LIMIT 8"
+            ),
             params![note_id],
             Self::map_row,
         )

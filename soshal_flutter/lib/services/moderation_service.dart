@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Category probabilities from the on-device AI moderation engine.
 class AiCategoryScores {
@@ -294,7 +295,7 @@ class HybridMediaResult {
 
 /// Moderation Service
 /// Mute/block lists, word filters, and on-device AI moderation engine.
-class ModerationService extends ChangeNotifier with LastErrorMixin {
+class ModerationService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   Set<String> _muted = {};
   Set<String> _blocked = {};
   List<String> _wordFilters = [];
@@ -487,78 +488,54 @@ class ModerationService extends ChangeNotifier with LastErrorMixin {
     required int threshold,
     required int totalJurors,
     required String groupPubkey,
-  }) async {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiModerationModerationCreateJuryCase(
-        caseId: caseId,
-        targetPubkey: targetPubkey,
-        reason: reason,
-        threshold: threshold,
-        totalJurors: totalJurors,
-        groupPubkey: groupPubkey,
-      );
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiModerationModerationCreateJuryCase(
+          caseId: caseId,
+          targetPubkey: targetPubkey,
+          reason: reason,
+          threshold: threshold,
+          totalJurors: totalJurors,
+          groupPubkey: groupPubkey,
+        );
+      }, notifyOnSuccess: false, notifyOnError: false);
 
   /// 2-Tier Hybrid text evaluation (Tier 1 N-Gram -> Tier 2 heuristic embeddings; real ML model on roadmap).
   Future<HybridModerationResult> hybridClassifyText(String content,
-      {bool forceDeepScan = false}) async {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiModerationModerationHybridClassifyText(
-        content: content,
-        forceDeepScan: forceDeepScan,
-      );
-      final map = jsonDecode(json) as Map<String, dynamic>;
-      clearLastError();
-      return HybridModerationResult.fromJson(map);
-    } catch (e, st) {
-      setLastError(e, st);
-      Error.throwWithStackTrace(e, st);
-    }
-  }
+          {bool forceDeepScan = false}) =>
+      guard(() {
+        final json =
+            RustLib.instance.api.crateFfiModerationModerationHybridClassifyText(
+          content: content,
+          forceDeepScan: forceDeepScan,
+        );
+        final map = jsonDecode(json) as Map<String, dynamic>;
+        return HybridModerationResult.fromJson(map);
+      }, notifyOnSuccess: false, notifyOnError: false);
 
   /// Classify text using the lightweight AI moderation engine (Spam, CSAM, Gore, Bigotry, Harassment).
-  Future<AiModerationResult> aiClassifyText(String content) async {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiModerationModerationAiClassifyText(
-        content: content,
-      );
-      final map = jsonDecode(json) as Map<String, dynamic>;
-      clearLastError();
-      return AiModerationResult.fromJson(map);
-    } catch (e, st) {
-      setLastError(e, st);
-      // Honest-err: returning clean() on failure shows Safe for unscanned
-      // content. Rethrow so UI shows scan-error instead of fake-negative.
-      Error.throwWithStackTrace(e, st);
-    }
-  }
+  Future<AiModerationResult> aiClassifyText(String content) => guard(() {
+        final json =
+            RustLib.instance.api.crateFfiModerationModerationAiClassifyText(
+          content: content,
+        );
+        final map = jsonDecode(json) as Map<String, dynamic>;
+        return AiModerationResult.fromJson(map);
+      }, notifyOnSuccess: false, notifyOnError: false);
 
   /// Classify raw media bytes with the AI media perceptual and chrominance analyzer.
   Future<AiMediaVerdict> aiClassifyMedia(
-      Uint8List imageBytes, String mimeType) async {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiModerationModerationAiClassifyMedia(
-        imageBytes: imageBytes,
-        mimeType: mimeType,
-      );
-      final map = jsonDecode(json) as Map<String, dynamic>;
-      clearLastError();
-      return AiMediaVerdict.fromJson(map);
-    } catch (e, st) {
-      setLastError(e, st);
-      Error.throwWithStackTrace(e, st);
-    }
-  }
+          Uint8List imageBytes, String mimeType) =>
+      guard(() {
+        final json =
+            RustLib.instance.api.crateFfiModerationModerationAiClassifyMedia(
+          imageBytes: imageBytes,
+          mimeType: mimeType,
+        );
+        final map = jsonDecode(json) as Map<String, dynamic>;
+        return AiMediaVerdict.fromJson(map);
+      }, notifyOnSuccess: false, notifyOnError: false);
 
   /// Compute 256-bit Meta PDQ perceptual image hash and evaluate against threat blocklist.
   Future<PdqHashResult?> computePdqHash(Uint8List imageBytes) async {

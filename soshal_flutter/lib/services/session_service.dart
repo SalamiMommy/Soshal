@@ -18,10 +18,11 @@ import 'moderation_service.dart';
 import 'notifications_service.dart';
 import 'search_service.dart';
 import 'sync_service.dart';
+import '../utils/service_guard.dart';
 
 /// Session Service
 /// Handles multi-account management, session persistence, and keychain
-class SessionService extends ChangeNotifier with LastErrorMixin {
+class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   SessionData? _session;
   String? _activePubkey;
   Future<SessionData>? _loadFuture;
@@ -135,26 +136,17 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Load session from storage
-  Future<SessionData> loadSession() async {
-    try {
-      final dbPath = await FfiBridge.getDbPath();
-      final sessionJson = RustLib.instance.api.crateFfiSessionSessionLoad(
-        dbPath: dbPath,
-      );
-      _session = SessionData.fromJson(
-        jsonDecode(sessionJson) as Map<String, dynamic>,
-      );
-      _activePubkey = _session!.activePubkey;
-
-      clearLastError();
-      notifyListeners();
-      return _session!;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<SessionData> loadSession() => guard(() async {
+        final dbPath = await FfiBridge.getDbPath();
+        final sessionJson = RustLib.instance.api.crateFfiSessionSessionLoad(
+          dbPath: dbPath,
+        );
+        _session = SessionData.fromJson(
+          jsonDecode(sessionJson) as Map<String, dynamic>,
+        );
+        _activePubkey = _session!.activePubkey;
+        return _session!;
+      });
 
   /// Save session to storage
   Future<bool> saveSession() async {
@@ -164,10 +156,11 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
       }
 
       final dbPath = await FfiBridge.getDbPath();
-      return RustLib.instance.api.crateFfiSessionSessionSave(
+      final ok = RustLib.instance.api.crateFfiSessionSessionSave(
         dbPath: dbPath,
         sessionData: jsonEncode(_session!.toJson()),
       );
+      return ok;
     } catch (e, st) {
       setLastError(e, st);
       notifyListeners();
@@ -194,7 +187,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
   /// Add account to session
   Future<void> addAccount(
       String pubkey, String npub, List<String> relays) async {
-    try {
+    await guard(() async {
       await _ensureLoaded();
 
       RustLib.instance.api.crateFfiSessionSessionAddAccount(
@@ -219,14 +212,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
         );
         _activePubkey = pubkey;
       }
-
-      clearLastError();
-      notifyListeners();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    });
   }
 
   /// Seed a base profile row so the account is indexable/searchable
@@ -261,7 +247,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
 
   /// Switch to a different account
   Future<void> switchAccount(String pubkey) async {
-    try {
+    await guard(() async {
       await _ensureLoaded();
 
       if (!_session!.accounts.any((a) => a.pubkey == pubkey)) {
@@ -297,19 +283,12 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
           ? accountRelays
           : const ['wss://relay.nostr.band', 'wss://nos.lol'];
       await _sync?.start(relays: relays);
-
-      clearLastError();
-      notifyListeners();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    });
   }
 
   /// Remove account from session (persisted via saveSession)
   Future<void> removeAccount(String pubkey) async {
-    try {
+    await guard(() async {
       await _ensureLoaded();
 
       _session!.accounts.removeWhere((a) => a.pubkey == pubkey);
@@ -342,13 +321,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
       }
 
       await saveSession();
-      clearLastError();
-      notifyListeners();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    });
   }
 
   /// Check if a session is active
@@ -358,32 +331,18 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
   List<SessionAccount> getAccounts() => _session?.accounts ?? [];
 
   /// Active account JSON straight from the Rust session file.
-  Future<Map<String, dynamic>> getActiveAccountJson() async {
-    try {
-      final json = RustLib.instance.api.crateFfiSessionSessionGetActive();
-      final decoded = jsonDecode(json);
-      clearLastError();
-      return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<Map<String, dynamic>> getActiveAccountJson() => guard(() {
+        final json = RustLib.instance.api.crateFfiSessionSessionGetActive();
+        final decoded = jsonDecode(json);
+        return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+      }, notifyOnSuccess: false);
 
   /// All accounts JSON straight from the Rust session file.
-  Future<List<dynamic>> listAccountsJson() async {
-    try {
-      final json = RustLib.instance.api.crateFfiSessionSessionListAccounts();
-      final decoded = jsonDecode(json);
-      clearLastError();
-      return decoded is List<dynamic> ? decoded : const [];
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<dynamic>> listAccountsJson() => guard(() {
+        final json = RustLib.instance.api.crateFfiSessionSessionListAccounts();
+        final decoded = jsonDecode(json);
+        return decoded is List<dynamic> ? decoded : const [];
+      }, notifyOnSuccess: false);
 
   /// Register (or clear, when empty) the push token for the active account
   /// in the Rust session file.
@@ -403,26 +362,18 @@ class SessionService extends ChangeNotifier with LastErrorMixin {
 
   /// Re-sync the in-memory session from the Rust session file (used by the
   /// Accounts screen "refresh from Rust" action).
-  Future<SessionData?> refreshFromRust() async {
-    try {
-      final active = await getActiveAccountJson();
-      final accounts = await listAccountsJson();
-      _session = SessionData(
-        activePubkey: active['pubkey'] as String?,
-        accounts: accounts
-            .map((a) => SessionAccount.fromJson(a as Map<String, dynamic>))
-            .toList(),
-      );
-      _activePubkey = _session!.activePubkey;
-      clearLastError();
-      notifyListeners();
-      return _session;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<SessionData?> refreshFromRust() => guard(() async {
+        final active = await getActiveAccountJson();
+        final accounts = await listAccountsJson();
+        _session = SessionData(
+          activePubkey: active['pubkey'] as String?,
+          accounts: accounts
+              .map((a) => SessionAccount.fromJson(a as Map<String, dynamic>))
+              .toList(),
+        );
+        _activePubkey = _session!.activePubkey;
+        return _session;
+      });
 }
 
 /// Account entry in the persisted session file (mirrors session.json v2).

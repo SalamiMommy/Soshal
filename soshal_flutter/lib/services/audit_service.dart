@@ -5,36 +5,30 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Audit Service
 /// Read-only access to the local SQLite security event log.
-class AuditService extends ChangeNotifier with LastErrorMixin {
+class AuditService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   List<AuditRow> _rows = [];
 
   List<AuditRow> get rows => _rows;
 
   /// List audit log rows, newest first. Optional actor pubkey filter.
-  Future<List<AuditRow>> list({int limit = 100, String? actor}) async {
-    try {
-      final json = RustLib.instance.api.crateFfiAuditAuditList(
-        limit: limit,
-        actorPubkey: actor,
-      );
-      final decoded = jsonDecode(json);
-      _rows = decoded is List
-          ? decoded
-              .map((e) => AuditRow.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : <AuditRow>[];
-      clearLastError();
-      notifyListeners();
-      return _rows;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<AuditRow>> list({int limit = 100, String? actor}) =>
+      guard(() {
+        final json = RustLib.instance.api.crateFfiAuditAuditList(
+          limit: limit,
+          actorPubkey: actor,
+        );
+        final decoded = jsonDecode(json);
+        _rows = decoded is List
+            ? decoded
+                .map((e) => AuditRow.fromJson(e as Map<String, dynamic>))
+                .toList()
+            : <AuditRow>[];
+        return _rows;
+      });
 }
 
 /// A single audit log entry.

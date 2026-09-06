@@ -3,7 +3,6 @@
 //! Handles key generation, mnemonic operations, and identity management.
 
 use flutter_rust_bridge::frb;
-use nostr::nips::nip19::{FromBech32, ToBech32};
 use serde::{Deserialize, Serialize};
 use soshal_identity_core::mnemonic::{generate_mnemonic, restore_from_mnemonic, validate_mnemonic};
 use soshal_nostr_core::keys::{from_nsec, generate_keys};
@@ -81,19 +80,11 @@ pub fn auth_public_key_from_nsec(mut nsec: String) -> Result<String, String> {
 /// Encode public key as npub (bech32)
 #[frb(sync, serialize)]
 pub fn auth_npub_encode(public_key: String) -> Result<String, String> {
-    use nostr::key::PublicKey;
-    PublicKey::from_hex(&public_key)
-        .map_err(super::util::to_err)
-        .and_then(|pk| pk.to_bech32().map_err(super::util::to_err))
-        .into()
+    soshal_identity_core::keys::npub_encode(&public_key).into()
 }
 
 /// Decode npub to hex public key
 #[frb(sync, serialize)]
 pub fn auth_npub_decode(npub: String) -> Result<String, String> {
-    use nostr::key::PublicKey;
-    PublicKey::from_bech32(&npub)
-        .map_err(super::util::to_err)
-        .map(|pk| pk.to_hex())
-        .into()
+    soshal_identity_core::keys::pubkey_from_npub(&npub).into()
 }

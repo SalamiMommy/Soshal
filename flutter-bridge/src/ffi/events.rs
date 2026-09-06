@@ -700,9 +700,7 @@ mod tests {
 
     #[test]
     fn test_events_missing_event_paths() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         super::super::db::tmp_db("events_missing", "evt");
         assert!(events_rsvp("nonexistent".into(), "pk".into(), "accepted".into()).is_err());
         assert!(events_check_in("nonexistent".into(), "pk".into(), 0.0, 0.0).is_err());
@@ -716,12 +714,8 @@ mod tests {
 
     #[test]
     fn test_events_full_flow() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         super::super::db::tmp_db("events_flow", "evt");
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();

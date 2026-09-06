@@ -104,9 +104,7 @@ mod tests {
 
     #[test]
     fn test_compute_stats_ok() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let path = format!(
             "{}/soshal_analytics_{}_{}.db",
             std::env::temp_dir().to_string_lossy(),

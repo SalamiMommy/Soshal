@@ -5,11 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
 import 'social_entry.dart';
+import '../utils/service_guard.dart';
 
 /// Chat Random Service
 /// Interest-based random pairing: kind-20030 availability announcements and
 /// kind-20031/20032 request/accept events over the shared relay client.
-class ChatrandomService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
+class ChatrandomService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   List<ChatrandomPeer> _peers = [];
 
   List<ChatrandomPeer> get peers => _peers;
@@ -33,21 +35,14 @@ class ChatrandomService extends ChangeNotifier with LastErrorMixin, DeferredNoti
     required String requestType,
     required List<String> peers,
     required String contentJson,
-  }) async {
-    try {
-      final id = await RustLib.instance.api.crateFfiChatrandomChatrandomSend(
-        requestType: requestType,
-        peers: peers,
-        contentJson: contentJson,
-      );
-      clearLastError();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiChatrandomChatrandomSend(
+          requestType: requestType,
+          peers: peers,
+          contentJson: contentJson,
+        );
+      }, notifyOnSuccess: false, onNotify: notifyDeferred);
 
   /// Fetch chatrandom events (kinds 20030/20031/20032). With no `author`
   /// these are events addressed to `myPubkey`; pass `author` for a peer's

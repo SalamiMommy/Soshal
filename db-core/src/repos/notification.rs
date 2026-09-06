@@ -6,9 +6,7 @@ pub struct NotificationRepo<'a> {
 }
 
 impl<'a> NotificationRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn upsert(&self, n: &NotificationRow) -> Result<(), crate::error::DbError> {
         if crate::repos::limits::notification_too_big(n.content.as_deref().unwrap_or("")) {

@@ -260,9 +260,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_set_rejects_invalid_pins() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = fresh_db();
         for bad in ["123", "1234567890123", "12a4", "", " 12 "] {
             let e = pin_set(bad.to_string()).await.unwrap_err();
@@ -272,9 +270,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_set_has_verify_roundtrip() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = fresh_db();
         assert!(!pin_has().unwrap());
         assert!(pin_set("2468".to_string()).await.unwrap());
@@ -285,9 +281,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_set_rejects_overwrite_without_pin_change() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = fresh_db();
         assert!(pin_set("1234".to_string()).await.unwrap());
         // Direct overwrite via pin_set must be rejected when a PIN already exists.
@@ -300,9 +294,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_change_requires_correct_old_pin() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = fresh_db();
         assert!(pin_set("1234".to_string()).await.unwrap());
         // Wrong old PIN → rejected
@@ -319,9 +311,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_lockout_after_three_failures() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = fresh_db();
         assert!(pin_set("1357".to_string()).await.unwrap());
         for _ in 0..3 {
@@ -345,9 +335,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_permanent_lock_after_hard_limit() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = fresh_db();
         assert!(pin_set("1357".to_string()).await.unwrap());
         for _ in 0..PIN_HARD_LIMIT {
@@ -370,9 +358,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn pin_clear_requires_current_pin() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = fresh_db();
         assert!(pin_set("97531".to_string()).await.unwrap());
         assert!(
@@ -395,9 +381,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[allow(clippy::await_holding_lock)]
     async fn pin_corrupt_storage_detected() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let p = fresh_db();
         with_repo(|r| {
             r.set("pin_hash", "garbage")

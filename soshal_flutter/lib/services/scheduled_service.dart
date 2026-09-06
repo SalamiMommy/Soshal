@@ -5,11 +5,12 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Scheduled Service
 /// Draft posts with a future scheduled_at timestamp, persisted in the
 /// posts table and broadcast later by the sync pipeline.
-class ScheduledService extends ChangeNotifier with LastErrorMixin {
+class ScheduledService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   List<ScheduledPost> _drafts = [];
 
   List<ScheduledPost> get drafts => _drafts;
@@ -21,55 +22,32 @@ class ScheduledService extends ChangeNotifier with LastErrorMixin {
     required String content,
     required int scheduledAt,
     List<String> hashtags = const [],
-  }) async {
-    try {
-      final id = RustLib.instance.api.crateFfiScheduledScheduledCreate(
-        pubkey: pubkey,
-        content: content,
-        scheduledAt: scheduledAt,
-        hashtags: hashtags,
-      );
-      clearLastError();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiScheduledScheduledCreate(
+          pubkey: pubkey,
+          content: content,
+          scheduledAt: scheduledAt,
+          hashtags: hashtags,
+        );
+      }, notifyOnSuccess: false);
 
   /// List scheduled drafts for a pubkey, soonest first.
-  Future<List<ScheduledPost>> list(String pubkey) async {
-    try {
-      final json = RustLib.instance.api.crateFfiScheduledScheduledList(
-        pubkey: pubkey,
-      );
-      final decoded = jsonDecode(json);
-      _drafts = (decoded as List<dynamic>)
-          .map((e) => ScheduledPost.fromJson(e as Map<String, dynamic>))
-          .toList();
-      clearLastError();
-      notifyListeners();
-      return _drafts;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<ScheduledPost>> list(String pubkey) => guard(() {
+        final json = RustLib.instance.api.crateFfiScheduledScheduledList(
+          pubkey: pubkey,
+        );
+        final decoded = jsonDecode(json);
+        _drafts = (decoded as List<dynamic>)
+            .map((e) => ScheduledPost.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return _drafts;
+      });
 
   /// Delete a scheduled draft (soft delete).
-  Future<bool> delete(String id) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiScheduledScheduledDelete(id: id);
-      clearLastError();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<bool> delete(String id) => guard(() {
+        return RustLib.instance.api.crateFfiScheduledScheduledDelete(id: id);
+      }, notifyOnSuccess: false);
 }
 
 /// A scheduled post draft row from the posts table.

@@ -19,9 +19,7 @@ pub struct PostViewsRepo<'a> {
 }
 
 impl<'a> PostViewsRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     /// Records `post_id` as seen by `pubkey` at the current unix time.
     /// Re-seeing a post is a no-op (INSERT OR IGNORE).

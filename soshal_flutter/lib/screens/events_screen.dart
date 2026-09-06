@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -12,13 +11,15 @@ import '../services/media_service.dart';
 import '../services/permissions_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../utils/media_upload.dart';
 import '../utils/safe_url.dart';
 import '../widgets/empty_state.dart';
 
 enum _AudienceMode { all, friends, fof, mine }
 
-/// Event photo: blob:// hashes resolve via the chunk store; http(s) load
-/// directly. Falls back to an icon when missing or unresolvable.
+/// Event photo: blob refs (`n<hash>`, `blob://<hash>`, bare hex) resolve via
+/// the chunk store; http(s) load directly. Falls back to an icon when missing
+/// or unresolvable.
 class _EventImage extends StatelessWidget {
   const _EventImage({required this.url, this.height, this.iconSize = 24});
 
@@ -32,8 +33,8 @@ class _EventImage extends StatelessWidget {
     if (trimmed.isEmpty) {
       return Icon(Icons.event, size: iconSize);
     }
-    if (trimmed.startsWith('blob://')) {
-      final hash = trimmed.substring('blob://'.length);
+    final hash = mediaBlobHash(trimmed);
+    if (hash != null) {
       return FutureBuilder<String>(
         future: context.read<MediaService>().fetchBlob(hash),
         builder: (context, snap) {
@@ -84,20 +85,6 @@ class _EventsScreenState extends State<EventsScreen> {
     'Thursday',
     'Friday',
     'Saturday',
-  ];
-  static const _monthShort = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
   ];
   static const _monthNames = [
     'January',
@@ -643,17 +630,17 @@ class _EventsScreenState extends State<EventsScreen> {
   String _timeRange(SoshalEvent e) {
     if (e.startTime <= 0) return 'Unscheduled';
     final s = DateTime.fromMillisecondsSinceEpoch(e.startTime * 1000).toLocal();
-    final line = '${_monthShort[s.month - 1]} ${s.day} · ${formatClock12h(s)}';
+    final line = formatMonthDayTime(s);
     if (e.endTime <= 0) return line;
     final en = DateTime.fromMillisecondsSinceEpoch(e.endTime * 1000).toLocal();
     final endClock = en.day == s.day
         ? formatClock12h(en)
-        : '${_monthShort[en.month - 1]} ${en.day} · ${formatClock12h(en)}';
+        : formatMonthDayTime(en);
     return '$line – $endClock';
   }
 
   String _fmtFullDate(DateTime d) =>
-      '${_weekdaysFull[d.weekday % 7]}, ${_monthShort[d.month - 1]} '
+      '${_weekdaysFull[d.weekday % 7]}, ${kMonthShort[d.month - 1]} '
       '${d.day}, ${d.year}';
 }
 
@@ -710,25 +697,7 @@ class _CreateEventDialogState extends State<_CreateEventDialog> {
     super.dispose();
   }
 
-  static const _monthShort = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-
-  String _fmt(DateTime t) {
-    final s = t;
-    return '${_monthShort[s.month - 1]} ${s.day} · ${formatClock12h(s)}';
-  }
+  String _fmt(DateTime t) => formatMonthDayTime(t);
 
   Future<void> _pickDate({required bool isStart}) async {
     final base = isStart ? _start : _end;
@@ -758,17 +727,14 @@ class _CreateEventDialogState extends State<_CreateEventDialog> {
 
   Future<void> _pickPhoto() async {
     try {
-      final picked = await FilePicker.pickFile(type: FileType.image);
-      final path = picked?.path;
-      if (path == null || !mounted) return;
-      final manifest = await context.read<MediaService>().uploadMedia(path);
-      final hash = manifest['blob_hash'] as String? ?? '';
-      if (hash.length != 64) {
-        throw Exception('Bad upload manifest');
-      }
+      final blob = await pickAndUploadMedia(
+        (p) => context.read<MediaService>().uploadMedia(p),
+        errorMessage: 'Bad upload manifest',
+      );
+      if (blob == null || !mounted) return;
       setState(() {
-        _pickedPath = path;
-        _imageUrl = 'blob://$hash';
+        _pickedPath = blob.path;
+        _imageUrl = blob.uri;
       });
     } catch (e) {
       if (mounted) {
@@ -883,20 +849,6 @@ class EventDetailScreen extends StatefulWidget {
 }
 
 class _EventDetailScreenState extends State<EventDetailScreen> {
-  static const _monthShort = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
   bool _loading = true;
   String? _attendees;
   List<EventReminder> _eventReminders = [];
@@ -1025,10 +977,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     return '$m min';
   }
 
-  String _fireTime(EventReminder r) {
-    final d = r.fireAt;
-    return '${_monthShort[d.month - 1]} ${d.day} · ${formatClock12h(d)}';
-  }
+  String _fireTime(EventReminder r) => formatMonthDayTime(r.fireAt);
 
   void _showAttendees() {
     showDialog<void>(

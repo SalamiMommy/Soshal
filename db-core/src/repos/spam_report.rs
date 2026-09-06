@@ -6,9 +6,7 @@ pub struct SpamReportRepo<'a> {
 }
 
 impl<'a> SpamReportRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn insert(&self, r: &SpamReportRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

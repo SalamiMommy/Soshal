@@ -4,6 +4,7 @@
 //! Depends on nothing in the workspace. `content-core` re-exports these
 //! modules so existing `soshal_content_core::*` call sites keep working.
 
+pub mod bounded;
 pub mod consts;
 pub mod format;
 pub mod json_util;

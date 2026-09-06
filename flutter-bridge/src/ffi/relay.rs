@@ -27,7 +27,7 @@ static MESH_INGEST_ALIVE: AtomicBool = AtomicBool::new(false);
 static MESH_INGEST_GEN: AtomicU64 = AtomicU64::new(0);
 
 fn node_guard() -> std::sync::MutexGuard<'static, Option<RelayNode>> {
-    NODE.lock().unwrap_or_else(|e| e.into_inner())
+    crate::ffi::util::lock(&NODE)
 }
 
 /// Whether the mesh relay node is running.
@@ -203,7 +203,7 @@ fn spawn_ingest(db_path: String, my_pubkey: String) {
                         let Ok(event) = Event::from_json(&payload) else {
                             continue;
                         };
-                        if event.verify().is_err() {
+                        if !soshal_nostr_core::models::verify_event(&event) {
                             continue;
                         }
                         let _ = soshal_sync_core::ingest::handle(&db, &my_pubkey, &event, &tx);

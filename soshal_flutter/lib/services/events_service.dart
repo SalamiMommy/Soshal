@@ -6,10 +6,12 @@ import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Events Service
 /// Nearby/user events, create, RSVP and check-in.
-class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
+class EventsService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   List<SoshalEvent> _events = [];
   SoshalEvent? _detail;
   List<String> _attendees = [];
@@ -54,19 +56,11 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   }
 
   /// Encodes lat/lng into a geohash string (sync FFI; spatial-core).
-  String encodeGeohash({required double lat, required double lon}) {
-    try {
-      final geohash = RustLib.instance.api
-          .crateFfiSpatialSpatialEncodeGeohash(lat: lat, lon: lon);
-      clearLastError();
-      notifyDeferred();
-      return geohash;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  String encodeGeohash({required double lat, required double lon}) =>
+      guardSync(() {
+        return RustLib.instance.api
+            .crateFfiSpatialSpatialEncodeGeohash(lat: lat, lon: lon);
+      }, onNotify: notifyDeferred);
 
   Future<List<SoshalEvent>> fetchUserEvents(String userPubkey,
       {int limit = 50}) async {
@@ -78,21 +72,13 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     );
   }
 
-  Future<SoshalEvent> getEvent(String eventId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiEventsEventsGetEvent(
-        eventId: eventId,
-      );
-      _detail = SoshalEvent.fromJson(jsonDecode(json));
-      clearLastError();
-      notifyDeferred();
-      return _detail!;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<SoshalEvent> getEvent(String eventId) => guard(() {
+        final json = RustLib.instance.api.crateFfiEventsEventsGetEvent(
+          eventId: eventId,
+        );
+        _detail = SoshalEvent.fromJson(jsonDecode(json));
+        return _detail!;
+      }, onNotify: notifyDeferred);
 
   Future<String> create(
     String creatorPubkey,
@@ -104,94 +90,56 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     int startTime,
     int endTime,
     String imageUrl,
-  ) async {
-    try {
-      final eventId = RustLib.instance.api.crateFfiEventsEventsCreate(
-        creatorPubkey: creatorPubkey,
-        title: title,
-        description: description,
-        location: location,
-        latitude: latitude,
-        longitude: longitude,
-        startTime: BigInt.from(startTime),
-        endTime: BigInt.from(endTime),
-        imageUrl: imageUrl,
-      );
-      clearLastError();
-      return eventId;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        final eventId = RustLib.instance.api.crateFfiEventsEventsCreate(
+          creatorPubkey: creatorPubkey,
+          title: title,
+          description: description,
+          location: location,
+          latitude: latitude,
+          longitude: longitude,
+          startTime: BigInt.from(startTime),
+          endTime: BigInt.from(endTime),
+          imageUrl: imageUrl,
+        );
+        return eventId;
+      }, notifyOnSuccess: false, onNotify: notifyDeferred);
 
-  Future<bool> rsvp(String eventId, String userPubkey, String status) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiEventsEventsRsvp(
-        eventId: eventId,
-        userPubkey: userPubkey,
-        rsvpStatus: status,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> rsvp(String eventId, String userPubkey, String status) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiEventsEventsRsvp(
+          eventId: eventId,
+          userPubkey: userPubkey,
+          rsvpStatus: status,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<bool> checkIn(String eventId, String userPubkey, double latitude,
-      double longitude) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiEventsEventsCheckIn(
-        eventId: eventId,
-        userPubkey: userPubkey,
-        latitude: latitude,
-        longitude: longitude,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+          double longitude) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiEventsEventsCheckIn(
+          eventId: eventId,
+          userPubkey: userPubkey,
+          latitude: latitude,
+          longitude: longitude,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<List<String>> getAttendees(String eventId) async {
-    try {
-      _attendees = RustLib.instance.api.crateFfiEventsEventsGetAttendees(
-        eventId: eventId,
-      );
-      clearLastError();
-      notifyDeferred();
-      return _attendees;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<String>> getAttendees(String eventId) => guard(() {
+        _attendees = RustLib.instance.api.crateFfiEventsEventsGetAttendees(
+          eventId: eventId,
+        );
+        return _attendees;
+      }, onNotify: notifyDeferred);
 
-  Future<List<EventReminder>> fetchReminders() async {
-    try {
-      final json = RustLib.instance.api.crateFfiEventsEventsRemindersList();
-      _reminders = (jsonDecode(json) as List<dynamic>)
-          .map((e) => EventReminder.fromJson(e as Map<String, dynamic>))
-          .toList();
-      clearLastError();
-      notifyDeferred();
-      return _reminders;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<EventReminder>> fetchReminders() => guard(() {
+        final json = RustLib.instance.api.crateFfiEventsEventsRemindersList();
+        _reminders = (jsonDecode(json) as List<dynamic>)
+            .map((e) => EventReminder.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return _reminders;
+      }, onNotify: notifyDeferred);
 
   Future<String> upsertReminder({
     required String reminderId,
@@ -199,51 +147,34 @@ class EventsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     required String title,
     required int startTime,
     required int minutesBefore,
-  }) async {
-    try {
-      final id = RustLib.instance.api.crateFfiEventsEventsReminderUpsert(
-        reminderId: reminderId,
-        eventId: eventId,
-        title: title,
-        startTime: startTime,
-        minutesBefore: minutesBefore,
-      );
-      await fetchReminders();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() async {
+        final id = RustLib.instance.api.crateFfiEventsEventsReminderUpsert(
+          reminderId: reminderId,
+          eventId: eventId,
+          title: title,
+          startTime: startTime,
+          minutesBefore: minutesBefore,
+        );
+        await fetchReminders();
+        return id;
+      }, clearOnSuccess: false, notifyOnSuccess: false, onNotify: notifyDeferred);
 
-  Future<bool> deleteReminder(String reminderId) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiEventsEventsReminderDelete(
-        reminderId: reminderId,
-      );
-      await fetchReminders();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> deleteReminder(String reminderId) => guard(() async {
+        final ok = RustLib.instance.api.crateFfiEventsEventsReminderDelete(
+          reminderId: reminderId,
+        );
+        await fetchReminders();
+        return ok;
+      }, clearOnSuccess: false, notifyOnSuccess: false, onNotify: notifyDeferred);
 
   Future<List<SoshalEvent>> _decode(String Function() call) async {
-    try {
+    return guard(() async {
       final json = call();
       final parsed = await runOffThread(() => _parseEvents(json));
       _events = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
-      clearLastError();
-      notifyDeferred();
       return _events;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
+    }, onNotify: notifyDeferred);
   }
 
   /// Score loaded events against my interests via their hashtags.

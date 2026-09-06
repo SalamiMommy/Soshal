@@ -1,4 +1,3 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +5,7 @@ import '../services/groups_service.dart';
 import '../services/media_service.dart';
 import '../services/session_service.dart';
 import '../services/settings_service.dart';
+import '../utils/media_upload.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/group_sidebar.dart';
 import '../widgets/group_tabs.dart';
@@ -356,17 +356,12 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
             OutlinedButton.icon(
               onPressed: () async {
                 try {
-                  final picked =
-                      await FilePicker.pickFile(type: FileType.image);
-                  final path = picked?.path;
-                  if (path == null || !context.mounted) return;
-                  final manifest =
-                      await context.read<MediaService>().uploadMedia(path);
-                  final hash = manifest['blob_hash'] as String? ?? '';
-                  if (hash.length != 64) {
-                    throw Exception('Bad upload manifest');
-                  }
-                  setState(() => _pic.text = 'n$hash');
+                  final blob = await pickAndUploadMedia(
+                    (p) => context.read<MediaService>().uploadMedia(p),
+                    errorMessage: 'Bad upload manifest',
+                  );
+                  if (blob == null || !context.mounted) return;
+                  setState(() => _pic.text = blob.uri);
                 } catch (e) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(

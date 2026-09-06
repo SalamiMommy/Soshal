@@ -8,11 +8,12 @@ import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
 import 'moderation_service.dart';
+import '../utils/service_guard.dart';
 
 /// Messaging Service
 /// Handles direct messages (NIP-44), group chats, and decryption
 class MessagingService extends ChangeNotifier
-    with LastErrorMixin, DeferredNotify {
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   static final _hexRegex = RegExp(r'^[0-9a-f]{64}$');
   final Map<String, List<DirectMessage>> _conversations = {};
   final Map<String, DateTime> _conversationsCacheTime = {};
@@ -266,72 +267,53 @@ class MessagingService extends ChangeNotifier
     required String content,
     required List<String> participantPubkeys,
     String senderPubkey = '',
-  }) async {
-    try {
-      final sorted = [...participantPubkeys]..sort();
-      final eventId =
-          RustLib.instance.api.crateFfiMessagingMessagingSendGroupDm(
-        content: content,
-        groupId: sorted.join(','),
-        participantPubkeysJson: jsonEncode(sorted),
-      );
+  }) =>
+      guard(() {
+        final sorted = [...participantPubkeys]..sort();
+        final eventId =
+            RustLib.instance.api.crateFfiMessagingMessagingSendGroupDm(
+          content: content,
+          groupId: sorted.join(','),
+          participantPubkeysJson: jsonEncode(sorted),
+        );
 
-      // Cache sent message locally, keyed by groupId.
-      final groupId = sorted.join(',');
-      final message = DirectMessage(
-        id: eventId,
-        sender: senderPubkey,
-        recipient: groupId,
-        content: content,
-        createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-        decrypted: true,
-        isOwn: true,
-      );
-      _conversations.putIfAbsent(groupId, () => []).add(message);
+        // Cache sent message locally, keyed by groupId.
+        final groupId = sorted.join(',');
+        final message = DirectMessage(
+          id: eventId,
+          sender: senderPubkey,
+          recipient: groupId,
+          content: content,
+          createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          decrypted: true,
+          isOwn: true,
+        );
+        _conversations.putIfAbsent(groupId, () => []).add(message);
 
-      clearLastError();
-      notifyDeferred();
-      return eventId;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+        return eventId;
+      }, onNotify: notifyDeferred);
 
   /// Decrypt a direct message
   Future<String> decryptDM(
     String encryptedContent,
     String senderPubkey,
     String recipientSk,
-  ) async {
-    try {
-      return RustLib.instance.api.crateFfiSignerSignerNip44Decrypt(
-        payload: encryptedContent,
-        senderPubkey: senderPubkey,
-      );
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiSignerSignerNip44Decrypt(
+          payload: encryptedContent,
+          senderPubkey: senderPubkey,
+        );
+      }, onNotify: notifyDeferred, clearOnSuccess: false);
 
   /// Fetch all conversation partner pubkeys for the active account.
-  Future<List<String>> fetchConversations(String pubkey) async {
-    try {
-      final list =
-          RustLib.instance.api.crateFfiMessagingMessagingFetchConversations(
-        pubkey: pubkey,
-      );
-      clearLastError();
-      return list;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<String>> fetchConversations(String pubkey) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiMessagingMessagingFetchConversations(
+          pubkey: pubkey,
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Replace a message's content in the local conversation cache. After a
   /// decrypt, the plaintext is also persisted to the DM store.
@@ -377,21 +359,14 @@ class MessagingService extends ChangeNotifier
 
   /// Fetch a single ephemeral (burn DM) row by id, fresh from the store.
   /// Returns null when the row no longer exists.
-  Future<EphemeralMedia?> ephemeralById(String id) async {
-    try {
-      final json = RustLib.instance.api.crateFfiEphemeralEphemeralGet(id: id);
-      if (json.isEmpty) return null;
-      final media = EphemeralMedia.fromJson(
-        jsonDecode(json) as Map<String, dynamic>,
-      );
-      clearLastError();
-      return media;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<EphemeralMedia?> ephemeralById(String id) => guard(() {
+        final json =
+            RustLib.instance.api.crateFfiEphemeralEphemeralGet(id: id);
+        if (json.isEmpty) return null;
+        return EphemeralMedia.fromJson(
+          jsonDecode(json) as Map<String, dynamic>,
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Mark conversation as read
   Future<void> markAsRead(String otherPubkey) async {
@@ -412,49 +387,35 @@ class MessagingService extends ChangeNotifier
     required String recipientPubkey,
     required int maxViews,
     int expiresAt = 0,
-  }) async {
-    try {
-      final id = RustLib.instance.api.crateFfiEphemeralEphemeralSave(
-        messageId: messageId,
-        conversationId: conversationId,
-        conversationType: conversationType,
-        mediaUrl: mediaUrl,
-        mediaType: mediaType,
-        senderPubkey: senderPubkey,
-        recipientPubkey: recipientPubkey,
-        maxViews: maxViews,
-        expiresAt: expiresAt,
-      );
-      clearLastError();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiEphemeralEphemeralSave(
+          messageId: messageId,
+          conversationId: conversationId,
+          conversationType: conversationType,
+          mediaUrl: mediaUrl,
+          mediaType: mediaType,
+          senderPubkey: senderPubkey,
+          recipientPubkey: recipientPubkey,
+          maxViews: maxViews,
+          expiresAt: expiresAt,
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   /// Fetch pending disappearing media addressed to [pubkey] (the active
   /// account). Sync FFI returning a JSON array.
-  Future<List<EphemeralMedia>> fetchPendingEphemeral(String pubkey) async {
-    try {
-      final json = RustLib.instance.api
-          .crateFfiEphemeralEphemeralListPending(pubkey: pubkey);
-      final list = jsonDecode(json) as List<dynamic>;
-      _pendingEphemeral
-        ..clear()
-        ..addAll(list
-            .map((e) => EphemeralMedia.fromJson(e as Map<String, dynamic>)));
-      _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
-      clearLastError();
-      notifyDeferred();
-      return pendingEphemeral;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<EphemeralMedia>> fetchPendingEphemeral(String pubkey) =>
+      guard(() {
+        final json = RustLib.instance.api
+            .crateFfiEphemeralEphemeralListPending(pubkey: pubkey);
+        final list = jsonDecode(json) as List<dynamic>;
+        _pendingEphemeral
+          ..clear()
+          ..addAll(list
+              .map((e) => EphemeralMedia.fromJson(e as Map<String, dynamic>)));
+        _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
+        return pendingEphemeral;
+      }, onNotify: notifyDeferred);
 
   /// Consume one view of a burn DM (increments view count; row expires at
   /// max_views). Returns the fresh row.
@@ -478,20 +439,13 @@ class MessagingService extends ChangeNotifier
   }
 
   /// Delete a burn DM row (also removes it from the pending list).
-  Future<bool> deleteEphemeral(String id) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiEphemeralEphemeralDelete(id: id);
-      _pendingEphemeral.removeWhere((m) => m.id == id);
-      _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> deleteEphemeral(String id) => guard(() {
+        final ok =
+            RustLib.instance.api.crateFfiEphemeralEphemeralDelete(id: id);
+        _pendingEphemeral.removeWhere((m) => m.id == id);
+        _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
+        return ok;
+      }, onNotify: notifyDeferred);
 }
 
 /// Identity Service

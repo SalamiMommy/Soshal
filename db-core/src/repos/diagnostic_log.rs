@@ -6,9 +6,7 @@ pub struct DiagnosticLogRepo<'a> {
 }
 
 impl<'a> DiagnosticLogRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn insert(&self, l: &DiagnosticLogRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

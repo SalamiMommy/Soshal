@@ -6,9 +6,7 @@ pub struct ProfileNodeRepo<'a> {
 }
 
 impl<'a> ProfileNodeRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn upsert(&self, n: &ProfileNodeRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

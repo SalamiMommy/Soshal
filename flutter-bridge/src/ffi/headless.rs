@@ -73,7 +73,7 @@ pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
 
     let relays_key = relays.join(",");
     let (stale, cached_client) = {
-        let guard = HEADLESS_CTX.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = crate::ffi::util::lock(&HEADLESS_CTX);
         match guard.as_ref() {
             Some(ctx) if ctx.relays_key == relays_key => (false, Some(ctx.client.clone())),
             _ => (true, None),
@@ -89,7 +89,7 @@ pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
         let client = build_client(&cfg)
             .await
             .map_err(|e| format!("Failed to build relay client: {e}"))?;
-        let mut guard = HEADLESS_CTX.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = crate::ffi::util::lock(&HEADLESS_CTX);
         *guard = Some(HeadlessCtx {
             relays_key,
             client: client.clone(),

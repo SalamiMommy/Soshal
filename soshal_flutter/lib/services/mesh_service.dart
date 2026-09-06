@@ -4,12 +4,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Mesh Service
 /// Reticulum P2P mesh networking: transport, interfaces, addressing,
 /// announce, and status. Wraps the 9 `reticulum_*` bridge fns; the pubkey
 /// is resolved lazily per call from the active session account.
-class MeshService extends ChangeNotifier with LastErrorMixin {
+class MeshService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   MeshService({String? Function()? pubkey}) : _pubkeyResolver = pubkey;
 
   /// Resolves the active account pubkey at call time (SessionService).
@@ -105,70 +106,38 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
   Future<bool> sendPacket({
     required String destAddr,
     required String packetJson,
-  }) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiNetworkReticulumSendPacket(
-        pubkey: _requirePubkey(),
-        destAddr: destAddr,
-        packetJson: packetJson,
-      );
-      clearLastError();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiNetworkReticulumSendPacket(
+          pubkey: _requirePubkey(),
+          destAddr: destAddr,
+          packetJson: packetJson,
+        );
+      }, notifyOnSuccess: false);
 
   /// Creates a Reticulum link request to a remote destination (hex).
-  Future<String?> requestLink(String destHex) async {
-    try {
-      final json = RustLib.instance.api.crateFfiNetworkReticulumRequestLink(
-        pubkey: _requirePubkey(),
-        destHex: destHex,
-      );
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<String?> requestLink(String destHex) => guard(() {
+        return RustLib.instance.api.crateFfiNetworkReticulumRequestLink(
+          pubkey: _requirePubkey(),
+          destHex: destHex,
+        );
+      }, notifyOnSuccess: false);
 
   /// Creates a Reticulum address from the active account public key.
-  Future<String?> addressFromPubkey() async {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiNetworkReticulumAddressFromPubkey(
-        pubkey: _requirePubkey(),
-      );
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<String?> addressFromPubkey() => guard(() {
+        return RustLib.instance.api.crateFfiNetworkReticulumAddressFromPubkey(
+          pubkey: _requirePubkey(),
+        );
+      }, notifyOnSuccess: false);
 
   /// Creates a Reticulum address from an app name and aspect.
-  Future<String?> addressFromAspect(String appName, String aspect) async {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiNetworkReticulumAddressFromAspect(
-        appName: appName,
-        aspect: aspect,
-      );
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<String?> addressFromAspect(String appName, String aspect) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiNetworkReticulumAddressFromAspect(
+          appName: appName,
+          aspect: aspect,
+        );
+      }, notifyOnSuccess: false);
 
   /// Broadcasts an ANNOUNCE packet for identity discovery.
   Future<void> announce([String? aspect]) async {
@@ -204,32 +173,19 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Prunes stale Reticulum links; returns the count removed.
-  Future<int> pruneStaleLinks() async {
-    try {
-      final n =
-          RustLib.instance.api.crateFfiNetworkNetworkReticulumPruneStaleLinks();
-      clearLastError();
-      return n.toInt();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<int> pruneStaleLinks() => guard(() {
+        return RustLib.instance.api
+            .crateFfiNetworkNetworkReticulumPruneStaleLinks()
+            .toInt();
+      }, notifyOnSuccess: false);
 
   /// Drops expired Reticulum path entries; returns the count removed.
-  Future<int> pruneRoutes(int nowSecs) async {
-    try {
-      final n = RustLib.instance.api.crateFfiNetworkNetworkReticulumPruneRoutes(
-          nowSecs: BigInt.from(nowSecs));
-      clearLastError();
-      return n.toInt();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<int> pruneRoutes(int nowSecs) => guard(() {
+        return RustLib.instance.api
+            .crateFfiNetworkNetworkReticulumPruneRoutes(
+                nowSecs: BigInt.from(nowSecs))
+            .toInt();
+      }, notifyOnSuccess: false);
 
   /// Proof-of-work node id (hex) for a pubkey, or null when the static
   /// nonce misses the difficulty target.
@@ -237,22 +193,15 @@ class MeshService extends ChangeNotifier with LastErrorMixin {
     required String pubkey,
     required int staticNonce,
     required int dynamicNonce,
-  }) async {
-    try {
-      final id =
-          RustLib.instance.api.crateFfiNetworkNetworkSkademliaGenerateNodeId(
-        pubkey: pubkey,
-        staticNonce: BigInt.from(staticNonce),
-        dynamicNonce: BigInt.from(dynamicNonce),
-      );
-      clearLastError();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiNetworkNetworkSkademliaGenerateNodeId(
+          pubkey: pubkey,
+          staticNonce: BigInt.from(staticNonce),
+          dynamicNonce: BigInt.from(dynamicNonce),
+        );
+      }, notifyOnSuccess: false);
 
   /// Shared parser for the status JSON returned by the `reticulum_*`
   /// wrappers: `{running, destination_hash, active_routes, rx_packets,

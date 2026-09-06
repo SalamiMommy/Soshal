@@ -79,10 +79,7 @@ static NWC_URI_STATE: Mutex<Option<ZeroizingString>> = Mutex::new(None);
 static PENDING_PAYMENT: Mutex<Option<(String, u64)>> = Mutex::new(None);
 
 fn pending_payment() -> Option<(String, u64)> {
-    PENDING_PAYMENT
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
+    crate::ffi::util::lock(&PENDING_PAYMENT).clone()
 }
 
 fn clear_pending_payment() {
@@ -118,7 +115,7 @@ pub const NWC_URI: &str = "nostr+walletconnect://abcdef0123456789abcdef012345678
 /// Returns a `Zeroizing<String>` so the secret bytes are zeroed as soon as the
 /// caller drops the value — no intermediate plain `String` clone lingers on the heap.
 fn nwc_uri() -> Result<ZeroizingString, String> {
-    let guard = NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&NWC_URI_STATE);
     match guard.as_ref() {
         Some(z) => Ok(ZeroizingString::new(z.as_str().to_owned())),
         None => Err("NWC not connected".to_string()),
@@ -155,16 +152,16 @@ pub fn zap_connect_nwc(nwc_uri: String) -> Result<bool, String> {
     let info = soshal_zap_core::nwc::parse_nwc_uri(&nwc_uri)
         .map_err(|e| format!("invalid NWC URI: {e}"))?;
     clear_pending_payment();
-    *NWC.lock().unwrap_or_else(|e| e.into_inner()) = Some(info.into());
-    *NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(ZeroizingString::new(nwc_uri));
+    *crate::ffi::util::lock(&NWC) = Some(info.into());
+    *crate::ffi::util::lock(&NWC_URI_STATE) = Some(ZeroizingString::new(nwc_uri));
     Ok(true).into()
 }
 
 /// Disconnect from NWC.
 #[frb(serialize)]
 pub fn zap_disconnect_nwc() -> Result<bool, String> {
-    *NWC.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *NWC_URI_STATE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::ffi::util::lock(&NWC) = None;
+    *crate::ffi::util::lock(&NWC_URI_STATE) = None;
     clear_pending_payment();
     Ok(true).into()
 }
@@ -172,7 +169,7 @@ pub fn zap_disconnect_nwc() -> Result<bool, String> {
 /// Get NWC connection status (never includes the secret).
 #[frb(serialize)]
 pub fn zap_get_nwc_status() -> Result<String, String> {
-    let guard = NWC.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&NWC);
     match guard.as_ref() {
         Some(info) => Ok(serde_json::json!({
             "wallet_pubkey": info.wallet_pubkey,
@@ -188,7 +185,7 @@ pub fn zap_get_nwc_status() -> Result<String, String> {
 /// Get connected NWC pubkey (for display), or error if disconnected.
 #[frb(serialize)]
 pub fn zap_get_nwc_pubkey() -> Result<String, String> {
-    let guard = NWC.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&NWC);
     match guard.as_ref() {
         Some(info) if !info.wallet_pubkey.is_empty() => Ok(info.wallet_pubkey.clone()).into(),
         _ => Err("NWC disconnected".to_string()).into(),
@@ -410,7 +407,7 @@ mod tests {
 
     #[test]
     fn test_connect_nwc_roundtrip_status_and_pubkey() {
-        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&NWC_TEST_LOCK);
         let _ = zap_disconnect_nwc();
         assert!(zap_connect_nwc(NWC_URI.to_string()).unwrap());
         let status = zap_get_nwc_status().unwrap();
@@ -428,7 +425,7 @@ mod tests {
 
     #[test]
     fn test_disconnect_nwc_when_not_connected() {
-        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&NWC_TEST_LOCK);
         let _ = zap_disconnect_nwc();
         assert!(zap_disconnect_nwc().unwrap());
         assert!(zap_get_nwc_pubkey().is_err());
@@ -437,7 +434,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_fetch_invoice_validation_before_connect() {
-        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&NWC_TEST_LOCK);
         let _ = zap_disconnect_nwc();
         let bad_lnurl = zap_fetch_invoice(
             "not-an-address".to_string(),
@@ -471,7 +468,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_send_payment_fails_when_disconnected() {
-        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&NWC_TEST_LOCK);
         let _ = zap_disconnect_nwc();
         // No invoice fetched → pending binding absent → rejected before NWC.
         let r = zap_send_payment("lnbc1fake".to_string()).await;
@@ -481,9 +478,7 @@ mod tests {
 
     #[test]
     fn test_fetch_totals_batch_db() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = db::tmp_db("totals", "zap");
         db::db_execute_raw_test(
             "INSERT INTO zaps (id, event_id, recipient_pubkey, amount, amount_msat, created_at, zap_type) \
@@ -515,9 +510,7 @@ mod tests {
 
     #[test]
     fn test_get_total_msat_seeded_and_empty() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = db::tmp_db("total-msat", "zap");
         db::db_execute_raw_test(
             "INSERT INTO zaps (id, event_id, recipient_pubkey, amount, amount_msat, created_at, zap_type) \
@@ -533,9 +526,7 @@ mod tests {
 
     #[test]
     fn test_fetch_receipts_validation_and_rows() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = db::tmp_db("receipts", "zap");
         let e = zap_fetch_receipts("ev1".to_string(), 0).err().unwrap();
         assert_eq!(e, "limit must be 1..=500");
@@ -560,7 +551,7 @@ mod tests {
 
     #[test]
     fn test_connect_nwc_clears_stale_pending_payment() {
-        let _g = NWC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&NWC_TEST_LOCK);
         let _ = zap_disconnect_nwc();
         assert!(zap_connect_nwc(NWC_URI.to_string()).unwrap());
         set_pending_payment_for_test("lnbc1stale", 1000);

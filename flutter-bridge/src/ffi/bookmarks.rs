@@ -147,9 +147,7 @@ mod tests {
 
     #[test]
     fn test_save_list_delete_roundtrip() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("crud");
         let pk = "a".repeat(64);
         crate::ffi::db::insert_test_user(&pk);
@@ -175,9 +173,7 @@ mod tests {
 
     #[test]
     fn test_resolve_post_found_and_missing() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("resolve");
         insert_post("p1", "pk1", "hello");
         let json = bookmarks_resolve_post("p1".into()).unwrap();
@@ -188,9 +184,7 @@ mod tests {
 
     #[test]
     fn test_resolve_posts_batch() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("resolve-batch");
         insert_post("p1", "pk1", "one");
         insert_post("p2", "pk2", "two");

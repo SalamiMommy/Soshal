@@ -252,6 +252,13 @@ pub fn session_save(db_path: String, session_data: String) -> Result<bool, Strin
     }
 }
 
+/// Best-effort persist of the on-disk session file after an in-memory change.
+fn persist_session(data: &SessionData) {
+    if let Ok(db_path) = super::db::db_path() {
+        let _ = session_save(db_path, serde_json::to_string(data).unwrap_or_default());
+    }
+}
+
 /// Add account to session
 #[frb(sync, serialize)]
 pub fn session_add_account(
@@ -285,9 +292,7 @@ pub fn session_add_account(
             // lost on process kill before a later explicit session_save.
             let data = session.clone();
             drop(session_lock);
-            if let Ok(db_path) = super::db::db_path() {
-                let _ = session_save(db_path, serde_json::to_string(&data).unwrap_or_default());
-            }
+            persist_session(&data);
             Ok(true).into()
         }
         Err(e) => Err(format!("Invalid relays JSON: {}", e)).into(),
@@ -324,9 +329,7 @@ pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
             // process kill before a later explicit session_save.
             let data = session.clone();
             drop(session_lock);
-            if let Ok(db_path) = super::db::db_path() {
-                let _ = session_save(db_path, serde_json::to_string(&data).unwrap_or_default());
-            }
+            persist_session(&data);
             Ok(true).into()
         } else {
             Err("Account not found".to_string()).into()
@@ -359,9 +362,7 @@ pub fn session_remove_account(pubkey: String) -> Result<bool, String> {
     // Persist the removal so it survives process kill (matches add/switch).
     let data = session.clone();
     drop(session_lock);
-    if let Ok(db_path) = super::db::db_path() {
-        let _ = session_save(db_path, serde_json::to_string(&data).unwrap_or_default());
-    }
+    persist_session(&data);
     Ok(true).into()
 }
 
@@ -396,9 +397,7 @@ pub fn session_get_active() -> Result<String, String> {
                 }
                 let data = session.clone();
                 drop(session_lock);
-                if let Ok(db_path) = super::db::db_path() {
-                    let _ = session_save(db_path, serde_json::to_string(&data).unwrap_or_default());
-                }
+                persist_session(&data);
                 // Re-acquire to read the (now-updated) account for the return value.
                 let session_lock = lock_session()?;
                 if let Some(session) = session_lock.as_ref() {
@@ -511,9 +510,7 @@ mod tests {
 
     #[test]
     fn test_add_account_lists_and_activates_first() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let (dir, db_path) = tmp_session_dir("addlist");
         session_load(db_path).unwrap();
         assert_eq!(session_get_active().unwrap(), "null");
@@ -541,12 +538,8 @@ mod tests {
 
     #[test]
     fn test_switch_account_updates_active() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _sg = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let (dir, db_path) = tmp_session_dir("switch");
         let keys = soshal_nostr_core::keys::generate_keys();
         assert!(super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).is_ok());
@@ -570,12 +563,8 @@ mod tests {
         // Onboarding restore->add->switch->keychain-save: switching to the
         // account the signer already holds must NOT wipe it, or the following
         // keychain save fails with "signer locked".
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _sg = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let (dir, db_path) = tmp_session_dir("switch_same_signer");
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
@@ -600,12 +589,8 @@ mod tests {
     fn test_switch_to_other_account_locks_signer() {
         // Real account change A->B wipes A's keys from memory; the caller
         // re-unlocks B afterwards (accounts screen unlockFromKeyring).
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _sg = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _sg = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let (dir, db_path) = tmp_session_dir("switch_other_signer");
         let keys_a = soshal_nostr_core::keys::generate_keys();
         let keys_b = soshal_nostr_core::keys::generate_keys();
@@ -627,9 +612,7 @@ mod tests {
 
     #[test]
     fn test_save_load_roundtrip() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let (dir, db_path) = tmp_session_dir("roundtrip");
         // Fresh last_used: the idle-timeout check rejects epoch-old fixtures.
         let data = format!(
@@ -652,9 +635,7 @@ mod tests {
 
     #[test]
     fn test_push_token_register_persists_and_clears() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let (dir, db_path) = tmp_session_dir("push");
         db::db_init(db_path.clone()).unwrap();
         session_load(db_path.clone()).unwrap();
@@ -670,9 +651,7 @@ mod tests {
 
     #[test]
     fn test_push_token_requires_active_account() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let (dir, db_path) = tmp_session_dir("pushnone");
         session_load(db_path).unwrap();
         let err = session_register_push_token("tok".to_string()).unwrap_err();
@@ -682,9 +661,7 @@ mod tests {
 
     #[test]
     fn test_errors_when_session_not_loaded() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let (dir, _) = tmp_session_dir("notloaded");
         *SESSION.lock().unwrap() = None;
         assert!(session_get_active()

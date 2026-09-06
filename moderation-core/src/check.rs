@@ -256,12 +256,7 @@ fn get_moderation_set() -> &'static ModerationSet {
         let categories: Vec<&'static str> =
             MODERATION_PATTERNS.iter().map(|p| p.category).collect();
         let severities: Vec<i32> = MODERATION_PATTERNS.iter().map(|p| p.severity).collect();
-        let set = regex::RegexSetBuilder::new(patterns)
-            .case_insensitive(true)
-            .size_limit(32 * 1024 * 1024)
-            .dfa_size_limit(32 * 1024 * 1024)
-            .build()
-            .unwrap_or_else(|_| regex::RegexSet::empty());
+        let set = crate::regex_util::build_regex_set(patterns);
         ModerationSet {
             set,
             categories,

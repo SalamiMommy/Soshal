@@ -6,9 +6,7 @@ pub struct BlockRepo<'a> {
 }
 
 impl<'a> BlockRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn upsert(&self, b: &BlockRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

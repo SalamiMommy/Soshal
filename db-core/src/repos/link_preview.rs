@@ -6,9 +6,7 @@ pub struct LinkPreviewRepo<'a> {
 }
 
 impl<'a> LinkPreviewRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn upsert(&self, p: &LinkPreviewRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

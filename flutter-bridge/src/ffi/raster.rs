@@ -63,7 +63,7 @@ pub fn raster_allocate_frame_buffer(
     // Reclaim stale, never-released buffers before inserting the new one so
     // leaked allocations don't accumulate unboundedly (a missed Dart-side
     // release currently leaks 256 MiB/frame).
-    let mut registry = FRAME_BUFFERS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut registry = crate::ffi::util::lock(&FRAME_BUFFERS);
     let now = std::time::Instant::now();
     let stale: Vec<usize> = registry
         .iter()
@@ -90,7 +90,7 @@ pub fn raster_allocate_frame_buffer(
 /// Unknown or double-released addresses are a safe no-op error.
 #[frb(serialize)]
 pub fn raster_release_frame_buffer(ptr_addr: usize) -> Result<bool, String> {
-    let mut registry = FRAME_BUFFERS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut registry = crate::ffi::util::lock(&FRAME_BUFFERS);
     match registry.remove(&ptr_addr) {
         Some(_buf) => Ok(true), // dropped here -> memory freed
         None => Err(format!("raster: no tracked buffer at ptr {ptr_addr:#x}")),

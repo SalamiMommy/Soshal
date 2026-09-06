@@ -12,7 +12,7 @@ use nostr::types::Timestamp;
 use nostr_sdk::client::Client;
 use nostr_sdk::prelude::*;
 use soshal_db_core::Database;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -321,8 +321,8 @@ pub async fn engine_loop_with_client(
     // so events near the boundary are re-fetched and re-ingested once on
     // start. Track recently-seen event ids (FIFO-bounded) and skip them —
     // re-ingest is idempotent but re-parses + re-hashes every duplicate.
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut seen_order: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let mut seen: soshal_common_core::bounded::BoundedSet<String> =
+        soshal_common_core::bounded::BoundedSet::new(SEEN_CAP);
     const SEEN_CAP: usize = 8192;
 
     while !stop.load(Ordering::Relaxed) {
@@ -335,14 +335,7 @@ pub async fn engine_loop_with_client(
         match tokio::time::timeout(poll, stream.next()).await {
             Ok(Some(ClientNotification::Event { event, .. })) => {
                 let id = event.id.to_hex();
-                if !seen.contains(&id) {
-                    if seen_order.len() >= SEEN_CAP {
-                        if let Some(oldest) = seen_order.pop_front() {
-                            seen.remove(&oldest);
-                        }
-                    }
-                    seen.insert(id.clone());
-                    seen_order.push_back(id);
+                if seen.insert(id.clone()) {
                     batch.push(*event);
                 }
             }

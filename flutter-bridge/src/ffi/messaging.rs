@@ -387,9 +387,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_send_dm_requires_unlocked_signer() {
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         super::super::signer::signer_lock().unwrap();
         let result = messaging_send_dm("hi".to_string(), "a".repeat(64)).await;
         assert!(result.is_err());

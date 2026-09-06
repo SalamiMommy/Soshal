@@ -6,9 +6,7 @@ pub struct StoryReactionRepo<'a> {
 }
 
 impl<'a> StoryReactionRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn react(&self, r: &StoryReactionRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

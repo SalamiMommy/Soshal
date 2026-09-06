@@ -6,9 +6,7 @@ pub struct MediaRepo<'a> {
 }
 
 impl<'a> MediaRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn get_by_id(&self, id: &str) -> Result<Option<MediaRow>, crate::error::DbError> {
         let conn = self.db.conn()?;

@@ -1,4 +1,3 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/dating_service.dart';
@@ -6,6 +5,8 @@ import '../services/events_service.dart';
 import '../services/media_service.dart';
 import '../services/permissions_service.dart';
 import '../services/session_service.dart';
+import '../utils/dating_options.dart';
+import '../utils/media_upload.dart';
 import '../widgets/blob_image.dart';
 
 /// My dating profile: create or edit.
@@ -17,31 +18,6 @@ class DatingProfileScreen extends StatefulWidget {
   State<DatingProfileScreen> createState() => _DatingProfileScreenState();
 }
 
-const _genders = ['', 'male', 'female', 'non-binary', 'other'];
-const kSeekingOptions = ['', 'male', 'female', 'non-binary', 'other', 'All'];
-const _bodyTypes = ['', 'slim', 'athletic', 'average', 'curvy', 'muscular'];
-const kSmokingOptions = ['', 'never', 'occasionally', 'regularly'];
-const kDrinkingOptions = ['', 'never', 'socially', 'regularly'];
-const _intents = ['', 'serious', 'casual', 'still figuring out'];
-const kPoliticsOptions = [
-  '',
-  'prefer not to say',
-  'liberal',
-  'moderate',
-  'conservative',
-  'libertarian',
-  'other',
-];
-const kEducationOptions = [
-  '',
-  'high school',
-  'some college',
-  'associate',
-  'trade school',
-  "bachelor's",
-  "master's",
-  'doctorate',
-];
 const _heights = [
   0,
   120,
@@ -317,20 +293,19 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
 
   Future<void> _addImage() async {
     try {
-      final picked = await FilePicker.pickFile(type: FileType.image);
-      final path = picked?.path;
+      final path = await pickMediaPath();
       if (path == null || !mounted) return;
       if (_imageHashes.length >= 9) {
         throw Exception('Max 9 photos');
       }
       setState(() => _uploadingImage = true);
-      final manifest = await context.read<MediaService>().uploadMedia(path);
-      final hash = manifest['blob_hash'] as String? ?? '';
-      if (hash.length != 64) {
-        throw Exception('Image upload failed (bad manifest)');
-      }
+      final hash = await uploadMediaBlob(
+        (p) => context.read<MediaService>().uploadMedia(p),
+        path: path,
+        errorMessage: 'Image upload failed (bad manifest)',
+      );
       if (!mounted) return;
-      setState(() => _imageHashes.add('n$hash'));
+      setState(() => _imageHashes.add(blobUri(hash)));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -430,7 +405,7 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
           _dropdown(
             label: 'Gender',
             value: _gender,
-            options: _genders,
+            options: kGenderOptions,
             onChanged: (v) => setState(() => _gender = v),
           ),
           const SizedBox(height: 12),
@@ -457,7 +432,7 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
           _dropdown(
             label: 'Body type',
             value: _bodyType,
-            options: _bodyTypes,
+            options: kBodyTypeOptions,
             onChanged: (v) => setState(() => _bodyType = v),
           ),
           const SizedBox(height: 12),
@@ -478,7 +453,7 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
           _dropdown(
             label: 'Relationship intent',
             value: _relationshipIntent,
-            options: _intents,
+            options: kIntentOptions,
             onChanged: (v) => setState(() => _relationshipIntent = v),
           ),
           const SizedBox(height: 12),

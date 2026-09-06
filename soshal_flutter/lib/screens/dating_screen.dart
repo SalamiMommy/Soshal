@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/dating_service.dart';
 import '../services/session_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/dating_options.dart';
 import '../utils/format.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/empty_state.dart';
@@ -1372,71 +1373,32 @@ class _FilterDialogState extends State<_FilterDialog> {
               _dropdown(
                   'Body type',
                   _bodyType,
-                  const [
-                    '',
-                    'slim',
-                    'athletic',
-                    'average',
-                    'curvy',
-                    'muscular',
-                  ],
+                  kBodyTypeOptions,
                   (v) => setState(() => _bodyType = v)),
               _dropdown(
                   'Smoking',
                   _smoking,
-                  const [
-                    '',
-                    'never',
-                    'occasionally',
-                    'regularly',
-                  ],
+                  kSmokingOptions,
                   (v) => setState(() => _smoking = v)),
               _dropdown(
                   'Drinking',
                   _drinking,
-                  const [
-                    '',
-                    'never',
-                    'socially',
-                    'regularly',
-                  ],
+                  kDrinkingOptions,
                   (v) => setState(() => _drinking = v)),
               _dropdown(
                   'Relationship intent',
                   _intent,
-                  const [
-                    '',
-                    'serious',
-                    'casual',
-                    'still figuring out',
-                  ],
+                  kIntentOptions,
                   (v) => setState(() => _intent = v)),
               _dropdown(
                   'Politics',
                   _politics,
-                  const [
-                    '',
-                    'prefer not to say',
-                    'liberal',
-                    'moderate',
-                    'conservative',
-                    'libertarian',
-                    'other',
-                  ],
+                  kPoliticsOptions,
                   (v) => setState(() => _politics = v)),
               _dropdown(
                   'Education',
                   _education,
-                  const [
-                    '',
-                    'high school',
-                    'some college',
-                    'associate',
-                    'trade school',
-                    "bachelor's",
-                    "master's",
-                    'doctorate',
-                  ],
+                  kEducationOptions,
                   (v) => setState(() => _education = v)),
               TextField(
                 controller: _interests,

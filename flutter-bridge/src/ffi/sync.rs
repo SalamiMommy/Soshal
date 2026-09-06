@@ -21,7 +21,7 @@ static SINK: Mutex<Option<StreamSink<String>>> = Mutex::new(None);
 static STOP: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 
 fn sink_guard() -> std::sync::MutexGuard<'static, Option<StreamSink<String>>> {
-    SINK.lock().unwrap_or_else(|e| e.into_inner())
+    crate::ffi::util::lock(&SINK)
 }
 
 /// Push a serialized update to the Dart stream (used by the mesh ingest
@@ -149,7 +149,7 @@ pub async fn sync_start(relays_json: String) -> Result<String, String> {
     // Guard against double-start: an existing engine must be stopped first,
     // otherwise its STOP flag would be overwritten and its thread would run
     // forever (uncontrollable + two engines at once).
-    if let Some(prev) = STOP.lock().unwrap_or_else(|e| e.into_inner()).take() {
+    if let Some(prev) = crate::ffi::util::lock(&STOP).take() {
         prev.store(true, Ordering::Relaxed);
     }
 
@@ -160,7 +160,7 @@ pub async fn sync_start(relays_json: String) -> Result<String, String> {
     // exit before `spawn_engine` returns, and its on_exit must find the
     // static populated (or a newer generation) to clear reconcilably.
     {
-        let mut guard = STOP.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = crate::ffi::util::lock(&STOP);
         *guard = Some(stop.clone());
     }
     let exit_stop = stop.clone();
@@ -179,7 +179,7 @@ pub async fn sync_start(relays_json: String) -> Result<String, String> {
             // reports the truth and, if it is still this generation's flag, a
             // later `sync_start` is the only writer. A newer Arc in the static
             // means a restart already happened — leave it untouched.
-            let mut guard = STOP.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = crate::ffi::util::lock(&STOP);
             if let Some(cur) = guard.as_ref() {
                 if Arc::ptr_eq(cur, &exit_stop) {
                     *guard = None;
@@ -213,7 +213,7 @@ pub async fn sync_start(relays_json: String) -> Result<String, String> {
 /// Stop the background sync engine (disconnects relays; closes its runtime).
 #[frb(serialize)]
 pub async fn sync_stop() -> Result<bool, String> {
-    if let Some(stop) = STOP.lock().unwrap_or_else(|e| e.into_inner()).take() {
+    if let Some(stop) = crate::ffi::util::lock(&STOP).take() {
         stop.store(true, Ordering::Relaxed);
     }
     Ok(true).into()
@@ -222,7 +222,7 @@ pub async fn sync_stop() -> Result<bool, String> {
 /// Whether an engine instance is currently running.
 #[frb(sync, serialize)]
 pub fn sync_running() -> Result<bool, String> {
-    let guard = STOP.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&STOP);
     Ok(guard.is_some()).into()
 }
 
@@ -341,9 +341,7 @@ mod tests {
 
     #[test]
     fn test_update_json_shapes() {
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let feed = update_json(SyncUpdate::Feed {
             id: "a".into(),
             pubkey: "b".into(),
@@ -391,9 +389,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_publish_or_enqueue_falls_back_to_outbox() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("sync", "sync");
         // No relay client is configured in tests: publish fails fast, so the
         // item must land in the persistent outbox.
@@ -410,9 +406,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_publish_or_enqueue_queues_invalid_json() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("sync-bad", "sync");
         // Even malformed JSON is queued (publish fails, outbox succeeds);
         // the event id falls back to "unknown".
@@ -427,9 +421,7 @@ mod tests {
 
     #[test]
     fn test_sync_enqueue_outbox_and_summary() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("sync-enqueue", "sync");
         let id = sync_enqueue_outbox(
             "post".to_string(),
@@ -454,9 +446,7 @@ mod tests {
 
     #[test]
     fn test_sync_get_outbox_summary_empty_db() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("sync-summary-empty", "sync");
         let v: serde_json::Value =
             serde_json::from_str(&sync_get_outbox_summary().unwrap()).unwrap();
@@ -467,9 +457,7 @@ mod tests {
 
     #[test]
     fn test_sync_run_epoch_garbage_collection() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("sync-gc", "sync");
         // No peer clocks → consensus impossible, summary is all zeros.
         let v: serde_json::Value = serde_json::from_str(
@@ -527,12 +515,8 @@ mod tests {
 
     #[test]
     fn test_update_json_dm_happy_path() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("sync-dm", "sync");
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();

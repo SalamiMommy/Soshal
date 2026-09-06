@@ -87,7 +87,7 @@ const COUNTABLE_TABLES: &[&str] = &[
 
 fn with_db<T>(f: impl FnOnce(&Database) -> Result<T, DbError>) -> Result<T, String> {
     let db = {
-        let guard = DB.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = crate::ffi::util::lock(&DB);
         match guard.as_ref() {
             Some(db) => db.clone(),
             None => return Err("database not initialized".to_string()),
@@ -132,9 +132,9 @@ pub fn db_init(db_path: String) -> Result<String, String> {
     // Clean up old DB instance and its temp files if any. Do the entire swap
     // (path + DB) under a single lock acquisition so concurrent `with_db()`
     // callers never observe a "database not initialized" transient window.
-    let mut db_guard = DB.lock().unwrap_or_else(|e| e.into_inner());
+    let mut db_guard = crate::ffi::util::lock(&DB);
     let _old_db = db_guard.take();
-    let old_path = DB_PATH.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let old_path = crate::ffi::util::lock(&DB_PATH).take();
     drop(db_guard);
     if let Some(ref p) = old_path {
         if old_path.as_deref() != Some(&db_path) {
@@ -152,15 +152,15 @@ pub fn db_init(db_path: String) -> Result<String, String> {
         }
     }
     // Set new path + DB under fresh locks (single-point, non-interleaved).
-    *DB_PATH.lock().unwrap_or_else(|e| e.into_inner()) = Some(db_path.clone());
-    *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+    *crate::ffi::util::lock(&DB_PATH) = Some(db_path.clone());
+    *crate::ffi::util::lock(&DB) = Some(db);
     Ok(db_path).into()
 }
 
 /// Get the current database path, or an error if not initialized.
 #[frb(sync, serialize)]
 pub fn db_path() -> Result<String, String> {
-    let guard = DB_PATH.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&DB_PATH);
     match guard.as_ref() {
         Some(p) => Ok(p.clone()).into(),
         None => Err("database not initialized".to_string()).into(),
@@ -188,8 +188,8 @@ pub(crate) fn active_pubkey() -> Result<String, String> {
 /// Close the active database connection and clear the DB path.
 #[frb(sync, serialize)]
 pub fn db_close() -> Result<bool, String> {
-    let _ = DB_PATH.lock().unwrap_or_else(|e| e.into_inner()).take();
-    let _ = DB.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let _ = crate::ffi::util::lock(&DB_PATH).take();
+    let _ = crate::ffi::util::lock(&DB).take();
     Ok(true).into()
 }
 
@@ -660,9 +660,7 @@ pub fn db_storage_stats() -> Result<String, String> {
         }
         Ok::<_, DbError>(())
     })?;
-    let file_bytes = DB_PATH
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+    let file_bytes = crate::ffi::util::lock(&DB_PATH)
         .as_ref()
         .and_then(|p| std::fs::metadata(p).ok())
         .map(|m| m.len())
@@ -685,25 +683,12 @@ pub fn db_storage_stats() -> Result<String, String> {
 pub fn db_backup(backup_path: String) -> Result<String, String> {
     // Path-traversal guard: resolve both paths and compare parent dirs.
     let src_path = {
-        let guard = DB_PATH.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = crate::ffi::util::lock(&DB_PATH);
         guard
             .clone()
             .ok_or_else(|| "database not initialized".to_string())?
     };
-    let db_dir = std::path::Path::new(&src_path)
-        .parent()
-        .ok_or("cannot determine db directory")?;
-    let dest = std::path::Path::new(&backup_path);
-    let dest_dir = dest.parent().ok_or("backup path has no parent directory")?;
-    // Use canonicalize on the dir (destination file need not exist yet).
-    let db_dir_canon =
-        std::fs::canonicalize(db_dir).map_err(|e| format!("db dir canonicalize: {e}"))?;
-    // dest_dir must already exist for canonicalize to work.
-    let dest_dir_canon =
-        std::fs::canonicalize(dest_dir).map_err(|e| format!("backup dir canonicalize: {e}"))?;
-    if db_dir_canon != dest_dir_canon {
-        return Err("backup path must be in the same directory as the database".to_string());
-    }
+    same_parent_dir(&src_path, &backup_path, "backup")?;
     with_db(|db| {
         let conn = db.conn()?;
         let _ = block_on(conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);"));
@@ -722,6 +707,26 @@ pub fn db_backup(backup_path: String) -> Result<String, String> {
             .map_err(|e| DbError::Migration(format!("write failed: {e}")))?;
         Ok(backup_path.clone())
     })
+}
+
+/// Verify that two paths resolve to the same parent directory.
+fn same_parent_dir(db_path: &str, other_path: &str, label: &str) -> Result<(), String> {
+    let db_dir = std::path::Path::new(db_path)
+        .parent()
+        .ok_or("cannot determine db directory")?;
+    let other_dir = std::path::Path::new(other_path)
+        .parent()
+        .ok_or("backup path has no parent directory")?;
+    let db_dir_canon =
+        std::fs::canonicalize(db_dir).map_err(|e| format!("db dir canonicalize: {e}"))?;
+    let other_dir_canon =
+        std::fs::canonicalize(other_dir).map_err(|e| format!("backup dir canonicalize: {e}"))?;
+    if db_dir_canon != other_dir_canon {
+        return Err(format!(
+            "{label} path must be in the same directory as the database"
+        ));
+    }
+    Ok(())
 }
 
 /// Backup file header: `SOSHBK01` marks an at-rest-key-sealed snapshot.
@@ -746,24 +751,12 @@ impl Drop for TempCleanup {
 pub fn db_restore(backup_path: String) -> Result<String, String> {
     // Path-traversal guard.
     let dst = {
-        let guard = DB_PATH.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = crate::ffi::util::lock(&DB_PATH);
         guard
             .clone()
             .ok_or_else(|| "database not initialized".to_string())?
     };
-    let db_dir = std::path::Path::new(&dst)
-        .parent()
-        .ok_or("cannot determine db directory")?;
-    let src_dir = std::path::Path::new(&backup_path)
-        .parent()
-        .ok_or("backup path has no parent directory")?;
-    let db_dir_canon =
-        std::fs::canonicalize(db_dir).map_err(|e| format!("db dir canonicalize: {e}"))?;
-    let src_dir_canon =
-        std::fs::canonicalize(src_dir).map_err(|e| format!("backup dir canonicalize: {e}"))?;
-    if db_dir_canon != src_dir_canon {
-        return Err("restore path must be in the same directory as the database".to_string());
-    }
+    same_parent_dir(&dst, &backup_path, "restore")?;
     // Only SOSHBK01-sealed backups are accepted. A plaintext DB file could
     // be a forged store that bypasses every guard (raw-SQL, protected
     // settings, PIN lockout) — reject it outright.
@@ -826,7 +819,7 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
     // leftover -wal could resurrect old data or corrupt the restored file.
     let _ = std::fs::remove_file(format!("{dst}-wal"));
     let _ = std::fs::remove_file(format!("{dst}-shm"));
-    *DB.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::ffi::util::lock(&DB) = None;
     let bak = format!("{dst}.bak");
     // Preserve the current live DB as .bak for rollback — but only when it
     // actually exists (restoring onto a deleted/never-created DB is valid).
@@ -834,7 +827,7 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
         if let Err(e) = std::fs::copy(&dst, &bak) {
             // re-open the original db so the app stays usable
             if let Ok(db) = Database::open(&dst) {
-                *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+                *crate::ffi::util::lock(&DB) = Some(db);
             }
             return Err(format!("backup copy failed: {e}"));
         }
@@ -843,7 +836,7 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
         // re-open the original db so the app stays usable
         let _ = std::fs::remove_file(&backup_file);
         if let Ok(db) = Database::open(&dst) {
-            *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+            *crate::ffi::util::lock(&DB) = Some(db);
         }
         return Err(format!("restore copy failed: {e}"));
     }
@@ -855,7 +848,7 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
                 drop(db);
                 let _ = std::fs::copy(&bak, &dst);
                 if let Ok(db) = Database::open(&dst) {
-                    *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+                    *crate::ffi::util::lock(&DB) = Some(db);
                 }
                 return Err(format!("restore migrate failed: {e}"));
             }
@@ -866,11 +859,11 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
                 drop(db);
                 let _ = std::fs::copy(&bak, &dst);
                 if let Ok(db) = Database::open(&dst) {
-                    *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+                    *crate::ffi::util::lock(&DB) = Some(db);
                 }
                 return Err(e);
             }
-            *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+            *crate::ffi::util::lock(&DB) = Some(db);
             let _ = std::fs::remove_file(&bak);
             Ok(dst)
         }
@@ -882,7 +875,7 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
                 let _ = std::fs::copy(&bak, &dst);
             }
             if let Ok(db) = Database::open(&dst) {
-                *DB.lock().unwrap_or_else(|e| e.into_inner()) = Some(db);
+                *crate::ffi::util::lock(&DB) = Some(db);
             }
             Err(format!("restore open failed: {e}"))
         }

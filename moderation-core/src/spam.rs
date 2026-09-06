@@ -120,12 +120,7 @@ fn get_spam_regex_set() -> &'static SpamRegexSet {
         let patterns: Vec<&str> = SPAM_PATTERNS.iter().map(|p| p.pattern).collect();
         let reasons: Vec<&'static str> = SPAM_PATTERNS.iter().map(|p| p.reason).collect();
         let weights: Vec<f32> = SPAM_PATTERNS.iter().map(|p| p.weight).collect();
-        let set = regex::RegexSetBuilder::new(patterns)
-            .case_insensitive(true)
-            .size_limit(1 << 30)
-            .dfa_size_limit(1 << 30)
-            .build()
-            .unwrap_or_else(|_| regex::RegexSet::empty());
+        let set = crate::regex_util::build_regex_set(patterns);
         SpamRegexSet {
             set,
             reasons,

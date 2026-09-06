@@ -6,9 +6,7 @@ pub struct GroupJoinRequestRepo<'a> {
 }
 
 impl<'a> GroupJoinRequestRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn upsert(&self, r: &GroupJoinRequestRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

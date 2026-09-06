@@ -15,9 +15,7 @@ pub struct UserRepo<'a> {
 }
 
 impl<'a> UserRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn get_by_pubkey(&self, pubkey: &str) -> Result<Option<UserRow>, crate::error::DbError> {
         let conn = self.db.conn()?;

@@ -6,9 +6,7 @@ pub struct RepostRepo<'a> {
 }
 
 impl<'a> RepostRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn upsert(&self, r: &RepostRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

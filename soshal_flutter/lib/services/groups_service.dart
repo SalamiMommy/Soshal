@@ -6,10 +6,12 @@ import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Groups Service
 /// NIP-29 group membership, info, messages and admin actions.
-class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
+class GroupsService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   List<SoshalGroup> _groups = [];
   bool _groupsLoading = false;
   SoshalGroup? _current;
@@ -95,129 +97,74 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  Future<SoshalGroup> getGroup(String groupId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiGroupsGroupsGetGroupInfo(
-        groupId: groupId,
-      );
-      _current = SoshalGroup.fromJson(jsonDecode(json));
-      clearLastError();
-      notifyDeferred();
-      return _current!;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<SoshalGroup> getGroup(String groupId) => guard(() {
+        final json = RustLib.instance.api.crateFfiGroupsGroupsGetGroupInfo(
+          groupId: groupId,
+        );
+        _current = SoshalGroup.fromJson(jsonDecode(json));
+        return _current!;
+      }, onNotify: notifyDeferred);
 
-  Future<List<String>> getMembers(String groupId) async {
-    try {
-      _members = RustLib.instance.api.crateFfiGroupsGroupsGetMembers(
-        groupId: groupId,
-      );
-      clearLastError();
-      notifyDeferred();
-      return _members;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<String>> getMembers(String groupId) => guard(() {
+        _members = RustLib.instance.api.crateFfiGroupsGroupsGetMembers(
+          groupId: groupId,
+        );
+        return _members;
+      }, onNotify: notifyDeferred);
 
   Future<bool> join(String groupId, String userPubkey,
-      {String? password}) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsJoin(
-        groupId: groupId,
-        userPubkey: userPubkey,
-        password: password,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+          {String? password}) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsJoin(
+          groupId: groupId,
+          userPubkey: userPubkey,
+          password: password,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<bool> setPassword(
     String groupId,
     String? newPassword,
     String actorPubkey,
-  ) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsSetPassword(
-        groupId: groupId,
-        newPassword: newPassword,
-        actorPubkey: actorPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsSetPassword(
+          groupId: groupId,
+          newPassword: newPassword,
+          actorPubkey: actorPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<bool> leave(String groupId, String userPubkey) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsLeave(
-        groupId: groupId,
-        userPubkey: userPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> leave(String groupId, String userPubkey) => guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsLeave(
+          groupId: groupId,
+          userPubkey: userPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<String> postMessage(String groupId, String content,
-      {String roomId = ''}) async {
-    try {
-      final eventJson = RustLib.instance.api.crateFfiGroupsGroupsPostMessage(
-        groupId: groupId,
-        roomId: roomId,
-        content: content,
-      );
-      clearLastError();
-      return eventJson;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+          {String roomId = ''}) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsPostMessage(
+          groupId: groupId,
+          roomId: roomId,
+          content: content,
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<List<GroupMessage>> fetchMessages(String groupId,
-      {int limit = 100, int offset = 0, String roomId = ''}) async {
-    try {
-      final json = RustLib.instance.api.crateFfiGroupsGroupsFetchMessages(
-        groupId: groupId,
-        roomId: roomId,
-        limit: limit,
-        offset: offset,
-      );
-      final parsed = await runOffThread(() => _parseGroupMessages(json));
-      _messages = parsed.length > 200 ? parsed.sublist(0, 200) : parsed;
-      clearLastError();
-      notifyDeferred();
-      return _messages;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+          {int limit = 100, int offset = 0, String roomId = ''}) =>
+      guard(() async {
+        final json = RustLib.instance.api.crateFfiGroupsGroupsFetchMessages(
+          groupId: groupId,
+          roomId: roomId,
+          limit: limit,
+          offset: offset,
+        );
+        final parsed = await runOffThread(() => _parseGroupMessages(json));
+        _messages = parsed.length > 200 ? parsed.sublist(0, 200) : parsed;
+        return _messages;
+      }, onNotify: notifyDeferred);
 
   Future<String> create(
     String groupId,
@@ -227,87 +174,56 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     String creatorPubkey, {
     bool isPrivate = false,
     String? password,
-  }) async {
-    try {
-      final id = RustLib.instance.api.crateFfiGroupsGroupsCreate(
-        groupId: groupId,
-        name: name,
-        description: description,
-        pictureUrl: pictureUrl,
-        creatorPubkey: creatorPubkey,
-        isPrivate: isPrivate,
-        password: password,
-      );
-      clearLastError();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsCreate(
+          groupId: groupId,
+          name: name,
+          description: description,
+          pictureUrl: pictureUrl,
+          creatorPubkey: creatorPubkey,
+          isPrivate: isPrivate,
+          password: password,
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<bool> setMemberRole(
     String groupId,
     String memberPubkey,
     String role,
     String adminPubkey,
-  ) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsSetMemberRole(
-        groupId: groupId,
-        memberPubkey: memberPubkey,
-        role: role,
-        adminPubkey: adminPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsSetMemberRole(
+          groupId: groupId,
+          memberPubkey: memberPubkey,
+          role: role,
+          adminPubkey: adminPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<bool> removeMember(
     String groupId,
     String memberPubkey,
     String adminPubkey,
-  ) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsRemoveMember(
-        groupId: groupId,
-        memberPubkey: memberPubkey,
-        adminPubkey: adminPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsRemoveMember(
+          groupId: groupId,
+          memberPubkey: memberPubkey,
+          adminPubkey: adminPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<List<GroupRole>> fetchRoles(String groupId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiGroupsGroupsRolesList(
-        groupId: groupId,
-      );
-      _roles = (jsonDecode(json) as List<dynamic>)
-          .map((e) => GroupRole.fromJson(e as Map<String, dynamic>))
-          .toList();
-      clearLastError();
-      notifyDeferred();
-      return _roles;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<GroupRole>> fetchRoles(String groupId) => guard(() {
+        final json = RustLib.instance.api.crateFfiGroupsGroupsRolesList(
+          groupId: groupId,
+        );
+        _roles = (jsonDecode(json) as List<dynamic>)
+            .map((e) => GroupRole.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return _roles;
+      }, onNotify: notifyDeferred);
 
   /// Create (empty [roleId]) or update a custom role. [permissions] is the
   /// JSON array-of-keys string the backend stores.
@@ -318,77 +234,47 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     required String color,
     required int position,
     required String permissions,
-  }) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsRoleUpsert(
-        roleId: roleId,
-        groupId: groupId,
-        name: name,
-        color: color,
-        position: position,
-        permissions: permissions,
-      );
-      clearLastError();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsRoleUpsert(
+          roleId: roleId,
+          groupId: groupId,
+          name: name,
+          color: color,
+          position: position,
+          permissions: permissions,
+        );
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
-  Future<bool> deleteRole(String roleId) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsRoleDelete(
-        roleId: roleId,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> deleteRole(String roleId) => guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsRoleDelete(
+          roleId: roleId,
+        );
+      }, onNotify: notifyDeferred);
 
   /// Members with their assigned role ids ({pubkey, role} rows).
   Future<List<GroupMemberWithRole>> fetchMembersWithRoles(
-      String groupId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiGroupsGroupsMembersWithRoles(
-        groupId: groupId,
-      );
-      _memberRoles = (jsonDecode(json) as List<dynamic>)
-          .map((e) => GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
-          .toList();
-      clearLastError();
-      notifyDeferred();
-      return _memberRoles;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+          String groupId) =>
+      guard(() {
+        final json = RustLib.instance.api.crateFfiGroupsGroupsMembersWithRoles(
+          groupId: groupId,
+        );
+        _memberRoles = (jsonDecode(json) as List<dynamic>)
+            .map((e) =>
+                GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return _memberRoles;
+      }, onNotify: notifyDeferred);
 
-  Future<List<GroupRoom>> fetchRooms(String groupId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiGroupsGroupsRoomsList(
-        groupId: groupId,
-      );
-      _rooms = (jsonDecode(json) as List<dynamic>)
-          .map((e) => GroupRoom.fromJson(e as Map<String, dynamic>))
-          .toList();
-      clearLastError();
-      notifyDeferred();
-      return _rooms;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<GroupRoom>> fetchRooms(String groupId) => guard(() {
+        final json = RustLib.instance.api.crateFfiGroupsGroupsRoomsList(
+          groupId: groupId,
+        );
+        _rooms = (jsonDecode(json) as List<dynamic>)
+            .map((e) => GroupRoom.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return _rooms;
+      }, onNotify: notifyDeferred);
 
   Future<String> createRoom(
     String groupId,
@@ -397,25 +283,19 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     String emoji,
     String color,
     String creator,
-  ) async {
-    try {
-      final id = RustLib.instance.api.crateFfiGroupsGroupsRoomsCreate(
-        groupId: groupId,
-        name: name,
-        topic: topic,
-        emoji: emoji,
-        color: color,
-        creator: creator,
-      );
-      clearLastError();
-      await fetchRooms(groupId);
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() async {
+        final id = RustLib.instance.api.crateFfiGroupsGroupsRoomsCreate(
+          groupId: groupId,
+          name: name,
+          topic: topic,
+          emoji: emoji,
+          color: color,
+          creator: creator,
+        );
+        await fetchRooms(groupId);
+        return id;
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<bool> updateRoom(
     String roomId,
@@ -425,307 +305,193 @@ class GroupsService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     String emoji,
     String color,
     String actor,
-  ) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsRoomsUpdate(
-        roomId: roomId,
-        groupId: groupId,
-        name: name,
-        topic: topic,
-        emoji: emoji,
-        color: color,
-        actor: actor,
-      );
-      clearLastError();
-      await fetchRooms(groupId);
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() async {
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsRoomsUpdate(
+          roomId: roomId,
+          groupId: groupId,
+          name: name,
+          topic: topic,
+          emoji: emoji,
+          color: color,
+          actor: actor,
+        );
+        await fetchRooms(groupId);
+        return ok;
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
-  Future<bool> deleteRoom(String roomId, String actor) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsRoomsDelete(
-        roomId: roomId,
-        actor: actor,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> deleteRoom(String roomId, String actor) => guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsRoomsDelete(
+          roomId: roomId,
+          actor: actor,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<List<GroupThread>> fetchThreads(String groupId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiGroupsGroupsThreadsList(
-        groupId: groupId,
-        sort: _threadSort.apiValue,
-      );
-      _threads = (jsonDecode(json) as List<dynamic>)
-          .map((e) => GroupThread.fromJson(e as Map<String, dynamic>))
-          .toList();
-      clearLastError();
-      notifyDeferred();
-      return _threads;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<GroupThread>> fetchThreads(String groupId) => guard(() {
+        final json = RustLib.instance.api.crateFfiGroupsGroupsThreadsList(
+          groupId: groupId,
+          sort: _threadSort.apiValue,
+        );
+        _threads = (jsonDecode(json) as List<dynamic>)
+            .map((e) => GroupThread.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return _threads;
+      }, onNotify: notifyDeferred);
 
   /// Toggle an emoji reaction on a thread or reply; refetches threads
   /// (counts move) and, when reacting inside an open thread, its reactions.
   Future<bool> react(
-      String threadId, String replyId, String emoji, String pubkey) async {
-    try {
-      final added = RustLib.instance.api.crateFfiGroupsGroupsThreadsReact(
-        threadId: threadId,
-        replyId: replyId,
-        pubkey: pubkey,
-        emoji: emoji,
-      );
-      clearLastError();
-      notifyDeferred();
-      return added;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+          String threadId, String replyId, String emoji, String pubkey) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsThreadsReact(
+          threadId: threadId,
+          replyId: replyId,
+          pubkey: pubkey,
+          emoji: emoji,
+        );
+      }, onNotify: notifyDeferred);
 
   /// Fetch emoji reaction summary for a thread (thread + reply targets).
   Future<List<ThreadReaction>> fetchReactions(
-      String threadId, String viewerPubkey) async {
-    try {
-      final json = RustLib.instance.api.crateFfiGroupsGroupsThreadsReactions(
-        threadId: threadId,
-        viewerPubkey: viewerPubkey,
-      );
-      final list = (jsonDecode(json) as List<dynamic>)
-          .map((e) => ThreadReaction.fromJson(e as Map<String, dynamic>))
-          .toList();
-      _reactionsByThread[threadId] = list;
-      clearLastError();
-      notifyDeferred();
-      return list;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+          String threadId, String viewerPubkey) =>
+      guard(() {
+        final json = RustLib.instance.api.crateFfiGroupsGroupsThreadsReactions(
+          threadId: threadId,
+          viewerPubkey: viewerPubkey,
+        );
+        final list = (jsonDecode(json) as List<dynamic>)
+            .map((e) => ThreadReaction.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _reactionsByThread[threadId] = list;
+        return list;
+      }, onNotify: notifyDeferred);
 
   Future<String> createThread(
     String groupId,
     String title,
     String body,
     String author,
-  ) async {
-    try {
-      final id = RustLib.instance.api.crateFfiGroupsGroupsThreadsCreate(
-        groupId: groupId,
-        title: title,
-        body: body,
-        author: author,
-      );
-      clearLastError();
-      await fetchThreads(groupId);
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() async {
+        final id = RustLib.instance.api.crateFfiGroupsGroupsThreadsCreate(
+          groupId: groupId,
+          title: title,
+          body: body,
+          author: author,
+        );
+        await fetchThreads(groupId);
+        return id;
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
-  Future<bool> deleteThread(String threadId, String actor) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsThreadsDelete(
-        threadId: threadId,
-        actor: actor,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> deleteThread(String threadId, String actor) => guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsThreadsDelete(
+          threadId: threadId,
+          actor: actor,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<bool> setThreadPinned(
-      String threadId, bool pinned, String actor) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsThreadsPin(
-        threadId: threadId,
-        pinned: pinned,
-        actor: actor,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+          String threadId, bool pinned, String actor) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsThreadsPin(
+          threadId: threadId,
+          pinned: pinned,
+          actor: actor,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<String> replyToThread(
     String threadId,
     String parentId,
     String content,
     String author,
-  ) async {
-    try {
-      final id = RustLib.instance.api.crateFfiGroupsGroupsThreadsReply(
-        threadId: threadId,
-        parentId: parentId,
-        content: content,
-        author: author,
-      );
-      clearLastError();
-      await fetchReplies(threadId);
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() async {
+        final id = RustLib.instance.api.crateFfiGroupsGroupsThreadsReply(
+          threadId: threadId,
+          parentId: parentId,
+          content: content,
+          author: author,
+        );
+        await fetchReplies(threadId);
+        return id;
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
-  Future<List<GroupThreadReply>> fetchReplies(String threadId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiGroupsGroupsThreadsReplies(
-        threadId: threadId,
-      );
-      _replies = (jsonDecode(json) as List<dynamic>)
-          .map((e) => GroupThreadReply.fromJson(e as Map<String, dynamic>))
-          .toList();
-      clearLastError();
-      notifyDeferred();
-      return _replies;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<GroupThreadReply>> fetchReplies(String threadId) =>
+      guard(() {
+        final json = RustLib.instance.api.crateFfiGroupsGroupsThreadsReplies(
+          threadId: threadId,
+        );
+        _replies = (jsonDecode(json) as List<dynamic>)
+            .map((e) =>
+                GroupThreadReply.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return _replies;
+      }, onNotify: notifyDeferred);
 
-  Future<List<GroupVoiceChannel>> fetchVoiceChannels(String groupId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsList(
-        groupId: groupId,
-      );
-      _voiceChannels = (jsonDecode(json) as List<dynamic>)
-          .map((e) => GroupVoiceChannel.fromJson(e as Map<String, dynamic>))
-          .toList();
-      clearLastError();
-      notifyDeferred();
-      return _voiceChannels;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<GroupVoiceChannel>> fetchVoiceChannels(String groupId) =>
+      guard(() {
+        final json =
+            RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsList(
+          groupId: groupId,
+        );
+        _voiceChannels = (jsonDecode(json) as List<dynamic>)
+            .map((e) =>
+                GroupVoiceChannel.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return _voiceChannels;
+      }, onNotify: notifyDeferred);
 
   Future<String> createVoiceChannel(
     String groupId,
     String name,
     String creator,
-  ) async {
-    try {
-      final id = RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsCreate(
-        groupId: groupId,
-        name: name,
-        creator: creator,
-      );
-      clearLastError();
-      await fetchVoiceChannels(groupId);
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() async {
+        final id =
+            RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsCreate(
+          groupId: groupId,
+          name: name,
+          creator: creator,
+        );
+        await fetchVoiceChannels(groupId);
+        return id;
+      }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
-  Future<bool> deleteVoiceChannel(String channelId, String actor) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsDelete(
-        channelId: channelId,
-        actor: actor,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> deleteVoiceChannel(String channelId, String actor) =>
+      guard(() {
+        return RustLib.instance.api
+            .crateFfiGroupsGroupsVoiceChannelsDelete(
+          channelId: channelId,
+          actor: actor,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<bool> voiceJoin(String channelId, String pubkey) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsVoiceJoin(
-        channelId: channelId,
-        pubkey: pubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> voiceJoin(String channelId, String pubkey) => guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsVoiceJoin(
+          channelId: channelId,
+          pubkey: pubkey,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<bool> voiceLeave(String channelId, String pubkey) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiGroupsGroupsVoiceLeave(
-        channelId: channelId,
-        pubkey: pubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> voiceLeave(String channelId, String pubkey) => guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsVoiceLeave(
+          channelId: channelId,
+          pubkey: pubkey,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<List<GroupVoicePresence>> fetchPresence(String channelId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiGroupsGroupsVoicePresence(
-        channelId: channelId,
-      );
-      _presence = (jsonDecode(json) as List<dynamic>)
-          .map((e) => GroupVoicePresence.fromJson(e as Map<String, dynamic>))
-          .toList();
-      clearLastError();
-      notifyDeferred();
-      return _presence;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<GroupVoicePresence>> fetchPresence(String channelId) =>
+      guard(() {
+        final json = RustLib.instance.api.crateFfiGroupsGroupsVoicePresence(
+          channelId: channelId,
+        );
+        _presence = (jsonDecode(json) as List<dynamic>)
+            .map((e) =>
+                GroupVoicePresence.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return _presence;
+      }, onNotify: notifyDeferred);
 
   List<SoshalGroup> _decodeGroups(String json) {
     final decoded = jsonDecode(json);

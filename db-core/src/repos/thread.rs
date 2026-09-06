@@ -59,9 +59,7 @@ pub struct GroupThreadRepo<'a> {
 }
 
 impl<'a> GroupThreadRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     fn row_from_columns(row: &libsql::Row) -> Result<GroupThreadRow, libsql::Error> {
         Ok(GroupThreadRow {

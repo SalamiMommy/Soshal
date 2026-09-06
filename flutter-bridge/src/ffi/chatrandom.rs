@@ -68,7 +68,7 @@ pub async fn chatrandom_fetch(
         serde_json::from_str(&raw).map_err(|e| format!("parse query result: {e}"))?;
     let mut out = Vec::new();
     for e in events {
-        if e.verify().is_err() {
+        if !soshal_nostr_core::models::verify_event(&e) {
             continue;
         }
         let k = e.kind.as_u16();
@@ -145,12 +145,8 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_send_publishes_signed_event_via_network() {
-        let _g = CHATRANDOM_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&CHATRANDOM_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let err = chatrandom_send(

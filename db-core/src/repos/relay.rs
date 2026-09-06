@@ -6,9 +6,7 @@ pub struct RelayRepo<'a> {
 }
 
 impl<'a> RelayRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn get_by_url(&self, url: &str) -> Result<Option<RelayRow>, crate::error::DbError> {
         let conn = self.db.conn()?;

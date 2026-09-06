@@ -77,12 +77,7 @@ fn get_gore_regex_set() -> &'static GoreRegexSet {
         let patterns: Vec<&str> = GORE_PATTERNS.iter().map(|p| p.pattern).collect();
         let rules: Vec<&'static str> = GORE_PATTERNS.iter().map(|p| p.rule).collect();
         let severities: Vec<i32> = GORE_PATTERNS.iter().map(|p| p.severity).collect();
-        let set = regex::RegexSetBuilder::new(patterns)
-            .case_insensitive(true)
-            .size_limit(1 << 30)
-            .dfa_size_limit(1 << 30)
-            .build()
-            .unwrap_or_else(|_| regex::RegexSet::empty());
+        let set = crate::regex_util::build_regex_set(patterns);
         GoreRegexSet {
             set,
             rules,

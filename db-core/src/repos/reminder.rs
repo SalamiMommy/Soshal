@@ -18,9 +18,7 @@ pub struct ReminderRepo<'a> {
 }
 
 impl<'a> ReminderRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn list(&self) -> Result<Vec<ReminderRow>, crate::error::DbError> {
         let conn = self.db.conn()?;

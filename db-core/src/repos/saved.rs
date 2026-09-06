@@ -6,9 +6,7 @@ pub struct SavedContentRepo<'a> {
 }
 
 impl<'a> SavedContentRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn upsert(&self, row: &SavedContentRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
@@ -137,9 +135,7 @@ pub struct MusicloudPlaylistRepo<'a> {
 }
 
 impl<'a> MusicloudPlaylistRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn create(
         &self,

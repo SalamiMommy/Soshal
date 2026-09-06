@@ -6,9 +6,7 @@ pub struct PollRepo<'a> {
 }
 
 impl<'a> PollRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn upsert_poll(&self, p: &PollRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

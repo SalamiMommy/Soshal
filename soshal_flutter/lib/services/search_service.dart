@@ -6,10 +6,11 @@ import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Search Service
 /// Local FTS5 search across posts, profiles, hashtags and mentions.
-class SearchService extends ChangeNotifier with LastErrorMixin {
+class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   List<SearchResultItem> _results = [];
   List<SearchResultItem> _trendingProfiles = [];
   List<String> _hashtags = [];
@@ -58,38 +59,27 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Search hashtags.
-  Future<List<String>> searchHashtags(String query, {int limit = 50}) async {
-    try {
-      _hashtags = RustLib.instance.api.crateFfiSearchSearchHashtags(
-        query: query,
-        limit: limit,
-      );
-      clearLastError();
-      notifyListeners();
-      return _hashtags;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<String>> searchHashtags(String query, {int limit = 50}) =>
+      guard(() {
+        _hashtags = RustLib.instance.api.crateFfiSearchSearchHashtags(
+          query: query,
+          limit: limit,
+        );
+        return _hashtags;
+      });
 
   /// Search mention rows (pubkey/name pairs from kind-3 contact lists).
   /// Kept separate from _results so typing @mentions does not wipe or dirty
   /// the main search screen results.
   Future<List<SearchResultItem>> mentions(String query,
-      {int limit = 50}) async {
-    try {
-      final json = RustLib.instance.api.crateFfiSearchSearchMentions(
-        query: query,
-        limit: limit,
-      );
-      return await runOffThread(() => _parseSearchResults(json));
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
+          {int limit = 50}) =>
+      guard(() async {
+        final json = RustLib.instance.api.crateFfiSearchSearchMentions(
+          query: query,
+          limit: limit,
+        );
+        return await runOffThread(() => _parseSearchResults(json));
+      }, clearOnSuccess: false, notifyOnSuccess: false, notifyOnError: false);
 
   /// Global search across all indexes (SearchResult rows).
   Future<List<SearchResultItem>> searchGlobal(String query,
@@ -106,90 +96,55 @@ class SearchService extends ChangeNotifier with LastErrorMixin {
   /// Remote NIP-50 search across relays (verified text notes, raw JSON).
   Future<String> remoteGlobalSearch(
       String query, int limit, List<String> relays) async {
-    try {
-      final json = await RustLib.instance.api.crateFfiSearchSearchRemoteGlobal(
+    return guard(() async {
+      return await RustLib.instance.api.crateFfiSearchSearchRemoteGlobal(
         query: query,
         limit: BigInt.from(limit),
         relaysJson: jsonEncode(relays),
       );
-      clearLastError();
-      notifyListeners();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    });
   }
 
   /// Trending hashtags.
-  Future<List<String>> trendingHashtags({int limit = 20}) async {
-    try {
-      _trendingHashtags =
-          RustLib.instance.api.crateFfiSearchSearchTrendingHashtags(
-        limit: limit,
-      );
-      clearLastError();
-      notifyListeners();
-      return _trendingHashtags;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<String>> trendingHashtags({int limit = 20}) => guard(() {
+        _trendingHashtags =
+            RustLib.instance.api.crateFfiSearchSearchTrendingHashtags(
+          limit: limit,
+        );
+        return _trendingHashtags;
+      });
 
   /// Trending profiles.
-  Future<List<SearchResultItem>> trendingProfiles({int limit = 20}) async {
-    try {
-      final json = RustLib.instance.api.crateFfiSearchSearchTrendingProfiles(
-        limit: limit,
-      );
-      _trendingProfiles = await runOffThread(() => _parseSearchResults(json));
-      clearLastError();
-      notifyListeners();
-      return _trendingProfiles;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<SearchResultItem>> trendingProfiles({int limit = 20}) =>
+      guard(() async {
+        final json = RustLib.instance.api.crateFfiSearchSearchTrendingProfiles(
+          limit: limit,
+        );
+        _trendingProfiles = await runOffThread(() => _parseSearchResults(json));
+        return _trendingProfiles;
+      });
 
   Future<List<SearchResultItem>> _run(String Function() call) async {
-    try {
+    return guard(() async {
       final json = call();
       final results = await runOffThread(() => _parseSearchResults(json));
       _results = results;
-      clearLastError();
-      notifyListeners();
       return _results;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    });
   }
 
   /// Trending hashtags with usage counts straight from the local DB
   /// (rows: tag/pubkey/last_used_at/count) — richer than the search-core
   /// name-only list above.
   Future<List<Map<String, dynamic>>> dbTrendingHashtags(
-      {int limit = 20}) async {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiDbDbGetTrendingHashtags(limit: limit);
-      _dbTrendingHashtags =
-          await runOffThread(() => _parseTrendingHashtags(json));
-      clearLastError();
-      notifyListeners();
-      return _dbTrendingHashtags;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+          {int limit = 20}) =>
+      guard(() async {
+        final json =
+            RustLib.instance.api.crateFfiDbDbGetTrendingHashtags(limit: limit);
+        _dbTrendingHashtags =
+            await runOffThread(() => _parseTrendingHashtags(json));
+        return _dbTrendingHashtags;
+      });
 }
 
 /// JSON → [SearchResultItem] list, top-level so [compute] can run it on a

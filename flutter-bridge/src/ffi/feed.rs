@@ -8,7 +8,7 @@
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 use soshal_db_core::repos::post::{PostMetaRow, PostRepo};
-use std::collections::HashMap;
+
 use std::sync::{Mutex, OnceLock};
 
 /// Feed post result (mirrors a DB post row for the Dart layer).
@@ -201,41 +201,27 @@ fn get_custom_word_filters(db: &soshal_db_core::Database) -> Vec<String> {
 /// Worst-case cap: 2048 × ~64-byte key ≈ 128 KiB of verdicts.
 const MODERATION_CACHE_CAP: usize = 2048;
 
-struct ModerationCache {
-    entries: HashMap<String, bool>,
-    filters: Vec<String>,
-}
-
-static MODERATION_CACHE: OnceLock<Mutex<ModerationCache>> = OnceLock::new();
+static MODERATION_CACHE: OnceLock<Mutex<super::util::TtlCache<String, bool>>> = OnceLock::new();
+static MODERATION_FILTERS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn is_content_clean(content: &str, filters: &[String]) -> bool {
-    let cache = MODERATION_CACHE.get_or_init(|| {
-        Mutex::new(ModerationCache {
-            entries: HashMap::new(),
-            filters: Vec::new(),
-        })
-    });
-    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.filters.as_slice() != filters {
-        guard.filters = filters.to_vec();
-        guard.entries.clear();
+    let now = soshal_common_core::format::now_secs();
+    if crate::ffi::util::lock(&MODERATION_FILTERS).as_slice() != filters {
+        *crate::ffi::util::lock(&MODERATION_FILTERS) = filters.to_vec();
+        crate::ffi::util::lock(MODERATION_CACHE.get_or_init(|| {
+            Mutex::new(super::util::TtlCache::new(i64::MAX, MODERATION_CACHE_CAP))
+        }))
+        .clear();
     }
-    if let Some(&verdict) = guard.entries.get(content) {
+    let mut cache =
+        crate::ffi::util::lock(MODERATION_CACHE.get_or_init(|| {
+            Mutex::new(super::util::TtlCache::new(i64::MAX, MODERATION_CACHE_CAP))
+        }));
+    if let Some(&verdict) = cache.get(content, now) {
         return verdict;
     }
     let passed = soshal_moderation_core::check::check_with_custom_words(content, filters).passed;
-    if guard.entries.len() >= MODERATION_CACHE_CAP {
-        let keys_to_remove: Vec<String> = guard
-            .entries
-            .keys()
-            .take(MODERATION_CACHE_CAP / 4)
-            .cloned()
-            .collect();
-        for k in keys_to_remove {
-            guard.entries.remove(&k);
-        }
-    }
-    guard.entries.insert(content.to_string(), passed);
+    cache.insert(content.to_string(), passed, now);
     passed
 }
 
@@ -525,9 +511,7 @@ mod tests {
 
     #[test]
     fn test_validate_note() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         assert!(feed_validate_note("hi".to_string()).unwrap());
         assert!(!feed_validate_note("".to_string()).unwrap());
         assert!(!feed_validate_note("x".repeat(64001)).unwrap());
@@ -543,12 +527,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_publish_text_note_blocked_by_moderation() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("pub_mod");
         let err = feed_publish_text_note(
             "Send 1 BTC to double your crypto immediately! Guaranteed profit".to_string(),
@@ -568,12 +548,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_publish_reply_blocked_by_moderation() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("rep_mod");
         let err = feed_publish_reply(
             "i will find you and kill you leak your address".to_string(),
@@ -587,9 +563,7 @@ mod tests {
 
     #[test]
     fn test_fetch_events_filters_moderated_posts() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("fetch_mod");
         insert_post(
             "p_clean",
@@ -659,12 +633,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_publish_text_note_validation_errors() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("pub_val");
         let err = feed_publish_text_note(String::new(), "[]".to_string())
             .await
@@ -679,12 +649,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_publish_reply_validation_error() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("rep_val");
         let err = feed_publish_reply(String::new(), "root".to_string(), "reply".to_string())
             .await
@@ -695,9 +661,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_reaction_and_delete_require_signer() {
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         crate::signer_lock().unwrap();
         let err = feed_create_reaction("ev1".to_string(), "👍".to_string())
             .await
@@ -709,9 +673,7 @@ mod tests {
 
     #[test]
     fn test_fetch_events_db_paged() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("events");
         insert_post("p1", "pk1", "first", 1, 3000, "[]");
         insert_post("p2", "pk2", "second", 1, 2000, "[]");
@@ -745,9 +707,7 @@ mod tests {
 
     #[test]
     fn test_fetch_events_media_json() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("media");
         let hash = "a".repeat(64);
         let tags = format!(r#"[["media","image","blob://{hash}","{hash}","123"]]"#);
@@ -778,9 +738,7 @@ mod tests {
 
     #[test]
     fn test_fetch_window_db() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("window");
         db::db_execute_raw_test(
             "INSERT INTO users (pubkey, npub, name) VALUES ('pk1','npub1pk1','tester') ON CONFLICT DO NOTHING"
@@ -812,9 +770,7 @@ mod tests {
 
     #[test]
     fn test_fetch_thread_db() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("thread");
         db::insert_test_user("pk1");
         db::insert_test_user("pk2");

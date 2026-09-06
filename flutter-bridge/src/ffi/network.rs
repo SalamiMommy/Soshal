@@ -33,7 +33,7 @@ static TRANSPORT_MODE: Mutex<TransportMode> = Mutex::new(TransportMode::Default)
 static I2P_MANAGER: Mutex<Option<I2PSessionManager>> = Mutex::new(None);
 
 pub(super) fn transport_mode() -> TransportMode {
-    *TRANSPORT_MODE.lock().unwrap_or_else(|e| e.into_inner())
+    *crate::ffi::util::lock(&TRANSPORT_MODE)
 }
 
 /// Whether the Reticulum mesh transport is started (bridge-side handle).
@@ -115,7 +115,7 @@ pub async fn network_fetch_http3(
 }
 
 fn client_guard() -> std::sync::MutexGuard<'static, Option<Client>> {
-    CLIENT.lock().unwrap_or_else(|e| e.into_inner())
+    crate::ffi::util::lock(&CLIENT)
 }
 
 /// Initialize the relay client and connect to the given relays.
@@ -306,7 +306,7 @@ pub async fn network_query_events(filter_json: String) -> Result<String, String>
         let mut out: Vec<nostr::event::Event> = Vec::new();
         for payload in super::relay::mesh_recent(QUERY_EVENTS_CAP * 2) {
             if let Ok(ev) = nostr::event::Event::from_json(&payload) {
-                if ev.verify().is_ok()
+                if soshal_nostr_core::models::verify_event(&ev)
                     && filter.match_event(&ev, nostr::filter::MatchEventOptions::default())
                 {
                     out.push(ev);
@@ -334,7 +334,7 @@ pub async fn network_query_events(filter_json: String) -> Result<String, String>
             Ok(events) => {
                 let verified: Vec<&nostr::event::Event> = events
                     .iter()
-                    .filter(|e| e.verify().is_ok())
+                    .filter(|e| soshal_nostr_core::models::verify_event(e))
                     .take(QUERY_EVENTS_CAP)
                     .collect();
                 match serde_json::to_string(&verified) {
@@ -389,7 +389,7 @@ pub fn network_get_resolved_transport() -> Result<String, String> {
 pub fn network_set_transport_mode(mode: String) -> Result<bool, String> {
     match TransportMode::parse_mode(&mode) {
         Some(m) => {
-            *TRANSPORT_MODE.lock().unwrap_or_else(|e| e.into_inner()) = m;
+            *crate::ffi::util::lock(&TRANSPORT_MODE) = m;
             Ok(true).into()
         }
         None => Err(format!("unknown transport mode: {mode}")).into(),
@@ -406,7 +406,7 @@ pub fn reticulum_start_transport(pubkey: String, bind_addr: String) -> Result<St
     use soshal_network_core::reticulum::node_for;
 
     let node = node_for(&pubkey)?;
-    let mut node = node.lock().unwrap_or_else(|e| e.into_inner());
+    let mut node = crate::ffi::util::lock(&node);
     node.start_udp_transport(&bind_addr)
         .map_err(|e| format!("Failed to start Reticulum transport: {e}"))?;
 
@@ -425,7 +425,7 @@ pub fn reticulum_start_auto_interface(
     use soshal_network_core::reticulum::{node_for, AutoInterfaceConfig};
 
     let node = node_for(&pubkey)?;
-    let mut node = node.lock().unwrap_or_else(|e| e.into_inner());
+    let mut node = crate::ffi::util::lock(&node);
     let config = AutoInterfaceConfig {
         enabled,
         bind_port: port,
@@ -449,7 +449,7 @@ pub fn reticulum_start_tcp_server(
     use soshal_network_core::reticulum::{node_for, TcpInterfaceConfig};
 
     let node = node_for(&pubkey)?;
-    let mut node = node.lock().unwrap_or_else(|e| e.into_inner());
+    let mut node = crate::ffi::util::lock(&node);
     let config = TcpInterfaceConfig {
         listen_port: port,
         max_connections,
@@ -473,7 +473,7 @@ pub fn reticulum_send_packet(
     use soshal_network_core::reticulum::{node_for, ReticulumPacket};
 
     let node = node_for(&pubkey)?;
-    let node = node.lock().unwrap_or_else(|e| e.into_inner());
+    let node = crate::ffi::util::lock(&node);
     let dest_socket = dest_addr
         .parse::<std::net::SocketAddr>()
         .map_err(|e| format!("Invalid destination address: {e}"))?;
@@ -509,7 +509,7 @@ pub fn reticulum_get_status(pubkey: String) -> Result<String, String> {
     use soshal_network_core::reticulum::node_for;
 
     let node = node_for(&pubkey)?;
-    let node = node.lock().unwrap_or_else(|e| e.into_inner());
+    let node = crate::ffi::util::lock(&node);
     let status = node.get_status();
 
     serde_json::to_string(&status).map_err(|e| format!("Failed to serialize status: {e}"))
@@ -539,7 +539,7 @@ pub fn reticulum_create_announce(pubkey: String, aspect: Option<String>) -> Resu
     use soshal_network_core::reticulum::node_for;
 
     let node = node_for(&pubkey)?;
-    let node = node.lock().unwrap_or_else(|e| e.into_inner());
+    let node = crate::ffi::util::lock(&node);
     let packet = node.create_announce(aspect.as_deref());
 
     serde_json::to_string(&packet).map_err(|e| format!("Failed to serialize packet: {e}"))
@@ -718,7 +718,7 @@ pub fn i2p_connect_to_destination(
 /// persist it and pass it back on later runs to keep a stable address.
 #[frb(sync, serialize)]
 pub fn i2p_start_session(destination: Option<String>) -> Result<String, String> {
-    let mut guard = I2P_MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = crate::ffi::util::lock(&I2P_MANAGER);
     let manager = guard.get_or_insert_with(I2PSessionManager::new);
     manager.start(destination.as_deref())
 }
@@ -726,7 +726,7 @@ pub fn i2p_start_session(destination: Option<String>) -> Result<String, String> 
 /// Stops the persistent i2p session (if any).
 #[frb(sync, serialize)]
 pub fn i2p_stop_session() -> Result<bool, String> {
-    let mut guard = I2P_MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = crate::ffi::util::lock(&I2P_MANAGER);
     if let Some(m) = guard.as_mut() {
         let was_running = m.is_running();
         m.stop();
@@ -739,7 +739,7 @@ pub fn i2p_stop_session() -> Result<bool, String> {
 /// `{"running": bool, "destination": string|null}` for the i2p session.
 #[frb(sync, serialize)]
 pub fn i2p_session_status() -> Result<String, String> {
-    let guard = I2P_MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&I2P_MANAGER);
     let running = guard.as_ref().map(|m| m.is_running()).unwrap_or(false);
     let destination = guard.as_ref().and_then(|m| m.destination());
     super::util::json_ok(serde_json::json!({
@@ -911,9 +911,7 @@ mod tests {
 
     #[test]
     fn test_transport_mode_roundtrip() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         for name in ["default", "reticulum", "freenet", "i2p", "nostr"] {
             assert!(super::network_set_transport_mode(name.to_string()).unwrap());
             assert_eq!(super::network_get_transport_mode().unwrap(), name);
@@ -929,9 +927,7 @@ mod tests {
 
     #[test]
     fn test_resolved_transport_json() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         assert!(super::network_set_transport_mode("nostr".to_string()).unwrap());
         let v: serde_json::Value =
             serde_json::from_str(&super::network_get_resolved_transport().unwrap()).unwrap();
@@ -942,9 +938,7 @@ mod tests {
 
     #[test]
     fn test_resolved_kind_reticulum_when_node_running() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         assert!(super::network_set_transport_mode("reticulum".to_string()).unwrap());
         // No node running yet: falls back to Nostr, unsatisfied.
         let resolve = || {
@@ -970,9 +964,7 @@ mod tests {
 
     #[test]
     fn test_i2p_socks_addr_by_transport_mode() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         for name in ["default", "reticulum", "freenet", "i2p", "nostr"] {
             assert!(super::network_set_transport_mode(name.to_string()).unwrap());
             // No local daemons in tests: nothing resolves to i2p, so the
@@ -1127,9 +1119,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_relay_error_paths_without_client() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         assert!(super::network_init_relays(vec![]).await.is_err());
         assert!(
             super::network_init_relays(vec!["http://10.0.0.1:7777".to_string()])
@@ -1165,9 +1155,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_relay_status_snapshot_with_unreachable_relay() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         assert!(
             super::network_init_relays(vec!["wss://relay.invalid".to_string()])
                 .await

@@ -28,9 +28,7 @@ pub struct EphemeralMediaRepo<'a> {
 }
 
 impl<'a> EphemeralMediaRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn create(&self, e: &EphemeralMediaRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

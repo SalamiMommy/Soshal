@@ -21,9 +21,7 @@ pub struct EscrowRepo<'a> {
 }
 
 impl<'a> EscrowRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn create(&self, e: &EscrowRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

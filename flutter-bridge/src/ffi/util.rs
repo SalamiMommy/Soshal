@@ -4,6 +4,70 @@
 //! low-level TCP probes for daemon status checks.
 
 use flutter_rust_bridge::frb;
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::sync::Mutex;
+use std::sync::MutexGuard;
+
+/// Lock a `std::sync::Mutex`, recovering the guard if it was poisoned instead
+/// of panicking. This is the single source of the
+/// `.lock().unwrap_or_else(|e| e.into_inner())` idiom used at every global
+/// handle site in the bridge.
+pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Bounded, TTL'd key/value cache for the function-global caches scattered
+/// across the ffi modules (single source of the OnceLock<Mutex<HashMap>> +
+/// eviction + saturating_sub timestamp shape). Lives behind the caller's
+/// static `OnceLock<Mutex<TtlCache<K, V>>>`, always accessed via [`lock`].
+pub(crate) struct TtlCache<K, V> {
+    entries: HashMap<K, (i64, V)>,
+    ttl_secs: i64,
+    cap: usize,
+}
+
+impl<K: Eq + Hash + Clone, V> TtlCache<K, V> {
+    pub(crate) fn new(ttl_secs: i64, cap: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            ttl_secs,
+            cap,
+        }
+    }
+
+    /// Look up `k`, ignoring entries older than the TTL. Stale entries are
+    /// left in place (the bounded `insert` evicts them once capacity is
+    /// reached), so a miss can return a borrowed value without a second
+    /// borrow of the map.
+    pub(crate) fn get<Q>(&mut self, k: &Q, now: i64) -> Option<&V>
+    where
+        K: std::borrow::Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        let (ts, v) = self.entries.get(k)?;
+        if now.saturating_sub(*ts) >= self.ttl_secs {
+            return None;
+        }
+        Some(v)
+    }
+
+    /// Insert `k -> v` at `now`, evicting one entry when the cache is at
+    /// capacity so distinct keys can't grow it without bound (TTL expiry
+    /// bounds actual staleness; eviction order is arbitrary).
+    pub(crate) fn insert(&mut self, k: K, v: V, now: i64) {
+        if !self.entries.contains_key(&k) && self.entries.len() >= self.cap {
+            if let Some(oldest) = self.entries.keys().next().cloned() {
+                self.entries.remove(&oldest);
+            }
+        }
+        self.entries.insert(k, (now, v));
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
 
 /// Serialize any value to JSON for FFI transport (structs cross the bridge
 /// as JSON strings; Dart side re-parses them).
@@ -82,33 +146,17 @@ pub(crate) fn tcp_probe(host: &str, port: u16) -> bool {
 
 /// Cached TCP probe with a 5-second TTL to avoid repeated socket connections on hot paths.
 pub(crate) fn cached_tcp_probe(host: &str, port: u16) -> bool {
-    use std::collections::HashMap;
-    use std::sync::{Mutex, OnceLock};
-    use std::time::{Duration, Instant};
+    use std::sync::OnceLock;
 
-    type ProbeCacheMap = HashMap<(String, u16), (bool, Instant)>;
-    static PROBE_CACHE: OnceLock<Mutex<ProbeCacheMap>> = OnceLock::new();
-    let cache = PROBE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    static PROBE_CACHE: OnceLock<Mutex<TtlCache<(String, u16), bool>>> = OnceLock::new();
+    let cache = PROBE_CACHE.get_or_init(|| Mutex::new(TtlCache::new(5, 256)));
     let key = (host.to_string(), port);
-    let ttl = Duration::from_secs(5);
-
-    if let Ok(guard) = cache.lock() {
-        if let Some((result, timestamp)) = guard.get(&key) {
-            if timestamp.elapsed() < ttl {
-                return *result;
-            }
-        }
+    let mut guard = lock(cache);
+    if let Some(&result) = guard.get(&key, soshal_common_core::format::now_secs()) {
+        return result;
     }
-
     let fresh = tcp_probe(host, port);
-    if let Ok(mut guard) = cache.lock() {
-        // Sweep stale entries if the map grows large so a flood of distinct
-        // probe targets can't grow the cache without bound.
-        if guard.len() > 256 {
-            guard.retain(|_, (_, ts)| ts.elapsed() < ttl * 2);
-        }
-        guard.insert(key, (fresh, Instant::now()));
-    }
+    guard.insert(key, fresh, soshal_common_core::format::now_secs());
     fresh
 }
 
@@ -162,6 +210,23 @@ mod tests {
         assert_eq!(util_truncate("hello".to_string(), 5).unwrap(), "hello");
         assert_eq!(util_truncate("hello".to_string(), 3).unwrap(), "he…");
         assert_eq!(util_truncate("hello".to_string(), 0).unwrap(), "");
+    }
+
+    #[test]
+    fn test_ttl_cache_expiry_and_cap() {
+        use super::super::util::TtlCache;
+        let mut c = TtlCache::new(2, 2);
+        c.insert("a".to_string(), 1, 100);
+        assert_eq!(c.get("a", 101), Some(&1));
+        // Expired after TTL.
+        assert_eq!(c.get("a", 103), None);
+        // Cap evicts one oldest entry per insert when full.
+        c.insert("b".to_string(), 2, 100);
+        c.insert("c".to_string(), 3, 100);
+        assert_eq!(c.entries.len(), 2);
+        // A clear wipes everything (used on moderation filter change).
+        c.clear();
+        assert!(c.entries.is_empty());
     }
 
     #[test]

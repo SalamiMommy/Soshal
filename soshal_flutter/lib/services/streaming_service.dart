@@ -8,11 +8,12 @@ import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Streaming Service
 /// Live stream + story rows (kind 30311 / 30312 posts table entries).
 class StreamingService extends ChangeNotifier
-    with LastErrorMixin, DeferredNotify {
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   final List<StreamRow> _live = [];
   final List<StreamRow> _stories = [];
 
@@ -147,62 +148,38 @@ class StreamingService extends ChangeNotifier
     String title,
     String description,
     String streamUrl,
-  ) async {
-    try {
-      final eventId = RustLib.instance.api.crateFfiStreamingStreamingStartLive(
-        broadcasterPubkey: broadcasterPubkey,
-        title: title,
-        description: description,
-        streamUrl: streamUrl,
-      );
-      clearLastError();
-      notifyDeferred();
-      return eventId;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiStreamingStreamingStartLive(
+          broadcasterPubkey: broadcasterPubkey,
+          title: title,
+          description: description,
+          streamUrl: streamUrl,
+        );
+      }, onNotify: notifyDeferred);
 
-  Future<bool> endLive(String streamId, String broadcasterPubkey) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiStreamingStreamingEndLive(
-        streamId: streamId,
-        broadcasterPubkey: broadcasterPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> endLive(String streamId, String broadcasterPubkey) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiStreamingStreamingEndLive(
+          streamId: streamId,
+          broadcasterPubkey: broadcasterPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<String> postStory(
     String authorPubkey,
     String content,
     List<String> images,
     int expiresInHours,
-  ) async {
-    try {
-      final eventId = RustLib.instance.api.crateFfiStreamingStreamingPostStory(
-        authorPubkey: authorPubkey,
-        content: content,
-        imagesJson: jsonEncode(images),
-        expiresInHours: expiresInHours,
-      );
-      clearLastError();
-      notifyDeferred();
-      return eventId;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  ) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiStreamingStreamingPostStory(
+          authorPubkey: authorPubkey,
+          content: content,
+          imagesJson: jsonEncode(images),
+          expiresInHours: expiresInHours,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<List<StreamRow>> fetchStories(String userPubkey) async {
     final parsed = await _decode(
@@ -230,21 +207,13 @@ class StreamingService extends ChangeNotifier
     return parsed;
   }
 
-  Future<bool> markStoryViewed(String storyId, String viewerPubkey) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiStreamingStreamingMarkStoryViewed(
+  Future<bool> markStoryViewed(String storyId, String viewerPubkey) =>
+    guard(() {
+      return RustLib.instance.api.crateFfiStreamingStreamingMarkStoryViewed(
         storyId: storyId,
         viewerPubkey: viewerPubkey,
       );
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+    }, onNotify: notifyDeferred);
 
   Future<bool> storyReact(String storyId, String pubkey, String emoji) async {
     try {
@@ -270,46 +239,28 @@ class StreamingService extends ChangeNotifier
     required int trackId,
     required bool isKeyframe,
     required String payloadHex,
-  }) async {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiStreamingStreamingMoqPublishObject(
-        streamId: streamId,
-        publisherPubkey: publisherPubkey,
-        trackId: trackId,
-        isKeyframe: isKeyframe,
-        payloadHex: payloadHex,
-      );
-      clearLastError();
-      notifyDeferred();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiStreamingStreamingMoqPublishObject(
+          streamId: streamId,
+          publisherPubkey: publisherPubkey,
+          trackId: trackId,
+          isKeyframe: isKeyframe,
+          payloadHex: payloadHex,
+        );
+      }, onNotify: notifyDeferred);
 
   /// Subscribe to a Media over QUIC (MoQ) P2P media stream.
   Future<String> subscribeMoqStream({
     required String streamId,
     required String subscriberPubkey,
-  }) async {
-    try {
-      final status =
-          RustLib.instance.api.crateFfiStreamingStreamingMoqSubscribeStream(
-        streamId: streamId,
-        subscriberPubkey: subscriberPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return status;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiStreamingStreamingMoqSubscribeStream(
+          streamId: streamId,
+          subscriberPubkey: subscriberPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
   /// Best-effort teardown of a MoQ viewer subscription. network-core keeps no
   /// per-subscriber registry and exposes no unsubscribe FFI — the fetch is
@@ -337,19 +288,13 @@ class StreamingService extends ChangeNotifier
   Future<Map<String, dynamic>> publishLiveGroup({
     required String streamId,
     required Map<String, dynamic> group,
-  }) async {
-    try {
-      final encoded = encodeMoqGroup(group);
-      final json = moq.p2PMoqPublishGroup(streamId: streamId, encoded: encoded);
-      clearLastError();
-      notifyDeferred();
-      return jsonDecode(json) as Map<String, dynamic>;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        final encoded = encodeMoqGroup(group);
+        final json =
+            moq.p2PMoqPublishGroup(streamId: streamId, encoded: encoded);
+        return jsonDecode(json) as Map<String, dynamic>;
+      }, onNotify: notifyDeferred);
 
   /// Like `publishLiveGroup` but never notifies consumers — per-frame
   /// broadcast publishing (video/audio groups) must not rebuild service
@@ -357,17 +302,13 @@ class StreamingService extends ChangeNotifier
   Future<Map<String, dynamic>> publishLiveGroupSilent({
     required String streamId,
     required Map<String, dynamic> group,
-  }) async {
-    try {
-      final encoded = encodeMoqGroup(group);
-      final json = moq.p2PMoqPublishGroup(streamId: streamId, encoded: encoded);
-      clearLastError();
-      return jsonDecode(json) as Map<String, dynamic>;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        final encoded = encodeMoqGroup(group);
+        final json =
+            moq.p2PMoqPublishGroup(streamId: streamId, encoded: encoded);
+        return jsonDecode(json) as Map<String, dynamic>;
+      }, notifyOnSuccess: false, notifyOnError: false);
 
   /// Open a MoQ broadcast for `streamId`: publishes a bootstrap control
   /// group (metadata object, track 0) so LAN peers see the stream as live in
@@ -492,19 +433,11 @@ class StreamingService extends ChangeNotifier
     return out;
   }
 
-  Future<List<StreamRow>> _decode(String Function() call) async {
-    try {
+  Future<List<StreamRow>> _decode(String Function() call) =>
+    guard(() async {
       final json = call();
-      final parsed = await runOffThread(() => _parseStreamRows(json));
-      clearLastError();
-      notifyDeferred();
-      return parsed;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+      return await runOffThread(() => _parseStreamRows(json));
+    }, onNotify: notifyDeferred);
 
   @override
   void dispose() {

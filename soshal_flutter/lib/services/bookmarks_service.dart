@@ -6,17 +6,16 @@ import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'feed_service.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Bookmarks Service
 /// Local bookmark storage plus post resolution from the local DB cache.
 class BookmarksService extends ChangeNotifier
-    with LastErrorMixin, DeferredNotify {
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   List<BookmarkRow> _bookmarks = [];
 
   List<BookmarkRow> get bookmarks => _bookmarks;
 
-  /// Clear all account-scoped state on account switch so Account B never
-  /// sees Account A's cached bookmarks.
   void resetForAccountSwitch() {
     _bookmarks = [];
     clearLastError();
@@ -24,65 +23,39 @@ class BookmarksService extends ChangeNotifier
   }
 
   /// Save a bookmark for an event. Returns the bookmark id.
-  Future<String> save(String pubkey, String eventId) async {
-    try {
-      final id = RustLib.instance.api.crateFfiBookmarksBookmarksSave(
-        pubkey: pubkey,
-        eventId: eventId,
-      );
-      clearLastError();
-      notifyDeferred();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<String> save(String pubkey, String eventId) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiBookmarksBookmarksSave(
+          pubkey: pubkey,
+          eventId: eventId,
+        );
+      }, onNotify: notifyDeferred);
 
   /// List bookmarks for a pubkey, newest first.
   Future<List<BookmarkRow>> list(String pubkey,
-      {int limit = 100, int offset = 0}) async {
-    try {
-      final json = RustLib.instance.api.crateFfiBookmarksBookmarksList(
-        pubkey: pubkey,
-        limit: limit,
-        offset: offset,
-      );
-      final decoded = jsonDecode(json);
-      _bookmarks = decoded is List
-          ? decoded
-              .map((e) => BookmarkRow.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : <BookmarkRow>[];
-      clearLastError();
-      notifyDeferred();
-      return _bookmarks;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+          {int limit = 100, int offset = 0}) =>
+      guard(() {
+        final json = RustLib.instance.api.crateFfiBookmarksBookmarksList(
+          pubkey: pubkey,
+          limit: limit,
+          offset: offset,
+        );
+        final decoded = jsonDecode(json);
+        _bookmarks = decoded is List
+            ? decoded
+                .map((e) => BookmarkRow.fromJson(e as Map<String, dynamic>))
+                .toList()
+            : <BookmarkRow>[];
+        return _bookmarks;
+      }, onNotify: notifyDeferred);
 
   /// Delete a bookmark by id.
-  Future<bool> delete(String id) async {
-    try {
-      final removed = RustLib.instance.api.crateFfiBookmarksBookmarksDelete(
-        id: id,
-      );
-      clearLastError();
-      notifyDeferred();
-      return removed;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> delete(String id) => guard(() {
+        return RustLib.instance.api.crateFfiBookmarksBookmarksDelete(
+          id: id,
+        );
+      }, onNotify: notifyDeferred);
 
-  /// Resolve many bookmarked events in one FFI call. Returns a map of
-  /// eventId → post for the rows cached locally.
   Future<Map<String, FeedPost>> resolvePosts(List<String> eventIds) async {
     final out = <String, FeedPost>{};
     if (eventIds.isEmpty) return out;

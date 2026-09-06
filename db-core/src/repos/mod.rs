@@ -1,3 +1,12 @@
+macro_rules! soshal_repo_new {
+    () => {
+        /// Open the repository on the shared database handle.
+        pub fn new(db: &'a crate::Database) -> Self {
+            Self { db }
+        }
+    };
+}
+
 pub mod audit_log;
 pub mod banned_member;
 pub mod block;

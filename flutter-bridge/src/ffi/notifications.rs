@@ -392,9 +392,7 @@ mod tests {
 
     #[test]
     fn test_fetch_unread_happy() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("unread");
         insert_user("pk1", "tester");
         insert_notification("n1", "pk1", "mention", Some("pk1"), "hi", 3000, false);
@@ -418,9 +416,7 @@ mod tests {
 
     #[test]
     fn test_fetch_unread_limit_clamped() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("clamp");
         for i in 0..3 {
             insert_notification(
@@ -451,9 +447,7 @@ mod tests {
 
     #[test]
     fn test_fetch_unread_empty() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("empty");
         insert_notification("n1", "pk1", "mention", None, "x", 1000, false);
         let json = notifications_fetch_unread("nobody".to_string(), 10).unwrap();
@@ -467,9 +461,7 @@ mod tests {
 
     #[test]
     fn test_fetch_paginated_includes_read() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("fetch");
         insert_notification("n1", "pk1", "mention", None, "a", 3000, false);
         insert_notification("n2", "pk1", "like", None, "b", 2000, true);
@@ -495,9 +487,7 @@ mod tests {
 
     #[test]
     fn test_mark_read() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("markread");
         insert_notification("n1", "pk1", "mention", None, "x", 1000, false);
         assert!(notifications_mark_read("n1".to_string()).unwrap());
@@ -517,9 +507,7 @@ mod tests {
 
     #[test]
     fn test_mark_all_read() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("markall");
         insert_notification("n1", "pk1", "mention", None, "x", 2000, false);
         insert_notification("n2", "pk1", "like", None, "x", 1000, false);
@@ -537,9 +525,7 @@ mod tests {
 
     #[test]
     fn test_delete() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("delete");
         insert_notification("n1", "pk1", "mention", None, "x", 1000, false);
         assert!(notifications_delete("n1".to_string()).unwrap());
@@ -555,9 +541,7 @@ mod tests {
 
     #[test]
     fn test_register_push_requires_active_account() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("push");
         let n = std::sync::atomic::AtomicU64::new(0);
         let dir = std::env::temp_dir().join(format!(
@@ -584,9 +568,7 @@ mod tests {
 
     #[test]
     fn test_get_unread_count() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("count");
         insert_notification("n1", "pk1", "mention", None, "x", 3000, false);
         insert_notification("n2", "pk1", "like", None, "x", 2000, false);
@@ -603,9 +585,7 @@ mod tests {
 
     #[test]
     fn test_fetch_by_type_filters() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("bytype");
         insert_notification("n1", "pk1", "mention", None, "x", 3000, false);
         insert_notification("n2", "pk1", "like", None, "x", 2000, false);
@@ -623,9 +603,7 @@ mod tests {
 
     #[test]
     fn test_fetch_mentions() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("mentions");
         insert_notification("n1", "pk1", "mention", None, "x", 1000, false);
         let json =
@@ -641,9 +619,7 @@ mod tests {
 
     #[test]
     fn test_fetch_reactions() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("reactions");
         insert_notification("n1", "pk1", "like", None, "x", 1000, false);
         let json = notifications_fetch_by_type("pk1".to_string(), "like".to_string(), 10).unwrap();
@@ -658,9 +634,7 @@ mod tests {
 
     #[test]
     fn test_fetch_replies() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("replies");
         insert_notification("n1", "pk1", "reply", None, "x", 1000, false);
         let json = notifications_fetch_by_type("pk1".to_string(), "reply".to_string(), 10).unwrap();
@@ -675,9 +649,7 @@ mod tests {
 
     #[test]
     fn test_fetch_messages() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("messages");
         insert_notification("n1", "pk1", "message", None, "x", 1000, false);
         let json =
@@ -693,9 +665,7 @@ mod tests {
 
     #[test]
     fn test_fetch_follows() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("follows");
         insert_notification("n1", "pk1", "follow", None, "x", 1000, false);
         let json =
@@ -711,9 +681,7 @@ mod tests {
 
     #[test]
     fn test_push_token_register_and_unregister() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let dir = soshal_test_util::tmp_root("notif_push");
         let db_path = dir.join("app.db").to_string_lossy().to_string();
         db::db_init(db_path.clone()).unwrap();
@@ -751,9 +719,7 @@ mod tests {
 
     #[test]
     fn test_fetch_offset_and_limit_clamped() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("offclamp");
         for i in 0..501 {
             insert_notification(
@@ -797,9 +763,7 @@ mod tests {
 
     #[test]
     fn test_fetch_by_type_limit_clamped() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("byclamp");
         insert_notification("n1", "pk1", "like", None, "x", 3000, false);
         insert_notification("n2", "pk1", "like", None, "x", 2000, false);
@@ -827,9 +791,7 @@ mod tests {
 
     #[test]
     fn test_unregister_push_requires_active_account() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let dir = soshal_test_util::tmp_root("notif_unreg");
         let db_path = dir.join("app.db").to_string_lossy().to_string();
         db::db_init(db_path.clone()).unwrap();

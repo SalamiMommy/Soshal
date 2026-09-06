@@ -6,9 +6,7 @@ pub struct BannedMemberRepo<'a> {
 }
 
 impl<'a> BannedMemberRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn insert(&self, b: &BannedMemberRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

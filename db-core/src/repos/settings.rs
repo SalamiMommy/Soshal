@@ -8,9 +8,7 @@ pub struct SettingsRepo<'a> {
 }
 
 impl<'a> SettingsRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn set(&self, key: &str, value: &str) -> Result<(), DbError> {
         let conn = self.db.conn()?;

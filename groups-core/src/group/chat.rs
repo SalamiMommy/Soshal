@@ -1,4 +1,6 @@
-use super::{find_tag_values_map, GroupEventInput, MAX_EVENTS, MAX_TAG_VALUE_LEN};
+use super::{
+    find_tag_values_map, GroupEventInput, MAX_EVENTS, MAX_TAGS_PER_EVENT, MAX_TAG_VALUE_LEN,
+};
 use serde::{Deserialize, Serialize};
 use soshal_common_core::json_util::{json_in, json_out};
 
@@ -35,7 +37,7 @@ fn parse_group_chat_messages(input: ParseGroupChatMessagesInput) -> Vec<ParsedGr
     }
     let mut results = Vec::with_capacity(input.events.len().min(MAX_EVENTS));
     for event in &input.events {
-        if event.tags.len() > 100_000 {
+        if event.tags.len() > MAX_TAGS_PER_EVENT {
             continue;
         }
         let [d_tag, event_channel, image_url_str, video_url_str] =

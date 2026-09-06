@@ -143,7 +143,7 @@ pub async fn music_fetch(
         serde_json::from_str(&raw).map_err(|e| format!("parse query result: {e}"))?;
     let mut out = Vec::new();
     for e in events {
-        if e.verify().is_err() {
+        if !soshal_nostr_core::models::verify_event(&e) {
             continue;
         }
         if let Some(mapped) =
@@ -237,7 +237,7 @@ pub async fn music_comments(
         serde_json::from_str(&raw).map_err(|e| format!("parse query result: {e}"))?;
     let mut out = Vec::new();
     for e in events {
-        if e.verify().is_err() {
+        if !soshal_nostr_core::models::verify_event(&e) {
             continue;
         }
         if let Some(mapped) =
@@ -482,9 +482,7 @@ mod tests {
 
     #[test]
     fn save_unsave_saved_roundtrip() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let path = init_db("saved");
         let empty =
             serde_json::from_str::<Vec<serde_json::Value>>(&music_saved().unwrap()).unwrap();
@@ -505,9 +503,7 @@ mod tests {
 
     #[test]
     fn playlist_lifecycle() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let path = init_db("playlist");
         let pl_id = music_playlist_create("Road Trip".to_string(), true).unwrap();
         assert!(!pl_id.is_empty());

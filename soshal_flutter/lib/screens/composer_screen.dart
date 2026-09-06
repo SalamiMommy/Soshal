@@ -13,6 +13,7 @@ import '../services/messaging_service.dart';
 import '../services/search_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../utils/media_upload.dart';
 import '../services/signer_service.dart';
 
 /// Composer Screen
@@ -95,10 +96,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
   /// codec, and attach it to the post as a blob-backed `audio` media tag.
   Future<void> _attachVoiceNote() async {
     try {
-      final picked = await FilePicker.pickFile(
-        type: FileType.any,
-      );
-      final path = picked?.path;
+      final path = await pickMediaPath(type: FileType.any);
       if (path == null || !mounted) return;
       final audio = AudioService();
       final bytes = await File(path).readAsBytes();
@@ -115,11 +113,11 @@ class _ComposerScreenState extends State<ComposerScreen> {
           '${Directory.systemTemp.path}/voice_${DateTime.now().millisecondsSinceEpoch}.vo');
       await tmp.writeAsBytes(payload);
       if (!mounted) return;
-      final manifest = await context.read<MediaService>().uploadMedia(tmp.path);
-      final blobHash = manifest['blob_hash'] as String? ?? '';
-      if (blobHash.length != 64) {
-        throw Exception('Voice upload failed (bad manifest)');
-      }
+      final blobHash = await uploadMediaBlob(
+        (p) => context.read<MediaService>().uploadMedia(p),
+        path: tmp.path,
+        errorMessage: 'Voice upload failed (bad manifest)',
+      );
       if (!mounted) return;
       setState(() {
         _voiceDuration = duration;
@@ -191,17 +189,11 @@ class _ComposerScreenState extends State<ComposerScreen> {
 
   Future<void> _attachMedia() async {
     try {
-      final picked = await FilePicker.pickFile(
-        type: FileType.any,
-      );
-      final path = picked?.path;
+      final path = await pickMediaPath(type: FileType.any);
       if (path == null || !mounted) return;
       setState(() => _uploadingMedia = true);
       final manifest = await context.read<MediaService>().uploadMedia(path);
-      final blobHash = manifest['blob_hash'] as String? ?? '';
-      if (blobHash.length != 64) {
-        throw Exception('Upload failed (bad manifest)');
-      }
+      final blobHash = validatedBlobHash(manifest, 'Upload failed (bad manifest)');
       final ext = path.split('.').last.toLowerCase();
       final type =
           const ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].contains(ext)
@@ -212,7 +204,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
       if (!mounted) return;
       setState(() {
         _pendingMedia = PostMedia(
-          url: 'blob://$blobHash',
+          url: blobUri(blobHash),
           type: type,
           blobHash: blobHash,
           size: (manifest['total_size'] as num?)?.toInt() ?? 0,
@@ -296,7 +288,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
           [
             'media',
             'audio',
-            'blob://$_voiceBlobHash',
+            blobUri(_voiceBlobHash!),
             _voiceBlobHash!,
             _voiceSize.toString(),
           ],

@@ -21,9 +21,7 @@ pub struct GroupRoomRepo<'a> {
 }
 
 impl<'a> GroupRoomRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn list(&self, group_id: &str) -> Result<Vec<GroupRoomRow>, crate::error::DbError> {
         let conn = self.db.conn()?;

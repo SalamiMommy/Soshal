@@ -2,15 +2,15 @@
 //! Connects PlumTree epidemic gossip protocol with SQLite event ingest and outbox pipelines.
 
 use crate::SyncUpdate;
+use soshal_common_core::bounded::BoundedSet;
 use soshal_db_core::Database;
 use soshal_network_core::plumtree::{PlumTreeMessage, PlumTreeNode};
-use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, LazyLock, Mutex};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 
-static SEEN_GOSSIP: LazyLock<Mutex<(VecDeque<String>, HashSet<String>)>> =
-    LazyLock::new(|| Mutex::new((VecDeque::new(), HashSet::new())));
+static SEEN_GOSSIP: LazyLock<Mutex<BoundedSet<String>>> =
+    LazyLock::new(|| Mutex::new(BoundedSet::new(SEEN_GOSSIP_CAP)));
 
 const SEEN_GOSSIP_CAP: usize = 10_000;
 
@@ -45,17 +45,7 @@ impl GossipSyncBridge {
                 let key = event.id.to_hex();
                 let fresh = {
                     let mut seen = SEEN_GOSSIP.lock().unwrap_or_else(|e| e.into_inner());
-                    if seen.1.insert(key.clone()) {
-                        seen.0.push_back(key);
-                        if seen.0.len() > SEEN_GOSSIP_CAP {
-                            if let Some(oldest) = seen.0.pop_front() {
-                                seen.1.remove(&oldest);
-                            }
-                        }
-                        true
-                    } else {
-                        false
-                    }
+                    seen.insert(key)
                 };
                 if fresh {
                     // Use bridge identity for p-tag-to-me checks: empty

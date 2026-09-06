@@ -1,4 +1,4 @@
-use super::{GroupEventInput, MAX_EVENTS, MAX_TAG_VALUE_LEN};
+use super::{GroupEventInput, MAX_EVENTS, MAX_TAGS_PER_EVENT, MAX_TAG_VALUE_LEN};
 use serde::{Deserialize, Serialize};
 use soshal_common_core::json_util::{json_in, json_out};
 
@@ -32,7 +32,7 @@ fn parse_group_posts(input: ParseGroupPostsInput) -> Vec<ParsedGroupPostOut> {
     }
     let mut results = Vec::new();
     for event in &input.events {
-        if event.tags.len() > 100_000 {
+        if event.tags.len() > MAX_TAGS_PER_EVENT {
             continue;
         }
         let mut d_tag: Option<&str> = None;

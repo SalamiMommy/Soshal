@@ -154,10 +154,7 @@ fn spawn(name: &'static str, mut cmd: Command, log_name: &str, data_dir: &std::p
     cmd.stdout(stdout).stderr(stderr);
     match cmd.spawn() {
         Ok(child) => {
-            CHILDREN
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(name, child);
+            crate::ffi::util::lock(&CHILDREN).insert(name, child);
             true
         }
         Err(_) => false,
@@ -165,9 +162,7 @@ fn spawn(name: &'static str, mut cmd: Command, log_name: &str, data_dir: &std::p
 }
 
 fn is_running(name: &'static str) -> bool {
-    CHILDREN
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+    crate::ffi::util::lock(&CHILDREN)
         .get_mut(name)
         .map(|c| c.try_wait().ok().map(|s| s.is_none()).unwrap_or(false))
         .unwrap_or(false)
@@ -264,7 +259,7 @@ fn spawn_all() -> Result<bool, String> {
     let mut all_ok = true;
     for name in DAEMONS {
         let spawned = {
-            let spawners = SPAWNERS.lock().unwrap_or_else(|e| e.into_inner());
+            let spawners = crate::ffi::util::lock(&SPAWNERS);
             spawners.get(name).map(|s| s()).unwrap_or(false)
         };
         if !spawned {
@@ -278,10 +273,7 @@ fn register_spawner<F>(name: &'static str, f: F)
 where
     F: Fn() -> bool + Send + 'static,
 {
-    SPAWNERS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(name, Box::new(f));
+    crate::ffi::util::lock(&SPAWNERS).insert(name, Box::new(f));
 }
 
 /// Periodic liveness sweep: respawn exited daemons while the foreground
@@ -301,7 +293,7 @@ fn watchdog_loop() {
                 continue;
             }
             let spawned = {
-                let spawners = SPAWNERS.lock().unwrap_or_else(|e| e.into_inner());
+                let spawners = crate::ffi::util::lock(&SPAWNERS);
                 if WATCHDOG_STOP.load(Ordering::Relaxed) {
                     drop(spawners);
                     break;
@@ -323,7 +315,7 @@ pub fn daemon_stop_daemons() -> Result<bool, String> {
     let _ = crate::platform::daemon_service_stop();
     #[cfg(target_os = "android")]
     let _ = crate::platform::rnsd_stop();
-    let mut children = CHILDREN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut children = crate::ffi::util::lock(&CHILDREN);
     for (_, child) in children.iter_mut() {
         child.kill().ok();
         child.wait().ok();
@@ -353,9 +345,7 @@ pub fn daemon_request_battery_exemption() -> Result<bool, String> {
 /// Liveness of the spawned i2pd process.
 #[frb(sync, serialize)]
 pub fn daemon_is_i2pd_running() -> Result<bool, String> {
-    Ok(CHILDREN
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+    Ok(crate::ffi::util::lock(&CHILDREN)
         .get_mut("i2pd")
         .map(|c| c.try_wait().ok().map(|s| s.is_none()).unwrap_or(false))
         .unwrap_or(false))
@@ -370,9 +360,7 @@ pub fn daemon_is_rnsd_running() -> Result<bool, String> {
     }
     #[cfg(not(target_os = "android"))]
     {
-        Ok(CHILDREN
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        Ok(crate::ffi::util::lock(&CHILDREN)
             .get_mut("rnsd")
             .map(|c| c.try_wait().ok().map(|s| s.is_none()).unwrap_or(false))
             .unwrap_or(false))

@@ -879,7 +879,7 @@ pub fn groups_verify_password(group_id: String, password: String) -> Result<bool
 
     // Phase 1: Check lockout window (no counter increment yet).
     {
-        let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+        let mut attempts = crate::ffi::util::lock(&ATTEMPTS);
         sweep_attempts(now, &mut attempts);
         let entry = attempts.entry(group_id.clone()).or_insert((0, now));
         if entry.1 + WINDOW_SECS <= now {
@@ -910,7 +910,7 @@ pub fn groups_verify_password(group_id: String, password: String) -> Result<bool
 
     // Phase 3: Increment counter only for a real, verifiable attempt.
     {
-        let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+        let mut attempts = crate::ffi::util::lock(&ATTEMPTS);
         sweep_attempts(now, &mut attempts);
         let entry = attempts.entry(group_id.clone()).or_insert((0, now));
         if entry.1 + WINDOW_SECS <= now {
@@ -930,7 +930,7 @@ pub fn groups_verify_password(group_id: String, password: String) -> Result<bool
 
     // Phase 5: Successful verify resets the counter.
     if ok {
-        let mut attempts = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+        let mut attempts = crate::ffi::util::lock(&ATTEMPTS);
         sweep_attempts(now, &mut attempts);
         if let Some(entry) = attempts.get_mut(&group_id) {
             entry.0 = 0;
@@ -992,12 +992,8 @@ mod tests {
 
     #[test]
     fn test_create_group_and_fetch() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("create");
         let owner = "a".repeat(64);
         crate::ffi::db::insert_test_user(&owner);
@@ -1034,21 +1030,15 @@ mod tests {
 
     #[test]
     fn test_get_group_info_missing_errors() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("missing");
         assert!(groups_get_group_info("nope".to_string()).is_err());
     }
 
     #[test]
     fn test_join_leave_and_members() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("members");
         let owner = "a".repeat(64);
         let keys = soshal_nostr_core::keys::generate_keys();
@@ -1075,12 +1065,8 @@ mod tests {
 
     #[test]
     fn test_role_change_admin_gate() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("role_gate");
         let owner = "a".repeat(64);
         let keys = soshal_nostr_core::keys::generate_keys();
@@ -1118,9 +1104,7 @@ mod tests {
 
     #[test]
     fn test_role_ops_on_missing_group_errors() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("missing_group");
         let admin = "a".repeat(64);
         assert!(groups_set_member_role(
@@ -1135,9 +1119,7 @@ mod tests {
 
     #[test]
     fn test_roles_crud() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("roles_crud");
         let owner = "a".repeat(64);
         create_group("g4", &owner);
@@ -1183,9 +1165,7 @@ mod tests {
 
     #[test]
     fn test_fetch_messages_empty() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("no_msgs");
         assert_eq!(
             groups_fetch_messages("g5".to_string(), String::new(), 20, 0).unwrap(),
@@ -1195,12 +1175,8 @@ mod tests {
 
     #[test]
     fn test_post_message_and_fetch_messages() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("messages");
         let keys = soshal_nostr_core::keys::generate_keys();
         let owner = keys.public_key().to_hex();
@@ -1242,12 +1218,8 @@ mod tests {
 
     #[test]
     fn test_rooms_crud_and_scoped_messages() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("rooms");
         let owner = "a".repeat(64);
         create_group("g6", &owner);
@@ -1311,9 +1283,7 @@ mod tests {
 
     #[test]
     fn test_threads_crud_replies_pin() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("threads");
         let owner = "a".repeat(64);
         let member = "b".repeat(64);
@@ -1374,9 +1344,7 @@ mod tests {
 
     #[test]
     fn test_thread_reactions_and_popular_sort() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("thread_reacts");
         let owner = "a".repeat(64);
         let member = "b".repeat(64);
@@ -1471,9 +1439,7 @@ mod tests {
 
     #[test]
     fn test_voice_channels_and_presence() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("voice");
         let owner = "a".repeat(64);
         let member = "b".repeat(64);
@@ -1507,9 +1473,7 @@ mod tests {
 
     #[test]
     fn test_admin_ops_on_missing_rows_error() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("missing_rows");
         let owner = "a".repeat(64);
         assert!(groups_rooms_delete("nope".to_string(), owner.clone()).is_err());
@@ -1520,12 +1484,8 @@ mod tests {
 
     #[test]
     fn test_post_message_locked_signer_errors() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("msg_locked");
         super::super::signer::signer_lock().unwrap();
         assert!(groups_post_message("g5".to_string(), String::new(), "hi".to_string()).is_err());
@@ -1533,12 +1493,8 @@ mod tests {
 
     #[test]
     fn test_private_group_password_flow() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("private_pwd");
         let owner = "a".repeat(64);
         let keys = soshal_nostr_core::keys::generate_keys();
@@ -1604,9 +1560,7 @@ mod tests {
 
     #[test]
     fn test_set_password_and_verify() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("set_pwd");
         let owner = "a".repeat(64);
         let non_owner = "b".repeat(64);
@@ -1658,9 +1612,7 @@ mod tests {
 
     #[test]
     fn test_verify_passwordless_group_does_not_burn_attempts() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("verify_no_pwd");
         let owner = "a".repeat(64);
         create_group("npwd", &owner);
@@ -1685,9 +1637,7 @@ mod tests {
 
     #[test]
     fn test_verify_success_resets_counter() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("verify_success_reset");
         let owner = "a".repeat(64);
         insert_user(&owner);
@@ -1720,9 +1670,7 @@ mod tests {
 
     #[test]
     fn test_verify_boundary_window_reset() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _db = TestDb::init("verify_boundary");
         let owner = "a".repeat(64);
         insert_user(&owner);
@@ -1750,7 +1698,7 @@ mod tests {
         // Manually set the window start to exactly WINDOW_SECS ago.
         let now = soshal_common_core::format::now_secs();
         {
-            let mut m = ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+            let mut m = crate::ffi::util::lock(&ATTEMPTS);
             if let Some(entry) = m.get_mut("bndry") {
                 // Set timestamp so that entry.1 + WINDOW_SECS == now (exact boundary).
                 entry.1 = now - WINDOW_SECS;

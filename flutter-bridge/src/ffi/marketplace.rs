@@ -1128,9 +1128,7 @@ mod tests {
 
     #[test]
     fn test_listing_queries_and_crud() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = db::tmp_db("listings", "market");
         insert_listing("l1", "seller1", "rust book", 5000, "books", 2000);
         insert_listing("l2", "seller2", "chess set", 3000, "games", 1000);
@@ -1238,12 +1236,8 @@ mod tests {
 
     #[test]
     fn test_create_listing_signs_and_stores() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = db::tmp_db("create", "market");
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk_hex = keys.public_key().to_hex();
@@ -1334,12 +1328,8 @@ mod tests {
 
     #[test]
     fn test_order_and_escrow_flow() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = db::tmp_db("orders", "market");
         let keys = soshal_nostr_core::keys::generate_keys();
         let spk = keys.public_key().to_hex();
@@ -1478,9 +1468,7 @@ mod tests {
 
     #[test]
     fn test_reviews() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = db::tmp_db("reviews", "market");
         assert!(marketplace_review_listing(
             "l1".to_string(),
@@ -1512,12 +1500,8 @@ mod tests {
 
     #[test]
     fn test_polls() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = db::tmp_db("polls", "market");
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
@@ -1625,9 +1609,7 @@ mod tests {
 
     #[test]
     fn test_crud_edge_cases() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = db::tmp_db("mkt_edges", "mk");
         insert_listing("l1", "seller1", "rust book", 5000, "books", 2000);
         insert_listing("l2", "seller2", "chess set", 3000, "games", 1000);
@@ -1694,12 +1676,8 @@ mod tests {
 
     #[test]
     fn test_escrow_edge_cases() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = db::tmp_db("mkt_esc", "mk");
         let keys = soshal_nostr_core::keys::generate_keys();
         let spk = keys.public_key().to_hex();
@@ -1750,12 +1728,8 @@ mod tests {
 
     #[test]
     fn test_polls_clamps_trending() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = db::tmp_db("mkt_poll", "mk");
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk = keys.public_key().to_hex();
@@ -1846,12 +1820,8 @@ mod tests {
 
     #[test]
     fn test_create_listing_validation_and_signer_lock() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = db::tmp_db("mkt_sign", "mk");
 
         // Locked signer -> Err, asserted BEFORE unlock.

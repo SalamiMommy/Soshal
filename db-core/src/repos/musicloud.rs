@@ -6,9 +6,7 @@ pub struct MusicloudRepo<'a> {
 }
 
 impl<'a> MusicloudRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn upsert(&self, m: &MusicloudRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
@@ -127,9 +125,7 @@ pub struct MusicloudCommentRepo<'a> {
 }
 
 impl<'a> MusicloudCommentRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn insert(&self, c: &MusicloudCommentRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

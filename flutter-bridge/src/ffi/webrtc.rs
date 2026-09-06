@@ -191,9 +191,7 @@ mod tests {
 
     #[test]
     fn test_turn_servers_err_when_unconfigured() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = db::tmp_db("turn_empty", "webrtc");
         let expected = "turn provisioning unavailable: no turn_endpoint configured (server endpoint on roadmap)".to_string();
         assert_eq!(webrtc_get_turn_servers(None).unwrap_err(), expected);
@@ -205,9 +203,7 @@ mod tests {
 
     #[test]
     fn test_turn_servers_err_when_endpoint_empty() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = db::tmp_db("turn_empty_str", "webrtc");
         db::db_set_setting("turn_endpoint".to_string(), "  ".to_string()).unwrap();
         assert_eq!(
@@ -218,9 +214,7 @@ mod tests {
 
     #[test]
     fn test_turn_servers_from_settings() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = db::tmp_db("turn", "webrtc");
         db::db_set_setting(
             "turn_endpoint".to_string(),

@@ -35,6 +35,7 @@ export 'package:soshal_flutter/ffi/p2p.dart'
     show P2pPeerDto, P2pPowerDto, P2pSwarmStatusDto;
 
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// P2P Service
 ///
@@ -43,7 +44,7 @@ import 'error_log.dart';
 /// mmap'd sparse files, and the thermal/battery-aware seeding scheduler.
 /// All key material stays in the Rust signer; OS power/connectivity facts
 /// come from Rust too (JNI on Android, UPower + NetworkManager on Linux).
-class P2pService extends ChangeNotifier with LastErrorMixin {
+class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   final List<P2pPeerDto> _peers = [];
   final Map<String, P2pSwarmStatusDto> _downloads = {};
   List<P2pPeerDto> _cachedPeers = const [];
@@ -121,7 +122,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
   /// Returns the LAN port. Pubkey empty = use unlocked signer. The QUIC
   /// server's port is advertised in TXT records so peers prefer it.
   Future<int> start({String pubkey = ''}) async {
-    try {
+    await guard(() {
       _lanPort = p2PLanServerStart(storeRoot: '');
       _quicPort = p2PQuicServerStart(storeRoot: '');
 
@@ -130,26 +131,15 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
         port: _lanPort!,
         quicPort: _quicPort,
       );
-      clearLastError();
-      notifyListeners();
-      return _lanPort!;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    });
+    return _lanPort!;
   }
 
   /// Begin browsing the subnet for `_soshal._tcp` services.
   Future<void> startBrowsing() async {
-    try {
+    await guard(() async {
       _browsing = p2PMdnsBrowseStart();
-      notifyListeners();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    }, clearOnSuccess: false);
   }
 
   /// Stop browsing (and drop the mDNS daemon).
@@ -209,18 +199,10 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
 
   /// Start only the QUIC stream media server (no mDNS advertise).
   /// Returns the bound port.
-  Future<int?> startQuicServer({String storeRoot = ''}) async {
-    try {
-      _quicPort = p2PQuicServerStart(storeRoot: storeRoot);
-      clearLastError();
-      notifyListeners();
-      return _quicPort;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<int?> startQuicServer({String storeRoot = ''}) => guard(() {
+        _quicPort = p2PQuicServerStart(storeRoot: storeRoot);
+        return _quicPort;
+      });
 
   /// Stop the QUIC stream server.
   Future<bool> stopQuicServer() async {
@@ -344,36 +326,29 @@ class P2pService extends ChangeNotifier with LastErrorMixin {
     required List<int?> quicPorts,
     required String outPath,
     int maxParallel = 4,
-  }) async {
-    try {
-      final quicPortsJson = jsonEncode(quicPorts);
-      final id = p2PSwarmDownload(
-        manifestJson: manifestJson,
-        peersJson: jsonEncode(peers),
-        quicPortsJson: quicPortsJson,
-        outPath: outPath,
-        maxParallel: BigInt.from(maxParallel),
-      );
-      if (_downloads.length >= 50) {
-        _downloads.remove(_downloads.keys.first);
-      }
-      _downloads[id] = P2pSwarmStatusDto(
-        state: 'running',
-        verifiedChunks: BigInt.zero,
-        bytesDownloaded: BigInt.zero,
-        failures: BigInt.zero,
-        failedHashes: const [],
-      );
-      _cachedDownloads = Map.unmodifiable(_downloads);
-      clearLastError();
-      notifyListeners();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() {
+        final quicPortsJson = jsonEncode(quicPorts);
+        final id = p2PSwarmDownload(
+          manifestJson: manifestJson,
+          peersJson: jsonEncode(peers),
+          quicPortsJson: quicPortsJson,
+          outPath: outPath,
+          maxParallel: BigInt.from(maxParallel),
+        );
+        if (_downloads.length >= 50) {
+          _downloads.remove(_downloads.keys.first);
+        }
+        _downloads[id] = P2pSwarmStatusDto(
+          state: 'running',
+          verifiedChunks: BigInt.zero,
+          bytesDownloaded: BigInt.zero,
+          failures: BigInt.zero,
+          failedHashes: const [],
+        );
+        _cachedDownloads = Map.unmodifiable(_downloads);
+        return id;
+      });
 
   /// Poll a swarm download once; finished downloads report + drop from map.
   Future<P2pSwarmStatusDto?> swarmStatus(String id) async {

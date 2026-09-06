@@ -1,10 +1,10 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/media_service.dart';
 import '../services/messaging_service.dart';
 import '../services/session_service.dart';
+import '../utils/media_upload.dart';
 
 /// Edit profile: name, display name, picture URL, banner, about, NIP-05.
 class EditProfileScreen extends StatefulWidget {
@@ -95,16 +95,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Future<void> _pickAndSet(TextEditingController controller) async {
     try {
-      final picked = await FilePicker.pickFile(type: FileType.image);
-      final path = picked?.path;
-      if (path == null || !mounted) return;
-      final manifest = await context.read<MediaService>().uploadMedia(path);
-      final hash = manifest['blob_hash'] as String? ?? '';
-      if (hash.length != 64) {
-        throw Exception('Image upload failed (bad manifest)');
-      }
+      final blob = await pickAndUploadMedia(
+        (p) => context.read<MediaService>().uploadMedia(p),
+        errorMessage: 'Image upload failed (bad manifest)',
+      );
+      if (blob == null || !mounted) return;
       if (mounted) {
-        setState(() => controller.text = 'n$hash');
+        setState(() => controller.text = blob.uri);
       }
     } catch (e) {
       if (mounted) {

@@ -306,9 +306,7 @@ mod tests {
 
     #[test]
     fn fetch_returns_empty_list() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let path = format!(
             "{}/soshal_minis_{}_{}.db",
             std::env::temp_dir().to_string_lossy(),
@@ -329,9 +327,7 @@ mod tests {
 
     #[test]
     fn fetch_returns_urls_from_mini_rows() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let path = format!(
             "{}/soshal_minis_{}_{}.db",
             std::env::temp_dir().to_string_lossy(),
@@ -366,9 +362,7 @@ mod tests {
 
     #[test]
     fn saved_roundtrip() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let path = format!(
             "{}/soshal_minis_{}_{}.db",
             std::env::temp_dir().to_string_lossy(),
@@ -409,9 +403,7 @@ mod tests {
 
     #[test]
     fn wasm_filter_returns_unavailable_error() {
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let err = minis_wasm_execute_filter(
@@ -429,9 +421,7 @@ mod tests {
 
     #[test]
     fn wasm_filter_rejects_invalid_hex() {
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let err =
@@ -443,9 +433,7 @@ mod tests {
 
     #[test]
     fn wasm_rank_returns_unavailable_error() {
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let err = minis_wasm_rank_feed(

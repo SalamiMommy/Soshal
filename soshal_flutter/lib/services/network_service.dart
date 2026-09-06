@@ -7,10 +7,11 @@ import 'package:soshal_flutter/ffi/network.dart';
 import 'package:soshal_flutter/ffi/p2p.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Network Service
 /// Transport status: I2P + Freenet presence + HTTP/3 stack + transport mode.
-class NetworkService extends ChangeNotifier with LastErrorMixin {
+class NetworkService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   static const String _modeKey = 'transport_mode';
 
   /// Relays used when none are configured for the active account yet.
@@ -153,18 +154,11 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// `{running, destination}` for the i2p SAM session.
-  Future<Map<String, dynamic>> i2pSessionStatus() async {
-    try {
-      final json = RustLib.instance.api.crateFfiNetworkI2PSessionStatus();
-      final map = jsonDecode(json) as Map<String, dynamic>;
-      clearLastError();
-      return map;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<Map<String, dynamic>> i2pSessionStatus() =>
+      guard(() {
+        final json = RustLib.instance.api.crateFfiNetworkI2PSessionStatus();
+        return jsonDecode(json) as Map<String, dynamic>;
+      }, notifyOnSuccess: false);
 
   /// Reconnects the relay client through the currently active transport.
   Future<void> reinitRelays() async {
@@ -211,81 +205,48 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Fetch per-relay connection status from the bridge client.
-  Future<List<RelayInfo>> fetchRelayStatus() async {
-    try {
-      final json =
-          await RustLib.instance.api.crateFfiNetworkNetworkGetRelayStatus();
-      final list = jsonDecode(json) as List<dynamic>;
-      final relays = list
-          .map((e) => RelayInfo.fromJson(e as Map<String, dynamic>))
-          .toList();
-      _relays = relays;
-      clearLastError();
-      notifyListeners();
-      return relays;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<RelayInfo>> fetchRelayStatus() => guard(() async {
+        final json =
+            await RustLib.instance.api.crateFfiNetworkNetworkGetRelayStatus();
+        final list = jsonDecode(json) as List<dynamic>;
+        final relays = list
+            .map((e) => RelayInfo.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _relays = relays;
+        return relays;
+      });
 
   /// Connect a new relay to the bridge relay client.
-  Future<bool> addRelay(String url) async {
-    try {
-      final ok =
-          await RustLib.instance.api.crateFfiNetworkNetworkAddRelay(url: url);
-      // Keep the local relay list in step so reinitRelays() pushes the
-      // current set instead of a stale snapshot built only from
-      // fetchRelayStatus().
-      if (ok && !_relays.any((r) => r.url == url)) {
-        _relays = [
-          ..._relays,
-          RelayInfo(url: url, connected: true, latencyMs: 0, lastEventAt: 0)
-        ];
-      }
-      clearLastError();
-      notifyListeners();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<bool> addRelay(String url) => guard(() async {
+        final ok =
+            await RustLib.instance.api.crateFfiNetworkNetworkAddRelay(url: url);
+        // Keep the local relay list in step so reinitRelays() pushes the
+        // current set instead of a stale snapshot built only from
+        // fetchRelayStatus().
+        if (ok && !_relays.any((r) => r.url == url)) {
+          _relays = [
+            ..._relays,
+            RelayInfo(url: url, connected: true, latencyMs: 0, lastEventAt: 0)
+          ];
+        }
+        return ok;
+      });
 
   /// Disconnect and forget a relay.
-  Future<bool> removeRelay(String url) async {
-    try {
-      final ok = await RustLib.instance.api
-          .crateFfiNetworkNetworkRemoveRelay(url: url);
-      if (ok) {
-        _relays.removeWhere((r) => r.url == url);
-      }
-      clearLastError();
-      notifyListeners();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<bool> removeRelay(String url) => guard(() async {
+        final ok = await RustLib.instance.api
+            .crateFfiNetworkNetworkRemoveRelay(url: url);
+        if (ok) {
+          _relays.removeWhere((r) => r.url == url);
+        }
+        return ok;
+      });
 
   /// (Re)initialize the relay client with a fresh URL list.
-  Future<String> initRelays(List<String> relayUrls) async {
-    try {
-      final result = await RustLib.instance.api
-          .crateFfiNetworkNetworkInitRelays(relayUrls: relayUrls);
-      clearLastError();
-      notifyListeners();
-      return result;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<String> initRelays(List<String> relayUrls) => guard(() async {
+        return await RustLib.instance.api
+            .crateFfiNetworkNetworkInitRelays(relayUrls: relayUrls);
+      });
 
   /// Multi-bearer off-grid mesh status (BLE, Wi-Fi Direct, LAN) as JSON map.
   Future<Map<String, dynamic>> fetchMultiBearerStatus(String ownPubkey) async {
@@ -304,18 +265,10 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
 
   /// Kernel / hardware crypto / storage engine diagnostics as JSON string
   /// (sync FFI; awaiting is harmless but this returns immediately).
-  String fetchSysDiagnostics() {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiNetworkNetworkGetSysDiagnostics();
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  String fetchSysDiagnostics() => guardSync(() {
+        return RustLib.instance.api
+            .crateFfiNetworkNetworkGetSysDiagnostics();
+      }, notifyOnSuccess: false);
 
   /// Reconciles Prolly Tree root hashes with a remote peer.
   /// Call this after LAN peer connect in p2p_service.
@@ -345,21 +298,13 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
   Future<bool> freenetConnect({
     required String url,
     required String authToken,
-  }) async {
-    try {
-      final ok = await RustLib.instance.api.crateFfiNetworkFreenetConnect(
-        url: url,
-        authToken: authToken,
-      );
-      clearLastError();
-      notifyListeners();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() async {
+        return await RustLib.instance.api.crateFfiNetworkFreenetConnect(
+          url: url,
+          authToken: authToken,
+        );
+      });
 
   /// Fetches a Freenet contract state for `key`.
   Future<String> freenetGetContract({
@@ -653,60 +598,27 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Stops the Reticulum transport (sync FFI).
-  bool reticulumStop() {
-    try {
-      final ok = RustLib.instance.api.crateFfiNetworkNetworkReticulumStop();
-      clearLastError();
-      notifyListeners();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  bool reticulumStop() => guardSync(() {
+        return RustLib.instance.api.crateFfiNetworkNetworkReticulumStop();
+      });
 
   /// Reticulum transport status JSON (sync FFI).
-  String reticulumStatus() {
-    try {
-      final json = RustLib.instance.api.crateFfiNetworkNetworkReticulumStatus();
-      clearLastError();
-      notifyListeners();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  String reticulumStatus() => guardSync(() {
+        return RustLib.instance.api.crateFfiNetworkNetworkReticulumStatus();
+      });
 
   /// Sends a Reticulum announce for `pubkey` (sync FFI).
-  bool reticulumAnnounce({required String pubkey}) {
-    try {
-      final ok = RustLib.instance.api
-          .crateFfiNetworkNetworkReticulumAnnounce(pubkey: pubkey);
-      clearLastError();
-      notifyListeners();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  bool reticulumAnnounce({required String pubkey}) => guardSync(() {
+        return RustLib.instance.api
+            .crateFfiNetworkNetworkReticulumAnnounce(pubkey: pubkey);
+      });
 
   /// Publishes the account relay list as a kind-10002 event (sync FFI).
   String publishRelayList({required List<String> relayUrls}) {
-    try {
-      final result = RustLib.instance.api
+    return guardSync(() {
+      return RustLib.instance.api
           .crateFfiIdentityIdentityPublishRelayList(relayUrls: relayUrls);
-      clearLastError();
-      return result;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    }, notifyOnSuccess: false);
   }
 
   /// Resolves protocol metadata (NIP-05 / NIP-19 style URI parts).
@@ -714,22 +626,15 @@ class NetworkService extends ChangeNotifier with LastErrorMixin {
     required String scheme,
     required String host,
     required String path,
-  }) async {
-    try {
-      final json =
-          await RustLib.instance.api.crateFfiProtocolHandlerProtocolGetMetadata(
-        scheme: scheme,
-        host: host,
-        path: path,
-      );
-      clearLastError();
-      return json;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() async {
+        return await RustLib.instance.api
+            .crateFfiProtocolHandlerProtocolGetMetadata(
+          scheme: scheme,
+          host: host,
+          path: path,
+        );
+      }, notifyOnSuccess: false);
 }
 
 /// Transport mode for outgoing traffic (mirrors network-core transport.rs).

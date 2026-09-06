@@ -6,9 +6,7 @@ pub struct ConversationMuteRepo<'a> {
 }
 
 impl<'a> ConversationMuteRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn mute(&self, conversation_id: &str, at: i64) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

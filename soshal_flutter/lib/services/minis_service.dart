@@ -8,11 +8,12 @@ import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
 import 'media_service.dart';
 import 'p2p_service.dart';
+import '../utils/service_guard.dart';
 
 /// Minis: mini video registry (kind-31020) plus WASI content-filter /
 /// feed-ranker plugin execution. Stateless wrapper — screens own their UI
 /// state.
-class MinisService extends ChangeNotifier with LastErrorMixin {
+class MinisService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   bool _wasmRuntimeUnavailable = false;
 
   /// True after a plugin call fails: the WASI host is on the roadmap, so
@@ -27,38 +28,23 @@ class MinisService extends ChangeNotifier with LastErrorMixin {
   bool isSaved(String id) => _saved.any((m) => m.id == id);
 
   /// Fetch known minis from the local registry, newest first.
-  List<MiniItem> fetchMinis({String audience = 'public'}) {
-    try {
-      final json =
-          RustLib.instance.api.crateFfiMinisMinisFetch(audience: audience);
-      final list = (jsonDecode(json) as List<dynamic>)
-          .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
-          .toList();
-      clearLastError();
-      return list;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
+  List<MiniItem> fetchMinis({String audience = 'public'}) => guardSync(() {
+        final json =
+            RustLib.instance.api.crateFfiMinisMinisFetch(audience: audience);
+        return (jsonDecode(json) as List<dynamic>)
+            .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }, notifyOnSuccess: false, notifyOnError: false);
 
   /// Saved minis from the local `saved_content` store, newest saved first.
-  Future<List<MiniItem>> fetchSavedMinis() async {
-    try {
-      final json = RustLib.instance.api.crateFfiMinisMinisSaved();
-      final list = (jsonDecode(json) as List<dynamic>)
-          .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
-          .toList();
-      _saved = list;
-      clearLastError();
-      notifyListeners();
-      return list;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<List<MiniItem>> fetchSavedMinis() => guard(() {
+        final json = RustLib.instance.api.crateFfiMinisMinisSaved();
+        final list = (jsonDecode(json) as List<dynamic>)
+            .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _saved = list;
+        return list;
+      });
 
   /// Save a mini: materialize its video blob into the local chunk store (so
   /// this device can serve it to peers, "hosting"), then persist the entry.
@@ -112,21 +98,15 @@ class MinisService extends ChangeNotifier with LastErrorMixin {
     String? textOverlay,
     String? thumbnail,
     String? audience,
-  }) async {
-    try {
-      final id = await RustLib.instance.api.crateFfiMinisMinisPublish(
-        mediaSource: mediaSource,
-        textOverlay: textOverlay,
-        thumbnail: thumbnail,
-        audience: audience,
-      );
-      clearLastError();
-      return id;
-    } catch (e, st) {
-      setLastError(e, st);
-      rethrow;
-    }
-  }
+  }) =>
+      guard(() async {
+        return await RustLib.instance.api.crateFfiMinisMinisPublish(
+          mediaSource: mediaSource,
+          textOverlay: textOverlay,
+          thumbnail: thumbnail,
+          audience: audience,
+        );
+      }, notifyOnSuccess: false, notifyOnError: false);
 
   /// Run a WASI content-filter plugin against text.
   String runFilter({

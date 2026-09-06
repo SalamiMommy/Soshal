@@ -6,9 +6,7 @@ pub struct GroupInviteRepo<'a> {
 }
 
 impl<'a> GroupInviteRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn create(&self, i: &GroupInviteRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;

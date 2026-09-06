@@ -10,9 +10,7 @@ pub struct IgnoredNotificationRepo<'a> {
 }
 
 impl<'a> IgnoredNotificationRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     /// Ignore all notifications from a user (event_id left empty).
     pub fn ignore_user(

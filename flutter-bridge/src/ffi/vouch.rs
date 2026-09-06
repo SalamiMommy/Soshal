@@ -38,7 +38,7 @@ pub async fn vouch_fetch(target_pubkey: String) -> Result<String, String> {
         if e.kind.as_u16() != 31989 {
             continue;
         }
-        if e.verify().is_err() {
+        if !soshal_nostr_core::models::verify_event(&e) {
             continue;
         }
         out.push(soshal_social_core::relations::relation_entry_from_event(
@@ -59,9 +59,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_vouch_publish_locked_signer_rejected() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         super::super::signer::signer_lock().unwrap();
         let result = vouch_publish("a".repeat(64), "trusted".to_string()).await;
         assert!(result.is_err());
@@ -72,9 +70,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_vouch_publish_signs_then_missing_relay() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let result = vouch_publish(keys.public_key().to_hex(), "trusted".to_string()).await;
@@ -88,9 +84,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_vouch_fetch_requires_relay_client() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         super::super::signer::signer_lock().unwrap();
         let result = vouch_fetch("a".repeat(64)).await;
         assert!(result.is_err());
@@ -100,9 +94,7 @@ mod tests {
     #[test]
     fn test_vouch_fixture_verify_and_mapping() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         let target = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
@@ -116,11 +108,11 @@ mod tests {
         let signed = crate::ffi::signer::sign_builder(builder).unwrap();
         let ev: nostr::event::Event = serde_json::from_str(&signed).unwrap();
         assert_eq!(ev.kind.as_u16(), 31989);
-        assert!(ev.verify().is_ok());
+        assert!(soshal_nostr_core::models::verify_event(&ev));
         let mut tampered: serde_json::Value = serde_json::from_str(&signed).unwrap();
         tampered["sig"] = serde_json::json!("0".repeat(128));
         let bad: nostr::event::Event = serde_json::from_value(tampered).unwrap();
-        assert!(bad.verify().is_err());
+        assert!(!soshal_nostr_core::models::verify_event(&bad));
         let entry = soshal_social_core::relations::relation_entry_from_event(
             &soshal_nostr_core::models::NostrEvent::from(&ev),
         );
@@ -134,9 +126,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_vouch_publish_garbage_target_reaches_relay() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         // nostr Tag::parse only rejects empty tag vecs — garbage pubkey parses fine.

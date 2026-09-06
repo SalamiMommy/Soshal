@@ -53,22 +53,15 @@ struct GlitterRegexes {
 }
 
 fn get_glitter_regexes() -> &'static GlitterRegexes {
-    use regex::RegexBuilder;
     static RE: std::sync::OnceLock<GlitterRegexes> = std::sync::OnceLock::new();
     RE.get_or_init(|| {
+        // catch_unwind: RegexBuilder::build can panic on hostile patterns;
+        // degrade to a never-matching regex instead of crashing moderation.
         let build_size_limited = |pat: &str| -> regex::Regex {
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                RegexBuilder::new(pat)
-                    .case_insensitive(true)
-                    .size_limit(1 << 30)
-                    .dfa_size_limit(1 << 30)
-                    .build()
-            })) {
-                Ok(Ok(re)) => re,
-                _ => {
-                    regex::Regex::new(r"^$").expect("fallback regex must compile")
-                }
-            }
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                crate::regex_util::build_regex(pat)
+            }))
+            .unwrap_or_else(|_| regex::Regex::new(r"^$").expect("fallback regex must compile"))
         };
         GlitterRegexes {
             script: build_size_limited(r"(?is)<script\b[^>]*>[\s\S]*?</script\s*>"),

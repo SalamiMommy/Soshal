@@ -45,7 +45,7 @@ fn state() -> &'static Mutex<Option<P2pState>> {
 }
 
 fn state_mut() -> std::sync::MutexGuard<'static, Option<P2pState>> {
-    state().lock().unwrap_or_else(|e| e.into_inner())
+    crate::ffi::util::lock(state())
 }
 
 /// A peer discovered on the local subnet.
@@ -710,7 +710,7 @@ mod tests {
 
     #[test]
     fn test_moq_publish_validation_and_registry() {
-        let _g = GLOBAL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&GLOBAL_LOCK);
         let e = super::p2p_moq_publish_group(String::new(), vec![1]).unwrap_err();
         assert!(e.contains("bad live stream id"), "got {e}");
         let e = super::p2p_moq_publish_group("x".repeat(129), vec![1]).unwrap_err();
@@ -823,7 +823,7 @@ mod tests {
 
     #[test]
     fn test_no_daemon_state_queries() {
-        let _g = GLOBAL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&GLOBAL_LOCK);
         assert!(super::p2p_lan_server_port()
             .unwrap_err()
             .contains("not running"));
@@ -838,7 +838,7 @@ mod tests {
 
     #[test]
     fn test_no_daemon_stops_are_noops() {
-        let _g = GLOBAL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&GLOBAL_LOCK);
         assert!(super::p2p_mdns_advertise_stop().unwrap());
         assert!(super::p2p_mdns_browse_stop().unwrap());
         assert!(super::p2p_lan_server_stop().unwrap());
@@ -849,7 +849,7 @@ mod tests {
 
     #[test]
     fn test_power_snapshot_modes() {
-        let _g = GLOBAL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&GLOBAL_LOCK);
         let full = super::p2p_power_update(true, 100, false, false).unwrap();
         assert_eq!(full.mode, "full");
         assert!(!full.paused);

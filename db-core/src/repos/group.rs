@@ -6,9 +6,7 @@ pub struct GroupRepo<'a> {
 }
 
 impl<'a> GroupRepo<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
+    soshal_repo_new!();
 
     pub fn get_by_id(&self, id: &str) -> Result<Option<GroupRow>, crate::error::DbError> {
         let conn = self.db.conn()?;

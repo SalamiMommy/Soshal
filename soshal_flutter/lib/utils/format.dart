@@ -61,6 +61,26 @@ String formatClock12h(DateTime t) {
   return '$h12:${t.minute.toString().padLeft(2, '0')} $period';
 }
 
+/// Short month names (`Jan`…`Dec`), indexed by `month - 1`.
+const kMonthShort = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/// `Jan 6 · 2:30 PM`-style label (short month, day, 12h clock).
+String formatMonthDayTime(DateTime t) =>
+    '${kMonthShort[t.month - 1]} ${t.day} · ${formatClock12h(t)}';
+
 /// Relative time (`just now` / m / h / d ago); empty string when `unix <= 0`.
 String relativeTime(int unix) {
   if (unix <= 0) return '';

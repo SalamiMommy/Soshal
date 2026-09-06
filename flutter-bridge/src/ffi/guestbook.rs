@@ -213,12 +213,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_guestbook_add_list_approve_delete() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("guestbook", "gb");
         let guest = nostr::key::Keys::generate();
         let owner_keys = nostr::key::Keys::generate();
@@ -269,12 +265,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_guestbook_add_rejects_bad_input() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("guestbook-bad", "gb");
         let keys = nostr::key::Keys::generate();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();

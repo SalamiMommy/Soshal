@@ -6,10 +6,12 @@ import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Notification Service
 /// Fetches, marks, and counts notifications through the Rust bridge.
-class NotificationService extends ChangeNotifier with LastErrorMixin {
+class NotificationService extends ChangeNotifier
+    with LastErrorMixin, ServiceGuard {
   List<AppNotification> _notifications = [];
   List<AppNotification> _unread = [];
   final Map<String, List<AppNotification>> _byType = {};
@@ -109,75 +111,48 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Register the platform push token for the active account.
-  Future<bool> registerPush(String userPubkey, String token) async {
-    try {
-      final ok =
-          RustLib.instance.api.crateFfiNotificationsNotificationsRegisterPush(
-        userPubkey: userPubkey,
-        token: token,
-      );
-      clearLastError();
-      notifyListeners();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<bool> registerPush(String userPubkey, String token) => guard(() {
+        return RustLib.instance.api
+            .crateFfiNotificationsNotificationsRegisterPush(
+          userPubkey: userPubkey,
+          token: token,
+        );
+      });
 
   /// Unregister from push notifications.
-  Future<bool> unregisterPush(String userPubkey) async {
-    try {
-      final ok =
-          RustLib.instance.api.crateFfiNotificationsNotificationsUnregisterPush(
-        userPubkey: userPubkey,
-      );
-      clearLastError();
-      notifyListeners();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<bool> unregisterPush(String userPubkey) => guard(() {
+        return RustLib.instance.api
+            .crateFfiNotificationsNotificationsUnregisterPush(
+          userPubkey: userPubkey,
+        );
+      });
 
   /// Mark a single notification as read.
-  Future<bool> markRead(String notificationId) async {
-    try {
-      final ok =
-          RustLib.instance.api.crateFfiNotificationsNotificationsMarkRead(
-        notificationId: notificationId,
-      );
-      if (ok) {
-        _unread.removeWhere((n) => n.id == notificationId);
-        for (var i = 0; i < _notifications.length; i++) {
-          final n = _notifications[i];
-          if (n.id == notificationId && !n.read) {
-            _notifications[i] = _asRead(n);
+  Future<bool> markRead(String notificationId) => guard(() {
+        final ok =
+            RustLib.instance.api.crateFfiNotificationsNotificationsMarkRead(
+          notificationId: notificationId,
+        );
+        if (ok) {
+          _unread.removeWhere((n) => n.id == notificationId);
+          for (var i = 0; i < _notifications.length; i++) {
+            final n = _notifications[i];
+            if (n.id == notificationId && !n.read) {
+              _notifications[i] = _asRead(n);
+            }
           }
+          _recomputeUnreadCount();
         }
-        _recomputeUnreadCount();
-      }
-      clearLastError();
-      notifyListeners();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+        return ok;
+      });
 
   /// Mark every notification read for the active account.
-  Future<bool> markAllRead(String pubkey) async {
-    try {
-      final ok =
-          RustLib.instance.api.crateFfiNotificationsNotificationsMarkAllRead(
-        userPubkey: pubkey,
-      );
-      if (ok) {
+  Future<bool> markAllRead(String pubkey) => guard(() {
+        final ok =
+            RustLib.instance.api.crateFfiNotificationsNotificationsMarkAllRead(
+          userPubkey: pubkey,
+        );
+if (ok) {
         _notifications = [
           for (final n in _notifications)
             if (!n.read) _asRead(n) else n,
@@ -188,56 +163,34 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         _byTypeFetchedAt.clear();
         _recomputeUnreadCount();
       }
-      clearLastError();
-      notifyListeners();
       return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+    });
 
   /// Get the unread notification count.
-  Future<int> refreshUnreadCount(String pubkey) async {
-    try {
-      _unreadCount =
-          RustLib.instance.api.crateFfiNotificationsNotificationsGetUnreadCount(
-        userPubkey: pubkey,
-      );
-      clearLastError();
-      notifyListeners();
-      return _unreadCount;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<int> refreshUnreadCount(String pubkey) => guard(() {
+        _unreadCount = RustLib.instance.api
+            .crateFfiNotificationsNotificationsGetUnreadCount(
+          userPubkey: pubkey,
+        );
+        return _unreadCount;
+      });
 
   /// Delete a notification from the local store.
-  Future<bool> deleteNotification(String notificationId) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiNotificationsNotificationsDelete(
-        notificationId: notificationId,
-      );
-      if (ok) {
-        _notifications.removeWhere((n) => n.id == notificationId);
-        _unread.removeWhere((n) => n.id == notificationId);
-        for (final list in _byType.values) {
-          list.removeWhere((n) => n.id == notificationId);
+  Future<bool> deleteNotification(String notificationId) => guard(() {
+        final ok =
+            RustLib.instance.api.crateFfiNotificationsNotificationsDelete(
+          notificationId: notificationId,
+        );
+        if (ok) {
+          _notifications.removeWhere((n) => n.id == notificationId);
+          _unread.removeWhere((n) => n.id == notificationId);
+          for (final list in _byType.values) {
+            list.removeWhere((n) => n.id == notificationId);
+          }
+          _recomputeUnreadCount();
         }
-        _recomputeUnreadCount();
-      }
-      clearLastError();
-      notifyListeners();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+        return ok;
+      });
 
   /// Ignore/dismiss a single notification.
   Future<void> ignoreNotification(String notificationId) async {
@@ -246,7 +199,7 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
 
   /// Ignore all notifications from a user.
   Future<bool> ignoreUser(String targetPubkey, {String? userPubkey}) async {
-    try {
+    return guard(() {
       var ok = userPubkey == null || userPubkey.isEmpty;
       if (!ok) {
         ok = RustLib.instance.api.crateFfiNotificationsNotificationsIgnoreUser(
@@ -262,22 +215,17 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         }
         _recomputeUnreadCount();
       }
-      clearLastError();
-      notifyListeners();
       return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    });
   }
 
   /// Turn off notifications for a thread/post.
   Future<bool> ignoreThread(String eventId, {String? userPubkey}) async {
-    try {
+    return guard(() {
       var ok = userPubkey == null || userPubkey.isEmpty;
       if (!ok) {
-        ok = RustLib.instance.api.crateFfiNotificationsNotificationsIgnoreThread(
+        ok =
+            RustLib.instance.api.crateFfiNotificationsNotificationsIgnoreThread(
           userPubkey: userPubkey,
           eventId: eventId,
         );
@@ -290,14 +238,8 @@ class NotificationService extends ChangeNotifier with LastErrorMixin {
         }
         _recomputeUnreadCount();
       }
-      clearLastError();
-      notifyListeners();
       return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    });
   }
 
   Future<List<AppNotification>> _fetchCategory(

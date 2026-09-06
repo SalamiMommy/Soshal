@@ -16,26 +16,21 @@ const SUGGESTIONS_TTL_SECS: i64 = 60;
 #[frb(sync, serialize)]
 pub fn social_friend_suggestions() -> Result<Vec<String>, String> {
     use std::sync::{Mutex, OnceLock};
-    type SuggestionsCache = Option<(String, i64, Vec<String>)>;
-    static CACHE: OnceLock<Mutex<SuggestionsCache>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<super::util::TtlCache<String, Vec<String>>>> = OnceLock::new();
     let me = match super::signer::signer_pubkey() {
         Ok(pk) => pk,
         // No signer → no identity to suggest for → stay honestly empty.
         Err(_) => return Ok(vec![]).into(),
     };
     let now = soshal_common_core::format::now_secs();
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
-    {
-        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((pk, ts, cached)) = guard.as_ref() {
-            if pk == &me && now.saturating_sub(*ts) < SUGGESTIONS_TTL_SECS {
-                return Ok(cached.clone()).into();
-            }
-        }
+    let mut cache = crate::ffi::util::lock(
+        CACHE.get_or_init(|| Mutex::new(super::util::TtlCache::new(SUGGESTIONS_TTL_SECS, 8))),
+    );
+    if let Some(cached) = cache.get(me.as_str(), now) {
+        return Ok(cached.clone()).into();
     }
     let suggestions = compute_suggestions(&me)?;
-    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    *guard = Some((me, now, suggestions.clone()));
+    cache.insert(me, suggestions.clone(), now);
     Ok(suggestions).into()
 }
 

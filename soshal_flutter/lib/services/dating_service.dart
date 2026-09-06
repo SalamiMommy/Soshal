@@ -6,10 +6,12 @@ import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Dating Service
 /// Profile creation/browsing, likes, matches, filters and stats.
-class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
+class DatingService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   List<DatingCard> _cards = [];
   final List<DatingCard> _matches = [];
   final List<DatingCard> _likes = [];
@@ -112,45 +114,38 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  Future<List<DatingCard>> fetchLikesForMatch(String userPubkey) async {
-    try {
-      final json = RustLib.instance.api.crateFfiDatingDatingFetchLikes(
-        userPubkey: userPubkey,
-      );
-      clearLastError();
-      return await runOffThread(() => _parseCards(json));
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<List<DatingCard>> fetchLikesForMatch(String userPubkey) => guard(
+      () async {
+        final json = RustLib.instance.api.crateFfiDatingDatingFetchLikes(
+          userPubkey: userPubkey,
+        );
+        return await runOffThread(() => _parseCards(json));
+      },
+      onNotify: notifyDeferred,
+      notifyOnSuccess: false,
+    );
 
-  Future<double> calculateScore(String userPubkey, String targetPubkey) async {
-    try {
-      final prefs = <String, dynamic>{};
-      final own = _ownProfile;
-      if (own != null) {
-        if (own.preferenceWeights.isNotEmpty) {
-          prefs['preferenceWeights'] = own.preferenceWeights;
+  Future<double> calculateScore(String userPubkey, String targetPubkey) => guard(
+      () async {
+        final prefs = <String, dynamic>{};
+        final own = _ownProfile;
+        if (own != null) {
+          if (own.preferenceWeights.isNotEmpty) {
+            prefs['preferenceWeights'] = own.preferenceWeights;
+          }
+          if (own.dealbreakers.isNotEmpty) {
+            prefs['dealbreakers'] = own.dealbreakers;
+          }
         }
-        if (own.dealbreakers.isNotEmpty) {
-          prefs['dealbreakers'] = own.dealbreakers;
-        }
-      }
-      final score = RustLib.instance.api.crateFfiDatingDatingCalculateScore(
-        userPubkey: userPubkey,
-        targetPubkey: targetPubkey,
-        preferencesJson: prefs.isEmpty ? '{}' : jsonEncode(prefs),
-      );
-      clearLastError();
-      return score;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+        return RustLib.instance.api.crateFfiDatingDatingCalculateScore(
+          userPubkey: userPubkey,
+          targetPubkey: targetPubkey,
+          preferencesJson: prefs.isEmpty ? '{}' : jsonEncode(prefs),
+        );
+      },
+      onNotify: notifyDeferred,
+      notifyOnSuccess: false,
+    );
 
   Future<DatingCard> getOwnProfile(String userPubkey) async {
     try {
@@ -176,23 +171,14 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
 
   /// Fetch a single dating profile by profile event id (fresh from the
   /// store, not the swipe deck).
-  Future<DatingCard> getProfile(String profileId) async {
-    try {
-      final json = RustLib.instance.api.crateFfiDatingDatingGetProfile(
-        profileId: profileId,
-      );
-      final card = DatingCard.fromJson(
-        jsonDecode(json) as Map<String, dynamic>,
-      );
-      clearLastError();
-      notifyDeferred();
-      return card;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<DatingCard> getProfile(String profileId) => guard(() {
+        final json = RustLib.instance.api.crateFfiDatingDatingGetProfile(
+          profileId: profileId,
+        );
+        return DatingCard.fromJson(
+          jsonDecode(json) as Map<String, dynamic>,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<String> createProfile(
     String userPubkey,
@@ -296,21 +282,13 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
   }
 
-  Future<bool> deleteProfile(String userPubkey) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiDatingDatingDeleteProfile(
-        userPubkey: userPubkey,
-      );
-      _ownProfile = null;
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<bool> deleteProfile(String userPubkey) => guard(() {
+        final ok = RustLib.instance.api.crateFfiDatingDatingDeleteProfile(
+          userPubkey: userPubkey,
+        );
+        _ownProfile = null;
+        return ok;
+      }, onNotify: notifyDeferred);
 
   Future<bool> like(String userPubkey, String profileId) async {
     final ok = await _bool(
@@ -364,20 +342,12 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
 
   /// Reset profiles the user swiped "no" on: deletes local `pass` records so
   /// they re-enter the discover deck. Returns how many were reset.
-  Future<int> resetPasses(String userPubkey) async {
-    try {
-      final n = RustLib.instance.api.crateFfiDatingDatingResetPasses(
-        userPubkey: userPubkey,
-      );
-      clearLastError();
-      notifyDeferred();
-      return n;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<int> resetPasses(String userPubkey) => guard(() {
+        final n = RustLib.instance.api.crateFfiDatingDatingResetPasses(
+          userPubkey: userPubkey,
+        );
+        return n;
+      }, onNotify: notifyDeferred);
 
   Future<bool> unblock(String userPubkey, String targetPubkey) async {
     return _bool(
@@ -412,48 +382,31 @@ class DatingService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     );
   }
 
-  Future<DatingStats> getStats(String userPubkey) async {
-    try {
-      final json = RustLib.instance.api.crateFfiDatingDatingGetStats(
-        userPubkey: userPubkey,
-      );
-      final decoded = jsonDecode(json);
-      final stats = DatingStats.fromJson(
-          decoded is Map<String, dynamic> ? decoded : <String, dynamic>{});
-      clearLastError();
-      return stats;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
-  }
+  Future<DatingStats> getStats(String userPubkey) => guard(
+      () async {
+        final json = RustLib.instance.api.crateFfiDatingDatingGetStats(
+          userPubkey: userPubkey,
+        );
+        final decoded = jsonDecode(json);
+        return DatingStats.fromJson(
+            decoded is Map<String, dynamic> ? decoded : <String, dynamic>{});
+      },
+      onNotify: notifyDeferred,
+      notifyOnSuccess: false,
+    );
 
   Future<bool> _bool(bool Function() call) async {
-    try {
-      final ok = call();
-      clearLastError();
-      notifyDeferred();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
+    return guard(() {
+      return call();
+    });
   }
 
   Future<List<DatingCard>> _decode(String Function() call) async {
-    try {
+    return guard(() async {
       final json = call();
       _cards = await runOffThread(() => _parseCards(json));
-      clearLastError();
-      notifyDeferred();
       return _cards;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
-      rethrow;
-    }
+    });
   }
 }
 

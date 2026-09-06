@@ -14,6 +14,7 @@ import '../services/session_service.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/empty_state.dart';
 import '../utils/format.dart';
+import '../utils/media_upload.dart';
 
 /// Minis: mini video registry (kind-31020). Each mini is a video hosted
 /// from device caches — the local chunk store first, then LAN peers, with
@@ -557,7 +558,7 @@ class _MinisScreenState extends State<MinisScreen>
                                 ),
                           title: Text(
                             _minis[i].textOverlay.isEmpty
-                                ? (_minis[i].videoUrl.startsWith('blob://')
+                                ? (mediaBlobHash(_minis[i].videoUrl) != null
                                     ? 'Mini video'
                                     : _minis[i].videoUrl)
                                 : _minis[i].textOverlay,
@@ -565,7 +566,7 @@ class _MinisScreenState extends State<MinisScreen>
                             overflow: TextOverflow.ellipsis,
                           ),
                           subtitle: Text(
-                            _minis[i].videoUrl.startsWith('blob://')
+                            mediaBlobHash(_minis[i].videoUrl) != null
                                 ? 'Mini video · hosted from device caches'
                                 : 'Mini video · ${_minis[i].videoUrl}',
                             maxLines: 1,
@@ -650,7 +651,7 @@ class _MinisScreenState extends State<MinisScreen>
                           color: Theme.of(context).colorScheme.primary),
                   title: Text(
                     mini.textOverlay.isEmpty
-                        ? (mini.videoUrl.startsWith('blob://')
+                        ? (mediaBlobHash(mini.videoUrl) != null
                             ? 'Mini video'
                             : mini.videoUrl)
                         : mini.textOverlay,

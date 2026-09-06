@@ -7,6 +7,7 @@ import '../services/minis_service.dart';
 import '../services/p2p_service.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/user_content_list.dart';
+import '../utils/media_upload.dart';
 
 /// Minis user page: lists fetched minis. Mini events carry the author's
 /// pubkey, so this shows the author's own published minis.
@@ -131,7 +132,7 @@ class _MinisUserScreenState extends State<MinisUserScreen> {
                   color: Theme.of(context).colorScheme.primary),
           title: Text(
             mini.textOverlay.isEmpty
-                ? (mini.videoUrl.startsWith('blob://')
+                ? (mediaBlobHash(mini.videoUrl) != null
                     ? 'Mini video'
                     : mini.videoUrl)
                 : mini.textOverlay,

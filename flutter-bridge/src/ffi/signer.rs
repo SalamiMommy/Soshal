@@ -70,7 +70,7 @@ pub fn signer_unlock(mut secret: String) -> Result<String, String> {
     // M2 fix: clear derived caches INSIDE the SIGNER lock to prevent the stale
     // identity window where another thread could call lan_key() with the old
     // key between cache clear and key replacement.
-    let mut guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = crate::ffi::util::lock(&SIGNER);
     clear_derived_cache();
     soshal_crypto_core::nip44::clear_conversation_key_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
@@ -82,7 +82,7 @@ pub fn signer_unlock(mut secret: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn signer_lock() -> Result<bool, String> {
     clear_derived_cache();
-    *SIGNER.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *crate::ffi::util::lock(&SIGNER) = None;
     soshal_crypto_core::nip44::clear_conversation_key_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
     Ok(true).into()
@@ -91,14 +91,14 @@ pub fn signer_lock() -> Result<bool, String> {
 /// Whether the signer currently holds an unlocked identity.
 #[frb(sync, serialize)]
 pub fn signer_is_locked() -> Result<bool, String> {
-    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&SIGNER);
     Ok(guard.is_none()).into()
 }
 
 /// Hex public key of the unlocked identity, or an error if locked.
 #[frb(sync, serialize)]
 pub fn signer_pubkey() -> Result<String, String> {
-    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&SIGNER);
     match guard.as_ref() {
         Some(keys) => Ok(keys.public_key().to_hex()).into(),
         None => Err("signer locked".to_string()),
@@ -133,7 +133,7 @@ pub async fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
     // keyring write: keyring may prompt or stall, and holding the global
     // SIGNER mutex across it would stall every signing call on other threads.
     let secret = {
-        let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = crate::ffi::util::lock(&SIGNER);
         let keys = match guard.as_ref() {
             Some(k) => k,
             None => return Err("signer locked".to_string()).into(),
@@ -191,7 +191,7 @@ pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> 
         return Err("stored key does not match pubkey".to_string()).into();
     }
     // Clear derived caches INSIDE the SIGNER lock to prevent stale identity window.
-    let mut guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = crate::ffi::util::lock(&SIGNER);
     clear_derived_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
     soshal_crypto_core::nip44::clear_conversation_key_cache();
@@ -257,11 +257,11 @@ pub fn signer_remove_from_keyring(pubkey: String) -> Result<bool, String> {
 /// that touch both statics must follow this order to prevent deadlocks.
 pub(crate) fn lan_key() -> Result<[u8; 32], String> {
     // LOCK ORDER: LAN_KEY_CACHE → SIGNER (must not be reversed).
-    let mut cache = LAN_KEY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut cache = crate::ffi::util::lock(&LAN_KEY_CACHE);
     if let Some(lan) = cache.as_ref() {
         return Ok(*lan);
     }
-    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&SIGNER);
     let keys = match guard.as_ref() {
         Some(k) => k,
         None => return Err("signer locked".to_string()),
@@ -292,11 +292,11 @@ pub(crate) fn lan_key() -> Result<[u8; 32], String> {
 /// Must follow the same order as `lan_key` to prevent deadlocks.
 pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
     // LOCK ORDER: AT_REST_KEY_CACHE → SIGNER (must not be reversed).
-    let mut cache = AT_REST_KEY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut cache = crate::ffi::util::lock(&AT_REST_KEY_CACHE);
     if let Some(rest) = cache.as_ref() {
         return Ok(*rest);
     }
-    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&SIGNER);
     let keys = match guard.as_ref() {
         Some(k) => k,
         None => return Err("signer locked".to_string()),
@@ -322,7 +322,7 @@ pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
 /// dedicated function with the correct context tag if a new use case arises.
 #[frb(sync, serialize)]
 pub fn signer_schnorr_sign(message_hex: String) -> Result<String, String> {
-    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&SIGNER);
     match guard.as_ref() {
         Some(keys) => {
             let msg = match hex::decode(&message_hex) {
@@ -360,7 +360,7 @@ fn sign_event_core(keys: &Keys, unsigned: UnsignedEvent) -> Result<String, Strin
 /// Sign a fully-formed `EventBuilder` with the unlocked key. Internal helper
 /// for the domain modules (feed, messaging, relations).
 pub(crate) fn sign_builder(builder: nostr::event::EventBuilder) -> Result<String, String> {
-    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&SIGNER);
     match guard.as_ref() {
         Some(keys) => sign_event_core(keys, builder.finalize_unsigned(keys.public_key())),
         None => Err("signer locked".to_string()),
@@ -372,7 +372,7 @@ pub(crate) fn sign_builder(builder: nostr::event::EventBuilder) -> Result<String
 /// Returns the fully signed event JSON including `id` and `sig`.
 #[frb(sync, serialize)]
 pub fn signer_sign_unsigned(event_json: String) -> Result<String, String> {
-    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&SIGNER);
     match guard.as_ref() {
         Some(keys) => {
             let unsigned = match serde_json::from_str::<UnsignedEvent>(&event_json) {
@@ -392,7 +392,7 @@ pub fn signer_nip44_encrypt(
     mut plaintext: String,
     recipient_pubkey: String,
 ) -> Result<String, String> {
-    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&SIGNER);
     let out = match guard.as_ref() {
         Some(keys) => {
             let pk = match PublicKey::from_hex(&recipient_pubkey) {
@@ -421,7 +421,7 @@ pub fn signer_nip44_encrypt(
 /// opaque Dart type rather than a String, breaking the callers).
 #[frb(sync, serialize)]
 pub fn signer_nip44_decrypt(payload: String, sender_pubkey: String) -> Result<String, String> {
-    let guard = SIGNER.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::ffi::util::lock(&SIGNER);
     match guard.as_ref() {
         Some(keys) => {
             let pk = match PublicKey::from_hex(&sender_pubkey) {
@@ -448,9 +448,7 @@ mod tests {
     #[test]
     fn test_unlock_and_sign_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         let secret = keys.secret_key().to_secret_hex();
         let pk_hex = keys.public_key().to_hex();
@@ -470,9 +468,7 @@ mod tests {
     #[test]
     fn test_unsigned_event_sign() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         let json = "{\"pubkey\":\"\",\"created_at\":0,\"kind\":1,\"tags\":[],\"content\":\"hi\"}"
             .to_string();
@@ -491,9 +487,7 @@ mod tests {
     #[test]
     fn test_nip44_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let alice = soshal_nostr_core::keys::generate_keys();
         let bob = soshal_nostr_core::keys::generate_keys();
         signer_unlock(alice.secret_key().to_secret_hex()).unwrap();
@@ -509,9 +503,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_keyring_save_unlock_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         let secret = keys.secret_key().to_secret_hex();
         let pk_hex = keys.public_key().to_hex();
@@ -540,9 +532,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_keyring_remove() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         let secret = keys.secret_key().to_secret_hex();
         let pk_hex = keys.public_key().to_hex();
@@ -564,9 +554,7 @@ mod tests {
     #[test]
     fn test_derived_keys_locked_and_unlocked() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         assert!(lan_key().is_err());
         assert!(signer_at_rest_key().is_err());
         let keys = soshal_nostr_core::keys::generate_keys();
@@ -586,9 +574,7 @@ mod tests {
     #[test]
     fn test_unlock_validation_and_schnorr_errors() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         signer_lock().unwrap();
         let err = signer_unlock("not-a-secret-key".to_string()).unwrap_err();
         assert!(
@@ -613,9 +599,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_keyring_validation() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         let pk_hex = keys.public_key().to_hex();
         let other = soshal_nostr_core::keys::generate_keys();
@@ -669,9 +653,7 @@ mod tests {
     #[test]
     fn test_signing_and_nip44_error_paths() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let alice = soshal_nostr_core::keys::generate_keys();
         let bob = soshal_nostr_core::keys::generate_keys();
         signer_unlock(alice.secret_key().to_secret_hex()).unwrap();
@@ -713,9 +695,7 @@ mod tests {
     #[test]
     fn test_at_rest_first_call_order() {
         let _g = TEST_LOCK.lock().unwrap();
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         // at-rest FIRST (cache None branch), then lan
         signer_unlock(keys.secret_key().to_secret_hex()).unwrap();

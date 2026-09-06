@@ -358,7 +358,7 @@ struct WotGraphSnapshot {
 /// (repos have no list-all; light raw query mirrors db.rs helpers).
 pub(crate) fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
     let current_db = super::db::db_path()?;
-    let mut guard = WOT_GRAPH_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = crate::ffi::util::lock(&WOT_GRAPH_CACHE);
     if let Some(snap) = guard.as_ref() {
         if snap.db_path == current_db && snap.fetched_at.elapsed() < WOT_GRAPH_TTL {
             return Ok(snap.users.clone());
@@ -769,12 +769,8 @@ mod tests {
 
     #[test]
     fn test_get_profile_is_following_from_viewer_contacts() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("identity-follow", "identity");
         let keys = nostr::key::Keys::generate();
         let me = keys.public_key().to_hex();
@@ -806,9 +802,7 @@ mod tests {
 
     #[test]
     fn test_wot_status_warning_distance_two() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("identity-wot", "identity");
         let me = "a".repeat(64);
         let friend = "b".repeat(64);
@@ -838,9 +832,7 @@ mod tests {
 
     #[test]
     fn test_store_profile_non_json_content_silent() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("identity-store-bad", "identity");
         let pk = "e".repeat(64);
         assert!(
@@ -867,9 +859,7 @@ mod tests {
 
     #[test]
     fn test_search_users_limit_clamp() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("identity-search", "identity");
         for i in 0..3 {
             let pk = format!("{:064x}", i + 1);
@@ -892,12 +882,8 @@ mod tests {
 
     #[test]
     fn test_follow_user_idempotent_persist() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("identity-follow-dup", "identity");
         let keys = soshal_nostr_core::keys::generate_keys();
         let me = keys.public_key().to_hex();
@@ -922,9 +908,7 @@ mod tests {
 
     #[test]
     fn test_fetch_follows_roundtrip_and_malformed() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("identity-fetch-follows", "identity");
         let pk = "1".repeat(64);
         let x = "2".repeat(64);
@@ -946,9 +930,7 @@ mod tests {
 
     #[test]
     fn test_wot_graph_users_light_load() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("identity-wot-graph", "identity");
         let p1 = "a1".repeat(32);
         let p2 = "b2".repeat(32);
@@ -970,12 +952,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[allow(clippy::await_holding_lock)]
     async fn test_delete_profile_publishes_kind_five_tombstone() {
-        let _g = crate::ffi::test_lock::DB_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = crate::ffi::db::tmp_db("identity-delete-profile", "identity");
         let keys = soshal_nostr_core::keys::generate_keys();
         let me = keys.public_key().to_hex();

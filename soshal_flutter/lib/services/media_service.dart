@@ -8,6 +8,7 @@ import 'package:soshal_flutter/ffi/media.dart';
 import 'package:soshal_flutter/ffi/p2p.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import '../utils/service_guard.dart';
 
 /// Media Service
 /// Handles media upload/download, blob storage, and local file serving via
@@ -15,7 +16,7 @@ import 'error_log.dart';
 /// (sendfile) for video playback. LAN peers can be crawled for blobs by
 /// hash alone (`fetchBlobFromLan`) — one TCP/QUIC round trip for the
 /// manifest, then parallel-verified chunk pulls.
-class MediaService extends ChangeNotifier with LastErrorMixin {
+class MediaService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   int? _localServerPort;
   Future<int>? _localServerStart;
   AppLifecycleListener? _lifecycle;
@@ -93,35 +94,26 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
   /// `filePath` may be a local file path or an http(s):// URL (SSRF-guarded
   /// fetch on the Rust side). The blob is chunked, deduplicated, and stored
   /// in the local CAS.
-  Future<Map<String, dynamic>> uploadMedia(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        throw Exception('File not found: $filePath');
-      }
+  Future<Map<String, dynamic>> uploadMedia(String filePath) => guard(() async {
+        final file = File(filePath);
+        if (!await file.exists()) {
+          throw Exception('File not found: $filePath');
+        }
 
-      final mime = await mimeType(filePath);
-      final window = await chunkingForMime(mime);
+        final mime = await mimeType(filePath);
+        final window = await chunkingForMime(mime);
 
-      final manifestJson =
-          await RustLib.instance.api.crateFfiMediaMediaUploadBlobFile(
-        filePath: filePath,
-      );
+        final manifestJson =
+            await RustLib.instance.api.crateFfiMediaMediaUploadBlobFile(
+          filePath: filePath,
+        );
 
-      final manifest = Map<String, dynamic>.from(
-        jsonDecode(manifestJson) as Map,
-      );
-      manifest['chunking'] = window;
-
-      clearLastError();
-      notifyListeners();
-      return manifest;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+        final manifest = Map<String, dynamic>.from(
+          jsonDecode(manifestJson) as Map,
+        );
+        manifest['chunking'] = window;
+        return manifest;
+      });
 
   /// Local-only blob fetch that never sets lastError: returns null when the
   /// blob is absent from the chunk store. For callers with a LAN/URL
@@ -168,17 +160,18 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
     return future;
   }
 
-  Future<String> _fetchBlob(String blobHash, String? outPath) async {
-    try {
-      if (outPath == null) {
+  Future<String> _fetchBlob(String blobHash, String? outPath) =>
+    guard(() {
+      var target = outPath;
+      if (target == null) {
         // Use default temp location if not specified
         final tempDir = RustLib.instance.api.crateFfiMediaMediaGetCachePath();
-        outPath = '$tempDir/$blobHash';
+        target = '$tempDir/$blobHash';
       }
 
       final manifestJson = RustLib.instance.api.crateFfiMediaMediaFetchBlob(
         blobHash: blobHash,
-        outPath: outPath,
+        outPath: target,
       );
 
       final result = Map<String, dynamic>.from(
@@ -189,14 +182,8 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
         throw Exception(result['error'] ?? 'Fetch failed');
       }
 
-      clearLastError();
-      return outPath;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+      return target;
+    });
 
   /// Start a local HTTP range server for media playback (sendfile zero-copy).
   /// Returns the bound port.
@@ -215,17 +202,11 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
   }
 
   Future<int> _startLocalServer() async {
-    try {
-      _localServerPort =
-          RustLib.instance.api.crateFfiMediaMediaStartLocalServer().toInt();
-      clearLastError();
-      notifyListeners();
-      return _localServerPort!;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    final port = await guard(() async {
+      return RustLib.instance.api.crateFfiMediaMediaStartLocalServer().toInt();
+    });
+    _localServerPort = port;
+    return port;
   }
 
   /// Stop the local HTTP range server.
@@ -252,15 +233,9 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
 
   /// Get the cache path for the chunk store.
   Future<String> getCachePath() async {
-    try {
-      final path = RustLib.instance.api.crateFfiMediaMediaGetCachePath();
-      clearLastError();
-      return path;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    return await guard(() async {
+      return RustLib.instance.api.crateFfiMediaMediaGetCachePath();
+    }, notifyOnSuccess: false);
   }
 
   /// Clear the chunk cache (evicts all stored chunks).
@@ -281,101 +256,58 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
   /// Upload a local file (or URL, SSRF-guarded) to a Blossom server.
   /// Returns the server-side hash/url.
   Future<String> upload(String filePath,
-      {required String blossomServer}) async {
-    try {
-      final result = await RustLib.instance.api.crateFfiMediaMediaUpload(
+        {required String blossomServer}) =>
+    guard(() {
+      return RustLib.instance.api.crateFfiMediaMediaUpload(
         filePath: filePath,
         blossomServer: blossomServer,
       );
-      clearLastError();
-      notifyListeners();
-      return result;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+    });
 
   /// Fetch media from a URL and cache it locally; returns the cache path.
-  Future<String> fetch(String url, {String? cacheDir}) async {
-    try {
-      final dir = cacheDir ?? await getCachePath();
-      final path = await RustLib.instance.api.crateFfiMediaMediaFetch(
-        url: url,
-        cacheDir: dir,
-      );
-      clearLastError();
-      notifyListeners();
-      return path;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<String> fetch(String url, {String? cacheDir}) => guard(() async {
+        final dir = cacheDir ?? await getCachePath();
+        return await RustLib.instance.api.crateFfiMediaMediaFetch(
+          url: url,
+          cacheDir: dir,
+        );
+      });
 
   /// Load a local media file's bytes off the UI isolate.
   Future<Uint8List> loadLocal(String path) async {
-    try {
-      final bytes = await RustLib.instance.api.crateFfiMediaMediaLoadLocal(
+    return await guard(() async {
+      return RustLib.instance.api.crateFfiMediaMediaLoadLocal(
         filePath: path,
       );
-      clearLastError();
-      return bytes;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    }, notifyOnSuccess: false);
   }
 
   /// MIME type of a local file (inferred on the Rust side).
   Future<String> mimeType(String path) async {
-    try {
-      final mime = await RustLib.instance.api.crateFfiMediaMediaGetMimeType(
+    return await guard(() async {
+      return RustLib.instance.api.crateFfiMediaMediaGetMimeType(
         filePath: path,
       );
-      clearLastError();
-      return mime;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    }, notifyOnSuccess: false);
   }
 
   /// Upload raw bytes to the local chunk store; returns the blob manifest
   /// (`blob_hash`, `total_size`, `chunks`).
-  Future<Map<String, dynamic>> uploadBlob(List<int> bytes) async {
-    try {
-      final manifestJson =
-          RustLib.instance.api.crateFfiMediaMediaUploadBlob(data: bytes);
-      final manifest = Map<String, dynamic>.from(
-        jsonDecode(manifestJson) as Map,
-      );
-      clearLastError();
-      notifyListeners();
-      return manifest;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<Map<String, dynamic>> uploadBlob(List<int> bytes) => guard(() {
+        final manifestJson =
+            RustLib.instance.api.crateFfiMediaMediaUploadBlob(data: bytes);
+        return Map<String, dynamic>.from(
+          jsonDecode(manifestJson) as Map,
+        );
+      });
 
   /// Content-aware chunking window (min/avg/max) for a MIME type.
   Future<Map<String, dynamic>> chunkingForMime(String mime) async {
-    try {
+    return await guard(() async {
       final json =
           RustLib.instance.api.crateFfiMediaMediaChunkingForMime(mime: mime);
-      clearLastError();
       return Map<String, dynamic>.from(jsonDecode(json) as Map);
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    }, notifyOnSuccess: false);
   }
 
   /// Feed scroll telemetry into the global prefetcher.
@@ -384,19 +316,13 @@ class MediaService extends ChangeNotifier with LastErrorMixin {
     required int topIndex,
     required int bottomIndex,
   }) async {
-    try {
-      final ok = RustLib.instance.api.crateFfiMediaMediaUpdateScrollTelemetry(
+    return await guard(() async {
+      return RustLib.instance.api.crateFfiMediaMediaUpdateScrollTelemetry(
         velocity: velocity,
         topIndex: topIndex,
         bottomIndex: bottomIndex,
       );
-      clearLastError();
-      return ok;
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyListeners();
-      rethrow;
-    }
+    }, notifyOnSuccess: false);
   }
 
   @override

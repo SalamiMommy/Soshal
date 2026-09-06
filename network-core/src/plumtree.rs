@@ -3,7 +3,8 @@
 //! spanning tree across active peers with eager payload pushes and lazy `IHave` announcements.
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use soshal_common_core::bounded::{BoundedMap, BoundedSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 const MAX_RECEIVED_MESSAGES: usize = 10_000;
@@ -35,10 +36,8 @@ pub struct PlumTreeNode {
     pub self_peer_id: String,
     pub eager_peers: HashSet<String>,
     pub lazy_peers: HashSet<String>,
-    pub received_messages: HashSet<String>,
-    pub received_order: VecDeque<String>,
-    pub pending_grafts: HashMap<String, String>, // message_id -> target_peer_id
-    pub pending_graft_order: VecDeque<String>,
+    pub received_messages: BoundedSet<String>,
+    pub pending_grafts: BoundedMap<String, String>,
 }
 
 impl PlumTreeNode {
@@ -47,10 +46,8 @@ impl PlumTreeNode {
             self_peer_id: self_peer_id.to_string(),
             eager_peers: HashSet::new(),
             lazy_peers: HashSet::new(),
-            received_messages: HashSet::new(),
-            received_order: VecDeque::new(),
-            pending_grafts: HashMap::new(),
-            pending_graft_order: VecDeque::new(),
+            received_messages: BoundedSet::new(MAX_RECEIVED_MESSAGES),
+            pending_grafts: BoundedMap::new(MAX_PENDING_GRAFTS),
         }
     }
 
@@ -93,16 +90,8 @@ impl PlumTreeNode {
                     ));
                 } else {
                     // New payload accepted
-                    if self.received_messages.insert(message_id.clone()) {
-                        if self.received_messages.len() > MAX_RECEIVED_MESSAGES {
-                            if let Some(oldest) = self.received_order.pop_front() {
-                                self.received_messages.remove(&oldest);
-                            }
-                        }
-                        self.received_order.push_back(message_id.clone());
-                    }
+                    self.received_messages.insert(message_id.clone());
                     self.pending_grafts.remove(&message_id);
-                    self.pending_graft_order.retain(|m| m != &message_id);
 
                     // Forward eagerly to all eager peers except sender
                     for eager_peer in &self.eager_peers {
@@ -136,15 +125,9 @@ impl PlumTreeNode {
                 if !self.received_messages.contains(&message_id)
                     && !self.pending_grafts.contains_key(&message_id)
                 {
-                    if self.pending_grafts.len() >= MAX_PENDING_GRAFTS {
-                        if let Some(oldest) = self.pending_graft_order.pop_front() {
-                            self.pending_grafts.remove(&oldest);
-                        }
-                    }
                     // Unseen payload announced lazily - trigger Graft to fetch full payload!
                     self.pending_grafts
                         .insert(message_id.clone(), from_peer.to_string());
-                    self.pending_graft_order.push_back(message_id.clone());
                     outgoing.push((from_peer.to_string(), PlumTreeMessage::Graft { message_id }));
                 }
             }
@@ -185,7 +168,7 @@ mod tests {
 
         let outgoing = node.handle_incoming("sender", gossip);
 
-        assert!(node.received_messages.contains("msg1"));
+        assert!(node.received_messages.contains(&"msg1".to_string()));
         assert_eq!(outgoing.len(), 2); // 1 eager gossip + 1 lazy IHave
 
         // Test duplicate receipt -> Prune
@@ -232,7 +215,7 @@ mod tests {
             },
         );
         assert!(out.is_empty());
-        assert!(!node.pending_grafts.contains_key("seen"));
+        assert!(!node.pending_grafts.contains_key(&"seen".to_string()));
 
         // IHave for message already pending graft -> no-op
         node.pending_grafts
@@ -257,7 +240,9 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0].1, PlumTreeMessage::Graft { .. }));
         assert_eq!(
-            node.pending_grafts.get("fresh_msg").map(String::as_str),
+            node.pending_grafts
+                .get(&"fresh_msg".to_string())
+                .map(String::as_str),
             Some("peer_lazy")
         );
 
@@ -281,8 +266,8 @@ mod tests {
                 round: 1,
             },
         );
-        assert!(!node.pending_grafts.contains_key("fresh_msg"));
-        assert!(node.received_messages.contains("fresh_msg"));
+        assert!(!node.pending_grafts.contains_key(&"fresh_msg".to_string()));
+        assert!(node.received_messages.contains(&"fresh_msg".to_string()));
         // sender was promoted to eager; only the remaining eager peer
         // (peer_eager) gets the forward, no IHave to lazy peers
         assert_eq!(out.len(), 1);

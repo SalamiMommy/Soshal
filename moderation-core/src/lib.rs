@@ -9,5 +9,6 @@ pub mod jury;
 pub mod media;
 pub mod normalize;
 pub mod pdq;
+pub mod regex_util;
 pub mod roberta;
 pub mod spam;
