@@ -88,24 +88,28 @@ pub struct DecodedImageRgbaDto {
 
 /// Decode raw image bytes/file path into uncompressed 32-bit RGBA pixels on a background worker thread.
 #[frb(serialize)]
-pub fn media_decode_image_rgba(
+pub async fn media_decode_image_rgba(
     file_path_or_url: String,
     max_width: Option<u32>,
     max_height: Option<u32>,
 ) -> Result<DecodedImageRgbaDto, String> {
-    let full = resolve_allowed_path(&file_path_or_url, "image decode")?;
-    let file = open_allowed_read(&full, "image decode")?;
-    let mut bytes = Vec::new();
-    let mut file = file;
-    file.read_to_end(&mut bytes)
-        .map_err(|e| format!("Failed to read image file: {e}"))?;
+    tokio::task::spawn_blocking(move || {
+        let full = resolve_allowed_path(&file_path_or_url, "image decode")?;
+        let file = open_allowed_read(&full, "image decode")?;
+        let mut bytes = Vec::new();
+        let mut file = file;
+        file.read_to_end(&mut bytes)
+            .map_err(|e| format!("Failed to read image file: {e}"))?;
 
-    let frame = soshal_media_core::decoder::decode_to_rgba(&bytes, max_width, max_height)?;
-    Ok(DecodedImageRgbaDto {
-        width: frame.width,
-        height: frame.height,
-        pixels: frame.pixels,
+        let frame = soshal_media_core::decoder::decode_to_rgba(&bytes, max_width, max_height)?;
+        Ok(DecodedImageRgbaDto {
+            width: frame.width,
+            height: frame.height,
+            pixels: frame.pixels,
+        })
     })
+    .await
+    .map_err(|e| format!("decode join: {e}"))?
 }
 
 /// Upload media to a Blossom server. `source` is a local file path or an
@@ -196,14 +200,18 @@ pub async fn media_fetch(url: String, cache_dir: String) -> Result<String, Strin
 /// Load media from cache or disk (path must resolve inside the media cache
 /// or temp dir; arbitrary file reads are rejected).
 #[frb(serialize)]
-pub fn media_load_local(file_path: String) -> Result<Vec<u8>, String> {
-    let full = resolve_allowed_path(&file_path, "media")?;
-    let file = open_allowed_read(&full, "media")?;
-    let mut data = Vec::new();
-    let mut file = file;
-    file.read_to_end(&mut data)
-        .map_err(|e| format!("Failed to read media: {e}"))?;
-    Ok(data).into()
+pub async fn media_load_local(file_path: String) -> Result<Vec<u8>, String> {
+    tokio::task::spawn_blocking(move || {
+        let full = resolve_allowed_path(&file_path, "media")?;
+        let file = open_allowed_read(&full, "media")?;
+        let mut data = Vec::new();
+        let mut file = file;
+        file.read_to_end(&mut data)
+            .map_err(|e| format!("Failed to read media: {e}"))?;
+        Ok(data)
+    })
+    .await
+    .map_err(|e| format!("load join: {e}"))?
 }
 
 /// Get MIME type from file path
@@ -345,11 +353,16 @@ fn validate_local_source_path(canon: &Path) -> Result<(), String> {
 
 /// Upload media to the local chunk store and return the blob manifest.
 /// The blob is chunked, deduplicated, and stored in the local CAS.
-#[frb(sync, serialize)]
-pub fn media_upload_blob(data: Vec<u8>) -> Result<String, String> {
-    let store = ChunkStore::new(ChunkStore::default_root());
-    let manifest = store.store_reader(Cursor::new(data))?;
-    store.save_manifest(&manifest)?;
+#[frb(serialize)]
+pub async fn media_upload_blob(data: Vec<u8>) -> Result<String, String> {
+    let manifest = tokio::task::spawn_blocking(move || {
+        let store = ChunkStore::new(ChunkStore::default_root());
+        let manifest = store.store_reader(Cursor::new(data))?;
+        store.save_manifest(&manifest)?;
+        Ok::<_, String>(manifest)
+    })
+    .await
+    .map_err(|e| format!("upload blob join: {e}"))??;
     serde_json::to_string(&manifest)
         .map_err(|e| format!("manifest serde: {e}"))
         .into()
@@ -412,34 +425,37 @@ pub async fn media_upload_blob_file(file_path: String) -> Result<String, String>
 
 /// Fetch a blob by hash from the chunk store (local or swarm).
 /// Returns the manifest JSON with success status.
-#[frb(sync, serialize)]
-pub fn media_fetch_blob(blob_hash: String, out_path: String) -> Result<String, String> {
-    let store = ChunkStore::new(ChunkStore::default_root());
-    let manifest = match store.load_manifest(&blob_hash) {
-        Some(m) => m,
-        None => return Err("manifest not found".to_string()).into(),
-    };
+#[frb(serialize)]
+pub async fn media_fetch_blob(blob_hash: String, out_path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let store = ChunkStore::new(ChunkStore::default_root());
+        let manifest = match store.load_manifest(&blob_hash) {
+            Some(m) => m,
+            None => return Err("manifest not found".to_string()),
+        };
 
-    // Reconstruct the blob from chunks
-    let data = soshal_media_core::cas::manifest_bytes(&store, &manifest);
-    let full = resolve_allowed_path(&out_path, "blob output")?;
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(&full)
-        .map_err(|e| format!("blob output open failed (symlink?): {e}"))?;
-    file.write_all(&data)
-        .map_err(|e| format!("write failed: {e}"))?;
+        // Reconstruct the blob from chunks
+        let data = soshal_media_core::cas::manifest_bytes(&store, &manifest);
+        let full = resolve_allowed_path(&out_path, "blob output")?;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&full)
+            .map_err(|e| format!("blob output open failed (symlink?): {e}"))?;
+        file.write_all(&data)
+            .map_err(|e| format!("write failed: {e}"))?;
 
-    serde_json::to_string(&serde_json::json!({
-        "success": true,
-        "blob_hash": blob_hash,
-        "size": manifest.total_size,
-    }))
-    .map_err(|e| format!("serde: {e}"))
-    .into()
+        serde_json::to_string(&serde_json::json!({
+            "success": true,
+            "blob_hash": blob_hash,
+            "size": manifest.total_size,
+        }))
+        .map_err(|e| format!("serde: {e}"))
+    })
+    .await
+    .map_err(|e| format!("fetch blob join: {e}"))?
 }
 
 /// Get the cache path for the chunk store.

@@ -16,7 +16,7 @@ void main() {
     api.stub('crateFfiMediaMediaLoadLocal', (_) => Future.value(Uint8List.fromList([1,2,3])));
     api.stub('crateFfiMediaMediaGetMimeType', (_) => Future.value('image/png'));
     api.stub('crateFfiMediaMediaClearCache', (_) => Future.value('cleared'));
-    api.stubString('crateFfiMediaMediaUploadBlob', 'blobid');
+    api.stub('crateFfiMediaMediaUploadBlob', (_) => Future.value('blobid'));
 
     final dec = await mediaDecodeImageRgba(filePathOrUrl: 'x');
     final up = await mediaUpload(filePath: '/tmp/f', blossomServer: 'b');
@@ -24,7 +24,7 @@ void main() {
     final loaded = await mediaLoadLocal(filePath: '/tmp/f');
     final mime = await mediaGetMimeType(filePath: '/tmp/f');
     final cleared = await mediaClearCache(cacheDir: '/tmp');
-    final blob = mediaUploadBlob(data: [1,2,3]);
+    final blob = await mediaUploadBlob(data: [1, 2, 3]);
 
     expect(dec.width, 1);
     expect(up, 'id');

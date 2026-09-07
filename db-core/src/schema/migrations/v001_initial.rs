@@ -573,6 +573,8 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         CREATE INDEX IF NOT EXISTS idx_posts_root_created ON posts(root_id, is_deleted, created_at ASC);
         CREATE INDEX IF NOT EXISTS idx_posts_kind_deleted_created ON posts(kind, is_deleted, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_posts_event_lat_lng ON posts(event_lat, event_lng);
+        CREATE INDEX IF NOT EXISTS idx_posts_kind_pubkey_deleted_created ON posts(kind, pubkey, is_deleted, created_at DESC, id);
+        CREATE INDEX IF NOT EXISTS idx_posts_kind_rsvp_pubkey_created ON posts(kind, rsvp_event_id, pubkey, created_at DESC, id);
 
         -- Messages
         CREATE INDEX IF NOT EXISTS idx_messages_pubkey ON messages(pubkey);

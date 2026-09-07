@@ -30,8 +30,7 @@ class FriendsService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
 
   /// Send a friend request to `pubkey`. Returns true when accepted.
   Future<bool> sendFriendRequest(String pubkey) => guard(() {
-        return RustLib.instance.api
-            .crateFfiRelationsRelationsSendFriendRequest(
+        return RustLib.instance.api.crateFfiRelationsRelationsSendFriendRequest(
           pubkey: pubkey,
         );
       });

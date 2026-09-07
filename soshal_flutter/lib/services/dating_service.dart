@@ -115,37 +115,38 @@ class DatingService extends ChangeNotifier
   }
 
   Future<List<DatingCard>> fetchLikesForMatch(String userPubkey) => guard(
-      () async {
-        final json = RustLib.instance.api.crateFfiDatingDatingFetchLikes(
-          userPubkey: userPubkey,
-        );
-        return await runOffThread(() => _parseCards(json));
-      },
-      onNotify: notifyDeferred,
-      notifyOnSuccess: false,
-    );
+        () async {
+          final json = RustLib.instance.api.crateFfiDatingDatingFetchLikes(
+            userPubkey: userPubkey,
+          );
+          return await runOffThread(() => _parseCards(json));
+        },
+        onNotify: notifyDeferred,
+        notifyOnSuccess: false,
+      );
 
-  Future<double> calculateScore(String userPubkey, String targetPubkey) => guard(
-      () async {
-        final prefs = <String, dynamic>{};
-        final own = _ownProfile;
-        if (own != null) {
-          if (own.preferenceWeights.isNotEmpty) {
-            prefs['preferenceWeights'] = own.preferenceWeights;
+  Future<double> calculateScore(String userPubkey, String targetPubkey) =>
+      guard(
+        () async {
+          final prefs = <String, dynamic>{};
+          final own = _ownProfile;
+          if (own != null) {
+            if (own.preferenceWeights.isNotEmpty) {
+              prefs['preferenceWeights'] = own.preferenceWeights;
+            }
+            if (own.dealbreakers.isNotEmpty) {
+              prefs['dealbreakers'] = own.dealbreakers;
+            }
           }
-          if (own.dealbreakers.isNotEmpty) {
-            prefs['dealbreakers'] = own.dealbreakers;
-          }
-        }
-        return RustLib.instance.api.crateFfiDatingDatingCalculateScore(
-          userPubkey: userPubkey,
-          targetPubkey: targetPubkey,
-          preferencesJson: prefs.isEmpty ? '{}' : jsonEncode(prefs),
-        );
-      },
-      onNotify: notifyDeferred,
-      notifyOnSuccess: false,
-    );
+          return RustLib.instance.api.crateFfiDatingDatingCalculateScore(
+            userPubkey: userPubkey,
+            targetPubkey: targetPubkey,
+            preferencesJson: prefs.isEmpty ? '{}' : jsonEncode(prefs),
+          );
+        },
+        onNotify: notifyDeferred,
+        notifyOnSuccess: false,
+      );
 
   Future<DatingCard> getOwnProfile(String userPubkey) async {
     try {
@@ -383,17 +384,17 @@ class DatingService extends ChangeNotifier
   }
 
   Future<DatingStats> getStats(String userPubkey) => guard(
-      () async {
-        final json = RustLib.instance.api.crateFfiDatingDatingGetStats(
-          userPubkey: userPubkey,
-        );
-        final decoded = jsonDecode(json);
-        return DatingStats.fromJson(
-            decoded is Map<String, dynamic> ? decoded : <String, dynamic>{});
-      },
-      onNotify: notifyDeferred,
-      notifyOnSuccess: false,
-    );
+        () async {
+          final json = RustLib.instance.api.crateFfiDatingDatingGetStats(
+            userPubkey: userPubkey,
+          );
+          final decoded = jsonDecode(json);
+          return DatingStats.fromJson(
+              decoded is Map<String, dynamic> ? decoded : <String, dynamic>{});
+        },
+        onNotify: notifyDeferred,
+        notifyOnSuccess: false,
+      );
 
   Future<bool> _bool(bool Function() call) async {
     return guard(() {

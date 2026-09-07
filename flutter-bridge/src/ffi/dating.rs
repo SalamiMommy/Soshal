@@ -792,13 +792,14 @@ fn react(user_pubkey: &str, profile_pubkey: &str, content: &str) -> Result<bool,
     };
     super::db::with_db_result(|db| {
         soshal_db_core::repos::reaction::ReactionRepo::new(db).upsert(&row)?;
-        soshal_sync_core::outbox::enqueue_outbox_item(
+        soshal_sync_core::outbox::enqueue_outbox_item_with_seal(
             db,
             &event_id,
             "reaction",
             &signed_json,
             None,
             now,
+            super::sync::outbox_seal_fn(),
         )
         .map_err(soshal_db_core::error::DbError::Migration)?;
         Ok(true)
@@ -1601,6 +1602,10 @@ mod tests {
             .iter()
             .filter_map(|r| r["payload_json"].as_str())
             .map(soshal_sync_core::outbox::decompress_payload)
+            .map(|p| {
+                let unseal = super::super::sync::outbox_unseal_fn();
+                soshal_sync_core::outbox::unseal_payload(&p, &unseal)
+            })
             .filter_map(|p| serde_json::from_str::<serde_json::Value>(&p).ok())
             .filter_map(|v| v["content"].as_str().map(|s| s.to_string()))
             .collect();

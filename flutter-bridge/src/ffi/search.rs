@@ -26,9 +26,14 @@ pub struct SearchResult {
 /// Escape `%`, `_`, and `\` so they are treated as literals in a SQL LIKE
 /// pattern (used with `ESCAPE '\'`).
 fn escape_like(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c == '\\' || c == '%' || c == '_' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn run_search(
@@ -91,6 +96,7 @@ fn run_search(
             let mut out = Vec::new();
             while let Some(row) = rows.next().await? {
                 let content: String = row.get(2)?;
+                let pk: String = row.get(1)?;
                 let result_type = match row.get::<i64>(3)? {
                     0 => "profile".to_string(),
                     _ => "post".to_string(),
@@ -99,15 +105,18 @@ fn run_search(
                 // exposed `id` uses the bare pubkey so it stays consistent with
                 // the search_profiles fallback and search_trending_profiles
                 // (Dart keys profiles by pubkey, not id).
-                let mut id: String = row.get(0)?;
+                let id: String = if result_type == "profile" {
+                    pk.clone()
+                } else {
+                    row.get(0)?
+                };
                 let title = if result_type == "profile" {
                     let name: String = row.get(5)?;
                     if name.is_empty() {
-                        let pk: String = row.get(1)?;
                         if pk.len() >= 12 {
                             pk[..12].to_string()
                         } else {
-                            pk
+                            pk.clone()
                         }
                     } else {
                         name
@@ -115,15 +124,12 @@ fn run_search(
                 } else {
                     soshal_common_core::format::truncate(&content, 80)
                 };
-                if result_type == "profile" {
-                    id = row.get::<String>(1)?;
-                }
                 out.push(SearchResult {
                     id,
                     result_type,
                     title,
                     description: soshal_common_core::format::truncate(&content, 160),
-                    pubkey: Some(row.get(1)?),
+                    pubkey: Some(pk),
                     score: 1.0,
                     created_at: row.get::<i64>(4)?.max(0) as u64,
                 });

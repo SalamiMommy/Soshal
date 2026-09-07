@@ -77,8 +77,9 @@ mod ffi_tests {
         assert!(tags.contains(&"rust".to_string()));
         assert!(tags.contains(&"soshal".to_string()));
     }
-    #[test]
-    fn test_ffi_error_propagation() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_ffi_error_propagation() {
         // Exercise real FFI error paths: Result<T, String> must surface the
         // Rust-side error string to the caller.
         let _g = crate::test_util::lock();
@@ -86,7 +87,9 @@ mod ffi_tests {
         let err = db::db_path().unwrap_err();
         assert!(err.contains("database not initialized"), "got {err}");
         let missing = std::env::temp_dir().join("soshal-no-such-media-file.bin");
-        let err2 = media::media_load_local(missing.to_string_lossy().to_string()).unwrap_err();
+        let err2 = media::media_load_local(missing.to_string_lossy().to_string())
+            .await
+            .unwrap_err();
         assert!(!err2.is_empty());
     }
 }

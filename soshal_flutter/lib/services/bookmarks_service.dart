@@ -23,8 +23,7 @@ class BookmarksService extends ChangeNotifier
   }
 
   /// Save a bookmark for an event. Returns the bookmark id.
-  Future<String> save(String pubkey, String eventId) =>
-      guard(() {
+  Future<String> save(String pubkey, String eventId) => guard(() {
         return RustLib.instance.api.crateFfiBookmarksBookmarksSave(
           pubkey: pubkey,
           eventId: eventId,

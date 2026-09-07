@@ -1370,35 +1370,17 @@ class _FilterDialogState extends State<_FilterDialog> {
                   ),
                 ],
               ),
-              _dropdown(
-                  'Body type',
-                  _bodyType,
-                  kBodyTypeOptions,
+              _dropdown('Body type', _bodyType, kBodyTypeOptions,
                   (v) => setState(() => _bodyType = v)),
-              _dropdown(
-                  'Smoking',
-                  _smoking,
-                  kSmokingOptions,
+              _dropdown('Smoking', _smoking, kSmokingOptions,
                   (v) => setState(() => _smoking = v)),
-              _dropdown(
-                  'Drinking',
-                  _drinking,
-                  kDrinkingOptions,
+              _dropdown('Drinking', _drinking, kDrinkingOptions,
                   (v) => setState(() => _drinking = v)),
-              _dropdown(
-                  'Relationship intent',
-                  _intent,
-                  kIntentOptions,
+              _dropdown('Relationship intent', _intent, kIntentOptions,
                   (v) => setState(() => _intent = v)),
-              _dropdown(
-                  'Politics',
-                  _politics,
-                  kPoliticsOptions,
+              _dropdown('Politics', _politics, kPoliticsOptions,
                   (v) => setState(() => _politics = v)),
-              _dropdown(
-                  'Education',
-                  _education,
-                  kEducationOptions,
+              _dropdown('Education', _education, kEducationOptions,
                   (v) => setState(() => _education = v)),
               TextField(
                 controller: _interests,

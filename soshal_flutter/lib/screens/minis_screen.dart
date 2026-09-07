@@ -753,8 +753,8 @@ class _MinisScreenState extends State<MinisScreen>
                     onPressed: () => _toggleLike(mini),
                   ),
                   Text('$count',
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 11)),
+                      style:
+                          const TextStyle(color: Colors.white, fontSize: 11)),
                   const SizedBox(height: 16),
                   IconButton(
                     icon: const Icon(Icons.chat_bubble_outline,

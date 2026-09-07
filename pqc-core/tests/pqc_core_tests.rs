@@ -330,12 +330,12 @@ fn freenet_keygen_shape_and_json() {
     assert_eq!(id.pqc_kem_secret_key.len(), KEM_SEED_LEN * 2);
     let json = id.to_json();
     assert_eq!(json["publicKey"], id.public_key);
-    assert_eq!(json["privateKey"], id.private_key);
+    assert_eq!(json["privateKey"], id.private_key.as_str());
     assert_eq!(json["address"], id.address);
     assert_eq!(json["pqc"]["dsaPublicKey"], id.pqc_dsa_public_key);
-    assert_eq!(json["pqc"]["dsaSecretKey"], id.pqc_dsa_secret_key);
+    assert_eq!(json["pqc"]["dsaSecretKey"], id.pqc_dsa_secret_key.as_str());
     assert_eq!(json["pqc"]["kemPublicKey"], id.pqc_kem_public_key);
-    assert_eq!(json["pqc"]["kemSecretKey"], id.pqc_kem_secret_key);
+    assert_eq!(json["pqc"]["kemSecretKey"], id.pqc_kem_secret_key.as_str());
     // Seed determinism applies to the ML-DSA part.
     let id2 = freenet_keygen(Some(&[0x77u8; 32])).unwrap();
     assert_eq!(id.pqc_dsa_public_key, id2.pqc_dsa_public_key);

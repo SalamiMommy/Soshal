@@ -352,128 +352,153 @@ pub async fn feed_delete_post(event_id: String) -> Result<String, String> {
 
 /// Fetch recent feed posts from the local DB (kind 1, newest first),
 /// filtering out posts that trip on-device AI moderation or word filters.
-#[frb(sync, serialize)]
-pub fn feed_fetch_events(options_json: String) -> Result<String, String> {
-    let opts: FeedOptions =
-        serde_json::from_str(&options_json).map_err(|e| format!("invalid options JSON: {e}"))?;
-    let limit = opts.limit.clamp(1, 200) as i64;
-    let authors: Option<Vec<String>> = super::identity::resolve_audience_authors(&opts.audience)?;
-    super::db::with_db_result(|db| {
-        let filters = get_custom_word_filters(db);
-        let repo = PostRepo::new(db);
-        let mut rows: Vec<PostMetaRow> = Vec::new();
-        if let (Some(cursor), Some(cursor_id)) = (opts.cursor_created_at, opts.cursor_id) {
-            let chunk = match authors.as_deref() {
-                Some(a) => repo.get_paged_meta_cursor_by_authors(cursor, &cursor_id, limit, a)?,
-                None => repo.get_paged_meta_cursor(cursor, &cursor_id, limit)?,
-            };
-            rows.extend(chunk);
-        } else {
-            let mut offset = opts.offset.max(0) as i64;
-            while rows.len() < limit as usize * 4 {
+#[frb(serialize)]
+pub async fn feed_fetch_events(options_json: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let opts: FeedOptions = serde_json::from_str(&options_json)
+            .map_err(|e| format!("invalid options JSON: {e}"))?;
+        let limit = opts.limit.clamp(1, 200) as i64;
+        let authors: Option<Vec<String>> =
+            super::identity::resolve_audience_authors(&opts.audience)?;
+        super::db::with_db_result(|db| {
+            let filters = get_custom_word_filters(db);
+            let repo = PostRepo::new(db);
+            let mut rows: Vec<PostMetaRow> = Vec::new();
+            if let (Some(cursor), Some(cursor_id)) = (opts.cursor_created_at, opts.cursor_id) {
                 let chunk = match authors.as_deref() {
-                    Some(a) => repo.get_paged_meta_by_authors(limit, offset, a)?,
-                    None => repo.get_paged_meta(limit, offset)?,
-                };
-                if chunk.is_empty() {
-                    break;
-                }
-                offset += chunk.len() as i64;
-                rows.extend(chunk);
-            }
-        }
-        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
-        let counters = feed_engagement_counters(db, &ids);
-        let posts: Vec<FeedPost> = rows
-            .into_iter()
-            .filter(|row| is_content_clean(&row.content, &filters))
-            .take(limit as usize)
-            .map(|row| {
-                let ref_id = row.id.clone();
-                let content = if row.content.starts_with("eNo") || row.content.starts_with("eF4") {
-                    let decompressed =
-                        soshal_content_core::compress::decompress_json_dict(&row.content);
-                    if decompressed.is_empty() {
-                        row.content
-                    } else {
-                        decompressed
+                    Some(a) => {
+                        repo.get_paged_meta_cursor_by_authors(cursor, &cursor_id, limit, a)?
                     }
-                } else {
-                    row.content
+                    None => repo.get_paged_meta_cursor(cursor, &cursor_id, limit)?,
                 };
-                let engagement = counters.get(&ref_id);
-                FeedPost {
-                    event_id: ref_id,
-                    pubkey: row.pubkey,
-                    content,
-                    created_at: row.created_at.max(0) as u64,
-                    reactions: engagement.map(|c| c.reactions).unwrap_or(0),
-                    replies: engagement.map(|c| c.replies).unwrap_or(0),
-                    reposts: engagement.map(|c| c.reposts).unwrap_or(0),
-                    liked: engagement.map(|c| c.liked).unwrap_or(false),
-                    media_json: soshal_feed_core::query::media_json_from_tags(&row.tags_json),
+                rows.extend(chunk);
+            } else {
+                let mut offset = opts.offset.max(0) as i64;
+                // Over-fetch to gather enough rows surviving the moderation
+                // filter, but hard-cap iterations so a content storm of
+                // blocked posts can't drive an unbounded query loop.
+                let mut loops = 0;
+                while rows.len() < limit as usize * 4 && loops < 32 {
+                    let chunk = match authors.as_deref() {
+                        Some(a) => repo.get_paged_meta_by_authors(limit, offset, a)?,
+                        None => repo.get_paged_meta(limit, offset)?,
+                    };
+                    if chunk.is_empty() {
+                        break;
+                    }
+                    loops += 1;
+                    offset += chunk.len() as i64;
+                    rows.extend(chunk);
                 }
-            })
-            .collect();
-        Ok(posts)
+            }
+            let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+            let counters = feed_engagement_counters(db, &ids);
+            let posts: Vec<FeedPost> = rows
+                .into_iter()
+                .filter(|row| is_content_clean(&row.content, &filters))
+                .take(limit as usize)
+                .map(|row| {
+                    let ref_id = row.id.clone();
+                    let content =
+                        if row.content.starts_with("eNo") || row.content.starts_with("eF4") {
+                            let decompressed =
+                                soshal_content_core::compress::decompress_json_dict(&row.content);
+                            if decompressed.is_empty() {
+                                row.content
+                            } else {
+                                decompressed
+                            }
+                        } else {
+                            row.content
+                        };
+                    let engagement = counters.get(&ref_id);
+                    FeedPost {
+                        event_id: ref_id,
+                        pubkey: row.pubkey,
+                        content,
+                        created_at: row.created_at.max(0) as u64,
+                        reactions: engagement.map(|c| c.reactions).unwrap_or(0),
+                        replies: engagement.map(|c| c.replies).unwrap_or(0),
+                        reposts: engagement.map(|c| c.reposts).unwrap_or(0),
+                        liked: engagement.map(|c| c.liked).unwrap_or(false),
+                        media_json: soshal_feed_core::query::media_json_from_tags(&row.tags_json),
+                    }
+                })
+                .collect();
+            Ok(posts)
+        })
+        .map(super::util::json_ok)?
     })
-    .map(super::util::json_ok)?
+    .await
+    .map_err(|e| format!("feed fetch join: {e}"))?
 }
 
 /// Fetch a windowed slice of feed posts from DB, filtering moderated items.
-#[frb(sync, serialize)]
-pub fn feed_fetch_window(start_index: u32, limit: u32, audience: String) -> Result<String, String> {
-    let authors = super::identity::resolve_audience_authors(&audience)?;
-    super::db::with_db_result(|db| {
-        let filters = get_custom_word_filters(db);
-        let items = soshal_feed_core::window::fetch_feed_window(
-            db,
-            start_index as usize,
-            (limit as usize * 4).clamp(1, 800),
-            authors.as_deref(),
-        )
-        .map_err(soshal_db_core::error::DbError::Migration)?;
-        let filtered_items: Vec<soshal_feed_core::window::FeedPostItem> = items
-            .into_iter()
-            .filter(|item| is_content_clean(&item.content, &filters))
-            .take(limit as usize)
-            .collect();
-        Ok(filtered_items)
+#[frb(serialize)]
+pub async fn feed_fetch_window(
+    start_index: u32,
+    limit: u32,
+    audience: String,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let authors = super::identity::resolve_audience_authors(&audience)?;
+        super::db::with_db_result(|db| {
+            let filters = get_custom_word_filters(db);
+            let items = soshal_feed_core::window::fetch_feed_window(
+                db,
+                start_index as usize,
+                (limit as usize * 4).clamp(1, 800),
+                authors.as_deref(),
+            )
+            .map_err(soshal_db_core::error::DbError::Migration)?;
+            let filtered_items: Vec<soshal_feed_core::window::FeedPostItem> = items
+                .into_iter()
+                .filter(|item| is_content_clean(&item.content, &filters))
+                .take(limit as usize)
+                .collect();
+            Ok(filtered_items)
+        })
+        .map(super::util::json_ok)?
     })
-    .map(super::util::json_ok)?
+    .await
+    .map_err(|e| format!("feed window join: {e}"))?
 }
 
 /// Fetch a thread (root post + direct replies) from the local DB, filtering moderated replies.
-#[frb(sync, serialize)]
-pub fn feed_fetch_thread(event_id: String) -> Result<String, String> {
-    super::db::with_db_result(|db| {
-        let filters = get_custom_word_filters(db);
-        let repo = PostRepo::new(db);
-        let replies = repo.get_replies_for_root(&event_id)?;
-        let ids: Vec<String> = replies.iter().map(|r| r.id.clone()).collect();
-        let counters = feed_engagement_counters(db, &ids);
-        let out: Vec<FeedPost> = replies
-            .into_iter()
-            .filter(|row| is_content_clean(&row.content, &filters))
-            .map(|row| {
-                let ref_id = row.id.clone();
-                let engagement = counters.get(&ref_id);
-                FeedPost {
-                    event_id: row.id,
-                    pubkey: row.pubkey,
-                    content: row.content,
-                    created_at: row.created_at.max(0) as u64,
-                    reactions: engagement.map(|c| c.reactions).unwrap_or(0),
-                    replies: engagement.map(|c| c.replies).unwrap_or(0),
-                    reposts: engagement.map(|c| c.reposts).unwrap_or(0),
-                    liked: engagement.map(|c| c.liked).unwrap_or(false),
-                    media_json: soshal_feed_core::query::media_json_from_tags(&row.tags_json),
-                }
-            })
-            .collect();
-        Ok(out)
+#[frb(serialize)]
+pub async fn feed_fetch_thread(event_id: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        super::db::with_db_result(|db| {
+            let filters = get_custom_word_filters(db);
+            let repo = PostRepo::new(db);
+            let replies = repo.get_replies_for_root(&event_id)?;
+            let ids: Vec<String> = replies.iter().map(|r| r.id.clone()).collect();
+            let counters = feed_engagement_counters(db, &ids);
+            let out: Vec<FeedPost> = replies
+                .into_iter()
+                .filter(|row| is_content_clean(&row.content, &filters))
+                .map(|row| {
+                    let ref_id = row.id.clone();
+                    let engagement = counters.get(&ref_id);
+                    FeedPost {
+                        event_id: row.id,
+                        pubkey: row.pubkey,
+                        content: row.content,
+                        created_at: row.created_at.max(0) as u64,
+                        reactions: engagement.map(|c| c.reactions).unwrap_or(0),
+                        replies: engagement.map(|c| c.replies).unwrap_or(0),
+                        reposts: engagement.map(|c| c.reposts).unwrap_or(0),
+                        liked: engagement.map(|c| c.liked).unwrap_or(false),
+                        media_json: soshal_feed_core::query::media_json_from_tags(&row.tags_json),
+                    }
+                })
+                .collect();
+            Ok(out)
+        })
+        .map(super::util::json_ok)?
     })
-    .map(super::util::json_ok)?
+    .await
+    .map_err(|e| format!("feed thread join: {e}"))?
 }
 
 #[cfg(test)]
@@ -561,8 +586,9 @@ mod tests {
         assert!(err.contains("blocked by moderation filter"), "{err}");
     }
 
-    #[test]
-    fn test_fetch_events_filters_moderated_posts() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fetch_events_filters_moderated_posts() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("fetch_mod");
         insert_post(
@@ -584,6 +610,7 @@ mod tests {
         insert_post("p_csam", "pk3", "selling cp pack", 1, 1000, "[]");
 
         let json = feed_fetch_events(r#"{"limit":10,"offset":0,"filter_type":"any"}"#.to_string())
+            .await
             .unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
@@ -671,15 +698,17 @@ mod tests {
         assert!(err.contains("signer locked"), "{err}");
     }
 
-    #[test]
-    fn test_fetch_events_db_paged() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fetch_events_db_paged() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("events");
         insert_post("p1", "pk1", "first", 1, 3000, "[]");
         insert_post("p2", "pk2", "second", 1, 2000, "[]");
         insert_post("p3", "pk3", "third", 1, 1000, "[]");
-        let json =
-            feed_fetch_events(r#"{"limit":2,"offset":0,"filter_type":"any"}"#.to_string()).unwrap();
+        let json = feed_fetch_events(r#"{"limit":2,"offset":0,"filter_type":"any"}"#.to_string())
+            .await
+            .unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -693,6 +722,7 @@ mod tests {
         assert_eq!(arr[0]["reactions"], 0);
         assert_eq!(arr[0]["liked"], false);
         let json = feed_fetch_events(r#"{"limit":10,"offset":2,"filter_type":"any"}"#.to_string())
+            .await
             .unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
@@ -701,12 +731,13 @@ mod tests {
             .clone();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["event_id"], "p3");
-        let err = feed_fetch_events("bad".to_string()).unwrap_err();
+        let err = feed_fetch_events("bad".to_string()).await.unwrap_err();
         assert!(err.contains("invalid options JSON"), "{err}");
     }
 
-    #[test]
-    fn test_fetch_events_media_json() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fetch_events_media_json() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("media");
         let hash = "a".repeat(64);
@@ -721,6 +752,7 @@ mod tests {
             r#"[["media","video","x","short","1"]]"#,
         );
         let json = feed_fetch_events(r#"{"limit":10,"offset":0,"filter_type":"any"}"#.to_string())
+            .await
             .unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
@@ -736,8 +768,9 @@ mod tests {
         assert!(arr[1]["media_json"].is_null());
     }
 
-    #[test]
-    fn test_fetch_window_db() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fetch_window_db() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("window");
         db::db_execute_raw_test(
@@ -748,7 +781,7 @@ mod tests {
         insert_post("w1", "pk1", "win", 1, 2000, "[]");
         insert_post("w2", "pk2", "other", 1, 1000, "[]");
         insert_post("w3", "pk2", "reaction", 7, 3000, "[]");
-        let json = feed_fetch_window(0, 2, String::new()).unwrap();
+        let json = feed_fetch_window(0, 2, String::new()).await.unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -758,7 +791,7 @@ mod tests {
         assert_eq!(arr[0]["event_id"], "w1");
         assert_eq!(arr[0]["profile_name"], "tester");
         assert_eq!(arr[1]["event_id"], "w2");
-        let json = feed_fetch_window(1, 1, String::new()).unwrap();
+        let json = feed_fetch_window(1, 1, String::new()).await.unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -768,8 +801,9 @@ mod tests {
         assert_eq!(arr[0]["event_id"], "w2");
     }
 
-    #[test]
-    fn test_fetch_thread_db() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fetch_thread_db() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _p = tmp_db("thread");
         db::insert_test_user("pk1");
@@ -806,7 +840,7 @@ mod tests {
                 .to_string(),
         )
         .unwrap();
-        let json = feed_fetch_thread("root".to_string()).unwrap();
+        let json = feed_fetch_thread("root".to_string()).await.unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()

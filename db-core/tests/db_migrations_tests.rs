@@ -261,6 +261,14 @@ fn legacy_db_with_old_migrations_heals_before_short_circuit() {
         !table_exists(&conn, "messages"),
         "v1 must be skipped when already migrated"
     );
+    assert!(
+        table_exists(&conn, "musicloud_playlists"),
+        "musicloud_playlists must be healed"
+    );
+    assert!(
+        table_exists(&conn, "musicloud_timed_comments"),
+        "musicloud_timed_comments must be healed"
+    );
 }
 
 #[test]

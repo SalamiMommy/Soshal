@@ -86,8 +86,7 @@ class CallsService extends ChangeNotifier
 
   /// Sanitize an SDP session description for relay publication (private IPs
   /// redacted). Sync FFI.
-  String sanitizeSdp(String sdp, {bool forceRelay = false}) =>
-      guardSync(() {
+  String sanitizeSdp(String sdp, {bool forceRelay = false}) => guardSync(() {
         return RustLib.instance.api.crateFfiWebrtcWebrtcSanitizeSdp(
           sdp: sdp,
           forceRelay: forceRelay,

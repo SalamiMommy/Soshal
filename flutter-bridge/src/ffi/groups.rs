@@ -61,6 +61,50 @@ fn member_count(group_id: &str) -> i32 {
     .unwrap_or(0) as i32
 }
 
+/// Read a group shared key, healing legacy plaintext rows into `seal1:`
+/// at-rest envelopes on first access. Returns the raw hex key for envelope
+/// construction. A key stored bare (pre-seal) is re-written sealed in place so
+/// the on-disk copy no longer carries the raw material in the clear.
+pub(crate) fn shared_key_for_group(
+    db: &soshal_db_core::Database,
+    group_id: &str,
+) -> Result<Option<String>, soshal_db_core::error::DbError> {
+    let repo = GroupRepo::new(db);
+    let stored = repo.get_shared_key(group_id)?;
+    let Some(k) = stored else {
+        return Ok(None);
+    };
+    match k.strip_prefix("seal1:") {
+        Some(sealed) => {
+            let plain = soshal_crypto_core::at_rest::open_at_rest(
+                &super::signer::signer_at_rest_key()
+                    .map_err(soshal_db_core::error::DbError::Migration)?,
+                sealed,
+            )
+            .map_err(soshal_db_core::error::DbError::Migration)?;
+            Ok(Some(hex::encode(plain)))
+        }
+        None => {
+            // Legacy plaintext row. Only heal when the value parses as hex
+            // (the `key_hex` column contract); otherwise pass through raw so
+            // nothing breaks on historical non-hex entries.
+            if let Ok(bytes) = hex::decode(&k) {
+                let sealed = format!(
+                    "seal1:{}",
+                    soshal_crypto_core::at_rest::seal_at_rest(
+                        &super::signer::signer_at_rest_key()
+                            .map_err(soshal_db_core::error::DbError::Migration)?,
+                        &bytes,
+                    )
+                    .map_err(soshal_db_core::error::DbError::Migration)?
+                );
+                repo.set_shared_key(group_id, &sealed)?;
+            }
+            Ok(Some(k))
+        }
+    }
+}
+
 /// Fetch all groups the user belongs to (DB-backed).
 #[frb(sync, serialize)]
 pub fn groups_fetch_groups(user_pubkey: String, audience: String) -> Result<String, String> {
@@ -189,24 +233,10 @@ pub fn groups_post_message(
     content: String,
 ) -> Result<String, String> {
     let content = super::db::with_db_result(|db| {
-        let key = GroupRepo::new(db).get_shared_key(&group_id)?;
+        let key = shared_key_for_group(db, &group_id)?;
         Ok(match key {
-            Some(k) => {
-                let k = match k.strip_prefix("seal1:") {
-                    Some(sealed) => {
-                        let plain = soshal_crypto_core::at_rest::open_at_rest(
-                            &super::signer::signer_at_rest_key()
-                                .map_err(soshal_db_core::error::DbError::Migration)?,
-                            sealed,
-                        )
-                        .map_err(soshal_db_core::error::DbError::Migration)?;
-                        hex::encode(plain)
-                    }
-                    None => k,
-                };
-                group_message_envelope(&content, Some(&k))
-                    .map_err(soshal_db_core::error::DbError::Migration)?
-            }
+            Some(k) => group_message_envelope(&content, Some(&k))
+                .map_err(soshal_db_core::error::DbError::Migration)?,
             None => content,
         })
     })?;
@@ -1712,5 +1742,42 @@ mod tests {
             "window should have reset at exact boundary, got: {r:?}"
         );
         assert!(!r.unwrap(), "password is wrong as expected");
+    }
+
+    #[test]
+    fn test_shared_key_read_heals_legacy_plaintext() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _db = TestDb::init("heal-key");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        // Plant a legacy plaintext row exactly as a pre-seal writer would.
+        let raw_hex = "a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0";
+        {
+            crate::ffi::db::with_db_result(|db| {
+                GroupRepo::new(db).set_shared_key("gheal", raw_hex)?;
+                Ok(())
+            })
+            .unwrap();
+        }
+        // First read returns the raw key AND heals the row in place.
+        let key = crate::ffi::db::with_db_result(|db| shared_key_for_group(db, "gheal")).unwrap();
+        assert_eq!(key.as_deref(), Some(raw_hex));
+        let stored =
+            crate::ffi::db::with_db_result(|db| GroupRepo::new(db).get_shared_key("gheal"))
+                .unwrap()
+                .unwrap();
+        assert!(
+            stored.starts_with("seal1:"),
+            "legacy key not healed into seal1 envelope: {stored}"
+        );
+        assert!(
+            !stored.contains(raw_hex),
+            "raw key leaked into sealed value: {stored}"
+        );
+        // A second read still resolves the same key through the seal path.
+        let key2 = crate::ffi::db::with_db_result(|db| shared_key_for_group(db, "gheal")).unwrap();
+        assert_eq!(key2.as_deref(), Some(raw_hex));
+        super::super::signer::signer_lock().unwrap();
     }
 }

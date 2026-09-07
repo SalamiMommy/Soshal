@@ -33,16 +33,44 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
         }
         None => "",
     };
-    let json = super::db::db_query_params(
+    let rows: Vec<serde_json::Value> = super::db::db_query_json(
         &format!(
             "SELECT id, pubkey, content, created_at, tags_json FROM posts \
              WHERE kind = 31020 AND is_deleted = 0{author_clause} \
              ORDER BY created_at DESC LIMIT 200"
         ),
         &params,
-    )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+    )
+    .unwrap_or_default();
     let me_pubkey = super::db::active_pubkey().ok();
+    // Batch reaction counts + liked flags for every mini in one query instead
+    // of one query per mini (N+1).
+    let mini_ids: Vec<String> = rows
+        .iter()
+        .filter_map(|r| r["id"].as_str().map(|s| s.to_string()))
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut reaction_map: std::collections::HashMap<String, (u64, bool)> =
+        std::collections::HashMap::new();
+    if !mini_ids.is_empty() {
+        let ids_json = serde_json::to_string(&mini_ids).unwrap_or_else(|_| "[]".to_string());
+        let reactors = super::db::db_query_json(
+            "SELECT event_id, pubkey FROM reactions WHERE event_id IN (SELECT value FROM json_each(?1))",
+            &[ids_json],
+        )
+        .unwrap_or_default();
+        for r in reactors {
+            if let Some(eid) = r["event_id"].as_str() {
+                let e = reaction_map.entry(eid.to_string()).or_insert((0, false));
+                e.0 += 1;
+                if let Some(m) = &me_pubkey {
+                    if r["pubkey"].as_str() == Some(m.as_str()) {
+                        e.1 = true;
+                    }
+                }
+            }
+        }
+    }
     let mut out: Vec<serde_json::Value> = Vec::new();
     for row in rows {
         let tags: Vec<Vec<String>> =
@@ -58,21 +86,7 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
         if let Some(mut mapped) = minis_events::mini_from_event(&ev) {
             let id = row["id"].as_str().unwrap_or_default().to_string();
             if !id.is_empty() {
-                let reactions_json = super::db::db_query_params(
-                    "SELECT pubkey, event_id FROM reactions WHERE event_id = ?1 LIMIT 1000",
-                    &[id.clone()],
-                )?;
-                let reactors: Vec<serde_json::Value> =
-                    serde_json::from_str(&reactions_json).unwrap_or_default();
-                let reactions = reactors.len() as u64;
-                let liked = me_pubkey
-                    .as_ref()
-                    .map(|m| {
-                        reactors
-                            .iter()
-                            .any(|r| r["pubkey"].as_str() == Some(m.as_str()))
-                    })
-                    .unwrap_or(false);
+                let (reactions, liked) = reaction_map.get(&id).copied().unwrap_or((0, false));
                 mapped["reactions"] = serde_json::json!(reactions);
                 mapped["liked"] = serde_json::json!(liked);
             }

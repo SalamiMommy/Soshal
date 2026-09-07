@@ -42,8 +42,7 @@ class AuthService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
             .crateFfiAuthAuthValidateMnemonic(mnemonic: mnemonic);
       }, clearOnSuccess: false, notifyOnSuccess: false);
 
-  Future<KeyPair> restoreFromMnemonic(
-          String mnemonic, String passphrase) =>
+  Future<KeyPair> restoreFromMnemonic(String mnemonic, String passphrase) =>
       guard(() async {
         final json =
             await RustLib.instance.api.crateFfiAuthAuthRestoreFromMnemonic(
@@ -74,8 +73,7 @@ class AuthService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
           required String host,
           required String path}) =>
       guard(() async {
-        await RustLib.instance.api
-            .crateFfiProtocolHandlerProtocolHandleRequest(
+        await RustLib.instance.api.crateFfiProtocolHandlerProtocolHandleRequest(
           scheme: scheme,
           host: host,
           path: path,

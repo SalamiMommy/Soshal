@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `generate_cache_filename`, `infer_mime_type`, `resolve_allowed_path`, `validate_local_source_path`
+// These functions are ignored because they are not marked as `pub`: `generate_cache_filename`, `infer_mime_type`, `open_allowed_read`, `resolve_allowed_path`, `validate_local_source_path`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MEDIA_SERVER`, `MediaResult`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `deref`, `fmt`, `fmt`, `initialize`
 
@@ -42,7 +42,7 @@ Future<String> mediaClearCache({required String cacheDir}) =>
 
 /// Upload media to the local chunk store and return the blob manifest.
 /// The blob is chunked, deduplicated, and stored in the local CAS.
-String mediaUploadBlob({required List<int> data}) =>
+Future<String> mediaUploadBlob({required List<int> data}) =>
     RustLib.instance.api.crateFfiMediaMediaUploadBlob(data: data);
 
 /// Upload a local media file (or remote URL, SSRF-guarded) directly to the
@@ -52,7 +52,8 @@ Future<String> mediaUploadBlobFile({required String filePath}) =>
 
 /// Fetch a blob by hash from the chunk store (local or swarm).
 /// Returns the manifest JSON with success status.
-String mediaFetchBlob({required String blobHash, required String outPath}) =>
+Future<String> mediaFetchBlob(
+        {required String blobHash, required String outPath}) =>
     RustLib.instance.api
         .crateFfiMediaMediaFetchBlob(blobHash: blobHash, outPath: outPath);
 
@@ -61,7 +62,7 @@ String mediaGetCachePath() =>
     RustLib.instance.api.crateFfiMediaMediaGetCachePath();
 
 /// Start a local HTTP range server for media playback (sendfile zero-copy).
-/// Binds 127.0.0.1 on an ephemeral port; /blob/`<hash>` serves blob files out
+/// Binds 127.0.0.1 on an ephemeral port; /blob/<hash> serves blob files out
 /// of the chunk-store cache directory.
 BigInt mediaStartLocalServer() =>
     RustLib.instance.api.crateFfiMediaMediaStartLocalServer();

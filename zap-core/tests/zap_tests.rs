@@ -200,7 +200,7 @@ fn nwc_connection_info_derives() {
     let info = NwcConnectionInfo {
         wallet_pubkey: "pk1".into(),
         relay_url: "wss://relay".into(),
-        secret_hex: "secret".into(),
+        secret_hex: zeroize::Zeroizing::new("secret".to_string()),
         lud16: Some("user@domain".into()),
     };
     assert_eq!(info.clone(), info);
@@ -250,7 +250,7 @@ fn nwc_uri_percent_encoded_secret_decoded() {
         "%62".repeat(64)
     );
     let info = parse_nwc_uri(&uri).unwrap();
-    assert_eq!(info.secret_hex, "b".repeat(64));
+    assert_eq!(info.secret_hex.as_str(), "b".repeat(64).as_str());
 }
 
 #[test]

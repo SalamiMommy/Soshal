@@ -121,8 +121,8 @@ class StreamingService extends ChangeNotifier
 
   Future<List<StreamRow>> fetchLive({int limit = 50}) async {
     final parsed = await _decode(
-      () => RustLib.instance.api
-          .crateFfiStreamingStreamingFetchLive(limit: limit, audience: 'public'),
+      () => RustLib.instance.api.crateFfiStreamingStreamingFetchLive(
+          limit: limit, audience: 'public'),
     );
     _live
       ..clear()
@@ -158,8 +158,7 @@ class StreamingService extends ChangeNotifier
         );
       }, onNotify: notifyDeferred);
 
-  Future<bool> endLive(String streamId, String broadcasterPubkey) =>
-      guard(() {
+  Future<bool> endLive(String streamId, String broadcasterPubkey) => guard(() {
         return RustLib.instance.api.crateFfiStreamingStreamingEndLive(
           streamId: streamId,
           broadcasterPubkey: broadcasterPubkey,
@@ -208,12 +207,12 @@ class StreamingService extends ChangeNotifier
   }
 
   Future<bool> markStoryViewed(String storyId, String viewerPubkey) =>
-    guard(() {
-      return RustLib.instance.api.crateFfiStreamingStreamingMarkStoryViewed(
-        storyId: storyId,
-        viewerPubkey: viewerPubkey,
-      );
-    }, onNotify: notifyDeferred);
+      guard(() {
+        return RustLib.instance.api.crateFfiStreamingStreamingMarkStoryViewed(
+          storyId: storyId,
+          viewerPubkey: viewerPubkey,
+        );
+      }, onNotify: notifyDeferred);
 
   Future<bool> storyReact(String storyId, String pubkey, String emoji) async {
     try {
@@ -256,7 +255,8 @@ class StreamingService extends ChangeNotifier
     required String subscriberPubkey,
   }) =>
       guard(() {
-        return RustLib.instance.api.crateFfiStreamingStreamingMoqSubscribeStream(
+        return RustLib.instance.api
+            .crateFfiStreamingStreamingMoqSubscribeStream(
           streamId: streamId,
           subscriberPubkey: subscriberPubkey,
         );
@@ -433,11 +433,10 @@ class StreamingService extends ChangeNotifier
     return out;
   }
 
-  Future<List<StreamRow>> _decode(String Function() call) =>
-    guard(() async {
-      final json = call();
-      return await runOffThread(() => _parseStreamRows(json));
-    }, onNotify: notifyDeferred);
+  Future<List<StreamRow>> _decode(String Function() call) => guard(() async {
+        final json = call();
+        return await runOffThread(() => _parseStreamRows(json));
+      }, onNotify: notifyDeferred);
 
   @override
   void dispose() {

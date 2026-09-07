@@ -19,24 +19,33 @@ object RnsdRunner {
     var running: Boolean = false
         private set
 
+    @Volatile
+    private var lastError: String? = null
+
     private var thread: Thread? = null
     private var py: Python? = null
 
     @Synchronized
     fun start(context: Context, configDir: String): Boolean {
         if (running) return true
-        try {
+        return try {
             if (py == null) {
                 Python.start(AndroidPlatform(context))
                 py = Python.getInstance()
             }
             thread = Thread {
+                // Bring up RNS on this thread. The result is authoritative:
+                // `running` stays false when RNS init fails so the app shows
+                // the honest state (see lastError / status()) instead of
+                // claiming a daemon that never started.
+                var started = false
                 try {
-                    val mod = py!!.getModule("rnsd_service")
-                    mod.callAttr("start", configDir)
+                    started = py!!.getModule("rnsd_service")
+                        .callAttr("start", configDir) as Boolean
                 } catch (e: Exception) {
-                    // Python init failed; report via running flag
+                    lastError = e.toString()
                 }
+                running = started
                 // Keep the RNS transport threads alive by pumping the loop;
                 // RNS.Reticulum() starts its own worker threads, the pump
                 // only exits when stop() is called.
@@ -52,11 +61,11 @@ object RnsdRunner {
                 isDaemon = true
                 start()
             }
-            running = true
-            return true
+            true
         } catch (e: Exception) {
+            lastError = e.toString()
             running = false
-            return false
+            false
         }
     }
 
@@ -72,4 +81,9 @@ object RnsdRunner {
     }
 
     fun isRunning(): Boolean = running
+
+    fun status(): String =
+        (lastError ?: "").let { err ->
+            "\"running\":" + running + (if (err.isEmpty()) "" else ",\"error\":\"$err\"")
+        }
 }

@@ -152,9 +152,29 @@ pub fn db_init(db_path: String) -> Result<String, String> {
         }
     }
     // Set new path + DB under fresh locks (single-point, non-interleaved).
+    chmod_0600(&db_path);
     *crate::ffi::util::lock(&DB_PATH) = Some(db_path.clone());
     *crate::ffi::util::lock(&DB) = Some(db);
     Ok(db_path).into()
+}
+
+/// Restrict the SQLite main/WAL/SHM files to the owning user. The default
+/// umask usually yields 0644, which leaves the message store + session tables
+/// world-readable on multi-user machines. Idempotent: fixes legacy files too.
+#[cfg(unix)]
+fn chmod_0600(path: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    for p in [
+        path.to_string(),
+        format!("{path}-wal"),
+        format!("{path}-shm"),
+    ] {
+        if let Ok(md) = std::fs::metadata(&p) {
+            let mut perms = md.permissions();
+            perms.set_mode(0o600);
+            let _ = std::fs::set_permissions(&p, perms);
+        }
+    }
 }
 
 /// Get the current database path, or an error if not initialized.
@@ -412,10 +432,11 @@ fn raw_sql_allowed(sql: &str) -> bool {
     };
 
     let lower = norm.trim().to_lowercase();
-    // The raw console is only meant for single SELECT/DELETE/UPDATE
-    // statements. Reject multi-statement input, schema mutation, writes
-    // (INSERT/REPLACE), and anything that could touch files outside the
-    // database (ATTACH DATABASE) or change runtime behavior (PRAGMA).
+    // The raw console is read-only diagnostics: only single SELECT / WITH
+    // statements. Reject multi-statement input, every mutation and schema
+    // statement (INSERT/UPDATE/DELETE/REPLACE/CREATE/ALTER/DROP), anything
+    // that could touch files outside the database (ATTACH DATABASE) or
+    // change runtime behavior (PRAGMA/VACUUM/REINDEX).
     if lower.contains(';')
         || lower.contains("attach ")
         || lower.contains("drop ")
@@ -426,7 +447,20 @@ fn raw_sql_allowed(sql: &str) -> bool {
         || lower.contains("pragma ")
         || lower.contains("insert ")
         || lower.contains("replace ")
+        || lower.contains("update ")
+        || lower.contains("delete ")
     {
+        return false;
+    }
+    // First-command gate: UPDATE/DELETE (executable through libsql
+    // `Statement::query`) must never slip past the substring blocklist (the
+    // comment/hex-normalization above makes prefixes like `x'…'`‑wrapped
+    // tokens detectable, but the first-token check is authoritative). Mutations
+    // go through parameterized repo functions (db_execute_params) only.
+    if !matches!(
+        lower.split_whitespace().next().unwrap_or(""),
+        "select" | "with"
+    ) {
         return false;
     }
     !lower.contains("settings") && !PROTECTED_SETTING_KEYS.iter().any(|k| lower.contains(k))
@@ -435,6 +469,15 @@ fn raw_sql_allowed(sql: &str) -> bool {
 /// Internal helper: raw SELECT with bound ?N parameters (Vec<String>),
 /// rows as a JSON array of objects. Not an FFI surface.
 pub fn db_query_params(sql: &str, params: &[String]) -> Result<String, String> {
+    db_query_json(sql, params).map(|rows| super::util::json_ok_or_empty(&rows))
+}
+
+/// Internal helper: raw SELECT with bound ?N parameters, rows directly as
+/// `Vec<serde_json::Value>` — avoids the JSON string encode/decode
+/// round-trip that `db_query_params` imposes on every caller. Use this on
+/// hot paths that parse rows back into Rust values (batch queries, feed,
+/// events, minis). Not an FFI surface.
+pub fn db_query_json(sql: &str, params: &[String]) -> Result<Vec<serde_json::Value>, String> {
     with_db(|db| {
         let conn = db.conn()?;
         let out = block_on(async {
@@ -444,7 +487,7 @@ pub fn db_query_params(sql: &str, params: &[String]) -> Result<String, String> {
                 .await?;
             rows_json(&stmt, &mut rows).await
         })?;
-        Ok(super::util::json_ok_or_empty(&out))
+        Ok(out)
     })
 }
 
@@ -847,6 +890,7 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
                 // restore the pre-restore snapshot so old data survives
                 drop(db);
                 let _ = std::fs::copy(&bak, &dst);
+                let _ = std::fs::remove_file(&bak);
                 if let Ok(db) = Database::open(&dst) {
                     *crate::ffi::util::lock(&DB) = Some(db);
                 }
@@ -858,6 +902,7 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
             if let Err(e) = verify_restored_schema(&db) {
                 drop(db);
                 let _ = std::fs::copy(&bak, &dst);
+                let _ = std::fs::remove_file(&bak);
                 if let Ok(db) = Database::open(&dst) {
                     *crate::ffi::util::lock(&DB) = Some(db);
                 }
@@ -873,6 +918,7 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
             // app is dead until a full re-init.
             if std::path::Path::new(&bak).exists() {
                 let _ = std::fs::copy(&bak, &dst);
+                let _ = std::fs::remove_file(&bak);
             }
             if let Ok(db) = Database::open(&dst) {
                 *crate::ffi::util::lock(&DB) = Some(db);
@@ -1103,6 +1149,13 @@ pub(crate) fn tmp_db(label: &str, prefix: &str) -> String {
     path
 }
 
+/// Drop the process-global DB handle (tests only) so the next `db_init`
+/// starts clean; callers must remove the backing files themselves.
+#[cfg(test)]
+pub(crate) fn reset_db_global() {
+    *DB.lock().unwrap() = None;
+}
+
 /// Insert a minimal users row so child tables with FOREIGN KEY REFERENCES
 /// users(pubkey) succeed under the now-enforced FK pragma.
 #[cfg(test)]
@@ -1245,6 +1298,23 @@ mod tests {
             db_query_raw("SELECT value FROM settings".to_string()).is_err(),
             "raw query must not touch the settings table"
         );
+        // Mutations must never run through the query console, even though
+        // libsql `Statement::query` would execute them.
+        for write_sql in [
+            "UPDATE users SET name='x'",
+            "DELETE FROM posts",
+            "UPDATE settings SET value='x' WHERE key='pin_hash'",
+            "select 1; delete from posts",
+        ] {
+            assert!(
+                db_query_raw(write_sql.to_string()).is_err(),
+                "console mutation must be rejected: {write_sql}"
+            );
+        }
+        assert!(
+            db_query_raw("SELECT * FROM users LIMIT 1".to_string()).is_ok(),
+            "read-only SELECT still allowed on the console"
+        );
         assert!(
             db_execute_raw(
                 "INSERT INTO users (pubkey, npub, name) VALUES ('guarded1', 'npub1g', 'g') \
@@ -1292,6 +1362,23 @@ mod tests {
         );
         *DB.lock().unwrap() = None;
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_db_file_perms_0600() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let path = tmp_db_path("perms", "e2");
+        db_init(path.clone()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600, "db file must be 0600, got {mode:o}");
+        }
+        reset_db_global();
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
     }
 
     #[test]

@@ -146,8 +146,9 @@ mod ffi_coverage_tests {
         assert_eq!(db::db_purge_stale_geohash_peers(3600).unwrap(), 0);
         crate::test_util::cleanup(&path);
     }
-    #[test]
-    fn events_ffi_db_roundtrip() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn events_ffi_db_roundtrip() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("coverage", "events_ffi");
         let pk = unlock_signer();
@@ -156,10 +157,13 @@ mod ffi_coverage_tests {
             &[pk.clone()],
         )
         .unwrap();
-        let empty_nearby =
-            events::events_fetch_nearby(37.0, -122.0, 10.0, 5, "public".into()).unwrap();
+        let empty_nearby = events::events_fetch_nearby(37.0, -122.0, 10.0, 5, "public".into())
+            .await
+            .unwrap();
         assert_eq!(empty_nearby, "[]");
-        let empty_user = events::events_fetch_user_events(pk.clone(), 5).unwrap();
+        let empty_user = events::events_fetch_user_events(pk.clone(), 5)
+            .await
+            .unwrap();
         assert_eq!(empty_user, "[]");
         let now = soshal_common_core::format::now_secs() as u64;
         let created = events::events_create(
@@ -177,14 +181,18 @@ mod ffi_coverage_tests {
         let v: serde_json::Value = serde_json::from_str(&created).unwrap();
         let event_id = v["id"].as_str().unwrap().to_string();
         assert!(!event_id.is_empty());
-        let nearby = events::events_fetch_nearby(37.5, -122.4, 5000.0, 5, "public".into()).unwrap();
+        let nearby = events::events_fetch_nearby(37.5, -122.4, 5000.0, 5, "public".into())
+            .await
+            .unwrap();
         let arr: serde_json::Value = serde_json::from_str(&nearby).unwrap();
         assert_eq!(
             arr.as_array().unwrap().len(),
             1,
             "object-location event within radius"
         );
-        let mine = events::events_fetch_user_events(pk.clone(), 5).unwrap();
+        let mine = events::events_fetch_user_events(pk.clone(), 5)
+            .await
+            .unwrap();
         let arr: serde_json::Value = serde_json::from_str(&mine).unwrap();
         assert_eq!(arr.as_array().unwrap().len(), 1);
         assert!(events::events_check_in(event_id.clone(), pk, 37.5, -122.4).unwrap());

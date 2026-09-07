@@ -193,7 +193,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
       if (path == null || !mounted) return;
       setState(() => _uploadingMedia = true);
       final manifest = await context.read<MediaService>().uploadMedia(path);
-      final blobHash = validatedBlobHash(manifest, 'Upload failed (bad manifest)');
+      final blobHash =
+          validatedBlobHash(manifest, 'Upload failed (bad manifest)');
       final ext = path.split('.').last.toLowerCase();
       final type =
           const ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].contains(ext)
@@ -256,8 +257,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content:
-                  SelectableText('Signer locked — unlock with your keychain or recovery phrase'),
+              content: SelectableText(
+                  'Signer locked — unlock with your keychain or recovery phrase'),
             ),
           );
         }

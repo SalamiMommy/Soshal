@@ -131,8 +131,7 @@ class MeshService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       }, notifyOnSuccess: false);
 
   /// Creates a Reticulum address from an app name and aspect.
-  Future<String?> addressFromAspect(String appName, String aspect) =>
-      guard(() {
+  Future<String?> addressFromAspect(String appName, String aspect) => guard(() {
         return RustLib.instance.api.crateFfiNetworkReticulumAddressFromAspect(
           appName: appName,
           aspect: aspect,

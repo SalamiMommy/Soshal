@@ -79,6 +79,23 @@ void main() {
     expect(find.text('No profile loaded'), findsOneWidget);
   });
 
+  testWidgets('profile screen with pubkey loads author posts', (tester) async {
+    const pk = '1122334455667788990011223344556677889900112233445566778899001122';
+    api.stubString('crateFfiDbDbGetSetting', '');
+    api.stubString('crateFfiIdentityIdentityGetProfile',
+        '{"pubkey":"$pk","name":"alice","display_name":"Alice D","about":"Hello world","picture":"","banner":"","nip05":"","nip05_valid":false,"created_at":0,"followers":0,"following":0,"is_following":false,"wot_status":"trusted"}');
+    api.stubString('crateFfiIdentityIdentityGetWotStatus', 'trusted');
+    api.stub('crateFfiIdentityIdentityGetTrustScore', (_) => 95.0);
+    api.stubBool('crateFfiIdentityIdentityIsBlocked', false);
+    api.stubString('crateFfiFeedFeedFetchWindow',
+        '[{"id":"p1","pubkey":"$pk","content":"Alice first post","created_at":1000}]');
+
+    await pump(tester, const ProfileScreen(pubkey: pk));
+
+    expect(find.text('Alice D'), findsOneWidget);
+    expect(find.text('Alice first post'), findsOneWidget);
+  });
+
   testWidgets('scheduled screen without account shows sign-in wall',
       (tester) async {
     await pump(tester, const ScheduledScreen());

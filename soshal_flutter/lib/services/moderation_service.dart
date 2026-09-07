@@ -295,7 +295,8 @@ class HybridMediaResult {
 
 /// Moderation Service
 /// Mute/block lists, word filters, and on-device AI moderation engine.
-class ModerationService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
+class ModerationService extends ChangeNotifier
+    with LastErrorMixin, ServiceGuard {
   Set<String> _muted = {};
   Set<String> _blocked = {};
   List<String> _wordFilters = [];
@@ -490,8 +491,7 @@ class ModerationService extends ChangeNotifier with LastErrorMixin, ServiceGuard
     required String groupPubkey,
   }) =>
       guard(() {
-        return RustLib.instance.api
-            .crateFfiModerationModerationCreateJuryCase(
+        return RustLib.instance.api.crateFfiModerationModerationCreateJuryCase(
           caseId: caseId,
           targetPubkey: targetPubkey,
           reason: reason,

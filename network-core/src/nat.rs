@@ -199,6 +199,21 @@ fn parse_ice_url(raw: &str) -> Result<Url, String> {
     if host.is_empty() {
         return Err(format!("bad stun url {raw}"));
     }
+    // SSRF guard: STUN/TURN servers must be public infra. Loopback + private
+    // literals are refused; *hostnames* are allowed (resolution is deferred
+    // to the ICE agent, which is fine for the low-integrity STUN path).
+    if host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host
+            .parse::<std::net::IpAddr>()
+            .map(crate::lan::is_private_ip)
+            .unwrap_or(false)
+    {
+        return Err(format!(
+            "stun url targets a loopback or private host: {host}"
+        ));
+    }
     Ok(Url {
         scheme,
         host,

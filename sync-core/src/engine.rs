@@ -82,18 +82,24 @@ pub fn spawn_engine(
     })
 }
 
-/// Replay pending outbox items over the live relay connections: signed event
-/// JSON is parsed and sent; success marks `completed`, failure applies
-/// exponential backoff via `mark_outbox_item_failed`.
-async fn replay_outbox(db: &Database, client: &Client) {
+/// Outbox replay with the at-rest sealed-payload stage: pending items go
+/// through the caller-supplied `unseal` closure (encapsulates the at-rest key,
+/// held by the bridge layer) before JSON parsing. Legacy plaintext rows pass
+/// through unchanged.
+async fn replay_outbox_sealed(
+    db: &Database,
+    client: &Client,
+    unseal: &(dyn Fn(&str) -> Result<String, String> + Sync),
+) {
     let now = soshal_common_core::format::now_secs();
-    let items = match crate::outbox::fetch_pending_outbox_items(db, now, 32) {
-        Ok(items) => items,
-        Err(e) => {
-            eprintln!("sync engine: outbox fetch: {e}");
-            return;
-        }
-    };
+    let items =
+        match crate::outbox::fetch_pending_outbox_items_with_unseal(db, now, 32, false, unseal) {
+            Ok(items) => items,
+            Err(e) => {
+                eprintln!("sync engine: outbox fetch: {e}");
+                return;
+            }
+        };
     let mut completed: Vec<String> = Vec::new();
     for item in items {
         if item.media_path.is_some() {
@@ -248,6 +254,52 @@ async fn engine_loop(
     engine_loop_with_client(cfg, tx, stop, client).await
 }
 
+/// Spawn the engine thread with an at-rest outbox unseal closure. The closure
+/// is captured on the engine thread and invoked from the async outbox replay
+/// path, so it must be `'static + Send + Sync` and must not block on the
+/// bridge runtime (it runs directly on the engine's tokio worker).
+pub fn spawn_engine_sealed(
+    cfg: SyncConfig,
+    tx: tokio::sync::mpsc::Sender<SyncUpdate>,
+    stop: Arc<AtomicBool>,
+    on_exit: impl FnOnce() + Send + 'static,
+    unseal: &'static (dyn Fn(&str) -> Result<String, String> + Sync),
+) -> std::thread::JoinHandle<()> {
+    use rustls::crypto::ring;
+    let _ = ring::default_provider().install_default();
+    std::thread::spawn(move || {
+        let rt = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name("soshal-sync")
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("sync engine: runtime init failed: {e}");
+                on_exit();
+                return;
+            }
+        };
+        rt.block_on(async move {
+            if let Err(e) = engine_loop_sealed(cfg, tx, stop, unseal).await {
+                eprintln!("sync engine: {e}");
+            }
+        });
+        drop(rt);
+        on_exit();
+    })
+}
+
+async fn engine_loop_sealed(
+    cfg: SyncConfig,
+    tx: tokio::sync::mpsc::Sender<SyncUpdate>,
+    stop: Arc<AtomicBool>,
+    unseal: &(dyn Fn(&str) -> Result<String, String> + Sync + 'static),
+) -> Result<(), String> {
+    let client = build_client(&cfg).await?;
+    engine_loop_with_client_sealed(cfg, tx, stop, client, unseal).await
+}
+
 /// The engine pass itself, against an existing relay client. Split out so
 /// short-lived callers (headless background passes) can reuse a warm client
 /// and runtime instead of paying the connect handshake each run.
@@ -256,6 +308,21 @@ pub async fn engine_loop_with_client(
     tx: tokio::sync::mpsc::Sender<SyncUpdate>,
     stop: Arc<AtomicBool>,
     client: Client,
+) -> Result<(), String> {
+    engine_loop_with_client_sealed(cfg, tx, stop, client, &|p: &str| Ok(p.to_string())).await
+}
+
+/// `engine_loop_with_client` with the at-rest outbox unseal closure. The
+/// closure runs on the async runtime the caller provides (the tokio runtime
+/// is owned below), so it must be `Sync + 'static` and must NOT block on the
+/// bridge's own runtime (it runs inside the engine's rayon-free async path,
+/// so a plain sync invocation of the signer at-rest key + open is fine).
+pub async fn engine_loop_with_client_sealed(
+    cfg: SyncConfig,
+    tx: tokio::sync::mpsc::Sender<SyncUpdate>,
+    stop: Arc<AtomicBool>,
+    client: Client,
+    unseal: &(dyn Fn(&str) -> Result<String, String> + Sync + 'static),
 ) -> Result<(), String> {
     let db = Database::open(&cfg.db_path).map_err(|e| format!("open db: {e}"))?;
 
@@ -310,7 +377,7 @@ pub async fn engine_loop_with_client(
     }
 
     // Drain anything queued while the engine was down.
-    replay_outbox(&db, &client).await;
+    replay_outbox_sealed(&db, &client, unseal).await;
 
     let mut last_flush = Instant::now();
     let mut idle_ticks: u32 = 0;
@@ -360,7 +427,7 @@ pub async fn engine_loop_with_client(
             for (key, ts) in &cursors {
                 ingest::set_watermark(&db, key, *ts);
             }
-            replay_outbox(&db, &client).await;
+            replay_outbox_sealed(&db, &client, unseal).await;
             last_flush = Instant::now();
         }
     }

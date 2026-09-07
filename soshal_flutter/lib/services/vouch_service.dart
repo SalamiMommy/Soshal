@@ -16,8 +16,7 @@ class VouchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   List<VouchEntry> get vouches => _vouches;
 
   /// Publish a vouch for `targetPubkey`. Returns the event id.
-  Future<String> publish(String targetPubkey, String content) =>
-      guard(() {
+  Future<String> publish(String targetPubkey, String content) => guard(() {
         return RustLib.instance.api.crateFfiVouchVouchPublish(
           targetPubkey: targetPubkey,
           content: content,

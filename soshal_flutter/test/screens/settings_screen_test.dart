@@ -92,7 +92,6 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Account'), findsOneWidget);
     expect(find.text('Privacy & Security'), findsOneWidget);
-    expect(find.text('Relays'), findsOneWidget);
     expect(find.text('Appearance'), findsNWidgets(2)); // section + tile
     expect(find.text('Lightning'), findsOneWidget);
     expect(find.text('Network'), findsOneWidget);

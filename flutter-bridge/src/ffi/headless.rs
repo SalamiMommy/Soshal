@@ -8,7 +8,7 @@
 //! list is unchanged), so the dominant per-pass cost — runtime spawn +
 //! WebSocket connect handshake — is paid once, not per pass.
 
-use soshal_sync_core::engine::{build_client, engine_loop_with_client, SyncConfig};
+use soshal_sync_core::engine::{build_client, engine_loop_with_client_sealed, SyncConfig};
 use soshal_sync_core::SyncUpdate;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -110,8 +110,16 @@ pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
         relays,
         socks_proxy: None,
     };
+    let unseal: &'static (dyn Fn(&str) -> Result<String, String> + Sync) =
+        Box::leak(Box::new(super::sync::outbox_unseal_fn()));
     let _ = client.connect().await; // no-op when already connected
-    let handle = tokio::spawn(engine_loop_with_client(cfg, tx, stop.clone(), client));
+    let handle = tokio::spawn(engine_loop_with_client_sealed(
+        cfg,
+        tx,
+        stop.clone(),
+        client,
+        unseal,
+    ));
     tokio::time::sleep(std::time::Duration::from_secs(SYNC_PASS_SECS)).await;
     stop.store(true, Ordering::Relaxed);
     let _ = handle.await;

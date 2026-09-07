@@ -58,10 +58,10 @@ pub fn fetch_feed_window(
         let sql = format!(
             "SELECT p.id, p.pubkey, p.content, p.tags_json, p.created_at,
                     COALESCE(u.name, u.display_name), u.picture,
-                    (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
-                    (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.kind = 1 AND rp.is_deleted = 0),
-                    (SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id),
-                    EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?3)
+                    COALESCE((SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id), 0),
+                    COALESCE((SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.kind = 1 AND rp.is_deleted = 0), 0),
+                    COALESCE((SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id), 0),
+                    COALESCE((SELECT MAX(CASE WHEN rl.pubkey = ?3 THEN 1 ELSE 0 END) FROM reactions rl WHERE rl.event_id = p.id), 0)
              FROM posts p
              LEFT JOIN users u ON p.pubkey = u.pubkey
              WHERE p.kind = 1 AND p.is_deleted = 0{author_clause}

@@ -17,11 +17,14 @@ bool daemonExtractDaemons() =>
 String daemonGetDaemonPath({required String daemonName}) => RustLib.instance.api
     .crateFfiDaemonDaemonGetDaemonPath(daemonName: daemonName);
 
-/// Whether all three daemons are extracted.
+/// Whether all extracted daemons are present. rnsd on Android ships inside
+/// the app (Chaquopy Python, RnsdRunner) — no asset to extract.
 bool daemonAreDaemonsAvailable() =>
     RustLib.instance.api.crateFfiDaemonDaemonAreDaemonsAvailable();
 
-/// Per-daemon extraction status as JSON: {"i2pd":true,...}.
+/// Per-daemon extraction status as JSON: {"i2pd":true,...}. On Android,
+/// `reticulum` reports the in-process Chaquopy daemon's liveness instead of
+/// asset presence — the daemon runs inside the app, not as a child process.
 String daemonGetDaemonStatus() =>
     RustLib.instance.api.crateFfiDaemonDaemonGetDaemonStatus();
 

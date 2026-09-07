@@ -253,6 +253,11 @@ Future<String> networkReconcileProllyTree(
         localKvJson: localKvJson, remoteRootHash: remoteRootHash);
 
 /// Verifies a zk-SNARK Web-of-Trust moderation proof.
+///
+/// Legacy 3-arg surface. The security hardening made proof verification
+/// prover-bound (`verify_zk_wot_proof` requires the minting prover's pubkey
+/// and blacklist root); this surface cannot supply them, so it fails closed
+/// with `false` rather than verifying without an identity.
 Future<bool> networkVerifyZkWotProof(
         {required String proofJson,
         required String expectedWotRoot,

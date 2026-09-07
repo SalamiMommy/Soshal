@@ -323,16 +323,18 @@ class _NotificationList extends StatelessWidget {
                             );
                           } else if (val == 'ignore_user') {
                             api.ignoreUser(n.fromPubkey,
-                                userPubkey:
-                                    context.read<SessionService>().activePubkey);
+                                userPubkey: context
+                                    .read<SessionService>()
+                                    .activePubkey);
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('User ignored')),
                             );
                           } else if (val == 'ignore_thread' &&
                               n.eventId != null) {
                             api.ignoreThread(n.eventId!,
-                                userPubkey:
-                                    context.read<SessionService>().activePubkey);
+                                userPubkey: context
+                                    .read<SessionService>()
+                                    .activePubkey);
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                   content:

@@ -58,7 +58,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.8
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # pinned commit (master-tracked repo)
+      - name: Cache cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
       - name: Test FFI bridge
         run: cargo test -p soshal-flutter-bridge --test flutter_bridge_tests
       - name: Test FFI bridge with ignored tests
@@ -68,7 +76,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.8
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # pinned commit (master-tracked repo)
+      - name: Cache cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
       - name: Run core compliance audit
         run: bash scripts/check-core-compliance.sh
       - name: Verify core crates compile independently
@@ -85,6 +101,14 @@ jobs:
       - uses: subosito/flutter-action@48caab11266cdbfc51ac412500010431fb1f2ce6 # v2.14.0
         with:
           flutter-version: '3.24.0'
+      - name: Cache Flutter pub + build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.pub-cache
+            soshal_flutter/.dart_tool
+          key: ${{ runner.os }}-pub-${{ hashFiles('soshal_flutter/pubspec.lock') }}
+          restore-keys: ${{ runner.os }}-pub-
       - name: Get Flutter dependencies
         run: cd soshal_flutter && flutter pub get && cd ..
       - name: Lint Flutter code

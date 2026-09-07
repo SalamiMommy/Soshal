@@ -3,6 +3,7 @@
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
+use std::fs::OpenOptions;
 use std::sync::Mutex;
 
 /// Session account entry
@@ -30,6 +31,11 @@ pub struct SessionData {
     /// Used to enforce session max age.
     #[serde(default)]
     pub loaded_at: Option<u64>,
+    /// HMAC-SHA256 integrity tag over the session payload (sans this field),
+    /// keyed by a device-local 32-byte key in `session.key`. Guards
+    /// `loaded_at`/`last_used` against offline forgery.
+    #[serde(default)]
+    pub sig: Option<String>,
 }
 
 lazy_static::lazy_static! {
@@ -170,6 +176,142 @@ fn validate_path_security(path: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Device-local HMAC key filename living next to `session.json`.
+const SESSION_KEY_FILE: &str = "session.key";
+
+fn session_key_path(session_path: &std::path::Path) -> std::path::PathBuf {
+    session_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join(SESSION_KEY_FILE)
+}
+
+/// Load the 32-byte device session key, creating it (0600) on first use.
+/// Always succeeds in a writable app-data dir; failing closes session ops.
+fn load_or_create_session_key(session_path: &std::path::Path) -> Result<Vec<u8>, String> {
+    let key_path = session_key_path(session_path);
+    if let Ok(content) = std::fs::read_to_string(&key_path) {
+        let key =
+            hex::decode(content.trim()).map_err(|_| "session.key is not valid hex".to_string())?;
+        if key.len() != 32 {
+            return Err("session.key is not 32 bytes".to_string());
+        }
+        return Ok(key);
+    }
+    let mut key = [0u8; 32];
+    getrandom::fill(&mut key).map_err(|e| format!("session key generation failed: {e}"))?;
+    let encoded = hex::encode(key);
+    let mut opts = OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    match opts.open(&key_path) {
+        Ok(mut f) => {
+            use std::io::Write;
+            f.write_all(encoded.as_bytes())
+                .map_err(|e| format!("session key write failed: {e}"))?;
+            Ok(key.to_vec())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            // Concurrent creator (or a stale/garbage key file) won the race.
+            // Re-read once; a non-32-byte key is refused, not overwritten, so
+            // an attacker-supplied key file can never silently rotate the key.
+            let content = std::fs::read_to_string(&key_path)
+                .map_err(|_| format!("session.key exists but is unreadable: {e}"))?;
+            let k = hex::decode(content.trim())
+                .map_err(|_| "session.key is not valid hex (existing file)".to_string())?;
+            if k.len() != 32 {
+                return Err("session.key is not 32 bytes (existing file)".to_string());
+            }
+            Ok(k)
+        }
+        Err(e) => Err(format!("session.key create failed: {e}")),
+    }
+}
+
+fn random_suffix() -> String {
+    let mut buf = [0u8; 8];
+    let _ = getrandom::fill(&mut buf);
+    hex::encode(buf)
+}
+
+/// HMAC-SHA256 over the canonical session payload with `sig` excluded.
+/// Both write and verify sides sign the same compact serialization, so the
+/// on-disk pretty-printed formatting never affects the tag.
+fn sign_session(key: &[u8], session: &SessionData) -> Result<String, String> {
+    let mut for_sign = session.clone();
+    for_sign.sig = None;
+    let canonical = serde_json::to_string(&for_sign)
+        .map_err(|e| format!("session serialize for signing failed: {e}"))?;
+    Ok(hex::encode(soshal_crypto_core::hash::hmac_sha256(
+        key,
+        canonical.as_bytes(),
+    )))
+}
+
+/// Constant-time validity check of a session file's integrity tag. Unsigned
+/// files (`sig == None`) report `false` so the caller can distinguish the
+/// legacy-pre-upgrade case from a signed-but-forged one.
+fn session_sig_valid(key: &[u8], session: &SessionData) -> bool {
+    match &session.sig {
+        Some(sig) => sign_session(key, session)
+            .map(|expect| {
+                soshal_common_core::util::constant_time_eq(expect.as_bytes(), sig.as_bytes())
+            })
+            .unwrap_or(false),
+        None => false,
+    }
+}
+
+/// Atomic, TOCTOU-safe session write: fresh unique tmp name, `O_NOFOLLOW`
+/// with `O_EXCL` (0600), fsync, then same-directory rename. A symlink planted
+/// at the tmp or target path can neither be followed nor crossed. The tag is
+/// computed over the canonical payload before formatting.
+fn write_session_file(
+    session_path: &std::path::Path,
+    key: &[u8],
+    session: &SessionData,
+) -> Result<(), String> {
+    let mut signed = session.clone();
+    signed.sig = Some(sign_session(key, session)?);
+    let json = serde_json::to_string_pretty(&signed)
+        .map_err(|e| format!("Failed to serialize session: {e}"))?;
+    let dir = session_path
+        .parent()
+        .ok_or_else(|| "session path has no parent".to_string())?;
+    for attempt in 0..3 {
+        let tmp_path = dir.join(format!("session-{}.tmp", random_suffix()));
+        let write_result = (|| -> std::io::Result<()> {
+            let mut opts = OpenOptions::new();
+            opts.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+            }
+            let mut f = opts.open(&tmp_path)?;
+            std::io::Write::write_all(&mut f, json.as_bytes())?;
+            std::io::Write::flush(&mut f)?;
+            f.sync_all()?;
+            drop(f);
+            std::fs::rename(&tmp_path, session_path)
+        })();
+        match write_result {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp_path);
+                if attempt == 2 {
+                    return Err(format!("Failed to write session: {e}"));
+                }
+            }
+        }
+    }
+    Err("Failed to write session".to_string())
+}
+
 /// Load session from file
 #[frb(sync, serialize)]
 pub fn session_load(db_path: String) -> Result<String, String> {
@@ -179,6 +321,14 @@ pub fn session_load(db_path: String) -> Result<String, String> {
         match std::fs::read_to_string(&session_path) {
             Ok(content) => match serde_json::from_str::<SessionData>(&content) {
                 Ok(session) => {
+                    let session_key = load_or_create_session_key(&session_path)?;
+                    // Integrity: a signed file must verify. An unsigned file
+                    // is the legacy pre-upgrade shape — accepted once, then
+                    // re-signed on this load so every later load enforces the
+                    // tag. A present-but-mismatched tag is forged/tampered.
+                    if !session_sig_valid(&session_key, &session) && session.sig.is_some() {
+                        return Err("session file failed integrity check".to_string());
+                    }
                     // Enforce session max age: reject sessions older than
                     // SESSION_MAX_AGE_SECS to limit exposure from stolen files.
                     let now = soshal_common_core::format::now_secs() as u64;
@@ -189,6 +339,9 @@ pub fn session_load(db_path: String) -> Result<String, String> {
                     }
                     let mut session = session;
                     session.loaded_at = Some(now);
+                    // loaded_at changed (or the file was legacy/unsigned):
+                    // re-sign and persist so the on-disk tag stays valid.
+                    let _ = write_session_file(&session_path, &session_key, &session);
                     let mut session_lock = lock_session()?;
                     *session_lock = Some(session.clone());
                     super::util::json_ok(session)
@@ -205,6 +358,7 @@ pub fn session_load(db_path: String) -> Result<String, String> {
             active_pubkey: None,
             accounts: Vec::new(),
             loaded_at: Some(soshal_common_core::format::now_secs() as u64),
+            sig: None,
         };
         let mut session_lock = lock_session()?;
         *session_lock = Some(empty.clone());
@@ -218,36 +372,17 @@ pub fn session_save(db_path: String, session_data: String) -> Result<bool, Strin
     let session_path = validated_session_path_hardened(&db_path)?;
 
     match serde_json::from_str::<SessionData>(&session_data) {
-        Ok(session) => match serde_json::to_string_pretty(&session) {
-            Ok(json) => {
-                // Atomic write: write to a temp file in the same directory,
-                // then rename over the target (atomic on same filesystem).
-                let tmp_path = std::path::PathBuf::from(format!("{}.tmp", session_path.display()));
-                let write_result = (|| -> std::io::Result<()> {
-                    let mut f = std::fs::OpenOptions::new()
-                        .create(true)
-                        .truncate(true)
-                        .write(true)
-                        .open(&tmp_path)?;
-                    std::io::Write::write_all(&mut f, json.as_bytes())?;
-                    std::io::Write::flush(&mut f)?;
-                    std::fs::rename(&tmp_path, &session_path)
-                })();
-                match write_result {
-                    Ok(_) => {
-                        let mut session_lock = lock_session()?;
-                        *session_lock = Some(session);
-                        Ok(true).into()
-                    }
-                    Err(e) => {
-                        // Best-effort cleanup so no partial state lingers.
-                        let _ = std::fs::remove_file(&tmp_path);
-                        Err(format!("Failed to write session: {}", e)).into()
-                    }
+        Ok(session) => {
+            let session_key = load_or_create_session_key(&session_path)?;
+            match write_session_file(&session_path, &session_key, &session) {
+                Ok(_) => {
+                    let mut session_lock = lock_session()?;
+                    *session_lock = Some(session);
+                    Ok(true).into()
                 }
+                Err(e) => Err(e).into(),
             }
-            Err(e) => Err(format!("Failed to serialize session: {}", e)).into(),
-        },
+        }
         Err(e) => Err(format!("Invalid session JSON: {}", e)).into(),
     }
 }
@@ -281,6 +416,7 @@ pub fn session_add_account(
                 active_pubkey: None,
                 accounts: Vec::new(),
                 loaded_at: Some(soshal_common_core::format::now_secs() as u64),
+                sig: None,
             });
             if !session.accounts.iter().any(|a| a.pubkey == account.pubkey) {
                 session.accounts.push(account.clone());
@@ -656,6 +792,84 @@ mod tests {
         session_load(db_path).unwrap();
         let err = session_register_push_token("tok".to_string()).unwrap_err();
         assert!(err.contains("No active account"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_tampered_session_file_rejected() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let (dir, db_path) = tmp_session_dir("tampered");
+        let data = format!(
+            r#"{{"active_pubkey":"pk1","accounts":[{{"pubkey":"pk1","npub":"npub1pk1","last_used":{},"relay_list":[]}}]}}"#,
+            soshal_common_core::format::now_secs()
+        );
+        assert!(session_save(db_path.clone(), data).unwrap());
+        // A clean load succeeds (signed file verifies) and re-signs on load.
+        session_load(db_path.clone()).unwrap();
+        // Tamper with `loaded_at` (the max-age bypass vector) — the tag now
+        // no longer matches, so the forged file must be rejected.
+        let path = dir.join("session.json");
+        let mut v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        v["loaded_at"] = serde_json::json!(1);
+        std::fs::write(&path, v.to_string()).unwrap();
+        let err = session_load(db_path.clone()).unwrap_err();
+        assert!(err.contains("integrity"), "got {err}");
+        // Forged tag (all-zero sig) is likewise rejected, not treated as
+        // unsigned-legacy.
+        let mut v2: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        v2["sig"] = serde_json::json!("0".repeat(64));
+        std::fs::write(&path, v2.to_string()).unwrap();
+        let err = session_load(db_path.clone()).unwrap_err();
+        assert!(err.contains("integrity"), "got {err}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_unsigned_legacy_file_healed_and_bound() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let (dir, db_path) = tmp_session_dir("legacy");
+        // Pre-upgrade shape: no `sig` field at all.
+        let legacy = format!(
+            r#"{{"active_pubkey":"pk1","accounts":[{{"pubkey":"pk1","npub":"npub1pk1","last_used":{},"relay_list":[]}}]}}"#,
+            soshal_common_core::format::now_secs()
+        );
+        std::fs::write(dir.join("session.json"), legacy).unwrap();
+        assert!(session_load(db_path.clone()).is_ok());
+        // Load must have healed the file: a `sig` is now present.
+        let healed = std::fs::read_to_string(dir.join("session.json")).unwrap();
+        assert!(healed.contains("\"sig\""), "healed: {healed}");
+        // And that healed tag binds the content: later tampering is rejected.
+        let mut v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("session.json")).unwrap())
+                .unwrap();
+        v["loaded_at"] = serde_json::json!(1);
+        std::fs::write(dir.join("session.json"), v.to_string()).unwrap();
+        let err = session_load(db_path.clone()).unwrap_err();
+        assert!(err.contains("integrity"), "got {err}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_session_key_created_with_0600_perms() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let (dir, db_path) = tmp_session_dir("keyperms");
+        let data = format!(
+            r#"{{"active_pubkey":"pk1","accounts":[{{"pubkey":"pk1","npub":"npub1pk1","last_used":{},"relay_list":[]}}]}}"#,
+            soshal_common_core::format::now_secs()
+        );
+        assert!(session_save(db_path.clone(), data).unwrap());
+        assert!(dir.join("session.key").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(dir.join("session.key"))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600, "session.key mode {mode:o}");
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 

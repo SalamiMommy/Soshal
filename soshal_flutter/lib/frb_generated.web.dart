@@ -630,13 +630,13 @@ class RustLibWire implements BaseWire {
               .wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_secret_key(
                   that, secret_key);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__analytics__analytics_compute_stats(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__analytics__analytics_compute_stats(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__analytics__analytics_compute_stats(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__analytics__analytics_compute_stats(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   void wire__crate__ffi__analytics__analytics_slm_classify_post(
           NativePortType port_,
@@ -1518,21 +1518,21 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__events__events_create(
               ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__events__events_fetch_nearby(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__events__events_fetch_nearby(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__events__events_fetch_nearby(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__events__events_fetch_nearby(
+          port_, ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__events__events_fetch_user_events(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__events__events_fetch_user_events(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__events__events_fetch_user_events(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__events__events_fetch_user_events(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__events__events_get_attendees(
@@ -1638,29 +1638,29 @@ class RustLibWire implements BaseWire {
       wasmModule.wire__crate__ffi__feed__feed_delete_post(
           port_, ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__feed__feed_fetch_events(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__feed__feed_fetch_events(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__feed__feed_fetch_events(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__feed__feed_fetch_events(
+          port_, ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__feed__feed_fetch_thread(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__feed__feed_fetch_thread(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__feed__feed_fetch_thread(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__feed__feed_fetch_thread(
+          port_, ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__feed__feed_fetch_window(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__feed__feed_fetch_window(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__feed__feed_fetch_window(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__feed__feed_fetch_window(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   void wire__crate__ffi__feed__feed_publish_reply(
           NativePortType port_,
@@ -2558,13 +2558,13 @@ class RustLibWire implements BaseWire {
       wasmModule.wire__crate__ffi__media__media_fetch(
           port_, ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__media__media_fetch_blob(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__media__media_fetch_blob(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__media__media_fetch_blob(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__media__media_fetch_blob(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__media__media_get_cache_path(
@@ -2622,13 +2622,13 @@ class RustLibWire implements BaseWire {
       wasmModule.wire__crate__ffi__media__media_upload(
           port_, ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__media__media_upload_blob(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__media__media_upload_blob(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__media__media_upload_blob(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__media__media_upload_blob(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   void wire__crate__ffi__media__media_upload_blob_file(
           NativePortType port_,
@@ -4685,11 +4685,11 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
       wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_secret_key(
           int that, int secret_key);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__analytics__analytics_compute_stats(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__analytics__analytics_compute_stats(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
 
   external void wire__crate__ffi__analytics__analytics_slm_classify_post(
       NativePortType port_,
@@ -5341,17 +5341,17 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_,
           int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__events__events_fetch_nearby(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__events__events_fetch_nearby(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__events__events_fetch_user_events(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__events__events_fetch_user_events(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__events__events_get_attendees(
@@ -5428,23 +5428,14 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
   external void wire__crate__ffi__feed__feed_delete_post(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__feed__feed_fetch_events(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__feed__feed_fetch_events(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__feed__feed_fetch_thread(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__feed__feed_fetch_thread(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__feed__feed_fetch_window(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__feed__feed_fetch_window(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
   external void wire__crate__ffi__feed__feed_publish_reply(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
@@ -6095,11 +6086,8 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
   external void wire__crate__ffi__media__media_fetch(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__media__media_fetch_blob(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__media__media_fetch_blob(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__media__media_get_cache_path(
@@ -6137,11 +6125,8 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
   external void wire__crate__ffi__media__media_upload(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__media__media_upload_blob(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__media__media_upload_blob(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
   external void wire__crate__ffi__media__media_upload_blob_file(
       NativePortType port_,

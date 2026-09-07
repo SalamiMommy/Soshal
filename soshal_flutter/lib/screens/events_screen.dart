@@ -633,9 +633,8 @@ class _EventsScreenState extends State<EventsScreen> {
     final line = formatMonthDayTime(s);
     if (e.endTime <= 0) return line;
     final en = DateTime.fromMillisecondsSinceEpoch(e.endTime * 1000).toLocal();
-    final endClock = en.day == s.day
-        ? formatClock12h(en)
-        : formatMonthDayTime(en);
+    final endClock =
+        en.day == s.day ? formatClock12h(en) : formatMonthDayTime(en);
     return '$line – $endClock';
   }
 

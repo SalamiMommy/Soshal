@@ -116,6 +116,31 @@ void main() {
       expect(api.namedArg(inv, 'limit'), 10);
     });
 
+    test('fetchAuthorPosts fetches posts without modifying global feed', () async {
+      final feed = FeedService();
+      var notified = 0;
+      feed.addListener(() => notified++);
+
+      const postJson =
+          '[{"id":"p1","pubkey":"pk_target","content":"user post","created_at":1000},'
+          '{"id":"p2","pubkey":"pk_other","content":"other post","created_at":999}]';
+      api.stubString('crateFfiFeedFeedFetchWindow', postJson);
+
+      final result = await feed.fetchAuthorPosts('pk_target', limit: 20);
+
+      expect(result.length, 1);
+      expect(result.first.eventId, 'p1');
+      expect(result.first.pubkey, 'pk_target');
+      // Global feed state must NOT be modified
+      expect(feed.posts.isEmpty, true);
+      expect(notified, 0);
+
+      final inv = api.callsOf('crateFfiFeedFeedFetchWindow').single;
+      expect(api.namedArg(inv, 'startIndex'), 0);
+      expect(api.namedArg(inv, 'limit'), 20);
+      expect(api.namedArg(inv, 'audience'), 'pk_target');
+    });
+
     test('enqueueOutboxPost creates offline post', () async {
       final feed = FeedService();
       var notified = 0;

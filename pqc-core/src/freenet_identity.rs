@@ -10,21 +10,23 @@ use ring::signature::{
     EcdsaKeyPair, KeyPair, UnparsedPublicKey, ECDSA_P256_SHA256_ASN1,
     ECDSA_P256_SHA256_ASN1_SIGNING,
 };
+use zeroize::Zeroizing;
 
 /// Generated Freenet identity payload (hex keys, base64 private key, PQ
-/// hybrid keys). Serialized to JSON by callers.
+/// hybrid keys). Serialized to JSON by callers. All secret-key fields are
+/// `Zeroizing` so drops and serialization snapshots self-wipe.
 pub struct FreenetIdentity {
     /// Public key as 128 hex chars (ring fixed encoding: 64-byte x||y).
     pub public_key: String,
     /// PKCS#8 private key, base64-encoded.
-    pub private_key: String,
+    pub private_key: Zeroizing<String>,
     /// Freenet address: `free:<publicKey>`.
     pub address: String,
     /// Post-quantum hybrid keys (ML-DSA-65 signing, ML-KEM-768 encryption).
     pub pqc_dsa_public_key: String,
-    pub pqc_dsa_secret_key: String,
+    pub pqc_dsa_secret_key: Zeroizing<String>,
     pub pqc_kem_public_key: String,
-    pub pqc_kem_secret_key: String,
+    pub pqc_kem_secret_key: Zeroizing<String>,
 }
 
 impl FreenetIdentity {
@@ -32,13 +34,13 @@ impl FreenetIdentity {
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "publicKey": self.public_key,
-            "privateKey": self.private_key,
+            "privateKey": self.private_key.as_str(),
             "address": self.address,
             "pqc": {
                 "dsaPublicKey": self.pqc_dsa_public_key,
-                "dsaSecretKey": self.pqc_dsa_secret_key,
+                "dsaSecretKey": self.pqc_dsa_secret_key.as_str(),
                 "kemPublicKey": self.pqc_kem_public_key,
-                "kemSecretKey": self.pqc_kem_secret_key,
+                "kemSecretKey": self.pqc_kem_secret_key.as_str(),
             }
         })
     }
@@ -70,12 +72,12 @@ pub fn freenet_keygen(seed: Option<&[u8]>) -> Result<FreenetIdentity, String> {
     let (kem_pk, kem_sk) = crate::kem::kem_keygen().map_err(|e| format!("ml-kem keygen: {e}"))?;
     Ok(FreenetIdentity {
         public_key,
-        private_key,
+        private_key: Zeroizing::new(private_key),
         address,
         pqc_dsa_public_key: dsa_pk,
-        pqc_dsa_secret_key: dsa_sk,
+        pqc_dsa_secret_key: Zeroizing::new(dsa_sk),
         pqc_kem_public_key: kem_pk,
-        pqc_kem_secret_key: kem_sk,
+        pqc_kem_secret_key: Zeroizing::new(kem_sk),
     })
 }
 

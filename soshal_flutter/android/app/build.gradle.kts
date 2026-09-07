@@ -88,7 +88,7 @@ flutter {
 chaquopy {
     defaultConfig {
         pip {
-            install("rnspure==1.4.2")
+            install("rnspure==1.5.2")
         }
     }
 }

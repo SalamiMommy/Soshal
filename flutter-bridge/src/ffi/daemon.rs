@@ -108,14 +108,22 @@ pub fn daemon_get_daemon_path(daemon_name: String) -> Result<String, String> {
     }
 }
 
-/// Whether all three daemons are extracted.
+/// Whether all extracted daemons are present. rnsd on Android ships inside
+/// the app (Chaquopy Python, RnsdRunner) — no asset to extract.
 #[frb(sync, serialize)]
 pub fn daemon_are_daemons_available() -> Result<bool, String> {
     let dir = daemons_dir()?;
-    Ok(DAEMONS.iter().all(|d| dir.join(d).exists()))
+    Ok(DAEMONS.iter().all(|d| {
+        if *d == "rnsd" && cfg!(target_os = "android") {
+            return true;
+        }
+        dir.join(d).exists()
+    }))
 }
 
-/// Per-daemon extraction status as JSON: {"i2pd":true,...}.
+/// Per-daemon extraction status as JSON: {"i2pd":true,...}. On Android,
+/// `reticulum` reports the in-process Chaquopy daemon's liveness instead of
+/// asset presence — the daemon runs inside the app, not as a child process.
 #[frb(sync, serialize)]
 pub fn daemon_get_daemon_status() -> Result<String, String> {
     let dir = daemons_dir()?;
@@ -125,10 +133,12 @@ pub fn daemon_get_daemon_status() -> Result<String, String> {
         ("freenet", "freenet"),
         ("reticulum", "rnsd"),
     ] {
-        map.insert(
-            key.to_string(),
-            serde_json::Value::Bool(dir.join(name).exists()),
-        );
+        let present = if name == "rnsd" && cfg!(target_os = "android") {
+            crate::platform::rnsd_running().unwrap_or(false)
+        } else {
+            dir.join(name).exists()
+        };
+        map.insert(key.to_string(), serde_json::Value::Bool(present));
     }
     Ok(serde_json::Value::Object(map).to_string())
 }

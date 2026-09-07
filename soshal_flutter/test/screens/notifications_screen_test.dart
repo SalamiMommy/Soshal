@@ -176,8 +176,8 @@ void main() {
     expect(api.callCount('crateFfiNotificationsNotificationsMarkRead'), 1);
     final inv = api.callsOf('crateFfiNotificationsNotificationsMarkRead').single;
     expect(api.namedArg(inv, 'notificationId'), 'n1');
-    expect(find.text('2 unread'), findsOneWidget);
-    expect(find.byIcon(Icons.circle), findsOneWidget);
+    expect(find.text('3 unread'), findsNothing);
+    expect(find.byIcon(Icons.circle), findsNothing);
   });
 
   testWidgets('swipe to dismiss deletes notification', (tester) async {

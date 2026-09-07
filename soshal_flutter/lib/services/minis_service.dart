@@ -13,7 +13,8 @@ import '../utils/service_guard.dart';
 /// Minis: mini video registry (kind-31020) plus WASI content-filter /
 /// feed-ranker plugin execution. Stateless wrapper — screens own their UI
 /// state.
-class MinisService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
+class MinisService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   bool _wasmRuntimeUnavailable = false;
 
   /// True after a plugin call fails: the WASI host is on the roadmap, so
@@ -64,11 +65,11 @@ class MinisService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
           .toList();
       _saved = list;
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
       return hosted;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return false;
     }
   }
@@ -82,10 +83,10 @@ class MinisService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
           .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
           .toList();
       clearLastError();
-      notifyListeners();
+      notifyDeferred();
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
     }
   }
 
@@ -123,14 +124,14 @@ class MinisService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       clearLastError();
       if (_wasmRuntimeUnavailable) {
         _wasmRuntimeUnavailable = false;
-        notifyListeners();
+        notifyDeferred();
       }
       return result;
     } catch (e, st) {
       setLastError(e, st);
       if (!_wasmRuntimeUnavailable) {
         _wasmRuntimeUnavailable = true;
-        notifyListeners();
+        notifyDeferred();
       }
       // Honest-err: empty string looked like success. Throw so callers
       // show "unavailable (roadmap)" instead of empty result.
@@ -153,14 +154,14 @@ class MinisService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       clearLastError();
       if (_wasmRuntimeUnavailable) {
         _wasmRuntimeUnavailable = false;
-        notifyListeners();
+        notifyDeferred();
       }
       return ranked;
     } catch (e, st) {
       setLastError(e, st);
       if (!_wasmRuntimeUnavailable) {
         _wasmRuntimeUnavailable = true;
-        notifyListeners();
+        notifyDeferred();
       }
       throw StateError('WASI ranker unavailable (roadmap): $e');
     }

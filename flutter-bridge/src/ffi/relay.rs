@@ -199,14 +199,20 @@ fn spawn_ingest(db_path: String, my_pubkey: String) {
                         break;
                     };
                     node.poll();
-                    for payload in node.drain_delivered() {
-                        let Ok(event) = Event::from_json(&payload) else {
-                            continue;
-                        };
-                        if !soshal_nostr_core::models::verify_event(&event) {
-                            continue;
+                    let payloads = node.drain_delivered();
+                    if !payloads.is_empty() {
+                        // Batched ingest mirrors the relay engine path:
+                        // signature verification is pooled + parallelized
+                        // (rayon) inside handle_batch, and all rows land in a
+                        // single transaction instead of one per event.
+                        let mut events: Vec<Event> = Vec::with_capacity(payloads.len());
+                        for payload in payloads {
+                            if let Ok(event) = Event::from_json(&payload) {
+                                events.push(event);
+                            }
                         }
-                        let _ = soshal_sync_core::ingest::handle(&db, &my_pubkey, &event, &tx);
+                        let _ =
+                            soshal_sync_core::ingest::handle_batch(&db, &my_pubkey, &events, &tx);
                     }
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;

@@ -114,35 +114,6 @@ fn events_from_json(json: String) -> Vec<EventInfo> {
         .collect()
 }
 
-fn rsvp_status_for_user(event_id: &str, user_pk: &str) -> String {
-    let json = super::db::db_query_params(
-        &format!(
-            "SELECT content FROM posts p WHERE kind = ?1 AND pubkey = ?2 AND is_deleted = 0 \
-             AND (rsvp_event_id = ?3 OR id LIKE ?4) \
-             AND {RSVP_NOT_SUPERSEDED} \
-             ORDER BY created_at DESC, id DESC LIMIT 1"
-        ),
-        &[
-            KIND_EVENT_RSVP.to_string(),
-            user_pk.to_string(),
-            event_id.to_string(),
-            format!("rsvp:{user_pk}:{event_id}:%"),
-        ],
-    );
-    if let Ok(json) = json {
-        if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
-            if let Some(row) = rows.first() {
-                if let Some(s) = row["content"].as_str() {
-                    if valid_rsvp(s) {
-                        return s.to_string();
-                    }
-                }
-            }
-        }
-    }
-    String::new()
-}
-
 /// A kind-31924 row is superseded when another row for the same event+user
 /// has a later created_at (or equal created_at and greater id); superseded
 /// rows must not count toward attendee totals.
@@ -204,76 +175,113 @@ fn attendees_count(event_id: &str) -> i32 {
 /// `radius_km <= 0` means "anywhere": no geo filter, zero-coordinate
 /// (location-less) events included. `audience` filters to an author set
 /// ("public" = none; empty set = no events).
-#[frb(sync, serialize)]
-pub fn events_fetch_nearby(
+#[frb(serialize)]
+pub async fn events_fetch_nearby(
     latitude: f64,
     longitude: f64,
     radius_km: f32,
     limit: i32,
     audience: String,
 ) -> Result<String, String> {
-    if !latitude.is_finite() || !longitude.is_finite() {
-        return Err("invalid coordinates".to_string());
-    }
-    let authors = super::identity::resolve_audience_authors(&audience)?;
-    let mut params: Vec<String> = Vec::new();
-    let mut audience_clause = String::new();
-    if let Some(a) = &authors {
-        if a.is_empty() {
-            return super::util::json_ok(Vec::<EventInfo>::new());
+    tokio::task::spawn_blocking(move || {
+        if !latitude.is_finite() || !longitude.is_finite() {
+            return Err("invalid coordinates".to_string());
         }
-        audience_clause = " AND p.pubkey IN (SELECT value FROM json_each(?1))".to_string();
-        params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
-    }
-    if radius_km <= 0.0 {
-        let filter = format!("{audience_clause} ");
-        let json = super::db::db_query_params(&event_rows_sql(&filter, limit), &params)?;
-        return super::util::json_ok(events_from_json(json));
-    }
-    let radius = radius_km.min(5000.0);
-    let lat_deg = radius as f64 / 110.574;
-    let lon_deg = radius as f64 / (111.320 * latitude.to_radians().cos().abs().max(0.01));
-    let (lat1, lat2) = (latitude - lat_deg, latitude + lat_deg);
-    let (lon1, lon2) = (longitude - lon_deg, longitude + lon_deg);
-    let geo_filter = format!(
-        "AND p.event_lat BETWEEN {lat1:.6} AND {lat2:.6} \
-         AND p.event_lng BETWEEN {lon1:.6} AND {lon2:.6} {audience_clause}"
-    );
-    let json = super::db::db_query_params(&event_rows_sql(&geo_filter, limit), &params)?;
-    let mut out: Vec<EventInfo> = events_from_json(json);
-    let center = (latitude, longitude);
-    out.retain(|e| {
-        if e.latitude == 0.0 && e.longitude == 0.0 {
-            return false;
+        let authors = super::identity::resolve_audience_authors(&audience)?;
+        let mut params: Vec<String> = Vec::new();
+        let mut audience_clause = String::new();
+        if let Some(a) = &authors {
+            if a.is_empty() {
+                return super::util::json_ok(Vec::<EventInfo>::new());
+            }
+            audience_clause = " AND p.pubkey IN (SELECT value FROM json_each(?1))".to_string();
+            params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
         }
-        soshal_spatial_core::distance::haversine_km(center.0, center.1, e.latitude, e.longitude)
-            <= radius as f64
-    });
-    super::util::json_ok(out)
+        if radius_km <= 0.0 {
+            let filter = format!("{audience_clause} ");
+            let json = super::db::db_query_params(&event_rows_sql(&filter, limit), &params)?;
+            return super::util::json_ok(events_from_json(json));
+        }
+        let radius = radius_km.min(5000.0);
+        let lat_deg = radius as f64 / 110.574;
+        let lon_deg = radius as f64 / (111.320 * latitude.to_radians().cos().abs().max(0.01));
+        let (lat1, lat2) = (latitude - lat_deg, latitude + lat_deg);
+        let (lon1, lon2) = (longitude - lon_deg, longitude + lon_deg);
+        let geo_filter = format!(
+            "AND p.event_lat BETWEEN {lat1:.6} AND {lat2:.6} \
+             AND p.event_lng BETWEEN {lon1:.6} AND {lon2:.6} {audience_clause}"
+        );
+        let json = super::db::db_query_params(&event_rows_sql(&geo_filter, limit), &params)?;
+        let mut out: Vec<EventInfo> = events_from_json(json);
+        let center = (latitude, longitude);
+        out.retain(|e| {
+            if e.latitude == 0.0 && e.longitude == 0.0 {
+                return false;
+            }
+            soshal_spatial_core::distance::haversine_km(center.0, center.1, e.latitude, e.longitude)
+                <= radius as f64
+        });
+        super::util::json_ok(out)
+    })
+    .await
+    .map_err(|e| format!("events nearby join: {e}"))?
 }
 
 /// Fetch events the user is involved in (created, RSVPed, or attended).
-#[frb(sync, serialize)]
-pub fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result<String, String> {
-    let filter = "AND (p.pubkey = ?1 OR EXISTS (SELECT 1 FROM posts r WHERE r.pubkey = ?1 \
-                  AND (r.rsvp_event_id = p.id \
-                       OR r.id = 'checkin:' || ?1 || ':' || p.id)))";
-    let json = super::db::db_query_params(&event_rows_sql(filter, limit), &[user_pubkey.clone()])?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    let ids: Vec<String> = rows
-        .iter()
-        .filter_map(|v| v["id"].as_str().map(|s| s.to_string()))
-        .collect();
-    let counts = attendee_counts_for_ids(&ids);
-    let mut out: Vec<EventInfo> = Vec::new();
-    for v in rows {
-        if let Some(mut e) = event_from_value(&v) {
-            e.attendees = counts.get(&e.id).copied().unwrap_or(0);
-            e.rsvp_status = rsvp_status_for_user(&e.id, &user_pubkey);
-            out.push(e);
+#[frb(serialize)]
+pub async fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let filter = "AND (p.pubkey = ?1 OR EXISTS (SELECT 1 FROM posts r WHERE r.pubkey = ?1 \
+                      AND (r.rsvp_event_id = p.id \
+                           OR r.id = 'checkin:' || ?1 || ':' || p.id)))";
+        let rows: Vec<serde_json::Value> =
+            super::db::db_query_json(&event_rows_sql(filter, limit), &[user_pubkey.clone()])
+                .unwrap_or_default();
+        let ids: Vec<String> = rows
+            .iter()
+            .filter_map(|v| v["id"].as_str().map(|s| s.to_string()))
+            .collect();
+        let counts = attendee_counts_for_ids(&ids);
+        // Batch RSVP status in a single query instead of one query per event
+        // (N+1). Returns latest non-superseded kind-31924 content per event
+        // for this user.
+        let mut rsvp_map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        if !ids.is_empty() && !user_pubkey.is_empty() {
+            let ids_json = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string());
+            let rows = super::db::db_query_json(
+                &format!(
+                    "SELECT p.rsvp_event_id, p.content FROM posts p WHERE kind = ?1 \
+                     AND pubkey = ?2 AND is_deleted = 0 \
+                     AND rsvp_event_id IN (SELECT value FROM json_each(?3)) \
+                     AND {RSVP_NOT_SUPERSEDED} \
+                     ORDER BY p.created_at DESC, p.id DESC"
+                ),
+                &[KIND_EVENT_RSVP.to_string(), user_pubkey.clone(), ids_json],
+            )
+            .unwrap_or_default();
+            for r in rows {
+                if let (Some(eid), Some(s)) = (r["rsvp_event_id"].as_str(), r["content"].as_str()) {
+                    if valid_rsvp(s) {
+                        rsvp_map
+                            .entry(eid.to_string())
+                            .or_insert_with(|| s.to_string());
+                    }
+                }
+            }
         }
-    }
-    super::util::json_ok(out)
+        let mut out: Vec<EventInfo> = Vec::new();
+        for v in rows {
+            if let Some(mut e) = event_from_value(&v) {
+                e.attendees = counts.get(&e.id).copied().unwrap_or(0);
+                e.rsvp_status = rsvp_map.get(&e.id).cloned().unwrap_or_default();
+                out.push(e);
+            }
+        }
+        super::util::json_ok(out)
+    })
+    .await
+    .map_err(|e| format!("events user join: {e}"))?
 }
 
 /// Create an event (kind 31923 calendar event; content per the calendar
@@ -416,13 +424,14 @@ pub fn events_rsvp(
     let signed_id = signed["id"].as_str().unwrap_or_default().to_string();
     let now = soshal_common_core::format::now_secs();
     super::db::with_db_result(|db| {
-        soshal_sync_core::outbox::enqueue_outbox_item(
+        soshal_sync_core::outbox::enqueue_outbox_item_with_seal(
             db,
             &signed_id,
             "rsvp",
             &signed_json,
             None,
             now,
+            super::sync::outbox_seal_fn(),
         )
         .map_err(soshal_db_core::error::DbError::Migration)?;
         Ok(())
@@ -522,13 +531,14 @@ pub fn events_check_in(
     let signed_id = signed["id"].as_str().unwrap_or_default().to_string();
     let now = soshal_common_core::format::now_secs();
     super::db::with_db_result(|db| {
-        soshal_sync_core::outbox::enqueue_outbox_item(
+        soshal_sync_core::outbox::enqueue_outbox_item_with_seal(
             db,
             &signed_id,
             "checkin",
             &signed_json,
             None,
             now,
+            super::sync::outbox_seal_fn(),
         )
         .map_err(soshal_db_core::error::DbError::Migration)?;
         Ok(())
@@ -698,8 +708,9 @@ mod tests {
         .is_err());
     }
 
-    #[test]
-    fn test_events_missing_event_paths() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_events_missing_event_paths() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         super::super::db::tmp_db("events_missing", "evt");
         assert!(events_rsvp("nonexistent".into(), "pk".into(), "accepted".into()).is_err());
@@ -708,12 +719,16 @@ mod tests {
         assert!(events_get_attendees("nonexistent".into())
             .unwrap()
             .is_empty());
-        assert_eq!(events_fetch_user_events("pk".into(), 10).unwrap(), "[]");
+        assert_eq!(
+            events_fetch_user_events("pk".into(), 10).await.unwrap(),
+            "[]"
+        );
         assert!(events_reminder_upsert("r".into(), "e".into(), "t".into(), 1, -1).is_err());
     }
 
-    #[test]
-    fn test_events_full_flow() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_events_full_flow() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         super::super::db::tmp_db("events_flow", "evt");
@@ -752,13 +767,16 @@ mod tests {
         assert!(events_check_in(event_id.clone(), pk.clone(), 0.0, 0.0).unwrap());
 
         let mine: Vec<serde_json::Value> =
-            serde_json::from_str(&events_fetch_user_events(pk, 10).unwrap()).unwrap();
+            serde_json::from_str(&events_fetch_user_events(pk, 10).await.unwrap()).unwrap();
         assert_eq!(mine.len(), 1);
         assert_eq!(mine[0]["id"].as_str().unwrap(), event_id);
 
-        let anywhere: Vec<serde_json::Value> =
-            serde_json::from_str(&events_fetch_nearby(0.0, 0.0, 0.0, 10, "public".into()).unwrap())
-                .unwrap();
+        let anywhere: Vec<serde_json::Value> = serde_json::from_str(
+            &events_fetch_nearby(0.0, 0.0, 0.0, 10, "public".into())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             anywhere.len(),
             1,

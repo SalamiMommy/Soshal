@@ -1346,12 +1346,14 @@ class RustLibWire implements BaseWire {
   late final _store_dart_post_cobject = _store_dart_post_cobjectPtr
       .asFunction<void Function(int)>();
 
-  WireSyncRust2DartSse wire__crate__ffi__analytics__analytics_compute_stats(
+  void wire__crate__ffi__analytics__analytics_compute_stats(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__analytics__analytics_compute_stats(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -1361,7 +1363,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__analytics__analytics_compute_statsPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -1372,9 +1375,7 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__analytics__analytics_compute_stats =
       _wire__crate__ffi__analytics__analytics_compute_statsPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   void wire__crate__ffi__analytics__analytics_slm_classify_post(
     int port_,
@@ -4606,12 +4607,14 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
-  WireSyncRust2DartSse wire__crate__ffi__events__events_fetch_nearby(
+  void wire__crate__ffi__events__events_fetch_nearby(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__events__events_fetch_nearby(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -4621,7 +4624,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__events__events_fetch_nearbyPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -4630,16 +4634,16 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__events__events_fetch_nearby');
   late final _wire__crate__ffi__events__events_fetch_nearby =
       _wire__crate__ffi__events__events_fetch_nearbyPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
-  WireSyncRust2DartSse wire__crate__ffi__events__events_fetch_user_events(
+  void wire__crate__ffi__events__events_fetch_user_events(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__events__events_fetch_user_events(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -4649,7 +4653,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__events__events_fetch_user_eventsPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -4660,9 +4665,7 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__events__events_fetch_user_events =
       _wire__crate__ffi__events__events_fetch_user_eventsPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   WireSyncRust2DartSse wire__crate__ffi__events__events_get_attendees(
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -5044,12 +5047,14 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__feed__feed_delete_postPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
-  WireSyncRust2DartSse wire__crate__ffi__feed__feed_fetch_events(
+  void wire__crate__ffi__feed__feed_fetch_events(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__feed__feed_fetch_events(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -5059,7 +5064,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__feed__feed_fetch_eventsPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -5068,16 +5074,16 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__feed__feed_fetch_events');
   late final _wire__crate__ffi__feed__feed_fetch_events =
       _wire__crate__ffi__feed__feed_fetch_eventsPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
-  WireSyncRust2DartSse wire__crate__ffi__feed__feed_fetch_thread(
+  void wire__crate__ffi__feed__feed_fetch_thread(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__feed__feed_fetch_thread(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -5087,7 +5093,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__feed__feed_fetch_threadPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -5096,16 +5103,16 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__feed__feed_fetch_thread');
   late final _wire__crate__ffi__feed__feed_fetch_thread =
       _wire__crate__ffi__feed__feed_fetch_threadPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
-  WireSyncRust2DartSse wire__crate__ffi__feed__feed_fetch_window(
+  void wire__crate__ffi__feed__feed_fetch_window(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__feed__feed_fetch_window(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -5115,7 +5122,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__feed__feed_fetch_windowPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -5124,9 +5132,7 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__feed__feed_fetch_window');
   late final _wire__crate__ffi__feed__feed_fetch_window =
       _wire__crate__ffi__feed__feed_fetch_windowPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   void wire__crate__ffi__feed__feed_publish_reply(
     int port_,
@@ -8110,12 +8116,14 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__media__media_fetchPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
-  WireSyncRust2DartSse wire__crate__ffi__media__media_fetch_blob(
+  void wire__crate__ffi__media__media_fetch_blob(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__media__media_fetch_blob(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -8125,7 +8133,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__media__media_fetch_blobPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -8134,9 +8143,7 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__media__media_fetch_blob');
   late final _wire__crate__ffi__media__media_fetch_blob =
       _wire__crate__ffi__media__media_fetch_blobPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   WireSyncRust2DartSse wire__crate__ffi__media__media_get_cache_path(
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -8343,12 +8350,14 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__media__media_uploadPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
-  WireSyncRust2DartSse wire__crate__ffi__media__media_upload_blob(
+  void wire__crate__ffi__media__media_upload_blob(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__media__media_upload_blob(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -8358,7 +8367,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__media__media_upload_blobPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -8367,9 +8377,7 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__media__media_upload_blob');
   late final _wire__crate__ffi__media__media_upload_blob =
       _wire__crate__ffi__media__media_upload_blobPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   void wire__crate__ffi__media__media_upload_blob_file(
     int port_,
@@ -16221,7 +16229,6 @@ final class AMediaCodecBufferInfo extends ffi.Struct {
 final class AMediaFormat extends ffi.Opaque {}
 
 const int COLOR_FormatYUV420Flexible = 2135033992;
-
 
 
 typedef DartPort = ffi.Int64;

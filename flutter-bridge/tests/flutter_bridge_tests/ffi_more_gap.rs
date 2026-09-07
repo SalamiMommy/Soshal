@@ -208,8 +208,9 @@ mod ffi_more_gap_tests {
         let _ = sync::sync_running().unwrap();
         let _ = db;
     }
-    #[test]
-    fn events_reminders_and_interest_scoring() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn events_reminders_and_interest_scoring() {
         let _g = crate::test_util::lock();
         let db = crate::test_util::init_db("more_gap", "events");
         let err =
@@ -250,9 +251,13 @@ mod ffi_more_gap_tests {
         assert!(sv.get("ev1").is_some(), "{scored}");
         let bad = events::events_score_events("junk".into(), "[]".into()).unwrap_err();
         assert!(bad.contains("invalid events JSON"), "{bad}");
-        let nearby = events::events_fetch_nearby(37.0, -122.0, 5.0, 10, "public".into()).unwrap();
+        let nearby = events::events_fetch_nearby(37.0, -122.0, 5.0, 10, "public".into())
+            .await
+            .unwrap();
         assert_eq!(nearby, "[]");
-        let user_events = events::events_fetch_user_events("a".repeat(64), 10).unwrap();
+        let user_events = events::events_fetch_user_events("a".repeat(64), 10)
+            .await
+            .unwrap();
         assert_eq!(user_events, "[]");
         let single = events::events_get_event("nope".into()).unwrap_err();
         assert!(single.contains("not found"), "{single}");

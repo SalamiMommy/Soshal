@@ -344,17 +344,17 @@ fn serve_range_zero_copy(
     else {
         return false;
     };
+    // BLAKE3-verify the chunk bytes before serving them: a hostile or
+    // corrupted chunk file must never be streamed out unverified. Verified via
+    // the store's mmap (maps + re-hashes the file) rather than a heap
+    // read_to_end: chunks run up to 16 MB, and the verify must not double the
+    // disk read the sendfile below already pays.
+    if store.get_mmap(&chunk.blake3).is_none() {
+        return false;
+    }
     let Ok(file) = std::fs::File::open(store.chunk_path(&chunk.blake3)) else {
         return false;
     };
-    // BLAKE3-verify the chunk bytes before serving them: a hostile or
-    // corrupted chunk file must never be streamed out unverified.
-    let mut verified = Vec::new();
-    if (&file).read_to_end(&mut verified).is_err()
-        || blake3::hash(&verified).to_hex().as_str() != chunk.blake3
-    {
-        return false;
-    }
     // Header first: [kind=ok][u32 len = req.length]; body bytes follow via
     // sendfile. The length prefix must match what sendfile then pipes out.
     let len_bytes = (req.length as u32).to_le_bytes();

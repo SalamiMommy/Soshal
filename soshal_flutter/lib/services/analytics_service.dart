@@ -6,7 +6,8 @@ import '../utils/service_guard.dart';
 
 /// Analytics Service
 /// Local SLM statistics, embeddings and post classification.
-class AnalyticsService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
+class AnalyticsService extends ChangeNotifier
+    with LastErrorMixin, ServiceGuard {
   /// Compute engagement/posts stats. Backend stub: returns "stats".
   Future<String> computeStats() => guard(() {
         return RustLib.instance.api.crateFfiAnalyticsAnalyticsComputeStats();

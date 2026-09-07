@@ -74,7 +74,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         if (cursorCreatedAt != null) 'cursor_created_at': cursorCreatedAt,
         if (cursorId != null) 'cursor_id': cursorId,
       });
-      final json = RustLib.instance.api
+      final json = await RustLib.instance.api
           .crateFfiFeedFeedFetchEvents(optionsJson: options);
       final newPosts = await _decodePosts(json);
       if (offset == 0 && cursorCreatedAt == null && cursorId == null) {
@@ -109,14 +109,14 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
 
   /// Fetch a windowed slice of feed items directly from Rust
   Future<List<FeedPost>> fetchWindow(
-      {int startIndex = 0, int limit = 20}) async {
+      {int startIndex = 0, int limit = 20, String audience = ''}) async {
     try {
       _isLoading = true;
 
-      final json = RustLib.instance.api.crateFfiFeedFeedFetchWindow(
+      final json = await RustLib.instance.api.crateFfiFeedFeedFetchWindow(
         startIndex: startIndex,
         limit: limit,
-        audience: '',
+        audience: audience,
       );
       _posts = await _decodePosts(json);
       _ranked = false;
@@ -133,6 +133,29 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
 
     return _posts;
+  }
+
+  /// Fetch posts authored by [pubkey] without overwriting the global feed posts state.
+  Future<List<FeedPost>> fetchAuthorPosts(
+    String pubkey, {
+    int startIndex = 0,
+    int limit = 50,
+  }) async {
+    if (pubkey.isEmpty) return [];
+    try {
+      final json = await RustLib.instance.api.crateFfiFeedFeedFetchWindow(
+        startIndex: startIndex,
+        limit: limit,
+        audience: pubkey,
+      );
+      final decoded = await _decodePosts(json);
+      clearLastError();
+      // Filter by pubkey as safeguard in case audience is ignored by an older bridge
+      return decoded.where((p) => p.pubkey == pubkey).toList();
+    } catch (e, st) {
+      setLastError(e, st);
+      return [];
+    }
   }
 
   /// Enqueue post into Rust offline outbox queue for optimistic posting.
@@ -289,7 +312,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   /// Fetch a thread (root post + replies)
   Future<List<FeedPost>> fetchThread(String eventId) async {
     try {
-      final json = RustLib.instance.api.crateFfiFeedFeedFetchThread(
+      final json = await RustLib.instance.api.crateFfiFeedFeedFetchThread(
         eventId: eventId,
       );
       return await _decodePosts(json);

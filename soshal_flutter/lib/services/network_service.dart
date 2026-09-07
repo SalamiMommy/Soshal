@@ -154,8 +154,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   }
 
   /// `{running, destination}` for the i2p SAM session.
-  Future<Map<String, dynamic>> i2pSessionStatus() =>
-      guard(() {
+  Future<Map<String, dynamic>> i2pSessionStatus() => guard(() {
         final json = RustLib.instance.api.crateFfiNetworkI2PSessionStatus();
         return jsonDecode(json) as Map<String, dynamic>;
       }, notifyOnSuccess: false);
@@ -266,8 +265,7 @@ class NetworkService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   /// Kernel / hardware crypto / storage engine diagnostics as JSON string
   /// (sync FFI; awaiting is harmless but this returns immediately).
   String fetchSysDiagnostics() => guardSync(() {
-        return RustLib.instance.api
-            .crateFfiNetworkNetworkGetSysDiagnostics();
+        return RustLib.instance.api.crateFfiNetworkNetworkGetSysDiagnostics();
       }, notifyOnSuccess: false);
 
   /// Reconciles Prolly Tree root hashes with a remote peer.

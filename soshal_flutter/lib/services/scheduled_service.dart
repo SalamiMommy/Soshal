@@ -10,7 +10,8 @@ import '../utils/service_guard.dart';
 /// Scheduled Service
 /// Draft posts with a future scheduled_at timestamp, persisted in the
 /// posts table and broadcast later by the sync pipeline.
-class ScheduledService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
+class ScheduledService extends ChangeNotifier
+    with LastErrorMixin, ServiceGuard {
   List<ScheduledPost> _drafts = [];
 
   List<ScheduledPost> get drafts => _drafts;

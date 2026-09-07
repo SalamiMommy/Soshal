@@ -32,6 +32,9 @@ pub fn moderation_mute_user(muter_pubkey: String, target_pubkey: String) -> Resu
     if target_pubkey == muter_pubkey {
         return Err("cannot mute yourself".to_string()).into();
     }
+    // The claimed actor must be the unlocked identity, or a compromised Dart
+    // layer could attribute mutes/blocks/reports to an arbitrary pubkey.
+    super::signer::require_identity(&muter_pubkey)?;
     super::db::with_db_result(|db| {
         let repo = SettingsRepo::new(db);
         let key = muted_list_key(&muter_pubkey);
@@ -51,6 +54,7 @@ pub fn moderation_mute_user(muter_pubkey: String, target_pubkey: String) -> Resu
 /// Unmute a user.
 #[frb(sync, serialize)]
 pub fn moderation_unmute_user(muter_pubkey: String, target_pubkey: String) -> Result<bool, String> {
+    super::signer::require_identity(&muter_pubkey)?;
     super::db::with_db_result(|db| {
         let repo = SettingsRepo::new(db);
         let key = muted_list_key(&muter_pubkey);
@@ -74,6 +78,7 @@ pub fn moderation_block_user(
     if target_pubkey == blocker_pubkey {
         return Err("cannot block yourself".to_string()).into();
     }
+    super::signer::require_identity(&blocker_pubkey)?;
     let row = BlockRow {
         pubkey: blocker_pubkey,
         blocked_pubkey: target_pubkey,
@@ -91,6 +96,7 @@ pub fn moderation_unblock_user(
     blocker_pubkey: String,
     target_pubkey: String,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&blocker_pubkey)?;
     super::db::with_db_result(|db| {
         BlockRepo::new(db).delete(&blocker_pubkey, &target_pubkey)?;
         Ok(true)
@@ -138,6 +144,7 @@ pub fn moderation_report_content(
     content_id: String,
     reason: String,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&reporter_pubkey)?;
     // Validate content_type against a fixed allowlist so the API contract is
     // honest — unknown values are rejected rather than silently discarded.
     const VALID_CONTENT_TYPES: &[&str] =
@@ -335,5 +342,32 @@ mod tests {
     fn test_block_self_rejected() {
         let result = moderation_block_user("pk".to_string(), "pk".to_string());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_write_ops_require_unlocked_identity() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        super::super::signer::signer_lock().unwrap(); // deterministic baseline
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        // Locked signer: gate fails before any write.
+        let err = moderation_mute_user(pk.clone(), "b".repeat(64)).unwrap_err();
+        assert!(err.contains("signer locked"), "got {err}");
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let path = crate::ffi::db::tmp_db("mod", "idg");
+        crate::ffi::db::insert_test_user(&pk);
+        crate::ffi::db::insert_test_user(&"b".repeat(64));
+        // Claimed identity != unlocked identity: rejected.
+        let err = moderation_mute_user("f".repeat(64), "b".repeat(64)).unwrap_err();
+        assert!(err.contains("identity mismatch"), "got {err}");
+        // Matching identity: passes the gate and performs the write.
+        assert!(
+            moderation_mute_user(pk.clone(), "b".repeat(64)).is_ok(),
+            "matching identity must pass the gate"
+        );
+        crate::ffi::db::reset_db_global();
+        let _ = std::fs::remove_file(&path);
+        super::super::signer::signer_lock().unwrap();
     }
 }

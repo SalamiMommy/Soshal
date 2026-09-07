@@ -21,6 +21,14 @@ class FakeApi extends RustLibApi {
   final Map<Symbol, ApiHandler> handlers = {};
   final List<Invocation> calls = [];
 
+  static final Map<Symbol, ApiHandler> _defaultHandlers = {
+    #crateFfiSessionSessionSave: (_) => true,
+    #crateFfiMessagingMessagingStoreDms: (_) => true,
+    #crateFfiMusicMusicSaved: (_) => '[]',
+    #crateFfiMusicMusicPlaylistList: (_) => '[]',
+    #crateFfiMinisMinisSaved: (_) => '[]',
+  };
+
   void stub(String method, ApiHandler handler) {
     handlers[Symbol(method)] = handler;
   }
@@ -124,6 +132,33 @@ class FakeApi extends RustLibApi {
       _asyncCall<String>('crateFfiFeedFeedRankPosts', [], {#eventsJson: eventsJson});
 
   @override
+  Future<String> crateFfiFeedFeedFetchEvents({required String optionsJson}) =>
+      _asyncCall<String>('crateFfiFeedFeedFetchEvents', [], {#optionsJson: optionsJson});
+
+  @override
+  Future<String> crateFfiFeedFeedFetchThread({required String eventId}) =>
+      _asyncCall<String>('crateFfiFeedFeedFetchThread', [], {#eventId: eventId});
+
+  @override
+  Future<String> crateFfiFeedFeedFetchWindow(
+          {required int startIndex, required int limit, required String audience}) =>
+      _asyncCall<String>('crateFfiFeedFeedFetchWindow', [], {#startIndex: startIndex, #limit: limit, #audience: audience});
+
+  @override
+  Future<String> crateFfiEventsEventsFetchNearby(
+          {required double latitude,
+          required double longitude,
+          required double radiusKm,
+          required int limit,
+          required String audience}) =>
+      _asyncCall<String>('crateFfiEventsEventsFetchNearby', [], {#latitude: latitude, #longitude: longitude, #radiusKm: radiusKm, #limit: limit, #audience: audience});
+
+  @override
+  Future<String> crateFfiEventsEventsFetchUserEvents(
+          {required String userPubkey, required int limit}) =>
+      _asyncCall<String>('crateFfiEventsEventsFetchUserEvents', [], {#userPubkey: userPubkey, #limit: limit});
+
+  @override
   Future<bool> crateFfiNetworkFreenetConnect({required String url, required String authToken}) =>
       _asyncCall<bool>('crateFfiNetworkFreenetConnect', [], {#url: url, #authToken: authToken});
 
@@ -142,6 +177,15 @@ class FakeApi extends RustLibApi {
   @override
   Future<String> crateFfiMediaMediaClearCache({required String cacheDir}) =>
       _asyncCall<String>('crateFfiMediaMediaClearCache', [], {#cacheDir: cacheDir});
+
+  @override
+  Future<String> crateFfiMediaMediaFetchBlob(
+          {required String blobHash, required String outPath}) =>
+      _asyncCall<String>('crateFfiMediaMediaFetchBlob', [], {#blobHash: blobHash, #outPath: outPath});
+
+  @override
+  Future<String> crateFfiMediaMediaUploadBlob({required List<int> data}) =>
+      _asyncCall<String>('crateFfiMediaMediaUploadBlob', [], {#data: data});
 
   @override
   Future<DecodedImageRgbaDto> crateFfiMediaMediaDecodeImageRgba({required String filePathOrUrl, int? maxWidth, int? maxHeight}) =>
@@ -349,6 +393,10 @@ class FakeApi extends RustLibApi {
       _asyncCall<String>('crateFfiAnalyticsAnalyticsSlmGenerateEmbedding', [], {#text: text});
 
   @override
+  Future<String> crateFfiAnalyticsAnalyticsComputeStats() =>
+      _asyncCall<String>('crateFfiAnalyticsAnalyticsComputeStats', [], {});
+
+  @override
   Future<String> crateFfiAnalyticsAnalyticsSlmClassifyPost({required String text}) =>
       _asyncCall<String>('crateFfiAnalyticsAnalyticsSlmClassifyPost', [], {#text: text});
 
@@ -419,7 +467,8 @@ class FakeApi extends RustLibApi {
   @override
   dynamic noSuchMethod(Invocation invocation) {
     calls.add(invocation);
-    final handler = handlers[invocation.memberName];
+    final handler =
+        handlers[invocation.memberName] ?? _defaultHandlers[invocation.memberName];
     if (handler != null) return handler(invocation);
     throw UnimplementedError(
       'no FakeApi stub registered for ${invocation.memberName}',

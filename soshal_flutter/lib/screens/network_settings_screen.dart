@@ -259,8 +259,10 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     } catch (e) {
       debugPrint('freenet connect: $e');
       if (mounted) setState(() => _freenetInfo = 'Freenet connect: $e');
+    } finally {
+      _freenetAuthToken.clear();
+      if (mounted) setState(() => _busy = false);
     }
-    if (mounted) setState(() => _busy = false);
   }
 
   Future<void> _freenetGetContract() async {
@@ -1437,6 +1439,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     _localKvField.dispose();
     _remoteHashField.dispose();
     _freenetUrl.dispose();
+    _freenetAuthToken.clear();
     _freenetAuthToken.dispose();
     _freenetKey.dispose();
     _freenetStateField.dispose();

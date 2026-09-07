@@ -71,8 +71,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   /// Search mention rows (pubkey/name pairs from kind-3 contact lists).
   /// Kept separate from _results so typing @mentions does not wipe or dirty
   /// the main search screen results.
-  Future<List<SearchResultItem>> mentions(String query,
-          {int limit = 50}) =>
+  Future<List<SearchResultItem>> mentions(String query, {int limit = 50}) =>
       guard(() async {
         final json = RustLib.instance.api.crateFfiSearchSearchMentions(
           query: query,
@@ -136,8 +135,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   /// Trending hashtags with usage counts straight from the local DB
   /// (rows: tag/pubkey/last_used_at/count) — richer than the search-core
   /// name-only list above.
-  Future<List<Map<String, dynamic>>> dbTrendingHashtags(
-          {int limit = 20}) =>
+  Future<List<Map<String, dynamic>>> dbTrendingHashtags({int limit = 20}) =>
       guard(() async {
         final json =
             RustLib.instance.api.crateFfiDbDbGetTrendingHashtags(limit: limit);

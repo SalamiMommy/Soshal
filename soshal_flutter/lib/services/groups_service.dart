@@ -112,8 +112,7 @@ class GroupsService extends ChangeNotifier
         return _members;
       }, onNotify: notifyDeferred);
 
-  Future<bool> join(String groupId, String userPubkey,
-          {String? password}) =>
+  Future<bool> join(String groupId, String userPubkey, {String? password}) =>
       guard(() {
         return RustLib.instance.api.crateFfiGroupsGroupsJoin(
           groupId: groupId,
@@ -253,15 +252,13 @@ class GroupsService extends ChangeNotifier
       }, onNotify: notifyDeferred);
 
   /// Members with their assigned role ids ({pubkey, role} rows).
-  Future<List<GroupMemberWithRole>> fetchMembersWithRoles(
-          String groupId) =>
+  Future<List<GroupMemberWithRole>> fetchMembersWithRoles(String groupId) =>
       guard(() {
         final json = RustLib.instance.api.crateFfiGroupsGroupsMembersWithRoles(
           groupId: groupId,
         );
         _memberRoles = (jsonDecode(json) as List<dynamic>)
-            .map((e) =>
-                GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
+            .map((e) => GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
             .toList();
         return _memberRoles;
       }, onNotify: notifyDeferred);
@@ -390,8 +387,7 @@ class GroupsService extends ChangeNotifier
         );
       }, onNotify: notifyDeferred);
 
-  Future<bool> setThreadPinned(
-          String threadId, bool pinned, String actor) =>
+  Future<bool> setThreadPinned(String threadId, bool pinned, String actor) =>
       guard(() {
         return RustLib.instance.api.crateFfiGroupsGroupsThreadsPin(
           threadId: threadId,
@@ -417,27 +413,23 @@ class GroupsService extends ChangeNotifier
         return id;
       }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
-  Future<List<GroupThreadReply>> fetchReplies(String threadId) =>
-      guard(() {
+  Future<List<GroupThreadReply>> fetchReplies(String threadId) => guard(() {
         final json = RustLib.instance.api.crateFfiGroupsGroupsThreadsReplies(
           threadId: threadId,
         );
         _replies = (jsonDecode(json) as List<dynamic>)
-            .map((e) =>
-                GroupThreadReply.fromJson(e as Map<String, dynamic>))
+            .map((e) => GroupThreadReply.fromJson(e as Map<String, dynamic>))
             .toList();
         return _replies;
       }, onNotify: notifyDeferred);
 
   Future<List<GroupVoiceChannel>> fetchVoiceChannels(String groupId) =>
       guard(() {
-        final json =
-            RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsList(
+        final json = RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsList(
           groupId: groupId,
         );
         _voiceChannels = (jsonDecode(json) as List<dynamic>)
-            .map((e) =>
-                GroupVoiceChannel.fromJson(e as Map<String, dynamic>))
+            .map((e) => GroupVoiceChannel.fromJson(e as Map<String, dynamic>))
             .toList();
         return _voiceChannels;
       }, onNotify: notifyDeferred);
@@ -448,8 +440,7 @@ class GroupsService extends ChangeNotifier
     String creator,
   ) =>
       guard(() async {
-        final id =
-            RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsCreate(
+        final id = RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsCreate(
           groupId: groupId,
           name: name,
           creator: creator,
@@ -458,10 +449,8 @@ class GroupsService extends ChangeNotifier
         return id;
       }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
-  Future<bool> deleteVoiceChannel(String channelId, String actor) =>
-      guard(() {
-        return RustLib.instance.api
-            .crateFfiGroupsGroupsVoiceChannelsDelete(
+  Future<bool> deleteVoiceChannel(String channelId, String actor) => guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsDelete(
           channelId: channelId,
           actor: actor,
         );
@@ -481,14 +470,12 @@ class GroupsService extends ChangeNotifier
         );
       }, onNotify: notifyDeferred);
 
-  Future<List<GroupVoicePresence>> fetchPresence(String channelId) =>
-      guard(() {
+  Future<List<GroupVoicePresence>> fetchPresence(String channelId) => guard(() {
         final json = RustLib.instance.api.crateFfiGroupsGroupsVoicePresence(
           channelId: channelId,
         );
         _presence = (jsonDecode(json) as List<dynamic>)
-            .map((e) =>
-                GroupVoicePresence.fromJson(e as Map<String, dynamic>))
+            .map((e) => GroupVoicePresence.fromJson(e as Map<String, dynamic>))
             .toList();
         return _presence;
       }, onNotify: notifyDeferred);

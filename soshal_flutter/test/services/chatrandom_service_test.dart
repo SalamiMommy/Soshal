@@ -89,6 +89,7 @@ void main() {
       expect(result.length, 1);
       expect(result.first.pubkey, 'pk1');
       expect(svc.peers.length, 1);
+      await pumpEventQueue();
       expect(notified, 1);
       expect(svc.lastError, isNull);
 

@@ -264,8 +264,10 @@ fn nat_gather_prompt_errors() {
         .unwrap_err();
     assert!(err.contains("bad port"), "{err}");
 
-    // Duplicate gather for the same pubkey must fail promptly.
-    h.gather("dave".repeat(2).as_str(), &["stun:127.0.0.1:9".to_string()])
+    // Duplicate gather for the same pubkey must fail promptly. (RFC 5737
+    // TEST-NET address: permitted literal that is not a private/loopback
+    // target, so the C4 guard `parse_ice_url` accepts it.)
+    h.gather("dave".repeat(2).as_str(), &["stun:192.0.2.1:9".to_string()])
         .unwrap();
     let err = h.gather("dave".repeat(2).as_str(), &[]).unwrap_err();
     assert!(err.contains("already exists"), "{err}");
@@ -277,10 +279,10 @@ fn nat_gather_creates_session_with_creds_and_remove() {
     let h = spawn_nat_manager("alice".repeat(2)).unwrap();
     let pubkey = "eve".repeat(2);
 
-    // STUN target is a refused loopback port: no srflx, host candidates only,
-    // still a successful gather (bounded by the internal settle loop).
+    // STUN target is an unroutable TEST-NET port: no srflx, host candidates
+    // only, still a successful gather (bounded by the internal settle loop).
     let status = h
-        .gather(pubkey.as_str(), &["stun:127.0.0.1:9".to_string()])
+        .gather(pubkey.as_str(), &["stun:192.0.2.1:9".to_string()])
         .unwrap();
     assert_eq!(status.pubkey, pubkey);
     // Initial state races with the async on_state callback: accept both.
@@ -328,7 +330,7 @@ fn nat_gather_creates_session_with_creds_and_remove() {
 fn nat_add_remote_dummy_candidates_no_panic() {
     let h = spawn_nat_manager("alice".repeat(2)).unwrap();
     let pubkey = "frank".repeat(2);
-    h.gather(pubkey.as_str(), &["stun:127.0.0.1:9".to_string()])
+    h.gather(pubkey.as_str(), &["stun:192.0.2.1:9".to_string()])
         .unwrap();
 
     // Well-formed host candidate pointing at a dead port: accepted, session

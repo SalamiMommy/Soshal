@@ -1000,12 +1000,8 @@ class _InboxScreenState extends State<InboxScreen> {
           builder: (context, conversations, _) {
             final convList = conversations.entries.toList()
               ..sort((a, b) {
-                final ta = a.value.isEmpty
-                    ? 0
-                    : a.value.first.createdAt;
-                final tb = b.value.isEmpty
-                    ? 0
-                    : b.value.first.createdAt;
+                final ta = a.value.isEmpty ? 0 : a.value.first.createdAt;
+                final tb = b.value.isEmpty ? 0 : b.value.first.createdAt;
                 return tb.compareTo(ta);
               });
             final requests = convList

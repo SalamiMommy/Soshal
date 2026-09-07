@@ -108,6 +108,27 @@ fn heal_legacy_schema(conn: &Connection) -> Result<(), crate::error::DbError> {
         );",
     ))?;
 
+    // musicloud_playlists and musicloud_timed_comments live in v001 but older
+    // dev databases already past v1 won't re-run it. Ensure the tables exist
+    // idempotently so Musicloud queries never hit a missing table.
+    block_on(conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS musicloud_playlists (
+            id TEXT PRIMARY KEY,
+            pubkey TEXT NOT NULL,
+            title TEXT NOT NULL,
+            is_private INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS musicloud_timed_comments (
+            id TEXT PRIMARY KEY,
+            track_id TEXT NOT NULL,
+            pubkey TEXT NOT NULL,
+            timestamp_ms INTEGER NOT NULL DEFAULT 0,
+            content TEXT NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT 0
+        );",
+    ))?;
+
     // idx_users_follower_count lives in v001 but pre-squash databases skipped
     // it via the version short-circuit; the counter-ordered feed window scans
     // without it. CREATE INDEX IF NOT EXISTS is idempotent on legacy DBs, but

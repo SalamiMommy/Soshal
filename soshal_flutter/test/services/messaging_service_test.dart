@@ -113,8 +113,8 @@ void main() {
       }
 
       expect(msg.conversations['peer1']!.length, 200);
-      expect(msg.conversations['peer1']!.first.content, 'msg 10');
-      expect(msg.conversations['peer1']!.last.content, 'msg 209');
+      expect(msg.conversations['peer1']!.first.content, 'msg 209');
+      expect(msg.conversations['peer1']!.last.content, 'msg 10');
     });
 
     test('fetchDMs returns cached conversation', () async {
@@ -191,8 +191,8 @@ void main() {
         throw Exception('Fetch failed');
       });
 
-      expect(
-        () => msg.fetchDMs('peer1'),
+      await expectLater(
+        msg.fetchDMs('peer1'),
         throwsException,
       );
       expect(msg.lastError, isNotNull);

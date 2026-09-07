@@ -4,12 +4,15 @@ pub mod lnurl;
 pub mod nwc;
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NwcConnectionInfo {
     pub wallet_pubkey: String,
     pub relay_url: String,
-    pub secret_hex: String,
+    /// NWC wallet signing secret. Zeroizing so parse snapshots, structured
+    /// logging, and any temporary reconstruction wipe themselves on drop.
+    pub secret_hex: Zeroizing<String>,
     pub lud16: Option<String>,
 }
 

@@ -99,39 +99,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
             ]),
-            // Relay section
-            _buildSection('Relays', [
-              ListTile(
-                title: const Text('Relay Configuration'),
-                subtitle: Text('${_relays.length} relay(s)'),
-                trailing: const Icon(Icons.arrow_forward),
-                onTap: () => _showRelayDialog(),
-              ),
-              ..._relays.map((relay) {
-                return ListTile(
-                  contentPadding: EdgeInsets.only(left: 32, right: 16),
-                  title: Text(relay),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete),
-                    onPressed: () async {
-                      setState(() => _relays.remove(relay));
-                      final session = context.read<SessionService>();
-                      final pubkey = session.activePubkey;
-                      if (pubkey != null) {
-                        await session.updateRelays(pubkey, _relays);
-                        _publishRelayList();
-                      }
-                    },
-                  ),
-                );
-              }),
-              ListTile(
-                contentPadding: const EdgeInsets.only(left: 32, right: 16),
-                title: const Text('Add Relay'),
-                trailing: const Icon(Icons.add),
-                onTap: () => _showAddRelayDialog(),
-              ),
-            ]),
             // Appearance section
             _buildSection('Appearance', [
               ListTile(
@@ -173,6 +140,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ]),
             // Network section
             _buildSection('Network', [
+              ListTile(
+                title: const Text('Relay Configuration'),
+                subtitle: Text('${_relays.length} relay(s)'),
+                trailing: const Icon(Icons.arrow_forward),
+                onTap: () => _showRelayDialog(),
+              ),
+              ..._relays.map((relay) {
+                return ListTile(
+                  contentPadding: EdgeInsets.only(left: 32, right: 16),
+                  title: Text(relay),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete),
+                    onPressed: () async {
+                      setState(() => _relays.remove(relay));
+                      final session = context.read<SessionService>();
+                      final pubkey = session.activePubkey;
+                      if (pubkey != null) {
+                        await session.updateRelays(pubkey, _relays);
+                        _publishRelayList();
+                      }
+                    },
+                  ),
+                );
+              }),
+              ListTile(
+                contentPadding: const EdgeInsets.only(left: 32, right: 16),
+                title: const Text('Add Relay'),
+                trailing: const Icon(Icons.add),
+                onTap: () => _showAddRelayDialog(),
+              ),
               ListTile(
                 title: const Text('Network Settings'),
                 subtitle: const Text('Relays, transports'),
@@ -317,43 +314,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showAddRelayDialog() {
-    final controller = TextEditingController();
-    showDialog(
+    showDialog<void>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Add Relay'),
-          content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              hintText: 'wss://relay.example.com',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (controller.text.isNotEmpty) {
-                  setState(() => _relays.add(controller.text));
-                  final session = context.read<SessionService>();
-                  final pubkey = session.activePubkey;
-                  if (pubkey != null) {
-                    await session.updateRelays(pubkey, _relays);
-                  }
-                  _publishRelayList();
-                  if (!context.mounted) return;
-                  Navigator.of(context).pop();
-                }
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        );
-      },
-    ).then((_) => controller.dispose());
+      builder: (context) => _TextInputDialog(
+        title: 'Add Relay',
+        hint: 'wss://relay.example.com',
+        actionLabel: 'Add',
+        onSubmit: (url) async {
+          setState(() => _relays.add(url));
+          final session = context.read<SessionService>();
+          final pubkey = session.activePubkey;
+          if (pubkey != null) {
+            await session.updateRelays(pubkey, _relays);
+          }
+          _publishRelayList();
+          return null;
+        },
+      ),
+    );
   }
 
   void _showNwcDialog(ZapService zap) {
@@ -393,105 +371,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       return;
     }
-    final controller = TextEditingController();
-    showDialog(
+    showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Connect NWC wallet'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'nostr+walletconnect:// URI',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final uri = controller.text.trim();
-              if (uri.isEmpty) return;
-              try {
-                await zap.connect(uri);
-              } catch (e) {
-                if (!context.mounted) return;
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: SelectableText('Connect failed: $e')));
-                return;
-              }
-              if (!context.mounted) return;
-              Navigator.of(context).pop();
-            },
-            child: const Text('Connect'),
-          ),
-        ],
+      builder: (context) => _TextInputDialog(
+        title: 'Connect NWC wallet',
+        label: 'nostr+walletconnect:// URI',
+        actionLabel: 'Connect',
+        filled: true,
+        onSubmit: (uri) async {
+          try {
+            await zap.connect(uri);
+            return null;
+          } catch (e) {
+            return 'Connect failed: $e';
+          }
+        },
       ),
-    ).then((_) => controller.dispose());
+    );
   }
 
   void _showLnurlDialog() {
-    final controller = TextEditingController();
-    showDialog(
+    showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Resolve LNURL'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'LN address (lud16)',
-            hintText: 'name@domain.com',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final lnurl = controller.text.trim();
-              if (lnurl.isEmpty) return;
-              try {
-                final json = await context.read<ZapService>().parseLnurl(lnurl);
-                if (!context.mounted) return;
-                Navigator.of(context).pop();
-                final meta = jsonDecode(json) as Map<String, dynamic>;
-                showDialogDeferred(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('LNURL resolved'),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Name: ${meta['name']}'),
-                        Text('Domain: ${meta['domain']}'),
-                        Text('Callback: ${meta['callback']}'),
-                      ],
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Close'),
-                      ),
-                    ],
+      builder: (context) => _TextInputDialog(
+        title: 'Resolve LNURL',
+        label: 'LN address (lud16)',
+        hint: 'name@domain.com',
+        actionLabel: 'Resolve',
+        filled: true,
+        onSubmit: (lnurl) async {
+          try {
+            final json = await context.read<ZapService>().parseLnurl(lnurl);
+            if (!context.mounted) return null;
+            final meta = jsonDecode(json) as Map<String, dynamic>;
+            showDialogDeferred(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('LNURL resolved'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Name: ${meta['name']}'),
+                    Text('Domain: ${meta['domain']}'),
+                    Text('Callback: ${meta['callback']}'),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
                   ),
-                );
-              } catch (e) {
-                if (!context.mounted) return;
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: SelectableText('Parse failed: $e')));
-              }
-            },
-            child: const Text('Resolve'),
-          ),
-        ],
+                ],
+              ),
+            );
+            return null;
+          } catch (e) {
+            return 'Parse failed: $e';
+          }
+        },
       ),
-    ).then((_) => controller.dispose());
+    );
   }
 
   void _showLogoutDialog() {
@@ -596,5 +536,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(screenContext)
           .showSnackBar(SnackBar(content: SelectableText('Delete failed: $e')));
     }
+  }
+}
+
+/// Dialog with a single text field whose controller is owned by its own
+/// [State], so it is disposed only after the pop transition completes.
+class _TextInputDialog extends StatefulWidget {
+  final String title;
+  final String? label;
+  final String? hint;
+  final String actionLabel;
+  final bool filled;
+  final Future<String?> Function(String value) onSubmit;
+
+  const _TextInputDialog({
+    required this.title,
+    this.label,
+    this.hint,
+    required this.actionLabel,
+    this.filled = false,
+    required this.onSubmit,
+  });
+
+  @override
+  State<_TextInputDialog> createState() => _TextInputDialogState();
+}
+
+class _TextInputDialogState extends State<_TextInputDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final value = _controller.text.trim();
+    if (value.isEmpty) return;
+    final error = await widget.onSubmit(value);
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText(error)));
+    }
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        decoration: InputDecoration(
+          labelText: widget.label,
+          hintText: widget.hint,
+        ),
+      ),
+actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          if (widget.filled)
+            FilledButton(
+              onPressed: _submit,
+              child: Text(widget.actionLabel),
+            )
+          else
+            TextButton(
+              onPressed: _submit,
+              child: Text(widget.actionLabel),
+            ),
+        ],
+    );
   }
 }

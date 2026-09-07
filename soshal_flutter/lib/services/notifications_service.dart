@@ -133,16 +133,22 @@ class NotificationService extends ChangeNotifier
             RustLib.instance.api.crateFfiNotificationsNotificationsMarkRead(
           notificationId: notificationId,
         );
-        if (ok) {
-          _unread.removeWhere((n) => n.id == notificationId);
-          for (var i = 0; i < _notifications.length; i++) {
-            final n = _notifications[i];
-            if (n.id == notificationId && !n.read) {
-              _notifications[i] = _asRead(n);
-            }
+if (ok) {
+        final listed = _notifications.any((n) => n.id == notificationId) ||
+            _unread.any((n) => n.id == notificationId);
+        _unread.removeWhere((n) => n.id == notificationId);
+        for (var i = 0; i < _notifications.length; i++) {
+          final n = _notifications[i];
+          if (n.id == notificationId && !n.read) {
+            _notifications[i] = _asRead(n);
           }
-          _recomputeUnreadCount();
         }
+        if (listed) {
+          _recomputeUnreadCount();
+        } else if (_unreadCount > 0) {
+          _unreadCount -= 1;
+        }
+      }
         return ok;
       });
 
@@ -152,19 +158,19 @@ class NotificationService extends ChangeNotifier
             RustLib.instance.api.crateFfiNotificationsNotificationsMarkAllRead(
           userPubkey: pubkey,
         );
-if (ok) {
-        _notifications = [
-          for (final n in _notifications)
-            if (!n.read) _asRead(n) else n,
-        ];
-        _unread = [];
-        // Read-state changed everywhere; next category fetch must not be
-        // served from the TTL cache.
-        _byTypeFetchedAt.clear();
-        _recomputeUnreadCount();
-      }
-      return ok;
-    });
+        if (ok) {
+          _notifications = [
+            for (final n in _notifications)
+              if (!n.read) _asRead(n) else n,
+          ];
+          _unread = [];
+          // Read-state changed everywhere; next category fetch must not be
+          // served from the TTL cache.
+          _byTypeFetchedAt.clear();
+          _recomputeUnreadCount();
+        }
+        return ok;
+      });
 
   /// Get the unread notification count.
   Future<int> refreshUnreadCount(String pubkey) => guard(() {

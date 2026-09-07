@@ -197,15 +197,16 @@ fn wire__crate__ffi__auth__KeyPairResult_auto_accessor_set_secret_key_impl(
     )
 }
 fn wire__crate__ffi__analytics__analytics_compute_stats_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "analytics_compute_stats",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -218,10 +219,15 @@ fn wire__crate__ffi__analytics__analytics_compute_stats_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::analytics::analytics_compute_stats()?;
-                Ok(output_ok)
-            })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::analytics::analytics_compute_stats().await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -3949,15 +3955,16 @@ fn wire__crate__ffi__events__events_create_impl(
     )
 }
 fn wire__crate__ffi__events__events_fetch_nearby_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "events_fetch_nearby",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -3975,29 +3982,36 @@ fn wire__crate__ffi__events__events_fetch_nearby_impl(
             let api_limit = <i32>::sse_decode(&mut deserializer);
             let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::events::events_fetch_nearby(
-                    api_latitude,
-                    api_longitude,
-                    api_radius_km,
-                    api_limit,
-                    api_audience,
-                )?;
-                Ok(output_ok)
-            })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::events::events_fetch_nearby(
+                            api_latitude,
+                            api_longitude,
+                            api_radius_km,
+                            api_limit,
+                            api_audience,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
 fn wire__crate__ffi__events__events_fetch_user_events_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "events_fetch_user_events",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -4012,11 +4026,19 @@ fn wire__crate__ffi__events__events_fetch_user_events_impl(
             let api_user_pubkey = <String>::sse_decode(&mut deserializer);
             let api_limit = <i32>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::events::events_fetch_user_events(api_user_pubkey, api_limit)?;
-                Ok(output_ok)
-            })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::events::events_fetch_user_events(
+                            api_user_pubkey,
+                            api_limit,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -4449,15 +4471,16 @@ fn wire__crate__ffi__feed__feed_delete_post_impl(
     )
 }
 fn wire__crate__ffi__feed__feed_fetch_events_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "feed_fetch_events",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -4471,23 +4494,30 @@ fn wire__crate__ffi__feed__feed_fetch_events_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_options_json = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::feed::feed_fetch_events(api_options_json)?;
-                Ok(output_ok)
-            })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::ffi::feed::feed_fetch_events(api_options_json).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
 fn wire__crate__ffi__feed__feed_fetch_thread_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "feed_fetch_thread",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -4501,23 +4531,29 @@ fn wire__crate__ffi__feed__feed_fetch_thread_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_event_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::feed::feed_fetch_thread(api_event_id)?;
-                Ok(output_ok)
-            })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::feed::feed_fetch_thread(api_event_id).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
 fn wire__crate__ffi__feed__feed_fetch_window_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "feed_fetch_window",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -4533,11 +4569,20 @@ fn wire__crate__ffi__feed__feed_fetch_window_impl(
             let api_limit = <u32>::sse_decode(&mut deserializer);
             let api_audience = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::ffi::feed::feed_fetch_window(api_start_index, api_limit, api_audience)?;
-                Ok(output_ok)
-            })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::feed::feed_fetch_window(
+                            api_start_index,
+                            api_limit,
+                            api_audience,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -8273,7 +8318,7 @@ fn wire__crate__ffi__media__media_decode_image_rgba_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "media_decode_image_rgba",
             port: Some(port_),
@@ -8293,15 +8338,19 @@ fn wire__crate__ffi__media__media_decode_image_rgba_impl(
             let api_max_width = <Option<u32>>::sse_decode(&mut deserializer);
             let api_max_height = <Option<u32>>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::ffi::media::media_decode_image_rgba(
-                        api_file_path_or_url,
-                        api_max_width,
-                        api_max_height,
-                    )?;
-                    Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::media::media_decode_image_rgba(
+                            api_file_path_or_url,
+                            api_max_width,
+                            api_max_height,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -8345,15 +8394,16 @@ fn wire__crate__ffi__media__media_fetch_impl(
     )
 }
 fn wire__crate__ffi__media__media_fetch_blob_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "media_fetch_blob",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -8368,10 +8418,17 @@ fn wire__crate__ffi__media__media_fetch_blob_impl(
             let api_blob_hash = <String>::sse_decode(&mut deserializer);
             let api_out_path = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::media::media_fetch_blob(api_blob_hash, api_out_path)?;
-                Ok(output_ok)
-            })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::ffi::media::media_fetch_blob(api_blob_hash, api_out_path)
+                                .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -8443,7 +8500,7 @@ fn wire__crate__ffi__media__media_load_local_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "media_load_local",
             port: Some(port_),
@@ -8461,11 +8518,14 @@ fn wire__crate__ffi__media__media_load_local_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_file_path = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::ffi::media::media_load_local(api_file_path)?;
-                    Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::media::media_load_local(api_file_path).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -8604,15 +8664,16 @@ fn wire__crate__ffi__media__media_upload_impl(
     )
 }
 fn wire__crate__ffi__media__media_upload_blob_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "media_upload_blob",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -8626,10 +8687,15 @@ fn wire__crate__ffi__media__media_upload_blob_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_data = <Vec<u8>>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::media::media_upload_blob(api_data)?;
-                Ok(output_ok)
-            })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::media::media_upload_blob(api_data).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -11179,16 +11245,16 @@ fn wire__crate__ffi__network__network_verify_zk_wot_proof_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_proof_json = <String>::sse_decode(&mut deserializer);
-            let api_expected_wot_root = <String>::sse_decode(&mut deserializer);
-            let api_blacklisted_nullifiers_json = <String>::sse_decode(&mut deserializer);
+            let api__proof_json = <String>::sse_decode(&mut deserializer);
+            let api__expected_wot_root = <String>::sse_decode(&mut deserializer);
+            let api__blacklisted_nullifiers_json = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::ffi::network::network_verify_zk_wot_proof(
-                        api_proof_json,
-                        api_expected_wot_root,
-                        api_blacklisted_nullifiers_json,
+                        api__proof_json,
+                        api__expected_wot_root,
+                        api__blacklisted_nullifiers_json,
                     )?;
                     Ok(output_ok)
                 })())
@@ -18042,11 +18108,17 @@ mod io {
 
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__analytics__analytics_compute_stats(
+        port_: i64,
         ptr_: *mut u8,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__analytics__analytics_compute_stats_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__analytics__analytics_compute_stats_impl(
+            port_,
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
     }
 
     #[unsafe(no_mangle)]
@@ -19150,20 +19222,27 @@ mod io {
 
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__events__events_fetch_nearby(
+        port_: i64,
         ptr_: *mut u8,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__events__events_fetch_nearby_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__events__events_fetch_nearby_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__events__events_fetch_user_events(
+        port_: i64,
         ptr_: *mut u8,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__events__events_fetch_user_events_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__events__events_fetch_user_events_impl(
+            port_,
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
     }
 
     #[unsafe(no_mangle)]
@@ -19287,29 +19366,32 @@ mod io {
 
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__feed__feed_fetch_events(
+        port_: i64,
         ptr_: *mut u8,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__feed__feed_fetch_events_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__feed__feed_fetch_events_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__feed__feed_fetch_thread(
+        port_: i64,
         ptr_: *mut u8,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__feed__feed_fetch_thread_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__feed__feed_fetch_thread_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__feed__feed_fetch_window(
+        port_: i64,
         ptr_: *mut u8,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__feed__feed_fetch_window_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__feed__feed_fetch_window_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -20424,11 +20506,12 @@ mod io {
 
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__media__media_fetch_blob(
+        port_: i64,
         ptr_: *mut u8,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__media__media_fetch_blob_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__media__media_fetch_blob_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -20499,11 +20582,12 @@ mod io {
 
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__media__media_upload_blob(
+        port_: i64,
         ptr_: *mut u8,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__media__media_upload_blob_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__media__media_upload_blob_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -23411,11 +23495,17 @@ mod web {
 
     #[wasm_bindgen]
     pub fn wire__crate__ffi__analytics__analytics_compute_stats(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__analytics__analytics_compute_stats_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__analytics__analytics_compute_stats_impl(
+            port_,
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
     }
 
     #[wasm_bindgen]
@@ -24519,20 +24609,27 @@ mod web {
 
     #[wasm_bindgen]
     pub fn wire__crate__ffi__events__events_fetch_nearby(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__events__events_fetch_nearby_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__events__events_fetch_nearby_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
     pub fn wire__crate__ffi__events__events_fetch_user_events(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__events__events_fetch_user_events_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__events__events_fetch_user_events_impl(
+            port_,
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
     }
 
     #[wasm_bindgen]
@@ -24656,29 +24753,32 @@ mod web {
 
     #[wasm_bindgen]
     pub fn wire__crate__ffi__feed__feed_fetch_events(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__feed__feed_fetch_events_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__feed__feed_fetch_events_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
     pub fn wire__crate__ffi__feed__feed_fetch_thread(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__feed__feed_fetch_thread_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__feed__feed_fetch_thread_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
     pub fn wire__crate__ffi__feed__feed_fetch_window(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__feed__feed_fetch_window_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__feed__feed_fetch_window_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -25793,11 +25893,12 @@ mod web {
 
     #[wasm_bindgen]
     pub fn wire__crate__ffi__media__media_fetch_blob(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__media__media_fetch_blob_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__media__media_fetch_blob_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -25868,11 +25969,12 @@ mod web {
 
     #[wasm_bindgen]
     pub fn wire__crate__ffi__media__media_upload_blob(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
         data_len_: i32,
-    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-        wire__crate__ffi__media__media_upload_blob_impl(ptr_, rust_vec_len_, data_len_)
+    ) {
+        wire__crate__ffi__media__media_upload_blob_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]

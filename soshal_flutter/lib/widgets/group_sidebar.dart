@@ -527,8 +527,7 @@ class _GroupSidebarState extends State<GroupSidebar> {
                       icon: Icon(obscure
                           ? Icons.visibility_outlined
                           : Icons.visibility_off_outlined),
-                      onPressed: () =>
-                          setDialogState(() => obscure = !obscure),
+                      onPressed: () => setDialogState(() => obscure = !obscure),
                     ),
                   ),
                 ),
@@ -545,8 +544,7 @@ class _GroupSidebarState extends State<GroupSidebar> {
                   if (pwd.isNotEmpty && pwd.length < 8) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content:
-                            Text('Password must be at least 8 characters'),
+                        content: Text('Password must be at least 8 characters'),
                       ),
                     );
                     return;

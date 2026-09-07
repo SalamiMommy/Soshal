@@ -74,7 +74,7 @@ Ensure you have:
 1. **Daemon Download**: The build script downloads daemon binaries from official repositories:
    - I2P: https://github.com/PurpleI2P/i2pd/releases
    - Freenet: https://github.com/freenet/freenet-core/releases
-   - Reticulum: Stub (requires Python runtime)
+   - Reticulum: Bundled as the Chaquopy `rnspure` Python package (runs in-process)
 
 2. **Asset Bundling**: Daemons are copied to `assets/daemons/` in the APK
 
@@ -110,13 +110,21 @@ Ensure you have:
 - **Integration**: WebSocket client connects to local Freenet node
 
 ### Reticulum (rnsd)
-- **Status**: Stub implementation
-- **Notes**: Requires Python runtime; full bundling needs Python-for-Android
-- **Integration**: Currently uses built-in Rust implementation instead
+- **Status**: Complete — in-process Chaquopy Python daemon
+- **Notes**: No Android binary exists; RNS is pure Python. Bundled via the
+  Chaquopy plugin (`rnspure==1.5.2` pip dep in `build.gradle.kts`), running
+  inside the app process through `RnsdRunner` (Kotlin) → `rnsd_service.py`
+  (Python) → `RNS.Reticulum`. Rust bridges it via `rnsd_start`/`rnsd_stop`/
+  `rnsd_running` in `flutter-bridge/src/platform.rs`.
+- **Integration**: RNS node runs in-process; the native Rust Reticulum stack
+  (`soshal-network-core::reticulum`) backs the relay/P2P transport.
 
 ## Limitations
 
-1. **Reticulum Python Dependency**: Full Reticulum daemon requires Python runtime, which is not bundled. The app uses the native Rust implementation instead.
+1. **Reticulum on Android** runs the reference Python RNS node (rnspure via
+   Chaquopy, in-process). It uses pure-Python crypto primitives (no
+   PyCA/pyserial on Android), which is slower than the OpenSSL backend — the
+   native Rust Reticulum stack doubles as the fast path for mesh transport.
 
 2. **Daemon Updates**: Daemon binaries are downloaded during build; updates require rebuilding the APK.
 
@@ -124,13 +132,13 @@ Ensure you have:
 
 ## Future Enhancements
 
-1. **Python-for-Android**: Package Reticulum with Python runtime for full functionality
+1. **Daemon Updates**: Implement in-app daemon binary updates
 
-2. **Daemon Updates**: Implement in-app daemon binary updates
+2. **Multi-architecture**: Support additional Android architectures (x86, ARMv7)
 
-3. **Multi-architecture**: Support additional Android architectures (x86, ARMv7)
-
-4. **Daemon Health Monitoring**: Add health checks and automatic restart for daemons
+3. **Daemon Health Monitoring**: Add health checks and automatic restart for
+   daemons (rnsd liveness is reported via `daemon_get_daemon_status` and
+   `daemon_is_rnsd_running`).
 
 ## Troubleshooting
 

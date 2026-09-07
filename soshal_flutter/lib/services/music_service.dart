@@ -16,7 +16,8 @@ import '../utils/service_guard.dart';
 
 /// Musicloud: kind-31022 track publishing, fetching, sharing to feed and
 /// comment threads. All FFI calls are async — always awaited.
-class MusicService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
+class MusicService extends ChangeNotifier
+    with LastErrorMixin, DeferredNotify, ServiceGuard {
   List<MusicTrack> _tracks = [];
 
   List<MusicTrack> get tracks => _tracks;
@@ -135,7 +136,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       return hosted;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return false;
     }
   }
@@ -147,7 +148,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       await fetchSavedTracks();
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
     }
   }
 
@@ -205,7 +206,7 @@ class MusicService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       return ok;
     } catch (e, st) {
       setLastError(e, st);
-      notifyListeners();
+      notifyDeferred();
       return false;
     }
   }

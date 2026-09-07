@@ -15,8 +15,7 @@ class AuditService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   List<AuditRow> get rows => _rows;
 
   /// List audit log rows, newest first. Optional actor pubkey filter.
-  Future<List<AuditRow>> list({int limit = 100, String? actor}) =>
-      guard(() {
+  Future<List<AuditRow>> list({int limit = 100, String? actor}) => guard(() {
         final json = RustLib.instance.api.crateFfiAuditAuditList(
           limit: limit,
           actorPubkey: actor,

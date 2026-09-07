@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -158,7 +159,10 @@ class EventsService extends ChangeNotifier
         );
         await fetchReminders();
         return id;
-      }, clearOnSuccess: false, notifyOnSuccess: false, onNotify: notifyDeferred);
+      },
+          clearOnSuccess: false,
+          notifyOnSuccess: false,
+          onNotify: notifyDeferred);
 
   Future<bool> deleteReminder(String reminderId) => guard(() async {
         final ok = RustLib.instance.api.crateFfiEventsEventsReminderDelete(
@@ -166,11 +170,14 @@ class EventsService extends ChangeNotifier
         );
         await fetchReminders();
         return ok;
-      }, clearOnSuccess: false, notifyOnSuccess: false, onNotify: notifyDeferred);
+      },
+          clearOnSuccess: false,
+          notifyOnSuccess: false,
+          onNotify: notifyDeferred);
 
-  Future<List<SoshalEvent>> _decode(String Function() call) async {
+  Future<List<SoshalEvent>> _decode(FutureOr<String> Function() call) async {
     return guard(() async {
-      final json = call();
+      final json = await call();
       final parsed = await runOffThread(() => _parseEvents(json));
       _events = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
       return _events;

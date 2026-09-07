@@ -155,14 +155,15 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
                     Ok(text) => (text, true),
                     Err(_) => ("[message could not be decrypted]".to_string(), false),
                 };
+                let recipient = if is_own {
+                    with_pubkey.clone()
+                } else {
+                    my_pk.clone()
+                };
                 Ok::<DirectMessage, soshal_db_core::error::DbError>(DirectMessage {
                     id: row.id,
                     sender: row.pubkey,
-                    recipient: if is_own {
-                        with_pubkey.clone()
-                    } else {
-                        my_pk.clone()
-                    },
+                    recipient,
                     content,
                     created_at: row.created_at.max(0) as u64,
                     decrypted,
@@ -192,7 +193,9 @@ pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, Stri
         )?;
         let mut peers = extract_peers_from_cids(&cids, &pubkey);
         let blocked = soshal_db_core::repos::block::BlockRepo::new(db).list(&pubkey)?;
-        peers.retain(|p| !blocked.contains(p));
+        let blocked_set: std::collections::HashSet<&str> =
+            blocked.iter().map(String::as_str).collect();
+        peers.retain(|p| !blocked_set.contains(p.as_str()));
         Ok(peers)
     })
 }
@@ -329,27 +332,12 @@ pub fn messaging_send_group_dm(
 
     // Check if a group key exists in local DB
     let sealed_payload = super::db::with_db_result(|db| {
-        let repo = soshal_db_core::repos::group::GroupRepo::new(db);
-        let key = repo.get_shared_key(&group_id)?;
+        let key = super::groups::shared_key_for_group(db, &group_id)?;
         Ok(match key {
-            Some(k) => {
-                let k = match k.strip_prefix("seal1:") {
-                    Some(sealed) => {
-                        let plain = soshal_crypto_core::at_rest::open_at_rest(
-                            &super::signer::signer_at_rest_key()
-                                .map_err(soshal_db_core::error::DbError::Migration)?,
-                            sealed,
-                        )
-                        .map_err(soshal_db_core::error::DbError::Migration)?;
-                        hex::encode(plain)
-                    }
-                    None => k,
-                };
-                Some(
-                    soshal_groups_core::group_enc::seal::group_message_envelope(&payload, Some(&k))
-                        .map_err(soshal_db_core::error::DbError::Migration)?,
-                )
-            }
+            Some(k) => Some(
+                soshal_groups_core::group_enc::seal::group_message_envelope(&payload, Some(&k))
+                    .map_err(soshal_db_core::error::DbError::Migration)?,
+            ),
             None => None,
         })
     })?;

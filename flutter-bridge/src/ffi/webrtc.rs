@@ -8,6 +8,49 @@ use soshal_db_core::repos::settings::SettingsRepo;
 use soshal_webrtc_core::ice::ice_config;
 use soshal_webrtc_core::sdp::{extract_candidates, sanitize_sdp, validate_sdp};
 
+/// Extract the host from a `turn:`/`stuns:`/`turns:`/`stun:` endpoint and
+/// refuse loopback/private literals (the TURN endpoint is settings-driven,
+/// so a compromised DB or typo'd config must not exfiltrate STUN/TURN
+/// credentials to an internal address).
+fn validate_ice_endpoint_host(endpoint: &str) -> Result<String, String> {
+    let lower = endpoint.trim().to_lowercase();
+    let mut rest: &str = endpoint.trim();
+    for scheme in [
+        "turn://", "turns://", "stun://", "stuns://", "turn:", "turns:", "stun:", "stuns:",
+    ] {
+        if let Some(stripped) = lower.strip_prefix(scheme) {
+            rest = &endpoint.trim()[endpoint.trim().len() - stripped.len()..];
+            break;
+        }
+    }
+    let rest = rest.split('@').next_back().unwrap_or(rest);
+    let host = if rest.starts_with('[') {
+        rest.split(']')
+            .nth(1)
+            .map(|_| rest[1..rest.find(']').unwrap_or(1)].to_string())
+            .unwrap_or_else(|| rest.to_string())
+    } else {
+        rest.split(':').next().unwrap_or(rest).to_string()
+    };
+    let host = host.trim().trim_matches('.').to_string();
+    if host.is_empty() {
+        return Err(format!("ice endpoint {endpoint:?} has no host"));
+    }
+    if host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host
+            .parse::<std::net::IpAddr>()
+            .map(soshal_network_core::lan::is_private_ip)
+            .unwrap_or(false)
+    {
+        return Err(format!(
+            "ice endpoint targets a loopback or private host: {host}"
+        ));
+    }
+    Ok(host)
+}
+
 /// Get ICE configuration based on privacy settings.
 /// `privacy_level`: "public" (all), "friends" (relay only).
 #[frb(sync, serialize)]
@@ -47,6 +90,7 @@ pub fn webrtc_get_turn_servers(_auth_token: Option<String>) -> Result<String, St
     };
     let username = settings.get("turn_username").filter(|s| !s.is_empty());
     let credential = settings.get("turn_credential").filter(|s| !s.is_empty());
+    validate_ice_endpoint_host(endpoint)?;
     let mut server = serde_json::json!({
         "urls": [endpoint],
     });

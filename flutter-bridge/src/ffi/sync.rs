@@ -9,7 +9,7 @@
 
 use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
-use soshal_sync_core::engine::{spawn_engine, SyncConfig};
+use soshal_sync_core::engine::{spawn_engine_sealed, SyncConfig};
 use soshal_sync_core::SyncUpdate;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -164,7 +164,9 @@ pub async fn sync_start(relays_json: String) -> Result<String, String> {
         *guard = Some(stop.clone());
     }
     let exit_stop = stop.clone();
-    spawn_engine(
+    let unseal: &'static (dyn Fn(&str) -> Result<String, String> + Sync) =
+        Box::leak(Box::new(outbox_unseal_fn()));
+    spawn_engine_sealed(
         SyncConfig {
             db_path,
             my_pubkey,
@@ -186,6 +188,7 @@ pub async fn sync_start(relays_json: String) -> Result<String, String> {
                 }
             }
         },
+        unseal,
     );
 
     // Forwarder thread: engine update → JSON → StreamSink. DM decryption
@@ -235,6 +238,40 @@ fn event_id_of(event_json: &str) -> Option<String> {
     Some(event_json[start..end].to_string())
 }
 
+/// Seal an outbox payload at rest. Compressed payload is base64'd into a
+/// `__seal_b64__:` envelope under the signer's at-rest key. Signer-lock /
+/// pre-init degrade to storing the payload plaintext (identity) so publishing
+/// never hard-fails on an unlocked wallet.
+pub(crate) fn outbox_seal_fn() -> impl Fn(String) -> Result<String, String> {
+    move |compressed: String| -> Result<String, String> {
+        let key = match super::signer::signer_at_rest_key() {
+            Ok(k) => k,
+            Err(_) => return Ok(compressed),
+        };
+        let sealed = soshal_crypto_core::at_rest::seal_at_rest_bin(&key, compressed.as_bytes())
+            .map_err(|e| format!("seal outbox: {e}"))?;
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(sealed);
+        Ok(format!("{}{b64}", soshal_sync_core::outbox::SEAL_PREFIX))
+    }
+}
+
+/// Unseal an outbox payload previously written via `outbox_seal_fn`. Receives
+/// the base64 body already stripped of the `__seal_b64__:` envelope by
+/// `soshal_sync_core::outbox::unseal_payload`.
+pub(crate) fn outbox_unseal_fn() -> impl Fn(&str) -> Result<String, String> + Send + Sync {
+    move |inner: &str| -> Result<String, String> {
+        use base64::Engine;
+        let blob = base64::engine::general_purpose::STANDARD
+            .decode(inner)
+            .map_err(|e| format!("outbox seal b64: {e}"))?;
+        let key = super::signer::signer_at_rest_key().map_err(|e| format!("at-rest key: {e}"))?;
+        let plain = soshal_crypto_core::at_rest::open_at_rest_bin(&key, &blob)
+            .map_err(|e| format!("open outbox: {e}"))?;
+        String::from_utf8(plain).map_err(|e| format!("outbox utf8: {e}"))
+    }
+}
+
 /// Publish a freshly-signed event, or queue it in the persistent outbox when
 /// no transport is available (offline mode). The mesh relay node is tried
 /// first when it is the resolved transport; otherwise the relay client.
@@ -260,13 +297,14 @@ pub(crate) async fn publish_or_enqueue(action_type: &str, event_json: &str) -> R
         Err(pub_err) => {
             let now = soshal_common_core::format::now_secs();
             let queued = super::db::with_db_result(|db| {
-                soshal_sync_core::outbox::enqueue_outbox_item(
+                soshal_sync_core::outbox::enqueue_outbox_item_with_seal(
                     db,
                     &event_id,
                     action_type,
                     event_json,
                     None,
                     now,
+                    outbox_seal_fn(),
                 )
                 .map_err(soshal_db_core::error::DbError::Migration)
             });
@@ -288,13 +326,14 @@ pub fn sync_enqueue_outbox(
     let id = format!("{:x}", rand::random::<u64>());
     let now = soshal_common_core::format::now_secs();
     super::db::with_db_result(|db| {
-        soshal_sync_core::outbox::enqueue_outbox_item(
+        soshal_sync_core::outbox::enqueue_outbox_item_with_seal(
             db,
             &id,
             &action_type,
             &payload_json,
             media_path.as_deref(),
             now,
+            outbox_seal_fn(),
         )
         .map_err(soshal_db_core::error::DbError::Migration)?;
         Ok(id)

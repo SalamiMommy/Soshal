@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'dart:convert';
 import 'dart:io';
-import 'package:video_player/video_player.dart';
+
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart';
 import '../services/permissions_service.dart';
@@ -1273,8 +1273,7 @@ class _VideoPlayerWidget extends StatefulWidget {
 }
 
 class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
-  VideoPlayerController? _controller;
-  VideoController? _linuxController;
+  VideoController? _controller;
   bool _isInitialized = false;
   String? _error;
   bool _started = false;
@@ -1297,12 +1296,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         !widget.visible &&
         oldWidget.visible &&
         _controller != null) {
-      _controller!.pause();
-    } else if (_isInitialized &&
-        !widget.visible &&
-        oldWidget.visible &&
-        _linuxController != null) {
-      _linuxController!.player.pause();
+      _controller!.player.pause();
     }
   }
 
@@ -1315,7 +1309,8 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
   /// Resolve the playback URL: if the post references a CAS blob and the
   /// remote URL isn't this device's own server, fetch the blob (local store
   /// first, then a LAN crawl of discovered peers) and play from the local
-  /// range server. Android uses video_player; Linux uses media_kit (mpv).
+  /// range server. Playback is media_kit (ExoPlayer/MediaCodec on Android,
+  /// mpv on Linux) on every platform.
   /// Honest failure: no peers / no local copy = error UI.
   Future<void> _prepare() async {
     if (!_playbackSupported) {
@@ -1343,34 +1338,21 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       }
       return;
     }
-    if (PermissionsService.isAndroid) {
-      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
-      _controller = controller;
-      try {
-        await controller.initialize();
-        if (mounted) setState(() => _isInitialized = true);
-      } catch (e) {
-        controller.dispose();
-        if (mounted) setState(() => _error = '$e');
-      }
-    } else {
-      final player = mk.Player();
-      final controller = VideoController(player);
-      _linuxController = controller;
-      try {
-        await player.open(mk.Media(url), play: widget.visible);
-        if (mounted) setState(() => _isInitialized = true);
-      } catch (e) {
-        player.dispose();
-        if (mounted) setState(() => _error = '$e');
-      }
+    final player = mk.Player();
+    final controller = VideoController(player);
+    _controller = controller;
+    try {
+      await player.open(mk.Media(url), play: widget.visible);
+      if (mounted) setState(() => _isInitialized = true);
+    } catch (e) {
+      player.dispose();
+      if (mounted) setState(() => _error = '$e');
     }
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
-    _linuxController?.player.dispose();
+    _controller?.player.dispose();
     super.dispose();
   }
 
@@ -1388,7 +1370,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         ),
       );
     }
-    if (!_isInitialized || (_controller == null && _linuxController == null)) {
+    if (!_isInitialized || _controller == null) {
       if (!_started && widget.visible) _start();
       return Container(
         height: 200,
@@ -1401,73 +1383,37 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       );
     }
 
-    if (_linuxController != null) {
-      final controller = _linuxController!;
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Video(controller: controller, fit: BoxFit.contain),
-              Positioned(
-                right: 8,
-                bottom: 8,
-                child: StreamBuilder<bool>(
-                  stream: controller.player.stream.playing,
-                  initialData: controller.player.state.playing,
-                  builder: (context, snapshot) {
-                    final isPlaying = snapshot.data ?? false;
-                    return IconButton(
-                      icon: Icon(
-                        isPlaying ? Icons.pause : Icons.play_arrow,
-                        color: Colors.white,
-                      ),
-                      onPressed: () {
-                        if (isPlaying) {
-                          controller.player.pause();
-                        } else {
-                          controller.player.play();
-                        }
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     final controller = _controller!;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: AspectRatio(
-        aspectRatio: controller.value.aspectRatio,
+        aspectRatio: 16 / 9,
         child: Stack(
           alignment: Alignment.center,
           children: [
-            VideoPlayer(controller),
-            VideoProgressIndicator(controller, allowScrubbing: true),
+            Video(controller: controller, fit: BoxFit.contain),
             Positioned(
               right: 8,
               bottom: 8,
-              child: IconButton(
-                icon: Icon(
-                  controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
-                  color: Colors.white,
-                ),
-                onPressed: () {
-                  setState(() {
-                    if (controller.value.isPlaying) {
-                      controller.pause();
-                    } else {
-                      controller.play();
-                    }
-                  });
+              child: StreamBuilder<bool>(
+                stream: controller.player.stream.playing,
+                initialData: controller.player.state.playing,
+                builder: (context, snapshot) {
+                  final isPlaying = snapshot.data ?? false;
+                  return IconButton(
+                    icon: Icon(
+                      isPlaying ? Icons.pause : Icons.play_arrow,
+                      color: Colors.white,
+                    ),
+                    onPressed: () {
+                      if (isPlaying) {
+                        controller.player.pause();
+                      } else {
+                        controller.player.play();
+                      }
+                    },
+                  );
                 },
               ),
             ),

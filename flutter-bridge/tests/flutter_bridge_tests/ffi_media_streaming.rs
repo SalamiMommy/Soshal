@@ -38,16 +38,20 @@ mod ffi_media_streaming_tests {
         signer::signer_unlock(secret).unwrap();
         signer::signer_pubkey().unwrap()
     }
-    #[test]
-    fn media_decode_png_rgba() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn media_decode_png_rgba() {
         let path = temp_path("decode");
         std::fs::write(&path, PNG_1X1_RGBA).unwrap();
-        let dto = media::media_decode_image_rgba(path.clone(), None, None).unwrap();
+        let dto = media::media_decode_image_rgba(path.clone(), None, None)
+            .await
+            .unwrap();
         assert_eq!(dto.width, 1);
         assert_eq!(dto.height, 1);
         assert_eq!(dto.pixels.len(), 4);
         let missing = temp_path("decode_missing");
-        assert!(media::media_decode_image_rgba(missing, None, None).is_err());
+        assert!(media::media_decode_image_rgba(missing, None, None)
+            .await
+            .is_err());
         let _ = std::fs::remove_file(&path);
     }
     #[test]
@@ -120,22 +124,27 @@ mod ffi_media_streaming_tests {
         assert!(media::media_stop_local_server().unwrap());
         assert!(media::media_stop_local_server().unwrap());
     }
-    #[test]
-    fn media_blob_upload_fetch_roundtrip() {
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn media_blob_upload_fetch_roundtrip() {
         let _g = crate::test_util::lock();
         let data = unique_bytes();
-        let json = media::media_upload_blob(data.clone()).unwrap();
+        let json = media::media_upload_blob(data.clone()).await.unwrap();
         let manifest: serde_json::Value = serde_json::from_str(&json).unwrap();
         let hash = manifest["blob_hash"].as_str().unwrap().to_string();
         let total = manifest["total_size"].as_u64().unwrap();
         assert_eq!(total, data.len() as u64);
         let out = temp_path("blob_out");
-        let res = media::media_fetch_blob(hash.clone(), out.clone()).unwrap();
+        let res = media::media_fetch_blob(hash.clone(), out.clone())
+            .await
+            .unwrap();
         assert!(res.contains("\"success\":true"));
         assert!(res.contains(&hash));
         assert_eq!(std::fs::read(&out).unwrap(), data);
         let out2 = temp_path("blob_miss");
-        assert!(media::media_fetch_blob("ab".repeat(32), out2.clone()).is_err());
+        assert!(media::media_fetch_blob("ab".repeat(32), out2.clone())
+            .await
+            .is_err());
         let _ = std::fs::remove_file(&out);
         let _ = std::fs::remove_file(&out2);
     }
@@ -151,7 +160,7 @@ mod ffi_media_streaming_tests {
         let hash = manifest["blob_hash"].as_str().unwrap().to_string();
         assert_eq!(manifest["total_size"].as_u64().unwrap(), data.len() as u64);
         let out = temp_path("blob_file_out");
-        media::media_fetch_blob(hash, out.clone()).unwrap();
+        media::media_fetch_blob(hash, out.clone()).await.unwrap();
         assert_eq!(std::fs::read(&out).unwrap(), data);
         assert!(media::media_upload_blob_file(temp_path("no_such_file"))
             .await
@@ -178,13 +187,13 @@ mod ffi_media_streaming_tests {
             );
         }
     }
-    #[test]
-    fn media_load_local_roundtrip_and_missing() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn media_load_local_roundtrip_and_missing() {
         let data = unique_bytes();
         let path = temp_path("local");
         std::fs::write(&path, &data).unwrap();
-        assert_eq!(media::media_load_local(path.clone()).unwrap(), data);
-        assert!(media::media_load_local(temp_path("missing")).is_err());
+        assert_eq!(media::media_load_local(path.clone()).await.unwrap(), data);
+        assert!(media::media_load_local(temp_path("missing")).await.is_err());
         let _ = std::fs::remove_file(&path);
     }
     #[test]

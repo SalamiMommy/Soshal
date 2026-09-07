@@ -364,13 +364,10 @@ pub(crate) fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
             return Ok(snap.users.clone());
         }
     }
-    let json = super::db::db_query_params("SELECT pubkey, contact_pubkeys FROM users", &[])?;
-    let rows: Vec<serde_json::Value> = match serde_json::from_str(&json) {
-        Ok(r) => r,
-        Err(e) => return Err(format!("parse users: {e}")),
-    };
+    let rows: Vec<serde_json::Value> =
+        super::db::db_query_json("SELECT pubkey, contact_pubkeys FROM users", &[])?;
     let users: Vec<wot::WotUser> = rows
-        .iter()
+        .into_iter()
         .map(|r| wot::WotUser {
             pubkey: r
                 .get("pubkey")
@@ -387,9 +384,12 @@ pub(crate) fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
     *guard = Some(WotGraphSnapshot {
         db_path: current_db,
         fetched_at: std::time::Instant::now(),
-        users: users.clone(),
+        users,
     });
-    Ok(users)
+    guard
+        .as_ref()
+        .map(|s| s.users.clone())
+        .ok_or_else(|| "wot graph cache empty".to_string())
 }
 
 /// Resolve an audience vocabulary value into the reachable author set used
@@ -397,13 +397,30 @@ pub(crate) fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
 /// - `"public"` (default) → `None`, no author filter
 /// - `"friends"` / `"friends_only"` → direct follows (WoT distance 1)
 /// - `"network"` → friends ∪ friends-of-friends (WoT distance 1 + 2)
+/// - an author pubkey / `"author:<pubkey>"` / `"user:<pubkey>"` → that author
 ///
+/// Returns `None` for public (unfiltered); `Some(vec)` for filtered.
 /// Empty vector when the active account is absent or has no contacts — the
 /// filter then matches nothing. The reachable set is derived from the cached
 /// contact graph ([`wot_graph_users`], 45 s TTL) and the WoT distance
 /// partition in identity-core.
 pub(crate) fn resolve_audience_authors(audience: &str) -> Result<Option<Vec<String>>, String> {
-    let level = match audience.trim() {
+    let trimmed = audience.trim();
+    if let Some(author) = trimmed
+        .strip_prefix("author:")
+        .or_else(|| trimmed.strip_prefix("user:"))
+    {
+        let author = author.trim();
+        return Ok(Some(if author.is_empty() {
+            Vec::new()
+        } else {
+            vec![author.to_string()]
+        }));
+    }
+    if trimmed.len() == 64 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Ok(Some(vec![trimmed.to_string()]));
+    }
+    let level = match trimmed {
         "friends" | "friends_only" => 1u32,
         "network" => 2,
         _ => return Ok(None),
@@ -976,5 +993,25 @@ mod tests {
             assert!(addrs.contains(&addr), "missing a-tag {addr}: {addrs:?}");
         }
         super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_resolve_audience_authors() {
+        let pk = "a1".repeat(32);
+        assert_eq!(
+            resolve_audience_authors(&pk).unwrap(),
+            Some(vec![pk.clone()])
+        );
+        assert_eq!(
+            resolve_audience_authors(&format!("author:{pk}")).unwrap(),
+            Some(vec![pk.clone()])
+        );
+        assert_eq!(
+            resolve_audience_authors(&format!("user:{pk}")).unwrap(),
+            Some(vec![pk.clone()])
+        );
+        assert_eq!(resolve_audience_authors("author:").unwrap(), Some(vec![]));
+        assert_eq!(resolve_audience_authors("public").unwrap(), None);
+        assert_eq!(resolve_audience_authors("").unwrap(), None);
     }
 }

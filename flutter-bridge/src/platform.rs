@@ -20,6 +20,10 @@ mod android {
 
     static JAVA_VM: Mutex<Option<&'static JavaVM>> = Mutex::new(None);
 
+    // dlsym returns a raw function pointer; cast through usize to the
+    // concrete extern "C" type. A bare `transmute` of `*mut c_void -> T`
+    // fails to compile on 32-bit armv7 where function pointers differ in
+    // size/representation; usize is pointer-sized on every ABI.
     fn dlsym<T>(lib: &str, symbol: &str) -> Option<T> {
         unsafe {
             let handle = libc::dlopen(std::ffi::CString::new(lib).ok()?.as_ptr(), libc::RTLD_NOW);
@@ -32,7 +36,7 @@ mod android {
             }
             // SAFETY: dlsym returns a valid function pointer for `symbol`;
             // the caller's `T` must match its extern "C" signature exactly.
-            Some(std::mem::transmute(ptr))
+            Some(std::mem::transmute_copy(&(ptr as usize)))
         }
     }
 

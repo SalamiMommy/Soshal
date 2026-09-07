@@ -3,6 +3,7 @@
 
 use soshal_nostr_core::nostr;
 use soshal_nostr_core::nostr_sdk;
+use zeroize::Zeroizing;
 
 use super::NwcConnectionInfo;
 
@@ -63,7 +64,7 @@ pub fn parse_nwc_uri(uri: &str) -> Result<NwcConnectionInfo, String> {
     Ok(NwcConnectionInfo {
         wallet_pubkey,
         relay_url,
-        secret_hex,
+        secret_hex: Zeroizing::new(secret_hex),
         lud16,
     })
 }
@@ -222,7 +223,7 @@ mod tests {
         let info = parse_nwc_uri(&valid_uri()).unwrap();
         assert_eq!(info.wallet_pubkey, "a".repeat(64));
         assert_eq!(info.relay_url, "wss://relay.example.com");
-        assert_eq!(info.secret_hex, "b".repeat(64));
+        assert_eq!(info.secret_hex.as_str(), "b".repeat(64).as_str());
         assert!(info.lud16.is_none());
     }
 
@@ -366,7 +367,7 @@ mod tests {
         let info = NwcConnectionInfo {
             wallet_pubkey: "pk1".into(),
             relay_url: "wss://relay".into(),
-            secret_hex: "secret".into(),
+            secret_hex: zeroize::Zeroizing::new("secret".to_string()),
             lud16: Some("user@domain".into()),
         };
         assert_eq!(info.clone(), info);

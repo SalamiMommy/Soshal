@@ -88,22 +88,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadPosts(String? pubkey) async {
+    if (pubkey == null || pubkey.isEmpty) {
+      if (mounted) setState(() => _postsLoading = false);
+      return;
+    }
     try {
       final feed = context.read<FeedService>();
       await feed.loadPinnedPosts();
-      final own = <FeedPost>[];
-      if (pubkey != null) {
-        const pageSize = 200;
-        const maxPages = 50;
-        for (var page = 0; page < maxPages; page++) {
-          final all = await feed.fetchWindow(
-            startIndex: page * pageSize,
-            limit: pageSize,
-          );
-          own.addAll(all.where((p) => p.pubkey == pubkey));
-          if (all.length < pageSize) break;
-        }
-      }
+      final own = await feed.fetchAuthorPosts(pubkey, limit: 100);
       if (!mounted) return;
       setState(() {
         _ownPosts = own;
@@ -182,10 +174,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
-            child: Consumer<IdentityService>(
-              builder: (context, identityService, child) {
-                final pinnedPosts = context
-                    .select<FeedService, List<String>>((s) => s.pinnedPosts);
+            child: Consumer2<IdentityService, FeedService>(
+              builder: (context, identityService, feedService, child) {
+                final pinnedPosts = feedService.pinnedPosts;
                 final profile = identityService.profiles[pubkey];
 
                 if (_isLoading || profile == null) {

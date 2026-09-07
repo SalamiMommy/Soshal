@@ -27,6 +27,12 @@ pub struct OutboxSummary {
 
 const ZSTD_MAGIC: &[u8; 4] = b"Zstd";
 
+/// Marker prefix for at-rest-sealed outbox payloads. The bridge layer owns
+/// the at-rest key and supplies the seal/unseal closures; this crate only
+/// recognizes the envelope so payloads can be sealed on write and unsealed
+/// on read without ever importing the key.
+pub const SEAL_PREFIX: &str = "__seal_b64__:";
+
 pub fn compress_payload(payload: &str) -> String {
     if payload.len() > 256 {
         if let Ok(compressed) = zstd::encode_all(payload.as_bytes(), 3) {
@@ -84,8 +90,28 @@ pub fn enqueue_outbox_item(
     media_path: Option<&str>,
     now_secs: i64,
 ) -> Result<(), String> {
+    enqueue_outbox_item_with_seal(db, id, action_type, payload_json, media_path, now_secs, Ok)
+}
+
+/// Enqueue with the payload sealed before storage. `seal` receives the
+/// raw/compressed payload and must return the stored form (e.g. the bridge's
+/// at-rest `__seal_b64__:` envelope). Honored reverse order at read time:
+/// `decompress_payload` first, then `unseal_payload`.
+pub fn enqueue_outbox_item_with_seal(
+    db: &Database,
+    id: &str,
+    action_type: &str,
+    payload_json: &str,
+    media_path: Option<&str>,
+    now_secs: i64,
+    seal: impl Fn(String) -> Result<String, String>,
+) -> Result<(), String> {
     let conn = db.conn().map_err(|e| e.to_string())?;
-    let stored_payload = compress_payload(payload_json);
+    // Compress THEN seal: ciphertext is ~incompressible, so the compression
+    // must happen on the plaintext first to be useful.
+    let compressed = compress_payload(payload_json);
+    let stored_payload =
+        seal(compressed).map_err(|e| format!("Failed to seal outbox payload: {e}"))?;
     block_on(conn.execute(
         "INSERT INTO outbox_queue (id, action_type, payload_json, media_path, status, retry_count, next_retry_at, created_at)
          VALUES (?1, ?2, ?3, ?4, 'pending', 0, 0, ?5)",
@@ -93,6 +119,23 @@ pub fn enqueue_outbox_item(
     ))
     .map_err(|e| format!("Failed to enqueue outbox item: {e}"))?;
     Ok(())
+}
+
+/// Reverse of the seal applied at enqueue: strips the `__seal_b64__:` envelope
+/// and hands the inner blob to the caller-supplied `unseal` closure (the
+/// secret-holding layer), then restores any zstd compression applied inside
+/// the envelope by `enqueue_outbox_item_with_seal` (compress-then-seal; the
+/// stored plaintext is the compressed form). Unseal failures fall back to the
+/// original string so legacy plaintext rows and transient signer-lock states
+/// degrade to today's behavior (parse attempt → retry) instead of throwing.
+pub fn unseal_payload(payload: &str, unseal: &impl Fn(&str) -> Result<String, String>) -> String {
+    match payload.strip_prefix(SEAL_PREFIX) {
+        Some(inner) => match unseal(inner) {
+            Ok(plain) => decompress_payload(&plain),
+            Err(_) => payload.to_string(),
+        },
+        None => payload.to_string(),
+    }
 }
 
 pub fn fetch_pending_outbox_items(
@@ -108,6 +151,25 @@ pub fn fetch_pending_outbox_items_filtered(
     now_secs: i64,
     limit: usize,
     include_media: bool,
+) -> Result<Vec<OutboxItem>, String> {
+    fetch_pending_outbox_items_with_unseal(
+        db,
+        now_secs,
+        limit,
+        include_media,
+        |p| Ok(p.to_string()),
+    )
+}
+
+/// Pending-item fetch with the sealed payload stage: after zstd decompression
+/// the `__seal_b64__:` envelope is unwrapped via the caller's `unseal`
+/// closure before the payload is surfaced to the publisher.
+pub fn fetch_pending_outbox_items_with_unseal(
+    db: &Database,
+    now_secs: i64,
+    limit: usize,
+    include_media: bool,
+    unseal: impl Fn(&str) -> Result<String, String>,
 ) -> Result<Vec<OutboxItem>, String> {
     let conn = db.conn().map_err(|e| e.to_string())?;
     block_on(async {
@@ -133,10 +195,11 @@ pub fn fetch_pending_outbox_items_filtered(
         let mut out = Vec::new();
         while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
             let raw_payload: String = row.get(2).map_err(|e| e.to_string())?;
+            let plain = decompress_payload(&raw_payload);
             out.push(OutboxItem {
                 id: row.get(0).map_err(|e| e.to_string())?,
                 action_type: row.get(1).map_err(|e| e.to_string())?,
-                payload_json: decompress_payload(&raw_payload),
+                payload_json: unseal_payload(&plain, &unseal),
                 media_path: row.get(3).map_err(|e| e.to_string())?,
                 status: row.get(4).map_err(|e| e.to_string())?,
                 retry_count: row.get(5).map_err(|e| e.to_string())?,
@@ -267,6 +330,76 @@ pub fn prune_outbox_settled(db: &Database, keep_latest: u32) -> Result<u64, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_outbox_seal_roundtrip() {
+        let db = soshal_test_util::test_db();
+        // Fake seal: reverse the bytes (an asymmetric-opaque ciphertext
+        // stand-in) so non-unsealing readers cannot parse the payload.
+        let seal = |s: String| -> Result<String, String> {
+            let inner = base64_encode(&s);
+            Ok(format!("{SEAL_PREFIX}{inner}"))
+        };
+        let unseal = move |s: &str| -> Result<String, String> {
+            let bytes = base64_decode(s)?;
+            String::from_utf8(bytes).map_err(|e| e.to_string())
+        };
+        let payload = serde_json::json!({"kind": 1, "content": "draft secret"}).to_string();
+        enqueue_outbox_item_with_seal(&db, "sealed1", "post", &payload, None, 100, seal).unwrap();
+        // Identity fetch (no unseal) surfaces the sealed form — the old
+        // behavior would leak the plaintext.
+        let raw = fetch_pending_outbox_items(&db, 100, 10).unwrap();
+        assert_ne!(
+            raw[0].payload_json, payload,
+            "sealed payload must not surface as plaintext"
+        );
+        assert!(
+            !raw[0].payload_json.contains("draft secret"),
+            "plaintext leaked"
+        );
+        // Unsealed fetch roundtrips the original payload.
+        let sealed = fetch_pending_outbox_items_with_unseal(&db, 100, 10, false, unseal).unwrap();
+        assert_eq!(sealed[0].payload_json, payload);
+        // Large payload (>256 B) roundtrips too: zstd-compressed inside the
+        // seal envelope, decompressed again after unseal.
+        let big = serde_json::json!({"kind": 1, "content": "x".repeat(600)}).to_string();
+        let seal2 = |s: String| -> Result<String, String> {
+            let inner = base64_encode(&s);
+            Ok(format!("{SEAL_PREFIX}{inner}"))
+        };
+        enqueue_outbox_item_with_seal(&db, "sealed-big", "post", &big, None, 100, seal2).unwrap();
+        let big_out = fetch_pending_outbox_items_with_unseal(&db, 100, 10, false, unseal).unwrap();
+        assert!(
+            big_out
+                .iter()
+                .any(|i| i.id == "sealed-big" && i.payload_json == big),
+            "large sealed payload must roundtrip; got {:?}",
+            big_out
+                .iter()
+                .find(|i| i.id == "sealed-big")
+                .map(|i| &i.payload_json)
+        );
+        // Legacy plaintext rows still read through the identity path.
+        enqueue_outbox_item(&db, "plain1", "post", "{}", None, 100).unwrap();
+        let mixed = fetch_pending_outbox_items(&db, 100, 10).unwrap();
+        assert_eq!(mixed.len(), 3);
+        assert!(
+            mixed.iter().any(|i| i.payload_json == "{}"),
+            "legacy row must stay readable"
+        );
+    }
+
+    fn base64_encode(s: &str) -> String {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(s.as_bytes())
+    }
+
+    fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD
+            .decode(s)
+            .map_err(|e| e.to_string())
+    }
 
     #[test]
     fn test_outbox_workflow() {

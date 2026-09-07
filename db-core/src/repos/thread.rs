@@ -112,11 +112,11 @@ impl<'a> GroupThreadRepo<'a> {
         );
         if sort == ThreadSort::Popular {
             let now = soshal_common_core::format::now_secs();
-            crate::query::query(&conn, &sql, params![group_id, now], |row| {
+            crate::query::query_capacity(&conn, &sql, params![group_id, now], 5000, |row| {
                 Self::row_from_columns(row)
             })
         } else {
-            crate::query::query(&conn, &sql, [group_id], Self::row_from_columns)
+            crate::query::query_capacity(&conn, &sql, [group_id], 5000, Self::row_from_columns)
         }
     }
 

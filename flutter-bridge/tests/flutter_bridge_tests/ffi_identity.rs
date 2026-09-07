@@ -98,8 +98,11 @@ mod ffi_identity_tests {
     fn test_identity_block_unblock_flow() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("identity", "block");
-        let me = crate::test_util::unique_pubkey("me");
-        let target = crate::test_util::unique_pubkey("tgt");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        let target = "b".repeat(64);
+        signer::signer_lock().unwrap();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         crate::test_util::insert_user(&me);
         crate::test_util::insert_user(&target);
         assert!(!identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
@@ -111,6 +114,7 @@ mod ffi_identity_tests {
         assert!(!identity::identity_is_blocked(me.clone(), target.clone()).unwrap());
         let list = identity::identity_get_blocked_users(me).unwrap();
         assert!(!list.contains(&target));
+        signer::signer_lock().unwrap();
         crate::test_util::cleanup(&path);
     }
     #[test]

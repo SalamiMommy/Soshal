@@ -32,6 +32,7 @@ void main() {
 
       expect(eventId, 'ev-1');
       expect(calls.lastError, isNull);
+      await pumpEventQueue();
       expect(notifications, 1);
       final inv = api.callsOf('crateFfiCallsCallsSendSignal').single;
       expect(api.namedArg(inv, 'signalType'), 'offer');
@@ -148,6 +149,7 @@ void main() {
       expect(calls.mediaType, 'audio');
       expect(calls.inCall, isTrue);
       expect(calls.elapsed.inSeconds, 0);
+      await pumpEventQueue();
       expect(notifications, 1);
 
       await Future<void>.delayed(const Duration(milliseconds: 1200));
@@ -169,6 +171,7 @@ void main() {
       expect(calls.peer, isNull);
       expect(calls.mediaType, isNull);
 
+      await pumpEventQueue();
       final afterEnd = notifications;
       await Future<void>.delayed(const Duration(milliseconds: 1200));
       expect(notifications, afterEnd,

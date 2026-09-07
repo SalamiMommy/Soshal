@@ -30,6 +30,14 @@ CREATE TABLE IF NOT EXISTS saved_content (
 CREATE INDEX IF NOT EXISTS idx_saved_content_saved_at ON saved_content (saved_at DESC);
 CREATE INDEX IF NOT EXISTS idx_saved_content_kind_saved ON saved_content (kind, saved_at DESC);
 
+CREATE TABLE IF NOT EXISTS musicloud_playlists (
+    id TEXT PRIMARY KEY,
+    pubkey TEXT NOT NULL,
+    title TEXT NOT NULL,
+    is_private INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS musicloud_playlist_tracks (
     playlist_id TEXT NOT NULL,
     track_id TEXT NOT NULL,

@@ -169,15 +169,12 @@ ensure_freenet() {
   fi
 }
 
-# Build Reticulum daemon for Android (use Python-for-Android approach)
+# Reticulum daemon (rnsd) has no Android binary and needs none: it runs in
+# the app process via the Chaquopy Python runtime (rnspure pip dep in
+# build.gradle.kts), bridged from Rust through RnsdRunner. Public interface
+# brings up the real RNS node at runtime — nothing to download or bundle.
 ensure_reticulum() {
-  local cache_dir="$DAEMONS_CACHE/reticulum"
-  mkdir -p "$cache_dir"
-  
-  # For now, create a stub script since Reticulum requires Python runtime
-  # In production, this would use Python-for-Android to package rnsd
-  create_stub "$cache_dir/rnsd" "Reticulum daemon requires Python runtime - not bundled in APK"
-  echo "  reticulum: stub prepared (requires Python runtime)"
+  echo "  reticulum: runs in-process via Chaquopy (rnspure) — no asset needed"
 }
 
 # Bundle all daemons into APK assets. Real binaries are >100KB; anything
@@ -214,8 +211,7 @@ bundle_daemons() {
     create_stub "$ASSETS_DIR/freenet" "Freenet daemon: no official Android binary - not bundled in APK"
   fi
 
-  # Always use Reticulum stub (requires Python runtime)
-  cp "$DAEMONS_CACHE/reticulum/rnsd" "$ASSETS_DIR/rnsd"
+  # rnsd needs no asset (Chaquopy Python, see ensure_reticulum).
 
   echo "  daemons: bundled to assets/daemons/"
 }
@@ -354,6 +350,6 @@ fi
 echo "  verifying: python runtime (rnsd via Chaquopy)"
 PYTHON_COUNT="$(unzip -l "$OUT" | grep -c 'lib/.*/libpython' || true)"
 if [[ "$PYTHON_COUNT" -eq 0 ]]; then
-  echo "  WARNING: no libpython in APK — rnsd (Chaquopy) missing" >&2
+  echo "  ERROR: no libpython in APK — rnsd (Chaquopy Python) missing, Reticulum daemon cannot start" >&2
 fi
 echo "== Done: $OUT =="

@@ -122,11 +122,12 @@ pub fn notifications_fetch(user_pubkey: String, limit: i32, offset: i32) -> Resu
     let offset = offset.max(0);
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
-        let rows: Vec<NotificationRow> = soshal_db_core::query::query(
+        let rows: Vec<NotificationRow> = soshal_db_core::query::query_capacity(
             &conn,
             "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read \
              FROM notifications WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
             libsql::params![user_pubkey.as_str(), limit as i64, offset as i64],
+            limit as usize,
             |r| {
                 Ok(NotificationRow {
                     id: r.get(0)?,
@@ -288,14 +289,11 @@ pub fn notifications_is_ignored(
 /// Get unread count.
 #[frb(sync, serialize)]
 pub fn notifications_get_unread_count(user_pubkey: String) -> Result<i32, String> {
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         "SELECT COUNT(*) AS c FROM notifications WHERE pubkey = ?1 AND is_read = 0",
         &[user_pubkey],
     )?;
-    let count = serde_json::from_str::<Vec<serde_json::Value>>(&json)
-        .ok()
-        .and_then(|rows| rows.first().and_then(|r| r["c"].as_i64()))
-        .unwrap_or(0);
+    let count = rows.first().and_then(|r| r["c"].as_i64()).unwrap_or(0);
     Ok(count as i32).into()
 }
 

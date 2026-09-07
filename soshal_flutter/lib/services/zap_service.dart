@@ -25,8 +25,7 @@ class ZapService extends ChangeNotifier
       (_nwcStatus ?? '').isNotEmpty && (_nwcStatus ?? '') != 'disconnected';
 
   /// Connect to a Nostr Wallet Connect URI.
-  Future<bool> connect(String nwcUri) =>
-      guard(() async {
+  Future<bool> connect(String nwcUri) => guard(() async {
         final ok =
             await RustLib.instance.api.crateFfiZapZapConnectNwc(nwcUri: nwcUri);
         if (ok) {
@@ -88,23 +87,21 @@ class ZapService extends ChangeNotifier
   }
 
   /// Recent zap receipts for an event.
-  Future<List<ZapReceipt>> fetchReceipts(String eventId,
-        {int limit = 20}) =>
-    guard(() async {
-      final json = await RustLib.instance.api.crateFfiZapZapFetchReceipts(
-        eventId: eventId,
-        limit: limit,
-      );
-      final decoded = jsonDecode(json);
-      _receipts = (decoded as List<dynamic>)
-          .map((e) => ZapReceipt.fromJson(e as Map<String, dynamic>))
-          .toList();
-      return _receipts;
-    }, onNotify: notifyDeferred);
+  Future<List<ZapReceipt>> fetchReceipts(String eventId, {int limit = 20}) =>
+      guard(() async {
+        final json = await RustLib.instance.api.crateFfiZapZapFetchReceipts(
+          eventId: eventId,
+          limit: limit,
+        );
+        final decoded = jsonDecode(json);
+        _receipts = (decoded as List<dynamic>)
+            .map((e) => ZapReceipt.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return _receipts;
+      }, onNotify: notifyDeferred);
 
   /// Parse LNURL metadata for a zapper address.
-  Future<String> parseLnurl(String lnurl) =>
-      guard(() {
+  Future<String> parseLnurl(String lnurl) => guard(() {
         return RustLib.instance.api
             .crateFfiZapZapParseLnurlMetadata(lnurl: lnurl);
       }, notifyOnSuccess: false, onNotify: notifyDeferred);
@@ -128,8 +125,7 @@ class ZapService extends ChangeNotifier
 
   /// Pay a BOLT-11 invoice via the connected NWC provider. Returns the
   /// serialized pay_invoice response (payment preimage).
-  Future<String> sendPayment(String bolt11) =>
-      guard(() {
+  Future<String> sendPayment(String bolt11) => guard(() {
         return RustLib.instance.api.crateFfiZapZapSendPayment(bolt11: bolt11);
       }, notifyOnSuccess: false, onNotify: notifyDeferred);
 }

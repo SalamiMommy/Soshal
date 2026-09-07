@@ -197,40 +197,59 @@ impl RelayNode {
                 inbound.push((idx, payloads));
             }
         }
-        let mut new_count = 0usize;
+        // Frame + signature verification are pure CPU; batch them across all
+        // backends and run the Schnorr checks in parallel (each verify is a
+        // secp256k1 fixpoint ~0.1 ms). Dedup/queue/re-broadcast stay strictly
+        // sequential so `seen`/`recent`/`delivered` order is deterministic.
+        let mut jobs: Vec<(usize, MeshEnvelope)> = Vec::new();
         for (idx, payloads) in inbound {
             for payload in payloads {
                 let Some(env) = MeshEnvelope::from_bytes(&payload) else {
                     continue;
                 };
-                // Verify before dedup/delivery/re-broadcast: forged or
-                // garbage payloads die at the first relay hop.
-                if !valid_event_payload(&env.payload) {
-                    continue;
-                }
-                // Dedup on the payload digest, NOT the envelope's event_id
-                // header: the id claim is unverified at the relay layer, so
-                // keying on it lets a forged envelope reuse a legit event's
-                // id and suppress delivery/re-broadcast of the real event.
-                // Identical payloads still dedup once.
-                let digest = payload_digest(&env.payload);
-                if self.seen.contains(&digest) {
-                    continue;
-                }
-                self.note_seen(digest);
-                self.received += 1;
-                new_count += 1;
-                self.delivered.push_back(env.payload.clone());
-                while self.delivered.len() > DELIVERED_CAPACITY {
-                    self.delivered.pop_front();
-                }
-                self.recent.push_back(env.clone());
-                while self.recent.len() > RECENT_CAPACITY {
-                    self.recent.pop_front();
-                }
-                if let Some(next) = env.increment_hop() {
-                    self.re_broadcast(next, idx);
-                }
+                jobs.push((idx, env));
+            }
+        }
+        let verified: Vec<bool> = if jobs.len() >= 4 {
+            use rayon::prelude::*;
+            jobs.par_iter()
+                .map(|(_, env)| valid_event_payload(&env.payload))
+                .collect()
+        } else {
+            jobs.iter()
+                .map(|(_, env)| valid_event_payload(&env.payload))
+                .collect()
+        };
+
+        let mut new_count = 0usize;
+        for ((idx, env), ok) in jobs.into_iter().zip(verified) {
+            // Verify before dedup/delivery/re-broadcast: forged or garbage
+            // payloads die at the first relay hop.
+            if !ok {
+                continue;
+            }
+            // Dedup on the payload digest, NOT the envelope's event_id
+            // header: the id claim is unverified at the relay layer, so
+            // keying on it lets a forged envelope reuse a legit event's
+            // id and suppress delivery/re-broadcast of the real event.
+            // Identical payloads still dedup once.
+            let digest = payload_digest(&env.payload);
+            if self.seen.contains(&digest) {
+                continue;
+            }
+            self.note_seen(digest);
+            self.received += 1;
+            new_count += 1;
+            self.delivered.push_back(env.payload.clone());
+            while self.delivered.len() > DELIVERED_CAPACITY {
+                self.delivered.pop_front();
+            }
+            self.recent.push_back(env.clone());
+            while self.recent.len() > RECENT_CAPACITY {
+                self.recent.pop_front();
+            }
+            if let Some(next) = env.increment_hop() {
+                self.re_broadcast(next, idx);
             }
         }
         new_count

@@ -567,6 +567,9 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
       setState(() => _meshResult = 'derived pubkey: $pubkey');
     } catch (e) {
       snack.showSnackBar(SnackBar(content: SelectableText('signer probe: $e')));
+    } finally {
+      // Probe-only nsec must not linger in memory past the debug call.
+      _nsecController.clear();
     }
   }
 

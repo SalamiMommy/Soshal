@@ -307,8 +307,7 @@ class MessagingService extends ChangeNotifier
       }, onNotify: notifyDeferred, clearOnSuccess: false);
 
   /// Fetch all conversation partner pubkeys for the active account.
-  Future<List<String>> fetchConversations(String pubkey) =>
-      guard(() {
+  Future<List<String>> fetchConversations(String pubkey) => guard(() {
         return RustLib.instance.api
             .crateFfiMessagingMessagingFetchConversations(
           pubkey: pubkey,
@@ -360,8 +359,7 @@ class MessagingService extends ChangeNotifier
   /// Fetch a single ephemeral (burn DM) row by id, fresh from the store.
   /// Returns null when the row no longer exists.
   Future<EphemeralMedia?> ephemeralById(String id) => guard(() {
-        final json =
-            RustLib.instance.api.crateFfiEphemeralEphemeralGet(id: id);
+        final json = RustLib.instance.api.crateFfiEphemeralEphemeralGet(id: id);
         if (json.isEmpty) return null;
         return EphemeralMedia.fromJson(
           jsonDecode(json) as Map<String, dynamic>,
@@ -503,9 +501,8 @@ class IdentityService extends ChangeNotifier
           .crateFfiIdentityIdentityGetProfile(pubkey: pubkey);
       final profile =
           ProfileInfo.fromJson(jsonDecode(json) as Map<String, dynamic>);
-      _profiles[pubkey] = refresh
-          ? _mergeProfile(profile, _profiles[pubkey])
-          : profile;
+      _profiles[pubkey] =
+          refresh ? _mergeProfile(profile, _profiles[pubkey]) : profile;
 
       clearLastError();
       notifyDeferred();

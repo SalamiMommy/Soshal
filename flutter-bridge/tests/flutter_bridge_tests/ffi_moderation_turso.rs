@@ -66,69 +66,65 @@ mod ffi_tests {
     fn test_mute_unmute_roundtrip() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("moderation", "mute");
-        assert!(
-            moderation::moderation_mute_user("me_pk".to_string(), "target_pk".to_string()).is_ok()
-        );
-        assert!(moderation::moderation_get_muted("me_pk".to_string())
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        let target = "b".repeat(64);
+        signer::signer_lock().unwrap();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        assert!(moderation::moderation_mute_user(me.clone(), target.clone()).is_ok());
+        assert!(moderation::moderation_get_muted(me.clone())
             .unwrap()
-            .contains(&"target_pk".to_string()));
-        assert!(
-            moderation::moderation_is_restricted("me_pk".to_string(), "target_pk".to_string())
-                .unwrap()
-        );
-        assert!(
-            moderation::moderation_mute_user("me_pk".to_string(), "me_pk".to_string()).is_err()
-        );
-        assert!(
-            moderation::moderation_unmute_user("me_pk".to_string(), "target_pk".to_string())
-                .is_ok()
-        );
-        assert!(!moderation::moderation_get_muted("me_pk".to_string())
+            .contains(&target));
+        assert!(moderation::moderation_is_restricted(me.clone(), target.clone()).unwrap());
+        assert!(moderation::moderation_mute_user(me.clone(), me.clone()).is_err());
+        assert!(moderation::moderation_unmute_user(me.clone(), target.clone()).is_ok());
+        assert!(!moderation::moderation_get_muted(me.clone())
             .unwrap()
-            .contains(&"target_pk".to_string()));
+            .contains(&target));
+        signer::signer_lock().unwrap();
         crate::test_util::cleanup(&path);
     }
     #[test]
     fn test_block_unblock_roundtrip() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("moderation", "block");
-        crate::test_util::insert_user("me_pk");
-        crate::test_util::insert_user("target_pk");
-        assert!(
-            moderation::moderation_block_user("me_pk".to_string(), "target_pk".to_string()).is_ok()
-        );
-        assert!(moderation::moderation_get_blocked("me_pk".to_string())
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        let target = "b".repeat(64);
+        signer::signer_lock().unwrap();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        crate::test_util::insert_user(&me);
+        crate::test_util::insert_user(&target);
+        assert!(moderation::moderation_block_user(me.clone(), target.clone()).is_ok());
+        assert!(moderation::moderation_get_blocked(me.clone())
             .unwrap()
-            .contains(&"target_pk".to_string()));
-        assert!(
-            moderation::moderation_is_restricted("me_pk".to_string(), "target_pk".to_string())
-                .unwrap()
-        );
-        assert!(
-            moderation::moderation_block_user("me_pk".to_string(), "me_pk".to_string()).is_err()
-        );
-        assert!(
-            moderation::moderation_unblock_user("me_pk".to_string(), "target_pk".to_string())
-                .is_ok()
-        );
-        assert!(moderation::moderation_get_blocked("me_pk".to_string())
+            .contains(&target));
+        assert!(moderation::moderation_is_restricted(me.clone(), target.clone()).unwrap());
+        assert!(moderation::moderation_block_user(me.clone(), me.clone()).is_err());
+        assert!(moderation::moderation_unblock_user(me.clone(), target.clone()).is_ok());
+        assert!(moderation::moderation_get_blocked(me.clone())
             .unwrap()
             .is_empty());
+        signer::signer_lock().unwrap();
         crate::test_util::cleanup(&path);
     }
     #[test]
     fn test_report_roundtrip() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("moderation", "report");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        signer::signer_lock().unwrap();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         assert!(moderation::moderation_report_content(
-            "reporter_pk".to_string(),
+            me.clone(),
             "post".to_string(),
             "post_id_1".to_string(),
             "spam".to_string()
         )
         .unwrap());
         assert!(moderation::moderation_report_content(
-            "reporter_pk".to_string(),
+            me.clone(),
             "post".to_string(),
             "post_id_2".to_string(),
             "   ".to_string()
@@ -140,15 +136,13 @@ mod ffi_tests {
         )
         .unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["pubkey"], "reporter_pk");
+        assert_eq!(rows[0]["pubkey"], me.clone());
         assert_eq!(rows[0]["target_id"], "post_id_1");
         assert_eq!(rows[0]["reason"], "spam");
         // list_reports filters on target_pubkey, which report_content never
         // sets (content_type is dropped) -> stays empty, but no longer Err.
-        let listed: Vec<serde_json::Value> = serde_json::from_str(
-            &moderation::moderation_list_reports("reporter_pk".to_string(), 10).unwrap(),
-        )
-        .unwrap();
+        let listed: Vec<serde_json::Value> =
+            serde_json::from_str(&moderation::moderation_list_reports(me, 10).unwrap()).unwrap();
         assert!(listed.is_empty());
         let id = rows[0]["id"].as_str().unwrap().to_string();
         assert!(moderation::moderation_delete_report(id).unwrap());
@@ -157,6 +151,7 @@ mod ffi_tests {
         )
         .unwrap();
         assert!(gone.is_empty());
+        signer::signer_lock().unwrap();
         crate::test_util::cleanup(&path);
     }
     #[test]
@@ -200,7 +195,11 @@ mod ffi_tests {
     fn test_turso_configure_and_status() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("moderation", "turso");
-        let res = moderation::moderation_unmute_user("x".to_string(), "y".to_string());
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        signer::signer_lock().unwrap();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let res = moderation::moderation_unmute_user(me.clone(), "y".to_string());
         assert!(res.is_ok());
         let status = turso::db_turso_status().unwrap();
         assert!(status.contains(r#""configured":false"#));
@@ -211,6 +210,7 @@ mod ffi_tests {
         );
         let after = turso::db_turso_status().unwrap();
         assert!(after.contains(r#""configured":true"#));
+        signer::signer_lock().unwrap();
         crate::test_util::cleanup(&path);
     }
     #[test]

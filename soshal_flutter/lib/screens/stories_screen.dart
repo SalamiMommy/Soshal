@@ -130,9 +130,8 @@ class _StoriesScreenState extends State<StoriesScreen> {
                             if (path == null || !context.mounted) return;
                             setDialogState(() => uploading = true);
                             final hash = await uploadMediaBlob(
-                              (p) => context
-                                  .read<MediaService>()
-                                  .uploadMedia(p),
+                              (p) =>
+                                  context.read<MediaService>().uploadMedia(p),
                               path: path,
                               errorMessage: 'Bad upload manifest',
                             );

@@ -75,7 +75,10 @@ mod identity_gap_tests {
     fn blocked_users_roundtrip_via_moderation() {
         let _g = crate::test_util::lock();
         let db = crate::test_util::init_db("identity_gap", "blocks");
-        let me = "a".repeat(64);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        signer::signer_lock().unwrap();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let target = "b".repeat(64);
         crate::test_util::insert_user(&me);
         crate::test_util::insert_user(&target);
@@ -86,6 +89,7 @@ mod identity_gap_tests {
         assert_eq!(list, vec![target.clone()]);
         assert!(moderation::moderation_unblock_user(me.clone(), target.clone()).unwrap());
         assert!(!identity::identity_is_blocked(me, target).unwrap());
+        signer::signer_lock().unwrap();
         let _ = db;
     }
     #[test]
