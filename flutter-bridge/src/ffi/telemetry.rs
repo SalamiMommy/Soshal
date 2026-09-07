@@ -4,7 +4,8 @@
 
 use flutter_rust_bridge::frb;
 use soshal_telemetry_core::{RecordKind, Recorder};
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 static RECORDER: Mutex<Option<Recorder>> = Mutex::new(None);
@@ -15,12 +16,51 @@ fn lock() -> Result<std::sync::MutexGuard<'static, Option<Recorder>>, String> {
         .map_err(|_| "recorder mutex poisoned".to_string())
 }
 
+/// Validate a Dart-supplied telemetry path. The parent must canonicalize and
+/// live under an allowed root: the app DB directory (the sanctioned recorder
+/// home) or the system temp dir (dev/test fallback). Symlink/`..` escapes
+/// resolve elsewhere and are rejected, so a compromised Dart layer can't
+/// point the recorder at arbitrary files (covers `media.rs`'s anchoring).
+fn validate_telemetry_path(path: &str) -> Result<PathBuf, String> {
+    if path.is_empty() {
+        return Err("telemetry path cannot be empty".to_string());
+    }
+    let p = Path::new(path);
+    let parent = p
+        .parent()
+        .ok_or_else(|| "telemetry path has no parent".to_string())?;
+    let canon_parent = fs::canonicalize(parent).map_err(|e| format!("telemetry dir: {e}"))?;
+    let mut allowed: Vec<PathBuf> = Vec::new();
+    let tmp = std::env::temp_dir();
+    match fs::canonicalize(&tmp) {
+        Ok(c) => allowed.push(c),
+        Err(_) => allowed.push(tmp),
+    }
+    if let Ok(db) = super::db::db_path() {
+        if let Some(db_parent) = Path::new(&db).parent() {
+            if let Ok(c) = fs::canonicalize(db_parent) {
+                allowed.push(c);
+            }
+        }
+    }
+    if !allowed.iter().any(|root| canon_parent.starts_with(root)) {
+        return Err(format!(
+            "telemetry path must be inside the app docs dir or temp dir, got {path}"
+        ));
+    }
+    Ok(canon_parent.join(
+        p.file_name()
+            .ok_or_else(|| "telemetry path has no file name".to_string())?,
+    ))
+}
+
 /// Open (or create) the flight recorder at `path` with `capacity_mb` MiB of
 /// ring space. Safe to call repeatedly; reopens the same file.
 #[frb(sync, serialize)]
 pub fn telemetry_init(path: String, capacity_mb: u32) -> Result<(), String> {
     let capacity = (capacity_mb.clamp(1, 4096) as usize) * 1024 * 1024;
-    let recorder = Recorder::init(Path::new(&path), capacity)?;
+    let anchored = validate_telemetry_path(&path)?;
+    let recorder = Recorder::init(&anchored, capacity)?;
     *lock()? = Some(recorder);
     Ok(())
 }
@@ -244,6 +284,17 @@ mod tests {
         let dump = telemetry_dump_encrypted().unwrap();
         assert!(!dump.is_empty());
         assert!(dump.len() > 16);
+    }
+
+    #[test]
+    fn test_path_rejects_escape() {
+        assert!(validate_telemetry_path("/etc/evil-telemetry.bin").is_err());
+        assert!(validate_telemetry_path("").is_err());
+        let escape = format!(
+            "{}/../../etc/evil.bin",
+            std::env::temp_dir().to_string_lossy()
+        );
+        assert!(validate_telemetry_path(&escape).is_err());
     }
 
     #[test]

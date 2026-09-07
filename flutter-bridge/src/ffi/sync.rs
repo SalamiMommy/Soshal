@@ -164,8 +164,7 @@ pub async fn sync_start(relays_json: String) -> Result<String, String> {
         *guard = Some(stop.clone());
     }
     let exit_stop = stop.clone();
-    let unseal: &'static (dyn Fn(&str) -> Result<String, String> + Sync) =
-        Box::leak(Box::new(outbox_unseal_fn()));
+    let unseal = outbox_unseal_fn();
     spawn_engine_sealed(
         SyncConfig {
             db_path,

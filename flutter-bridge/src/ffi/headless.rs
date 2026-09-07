@@ -110,8 +110,7 @@ pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
         relays,
         socks_proxy: None,
     };
-    let unseal: &'static (dyn Fn(&str) -> Result<String, String> + Sync) =
-        Box::leak(Box::new(super::sync::outbox_unseal_fn()));
+    let unseal = super::sync::outbox_unseal_fn();
     let _ = client.connect().await; // no-op when already connected
     let handle = tokio::spawn(engine_loop_with_client_sealed(
         cfg,

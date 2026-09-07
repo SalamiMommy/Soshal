@@ -89,6 +89,9 @@ pub struct HttpResponseDto {
 static HTTP3_CLIENT: OnceLock<soshal_network_core::http3_client::Http3Client> = OnceLock::new();
 
 /// Perform a network request via the HTTP/3 & QUIC network stack.
+/// Defense-in-depth: the SSRF policy runs here AND inside `Http3Client::request`
+/// (private/loopback/link-local/DNS-rebinding hosts rejected), so a hijacked
+/// Dart layer can't turn this surface into an internal-network egress.
 #[frb(serialize)]
 pub async fn network_fetch_http3(
     url: String,
@@ -96,6 +99,12 @@ pub async fn network_fetch_http3(
     headers_json: String,
     body: Option<Vec<u8>>,
 ) -> Result<HttpResponseDto, String> {
+    if !soshal_common_core::url::is_valid_media_url(&url) {
+        return Err(format!(
+            "HTTP request blocked: URL does not pass SSRF policy: {url}"
+        ))
+        .into();
+    }
     let headers: std::collections::HashMap<String, String> =
         serde_json::from_str(&headers_json).map_err(|e| format!("invalid headers json: {e}"))?;
 

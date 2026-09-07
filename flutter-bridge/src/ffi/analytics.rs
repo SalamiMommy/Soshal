@@ -50,14 +50,24 @@ pub async fn analytics_compute_stats() -> Result<String, String> {
 
 static ENGINE: OnceLock<soshal_analytics_core::slm::BurnSlmEngine> = OnceLock::new();
 
+/// Get-or-init the Burn SLM engine inside a panic guard. Init has no in-band
+/// Result; a panicking GPU backend init must not cross the frb async boundary
+/// (release profile aborts, killing the whole process).
+fn engine() -> Result<&'static soshal_analytics_core::slm::BurnSlmEngine, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ENGINE.get_or_init(|| {
+            soshal_analytics_core::slm::BurnSlmEngine::new(
+                soshal_analytics_core::slm::SlmBackend::WebGpu,
+            )
+        })
+    }))
+    .map_err(|_| "SLM engine init panicked (hardware backend unavailable)".to_string())
+}
+
 /// Generate dense vector embedding using hardware-accelerated Burn SLM engine.
 #[frb(serialize)]
 pub async fn analytics_slm_generate_embedding(text: String) -> Result<String, String> {
-    let engine = ENGINE.get_or_init(|| {
-        soshal_analytics_core::slm::BurnSlmEngine::new(
-            soshal_analytics_core::slm::SlmBackend::WebGpu,
-        )
-    });
+    let engine = engine()?;
     let embedding = engine.generate_embedding(&text)?;
     serde_json::to_string(&embedding)
         .map_err(|e| format!("json encode error: {e}"))
@@ -67,11 +77,7 @@ pub async fn analytics_slm_generate_embedding(text: String) -> Result<String, St
 /// Classify post text for sentiment & automated spam detection locally via Burn SLM.
 #[frb(serialize)]
 pub async fn analytics_slm_classify_post(text: String) -> Result<String, String> {
-    let engine = ENGINE.get_or_init(|| {
-        soshal_analytics_core::slm::BurnSlmEngine::new(
-            soshal_analytics_core::slm::SlmBackend::WebGpu,
-        )
-    });
+    let engine = engine()?;
     let classification = engine.classify_post(&text)?;
     serde_json::to_string(&classification)
         .map_err(|e| format!("json encode error: {e}"))

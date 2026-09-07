@@ -255,7 +255,7 @@ async fn engine_loop(
 }
 
 /// Spawn the engine thread with an at-rest outbox unseal closure. The closure
-/// is captured on the engine thread and invoked from the async outbox replay
+/// is owned by the engine thread and invoked from the async outbox replay
 /// path, so it must be `'static + Send + Sync` and must not block on the
 /// bridge runtime (it runs directly on the engine's tokio worker).
 pub fn spawn_engine_sealed(
@@ -263,7 +263,7 @@ pub fn spawn_engine_sealed(
     tx: tokio::sync::mpsc::Sender<SyncUpdate>,
     stop: Arc<AtomicBool>,
     on_exit: impl FnOnce() + Send + 'static,
-    unseal: &'static (dyn Fn(&str) -> Result<String, String> + Sync),
+    unseal: impl Fn(&str) -> Result<String, String> + Send + Sync + 'static,
 ) -> std::thread::JoinHandle<()> {
     use rustls::crypto::ring;
     let _ = ring::default_provider().install_default();
@@ -294,7 +294,7 @@ async fn engine_loop_sealed(
     cfg: SyncConfig,
     tx: tokio::sync::mpsc::Sender<SyncUpdate>,
     stop: Arc<AtomicBool>,
-    unseal: &(dyn Fn(&str) -> Result<String, String> + Sync + 'static),
+    unseal: impl Fn(&str) -> Result<String, String> + Send + Sync + 'static,
 ) -> Result<(), String> {
     let client = build_client(&cfg).await?;
     engine_loop_with_client_sealed(cfg, tx, stop, client, unseal).await
@@ -309,7 +309,7 @@ pub async fn engine_loop_with_client(
     stop: Arc<AtomicBool>,
     client: Client,
 ) -> Result<(), String> {
-    engine_loop_with_client_sealed(cfg, tx, stop, client, &|p: &str| Ok(p.to_string())).await
+    engine_loop_with_client_sealed(cfg, tx, stop, client, |p: &str| Ok(p.to_string())).await
 }
 
 /// `engine_loop_with_client` with the at-rest outbox unseal closure. The
@@ -322,7 +322,7 @@ pub async fn engine_loop_with_client_sealed(
     tx: tokio::sync::mpsc::Sender<SyncUpdate>,
     stop: Arc<AtomicBool>,
     client: Client,
-    unseal: &(dyn Fn(&str) -> Result<String, String> + Sync + 'static),
+    unseal: impl Fn(&str) -> Result<String, String> + Send + Sync + 'static,
 ) -> Result<(), String> {
     let db = Database::open(&cfg.db_path).map_err(|e| format!("open db: {e}"))?;
 
@@ -377,7 +377,7 @@ pub async fn engine_loop_with_client_sealed(
     }
 
     // Drain anything queued while the engine was down.
-    replay_outbox_sealed(&db, &client, unseal).await;
+    replay_outbox_sealed(&db, &client, &unseal).await;
 
     let mut last_flush = Instant::now();
     let mut idle_ticks: u32 = 0;
@@ -427,7 +427,7 @@ pub async fn engine_loop_with_client_sealed(
             for (key, ts) in &cursors {
                 ingest::set_watermark(&db, key, *ts);
             }
-            replay_outbox_sealed(&db, &client, unseal).await;
+            replay_outbox_sealed(&db, &client, &unseal).await;
             last_flush = Instant::now();
         }
     }
