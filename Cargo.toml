@@ -15,6 +15,7 @@ members = [
     "feed-core",
     "groups-core",
     "messaging-core",
+    "mesh-core",
     "social-core",
     "events-core",
     "marketplace-core",

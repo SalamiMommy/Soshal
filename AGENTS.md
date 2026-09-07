@@ -33,7 +33,9 @@ Soshal/
 │       ├── signer.rs          #   in-process signer (nsec via FFI at init; OS keychain
 │       │                      #   ops exchange pubkeys only — never key bytes)
 │       └── frb_generated.rs   # codegen output — do NOT edit by hand
-├── common-core/ … streaming-core/  # 30 *-core crates, pure Rust, tauri-free
+├── common-core/ … mesh-core/ … streaming-core/  # 32 *-core crates, pure Rust, tauri-free
+│       #   mesh-core = exotic/mesh transports (freenet, i2p, reticulum, ble,
+│       #   wifi_direct, pqc_link, p2p_frame) split out of network-core
 ├── scripts/
 │   ├── check-core-compliance.sh    # core-crates purity audit (CI)
 │   └── build-reticulum.sh          # builds rnsd for mesh networking
@@ -41,7 +43,7 @@ Soshal/
 │   ├── android/build.sh            # 3-ABI bridge + flutter build apk [--release]
 │   ├── linux/build.sh              # host bridge + flutter build linux --debug (terminal output)
 │   └── README.md
-└── Cargo.toml               # Workspace root, 33 members (flutter-bridge + 31 cores + test-util)
+└── Cargo.toml               # Workspace root, 34 members (flutter-bridge + 32 cores + test-util)
 ```
 
 ## Commands
@@ -127,6 +129,14 @@ media landed. FFI: `p2p_quic_server_start/port/stop`, `p2p_quic_fetch_chunk`,
 `quic_port` (`mdns.rs`), `P2pPeerDto.quicPort` surfaces it in Dart, and
 `swarmDownload(quicPorts:)` (parallel `Vec<Option<u16>>`) falls back to TCP per
 peer when null (`swarm.rs::fetch_from_peer`).
+
+**Mesh transports** (mesh-core, split from network-core): freenet (websocket/
+contract/opennet/cache_router), i2p_sam, reticulum (`reticulum/`), ble,
+wifi_direct, plus the shared pqc_link (hybrid PQC double-ratchet link crypto)
+and p2p_frame (CRC32 frame kernel) primitives. `network-core` re-exports these
+modules (`pub use soshal_mesh_core::{…}`) so `network_core::<mesh_module>`
+paths still resolve for flutter-bridge/relay-core/sync-core callers; only
+`multi_bearer.rs` crosses the boundary (into `ble`/`wifi_direct`).
 
 **Live media (Android, Rust FFI codecs):** capture + playback run through
 Rust — the legacy Kotlin `MethodChannel` codecs (`H264Codec.kt`/`AudioCodec.kt`,

@@ -144,7 +144,7 @@ impl ReticulumNode {
                         // Reject non-private sources early: prevents
                         // amplification/D.o.S from spoofed public addrs
                         // being inserted into peers and re-broadcast.
-                        if !crate::lan::is_private_ip(src_addr.ip()) {
+                        if !soshal_common_core::url::is_private_ip_str(&src_addr.ip().to_string()) {
                             continue;
                         }
                         if let Ok(packet_data) = super::slip::slip_decode(&buf[..len]) {

@@ -2,11 +2,11 @@
 //! Coordinates low-power BLE state-root broadcasts, Wi-Fi Direct socket handshakes,
 //! FastCDC chunking, S/Kademlia DHT routing, EigenTrust reputation, and PlumTree gossip.
 
-use crate::ble;
 use crate::eigentrust::EigenTrustEngine;
 use crate::plumtree::{PlumTreeMessage, PlumTreeNode};
 use crate::skademlia::{NodeId, SkademliaRoutingTable};
-use crate::wifi_direct::{WifiDirectManager, WifiP2pStatus};
+use soshal_mesh_core::ble;
+use soshal_mesh_core::wifi_direct::{WifiDirectManager, WifiP2pStatus};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 

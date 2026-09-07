@@ -3994,6 +3994,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "soshal-mesh-core"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "blake3",
+ "futures-util",
+ "hex",
+ "ring",
+ "rustls 0.23.43",
+ "serde",
+ "serde_json",
+ "sha2",
+ "soshal-common-core",
+ "soshal-content-core",
+ "soshal-crypto-core",
+ "soshal-media-core",
+ "soshal-pqc-core",
+ "soshal-test-util",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "tokio-tungstenite 0.21.0",
+ "tungstenite 0.21.0",
+ "url",
+ "webpki-roots 0.26.11",
+]
+
+[[package]]
 name = "soshal-messaging-core"
 version = "0.1.0"
 dependencies = [
@@ -4052,6 +4079,7 @@ dependencies = [
  "soshal-content-core",
  "soshal-crypto-core",
  "soshal-media-core",
+ "soshal-mesh-core",
  "soshal-pqc-core",
  "soshal-test-util",
  "tokio",
