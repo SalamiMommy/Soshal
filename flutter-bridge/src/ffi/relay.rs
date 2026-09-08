@@ -77,7 +77,11 @@ pub fn relay_node_start(pubkey: String) -> Result<String, String> {
     let mode = super::network::transport_mode();
     let mut node = RelayNode::new_with_transport(mode, &pubkey);
     if node.running_backends().is_empty() {
-        return Err("mesh relay needs a mesh transport mode (not nostr)".to_string());
+        return Err(
+            "mesh relay needs a mesh transport mode (not nostr) — switch the \
+             transport to freenet, reticulum, or i2p first"
+                .to_string(),
+        );
     }
     node.start()
         .map_err(|e| format!("mesh relay start failed: {e}"))?;

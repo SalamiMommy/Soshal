@@ -20,14 +20,32 @@ const FREENET_API_PORT: u16 = 7509;
 
 const WATCHDOG_INTERVAL_SECS: u64 = 30;
 
+/// Consecutive failed respawns per daemon before the watchdog gives up. A
+/// daemon that exits instantly on every spawn (wrong conf, missing shared
+/// libs, missing interpreter) must not churn the respawn loop forever.
+const MAX_RESPAWN_FAILURES: u32 = 5;
+
 static CHILDREN: LazyLock<Mutex<HashMap<&'static str, Child>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-type SpawnerFn = Box<dyn Fn() -> bool + Send>;
+/// Outcome of a spawner attempt. `Running` means the daemon is already up
+/// (e.g. an existing local node reused via its port) and nothing was spawned —
+/// the watchdog must not report it as a respawn.
+#[derive(Clone, Copy, PartialEq)]
+enum SpawnOutcome {
+    Running,
+    Spawned,
+    Failed,
+}
+
+type SpawnerFn = Box<dyn Fn() -> SpawnOutcome + Send>;
 
 /// Respawn closures per daemon; re-invoked by the watchdog when a child has
 /// exited (e.g. OOM kill) while the foreground service is active.
 static SPAWNERS: LazyLock<Mutex<HashMap<&'static str, SpawnerFn>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static RESPAWN_FAILURES: LazyLock<Mutex<HashMap<&'static str, u32>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 static WATCHDOG_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -257,8 +275,14 @@ fn spawn_all() -> Result<bool, String> {
 
     let i2pd_data = files.join("i2pd-data");
     let i2pd_conf = i2pd_data.join("i2pd.conf");
+    // i2pd >= 2.5x parses config keys as dotted CLI-style options: logging
+    // lives at the top level (a `[general]` wrapper turns `log` into the
+    // unknown option `general.log` and kills the daemon on startup), and the
+    // proxy services use their section names (`socksproxy`/`httpproxy`, not
+    // `proxy`/`http`). `[http]` alone configures the control panel, not an
+    // HTTP proxy on 4444.
     let conf = format!(
-        "[general]\nlog = file\nlogfile = {}\n[sam]\nenabled = true\n[proxy]\nenabled = true\nport = 4447\n[http]\nenabled = true\nport = 4444\n",
+        "log = file\nlogfile = {}\n[sam]\nenabled = true\nport = 7656\n[socksproxy]\nenabled = true\nport = 4447\n[httpproxy]\nenabled = true\nport = 4444\n",
         i2pd_data.join("i2pd.log").display()
     );
     if write_file(&i2pd_conf, conf.as_bytes()).is_err() {
@@ -269,12 +293,15 @@ fn spawn_all() -> Result<bool, String> {
         // Reuse an already-running i2pd (e.g. enabled systemd service) whose
         // SAM port is live; spawning our own would fail to bind 7656.
         if port_open(I2PD_SAM_PORT) {
-            return true;
+            return SpawnOutcome::Running;
         }
         let mut cmd = Command::new(dir_i2pd.join("i2pd"));
         cmd.arg(format!("--datadir={}", i2pd_data.display()))
             .arg(format!("--conf={}", i2pd_conf.display()));
-        spawn("i2pd", cmd, "i2pd.stdout.log", &i2pd_data)
+        match spawn("i2pd", cmd, "i2pd.stdout.log", &i2pd_data) {
+            true => SpawnOutcome::Spawned,
+            false => SpawnOutcome::Failed,
+        }
     });
 
     let freenet_data = files.join("freenet-data");
@@ -283,11 +310,14 @@ fn spawn_all() -> Result<bool, String> {
         // Reuse the already-running local node (system/service instance bound
         // to 7509) instead of spawning a second that would fail to bind.
         if port_open(FREENET_API_PORT) {
-            return true;
+            return SpawnOutcome::Running;
         }
         let mut cmd = Command::new(dir_freenet.join("freenet"));
         cmd.current_dir(&freenet_data).arg("network");
-        spawn("freenet", cmd, "freenet.log", &freenet_data)
+        match spawn("freenet", cmd, "freenet.log", &freenet_data) {
+            true => SpawnOutcome::Spawned,
+            false => SpawnOutcome::Failed,
+        }
     });
 
     let rnsd_data = files.join("reticulum-data");
@@ -300,23 +330,33 @@ fn spawn_all() -> Result<bool, String> {
             // runtime inside the app process (RnsdRunner).
             let _ = std::fs::create_dir_all(&rnsd_data);
             let dir_str = rnsd_data.to_string_lossy().into_owned();
-            crate::platform::rnsd_start(&dir_str).unwrap_or(false)
+            match crate::platform::rnsd_start(&dir_str) {
+                Ok(true) => SpawnOutcome::Spawned,
+                Ok(false) => SpawnOutcome::Failed,
+                Err(_) => SpawnOutcome::Failed,
+            }
         }
         #[cfg(not(target_os = "android"))]
         {
             let mut cmd = Command::new(dir_rnsd.join("rnsd"));
             cmd.current_dir(&rnsd_data);
-            spawn("rnsd", cmd, "rnsd.log", &rnsd_data)
+            match spawn("rnsd", cmd, "rnsd.log", &rnsd_data) {
+                true => SpawnOutcome::Spawned,
+                false => SpawnOutcome::Failed,
+            }
         }
     });
 
     let mut all_ok = true;
     for name in DAEMONS {
-        let spawned = {
+        let outcome = {
             let spawners = crate::ffi::util::lock(&SPAWNERS);
-            spawners.get(name).map(|s| s()).unwrap_or(false)
+            spawners
+                .get(name)
+                .map(|s| s())
+                .unwrap_or(SpawnOutcome::Failed)
         };
-        if !spawned {
+        if outcome == SpawnOutcome::Failed {
             all_ok = false;
         }
     }
@@ -325,7 +365,7 @@ fn spawn_all() -> Result<bool, String> {
 
 fn register_spawner<F>(name: &'static str, f: F)
 where
-    F: Fn() -> bool + Send + 'static,
+    F: Fn() -> SpawnOutcome + Send + 'static,
 {
     crate::ffi::util::lock(&SPAWNERS).insert(name, Box::new(f));
 }
@@ -346,16 +386,61 @@ fn watchdog_loop() {
             if is_running(name) || !is_real_binary(name) {
                 continue;
             }
-            let spawned = {
+            if crate::ffi::util::lock(&RESPAWN_FAILURES)
+                .get(name)
+                .copied()
+                .unwrap_or(0)
+                >= MAX_RESPAWN_FAILURES
+            {
+                continue;
+            }
+            let outcome = {
                 let spawners = crate::ffi::util::lock(&SPAWNERS);
                 if WATCHDOG_STOP.load(Ordering::Relaxed) {
                     drop(spawners);
                     break;
                 }
-                spawners.get(name).map(|s| s()).unwrap_or(false)
+                spawners
+                    .get(name)
+                    .map(|s| s())
+                    .unwrap_or(SpawnOutcome::Failed)
             };
-            if spawned {
-                eprintln!("daemon watchdog: respawned {name}");
+            match outcome {
+                SpawnOutcome::Spawned => {
+                    // Grace window: a process that execs but exits immediately
+                    // (bad binary, missing runtime) still made spawn() succeed,
+                    // so verify it actually came up before counting the
+                    // respawn as a win.
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    if is_running(name) || !is_real_binary(name) {
+                        crate::ffi::util::lock(&RESPAWN_FAILURES).remove(name);
+                        eprintln!("daemon watchdog: respawned {name}");
+                    } else {
+                        // Counts toward MAX_RESPAWN_FAILURES below.
+                        let mut failures = crate::ffi::util::lock(&RESPAWN_FAILURES);
+                        let count = failures.entry(name).or_insert(0);
+                        *count += 1;
+                        if *count == MAX_RESPAWN_FAILURES {
+                            eprintln!(
+                                "daemon watchdog: giving up on {name} after {count} failed respawns"
+                            );
+                        }
+                    }
+                }
+                SpawnOutcome::Running => {
+                    // Already-up daemon (port reuse) — not a respawn; log nothing.
+                    crate::ffi::util::lock(&RESPAWN_FAILURES).remove(name);
+                }
+                SpawnOutcome::Failed => {
+                    let mut failures = crate::ffi::util::lock(&RESPAWN_FAILURES);
+                    let count = failures.entry(name).or_insert(0);
+                    *count += 1;
+                    if *count == MAX_RESPAWN_FAILURES {
+                        eprintln!(
+                            "daemon watchdog: giving up on {name} after {count} failed respawns"
+                        );
+                    }
+                }
             }
         }
     }

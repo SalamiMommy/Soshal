@@ -41,7 +41,7 @@ class MinisService extends ChangeNotifier
       }, notifyOnSuccess: false, notifyOnError: false);
 
   /// Saved minis from the local `saved_content` store, newest saved first.
-  Future<List<MiniItem>> fetchSavedMinis() => guard(() {
+  Future<List<MiniItem>> fetchSavedMinis() => guard(() async {
         final json = RustLib.instance.api.crateFfiMinisMinisSaved();
         final decoded = jsonDecode(json) as List<dynamic>;
         final list = List<MiniItem>.generate(

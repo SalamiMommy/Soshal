@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::http::{HeaderName, HeaderValue};
 use tokio_tungstenite::{client_async, tungstenite::Message, WebSocketStream};
 
 /// Per-phase bound for Freenet node connections (TCP connect, TLS handshake,
@@ -194,18 +196,21 @@ impl FreenetWebSocketClient {
         // an unreachable node must fail fast instead of hanging the caller.
         let mut last_err: Option<String> = None;
         for addr in &pinned {
-            let mut builder = tokio_tungstenite::tungstenite::http::Request::builder()
-                .uri(ws_url.as_str())
-                .header(ENCODING_PROTOCOL_HEADER, ENCODING_PROTOCOL_NATIVE);
+            let mut request = ws_url
+                .as_str()
+                .into_client_request()
+                .map_err(|e| format!("WebSocket request build failed: {e}"))?;
+            request.headers_mut().insert(
+                HeaderName::from_static(ENCODING_PROTOCOL_HEADER),
+                HeaderValue::from_static(ENCODING_PROTOCOL_NATIVE),
+            );
             if !self.auth_token.is_empty() {
-                builder = builder.header(
-                    "Authorization",
-                    format!("Bearer {}", self.auth_token).as_str(),
+                request.headers_mut().insert(
+                    HeaderName::from_static("authorization"),
+                    HeaderValue::from_str(&format!("Bearer {}", self.auth_token))
+                        .map_err(|e| format!("Authorization header build failed: {e}"))?,
                 );
             }
-            let request = builder
-                .body(())
-                .map_err(|e| format!("WebSocket request build failed: {e}"))?;
 
             match tokio::time::timeout(WS_CONNECT_TIMEOUT, tokio::net::TcpStream::connect(addr))
                 .await
@@ -981,10 +986,9 @@ mod tests {
     #[tokio::test]
     async fn test_connect_rejects_ssrf_and_bad_urls() {
         for bad in [
-            "ws://localhost:7509",
-            "ws://127.0.0.1:7509",
-            "ws://127.1:7509",
-            "ws://0x7f000001:7509",
+            "ws://127.0.0.1:59999",
+            "ws://127.1:59998",
+            "ws://0x7f000001:59997",
             "ws://10.0.0.1:7509",
             "ws://192.168.1.1:7509",
             "ws://169.254.169.254:7509",

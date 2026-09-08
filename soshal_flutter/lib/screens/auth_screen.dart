@@ -117,6 +117,36 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
+  /// Recovery-phrase import is the fallback when keychain unlock is disabled
+  /// or has no stored key for the account. Route the existing account to the
+  /// import screen instead of leaving the user on a dead-end snackbar.
+  void _offerRecoveryImport() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Import recovery phrase'),
+        content: const SelectableText(
+          'Keychain unlock is not available for this account. Importing its '
+          'recovery phrase signs back in.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              setState(() => _currentStep = 3);
+            },
+            child: const Text('Import phrase'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Unlock an account that already has a keychain entry and make it active.
   /// Falls back to import (recovery phrase) when no key is stored or when
   /// keychain unlock is disabled in settings.
@@ -130,32 +160,14 @@ class _AuthScreenState extends State<AuthScreen> {
             'true';
     try {
       if (!pinUser && !keychainEnabled) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: SelectableText(
-                'Keychain unlock is disabled — import the account\'s recovery '
-                'phrase to continue.',
-              ),
-            ),
-          );
-        }
+        _offerRecoveryImport();
         return;
       }
       var unlocked = false;
       if (!pinUser) {
         unlocked = await signer.unlockFromKeyring(account.pubkey);
         if (!unlocked) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: SelectableText(
-                  'No stored key for this account — import its recovery phrase '
-                  'to recover.',
-                ),
-              ),
-            );
-          }
+          _offerRecoveryImport();
           return;
         }
       }
