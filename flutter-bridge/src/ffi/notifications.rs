@@ -53,21 +53,41 @@ fn row_to_item(
 
 fn user_names(
     db: &Database,
-    pubkeys: &[String],
+    pubkeys: &[&str],
 ) -> Result<std::collections::HashMap<String, (String, String)>, DbError> {
     if pubkeys.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
     let conn = db.conn()?;
-    let mut sql = String::from("SELECT pubkey, name, picture FROM users WHERE pubkey IN (");
+    if pubkeys.len() == 1 {
+        let rows = soshal_db_core::query::query(
+            &conn,
+            "SELECT pubkey, name, picture FROM users WHERE pubkey = ?1",
+            libsql::params![pubkeys[0]],
+            |r| {
+                let pk: String = r.get(0)?;
+                let name: Option<String> = r.get(1)?;
+                let pic: Option<String> = r.get(2)?;
+                Ok((pk, name.unwrap_or_default(), pic.unwrap_or_default()))
+            },
+        )?;
+        let mut map = std::collections::HashMap::with_capacity(rows.len());
+        for (pk, name, pic) in rows {
+            map.insert(pk, (name, pic));
+        }
+        return Ok(map);
+    }
+    use std::fmt::Write;
+    let mut sql = String::with_capacity(60 + pubkeys.len() * 4);
+    sql.push_str("SELECT pubkey, name, picture FROM users WHERE pubkey IN (");
     for i in 0..pubkeys.len() {
         if i > 0 {
             sql.push(',');
         }
-        sql.push_str(&format!("?{}", i + 1));
+        let _ = write!(sql, "?{}", i + 1);
     }
     sql.push(')');
-    let params = libsql::params_from_iter(pubkeys.iter().map(|p| p.as_str()));
+    let params = libsql::params_from_iter(pubkeys.iter().copied());
     let rows = soshal_db_core::query::query(&conn, &sql, params, |r| {
         let pk: String = r.get(0)?;
         let name: Option<String> = r.get(1)?;
@@ -92,13 +112,13 @@ fn require_db_rows(
             Some(t) => repo.get_unread_filtered(pubkey, t, limit)?,
             None => repo.get_unread(pubkey, limit)?,
         };
-        let mut from_pks_set = std::collections::HashSet::new();
+        let mut from_pks_set = std::collections::HashSet::with_capacity(rows.len());
         for r in &rows {
-            if let Some(pk) = &r.from_pubkey {
-                from_pks_set.insert(pk.clone());
+            if let Some(pk) = r.from_pubkey.as_deref() {
+                from_pks_set.insert(pk);
             }
         }
-        let from_pks: Vec<String> = from_pks_set.into_iter().collect();
+        let from_pks: Vec<&str> = from_pks_set.into_iter().collect();
         let users = user_names(db, &from_pks)?;
         Ok(rows.into_iter().map(|r| row_to_item(r, &users)).collect())
     })
@@ -141,13 +161,13 @@ pub fn notifications_fetch(user_pubkey: String, limit: i32, offset: i32) -> Resu
                 })
             },
         )?;
-        let mut from_pks_set = std::collections::HashSet::new();
+        let mut from_pks_set = std::collections::HashSet::with_capacity(rows.len());
         for r in &rows {
-            if let Some(pk) = &r.from_pubkey {
-                from_pks_set.insert(pk.clone());
+            if let Some(pk) = r.from_pubkey.as_deref() {
+                from_pks_set.insert(pk);
             }
         }
-        let from_pks: Vec<String> = from_pks_set.into_iter().collect();
+        let from_pks: Vec<&str> = from_pks_set.into_iter().collect();
         let users = user_names(db, &from_pks)?;
         Ok(rows
             .into_iter()
@@ -252,16 +272,21 @@ pub fn notifications_unignore_thread(
 /// List all ignore rows for the Ignored List dashboard.
 #[frb(sync, serialize)]
 pub fn notifications_list_ignored(user_pubkey: String) -> Result<String, String> {
+    #[derive(Serialize)]
+    struct IgnoredRow<'a> {
+        kind: &'a str,
+        from_pubkey: &'a str,
+        event_id: &'a str,
+        created_at: i64,
+    }
     let rows = super::db::with_db_result(|db| IgnoredNotificationRepo::new(db).list(&user_pubkey))?;
-    let items: Vec<serde_json::Value> = rows
-        .into_iter()
-        .map(|(kind, from_pubkey, event_id, created_at)| {
-            serde_json::json!({
-                "kind": kind,
-                "from_pubkey": from_pubkey,
-                "event_id": event_id,
-                "created_at": created_at,
-            })
+    let items: Vec<IgnoredRow> = rows
+        .iter()
+        .map(|(kind, from_pubkey, event_id, created_at)| IgnoredRow {
+            kind,
+            from_pubkey,
+            event_id,
+            created_at: *created_at,
         })
         .collect();
     super::util::json_ok(items)
@@ -289,12 +314,17 @@ pub fn notifications_is_ignored(
 /// Get unread count.
 #[frb(sync, serialize)]
 pub fn notifications_get_unread_count(user_pubkey: String) -> Result<i32, String> {
-    let rows = super::db::db_query_json(
-        "SELECT COUNT(*) AS c FROM notifications WHERE pubkey = ?1 AND is_read = 0",
-        &[user_pubkey],
-    )?;
-    let count = rows.first().and_then(|r| r["c"].as_i64()).unwrap_or(0);
-    Ok(count as i32).into()
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let count: i64 = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT COUNT(*) FROM notifications WHERE pubkey = ?1 AND is_read = 0",
+            libsql::params![user_pubkey.as_str()],
+            |r| r.get(0),
+        )?
+        .unwrap_or(0);
+        Ok(count as i32)
+    })
 }
 
 /// Fetch notifications by type.

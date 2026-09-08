@@ -40,11 +40,10 @@ pub fn count_mutual(contacts_a: &[String], contacts_b: &[String]) -> usize {
     for s in small {
         set_small.insert(s.as_str());
     }
-    let mut set_large = HashSet::with_capacity(large.len());
-    for l in large {
-        set_large.insert(l.as_str());
-    }
-    set_small.intersection(&set_large).count()
+    large
+        .iter()
+        .filter(|l| set_small.contains(l.as_str()))
+        .count()
 }
 
 pub fn compute_distance(

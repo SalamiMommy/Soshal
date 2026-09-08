@@ -1,3 +1,15 @@
+use base64::Engine;
+
+pub fn base64url_encode(bytes: &[u8]) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+pub fn base64url_decode(s: &str) -> Option<Vec<u8>> {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(s.as_bytes())
+        .ok()
+}
+
 pub fn to_base64url(b64: &str) -> String {
     let mut out = String::with_capacity(b64.len());
     for b in b64.bytes() {

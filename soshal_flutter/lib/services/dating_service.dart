@@ -471,7 +471,7 @@ class DatingCard {
       location: json.strOf('location'),
       gender: json.strOf('gender'),
       seeking: json.strOf('seeking'),
-      height: (json['height'] as num?)?.toDouble() ?? 0,
+      height: json.doubleOf('height'),
       bodyType: json.strOf('body_type'),
       smoking: json.strOf('smoking'),
       drinking: json.strOf('drinking'),
@@ -479,26 +479,17 @@ class DatingCard {
       politics: json.strOf('politics'),
       ethnicity: json.strOf('ethnicity'),
       education: json.strOf('education'),
-      language: (json['language'] as List<dynamic>? ?? [])
-          .map((e) => e.toString())
-          .toList(),
-      maxDistanceKm: (json['max_distance_km'] as num?)?.toDouble() ?? 0,
+      language: json.stringsOf('language'),
+      maxDistanceKm: json.doubleOf('max_distance_km'),
       bio: json.strOf('bio'),
-      images: (json['images'] as List<dynamic>? ?? [])
-          .map((e) => e.toString())
-          .toList(),
-      interests: (json['interests'] as List<dynamic>? ?? [])
-          .map((e) => e.toString())
-          .toList(),
-      compatibilityScore:
-          (json['compatibility_score'] as num?)?.toDouble() ?? 0,
+      images: json.stringsOf('images'),
+      interests: json.stringsOf('interests'),
+      compatibilityScore: json.doubleOf('compatibility_score'),
       lastSeen: json.intOf('last_seen'),
       preferenceWeights: (json['preferenceWeights'] as Map<String, dynamic>?)
               ?.map((k, v) => MapEntry(k, (v as num?)?.toDouble() ?? 0)) ??
           const {},
-      dealbreakers: (json['dealbreakers'] as List<dynamic>? ?? [])
-          .map((e) => e.toString())
-          .toList(),
+      dealbreakers: json.stringsOf('dealbreakers'),
     );
   }
 }
@@ -535,6 +526,12 @@ class DatingStats {
 
 /// JSON → [DatingCard] list, top-level so [runOffThread] can decode on a
 /// background isolate.
-List<DatingCard> _parseCards(String json) => (jsonDecode(json) as List<dynamic>)
-    .map((e) => DatingCard.fromJson(e as Map<String, dynamic>))
-    .toList();
+List<DatingCard> _parseCards(String json) {
+  final decoded = jsonDecode(json);
+  if (decoded is! List) return const [];
+  return List<DatingCard>.generate(
+    decoded.length,
+    (i) => DatingCard.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
+}

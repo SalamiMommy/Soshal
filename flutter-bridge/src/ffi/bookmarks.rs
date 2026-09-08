@@ -88,16 +88,15 @@ pub fn bookmarks_resolve_post(event_id: String) -> Result<String, String> {
 pub fn bookmarks_resolve_posts(ids_json: String) -> Result<String, String> {
     let ids: Vec<String> =
         serde_json::from_str(&ids_json).map_err(|e| format!("invalid ids JSON: {e}"))?;
+    if ids.is_empty() {
+        return Ok("{}".to_string());
+    }
     super::db::with_db_result(|db| {
         let repo = soshal_db_core::repos::post::PostRepo::new(db);
         let rows = repo.get_by_ids(&ids)?;
-        let mut out = serde_json::Map::with_capacity(rows.len());
-        for row in rows {
-            if let Ok(value) = serde_json::to_value(&row) {
-                out.insert(row.id, value);
-            }
-        }
-        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "{}".into()))
+        let map: std::collections::HashMap<&str, &soshal_db_core::repos::post::PostRow> =
+            rows.iter().map(|r| (r.id.as_str(), r)).collect();
+        Ok(serde_json::to_string(&map).unwrap_or_else(|_| "{}".into()))
     })
 }
 

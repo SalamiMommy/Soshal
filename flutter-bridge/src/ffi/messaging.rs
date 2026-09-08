@@ -210,15 +210,31 @@ pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, Stri
 /// other, so `"abc".contains("ab")` would wrongly include a conversation
 /// for a different account.
 pub(crate) fn extract_peers_from_cids(cids: &[String], pubkey: &str) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    let mut peers: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::with_capacity(cids.len());
+    let mut peers: Vec<String> = Vec::with_capacity(cids.len());
     for cid in cids {
-        let parts: Vec<&str> = cid.trim_start_matches("conv:").split(':').collect();
+        let rest = cid.strip_prefix("conv:").unwrap_or(cid.as_str());
+        if let Some((p1, p2)) = rest.split_once(':') {
+            if !p2.contains(':') {
+                let other = if p1 == pubkey {
+                    p2
+                } else if p2 == pubkey {
+                    p1
+                } else {
+                    continue;
+                };
+                if seen.insert(other) {
+                    peers.push(other.to_string());
+                }
+                continue;
+            }
+        }
+        let parts: Vec<&str> = rest.split(':').collect();
         if !parts.contains(&pubkey) {
             continue;
         }
         for p in parts {
-            if p != pubkey && seen.insert(p.to_string()) {
+            if p != pubkey && seen.insert(p) {
                 peers.push(p.to_string());
             }
         }
@@ -229,6 +245,9 @@ pub(crate) fn extract_peers_from_cids(cids: &[String], pubkey: &str) -> Vec<Stri
 /// Extract the reply target from a DM's tags JSON (`e` with "reply" marker or
 /// a `q` tag point to the message being replied to; the first such id wins).
 fn reply_to_from_tags_json(tags_json: &str) -> Option<String> {
+    if !tags_json.contains("\"e\"") && !tags_json.contains("\"q\"") {
+        return None;
+    }
     let tags: Vec<Vec<String>> = serde_json::from_str(tags_json).ok()?;
     tags.iter()
         .find(|t| matches!(t.first().map(|s| s.as_str()), Some("e") | Some("q")))

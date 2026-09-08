@@ -39,9 +39,12 @@ class ScheduledService extends ChangeNotifier
           pubkey: pubkey,
         );
         final decoded = jsonDecode(json);
-        _drafts = (decoded as List<dynamic>)
-            .map((e) => ScheduledPost.fromJson(e as Map<String, dynamic>))
-            .toList();
+        final items = decoded as List<dynamic>;
+        _drafts = List<ScheduledPost>.generate(
+          items.length,
+          (i) => ScheduledPost.fromJson(items[i] as Map<String, dynamic>),
+          growable: true,
+        );
         return _drafts;
       });
 

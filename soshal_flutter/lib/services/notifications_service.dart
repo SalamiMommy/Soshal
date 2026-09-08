@@ -159,10 +159,12 @@ if (ok) {
           userPubkey: pubkey,
         );
         if (ok) {
-          _notifications = [
-            for (final n in _notifications)
-              if (!n.read) _asRead(n) else n,
-          ];
+          if (_notifications.any((n) => !n.read)) {
+            _notifications = [
+              for (final n in _notifications)
+                if (!n.read) _asRead(n) else n,
+            ];
+          }
           _unread = [];
           // Read-state changed everywhere; next category fetch must not be
           // served from the TTL cache.
@@ -298,9 +300,11 @@ if (ok) {
       );
 
   void _recomputeUnreadCount() {
-    final listed = _notifications.map((n) => n.id).toSet();
     var count = _notifications.where((n) => !n.read).length;
-    count += _unread.where((n) => !listed.contains(n.id)).length;
+    if (_unread.isNotEmpty) {
+      final listed = _notifications.map((n) => n.id).toSet();
+      count += _unread.where((n) => !listed.contains(n.id)).length;
+    }
     _unreadCount = count;
   }
 
@@ -318,9 +322,11 @@ if (ok) {
 
 List<AppNotification> parseNotifications(String json) {
   final decoded = jsonDecode(json) as List<dynamic>;
-  return decoded
-      .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
-      .toList();
+  return List<AppNotification>.generate(
+    decoded.length,
+    (i) => AppNotification.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
 }
 
 /// A notification item from the local store.

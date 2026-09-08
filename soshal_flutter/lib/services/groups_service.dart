@@ -73,8 +73,17 @@ class GroupsService extends ChangeNotifier
   }
 
   /// Emoji reactions for a target (thread or reply id).
-  List<ThreadReaction> reactionsFor(String targetId) =>
-      reactions.where((r) => r.matches(targetId)).toList();
+  List<ThreadReaction> reactionsFor(String targetId) {
+    final direct = _reactionsByThread[targetId];
+    if (direct != null) return direct;
+    final out = <ThreadReaction>[];
+    for (final list in _reactionsByThread.values) {
+      for (final r in list) {
+        if (r.matches(targetId)) out.add(r);
+      }
+    }
+    return out;
+  }
 
   Future<List<SoshalGroup>> fetchGroups(String userPubkey) async {
     _groupsLoading = true;

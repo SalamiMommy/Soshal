@@ -178,29 +178,31 @@ fn check_line_flooding(text: &str) -> bool {
 
 /// Detects mass mention storms (more than 7 distinct mentions or @everyone spam).
 fn check_mention_storm(text: &str) -> bool {
-    let mentions: HashSet<&str> = text
-        .split_whitespace()
-        .filter(|w| {
-            w.starts_with('@') || w.starts_with("nostr:npub") || w.starts_with("nostr:nprofile")
-        })
-        .collect();
-
-    mentions.len() >= 8
+    let mut mentions = HashSet::with_capacity(8);
+    for w in text.split_whitespace() {
+        if w.starts_with('@') || w.starts_with("nostr:npub") || w.starts_with("nostr:nprofile") {
+            mentions.insert(w);
+            if mentions.len() >= 8 {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Computes simple Shannon entropy of character frequencies to flag low-entropy keyboard mash / wall-of-emoji.
 fn check_low_entropy_spam(text: &str) -> bool {
-    let clean: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
-    if clean.len() < 30 {
+    let mut total_chars = 0usize;
+    let mut counts = std::collections::HashMap::new();
+    for c in text.chars().filter(|c| !c.is_whitespace()) {
+        total_chars += 1;
+        *counts.entry(c).or_insert(0) += 1;
+    }
+    if total_chars < 30 {
         return false;
     }
 
-    let mut counts = std::collections::HashMap::new();
-    for c in &clean {
-        *counts.entry(*c).or_insert(0) += 1;
-    }
-
-    let len = clean.len() as f32;
+    let len = total_chars as f32;
     let mut entropy = 0.0f32;
     for &count in counts.values() {
         let p = (count as f32) / len;

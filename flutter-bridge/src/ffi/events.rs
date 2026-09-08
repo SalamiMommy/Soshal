@@ -46,11 +46,17 @@ struct EventContent {
 }
 
 fn event_from_value(v: &serde_json::Value) -> Option<EventInfo> {
-    let content_value: serde_json::Value = match v["content"].as_str() {
-        Some(s) => serde_json::from_str(s).unwrap_or(serde_json::Value::Null),
-        None => v["content"].clone(),
+    let c: EventContent = match v.get("content") {
+        Some(serde_json::Value::String(s)) => {
+            if let Ok(c) = serde_json::from_str::<EventContent>(s) {
+                c
+            } else {
+                return None;
+            }
+        }
+        Some(val @ serde_json::Value::Object(_)) => serde_json::from_value(val.clone()).ok()?,
+        _ => return None,
     };
-    let c: EventContent = serde_json::from_value(content_value).ok()?;
     let (lat, lon) = match c.location.as_ref() {
         Some(serde_json::Value::String(s)) => centroid_of(s),
         Some(serde_json::Value::Object(o)) => (
@@ -88,13 +94,16 @@ fn event_from_value(v: &serde_json::Value) -> Option<EventInfo> {
 }
 
 fn centroid_of(s: &str) -> (f64, f64) {
-    let parts: Vec<&str> = s.split(',').collect();
-    match parts.as_slice() {
-        [lat, lon] => (
+    if let Some((lat, lon)) = s.split_once(',') {
+        if lon.contains(',') {
+            return (0.0, 0.0);
+        }
+        (
             lat.trim().parse::<f64>().unwrap_or(0.0),
             lon.trim().parse::<f64>().unwrap_or(0.0),
-        ),
-        _ => (0.0, 0.0),
+        )
+    } else {
+        (0.0, 0.0)
     }
 }
 
@@ -872,24 +881,32 @@ pub fn events_score_events(
     my_interests_json: String,
 ) -> Result<String, String> {
     #[derive(serde::Deserialize)]
-    struct EventText {
-        id: String,
-        title: String,
-        description: String,
+    struct EventText<'a> {
+        id: &'a str,
+        title: &'a str,
+        description: &'a str,
     }
     let events: Vec<EventText> =
         serde_json::from_str(&events_json).map_err(|e| format!("invalid events JSON: {e}"))?;
     let my_interests: Vec<String> = serde_json::from_str(&my_interests_json).unwrap_or_default();
-    let mut out = serde_json::Map::with_capacity(events.len());
+    let mut out = std::collections::HashMap::with_capacity(events.len());
+    if my_interests.is_empty() {
+        for ev in events {
+            out.insert(ev.id, 0.0);
+        }
+        return Ok(serde_json::to_string(&out).unwrap_or_else(|_| "{}".into()));
+    }
     for ev in events {
-        let tags =
-            soshal_content_core::hashtag::extract(&format!("{} {}", ev.title, ev.description));
-        let score = if tags.is_empty() || my_interests.is_empty() {
+        let mut tags = soshal_content_core::hashtag::extract(ev.title);
+        if !ev.description.is_empty() {
+            tags.extend(soshal_content_core::hashtag::extract(ev.description));
+        }
+        let score = if tags.is_empty() {
             0.0
         } else {
             soshal_events_core::event::interest::compute_interest_score(&my_interests, &tags).score
         };
-        out.insert(ev.id, serde_json::json!(score));
+        out.insert(ev.id, score);
     }
     Ok(serde_json::to_string(&out).unwrap_or_else(|_| "{}".into()))
 }

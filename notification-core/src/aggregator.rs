@@ -33,27 +33,42 @@ pub struct NotificationOutput {
 fn format_notification_content(notif_type: &str, content: &str, tags: &[Vec<String>]) -> String {
     match notif_type {
         "reaction" => {
-            let safe = sanitize_notif_content(content, 140);
-            if safe.is_empty() || safe == "+" {
+            let trimmed = content.trim();
+            if trimmed.is_empty() || trimmed == "+" {
                 "Liked your post".to_string()
             } else {
-                safe
+                let safe = sanitize_notif_content(trimmed, 140);
+                if safe.is_empty() || safe == "+" {
+                    "Liked your post".to_string()
+                } else {
+                    safe
+                }
             }
         }
         "zap" => {
-            let safe = sanitize_notif_content(content, 140);
-            if safe.is_empty() {
+            let trimmed = content.trim();
+            if trimmed.is_empty() {
                 "Sent you a zap".to_string()
             } else {
-                safe
+                let safe = sanitize_notif_content(trimmed, 140);
+                if safe.is_empty() {
+                    "Sent you a zap".to_string()
+                } else {
+                    safe
+                }
             }
         }
         "reply" => {
-            let safe = sanitize_notif_content(content, 140);
-            if safe.is_empty() {
+            let trimmed = content.trim();
+            if trimmed.is_empty() {
                 "Replied to your post".to_string()
             } else {
-                safe
+                let safe = sanitize_notif_content(trimmed, 140);
+                if safe.is_empty() {
+                    "Replied to your post".to_string()
+                } else {
+                    safe
+                }
             }
         }
         "follow" => "Started following you".to_string(),

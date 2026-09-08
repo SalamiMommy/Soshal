@@ -50,10 +50,14 @@ pub fn fetch_feed_window(
             }
         };
 
-        let author_clause = if authors.is_some() {
-            " AND p.pubkey IN (SELECT value FROM json_each(?4))"
-        } else {
-            ""
+        let single_author = match authors {
+            Some(list) if list.len() == 1 => Some(&list[0]),
+            _ => None,
+        };
+        let author_clause = match authors {
+            Some(_) if single_author.is_some() => " AND p.pubkey = ?4",
+            Some(_) => " AND p.pubkey IN (SELECT value FROM json_each(?4))",
+            None => "",
         };
         let sql = format!(
             "SELECT p.id, p.pubkey, p.content, p.tags_json, p.created_at,
@@ -72,6 +76,11 @@ pub fn fetch_feed_window(
 
         let offset = i64::try_from(start_index).unwrap_or(i64::MAX).max(0);
         let mut rows = match authors {
+            Some(_) if single_author.is_some() => {
+                let single_pk = single_author.unwrap().as_str();
+                stmt.query((limit as i64, offset, active_pubkey, single_pk))
+                    .await
+            }
             Some(author_list) => {
                 let authors_json = serde_json::to_string(author_list)
                     .map_err(|e| format!("serialize authors: {e}"))?;
@@ -82,7 +91,7 @@ pub fn fetch_feed_window(
         }
         .map_err(|e| e.to_string())?;
 
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(limit);
         while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
             let event_id: String = row.get(0).map_err(|e| e.to_string())?;
             let pubkey: String = row.get(1).map_err(|e| e.to_string())?;

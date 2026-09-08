@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::HashSet;
 
-use soshal_common_core::json_util::{json_in, json_out};
+use soshal_common_core::json_util::{json_in_borrow, json_out};
 
 const MAX_USERS: usize = 100_000;
 const MAX_POSTS: usize = 10_000;
@@ -9,37 +10,43 @@ const MAX_TAGS: usize = 100;
 const MAX_INTEREST_LEN: usize = 64;
 
 #[derive(Deserialize)]
-struct DiscoverByInterestInput {
-    events: Vec<DiscoveryEventInput>,
-    tags: Vec<String>,
-    self_pubkey: String,
-    self_contacts: Vec<String>,
+struct DiscoverByInterestInput<'a> {
+    #[serde(borrow)]
+    events: Vec<DiscoveryEventInput<'a>>,
+    #[serde(borrow)]
+    tags: Vec<&'a str>,
+    #[serde(borrow)]
+    self_pubkey: &'a str,
+    #[serde(borrow)]
+    self_contacts: Vec<&'a str>,
     limit: usize,
 }
 
 #[derive(Deserialize)]
-struct DiscoveryEventInput {
-    pubkey: String,
-    content: String,
+struct DiscoveryEventInput<'a> {
+    #[serde(borrow)]
+    pubkey: &'a str,
+    #[serde(borrow)]
+    content: &'a str,
 }
 
 #[derive(Serialize)]
-struct DiscoverResultOut {
-    pubkey: String,
+struct DiscoverResultOut<'a> {
+    pubkey: &'a str,
     reason: String,
     #[serde(rename = "mutualCount")]
     mutual_count: u32,
     distance: u32,
 }
 
-fn discover_by_interest(input: DiscoverByInterestInput) -> Vec<DiscoverResultOut> {
+fn discover_by_interest<'a>(input: DiscoverByInterestInput<'a>) -> Vec<DiscoverResultOut<'a>> {
     if input.events.len() > MAX_POSTS || input.tags.len() > MAX_TAGS || input.limit > MAX_USERS {
         return Vec::new();
     }
     if input.events.len() * input.tags.len() > 1_000_000 {
         return Vec::new();
     }
-    let self_contacts_set: HashSet<&str> = input.self_contacts.iter().map(|s| s.as_str()).collect();
+    let self_contacts_set: HashSet<&str> = input.self_contacts.iter().copied().collect();
     let lower_tags: Vec<String> = input
         .tags
         .iter()
@@ -61,13 +68,17 @@ fn discover_by_interest(input: DiscoverByInterestInput) -> Vec<DiscoverResultOut
         if event.content.len() > 64 * 1024 {
             continue;
         }
-        if event.pubkey == input.self_pubkey || self_contacts_set.contains(event.pubkey.as_str()) {
+        if event.pubkey == input.self_pubkey || self_contacts_set.contains(event.pubkey) {
             continue;
         }
-        let lower_content = event.content.to_lowercase();
+        let content_to_match: Cow<str> = if event.content.bytes().any(|b| b.is_ascii_uppercase()) {
+            Cow::Owned(event.content.to_lowercase())
+        } else {
+            Cow::Borrowed(event.content)
+        };
         let mut matched: Vec<&str> = Vec::new();
         let mut seen_mask = [0u64; 2];
-        for m in matcher.find_iter(&lower_content) {
+        for m in matcher.find_iter(&*content_to_match) {
             let idx = m.pattern().as_usize();
             let word = idx / 64;
             let bit = 1u64 << (idx % 64);
@@ -78,7 +89,7 @@ fn discover_by_interest(input: DiscoverByInterestInput) -> Vec<DiscoverResultOut
         }
         if !matched.is_empty() {
             results.push(DiscoverResultOut {
-                pubkey: event.pubkey.clone(),
+                pubkey: event.pubkey,
                 reason: format!("Shared interests: {}", matched.join(", ")),
                 mutual_count: 0,
                 distance: 2,
@@ -89,7 +100,7 @@ fn discover_by_interest(input: DiscoverByInterestInput) -> Vec<DiscoverResultOut
 }
 
 pub fn discover_by_interest_json(input: &str) -> String {
-    let Some(input) = json_in::<Option<DiscoverByInterestInput>>(input, None) else {
+    let Some(input) = json_in_borrow::<DiscoverByInterestInput>(input) else {
         return "[]".to_string();
     };
     let out = discover_by_interest(input);
@@ -104,11 +115,11 @@ mod tests {
     fn test_discover_by_interest_empty_tags_does_not_panic() {
         let input = DiscoverByInterestInput {
             events: vec![DiscoveryEventInput {
-                pubkey: "pk1".to_string(),
-                content: "hello world".to_string(),
+                pubkey: "pk1",
+                content: "hello world",
             }],
             tags: vec![],
-            self_pubkey: "self".to_string(),
+            self_pubkey: "self",
             self_contacts: vec![],
             limit: 10,
         };
@@ -117,11 +128,11 @@ mod tests {
 
         let input_blank = DiscoverByInterestInput {
             events: vec![DiscoveryEventInput {
-                pubkey: "pk1".to_string(),
-                content: "hello world".to_string(),
+                pubkey: "pk1",
+                content: "hello world",
             }],
-            tags: vec!["".to_string(), "   ".to_string()],
-            self_pubkey: "self".to_string(),
+            tags: vec!["", "   "],
+            self_pubkey: "self",
             self_contacts: vec![],
             limit: 10,
         };

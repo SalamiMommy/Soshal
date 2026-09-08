@@ -41,9 +41,11 @@ class BookmarksService extends ChangeNotifier
         );
         final decoded = jsonDecode(json);
         _bookmarks = decoded is List
-            ? decoded
-                .map((e) => BookmarkRow.fromJson(e as Map<String, dynamic>))
-                .toList()
+            ? List<BookmarkRow>.generate(
+                decoded.length,
+                (i) => BookmarkRow.fromJson(decoded[i] as Map<String, dynamic>),
+                growable: true,
+              )
             : <BookmarkRow>[];
         return _bookmarks;
       }, onNotify: notifyDeferred);
@@ -65,7 +67,9 @@ class BookmarksService extends ChangeNotifier
       final decoded = jsonDecode(json) as Map<String, dynamic>;
       for (final entry in decoded.entries) {
         final value = entry.value;
-        if (value is Map) {
+        if (value is Map<String, dynamic>) {
+          out[entry.key] = FeedPost.fromJson(value);
+        } else if (value is Map) {
           out[entry.key] = FeedPost.fromJson(Map<String, dynamic>.from(value));
         }
       }

@@ -80,27 +80,20 @@ pub async fn calls_fetch_signals(my_pubkey: String) -> Result<String, String> {
     let mut out = Vec::new();
     let now = soshal_common_core::format::now_secs() as u64;
     for e in events {
-        let p_tags: Vec<String> = e
-            .tags
-            .iter()
-            .filter(|t| t.as_slice().first().map(|k| k == "p").unwrap_or(false))
-            .filter_map(|t| t.as_slice().get(1).cloned())
-            .collect();
-        if !p_tags.iter().any(|p| p == &my_pubkey) {
+        let addressed_to_me = e.tags.iter().any(|t| {
+            let s = t.as_slice();
+            s.first().map(|k| k == "p").unwrap_or(false)
+                && s.get(1).map(|p| p == &my_pubkey).unwrap_or(false)
+        });
+        if !addressed_to_me {
             continue;
         }
-        if !soshal_nostr_core::models::verify_event(&e) {
-            continue;
-        }
-        let call_id = e
-            .tags
-            .iter()
-            .find(|t| t.as_slice().first().map(|k| k == "call").unwrap_or(false))
-            .and_then(|t| t.as_slice().get(1).cloned())
-            .unwrap_or_default();
         let created = e.created_at.as_secs();
         if now.saturating_sub(created) > 300 {
             continue; // ignore stale signals (>5 min)
+        }
+        if !soshal_nostr_core::models::verify_event(&e) {
+            continue;
         }
         let content_str =
             match super::signer::signer_nip44_decrypt(e.content.clone(), e.pubkey.to_string()) {
@@ -109,6 +102,18 @@ pub async fn calls_fetch_signals(my_pubkey: String) -> Result<String, String> {
                 // garbage) content as plaintext to the caller.
                 Err(_) => continue,
             };
+        let p_tags: Vec<String> = e
+            .tags
+            .iter()
+            .filter(|t| t.as_slice().first().map(|k| k == "p").unwrap_or(false))
+            .filter_map(|t| t.as_slice().get(1).cloned())
+            .collect();
+        let call_id = e
+            .tags
+            .iter()
+            .find(|t| t.as_slice().first().map(|k| k == "call").unwrap_or(false))
+            .and_then(|t| t.as_slice().get(1).cloned())
+            .unwrap_or_default();
         out.push(serde_json::json!({
             "id": e.id.to_hex(),
             "pubkey": e.pubkey.to_string(),

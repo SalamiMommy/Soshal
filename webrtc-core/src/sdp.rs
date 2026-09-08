@@ -10,7 +10,8 @@ use soshal_common_core::url::{is_private_ip_str, is_private_ipv6_str};
 /// SDP string, and rewrites `c=IN IP4` / `c=IN IP6` lines that reference
 /// private/reserved addresses to loopback equivalents.
 pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
-    let mut lines = Vec::with_capacity(sdp.lines().count());
+    let mut out = String::with_capacity(sdp.len() + 32);
+    let mut first = true;
     for raw_line in sdp.lines() {
         let trimmed_line = raw_line.trim();
         let norm_storage;
@@ -29,12 +30,16 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
                 continue;
             }
         }
+        if !first {
+            out.push_str("\r\n");
+        }
+        first = false;
         if line.starts_with("c=IN") {
             if let Some(ip4_pos) = line.find("IP4") {
                 let ip_part = &line[ip4_pos + 3..];
                 let ip = ip_part.trim();
                 if !ip.is_empty() && is_private_ip_str(ip) {
-                    lines.push(format!("c=IN IP4 {}", "127.0.0.1"));
+                    out.push_str("c=IN IP4 127.0.0.1");
                     continue;
                 }
             }
@@ -42,7 +47,7 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
                 let ip_part = &line[ip6_pos + 3..];
                 let ip = ip_part.trim();
                 if !ip.is_empty() && is_private_ipv6_str(ip) {
-                    lines.push(format!("c=IN IP6 {}", "::1"));
+                    out.push_str("c=IN IP6 ::1");
                     continue;
                 }
             }
@@ -55,11 +60,9 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
                 let tail = &line[ip4_pos + "IN IP4".len()..];
                 let addr = tail.trim();
                 if !addr.is_empty() {
-                    lines.push(format!(
-                        "o={}{}",
-                        &line[..ip4_pos + "IN IP4".len()],
-                        tail.replace(addr, "0.0.0.0")
-                    ));
+                    out.push_str("o=");
+                    out.push_str(&line[..ip4_pos + "IN IP4".len()]);
+                    out.push_str(&tail.replace(addr, "0.0.0.0"));
                     continue;
                 }
             }
@@ -67,40 +70,45 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
                 let tail = &line[ip6_pos + "IN IP6".len()..];
                 let addr = tail.trim();
                 if !addr.is_empty() {
-                    lines.push(format!(
-                        "o={}{}",
-                        &line[..ip6_pos + "IN IP6".len()],
-                        tail.replace(addr, "::")
-                    ));
+                    out.push_str("o=");
+                    out.push_str(&line[..ip6_pos + "IN IP6".len()]);
+                    out.push_str(&tail.replace(addr, "::"));
                     continue;
                 }
             }
         }
-        lines.push(line.to_string());
+        out.push_str(line);
     }
-    lines.join("\r\n")
+    out
+}
+
+#[derive(serde::Serialize)]
+struct SanitizeOutput<'a> {
+    sanitized_sdp: &'a str,
 }
 
 /// JSON-in/JSON-out wrapper for sanitize_sdp.
 /// Input: `{"sdp": "...", "forceRelay": true/false}`
 /// Output: `{"sanitized_sdp": "..."}`
 pub fn sanitize_sdp_json(input: &str) -> String {
+    use std::borrow::Cow;
+
     #[derive(Deserialize)]
-    struct Input {
-        sdp: String,
+    struct Input<'a> {
+        #[serde(borrow)]
+        sdp: Cow<'a, str>,
         #[serde(rename = "forceRelay")]
         force_relay: bool,
     }
-    let Some(input) = json_in::<Option<Input>>(input, None) else {
-        return json_out(
-            &serde_json::json!({"sanitized_sdp": ""}),
-            r#"{"sanitized_sdp": ""}"#,
-        );
+    let Some(input) = soshal_common_core::json_util::json_in_borrow::<Input>(input) else {
+        return r#"{"sanitized_sdp":""}"#.to_string();
     };
-    let result = sanitize_sdp(&input.sdp, input.force_relay);
+    let result = sanitize_sdp(input.sdp.as_ref(), input.force_relay);
     json_out(
-        &serde_json::json!({"sanitized_sdp": result}),
-        r#"{"sanitized_sdp": ""}"#,
+        &SanitizeOutput {
+            sanitized_sdp: &result,
+        },
+        r#"{"sanitized_sdp":""}"#,
     )
 }
 

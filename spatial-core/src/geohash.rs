@@ -1,5 +1,5 @@
 use crate::distance;
-use soshal_common_core::json_util::{json_in, json_out};
+use soshal_common_core::json_util::{json_in_borrow, json_out};
 
 const MAX_GEOHASH_LEN: usize = 16;
 /// Maximum geohash precision.
@@ -83,42 +83,47 @@ pub fn is_valid_geohash(s: &str) -> bool {
 
 pub fn compute_spatial_matrix_json(input: &str) -> String {
     #[derive(serde::Deserialize)]
-    struct LocationPoint {
-        id: String,
+    struct LocationPoint<'a> {
+        #[serde(borrow)]
+        id: &'a str,
         lat: f64,
         lon: f64,
     }
     #[derive(serde::Deserialize)]
-    struct Input {
+    struct Input<'a> {
         center_lat: f64,
         center_lon: f64,
-        points: Vec<LocationPoint>,
+        #[serde(borrow)]
+        points: Vec<LocationPoint<'a>>,
         max_distance_km: f64,
     }
     #[derive(serde::Serialize)]
-    struct DistanceResult {
-        id: String,
+    struct DistanceResult<'a> {
+        id: &'a str,
         distance_km: f64,
     }
 
-    let Some(input) = json_in::<Option<Input>>(input, None) else {
+    let Some(input) = json_in_borrow::<Input>(input) else {
         return "[]".to_string();
     };
 
     let mut results: Vec<DistanceResult> = input
         .points
         .into_iter()
-        .map(|pt| {
+        .filter_map(|pt| {
             let dist = distance::haversine_km(input.center_lat, input.center_lon, pt.lat, pt.lon);
-            DistanceResult {
-                id: pt.id,
-                distance_km: dist,
+            if input.max_distance_km <= 0.0 || dist <= input.max_distance_km {
+                Some(DistanceResult {
+                    id: pt.id,
+                    distance_km: dist,
+                })
+            } else {
+                None
             }
         })
-        .filter(|res| input.max_distance_km <= 0.0 || res.distance_km <= input.max_distance_km)
         .collect();
 
-    results.sort_by(|a, b| {
+    results.sort_unstable_by(|a, b| {
         a.distance_km
             .partial_cmp(&b.distance_km)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -129,8 +134,9 @@ pub fn compute_spatial_matrix_json(input: &str) -> String {
 
 pub fn expand_geohash_prefix_json(input: &str) -> String {
     #[derive(serde::Deserialize)]
-    struct Input {
-        geohash: String,
+    struct Input<'a> {
+        #[serde(borrow)]
+        geohash: &'a str,
         precision: Option<usize>,
     }
     #[derive(serde::Serialize)]
@@ -138,12 +144,12 @@ pub fn expand_geohash_prefix_json(input: &str) -> String {
         prefixes: Vec<String>,
     }
 
-    let Some(input) = json_in::<Option<Input>>(input, None) else {
+    let Some(input) = json_in_borrow::<Input>(input) else {
         return "{\"prefixes\":[]}".to_string();
     };
 
     let precision = input.precision.unwrap_or(5);
-    let prefixes = get_nearby_prefixes(&input.geohash, precision);
+    let prefixes = get_nearby_prefixes(input.geohash, precision);
     let out = Output { prefixes };
     json_out(&out, "{\"prefixes\":[]}")
 }
@@ -152,35 +158,39 @@ pub fn filter_geohash_presence_events_json(input: &str) -> String {
     use std::collections::HashSet;
 
     #[derive(serde::Deserialize)]
-    struct SpatialEvent {
-        id: String,
-        pubkey: String,
-        geohash: String,
+    struct SpatialEvent<'a> {
+        #[serde(borrow)]
+        id: &'a str,
+        #[serde(borrow)]
+        pubkey: &'a str,
+        #[serde(borrow)]
+        geohash: &'a str,
         created_at: u64,
     }
     #[derive(serde::Deserialize)]
-    struct Input {
-        events: Vec<SpatialEvent>,
+    struct Input<'a> {
+        #[serde(borrow)]
+        events: Vec<SpatialEvent<'a>>,
         target_prefix: String,
         now_sec: u64,
         max_age_sec: u64,
     }
     #[derive(serde::Serialize)]
-    struct FilteredSpatialEvent {
-        id: String,
-        pubkey: String,
-        geohash: String,
+    struct FilteredSpatialEvent<'a> {
+        id: &'a str,
+        pubkey: &'a str,
+        geohash: &'a str,
     }
 
-    let Some(input) = json_in::<Option<Input>>(input, None) else {
+    let Some(input) = json_in_borrow::<Input>(input) else {
         return "[]".to_string();
     };
 
-    let mut seen_ids = HashSet::new();
-    let mut filtered = Vec::new();
+    let mut seen_ids = HashSet::with_capacity(input.events.len());
+    let mut filtered = Vec::with_capacity(input.events.len());
 
-    for ev in input.events {
-        if !seen_ids.insert(ev.id.clone()) {
+    for ev in &input.events {
+        if !seen_ids.insert(ev.id) {
             continue;
         }
 

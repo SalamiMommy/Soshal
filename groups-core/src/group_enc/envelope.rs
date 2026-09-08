@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use soshal_common_core::json_util::{json_in, json_out};
+use soshal_common_core::json_util::json_out;
 
 // ─── Build Group Message Envelope ──────────────────────────────────────────
 
@@ -48,22 +48,60 @@ pub fn validate_group_permissions(input: &GroupPermissionInput) -> GroupPermissi
     GroupPermissionOutput { allowed }
 }
 
+#[derive(Deserialize)]
+struct BuildGroupMsgEnvelopeInputBorrow<'a> {
+    #[serde(borrow, rename = "pqcCt")]
+    pqc_ct: &'a str,
+    #[serde(borrow)]
+    payload: &'a str,
+}
+
+#[derive(Serialize)]
+struct GroupMsgEnvelopeOutputBorrow<'a> {
+    pqc_ct: &'a str,
+    payload: &'a str,
+}
+
+#[derive(Deserialize)]
+struct GroupPermissionInputBorrow<'a> {
+    #[serde(borrow, default)]
+    role: &'a str,
+    #[serde(default)]
+    permissions_mask: u32,
+    #[serde(default)]
+    required_bit: u32,
+}
+
 /// JSON-string entry point for [`build_group_message_envelope`]. Returns
 /// `"{}"` on malformed input.
 pub fn build_group_message_envelope_json(input: &str) -> String {
-    let Some(i) = json_in::<Option<BuildGroupMsgEnvelopeInput>>(input, None) else {
+    let Some(i) =
+        soshal_common_core::json_util::json_in_borrow::<BuildGroupMsgEnvelopeInputBorrow>(input)
+    else {
         return "{}".to_string();
     };
-    json_out(&build_group_message_envelope(i.pqc_ct, i.payload), "{}")
+    json_out(
+        &GroupMsgEnvelopeOutputBorrow {
+            pqc_ct: i.pqc_ct,
+            payload: i.payload,
+        },
+        "{}",
+    )
 }
 
 /// JSON-string entry point for [`validate_group_permissions`]. Returns
 /// `{"allowed":false}` on malformed input.
 pub fn validate_group_permissions_json(input: &str) -> String {
-    let Some(i) = json_in::<Option<GroupPermissionInput>>(input, None) else {
+    let Some(i) =
+        soshal_common_core::json_util::json_in_borrow::<GroupPermissionInputBorrow>(input)
+    else {
         return r#"{"allowed":false}"#.to_string();
     };
-    json_out(&validate_group_permissions(&i), r#"{"allowed":false}"#)
+    let is_admin_or_owner = i.role == "owner" || i.role == "admin";
+    let bitmask_allowed =
+        i.required_bit == 0 || (i.permissions_mask & i.required_bit) == i.required_bit;
+    let allowed = is_admin_or_owner || bitmask_allowed;
+    json_out(&GroupPermissionOutput { allowed }, r#"{"allowed":false}"#)
 }
 
 #[cfg(test)]

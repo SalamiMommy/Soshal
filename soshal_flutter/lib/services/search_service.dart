@@ -178,8 +178,13 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
 /// JSON → hashtag row maps, top-level so [runOffThread] can decode on a
 /// background isolate.
 List<Map<String, dynamic>> _parseTrendingHashtags(String json) {
-  final list = jsonDecode(json) as List<dynamic>;
-  return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  final decoded = jsonDecode(json);
+  if (decoded is! List) return const [];
+  return List<Map<String, dynamic>>.generate(
+    decoded.length,
+    (i) => Map<String, dynamic>.from(decoded[i] as Map),
+    growable: true,
+  );
 }
 
 /// JSON → [SearchResultItem] list, top-level so [runOffThread] can decode on a
@@ -187,9 +192,11 @@ List<Map<String, dynamic>> _parseTrendingHashtags(String json) {
 List<SearchResultItem> _parseSearchResults(String json) {
   final decoded = jsonDecode(json);
   if (decoded is! List) return const [];
-  return decoded
-      .map((e) => SearchResultItem.fromJson(e as Map<String, dynamic>))
-      .toList();
+  return List<SearchResultItem>.generate(
+    decoded.length,
+    (i) => SearchResultItem.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
 }
 
 /// A single search hit (post/profile/mention rows as raw JSON).

@@ -62,29 +62,41 @@ pub fn sanitize_log_message(msg: &str) -> String {
 /// Strips HTML tags, normalizes whitespace, and truncates notification content.
 /// Mirrors TS `sanitizeNotifContent` in NotificationService.ts.
 pub fn sanitize_notif_content(raw: &str, max_len: usize) -> String {
-    static RE_TAGS: OnceLock<Regex> = OnceLock::new();
-    let re = RE_TAGS.get_or_init(|| {
-        RegexBuilder::new(r"<[^>]*>")
-            .size_limit(64 * 1024)
-            .build()
-            .unwrap_or_else(|_| Regex::new(MATCH_NOTHING_REGEX).expect("compile nothing"))
-    });
-    let no_tags = re.replace_all(raw, "");
-    static RE_WS: OnceLock<Regex> = OnceLock::new();
-    let re_ws = RE_WS.get_or_init(|| {
-        RegexBuilder::new(r"\s+")
-            .size_limit(64 * 1024)
-            .build()
-            .unwrap_or_else(|_| Regex::new(MATCH_NOTHING_REGEX).expect("compile nothing"))
-    });
-    let normalized = re_ws.replace_all(&no_tags, " ");
-    let trimmed = normalized.trim();
-    if trimmed.len() > max_len {
-        let boundary = trimmed.floor_char_boundary(max_len);
-        trimmed[..boundary].to_string()
-    } else {
-        trimmed.to_string()
+    if max_len == 0 || raw.is_empty() {
+        return String::new();
     }
+    let no_tags = if raw.contains('<') {
+        static RE_TAGS: OnceLock<Regex> = OnceLock::new();
+        let re = RE_TAGS.get_or_init(|| {
+            RegexBuilder::new(r"<[^>]*>")
+                .size_limit(64 * 1024)
+                .build()
+                .unwrap_or_else(|_| Regex::new(MATCH_NOTHING_REGEX).expect("compile nothing"))
+        });
+        re.replace_all(raw, "")
+    } else {
+        std::borrow::Cow::Borrowed(raw)
+    };
+
+    let mut words = no_tags.split_whitespace();
+    let Some(first) = words.next() else {
+        return String::new();
+    };
+
+    let mut out = String::with_capacity(no_tags.len().min(max_len));
+    out.push_str(first);
+    for w in words {
+        if out.len() >= max_len {
+            break;
+        }
+        out.push(' ');
+        out.push_str(w);
+    }
+    if out.len() > max_len {
+        let boundary = out.floor_char_boundary(max_len);
+        out.truncate(boundary);
+    }
+    out
 }
 
 // ─── Security audit sanitization ──────────────────────────────────────

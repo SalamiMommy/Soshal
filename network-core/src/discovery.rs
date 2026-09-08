@@ -34,17 +34,13 @@ pub fn suggest_mutual_friends(input: SuggestMutualFriendsInput) -> Vec<Suggestio
     }
     let self_pubkey = &input.self_pubkey;
     let self_contacts: HashSet<&str> = input.self_contacts.iter().map(|s| s.as_str()).collect();
-    let user_contacts_map: HashMap<&str, &Vec<String>> = input
+    let user_info_map: HashMap<&str, &AllUserInfo> = input
         .all_users
         .iter()
-        .map(|u| (u.pubkey.as_str(), &u.contacts))
+        .map(|u| (u.pubkey.as_str(), u))
         .collect();
-    let user_distance_map: HashMap<&str, u32> = input
-        .all_users
-        .iter()
-        .map(|u| (u.pubkey.as_str(), u.wot_distance))
-        .collect();
-    let mut candidates: HashMap<&str, HashSet<&str>> = HashMap::new();
+    let mut candidates: HashMap<&str, HashSet<&str>> =
+        HashMap::with_capacity(input.all_users.len().min(128));
     for user in &input.all_users {
         if &user.pubkey == self_pubkey || self_contacts.contains(user.pubkey.as_str()) {
             continue;
@@ -60,8 +56,8 @@ pub fn suggest_mutual_friends(input: SuggestMutualFriendsInput) -> Vec<Suggestio
         }
     }
     for contact in &input.self_contacts {
-        if let Some(their_contacts) = user_contacts_map.get(contact.as_str()) {
-            for their_contact in *their_contacts {
+        if let Some(user_info) = user_info_map.get(contact.as_str()) {
+            for their_contact in &user_info.contacts {
                 if their_contact == self_pubkey || self_contacts.contains(their_contact.as_str()) {
                     continue;
                 }
@@ -72,24 +68,26 @@ pub fn suggest_mutual_friends(input: SuggestMutualFriendsInput) -> Vec<Suggestio
             }
         }
     }
-    let mut suggestions: Vec<SuggestionOut> = candidates
-        .into_iter()
-        .map(|(pubkey, mutuals)| {
-            let mutual_count = mutuals.len();
-            let distance = *user_distance_map.get(pubkey).unwrap_or(&2);
-            let reason = if distance == 2 {
-                format!("Connected via {} friend(s)", mutual_count)
-            } else {
-                format!("Shared by {} mutual contact(s)", mutual_count)
-            };
-            SuggestionOut {
-                pubkey: pubkey.to_string(),
-                reason,
-                mutual_count,
-                distance,
-            }
-        })
-        .collect();
+    let candidates_len = candidates.len();
+    let mut suggestions: Vec<SuggestionOut> = Vec::with_capacity(candidates_len);
+    for (pubkey, mutuals) in candidates {
+        let mutual_count = mutuals.len();
+        let distance = user_info_map
+            .get(pubkey)
+            .map(|u| u.wot_distance)
+            .unwrap_or(2);
+        let reason = if distance == 2 {
+            format!("Connected via {} friend(s)", mutual_count)
+        } else {
+            format!("Shared by {} mutual contact(s)", mutual_count)
+        };
+        suggestions.push(SuggestionOut {
+            pubkey: pubkey.to_string(),
+            reason,
+            mutual_count,
+            distance,
+        });
+    }
     suggestions.sort_by(|a, b| {
         let cmp = b.mutual_count.cmp(&a.mutual_count);
         if cmp == std::cmp::Ordering::Equal {

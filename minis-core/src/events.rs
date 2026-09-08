@@ -64,12 +64,12 @@ pub fn media_blob_from_tags(tags: &[Vec<String>]) -> (String, u64) {
         if !matches!(tag[1].as_str(), "image" | "video" | "audio") {
             continue;
         }
-        let blob_hash = tag[3].clone();
+        let blob_hash = &tag[3];
         if blob_hash.len() != 64 || !blob_hash.bytes().all(|b| b.is_ascii_hexdigit()) {
             continue;
         }
         let size: u64 = tag[4].parse().unwrap_or(0);
-        return (blob_hash, size);
+        return (blob_hash.clone(), size);
     }
     (String::new(), 0)
 }

@@ -200,11 +200,10 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     try {
       final raw = RustLib.instance.api.crateFfiDbDbGetSetting(key: _pinnedKey);
       _pinned.clear();
-      _rebuildPinnedView();
       if (raw != null && raw.isNotEmpty) {
         _pinned.addAll((jsonDecode(raw) as List<dynamic>).whereType<String>());
-        _rebuildPinnedView();
       }
+      _rebuildPinnedView();
       _pinnedLoaded = true;
       clearLastError();
     } catch (e, st) {

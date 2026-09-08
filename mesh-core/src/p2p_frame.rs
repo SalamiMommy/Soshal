@@ -133,19 +133,21 @@ pub fn encode_p2p_frame(json_input: &str) -> String {
     } else {
         input.chunk_size.min(MAX_CHUNK_SIZE)
     };
-    let chunks_data: Vec<&[u8]> = bytes.chunks(chunk_size).collect();
-    let total = chunks_data.len();
-
-    let chunks = chunks_data
-        .into_iter()
-        .enumerate()
-        .map(|(idx, chunk)| ChunkOutput {
+    let chunks_iter = bytes.chunks(chunk_size);
+    let total = chunks_iter.len();
+    let mut chunks = Vec::with_capacity(total);
+    for (idx, chunk) in chunks_iter.enumerate() {
+        let data = match std::str::from_utf8(chunk) {
+            Ok(s) => s.to_string(),
+            Err(_) => String::from_utf8_lossy(chunk).into_owned(),
+        };
+        chunks.push(ChunkOutput {
             index: idx,
             total,
-            data: String::from_utf8_lossy(chunk).to_string(),
+            data,
             checksum: compute_crc32(chunk),
-        })
-        .collect();
+        });
+    }
 
     let result = FramePacketResult {
         chunks,
@@ -182,14 +184,15 @@ pub fn decode_p2p_frame(json_input: &str) -> String {
             return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string();
         }
     }
-    if input.chunks.iter().map(|c| c.data.len()).sum::<usize>() > MAX_TOTAL_BYTES {
+    let total_len: usize = input.chunks.iter().map(|c| c.data.len()).sum();
+    if total_len > MAX_TOTAL_BYTES {
         return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string();
     }
 
     let mut sorted_chunks = input.chunks;
-    sorted_chunks.sort_by_key(|c| c.index);
+    sorted_chunks.sort_unstable_by_key(|c| c.index);
 
-    let mut payload_bytes = Vec::new();
+    let mut payload_bytes = Vec::with_capacity(total_len);
     let mut valid = true;
 
     for chunk in &sorted_chunks {
@@ -208,7 +211,10 @@ pub fn decode_p2p_frame(json_input: &str) -> String {
         }
     }
 
-    let payload = String::from_utf8_lossy(&payload_bytes).to_string();
+    let payload = match String::from_utf8(payload_bytes) {
+        Ok(s) => s,
+        Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
+    };
     let result = DecodeFrameResult {
         payload,
         valid,

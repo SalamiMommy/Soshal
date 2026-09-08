@@ -66,35 +66,39 @@ pub async fn chatrandom_fetch(
     let raw = super::network::network_query_events(filter.to_string()).await?;
     let events: Vec<nostr::event::Event> =
         serde_json::from_str(&raw).map_err(|e| format!("parse query result: {e}"))?;
-    let mut out = Vec::new();
-    for e in events {
-        if !soshal_nostr_core::models::verify_event(&e) {
+    #[derive(serde::Serialize)]
+    struct ChatRandomItem<'a> {
+        id: String,
+        pubkey: String,
+        content: &'a str,
+        created_at: u64,
+    }
+
+    let mut out = Vec::with_capacity(events.len().min(100));
+    for e in &events {
+        if !soshal_nostr_core::models::verify_event(e) {
             continue;
         }
         let k = e.kind.as_u16();
         if k == 20031 || k == 20032 {
             let addresses_me = e.tags.iter().any(|t| {
-                t.as_slice().first().map(|s| s == "p").unwrap_or(false)
-                    && t.as_slice()
-                        .get(1)
-                        .map(|s| s == &my_pubkey)
-                        .unwrap_or(false)
+                let s = t.as_slice();
+                s.first().map(|v| v == "p").unwrap_or(false)
+                    && s.get(1).map(|v| v == &my_pubkey).unwrap_or(false)
             });
             let authored_by_me = e.pubkey.to_hex() == my_pubkey;
             if !addresses_me && !authored_by_me {
                 continue;
             }
         }
-        out.push(streaming_events::chatrandom_peer_from_event(
-            &soshal_nostr_core::models::NostrEvent::from(&e),
-        ));
+        out.push(ChatRandomItem {
+            id: e.id.to_hex(),
+            pubkey: e.pubkey.to_hex(),
+            content: &e.content,
+            created_at: e.created_at.as_secs(),
+        });
     }
-    out.sort_by(|a, b| {
-        b["created_at"]
-            .as_u64()
-            .unwrap_or(0)
-            .cmp(&a["created_at"].as_u64().unwrap_or(0))
-    });
+    out.sort_unstable_by_key(|item| std::cmp::Reverse(item.created_at));
     super::util::json_ok(out)
 }
 

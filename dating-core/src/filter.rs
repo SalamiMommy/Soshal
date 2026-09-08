@@ -7,12 +7,12 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
     if input.profiles.len() > MAX_PROFILES {
         return Vec::new();
     }
-    let gender_map: Vec<&str> = match input.own_seeking.as_deref() {
-        Some("male") => vec!["male"],
-        Some("female") => vec!["female"],
-        Some("non-binary") => vec!["non-binary"],
-        Some("other") => vec!["other"],
-        _ => vec!["male", "female", "non-binary", "other"],
+    let gender_map: &[&str] = match input.own_seeking.as_deref() {
+        Some("male") => &["male"],
+        Some("female") => &["female"],
+        Some("non-binary") => &["non-binary"],
+        Some("other") => &["other"],
+        _ => &["male", "female", "non-binary", "other"],
     };
     let self_contacts_set: HashSet<&str> = input.self_contacts.iter().map(|s| s.as_str()).collect();
     let own_coords = input
@@ -26,9 +26,7 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
         .map(|(i, profile)| {
             let is_contact = self_contacts_set.contains(profile.pubkey.as_str());
             let passes = (|| -> bool {
-                if input.hide_friends.unwrap_or(false)
-                    && self_contacts_set.contains(profile.pubkey.as_str())
-                {
+                if input.hide_friends.unwrap_or(false) && is_contact {
                     return false;
                 }
                 if let Some(ref seeking) = input.own_seeking {
@@ -63,46 +61,6 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                     };
                     if !other_map.contains(&own_g.as_str()) {
                         return false;
-                    }
-                }
-                if let (Some((own_lat, own_lon)), Some(own_max)) =
-                    (own_coords, input.own_max_distance_km)
-                {
-                    if own_max > 0.0 {
-                        let (other_lat, other_lon) = match profile
-                            .location_geohash
-                            .as_deref()
-                            .and_then(soshal_spatial_core::distance::decode_geohash_coords)
-                        {
-                            Some(c) => c,
-                            None => return false,
-                        };
-                        if soshal_spatial_core::distance::haversine_km(
-                            own_lat, own_lon, other_lat, other_lon,
-                        ) > own_max
-                        {
-                            return false;
-                        }
-                    }
-                }
-                if let (Some(other_gh), Some(other_max)) =
-                    (profile.location_geohash.as_ref(), profile.max_distance_km)
-                {
-                    if other_max > 0.0 {
-                        if let Some((own_lat, own_lon)) = own_coords {
-                            let (other_lat, other_lon) =
-                                match soshal_spatial_core::distance::decode_geohash_coords(other_gh)
-                                {
-                                    Some(c) => c,
-                                    None => return false,
-                                };
-                            if soshal_spatial_core::distance::haversine_km(
-                                other_lat, other_lon, own_lat, own_lon,
-                            ) > other_max
-                            {
-                                return false;
-                            }
-                        }
                     }
                 }
                 if input.min_age.is_some() || input.max_age.is_some() {
@@ -165,6 +123,37 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                 }
                 if !matches_trait(&input.education, &profile.education) {
                     return false;
+                }
+                if let Some((own_lat, own_lon)) = own_coords {
+                    if input.own_max_distance_km.is_some() || profile.max_distance_km.is_some() {
+                        let other_coords = profile
+                            .location_geohash
+                            .as_deref()
+                            .and_then(soshal_spatial_core::distance::decode_geohash_coords);
+                        let dist = other_coords.map(|(other_lat, other_lon)| {
+                            soshal_spatial_core::distance::haversine_km(
+                                own_lat, own_lon, other_lat, other_lon,
+                            )
+                        });
+
+                        if let Some(own_max) = input.own_max_distance_km {
+                            if own_max > 0.0 {
+                                match dist {
+                                    Some(d) if d <= own_max => {}
+                                    _ => return false,
+                                }
+                            }
+                        }
+
+                        if let Some(other_max) = profile.max_distance_km {
+                            if other_max > 0.0 {
+                                match dist {
+                                    Some(d) if d <= other_max => {}
+                                    _ => return false,
+                                }
+                            }
+                        }
+                    }
                 }
                 true
             })();

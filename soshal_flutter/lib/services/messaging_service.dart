@@ -43,8 +43,9 @@ class MessagingService extends ChangeNotifier
             DateTime.fromMillisecondsSinceEpoch(0);
         return ta.compareTo(tb);
       });
-    while (_conversations.length > _maxConversations) {
-      final victim = sorted.removeAt(0);
+    final excess = _conversations.length - _maxConversations;
+    for (var i = 0; i < excess && i < sorted.length; i++) {
+      final victim = sorted[i];
       _conversations.remove(victim);
       _conversationsCacheTime.remove(victim);
       _conversationExhausted.remove(victim);

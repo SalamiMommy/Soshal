@@ -35,7 +35,7 @@ pub fn compute_event_patch(
     old_bytes: &[u8],
     new_bytes: &[u8],
 ) -> Result<EventPatch, String> {
-    let mut delta_buf = Vec::new();
+    let mut delta_buf = Vec::with_capacity(new_bytes.len().min(4096));
     encoder::encode_all(
         &mut delta_buf,
         old_bytes,
@@ -43,20 +43,17 @@ pub fn compute_event_patch(
         CompressOptions::default(),
     )
     .map_err(|e| format!("vcdiff encode failed: {e}"))?;
-    let patch = EventPatch {
+    let (patch_b64, full_b64) = if delta_buf.len() >= new_bytes.len() {
+        (String::new(), Some(B64.encode(new_bytes)))
+    } else {
+        (B64.encode(&delta_buf), None)
+    };
+    Ok(EventPatch {
         base_id: base_id.to_string(),
         new_id: new_id.to_string(),
-        patch_b64: B64.encode(&delta_buf),
-        full_b64: None,
-    };
-    // Prefer the full payload when delta encoding is not a win.
-    if delta_buf.len() >= new_bytes.len() {
-        let mut fallback = patch;
-        fallback.full_b64 = Some(B64.encode(new_bytes));
-        Ok(fallback)
-    } else {
-        Ok(patch)
-    }
+        patch_b64,
+        full_b64,
+    })
 }
 
 /// Applies `patch` to `old_bytes`, verifying the result hashes to

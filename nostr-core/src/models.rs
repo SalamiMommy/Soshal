@@ -55,22 +55,20 @@ pub fn clear_verified_cache() {
 /// Verifies a Nostr event's Schnorr signature, using an in-memory bounded generational LRU cache.
 pub fn verify_event(e: &nostr::event::Event) -> bool {
     let key = compute_verify_cache_key(e);
-    {
+    let in_previous = {
         let guard = VERIFIED_CACHE.read().unwrap_or_else(|e| e.into_inner());
         if let Some(cache) = guard.as_ref() {
             if cache.current.contains(&key) {
                 return true;
             }
-            if cache.previous.contains(&key) {
-                // Promotion handled below under write lock
-            } else {
-                // Fast path: not in cache, drop read lock and verify
-            }
+            cache.previous.contains(&key)
+        } else {
+            false
         }
-    }
+    };
 
     // Check if promotion from previous is needed
-    {
+    if in_previous {
         let mut guard = VERIFIED_CACHE.write().unwrap_or_else(|e| e.into_inner());
         if let Some(cache) = guard.as_mut() {
             if cache.current.contains(&key) {
@@ -122,8 +120,8 @@ impl NostrEvent {
     /// Returns the first tag value matching key `key` without dynamic allocation.
     pub fn find_tag(&self, key: &str) -> Option<&str> {
         self.tags.iter().find_map(|t| {
-            if t.first().map(|s| s.as_str()) == Some(key) {
-                t.get(1).map(|s| s.as_str())
+            if t.len() >= 2 && t[0] == key {
+                Some(t[1].as_str())
             } else {
                 None
             }

@@ -14,10 +14,42 @@ pub fn interest_overlap_details<'a>(
     if a.is_empty() && b.is_empty() {
         return (Vec::new(), 0, 0, 0);
     }
-    use std::borrow::Cow;
     let norm = |s: &'a str| -> &'a str { s.trim() };
+
+    if !case_insensitive {
+        let mut seen_a: HashSet<&'a str> = HashSet::with_capacity(a.len());
+        let mut seen_b: HashSet<&'a str> = HashSet::with_capacity(b.len());
+        for s in a {
+            let t = norm(s);
+            if !t.is_empty() {
+                seen_a.insert(t);
+            }
+        }
+        for s in b {
+            let t = norm(s);
+            if !t.is_empty() {
+                seen_b.insert(t);
+            }
+        }
+        let len_a = seen_a.len();
+        let len_b = seen_b.len();
+        let mut common: Vec<&'a str> = Vec::with_capacity(len_a.min(len_b));
+        for s in a {
+            if seen_b.is_empty() {
+                break;
+            }
+            let t = norm(s);
+            if !t.is_empty() && seen_b.remove(t) {
+                common.push(t);
+            }
+        }
+        let union = len_a + len_b - common.len();
+        return (common, union, len_a, len_b);
+    }
+
+    use std::borrow::Cow;
     let key = |t: &'a str| -> Cow<'a, str> {
-        if case_insensitive && t.chars().any(|c| c.is_uppercase()) {
+        if t.bytes().any(|b| b.is_ascii_uppercase()) {
             Cow::Owned(t.to_ascii_lowercase())
         } else {
             Cow::Borrowed(t)

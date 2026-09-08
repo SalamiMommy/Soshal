@@ -57,6 +57,12 @@ impl<'a> PostRepo<'a> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
+        if ids.len() == 1 {
+            return match self.get_by_id(&ids[0])? {
+                Some(p) => Ok(vec![p]),
+                None => Ok(Vec::new()),
+            };
+        }
         let ids_json = serde_json::to_string(ids)
             .map_err(|e| crate::error::DbError::Migration(e.to_string()))?;
         let conn = self.db.conn()?;

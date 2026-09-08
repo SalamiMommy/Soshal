@@ -55,7 +55,7 @@ fn parse_calendar_event(ev: &CalendarEventInput) -> Option<CalendarEventOut> {
         find_tag_values_map(&ev.tags, ["d", "title", "start", "end", "location"]);
     let d_tag = d_val
         .map(|s| s.to_string())
-        .unwrap_or_else(|| ev.id.chars().take(12).collect::<String>());
+        .unwrap_or_else(|| ev.id.get(..12).unwrap_or(&ev.id).to_string());
     let title = title_val.unwrap_or("Untitled Event").to_string();
     let start_str = start_val?;
     if start_str.len() > 32 {

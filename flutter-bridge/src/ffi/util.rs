@@ -92,17 +92,19 @@ pub fn util_sha256_hex(input: String) -> Result<String, String> {
 /// Base64URL (no padding) encode.
 #[frb(sync, serialize)]
 pub fn util_base64url_encode(input: String) -> Result<String, String> {
-    use soshal_crypto_core::base64url as b64u;
-    let standard = soshal_crypto_core::base64::base64_encode(&input);
-    Ok(b64u::to_base64url(&standard)).into()
+    Ok(soshal_crypto_core::base64url::base64url_encode(
+        input.as_bytes(),
+    ))
+    .into()
 }
 
 /// Base64URL (no padding) decode; returns the decoded string if valid UTF-8.
 #[frb(sync, serialize)]
 pub fn util_base64url_decode(input: String) -> Result<String, String> {
-    use soshal_crypto_core::base64url as b64u;
-    let standard = b64u::from_base64url(&input);
-    Ok(soshal_crypto_core::base64::base64_decode(&standard)).into()
+    match soshal_crypto_core::base64url::base64url_decode(&input) {
+        Some(bytes) => Ok(String::from_utf8(bytes).unwrap_or_default()).into(),
+        None => Ok(String::new()).into(),
+    }
 }
 
 /// Truncate string to max length (char-boundary safe).

@@ -157,6 +157,22 @@ pub fn build_fts_query(query: &str) -> String {
         .split_whitespace()
         .take(soshal_content_core::fts5::MAX_FTS5_TERMS)
     {
+        if w.chars().all(|c| c.is_alphanumeric())
+            && w.len() <= soshal_content_core::fts5::MAX_FTS5_TERM_LEN
+        {
+            if w.is_empty() {
+                continue;
+            }
+            if !first {
+                out.push_str(" OR ");
+            } else {
+                first = false;
+            }
+            out.push('"');
+            out.push_str(w);
+            out.push('"');
+            continue;
+        }
         let mut cleaned =
             String::with_capacity(w.len().min(soshal_content_core::fts5::MAX_FTS5_TERM_LEN));
         for c in w

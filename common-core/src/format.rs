@@ -15,10 +15,11 @@ pub fn now_secs() -> i64 {
 }
 
 /// Truncates a string to at most max_len Unicode scalar values, replacing the
-/// last kept character with an ellipsis when the input is longer.
-pub fn truncate(s: &str, max_len: usize) -> String {
+/// last kept character with an ellipsis when the input is longer. Returns a
+/// borrowed slice when truncation was not needed.
+pub fn truncate_cow(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
     if max_len == 0 {
-        return String::new();
+        return std::borrow::Cow::Borrowed("");
     }
     let mut count = 0;
     let mut truncate_at = None;
@@ -31,11 +32,17 @@ pub fn truncate(s: &str, max_len: usize) -> String {
                 let mut out = String::with_capacity(cut + 3);
                 out.push_str(&s[..cut]);
                 out.push('…');
-                return out;
+                return std::borrow::Cow::Owned(out);
             }
         }
     }
-    s.to_string()
+    std::borrow::Cow::Borrowed(s)
+}
+
+/// Truncates a string to at most max_len Unicode scalar values, replacing the
+/// last kept character with an ellipsis when the input is longer.
+pub fn truncate(s: &str, max_len: usize) -> String {
+    truncate_cow(s, max_len).into_owned()
 }
 
 pub fn is_valid_hex(s: &str) -> bool {

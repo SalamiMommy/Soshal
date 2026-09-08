@@ -96,7 +96,8 @@ pub async fn media_decode_image_rgba(
     tokio::task::spawn_blocking(move || {
         let full = resolve_allowed_path(&file_path_or_url, "image decode")?;
         let file = open_allowed_read(&full, "image decode")?;
-        let mut bytes = Vec::new();
+        let cap = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+        let mut bytes = Vec::with_capacity(cap);
         let mut file = file;
         file.read_to_end(&mut bytes)
             .map_err(|e| format!("Failed to read image file: {e}"))?;
@@ -204,7 +205,8 @@ pub async fn media_load_local(file_path: String) -> Result<Vec<u8>, String> {
     tokio::task::spawn_blocking(move || {
         let full = resolve_allowed_path(&file_path, "media")?;
         let file = open_allowed_read(&full, "media")?;
-        let mut data = Vec::new();
+        let cap = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+        let mut data = Vec::with_capacity(cap);
         let mut file = file;
         file.read_to_end(&mut data)
             .map_err(|e| format!("Failed to read media: {e}"))?;

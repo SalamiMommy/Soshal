@@ -111,35 +111,45 @@ pub fn webrtc_sanitize_sdp(sdp: String, force_relay: bool) -> Result<String, Str
     Ok(sanitize_sdp(&sdp, force_relay)).into()
 }
 
+#[derive(serde::Serialize)]
+struct PeerConfigDto<'a> {
+    #[serde(rename = "iceServers")]
+    ice_servers: &'a serde_json::Value,
+    #[serde(rename = "iceTransportPolicy")]
+    ice_transport_policy: &'a str,
+    #[serde(rename = "bundlePolicy")]
+    bundle_policy: &'static str,
+    #[serde(rename = "rtcpMuxPolicy")]
+    rtcp_mux_policy: &'static str,
+}
+
+static EMPTY_SERVERS: std::sync::LazyLock<serde_json::Value> =
+    std::sync::LazyLock::new(|| serde_json::json!([]));
+
 /// Create peer connection config
 #[frb(sync, serialize)]
 pub fn webrtc_create_peer_config(privacy_level: String) -> Result<String, String> {
     let ice_value = ice_config(&privacy_level, "stun:stun.l.google.com:19302");
-    let config_json = match ice_value.as_object() {
+    let (servers, policy) = match ice_value.as_object() {
         Some(obj) => {
-            let servers = obj
-                .get("iceServers")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!([]));
-            let policy = obj
+            let s = obj.get("iceServers").unwrap_or(&EMPTY_SERVERS);
+            let p = obj
                 .get("iceTransportPolicy")
                 .and_then(|v| v.as_str())
                 .unwrap_or("all");
-            serde_json::json!({
-                "iceServers": servers,
-                "iceTransportPolicy": policy,
-                "bundlePolicy": "max-bundle",
-                "rtcpMuxPolicy": "require",
-            })
+            (s, p)
         }
-        None => serde_json::json!({
-            "iceServers": [],
-            "iceTransportPolicy": "all",
-            "bundlePolicy": "max-bundle",
-            "rtcpMuxPolicy": "require",
-        }),
+        None => (&*EMPTY_SERVERS, "all"),
     };
-    Ok(config_json.to_string()).into()
+    let dto = PeerConfigDto {
+        ice_servers: servers,
+        ice_transport_policy: policy,
+        bundle_policy: "max-bundle",
+        rtcp_mux_policy: "require",
+    };
+    serde_json::to_string(&dto)
+        .map_err(|e| format!("serialize peer config: {e}"))
+        .into()
 }
 
 /// Extract candidates from SDP

@@ -53,7 +53,7 @@ pub fn extract_deletion_ids_json(input: &str) -> String {
         return "[]".to_string();
     }
     let initial_cap = input.tags.len().min(MAX_OUTPUT_IDS).min(64);
-    let mut ids: Vec<String> = Vec::with_capacity(initial_cap);
+    let mut ids: Vec<&str> = Vec::with_capacity(initial_cap);
     let mut seen: HashSet<&str> = HashSet::with_capacity(initial_cap);
     for tag in input.tags.iter().take(MAX_TAGS) {
         if ids.len() >= MAX_OUTPUT_IDS {
@@ -64,7 +64,7 @@ pub fn extract_deletion_ids_json(input: &str) -> String {
         }
         if let Some(&id) = tag.get(1) {
             if id.len() <= MAX_TAG_FIELD_LEN && seen.insert(id) {
-                ids.push(id.to_string());
+                ids.push(id);
             }
         }
     }

@@ -11,8 +11,11 @@ pub struct FormatFts5Input {
 
 /// Sanitizes a single FTS5 term.
 pub fn sanitize_fts5_term(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
     if raw.chars().all(|c| c.is_alphanumeric()) {
-        if raw.chars().count() == 0 || raw.chars().count() > MAX_FTS5_TERM_LEN {
+        if raw.chars().count() > MAX_FTS5_TERM_LEN {
             return None;
         }
         return Some(raw.to_string());
@@ -23,7 +26,7 @@ pub fn sanitize_fts5_term(raw: &str) -> Option<String> {
             out.push(c);
         }
     }
-    if out.chars().count() == 0 || out.chars().count() > MAX_FTS5_TERM_LEN {
+    if out.is_empty() || out.chars().count() > MAX_FTS5_TERM_LEN {
         return None;
     }
     Some(out)
@@ -41,7 +44,7 @@ pub fn format_fts5_query(query: &str) -> String {
         return String::new();
     }
     let mut out = String::with_capacity(trimmed.len() + 16);
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: HashSet<(Option<String>, String)> = HashSet::new();
     let mut count = 0;
     for word in trimmed.split_whitespace() {
         let (field, term) = match word.find(':') {
@@ -57,32 +60,29 @@ pub fn format_fts5_query(query: &str) -> String {
         let Some(t) = sanitize_fts5_term(term) else {
             continue;
         };
-        let key = match &field {
-            Some(f) => format!("{f}:{t}"),
-            None => t.clone(),
-        };
-        if !seen.contains(&key) {
-            if count > 0 {
-                out.push_str(" AND ");
+        let entry = (field, t);
+        if !seen.insert(entry.clone()) {
+            continue;
+        }
+        if count > 0 {
+            out.push_str(" AND ");
+        }
+        match &entry.0 {
+            Some(f) => {
+                out.push_str(f);
+                out.push_str(":\"");
+                out.push_str(&entry.1);
+                out.push_str("\"*");
             }
-            match &field {
-                Some(f) => {
-                    out.push_str(f);
-                    out.push_str(":\"");
-                    out.push_str(&t);
-                    out.push_str("\"*");
-                }
-                None => {
-                    out.push('"');
-                    out.push_str(&t);
-                    out.push_str("\"*");
-                }
+            None => {
+                out.push('"');
+                out.push_str(&entry.1);
+                out.push_str("\"*");
             }
-            count += 1;
-            seen.insert(key);
-            if count >= MAX_FTS5_TERMS {
-                break;
-            }
+        }
+        count += 1;
+        if count >= MAX_FTS5_TERMS {
+            break;
         }
     }
     out

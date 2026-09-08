@@ -266,10 +266,7 @@ class MusicTrack {
         mediaSize: json.intOf('mediaSize'),
         title: json.strOf('title'),
         thumbnail: json.strOf('thumbnail'),
-        hashtags: (json['hashtags'] as List<dynamic>? ?? const [])
-            .map((e) => e as String? ?? '')
-            .where((e) => e.isNotEmpty)
-            .toList(),
+        hashtags: json.stringsOf('hashtags'),
         d: json.strOf('d'),
         audience: json.strOrNull('audience') ?? 'public',
         createdAt: json.intOf('createdAt'),
@@ -392,14 +389,22 @@ class TrackComment extends SocialEntry {
 
 /// JSON → [MusicTrack] list, top-level so [runOffThread] can decode on a
 /// background isolate.
-List<MusicTrack> _parseTracks(String json) =>
-    (jsonDecode(json) as List<dynamic>)
-        .map((e) => MusicTrack.fromJson(e as Map<String, dynamic>))
-        .toList();
+List<MusicTrack> _parseTracks(String json) {
+  final decoded = jsonDecode(json) as List<dynamic>;
+  return List<MusicTrack>.generate(
+    decoded.length,
+    (i) => MusicTrack.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
+}
 
 /// JSON → [TrackComment] list, top-level so [runOffThread] can decode on a
 /// background isolate.
-List<TrackComment> _parseComments(String json) =>
-    (jsonDecode(json) as List<dynamic>)
-        .map((e) => TrackComment.fromJson(e as Map<String, dynamic>))
-        .toList();
+List<TrackComment> _parseComments(String json) {
+  final decoded = jsonDecode(json) as List<dynamic>;
+  return List<TrackComment>.generate(
+    decoded.length,
+    (i) => TrackComment.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
+}

@@ -94,9 +94,12 @@ class ZapService extends ChangeNotifier
           limit: limit,
         );
         final decoded = jsonDecode(json);
-        _receipts = (decoded as List<dynamic>)
-            .map((e) => ZapReceipt.fromJson(e as Map<String, dynamic>))
-            .toList();
+        final items = decoded as List<dynamic>;
+        _receipts = List<ZapReceipt>.generate(
+          items.length,
+          (i) => ZapReceipt.fromJson(items[i] as Map<String, dynamic>),
+          growable: true,
+        );
         return _receipts;
       }, onNotify: notifyDeferred);
 

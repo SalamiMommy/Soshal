@@ -84,17 +84,20 @@ pub fn pin_has() -> Result<bool, String> {
 
 fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
     let now = soshal_common_core::util::now_ms() as i64;
-    let permanent = with_repo(|r| {
-        Ok(r.get("pin_permanently_locked")
+    let (permanent, mut state, stored) = super::db::with_db_string(|db| {
+        let r = soshal_db_core::repos::settings::SettingsRepo::new(db);
+        let permanent = r
+            .get("pin_permanently_locked")
             .map_err(super::util::to_err)?
             .map(|v| v == "true")
-            .unwrap_or(false))
-    })?;
-    let mut state: PinLockoutState = with_repo(|r| {
-        Ok(r.get("pin_lockout_state")
+            .unwrap_or(false);
+        let state: PinLockoutState = r
+            .get("pin_lockout_state")
             .map_err(super::util::to_err)?
             .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default())
+            .unwrap_or_default();
+        let stored = r.get(PIN_HASH_KEY).map_err(super::util::to_err)?;
+        Ok((permanent, state, stored))
     })?;
 
     // Fast-path: if already permanently locked or within active lockout window,
@@ -128,7 +131,6 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
         };
     }
 
-    let stored = with_repo(|r| r.get(PIN_HASH_KEY).map_err(super::util::to_err))?;
     let stored = stored
         .filter(|v| !v.is_empty())
         .ok_or_else(|| "no PIN configured; set a PIN in Settings > Security first".to_string())?;

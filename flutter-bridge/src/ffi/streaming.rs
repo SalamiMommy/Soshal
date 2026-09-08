@@ -35,11 +35,20 @@ pub struct StoryInfo {
 }
 
 fn tag_value(tags_json: &str, key: &str) -> Option<String> {
+    if tags_json.is_empty() || tags_json == "[]" {
+        return None;
+    }
     serde_json::from_str::<Vec<Vec<String>>>(tags_json)
         .ok()?
         .into_iter()
         .find(|t| t.first().map(|k| k == key).unwrap_or(false))
-        .and_then(|t| t.get(1).cloned())
+        .and_then(|mut t| {
+            if t.len() > 1 {
+                Some(t.swap_remove(1))
+            } else {
+                None
+            }
+        })
 }
 
 /// Set the `status` tag value to `ended` in place. Hostile relay data can
@@ -51,6 +60,45 @@ fn mark_status_ended(tags: &mut [Vec<String>]) {
                 *v = "ended".to_string();
             }
         }
+    }
+}
+
+fn stream_from_fields(
+    id: String,
+    pubkey: String,
+    content_str: &str,
+    created_at: i64,
+    tags_json: &str,
+) -> StreamInfo {
+    let parsed_tags: Vec<Vec<String>> = serde_json::from_str(tags_json).unwrap_or_default();
+    let mut status: Option<String> = None;
+    let mut stream_url: Option<String> = None;
+    for t in &parsed_tags {
+        if let Some(key) = t.first().map(|s| s.as_str()) {
+            match key {
+                "status" if status.is_none() => {
+                    status = t.get(1).cloned();
+                }
+                "d" if stream_url.is_none() => {
+                    stream_url = t.get(1).cloned();
+                }
+                _ => {}
+            }
+        }
+        if status.is_some() && stream_url.is_some() {
+            break;
+        }
+    }
+    let c: serde_json::Value = serde_json::from_str(content_str).unwrap_or(serde_json::Value::Null);
+    StreamInfo {
+        id,
+        broadcaster_pubkey: pubkey,
+        title: c["title"].as_str().unwrap_or("Live").to_string(),
+        description: c["summary"].as_str().unwrap_or("").to_string(),
+        status: status.unwrap_or_else(|| "offline".to_string()),
+        viewer_count: 0,
+        created_at: created_at.max(0) as u64,
+        stream_url: stream_url.unwrap_or_default(),
     }
 }
 
@@ -173,55 +221,30 @@ pub fn streaming_fetch_live(limit: i32, audience: String) -> Result<String, Stri
 /// Fetch live streams from followed users (contact graph join).
 #[frb(sync, serialize)]
 pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, String> {
-    let json = super::db::with_db_result(|db| {
+    let streams: Vec<StreamInfo> = super::db::with_db_result(|db| {
         let conn = db.conn()?;
-        let out = soshal_db_core::block_on(async {
-            let stmt = conn
-                .prepare(
-                    "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
-                     WHERE p.kind = ?1 AND p.is_deleted = 0 \
-                     AND p.pubkey IN (SELECT value FROM json_each((SELECT contact_pubkeys FROM users WHERE pubkey = ?2))) \
-                     ORDER BY p.created_at DESC LIMIT 100",
-                )
-                .await?;
-            let mut rows = stmt
-                .query(libsql::params![KIND_LIVE as i64, user_pubkey.as_str()])
-                .await?;
-            let names: Vec<String> = stmt
-                .columns()
-                .iter()
-                .map(|c| c.name().to_string())
-                .collect();
-            let mut out = Vec::new();
-            while let Some(row) = rows.next().await? {
-                let mut obj = serde_json::Map::new();
-                for (i, name) in names.iter().enumerate() {
-                    let val = match row.get_value(i as i32) {
-                        Ok(libsql::Value::Null) => serde_json::Value::Null,
-                        Ok(libsql::Value::Integer(n)) => serde_json::json!(n),
-                        Ok(libsql::Value::Real(r)) => serde_json::json!(r),
-                        Ok(libsql::Value::Text(t)) => serde_json::json!(t),
-                        Ok(libsql::Value::Blob(b)) => serde_json::json!(hex::encode(b)),
-                        Err(_) => serde_json::Value::Null,
-                    };
-                    obj.insert(name.clone(), val);
-                }
-                out.push(serde_json::Value::Object(obj));
-            }
-            Ok::<_, libsql::Error>(out)
-        })
-        .map_err(soshal_db_core::error::DbError::from)?;
-        Ok(super::util::json_ok_or_empty(&out))
+        let sql = "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
+                   WHERE p.kind = ?1 AND p.is_deleted = 0 \
+                   AND p.pubkey IN (SELECT value FROM json_each((SELECT contact_pubkeys FROM users WHERE pubkey = ?2))) \
+                   ORDER BY p.created_at DESC LIMIT 100";
+        let rows = soshal_db_core::query::query(
+            &conn,
+            sql,
+            libsql::params![KIND_LIVE as i64, user_pubkey.as_str()],
+            |r| {
+                let id: String = r.get(0)?;
+                let pubkey: String = r.get(1)?;
+                let content: String = r.get(2)?;
+                let created_at: i64 = r.get(3)?;
+                let tags_json: String = r.get(4)?;
+                Ok(stream_from_fields(
+                    id, pubkey, &content, created_at, &tags_json,
+                ))
+            },
+        )?;
+        Ok(rows)
     })?;
-    // NOTE: contact_pubkeys holds the user's own contacts, so "followed"
-    // semantics here use the reverse direction (followers live). Relay-side
-    // filtering in the Tauri layer handles the forward direction.
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    super::util::json_ok(
-        rows.into_iter()
-            .filter_map(|v| stream_from_value(&v))
-            .collect::<Vec<_>>(),
-    )
+    super::util::json_ok(streams)
 }
 
 /// Start a live stream announcement (kind 30311 with `status` = live).
@@ -238,24 +261,17 @@ pub fn streaming_start_live(
         return Err("title must be 1..=300 chars".to_string()).into();
     }
     if stream_url.is_empty() || stream_url.len() > 500 {
-        return Err("stream_url required".to_string()).into();
+        return Err("stream_url must be 1..=500 chars".to_string()).into();
     }
     let content = serde_json::json!({
         "title": title,
-        "summary": soshal_common_core::format::truncate(&description, 2000),
-        "status": "live",
+        "summary": description,
     })
     .to_string();
     let builder =
         nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(KIND_LIVE), content.clone())
-            .tags(
-                vec![
-                    vec!["d".to_string(), stream_url.clone()],
-                    vec!["status".to_string(), "live".to_string()],
-                ]
-                .into_iter()
-                .filter_map(|t| nostr::event::Tag::parse(t).ok()),
-            );
+            .tag(nostr::event::Tag::parse(vec!["d".to_string(), stream_url.clone()]).unwrap())
+            .tag(nostr::event::Tag::parse(vec!["status".to_string(), "live".to_string()]).unwrap());
     let signed_json = super::signer::sign_builder(builder)?;
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;
@@ -280,43 +296,21 @@ pub fn streaming_start_live(
 #[frb(sync, serialize)]
 pub fn streaming_end_live(stream_id: String, broadcaster_pubkey: String) -> Result<bool, String> {
     super::signer::require_identity(&broadcaster_pubkey)?;
-    let json = super::db::with_db_result(|db| {
-        let conn = db.conn()?;
-        let out = soshal_db_core::block_on(async {
-            let stmt = conn
-                .prepare("SELECT pubkey, tags_json FROM posts WHERE kind = ?1 AND id = ?2")
-                .await?;
-            let mut rows = stmt
-                .query(libsql::params![KIND_LIVE as i64, stream_id.as_str()])
-                .await?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next().await? {
-                let mut obj = serde_json::Map::new();
-                for (i, name) in ["pubkey", "tags_json"].iter().enumerate() {
-                    let val = match row.get_value(i as i32) {
-                        Ok(libsql::Value::Null) => serde_json::Value::Null,
-                        Ok(libsql::Value::Integer(n)) => serde_json::json!(n),
-                        Ok(libsql::Value::Real(r)) => serde_json::json!(r),
-                        Ok(libsql::Value::Text(t)) => serde_json::json!(t),
-                        Ok(libsql::Value::Blob(b)) => serde_json::json!(hex::encode(b)),
-                        Err(_) => serde_json::Value::Null,
-                    };
-                    obj.insert(name.to_string(), val);
-                }
-                out.push(serde_json::Value::Object(obj));
-            }
-            Ok::<_, libsql::Error>(out)
-        })
-        .map_err(soshal_db_core::error::DbError::from)?;
-        Ok(super::util::json_ok_or_empty(&out))
+    let (row_pubkey, tags_json): (String, String) = super::db::with_db_string(|db| {
+        let conn = db.conn().map_err(|e| e.to_string())?;
+        let res = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT pubkey, tags_json FROM posts WHERE kind = ?1 AND id = ?2",
+            libsql::params![KIND_LIVE as i64, stream_id.as_str()],
+            |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+        res.ok_or_else(|| "stream not found".to_string())
     })?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    let row = rows.first().ok_or("stream not found".to_string())?;
-    if row["pubkey"].as_str().unwrap_or("") != broadcaster_pubkey {
+    if row_pubkey != broadcaster_pubkey {
         return Err("only the broadcaster can end a stream".to_string()).into();
     }
-    let tags_json = row["tags_json"].as_str().unwrap_or("");
-    let mut tags: Vec<Vec<String>> = serde_json::from_str(tags_json).unwrap_or_default();
+    let mut tags: Vec<Vec<String>> = serde_json::from_str(&tags_json).unwrap_or_default();
     mark_status_ended(&mut tags);
     if !tags
         .iter()

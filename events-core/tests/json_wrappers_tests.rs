@@ -29,10 +29,9 @@ fn get_expiry_from_tags_json_matches_direct() {
 
 #[test]
 fn compute_interest_score_json_roundtrip() {
-    let direct = compute_interest_score(
-        &["nostr".to_string(), "rust".to_string()],
-        &["rust".to_string(), "ai".to_string()],
-    );
+    let my = ["nostr".to_string(), "rust".to_string()];
+    let peer = ["rust".to_string(), "ai".to_string()];
+    let direct = compute_interest_score(&my, &peer);
     let via_json = compute_interest_score_json(
         r#"{"myInterests":["nostr","rust"],"peerInterests":["rust","ai"]}"#,
     );

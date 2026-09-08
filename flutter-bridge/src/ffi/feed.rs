@@ -47,65 +47,67 @@ pub fn feed_aggregate_chat_reactions(input: String) -> Result<String, String> {
     Ok(soshal_feed_core::reaction::aggregate_message_reactions_json(&input)).into()
 }
 
+#[derive(serde::Deserialize)]
+struct FeedRankItem {
+    #[serde(default)]
+    stats: Option<PostStatsInput>,
+    #[serde(default)]
+    hashtags: Option<Vec<String>>,
+    #[serde(default)]
+    content: Option<String>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct PostStatsInput {
+    #[serde(default)]
+    created_at_secs: f64,
+    #[serde(default)]
+    likes_count: u64,
+    #[serde(default)]
+    replies_count: u64,
+    #[serde(default)]
+    zaps_count: u64,
+    #[serde(default)]
+    reposts_count: u64,
+    #[serde(default)]
+    wot_distance: u64,
+}
+
 /// Rank posts for feed display (delegates to feed-core ranking).
 /// `events_json`: array of `{stats: {...}, hashtags: []}`; returns ranked
 /// indices into the original array.
 #[frb(serialize)]
 pub async fn feed_rank_posts(events_json: String) -> Result<String, String> {
-    let input: Vec<serde_json::Value> = match serde_json::from_str(&events_json) {
+    let input: Vec<FeedRankItem> = match serde_json::from_str(&events_json) {
         Ok(v) => v,
         Err(e) => return Err(format!("invalid stats JSON: {e}")).into(),
     };
-    let mut stats: Vec<soshal_feed_core::ranking::PostStats> = Vec::new();
-    let mut hashtags: Vec<Vec<String>> = Vec::new();
-    for item in &input {
-        let st = item["stats"]
-            .as_object()
+    let mut stats: Vec<soshal_feed_core::ranking::PostStats> = Vec::with_capacity(input.len());
+    let mut hashtags: Vec<Vec<String>> = Vec::with_capacity(input.len());
+    for item in input {
+        let st = item
+            .stats
             .map(|m| soshal_feed_core::ranking::PostStats {
-                created_at_secs: m
-                    .get("created_at_secs")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0),
-                likes_count: m
-                    .get("likes_count")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0)
-                    .min(u32::MAX as u64) as u32,
-                replies_count: m
-                    .get("replies_count")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0)
-                    .min(u32::MAX as u64) as u32,
-                zaps_count: m
-                    .get("zaps_count")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0)
-                    .min(u32::MAX as u64) as u32,
-                reposts_count: m
-                    .get("reposts_count")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0)
-                    .min(u32::MAX as u64) as u32,
-                wot_distance: m
-                    .get("wot_distance")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0)
-                    .min(u32::MAX as u64) as u32,
+                created_at_secs: m.created_at_secs,
+                likes_count: m.likes_count.min(u32::MAX as u64) as u32,
+                replies_count: m.replies_count.min(u32::MAX as u64) as u32,
+                zaps_count: m.zaps_count.min(u32::MAX as u64) as u32,
+                reposts_count: m.reposts_count.min(u32::MAX as u64) as u32,
+                wot_distance: m.wot_distance.min(u32::MAX as u64) as u32,
+            })
+            .unwrap_or(soshal_feed_core::ranking::PostStats {
+                created_at_secs: 0.0,
+                likes_count: 0,
+                replies_count: 0,
+                zaps_count: 0,
+                reposts_count: 0,
+                wot_distance: 0,
             });
-        stats.push(st.unwrap_or(soshal_feed_core::ranking::PostStats {
-            created_at_secs: 0.0,
-            likes_count: 0,
-            replies_count: 0,
-            zaps_count: 0,
-            reposts_count: 0,
-            wot_distance: 0,
-        }));
-        let item_hashtags = if let Some(a) = item["hashtags"].as_array() {
-            a.iter()
-                .filter_map(|t| t.as_str().map(|s| s.to_string()))
-                .collect()
-        } else if let Some(content) = item["content"].as_str() {
-            soshal_content_core::hashtag::extract(content)
+        stats.push(st);
+        let item_hashtags = if let Some(tags) = item.hashtags {
+            tags
+        } else if let Some(content) = item.content {
+            soshal_content_core::hashtag::extract(&content)
         } else {
             Vec::new()
         };
@@ -241,7 +243,21 @@ pub fn feed_validate_note(content: String) -> Result<bool, String> {
 
 /// Publish a text note (kind 1). Checks note against on-device AI moderation, signs with the
 /// unlocked signer, sends to relays, or queues in the persistent outbox when offline.
-/// Returns the signed event JSON.
+#[derive(serde::Deserialize)]
+struct SignedEventHeader<'a> {
+    id: &'a str,
+    pubkey: &'a str,
+    content: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct SearchIndexRow<'a> {
+    id: &'a str,
+    pubkey: &'a str,
+    content: &'a str,
+    kind: u64,
+}
+
 #[frb(serialize)]
 pub async fn feed_publish_text_note(content: String, tags_json: String) -> Result<String, String> {
     soshal_feed_core::publish::validate_note_content(&content).map_err(super::util::to_err)?;
@@ -261,19 +277,14 @@ pub async fn feed_publish_text_note(content: String, tags_json: String) -> Resul
             .filter_map(|t| nostr::event::Tag::parse(t).ok()),
     );
     let signed_json = super::signer::sign_builder(builder)?;
-    if let Ok(signed) = serde_json::from_str::<serde_json::Value>(&signed_json) {
-        if let (Some(id), Some(pubkey), Some(c)) = (
-            signed["id"].as_str(),
-            signed["pubkey"].as_str(),
-            signed["content"].as_str(),
-        ) {
-            let rows = serde_json::json!([{
-                "id": id,
-                "pubkey": pubkey,
-                "content": c,
-                "kind": 1,
-            }]);
-            let _ = super::search::search_index_posts(rows.to_string());
+    if let Ok(signed) = serde_json::from_str::<SignedEventHeader>(&signed_json) {
+        if let Ok(rows) = serde_json::to_string(&[SearchIndexRow {
+            id: signed.id,
+            pubkey: signed.pubkey,
+            content: signed.content,
+            kind: 1,
+        }]) {
+            let _ = super::search::search_index_posts(rows);
         }
     }
     super::sync::publish_or_enqueue("post", &signed_json).await?;
@@ -299,26 +310,21 @@ pub async fn feed_publish_reply(
         return Err(format!("reply blocked by moderation filter: {reason}"));
     }
     let mut builder = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, content);
-    if let Ok(tag) = nostr::event::Tag::parse(vec!["e".to_string(), root_event_id.clone()]) {
+    if let Ok(tag) = nostr::event::Tag::parse(["e", &root_event_id]) {
         builder = builder.tag(tag);
     }
-    if let Ok(tag) = nostr::event::Tag::parse(vec!["e".to_string(), reply_to_event_id]) {
+    if let Ok(tag) = nostr::event::Tag::parse(["e", &reply_to_event_id]) {
         builder = builder.tag(tag);
     }
     let signed_json = super::signer::sign_builder(builder)?;
-    if let Ok(signed) = serde_json::from_str::<serde_json::Value>(&signed_json) {
-        if let (Some(id), Some(pubkey), Some(c)) = (
-            signed["id"].as_str(),
-            signed["pubkey"].as_str(),
-            signed["content"].as_str(),
-        ) {
-            let rows = serde_json::json!([{
-                "id": id,
-                "pubkey": pubkey,
-                "content": c,
-                "kind": 1,
-            }]);
-            let _ = super::search::search_index_posts(rows.to_string());
+    if let Ok(signed) = serde_json::from_str::<SignedEventHeader>(&signed_json) {
+        if let Ok(rows) = serde_json::to_string(&[SearchIndexRow {
+            id: signed.id,
+            pubkey: signed.pubkey,
+            content: signed.content,
+            kind: 1,
+        }]) {
+            let _ = super::search::search_index_posts(rows);
         }
     }
     super::sync::publish_or_enqueue("reply", &signed_json).await?;

@@ -80,7 +80,18 @@ impl MeshEnvelope {
 
     /// Encodes to wire bytes (little-endian, magic prefixed).
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
-        let mut out = Vec::with_capacity(4 + 1 + 1 + 2 + 2 + 8 + 4 + self.payload.len());
+        let mut out = Vec::with_capacity(
+            4 + 1
+                + 1
+                + 2
+                + self.event_id.len()
+                + 2
+                + 2
+                + self.author.len()
+                + 8
+                + 4
+                + self.payload.len(),
+        );
         out.extend_from_slice(&MAGIC);
         out.push(self.version);
         out.push(self.hop_count);

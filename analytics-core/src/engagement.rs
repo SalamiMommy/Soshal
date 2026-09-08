@@ -16,14 +16,21 @@ pub fn compute_engagement_stats(
     let mut matching: Vec<&EngagementPostInput> =
         posts.iter().filter(|p| p.pubkey == self_pubkey).collect();
 
-    matching.sort_by_key(|b| std::cmp::Reverse(b.created_at));
-    matching.truncate(50);
+    if matching.len() > 50 {
+        matching.select_nth_unstable_by_key(50, |b| std::cmp::Reverse(b.created_at));
+        matching.truncate(50);
+        matching.sort_unstable_by_key(|b| std::cmp::Reverse(b.created_at));
+    } else {
+        matching.sort_unstable_by_key(|b| std::cmp::Reverse(b.created_at));
+    }
 
     let mut out = Vec::with_capacity(matching.len());
     for p in matching {
         let text = &p.nostr_event.content;
         let content = if text.len() <= 100 {
             text.to_string()
+        } else if text.is_ascii() {
+            text[..100].to_string()
         } else if let Some((idx, _)) = text.char_indices().nth(100) {
             text[..idx].to_string()
         } else {

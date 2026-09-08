@@ -300,7 +300,10 @@ class SoshalEvent {
 /// background isolate.
 List<SoshalEvent> _parseEvents(String json) {
   final decoded = jsonDecode(json);
-  return (decoded as List<dynamic>)
-      .map((e) => SoshalEvent.fromJson(e as Map<String, dynamic>))
-      .toList();
+  if (decoded is! List) return const [];
+  return List<SoshalEvent>.generate(
+    decoded.length,
+    (i) => SoshalEvent.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
 }

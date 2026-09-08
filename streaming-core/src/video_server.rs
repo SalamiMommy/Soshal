@@ -124,9 +124,8 @@ impl LocalVideoServer {
                     }
 
                     let path = parts[1];
-                    let range_header = lines
-                        .find(|l| l.to_lowercase().starts_with("range:"))
-                        .map(|l| l.to_string());
+                    let range_header =
+                        lines.find(|l| l.len() >= 6 && l[..6].eq_ignore_ascii_case("range:"));
 
                     let route = match parse_route(path) {
                         Some(r) => r,
@@ -145,8 +144,7 @@ impl LocalVideoServer {
                                     return;
                                 }
                             };
-                            serve_video_file(&mut socket, &file_path, range_header.as_deref())
-                                .await;
+                            serve_video_file(&mut socket, &file_path, range_header).await;
                         }
                         Route::Blob(hash) => {
                             let file_path = match root {
@@ -160,7 +158,7 @@ impl LocalVideoServer {
                                 serve_video_file(
                                     &mut socket,
                                     &file_path.to_string_lossy(),
-                                    range_header.as_deref(),
+                                    range_header,
                                 )
                                 .await;
                             } else {
@@ -229,24 +227,25 @@ async fn serve_video_file(
     let mut end = total_size.saturating_sub(1);
     let mut invalid_range = false;
     let is_range = if let Some(hdr) = range_header {
-        if let Some(spec) = hdr.split('=').nth(1) {
+        if let Some((_, spec)) = hdr.split_once('=') {
             let spec = spec.trim();
             if spec.contains(',') {
                 false
-            } else {
-                let parts: Vec<&str> = spec.split('-').collect();
-                if !parts.is_empty() && !parts[0].is_empty() {
-                    if let Ok(s) = parts[0].parse::<u64>() {
+            } else if let Some((start_str, end_str)) = spec.split_once('-') {
+                let start_str = start_str.trim();
+                let end_str = end_str.trim();
+                if !start_str.is_empty() {
+                    if let Ok(s) = start_str.parse::<u64>() {
                         start = s;
                     }
-                    if parts.len() > 1 && !parts[1].is_empty() {
-                        if let Ok(e) = parts[1].parse::<u64>() {
+                    if !end_str.is_empty() {
+                        if let Ok(e) = end_str.parse::<u64>() {
                             end = e.min(end);
                         }
                     }
                     true
-                } else if parts.len() > 1 && !parts[1].is_empty() {
-                    if let Ok(n) = parts[1].parse::<u64>() {
+                } else if !end_str.is_empty() {
+                    if let Ok(n) = end_str.parse::<u64>() {
                         start = total_size.saturating_sub(n);
                         end = total_size.saturating_sub(1);
                     }
@@ -255,6 +254,9 @@ async fn serve_video_file(
                     invalid_range = true;
                     true
                 }
+            } else {
+                invalid_range = true;
+                true
             }
         } else {
             false

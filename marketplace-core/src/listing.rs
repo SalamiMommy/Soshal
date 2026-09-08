@@ -60,6 +60,9 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
     let mut price_str: Option<&str> = None;
     let mut currency: Option<&str> = None;
     let mut location_geohash: Option<&str> = None;
+    let mut images: Vec<String> = Vec::new();
+    let mut videos: Vec<String> = Vec::new();
+    let mut hashtags: Vec<String> = Vec::new();
 
     for tag in &ev.tags {
         if tag.len() < 2 {
@@ -75,6 +78,15 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
             "price" if price_str.is_none() => price_str = Some(v),
             "currency" if currency.is_none() => currency = Some(v),
             "location" | "g" if location_geohash.is_none() => location_geohash = Some(v),
+            "image" if images.len() + videos.len() + hashtags.len() < 10_000 => {
+                images.push(v.clone())
+            }
+            "video" if images.len() + videos.len() + hashtags.len() < 10_000 => {
+                videos.push(v.clone())
+            }
+            "t" if images.len() + videos.len() + hashtags.len() < 10_000 => {
+                hashtags.push(v.clone())
+            }
             _ => {}
         }
     }
@@ -89,32 +101,10 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
         return None;
     }
 
-    let mut images: Vec<String> = Vec::new();
-    let mut videos: Vec<String> = Vec::new();
-    let mut hashtags: Vec<String> = Vec::new();
-
-    for tag in &ev.tags {
-        if tag.len() < 2 {
-            continue;
-        }
-        let v = &tag[1];
-        if v.len() > MAX_TAG_VALUE_LEN {
-            continue;
-        }
-        match tag[0].as_str() {
-            "image" => images.push(v.clone()),
-            "video" => videos.push(v.clone()),
-            "t" => hashtags.push(v.clone()),
-            _ => {}
-        }
-        if images.len() + videos.len() + hashtags.len() > 10_000 {
-            break;
-        }
-    }
     let currency = currency_str.to_string();
     let d_tag = d_tag
         .map(|s| s.to_string())
-        .unwrap_or_else(|| ev.id.chars().take(12).collect::<String>());
+        .unwrap_or_else(|| ev.id.get(..12).unwrap_or(&ev.id).to_string());
     let title = title.unwrap_or("Untitled").to_string();
     let location_geohash = location_geohash.map(|s| s.to_string());
     let mut description: Option<String> = None;

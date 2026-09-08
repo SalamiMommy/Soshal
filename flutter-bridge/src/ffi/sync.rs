@@ -42,6 +42,32 @@ pub fn sync_events(sink: StreamSink<String>) {
     *sink_guard() = Some(sink);
 }
 
+#[derive(serde::Serialize)]
+struct FeedSyncDto<'a> {
+    t: &'static str,
+    id: &'a str,
+    pubkey: &'a str,
+    content: &'a str,
+    created_at: u64,
+    kind: u64,
+}
+
+#[derive(serde::Serialize)]
+struct ReactionSyncDto<'a> {
+    t: &'static str,
+    id: &'a str,
+    event_id: &'a str,
+    pubkey: &'a str,
+    content: &'a str,
+    created_at: u64,
+}
+
+#[derive(serde::Serialize)]
+struct ProfileSyncDto<'a> {
+    t: &'static str,
+    pubkey: &'a str,
+}
+
 /// Serialize one engine update into its Dart-facing JSON payload.
 pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
     match update {
@@ -51,13 +77,15 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
             content,
             created_at,
             kind,
-        } => Some(
-            serde_json::json!({
-                "t": "feed", "id": id, "pubkey": pubkey,
-                "content": content, "created_at": created_at, "kind": kind
-            })
-            .to_string(),
-        ),
+        } => serde_json::to_string(&FeedSyncDto {
+            t: "feed",
+            id: &id,
+            pubkey: &pubkey,
+            content: &content,
+            created_at,
+            kind,
+        })
+        .ok(),
         SyncUpdate::Dm {
             id,
             sender,
@@ -120,16 +148,20 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
             pubkey,
             content,
             created_at,
-        } => Some(
-            serde_json::json!({
-                "t": "reaction", "id": id, "event_id": event_id,
-                "pubkey": pubkey, "content": content, "created_at": created_at
-            })
-            .to_string(),
-        ),
-        SyncUpdate::Profile { pubkey } => {
-            Some(serde_json::json!({"t": "profile", "pubkey": pubkey}).to_string())
-        }
+        } => serde_json::to_string(&ReactionSyncDto {
+            t: "reaction",
+            id: &id,
+            event_id: &event_id,
+            pubkey: &pubkey,
+            content: &content,
+            created_at,
+        })
+        .ok(),
+        SyncUpdate::Profile { pubkey } => serde_json::to_string(&ProfileSyncDto {
+            t: "profile",
+            pubkey: &pubkey,
+        })
+        .ok(),
     }
 }
 

@@ -26,7 +26,10 @@ pub struct SearchResult {
 /// Escape `%`, `_`, and `\` so they are treated as literals in a SQL LIKE
 /// pattern (used with `ESCAPE '\'`).
 fn escape_like(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
+    if !s.contains(['\\', '%', '_']) {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len() + 4);
     for c in s.chars() {
         if c == '\\' || c == '%' || c == '_' {
             out.push('\\');
@@ -93,7 +96,7 @@ fn run_search(
                         .await
                 }
             }?;
-            let mut out = Vec::new();
+            let mut out = Vec::with_capacity(limit as usize);
             while let Some(row) = rows.next().await? {
                 let content: String = row.get(2)?;
                 let pk: String = row.get(1)?;
@@ -211,15 +214,15 @@ pub fn search_hashtags(query: String, limit: i32) -> Result<Vec<String>, String>
     if let Some(tags) = cache.get(clean_query, now) {
         return Ok(tags.iter().take(limit).cloned().collect());
     }
-    let json = super::db::db_query_params(
-        "SELECT tag FROM hashtags WHERE tag LIKE ?1 || '%' ESCAPE '\\' GROUP BY tag ORDER BY SUM(count) DESC LIMIT 100",
-        &[escape_like(&clean_query)],
-    )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    let tags: Vec<String> = rows
-        .into_iter()
-        .filter_map(|r| r["tag"].as_str().map(|s| s.to_string()))
-        .collect();
+    let tags = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        soshal_db_core::query::query(
+            &conn,
+            "SELECT tag FROM hashtags WHERE tag LIKE ?1 || '%' ESCAPE '\\' GROUP BY tag ORDER BY SUM(count) DESC LIMIT 100",
+            libsql::params![escape_like(clean_query)],
+            |r| r.get(0),
+        )
+    })?;
     cache.insert(clean_query.to_string(), tags.clone(), now);
     Ok(tags.into_iter().take(limit).collect())
 }

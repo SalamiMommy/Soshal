@@ -411,15 +411,17 @@ fn rank_cards_by_interest_distance(
             sort_by: None,
         });
     let mut ranked: Vec<DatingCardInfo> = Vec::with_capacity(cards.len());
-    let mut remaining = cards;
-    for s in sorted {
-        if let Some(pos) = remaining.iter().position(|c| c.pubkey == s.pubkey) {
-            let mut card = remaining.remove(pos);
+    let mut remaining: std::collections::HashMap<String, DatingCardInfo> =
+        cards.into_iter().map(|c| (c.pubkey.clone(), c)).collect();
+    for s in &sorted {
+        if let Some(mut card) = remaining.remove(&s.pubkey) {
             card.compatibility_score = s.compatibility_score as f32;
             ranked.push(card);
         }
     }
-    ranked.append(&mut remaining);
+    for (_, card) in remaining {
+        ranked.push(card);
+    }
     ranked
 }
 
@@ -1063,81 +1065,91 @@ pub fn dating_filter_profiles(
             self_contacts: Vec::new(),
             sort_by: None,
         });
-    let mut remaining = cards;
-    let mut out = Vec::new();
+    let mut remaining: std::collections::HashMap<String, DatingCardInfo> =
+        cards.into_iter().map(|c| (c.pubkey.clone(), c)).collect();
+    let mut out = Vec::with_capacity(sorted.len().min(50));
     for s in sorted {
-        if let Some(pos) = remaining.iter().position(|c| c.pubkey == s.pubkey) {
-            let mut card = remaining.remove(pos);
+        if let Some(mut card) = remaining.remove(&s.pubkey) {
             card.compatibility_score = s.compatibility_score as f32;
             out.push(card);
+            if out.len() >= 50 {
+                break;
+            }
         }
     }
-    out.truncate(50);
     super::util::json_ok(out)
 }
 
 /// Dating profile statistics from the local graph.
 #[frb(sync, serialize)]
 pub fn dating_get_stats(user_pubkey: String) -> Result<String, String> {
-    let own_json = super::db::db_query_params(
-        &format!(
-            "SELECT id, content FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0 LIMIT 1"
-        ),
-        &[user_pubkey.clone()],
-    )?;
-    let own: Vec<serde_json::Value> = serde_json::from_str(&own_json).unwrap_or_default();
-    let own_row = own.first();
-    let own_id = own_row.and_then(|r| r["id"].as_str()).unwrap_or("");
-    let photo_count = own_row
-        .and_then(|r| r["content"].as_str())
-        .and_then(|c| serde_json::from_str::<serde_json::Value>(c).ok())
-        .map(|c| c["images"].as_array().map(|a| a.len()).unwrap_or(0))
-        .unwrap_or(0) as i64;
-    let likes_json = super::db::db_query_params(
-        &format!(
-            "SELECT COUNT(*) AS c FROM reactions WHERE event_id IN \
-             (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1) AND content = '+'"
-        ),
-        &[user_pubkey.clone()],
-    )?;
-    let likes: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&likes_json)
-        .ok()
-        .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
+    let (own_id, photo_count, likes, superlikes, views, matches) = super::db::with_db_result(
+        |db| {
+            let conn = db.conn()?;
+
+            let own_profile = soshal_db_core::query::query_first(
+            &conn,
+            &format!(
+                "SELECT id, content FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0 LIMIT 1"
+            ),
+            libsql::params![user_pubkey.as_str()],
+            |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?)),
+        )?;
+
+            let (own_id, photo_count) = if let Some((id, content)) = own_profile {
+                let count = serde_json::from_str::<serde_json::Value>(&content)
+                    .ok()
+                    .and_then(|c| c["images"].as_array().map(|a| a.len() as i64))
+                    .unwrap_or(0);
+                (id, count)
+            } else {
+                (String::new(), 0)
+            };
+
+            let (likes, superlikes) = soshal_db_core::query::query_first(
+                &conn,
+                &format!(
+                    "SELECT \
+                 COALESCE(SUM(CASE WHEN content = '+' THEN 1 ELSE 0 END), 0), \
+                 COALESCE(SUM(CASE WHEN content = 'super' THEN 1 ELSE 0 END), 0) \
+                 FROM reactions WHERE event_id IN \
+                 (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1)"
+                ),
+                libsql::params![user_pubkey.as_str()],
+                |r| Ok((r.get::<i64>(0)?, r.get::<i64>(1)?)),
+            )?
+            .unwrap_or((0, 0));
+
+            let views = if !own_id.is_empty() {
+                soshal_db_core::query::query_first(
+                    &conn,
+                    "SELECT COUNT(*) FROM post_views WHERE post_id = ?1",
+                    libsql::params![own_id.as_str()],
+                    |r| r.get::<i64>(0),
+                )?
+                .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let matches = soshal_db_core::query::query_first(
+            &conn,
+            &format!(
+                "SELECT COUNT(*) FROM reactions r \
+                 JOIN posts p ON p.id = r.event_id \
+                 WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND r.pubkey = ?1 \
+                 AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND r2.pubkey = p.pubkey \
+                             AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1))"
+            ),
+            libsql::params![user_pubkey.as_str()],
+            |r| r.get::<i64>(0),
+        )?
         .unwrap_or(0);
-    let superlikes_json = super::db::db_query_params(
-        &format!(
-            "SELECT COUNT(*) AS c FROM reactions WHERE event_id IN \
-             (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1) AND content = 'super'"
-        ),
-        &[user_pubkey.clone()],
+
+            Ok((own_id, photo_count, likes, superlikes, views, matches))
+        },
     )?;
-    let superlikes: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&superlikes_json)
-        .ok()
-        .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
-        .unwrap_or(0);
-    let views_json = super::db::db_query_params(
-        "SELECT COUNT(*) AS c FROM post_views WHERE post_id = ?1",
-        &[own_id.to_string()],
-    )
-    .unwrap_or_else(|_| "[]".to_string());
-    let views: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&views_json)
-        .ok()
-        .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
-        .unwrap_or(0);
-    let matches_json = super::db::db_query_params(
-        &format!(
-            "SELECT COUNT(*) AS c FROM reactions r \
-             JOIN posts p ON p.id = r.event_id \
-             WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND r.pubkey = ?1 \
-             AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND r2.pubkey = p.pubkey \
-                         AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1))"
-        ),
-        &[user_pubkey],
-    )?;
-    let matches: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&matches_json)
-        .ok()
-        .and_then(|r| r.first().and_then(|v| v["c"].as_i64()))
-        .unwrap_or(0);
+
     let stats = serde_json::json!({
         "profile_views": views,
         "likes_received": likes,

@@ -7,7 +7,19 @@ pub const SLIP_ESC_ESC: u8 = 0xDD;
 
 /// Encodes raw payload data into SLIP framed bytes.
 pub fn slip_encode(data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(data.len() + 4);
+    let escapes = data
+        .iter()
+        .filter(|&&b| b == SLIP_END || b == SLIP_ESC)
+        .count();
+    if escapes == 0 {
+        let mut out = Vec::with_capacity(data.len() + 2);
+        out.push(SLIP_END);
+        out.extend_from_slice(data);
+        out.push(SLIP_END);
+        return out;
+    }
+
+    let mut out = Vec::with_capacity(data.len() + escapes + 2);
     out.push(SLIP_END);
     for &b in data {
         match b {

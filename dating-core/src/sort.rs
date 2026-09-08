@@ -67,22 +67,22 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
         ));
     }
     match input.sort_by.as_deref() {
-        Some("age") => results.sort_by(|a, b| match (a.1, b.1) {
+        Some("age") => results.sort_unstable_by(|a, b| match (a.1, b.1) {
             (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(Ordering::Equal),
             (None, Some(_)) => Ordering::Greater,
             (Some(_), None) => Ordering::Less,
             (None, None) => Ordering::Equal,
         }),
-        Some("height") => results.sort_by(|a, b| match (a.2, b.2) {
+        Some("height") => results.sort_unstable_by(|a, b| match (a.2, b.2) {
             (Some(x), Some(y)) => y.partial_cmp(&x).unwrap_or(Ordering::Equal),
             (None, Some(_)) => Ordering::Greater,
             (Some(_), None) => Ordering::Less,
             (None, None) => Ordering::Equal,
         }),
         Some("distance") => {
-            results.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(Ordering::Equal))
+            results.sort_unstable_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(Ordering::Equal))
         }
-        _ => results.sort_by(|a, b| {
+        _ => results.sort_unstable_by(|a, b| {
             let cmp = b.0.compatibility_score.cmp(&a.0.compatibility_score);
             if cmp != Ordering::Equal {
                 return cmp;

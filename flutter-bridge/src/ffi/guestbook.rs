@@ -27,15 +27,33 @@ fn entry_json(row: &soshal_db_core::repos::guestbook::GuestbookEntryRow) -> serd
     })
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GuestbookEntryDto<'a> {
+    id: &'a str,
+    pubkey: &'a str,
+    profile_pubkey: &'a str,
+    name: Option<&'a str>,
+    avatar: Option<&'a str>,
+    content: &'a str,
+    created_at: i64,
+    sig: Option<&'a str>,
+    approved: bool,
+}
+
 fn sender_name_of(sender_pubkey: &str) -> Option<String> {
-    let profile_json = super::identity::identity_get_profile(sender_pubkey.to_string()).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&profile_json).ok()?;
-    let name = v["name"].as_str()?;
-    if name.is_empty() {
-        None
-    } else {
-        Some(name.to_string())
-    }
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        soshal_db_core::query::query_first(
+            &conn,
+            "SELECT name FROM users WHERE pubkey = ?1",
+            libsql::params![sender_pubkey],
+            |r| r.get(0),
+        )
+    })
+    .ok()
+    .flatten()
+    .filter(|s: &String| !s.is_empty())
 }
 
 /// Sign + store + relay a guestbook entry (kind 30080, `p` = owner pubkey).
@@ -97,8 +115,21 @@ pub fn guestbook_list(
         let rows = soshal_db_core::repos::guestbook::GuestbookRepo::new(db)
             .list_by_profile(&profile_pubkey, i64::from(limit), only_approved)
             .map_err(|e| e.to_string())?;
-        let arr: Vec<serde_json::Value> = rows.iter().map(entry_json).collect();
-        serde_json::to_string(&arr).map_err(|e| e.to_string())
+        let dtos: Vec<GuestbookEntryDto> = rows
+            .iter()
+            .map(|r| GuestbookEntryDto {
+                id: &r.id,
+                pubkey: &r.sender_pubkey,
+                profile_pubkey: &r.profile_pubkey,
+                name: r.sender_name.as_deref(),
+                avatar: r.sender_avatar.as_deref(),
+                content: &r.content,
+                created_at: r.created_at,
+                sig: r.signature.as_deref(),
+                approved: r.approved,
+            })
+            .collect();
+        serde_json::to_string(&dtos).map_err(|e| e.to_string())
     })
 }
 

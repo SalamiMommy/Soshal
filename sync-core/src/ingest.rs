@@ -81,6 +81,14 @@ fn e_tags(event: &Event) -> Vec<String> {
         .collect()
 }
 
+fn first_e_tag(event: &Event) -> Option<&str> {
+    event
+        .tags
+        .iter()
+        .find(|t| t.kind() == "e")
+        .and_then(|t| t.content())
+}
+
 fn p_tags(event: &Event) -> Vec<String> {
     event
         .tags
@@ -88,6 +96,14 @@ fn p_tags(event: &Event) -> Vec<String> {
         .filter(|t| t.kind() == "p")
         .filter_map(|t| t.content().map(|c| c.to_string()))
         .collect()
+}
+
+fn first_p_tag(event: &Event) -> Option<&str> {
+    event
+        .tags
+        .iter()
+        .find(|t| t.kind() == "p")
+        .and_then(|t| t.content())
 }
 
 fn r_tags(event: &Event) -> Vec<String> {
@@ -499,12 +515,13 @@ async fn handle_impl(
             }
         }
         Kind::ZapReceipt => {
-            let Some(recipient) = p_tags(event).first().cloned() else {
+            let Some(recipient) = first_p_tag(event) else {
                 return Ok(());
             };
             if recipient != my_pubkey {
                 return Ok(());
             }
+            let recipient = recipient.to_string();
             let Ok(amount_msats) = soshal_zap_core::parse_msats_from_bolt11(&event.content) else {
                 return Ok(());
             };
@@ -524,9 +541,10 @@ async fn handle_impl(
             let Some(desc_hash) = soshal_zap_core::bolt11_description_hash(&event.content) else {
                 return Ok(());
             };
-            let Some(zapped_event) = e_tags(event).first().cloned() else {
+            let Some(zapped_event) = first_e_tag(event) else {
                 return Ok(());
             };
+            let zapped_event = zapped_event.to_string();
             let requests = PostRepo::new(db)
                 .get_zap_requests_for_note_in(t, &zapped_event)
                 .await?;
@@ -591,9 +609,10 @@ async fn handle_impl(
             }
         }
         Kind::Bookmarks => {
-            let Some(event_id) = e_tags(event).first().cloned() else {
+            let Some(event_id) = first_e_tag(event) else {
                 return Ok(());
             };
+            let event_id = event_id.to_string();
             ensure_author_user(db, t, event).await?;
             BookmarkRepo::new(db)
                 .upsert_in(
@@ -608,15 +627,14 @@ async fn handle_impl(
                 .await?;
         }
         Kind::Reaction => {
-            let es = e_tags(event);
-            let Some(target) = es.first() else {
+            let Some(target) = first_e_tag(event) else {
                 return Ok(());
             };
             ensure_author_user(db, t, event).await?;
             let row = ReactionRow {
                 id: event.id.to_hex(),
                 pubkey: event.pubkey.to_hex(),
-                event_id: target.clone(),
+                event_id: target.to_string(),
                 kind: KIND_REACTION as i64,
                 content: Some(event.content.clone()),
                 created_at: sanitize_ts(event.created_at.as_secs()),
@@ -636,9 +654,10 @@ async fn handle_impl(
             }
         }
         Kind::Repost => {
-            let Some(target) = e_tags(event).first().cloned() else {
+            let Some(target) = first_e_tag(event) else {
                 return Ok(());
             };
+            let target = target.to_string();
             ensure_author_user(db, t, event).await?;
             let row = RepostRow {
                 id: event.id.to_hex(),

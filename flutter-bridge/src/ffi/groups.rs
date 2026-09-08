@@ -305,7 +305,7 @@ pub fn groups_fetch_messages(
             let mut rows = stmt
                 .query(libsql::params![group_id, room_id, limit, offset])
                 .await?;
-            let mut out = Vec::with_capacity(32);
+            let mut out = Vec::with_capacity(limit as usize);
             while let Some(row) = rows.next().await? {
                 out.push(GroupMessageRow {
                     id: row.get(0)?,
@@ -425,15 +425,18 @@ pub fn groups_role_delete(role_id: String) -> Result<bool, String> {
 /// Members with their role ids (json array of {pubkey, role}).
 #[frb(sync, serialize)]
 pub fn groups_members_with_roles(group_id: String) -> Result<String, String> {
+    #[derive(Serialize)]
+    struct MemberRole<'a> {
+        pubkey: &'a str,
+        role: &'a str,
+    }
     super::db::with_db_result(|db| {
         let members = GroupRepo::new(db).get_members(&group_id)?;
-        let rows: Vec<serde_json::Value> = members
+        let rows: Vec<MemberRole> = members
             .iter()
-            .map(|m| {
-                serde_json::json!({
-                    "pubkey": m.pubkey,
-                    "role": m.role,
-                })
+            .map(|m| MemberRole {
+                pubkey: &m.pubkey,
+                role: &m.role,
             })
             .collect();
         serde_json::to_string(&rows)

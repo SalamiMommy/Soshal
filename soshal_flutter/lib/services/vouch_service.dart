@@ -28,10 +28,12 @@ class VouchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         final json = await RustLib.instance.api.crateFfiVouchVouchFetch(
           targetPubkey: targetPubkey,
         );
-        final decoded = jsonDecode(json);
-        _vouches = (decoded as List<dynamic>)
-            .map((e) => VouchEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
+        final decoded = jsonDecode(json) as List<dynamic>;
+        _vouches = List<VouchEntry>.generate(
+          decoded.length,
+          (i) => VouchEntry.fromJson(decoded[i] as Map<String, dynamic>),
+          growable: true,
+        );
         return _vouches;
       });
 }

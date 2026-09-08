@@ -539,9 +539,7 @@ class ListingInfo {
       sellerName: json.strOf('seller_name'),
       title: json.strOf('title'),
       description: json.strOf('description'),
-      images: (json['images'] as List<dynamic>? ?? [])
-          .map((e) => e.toString())
-          .toList(),
+      images: json.stringsOf('images'),
       price: json.intOf('price'),
       currency: json.strOf('currency'),
       category: json.strOf('category'),
@@ -637,25 +635,34 @@ class EscrowInfo {
 /// background isolate.
 List<ListingInfo> _parseListings(String json) {
   final decoded = jsonDecode(json);
-  return (decoded as List<dynamic>)
-      .map((e) => ListingInfo.fromJson(e as Map<String, dynamic>))
-      .toList();
+  if (decoded is! List) return const [];
+  return List<ListingInfo>.generate(
+    decoded.length,
+    (i) => ListingInfo.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
 }
 
 /// JSON → [OrderInfo] list, top-level so [runOffThread] can decode on a
 /// background isolate.
 List<OrderInfo> _parseOrders(String json) {
   final decoded = jsonDecode(json);
-  return (decoded as List<dynamic>)
-      .map((e) => OrderInfo.fromJson(e as Map<String, dynamic>))
-      .toList();
+  if (decoded is! List) return const [];
+  return List<OrderInfo>.generate(
+    decoded.length,
+    (i) => OrderInfo.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
 }
 
 /// JSON → [EscrowInfo] list, top-level so [runOffThread] can decode on a
 /// background isolate.
 List<EscrowInfo> _parseEscrows(String json) {
   final decoded = jsonDecode(json);
-  return (decoded as List<dynamic>)
-      .map((e) => EscrowInfo.fromJson(e as Map<String, dynamic>))
-      .toList();
+  if (decoded is! List) return const [];
+  return List<EscrowInfo>.generate(
+    decoded.length,
+    (i) => EscrowInfo.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
 }

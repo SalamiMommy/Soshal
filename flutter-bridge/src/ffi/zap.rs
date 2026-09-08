@@ -166,19 +166,26 @@ pub fn zap_disconnect_nwc() -> Result<bool, String> {
     Ok(true).into()
 }
 
+#[derive(Serialize)]
+struct NwcStatusConnectedDto<'a> {
+    wallet_pubkey: &'a str,
+    relay_url: &'a str,
+    connected: bool,
+}
+
 /// Get NWC connection status (never includes the secret).
 #[frb(serialize)]
 pub fn zap_get_nwc_status() -> Result<String, String> {
     let guard = crate::ffi::util::lock(&NWC);
     match guard.as_ref() {
-        Some(info) => Ok(serde_json::json!({
-            "wallet_pubkey": info.wallet_pubkey,
-            "relay_url": info.relay_url,
-            "connected": true,
+        Some(info) => serde_json::to_string(&NwcStatusConnectedDto {
+            wallet_pubkey: &info.wallet_pubkey,
+            relay_url: &info.relay_url,
+            connected: true,
         })
-        .to_string())
+        .map_err(|e| format!("serialize nwc status: {e}"))
         .into(),
-        None => Ok(serde_json::json!({ "connected": false }).to_string()).into(),
+        None => Ok("{\"connected\":false}".to_string()).into(),
     }
 }
 
@@ -274,12 +281,17 @@ pub async fn zap_send_payment(bolt11: String) -> Result<String, String> {
 /// only — never the `amount` tag of an unverified receipt).
 #[frb(serialize)]
 pub fn zap_get_total_msat(event_id: String) -> Result<u64, String> {
-    let json = zap_fetch_totals(vec![event_id.clone()])?;
-    let v: serde_json::Value = serde_json::from_str(&json).map_err(|e| format!("parse: {e}"))?;
-    Ok(v.get(&event_id)
-        .and_then(serde_json::Value::as_i64)
-        .unwrap_or(0)
-        .max(0) as u64)
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let total: i64 = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT COALESCE(SUM(amount_msat), 0) FROM zaps WHERE event_id = ?1",
+            libsql::params![event_id.as_str()],
+            |r| r.get(0),
+        )?
+        .unwrap_or(0);
+        Ok(total.max(0) as u64)
+    })
 }
 
 /// Batch zap totals for many event ids: one query, one FFI roundtrip.
@@ -295,19 +307,40 @@ pub fn zap_fetch_totals(event_ids: Vec<String>) -> Result<String, String> {
                 )
                 .await?;
             let mut rows = stmt.query(libsql::params![ids_json.as_str()]).await?;
-            let mut map = serde_json::Map::new();
+            let mut map: std::collections::HashMap<&str, i64> =
+                std::collections::HashMap::with_capacity(event_ids.len());
             for id in &event_ids {
-                map.insert(id.clone(), serde_json::json!(0));
+                map.insert(id.as_str(), 0);
             }
             while let Some(row) = rows.next().await? {
-                map.insert(row.get::<String>(0)?, serde_json::json!(row.get::<i64>(1)?));
+                let eid: String = row.get(0)?;
+                let sum: i64 = row.get(1)?;
+                if let Some(slot) = map.get_mut(eid.as_str()) {
+                    *slot = sum;
+                }
             }
             Ok::<_, libsql::Error>(map)
         })
         .map_err(soshal_db_core::error::DbError::from)?;
-        Ok(serde_json::to_string(&serde_json::Value::Object(out))
-            .unwrap_or_else(|_| "{}".to_string()))
+        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "{}".to_string()))
     })
+}
+
+#[derive(Serialize)]
+struct ZapReceiptDto {
+    id: String,
+    event_id: Option<String>,
+    recipient_pubkey: String,
+    sender_pubkey: Option<String>,
+    amount_msat: i64,
+    bolt11: Option<String>,
+    preimage: Option<String>,
+    comment: Option<String>,
+    created_at: i64,
+    pubkey: Option<String>,
+    amount: i64,
+    content: Option<String>,
+    zap_type: String,
 }
 
 /// Fetch stored zap receipt rows for an event as raw JSON.
@@ -327,28 +360,28 @@ pub fn zap_fetch_receipts(event_id: String, limit: i32) -> Result<String, String
             let mut rows = stmt
                 .query(libsql::params![event_id.as_str(), limit as i64])
                 .await?;
-            let mut out = Vec::new();
+            let mut out = Vec::with_capacity((limit as usize).min(64));
             while let Some(row) = rows.next().await? {
-                out.push(serde_json::json!({
-                    "id": row.get::<String>(0)?,
-                    "event_id": row.get::<Option<String>>(1)?,
-                    "recipient_pubkey": row.get::<String>(2)?,
-                    "sender_pubkey": row.get::<Option<String>>(3)?,
-                    "amount_msat": row.get::<i64>(4)?,
-                    "bolt11": row.get::<Option<String>>(5)?,
-                    "preimage": row.get::<Option<String>>(6)?,
-                    "comment": row.get::<Option<String>>(7)?,
-                    "created_at": row.get::<i64>(8)?,
-                    "pubkey": row.get::<Option<String>>(9)?,
-                    "amount": row.get::<i64>(10)?,
-                    "content": row.get::<Option<String>>(11)?,
-                    "zap_type": row.get::<String>(12)?,
-                }));
+                out.push(ZapReceiptDto {
+                    id: row.get::<String>(0)?,
+                    event_id: row.get::<Option<String>>(1)?,
+                    recipient_pubkey: row.get::<String>(2)?,
+                    sender_pubkey: row.get::<Option<String>>(3)?,
+                    amount_msat: row.get::<i64>(4)?,
+                    bolt11: row.get::<Option<String>>(5)?,
+                    preimage: row.get::<Option<String>>(6)?,
+                    comment: row.get::<Option<String>>(7)?,
+                    created_at: row.get::<i64>(8)?,
+                    pubkey: row.get::<Option<String>>(9)?,
+                    amount: row.get::<i64>(10)?,
+                    content: row.get::<Option<String>>(11)?,
+                    zap_type: row.get::<String>(12)?,
+                });
             }
             Ok::<_, libsql::Error>(out)
         })
         .map_err(soshal_db_core::error::DbError::from)?;
-        Ok(super::util::json_ok_or_empty(&out))
+        Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string()))
     })?;
     Ok(json).into()
 }

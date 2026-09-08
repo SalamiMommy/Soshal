@@ -48,10 +48,13 @@ pub fn compress_payload(payload: &str) -> String {
 }
 
 pub fn decompress_payload(raw: &str) -> String {
+    if !raw.starts_with("__zstd") {
+        return raw.to_string();
+    }
     const MAX_DECOMPRESSED: u64 = 1024 * 1024;
     let cap = |bytes: &[u8]| -> Option<String> {
         let decoder = zstd::stream::read::Decoder::new(bytes).ok()?;
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(bytes.len() * 3);
         decoder
             .take(MAX_DECOMPRESSED + 1)
             .read_to_end(&mut out)

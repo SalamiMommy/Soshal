@@ -354,10 +354,19 @@ pub fn check_text_comprehensive(text: &str, custom_words: &[String]) -> Moderati
 
     // 6. Custom Word Filters
     if !custom_words.is_empty() {
-        let lower = trimmed.to_ascii_lowercase();
+        let lower: std::borrow::Cow<str> = if trimmed.bytes().any(|b| b.is_ascii_uppercase()) {
+            std::borrow::Cow::Owned(trimmed.to_ascii_lowercase())
+        } else {
+            std::borrow::Cow::Borrowed(trimmed)
+        };
         let normalized = crate::normalize::normalize_basic(trimmed);
         for word in custom_words {
-            let w = word.trim().to_ascii_lowercase();
+            let trimmed_w = word.trim();
+            let w: std::borrow::Cow<str> = if trimmed_w.bytes().any(|b| b.is_ascii_uppercase()) {
+                std::borrow::Cow::Owned(trimmed_w.to_ascii_lowercase())
+            } else {
+                std::borrow::Cow::Borrowed(trimmed_w)
+            };
             if !w.is_empty()
                 && (custom_word_matches(&lower, &w) || custom_word_matches(&normalized, &w))
             {

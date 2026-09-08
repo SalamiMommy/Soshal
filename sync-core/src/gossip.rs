@@ -35,9 +35,10 @@ impl GossipSyncBridge {
         msg: PlumTreeMessage,
         tx: &Sender<SyncUpdate>,
     ) -> Vec<(String, PlumTreeMessage)> {
-        let outgoing = {
+        let (outgoing, my_pubkey) = {
             let mut pt = self.node.write().await;
-            pt.handle_incoming(from_peer, msg.clone())
+            let out = pt.handle_incoming(from_peer, msg.clone());
+            (out, pt.self_peer_id.clone())
         };
 
         if let PlumTreeMessage::Gossip { payload_json, .. } = msg {
@@ -51,7 +52,6 @@ impl GossipSyncBridge {
                     // Use bridge identity for p-tag-to-me checks: empty
                     // pubkey would drop all gossip DMs (safe) but also
                     // breaks own-DM relay via mesh. Read from node.
-                    let my_pubkey = self.node.read().await.self_peer_id.clone();
                     // Ingest into SQLite database
                     if let Err(e) = crate::ingest::handle(db, &my_pubkey, &event, tx) {
                         eprintln!("gossip ingest failed: {e}");

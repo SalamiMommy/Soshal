@@ -6,6 +6,7 @@
 //! through minis-core.
 
 use flutter_rust_bridge::frb;
+use serde::Serialize;
 use soshal_db_core::repos::saved::{
     MusicloudPlaylistRepo, PlaylistTrackRow, SavedContentRepo, SavedContentRow,
 };
@@ -302,26 +303,56 @@ pub fn music_unsave(track_id: String) -> Result<bool, String> {
 }
 
 /// Return saved tracks as a JSON array of musicloud-shaped entries: id,
+#[derive(Serialize)]
+struct SavedTrackDto<'a> {
+    id: &'a str,
+    pubkey: &'a str,
+    #[serde(rename = "audioUrl")]
+    audio_url: &'a str,
+    #[serde(rename = "blobHash")]
+    blob_hash: &'a str,
+    #[serde(rename = "mediaSize")]
+    media_size: i64,
+    title: &'a str,
+    thumbnail: &'a str,
+    hashtags: serde_json::Value,
+    d: &'a str,
+    audience: &'a str,
+    #[serde(rename = "createdAt")]
+    created_at: i64,
+    #[serde(rename = "hostReady")]
+    host_ready: bool,
+    #[serde(rename = "savedAt")]
+    saved_at: i64,
+}
+
+/// List saved musicloud tracks for the active account as JSON: id,
 /// pubkey, audioUrl, blobHash, mediaSize, title, thumbnail, hashtags, d,
 /// audience, createdAt — plus hostReady and savedAt. Newest saved first.
 #[frb(sync, serialize)]
 pub fn music_saved() -> Result<String, String> {
     let rows = super::db::with_db_result(|db| SavedContentRepo::new(db).list(31022, 200))?;
-    let out: Vec<serde_json::Value> = rows
-        .into_iter()
-        .map(|r| {
-            let hashtags: Vec<serde_json::Value> =
-                serde_json::from_str(&r.hashtags).unwrap_or_default();
-            serde_json::json!({
-                "id": r.id, "pubkey": r.pubkey, "audioUrl": r.media_url,
-                "blobHash": r.blob_hash, "mediaSize": r.media_size,
-                "title": r.title, "thumbnail": r.thumbnail, "hashtags": hashtags,
-                "d": r.d, "audience": r.audience, "createdAt": r.created_at,
-                "hostReady": r.host_ready, "savedAt": r.saved_at,
-            })
-        })
-        .collect();
-    super::util::json_ok(out)
+    let mut out = Vec::with_capacity(rows.len());
+    for r in &rows {
+        let hashtags: serde_json::Value =
+            serde_json::from_str(&r.hashtags).unwrap_or_else(|_| serde_json::json!([]));
+        out.push(SavedTrackDto {
+            id: &r.id,
+            pubkey: &r.pubkey,
+            audio_url: &r.media_url,
+            blob_hash: &r.blob_hash,
+            media_size: r.media_size,
+            title: &r.title,
+            thumbnail: &r.thumbnail,
+            hashtags,
+            d: &r.d,
+            audience: &r.audience,
+            created_at: r.created_at,
+            host_ready: r.host_ready,
+            saved_at: r.saved_at,
+        });
+    }
+    serde_json::to_string(&out).map_err(|e| format!("serialize saved tracks: {e}"))
 }
 
 /// Create a playlist for the active account. Returns the new playlist id.
@@ -339,23 +370,37 @@ pub fn music_playlist_create(title: String, is_private: bool) -> Result<String, 
     Ok(id)
 }
 
+#[derive(Serialize)]
+struct PlaylistSummaryDto<'a> {
+    id: &'a str,
+    pubkey: &'a str,
+    title: &'a str,
+    #[serde(rename = "isPrivate")]
+    is_private: bool,
+    #[serde(rename = "createdAt")]
+    created_at: i64,
+    #[serde(rename = "trackCount")]
+    track_count: i64,
+}
+
 /// List the active account's playlists as JSON: id, pubkey, title, isPrivate,
 /// createdAt, trackCount. Newest first.
 #[frb(sync, serialize)]
 pub fn music_playlist_list() -> Result<String, String> {
     let pubkey = super::db::active_pubkey().unwrap_or_default();
     let rows = super::db::with_db_result(|db| MusicloudPlaylistRepo::new(db).list(&pubkey, 200))?;
-    let out: Vec<serde_json::Value> = rows
-        .into_iter()
-        .map(|p| {
-            serde_json::json!({
-                "id": p.id, "pubkey": p.pubkey, "title": p.title,
-                "isPrivate": p.is_private, "createdAt": p.created_at,
-                "trackCount": p.track_count,
-            })
-        })
-        .collect();
-    super::util::json_ok(out)
+    let mut out = Vec::with_capacity(rows.len());
+    for p in &rows {
+        out.push(PlaylistSummaryDto {
+            id: &p.id,
+            pubkey: &p.pubkey,
+            title: &p.title,
+            is_private: p.is_private,
+            created_at: p.created_at,
+            track_count: p.track_count,
+        });
+    }
+    serde_json::to_string(&out).map_err(|e| format!("serialize playlists: {e}"))
 }
 
 /// Rename a playlist owned by the active account.
@@ -417,6 +462,25 @@ pub fn music_playlist_remove_track(playlist_id: String, track_id: String) -> Res
     Ok(true)
 }
 
+#[derive(Serialize)]
+struct PlaylistTrackDto<'a> {
+    id: &'a str,
+    pubkey: &'a str,
+    #[serde(rename = "audioUrl")]
+    audio_url: &'a str,
+    #[serde(rename = "blobHash")]
+    blob_hash: &'a str,
+    #[serde(rename = "mediaSize")]
+    media_size: i64,
+    title: &'a str,
+    thumbnail: &'a str,
+    hashtags: serde_json::Value,
+    d: &'a str,
+    audience: &'a str,
+    #[serde(rename = "createdAt")]
+    created_at: i64,
+}
+
 /// Return a playlist's tracks ordered by insertion position as a JSON array
 /// of musicloud-shaped entries (id, pubkey, audioUrl, blobHash, mediaSize,
 /// title, thumbnail, hashtags, d, audience, createdAt).
@@ -424,20 +488,25 @@ pub fn music_playlist_remove_track(playlist_id: String, track_id: String) -> Res
 pub fn music_playlist_tracks(playlist_id: String) -> Result<String, String> {
     let rows =
         super::db::with_db_result(|db| MusicloudPlaylistRepo::new(db).tracks(&playlist_id, 500))?;
-    let out: Vec<serde_json::Value> = rows
-        .into_iter()
-        .map(|r| {
-            let hashtags: Vec<serde_json::Value> =
-                serde_json::from_str(&r.hashtags).unwrap_or_default();
-            serde_json::json!({
-                "id": r.track_id, "pubkey": r.pubkey, "audioUrl": r.audio_url,
-                "blobHash": r.blob_hash, "mediaSize": r.media_size,
-                "title": r.title, "thumbnail": r.thumbnail, "hashtags": hashtags,
-                "d": r.d, "audience": r.audience, "createdAt": r.created_at,
-            })
-        })
-        .collect();
-    super::util::json_ok(out)
+    let mut out = Vec::with_capacity(rows.len());
+    for r in &rows {
+        let hashtags: serde_json::Value =
+            serde_json::from_str(&r.hashtags).unwrap_or_else(|_| serde_json::json!([]));
+        out.push(PlaylistTrackDto {
+            id: &r.track_id,
+            pubkey: &r.pubkey,
+            audio_url: &r.audio_url,
+            blob_hash: &r.blob_hash,
+            media_size: r.media_size,
+            title: &r.title,
+            thumbnail: &r.thumbnail,
+            hashtags,
+            d: &r.d,
+            audience: &r.audience,
+            created_at: r.created_at,
+        });
+    }
+    serde_json::to_string(&out).map_err(|e| format!("serialize playlist tracks: {e}"))
 }
 
 #[cfg(test)]

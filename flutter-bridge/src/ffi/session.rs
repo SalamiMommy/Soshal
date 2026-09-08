@@ -342,9 +342,10 @@ pub fn session_load(db_path: String) -> Result<String, String> {
                     // loaded_at changed (or the file was legacy/unsigned):
                     // re-sign and persist so the on-disk tag stays valid.
                     let _ = write_session_file(&session_path, &session_key, &session);
+                    let json = super::util::json_ok(&session)?;
                     let mut session_lock = lock_session()?;
-                    *session_lock = Some(session.clone());
-                    super::util::json_ok(session)
+                    *session_lock = Some(session);
+                    Ok(json)
                 }
                 Err(e) => Err(format!("Failed to parse session: {}", e)).into(),
             },
@@ -360,9 +361,10 @@ pub fn session_load(db_path: String) -> Result<String, String> {
             loaded_at: Some(soshal_common_core::format::now_secs() as u64),
             sig: None,
         };
+        let json = super::util::json_ok(&empty)?;
         let mut session_lock = lock_session()?;
-        *session_lock = Some(empty.clone());
-        super::util::json_ok(empty)
+        *session_lock = Some(empty);
+        Ok(json)
     }
 }
 
@@ -532,20 +534,14 @@ pub fn session_get_active() -> Result<String, String> {
                     acc.last_used = now;
                 }
                 let data = session.clone();
+                let account = data
+                    .accounts
+                    .iter()
+                    .find(|a| a.pubkey == active_pubkey)
+                    .cloned();
                 drop(session_lock);
                 persist_session(&data);
-                // Re-acquire to read the (now-updated) account for the return value.
-                let session_lock = lock_session()?;
-                if let Some(session) = session_lock.as_ref() {
-                    let account = session
-                        .accounts
-                        .iter()
-                        .find(|a| a.pubkey == active_pubkey)
-                        .cloned();
-                    return super::util::json_ok(account);
-                } else {
-                    return Err("Session not loaded".to_string());
-                }
+                return super::util::json_ok(account);
             }
             let account = session
                 .accounts
@@ -566,7 +562,7 @@ pub fn session_get_active() -> Result<String, String> {
 pub fn session_list_accounts() -> Result<String, String> {
     let session_lock = lock_session()?;
     if let Some(session) = session_lock.as_ref() {
-        super::util::json_ok(session.accounts.clone())
+        super::util::json_ok(&session.accounts)
     } else {
         Err("Session not loaded".to_string()).into()
     }

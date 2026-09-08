@@ -41,9 +41,12 @@ pub async fn vouch_fetch(target_pubkey: String) -> Result<String, String> {
         if !soshal_nostr_core::models::verify_event(&e) {
             continue;
         }
-        out.push(soshal_social_core::relations::relation_entry_from_event(
-            &soshal_nostr_core::models::NostrEvent::from(&e),
-        ));
+        out.push(serde_json::json!({
+            "id": e.id.to_hex(),
+            "pubkey": e.pubkey.to_hex(),
+            "content": e.content,
+            "created_at": e.created_at.as_secs(),
+        }));
     }
     super::util::json_ok(out)
 }

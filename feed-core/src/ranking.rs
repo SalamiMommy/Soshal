@@ -40,46 +40,61 @@ pub fn score_post_with_set(
     now_secs: f64,
 ) -> f64 {
     let hours_ago = (now_secs - stats.created_at_secs).max(0.1) / HOUR_SEC;
-    let engagement = (stats.likes_count as u64)
-        + (stats.reposts_count as u64)
-        + (stats.zaps_count as u64)
-        + (stats.replies_count as u64);
-    let velocity = engagement as f64 / hours_ago;
-    let wot_boost = (2.0 - stats.wot_distance.min(2) as f64).max(0.5);
-    let recency_factor = 1.0 / (hours_ago + 1.0).log2();
 
-    let hashtag_score = if !post_hashtags.is_empty() && !user_hashtags_set.is_empty() {
-        // ASCII tags match via alloc-free case-insensitive scan of the
-        // (lowercased) user set — no per-tag String allocation in the
-        // scoring loop. Non-ASCII falls back to a lowercased lookup.
-        let match_count = post_hashtags
-            .iter()
-            .filter(|t| {
-                if t.is_ascii() && t.len() <= 64 {
-                    let mut buf = [0u8; 64];
-                    let bytes = t.as_bytes();
-                    for (i, &b) in bytes.iter().enumerate() {
-                        buf[i] = b.to_ascii_lowercase();
-                    }
-                    if let Ok(s) = std::str::from_utf8(&buf[..bytes.len()]) {
-                        user_hashtags_set.contains(s)
-                    } else {
-                        false
-                    }
-                } else {
-                    user_hashtags_set.contains(t.to_lowercase().as_str())
-                }
-            })
-            .count();
-        match_count as f64 / post_hashtags.len() as f64
+    let velocity_term = if weights.velocity != 0.0 {
+        let engagement = (stats.likes_count as u64)
+            + (stats.reposts_count as u64)
+            + (stats.zaps_count as u64)
+            + (stats.replies_count as u64);
+        (engagement as f64 / hours_ago) * weights.velocity
     } else {
         0.0
     };
 
-    let score = velocity * weights.velocity
-        + wot_boost * weights.wot
-        + recency_factor * weights.recency
-        + hashtag_score * weights.hashtag;
+    let wot_term = if weights.wot != 0.0 {
+        let wot_boost = (2.0 - stats.wot_distance.min(2) as f64).max(0.5);
+        wot_boost * weights.wot
+    } else {
+        0.0
+    };
+
+    let recency_term = if weights.recency != 0.0 {
+        let recency_factor = 1.0 / (hours_ago + 1.0).log2();
+        recency_factor * weights.recency
+    } else {
+        0.0
+    };
+
+    let hashtag_term =
+        if weights.hashtag != 0.0 && !post_hashtags.is_empty() && !user_hashtags_set.is_empty() {
+            // ASCII tags match via alloc-free case-insensitive scan of the
+            // (lowercased) user set — no per-tag String allocation in the
+            // scoring loop. Non-ASCII falls back to a lowercased lookup.
+            let match_count = post_hashtags
+                .iter()
+                .filter(|t| {
+                    if t.is_ascii() && t.len() <= 64 {
+                        let mut buf = [0u8; 64];
+                        let bytes = t.as_bytes();
+                        for (i, &b) in bytes.iter().enumerate() {
+                            buf[i] = b.to_ascii_lowercase();
+                        }
+                        if let Ok(s) = std::str::from_utf8(&buf[..bytes.len()]) {
+                            user_hashtags_set.contains(s)
+                        } else {
+                            false
+                        }
+                    } else {
+                        user_hashtags_set.contains(t.to_lowercase().as_str())
+                    }
+                })
+                .count();
+            (match_count as f64 / post_hashtags.len() as f64) * weights.hashtag
+        } else {
+            0.0
+        };
+
+    let score = velocity_term + wot_term + recency_term + hashtag_term;
     if score.is_finite() {
         score.max(0.0)
     } else {
@@ -112,7 +127,11 @@ pub fn rank_posts(
     let user_hashtags_set: HashSet<String> = if user_hashtags.is_empty() {
         HashSet::new()
     } else {
-        user_hashtags.iter().map(|s| s.to_lowercase()).collect()
+        let mut set = HashSet::with_capacity(user_hashtags.len());
+        for s in user_hashtags {
+            set.insert(s.to_lowercase());
+        }
+        set
     };
     let mut scored: Vec<(usize, f64)> = if posts_stats.len() < 256 {
         posts_stats
@@ -140,9 +159,9 @@ pub fn rank_posts(
             b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
         });
         scored.truncate(limit);
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     } else {
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     }
     scored.into_iter().map(|(i, _)| i).collect()
 }

@@ -352,6 +352,13 @@ pub fn p2p_moq_decode_group(bytes: Vec<u8>) -> Result<String, String> {
     serde_json::to_string(&group).map_err(|e| format!("moq serde: {e}"))
 }
 
+#[derive(Serialize)]
+struct MoqPublishDto<'a> {
+    status: &'static str,
+    stream_id: &'a str,
+    groups: u64,
+}
+
 /// Publish one encoded MoQ group into the live registry under `stream_id`.
 /// Bytes are opaque to the transport; the caller encodes with
 /// `p2p_moq_encode_group`. Returns JSON `{"status","stream_id","groups"}`.
@@ -361,11 +368,17 @@ pub fn p2p_moq_publish_group(stream_id: String, encoded: Vec<u8>) -> Result<Stri
         return Err("bad live stream id".to_string()).into();
     }
     let seq = soshal_network_core::quic::moq_publish_group(&stream_id, encoded).map_err(|e| e)?;
-    super::util::json_ok(serde_json::json!({
-        "status": "published",
-        "stream_id": stream_id,
-        "groups": seq,
-    }))
+    serde_json::to_string(&MoqPublishDto {
+        status: "published",
+        stream_id: &stream_id,
+        groups: seq,
+    })
+    .map_err(|e| format!("serialize moq publish: {e}"))
+}
+
+#[derive(Serialize)]
+struct MoqSubscribeDto {
+    groups: Vec<String>,
 }
 
 /// Subscribe to a live MoQ stream over QUIC for `window_ms`. Returns JSON
@@ -387,9 +400,19 @@ pub async fn p2p_moq_subscribe_fetch(
         addr, key, &my_pubkey, &stream_id, window_ms,
     )
     .map_err(|e| e)?;
-    super::util::json_ok(serde_json::json!({
-        "groups": groups.iter().map(hex::encode).collect::<Vec<_>>(),
-    }))
+    let mut hex_groups = Vec::with_capacity(groups.len());
+    for g in &groups {
+        hex_groups.push(hex::encode(g));
+    }
+    serde_json::to_string(&MoqSubscribeDto { groups: hex_groups })
+        .map_err(|e| format!("serialize moq subscribe: {e}"))
+}
+
+#[derive(Serialize)]
+struct BlobFetchDto<'a> {
+    success: bool,
+    path: &'a str,
+    bytes: u64,
 }
 
 /// Hash-only blob fetch from a single LAN peer: crawl the manifest over QUIC
@@ -423,11 +446,12 @@ pub async fn p2p_fetch_blob_from_peer(
     .await
     .map_err(|e| format!("blob fetch task: {e}"))?
     .map_err(|e| e)?;
-    super::util::json_ok(serde_json::json!({
-        "success": true,
-        "path": path,
-        "bytes": bytes,
-    }))
+    serde_json::to_string(&BlobFetchDto {
+        success: true,
+        path: &path,
+        bytes,
+    })
+    .map_err(|e| format!("serialize blob fetch: {e}"))
 }
 
 /// Kick off a swarm download of `manifest_json` from `peers_json` (a list of
@@ -576,18 +600,25 @@ pub fn p2p_stop_all() -> Result<bool, String> {
     Ok(true).into()
 }
 
+#[derive(Serialize)]
+struct FountainEncodeDto<'a> {
+    manifest: &'a soshal_storage_core::erasure_fountain::FountainManifest,
+    packets: Vec<String>,
+}
+
 /// Encodes raw payload into rateless RaptorQ Fountain code packets.
 #[frb(sync, serialize)]
 pub fn p2p_encode_fountain_payload(data: Vec<u8>, redundancy_ratio: f32) -> Result<String, String> {
     let encoded = soshal_storage_core::erasure_fountain::encode_fountain(&data, redundancy_ratio)?;
-    super::util::json_ok(serde_json::json!({
-        "manifest": encoded.manifest,
-        "packets": encoded
-            .packets
-            .iter()
-            .map(|p| soshal_crypto_core::base64::base64_encode_bytes(p))
-            .collect::<Vec<_>>(),
-    }))
+    let mut packets = Vec::with_capacity(encoded.packets.len());
+    for p in &encoded.packets {
+        packets.push(soshal_crypto_core::base64::base64_encode_bytes(p));
+    }
+    serde_json::to_string(&FountainEncodeDto {
+        manifest: &encoded.manifest,
+        packets,
+    })
+    .map_err(|e| format!("serialize fountain payload: {e}"))
 }
 
 /// Decodes received Fountain code packets back into original payload.

@@ -4,31 +4,31 @@
 use flutter_rust_bridge::frb;
 use std::sync::OnceLock;
 
+#[derive(serde::Serialize)]
+struct AnalyticsStatsDto {
+    #[serde(rename = "totalPosts")]
+    total_posts: i64,
+    #[serde(rename = "totalReactions")]
+    total_reactions: i64,
+    #[serde(rename = "totalZapMsat")]
+    total_zap_msat: i64,
+}
+
 #[frb(serialize)]
 pub async fn analytics_compute_stats() -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let my_pubkey = super::signer::signer_pubkey().unwrap_or_default();
         super::db::with_db_result(|db| {
             let conn = db.conn()?;
-            let rows: Vec<(String, i64)> = soshal_db_core::query::query(
+            let (total_posts, total_reactions): (i64, i64) = soshal_db_core::query::query_first(
                 &conn,
-                "SELECT p.pubkey, COUNT(r.event_id) FROM posts p \
-                 LEFT JOIN reactions r ON r.event_id = p.id \
-                 WHERE p.pubkey = ?1 AND p.kind = 1 AND p.is_deleted = 0 GROUP BY p.id",
+                "SELECT \
+                 (SELECT COUNT(*) FROM posts WHERE pubkey = ?1 AND kind = 1 AND is_deleted = 0), \
+                 (SELECT COUNT(*) FROM reactions r JOIN posts p ON r.event_id = p.id WHERE p.pubkey = ?1 AND p.kind = 1 AND p.is_deleted = 0)",
                 [my_pubkey.as_str()],
                 |r| Ok((r.get(0)?, r.get(1)?)),
-            )?;
-            let posts: Vec<soshal_analytics_core::PostInput> = rows
-                .into_iter()
-                .map(|(pubkey, likes)| soshal_analytics_core::PostInput {
-                    pubkey,
-                    local_stats: Some(soshal_analytics_core::LocalStats {
-                        likes_count: Some(likes as u64),
-                        reposts_count: None,
-                    }),
-                })
-                .collect();
-            let out = soshal_analytics_core::posts::compute_analytics_posts(&posts, &my_pubkey);
+            )?
+            .unwrap_or((0, 0));
             let total_zap_msat: i64 = soshal_db_core::query::query_first(
                 &conn,
                 "SELECT COALESCE(SUM(amount_msat), 0) FROM zaps WHERE recipient_pubkey = ?1",
@@ -36,12 +36,13 @@ pub async fn analytics_compute_stats() -> Result<String, String> {
                 |r| r.get(0),
             )?
             .unwrap_or(0);
-            Ok(serde_json::json!({
-                "totalPosts": out.total_posts,
-                "totalReactions": out.total_reactions,
-                "totalZapMsat": total_zap_msat,
+            let json = serde_json::to_string(&AnalyticsStatsDto {
+                total_posts,
+                total_reactions,
+                total_zap_msat,
             })
-            .to_string())
+            .unwrap_or_else(|_| "{}".to_string());
+            Ok(json)
         })
     })
     .await

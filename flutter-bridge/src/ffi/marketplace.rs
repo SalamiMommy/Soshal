@@ -134,6 +134,20 @@ fn listing_from_value(v: &serde_json::Value) -> Option<ListingInfo> {
     })
 }
 
+fn order_from_fields(id: String, content_str: &str, pubkey: String, created_at: i64) -> OrderInfo {
+    let content: serde_json::Value =
+        serde_json::from_str(content_str).unwrap_or(serde_json::Value::Null);
+    OrderInfo {
+        id,
+        listing_id: content["listingId"].as_str().unwrap_or("").to_string(),
+        buyer_pubkey: pubkey,
+        seller_pubkey: content["seller"].as_str().unwrap_or("").to_string(),
+        status: content["status"].as_str().unwrap_or("created").to_string(),
+        amount: content["amount"].as_f64().unwrap_or(0.0) as u64,
+        created_at: created_at.max(0) as u64,
+    }
+}
+
 fn order_from_value(v: &serde_json::Value) -> Option<OrderInfo> {
     let content: serde_json::Value = match v["content"].as_str() {
         Some(s) => serde_json::from_str(s).unwrap_or(serde_json::Value::Null),
@@ -421,14 +435,16 @@ pub fn marketplace_delete_listing(
     if existing.seller_pubkey != seller_pubkey {
         return Err("only the seller can delete a listing".to_string()).into();
     }
-    let escrow_check = super::db::db_query_params(
-        "SELECT COUNT(*) AS c FROM escrows WHERE listing_id = ?1 AND status IN ('created','funded','shipped','disputed')",
-        &[listing_id.clone()],
-    )?;
-    let open: i64 = serde_json::from_str::<Vec<serde_json::Value>>(&escrow_check)
-        .ok()
-        .and_then(|rows| rows.first().and_then(|r| r["c"].as_i64()))
-        .unwrap_or(0);
+    let open: i64 = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let c = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT COUNT(*) FROM escrows WHERE listing_id = ?1 AND status IN ('created','funded','shipped','disputed')",
+            libsql::params![listing_id.as_str()],
+            |r| r.get::<i64>(0),
+        )?;
+        Ok(c.unwrap_or(0))
+    })?;
     if open > 0 {
         return Err("listing has open escrows".to_string()).into();
     }
@@ -577,19 +593,27 @@ pub fn marketplace_get_order(order_id: String) -> Result<String, String> {
 /// Fetch buyer's orders (posts where the order row's pubkey is the buyer).
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_params(
-        &format!(
+    let orders: Vec<OrderInfo> = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let sql = format!(
             "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
              WHERE p.kind = {KIND_ORDER} AND p.pubkey = ?1 AND p.is_deleted = 0 \
              ORDER BY p.created_at DESC LIMIT 200"
-        ),
-        &[buyer_pubkey],
-    )?;
-    let orders: Vec<OrderInfo> = serde_json::from_str::<Vec<serde_json::Value>>(&json)
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|r| order_from_value(&r))
-        .collect();
+        );
+        let rows = soshal_db_core::query::query(
+            &conn,
+            &sql,
+            libsql::params![buyer_pubkey.as_str()],
+            |r| {
+                let id: String = r.get(0)?;
+                let content: String = r.get(1)?;
+                let pubkey: String = r.get(2)?;
+                let created_at: i64 = r.get(3)?;
+                Ok(order_from_fields(id, &content, pubkey, created_at))
+            },
+        )?;
+        Ok(rows)
+    })?;
     super::util::json_ok(orders)
 }
 
@@ -597,20 +621,28 @@ pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, St
 /// content `seller` field matches).
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_seller_orders(seller_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_params(
-        &format!(
+    let orders: Vec<OrderInfo> = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let sql = format!(
             "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
              WHERE p.kind = {KIND_ORDER} AND p.is_deleted = 0 \
                AND p.content LIKE '%\"seller\":\"' || ?1 || '\"%' \
              ORDER BY p.created_at DESC LIMIT 200"
-        ),
-        &[seller_pubkey],
-    )?;
-    let orders: Vec<OrderInfo> = serde_json::from_str::<Vec<serde_json::Value>>(&json)
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|r| order_from_value(&r))
-        .collect();
+        );
+        let rows = soshal_db_core::query::query(
+            &conn,
+            &sql,
+            libsql::params![seller_pubkey.as_str()],
+            |r| {
+                let id: String = r.get(0)?;
+                let content: String = r.get(1)?;
+                let pubkey: String = r.get(2)?;
+                let created_at: i64 = r.get(3)?;
+                Ok(order_from_fields(id, &content, pubkey, created_at))
+            },
+        )?;
+        Ok(rows)
+    })?;
     super::util::json_ok(orders)
 }
 

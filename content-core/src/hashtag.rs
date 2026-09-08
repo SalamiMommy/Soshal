@@ -16,6 +16,12 @@ pub fn split(text: &str) -> Vec<Segment> {
     if text.is_empty() {
         return Vec::new();
     }
+    if !text.contains('#') {
+        return vec![Segment {
+            text: text.to_string(),
+            is_hashtag: false,
+        }];
+    }
     let re = hashtag_re();
     let estimated_segments = (text.len() / 32).clamp(2, 64);
     let mut segments = Vec::with_capacity(estimated_segments);
@@ -43,7 +49,7 @@ pub fn split(text: &str) -> Vec<Segment> {
 }
 
 pub fn extract(text: &str) -> Vec<String> {
-    if text.is_empty() {
+    if text.is_empty() || !text.contains('#') {
         return Vec::new();
     }
     let re = hashtag_re();

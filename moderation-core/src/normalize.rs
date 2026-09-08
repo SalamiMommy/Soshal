@@ -158,6 +158,12 @@ pub fn normalize_leetspeak(text: &str) -> String {
 
 /// Collapses consecutive runs of identical characters down to a single character (e.g. "sssspppaaaammmm" -> "spam").
 pub fn collapse_repeats(text: &str) -> String {
+    if text.len() <= 1 {
+        return text.to_string();
+    }
+    if text.is_ascii() && text.as_bytes().windows(2).all(|w| w[0] != w[1]) {
+        return text.to_string();
+    }
     let mut out = String::with_capacity(text.len());
     let mut last_char: Option<char> = None;
 
@@ -172,6 +178,55 @@ pub fn collapse_repeats(text: &str) -> String {
 
 /// Collapses isolated spaces between individual characters (e.g. "f r e e  m o n e y  now" -> "free money now").
 pub fn collapse_spaced_words(text: &str) -> String {
+    if !text.contains(' ') {
+        let mut words = text.split_whitespace();
+        let Some(first) = words.next() else {
+            return String::new();
+        };
+        let mut out = String::with_capacity(text.len());
+        out.push_str(first);
+        for w in words {
+            out.push(' ');
+            out.push_str(w);
+        }
+        return out;
+    }
+
+    if text.is_ascii() {
+        let bytes = text.as_bytes();
+        let len = bytes.len();
+        let mut intermediate = Vec::with_capacity(len);
+        let mut i = 0;
+
+        while i < len {
+            let b = bytes[i];
+            intermediate.push(b);
+            if b.is_ascii_alphanumeric()
+                && i + 2 < len
+                && bytes[i + 1] == b' '
+                && bytes[i + 2].is_ascii_alphanumeric()
+                && (i + 3 >= len || bytes[i + 3] == b' ' || !bytes[i + 3].is_ascii_alphanumeric())
+            {
+                i += 2;
+                continue;
+            }
+            i += 1;
+        }
+
+        let s = std::str::from_utf8(&intermediate).unwrap_or("");
+        let mut words = s.split_whitespace();
+        let Some(first) = words.next() else {
+            return String::new();
+        };
+        let mut out = String::with_capacity(s.len());
+        out.push_str(first);
+        for w in words {
+            out.push(' ');
+            out.push_str(w);
+        }
+        return out;
+    }
+
     let mut intermediate = String::with_capacity(text.len());
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
@@ -192,8 +247,17 @@ pub fn collapse_spaced_words(text: &str) -> String {
         i += 1;
     }
 
-    let words: Vec<&str> = intermediate.split_whitespace().collect();
-    words.join(" ")
+    let mut words = intermediate.split_whitespace();
+    let Some(first) = words.next() else {
+        return String::new();
+    };
+    let mut out = String::with_capacity(intermediate.len());
+    out.push_str(first);
+    for w in words {
+        out.push(' ');
+        out.push_str(w);
+    }
+    out
 }
 
 /// Produces multiple normalized variants of the input text for anti-evasion scanning:
@@ -203,7 +267,7 @@ pub fn collapse_spaced_words(text: &str) -> String {
 /// 4. Repetition-collapsed leetspeak
 /// 5. Spaced-word collapsed
 pub fn generate_normalized_variants(text: &str) -> Vec<String> {
-    let mut variants = Vec::with_capacity(5);
+    let mut variants = Vec::with_capacity(6);
     let trimmed = text.trim().to_string();
     if trimmed.is_empty() {
         return variants;

@@ -32,17 +32,23 @@ class MinisService extends ChangeNotifier
   List<MiniItem> fetchMinis({String audience = 'public'}) => guardSync(() {
         final json =
             RustLib.instance.api.crateFfiMinisMinisFetch(audience: audience);
-        return (jsonDecode(json) as List<dynamic>)
-            .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
-            .toList();
+        final decoded = jsonDecode(json) as List<dynamic>;
+        return List<MiniItem>.generate(
+          decoded.length,
+          (i) => MiniItem.fromJson(decoded[i] as Map<String, dynamic>),
+          growable: true,
+        );
       }, notifyOnSuccess: false, notifyOnError: false);
 
   /// Saved minis from the local `saved_content` store, newest saved first.
   Future<List<MiniItem>> fetchSavedMinis() => guard(() {
         final json = RustLib.instance.api.crateFfiMinisMinisSaved();
-        final list = (jsonDecode(json) as List<dynamic>)
-            .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
-            .toList();
+        final decoded = jsonDecode(json) as List<dynamic>;
+        final list = List<MiniItem>.generate(
+          decoded.length,
+          (i) => MiniItem.fromJson(decoded[i] as Map<String, dynamic>),
+          growable: true,
+        );
         _saved = list;
         return list;
       });
@@ -59,11 +65,8 @@ class MinisService extends ChangeNotifier
     try {
       final hosted = await hostMiniBlob(mini, media, p2p);
       RustLib.instance.api.crateFfiMinisMinisSave(eventId: mini.id);
-      final json = RustLib.instance.api.crateFfiMinisMinisSaved();
-      final list = (jsonDecode(json) as List<dynamic>)
-          .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
-          .toList();
-      _saved = list;
+      _saved.removeWhere((m) => m.id == mini.id);
+      _saved.insert(0, mini);
       clearLastError();
       notifyDeferred();
       return hosted;
@@ -78,10 +81,7 @@ class MinisService extends ChangeNotifier
   Future<void> unsaveMini(String id) async {
     try {
       RustLib.instance.api.crateFfiMinisMinisUnsave(eventId: id);
-      final json = RustLib.instance.api.crateFfiMinisMinisSaved();
-      _saved = (jsonDecode(json) as List<dynamic>)
-          .map((e) => MiniItem.fromJson(e as Map<String, dynamic>))
-          .toList();
+      _saved.removeWhere((m) => m.id == id);
       clearLastError();
       notifyDeferred();
     } catch (e, st) {

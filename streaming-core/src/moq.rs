@@ -171,7 +171,11 @@ fn read_u32(bytes: &[u8], pos: &mut usize) -> Result<u32, String> {
         .get(*pos..end)
         .ok_or_else(|| "moq truncated header".to_string())?;
     *pos = end;
-    Ok(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
+    Ok(u32::from_le_bytes(
+        slice
+            .try_into()
+            .map_err(|_| "moq truncated header".to_string())?,
+    ))
 }
 
 fn read_u64(bytes: &[u8], pos: &mut usize) -> Result<u64, String> {
@@ -182,9 +186,11 @@ fn read_u64(bytes: &[u8], pos: &mut usize) -> Result<u64, String> {
         .get(*pos..end)
         .ok_or_else(|| "moq truncated header".to_string())?;
     *pos = end;
-    let mut arr = [0u8; 8];
-    arr.copy_from_slice(slice);
-    Ok(u64::from_le_bytes(arr))
+    Ok(u64::from_le_bytes(
+        slice
+            .try_into()
+            .map_err(|_| "moq truncated header".to_string())?,
+    ))
 }
 
 /// Type of MoQ media track payload (video keyframe, video delta frame, audio datagram).

@@ -19,6 +19,16 @@ pub struct MentionSegment {
 }
 
 pub fn parse(text: &str) -> Vec<MentionSegment> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    if !text.contains("nostr:npub1") {
+        return vec![MentionSegment {
+            text: text.to_string(),
+            is_mention: false,
+            pubkey: None,
+        }];
+    }
     let re = npub_re();
     let mut segments = Vec::new();
     let mut last = 0;
@@ -48,6 +58,9 @@ pub fn parse(text: &str) -> Vec<MentionSegment> {
 }
 
 pub fn extract_pubkeys(text: &str) -> Vec<String> {
+    if text.is_empty() || !text.contains("npub1") {
+        return Vec::new();
+    }
     let re = bech32_re();
     re.find_iter(text).map(|m| m.as_str().to_string()).collect()
 }

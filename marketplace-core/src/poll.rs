@@ -1,32 +1,36 @@
 use serde::{Deserialize, Serialize};
-use soshal_common_core::json_util::{json_in, json_out};
+use soshal_common_core::json_util::json_out;
 
 const MAX_TAGS_ENTRIES: usize = 100_000;
 const MAX_POLL_OPTIONS: usize = 100;
 const POLL_EXPIRY_DEFAULT: f64 = 604800.0;
 
+use std::borrow::Cow;
+
 #[derive(Deserialize)]
-pub(crate) struct CalendarEventInput {
-    id: String,
-    pubkey: String,
-    content: String,
+pub(crate) struct CalendarEventInput<'a> {
+    #[serde(borrow)]
+    id: &'a str,
+    #[serde(borrow)]
+    pubkey: &'a str,
+    content: Cow<'a, str>,
     created_at: f64,
-    #[serde(default)]
-    tags: Vec<Vec<String>>,
+    #[serde(borrow, default)]
+    tags: Vec<Vec<&'a str>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct PollOptionOut {
+pub struct PollOptionOut<'a> {
     pub id: i64,
-    pub text: String,
+    pub text: Cow<'a, str>,
 }
 
 #[derive(Serialize)]
-pub struct PollOut {
-    pub id: String,
-    pub pubkey: String,
-    pub question: String,
-    pub options: Vec<PollOptionOut>,
+pub struct PollOut<'a> {
+    pub id: &'a str,
+    pub pubkey: &'a str,
+    pub question: Cow<'a, str>,
+    pub options: Vec<PollOptionOut<'a>>,
     #[serde(rename = "expiresAt")]
     pub expires_at: f64,
     pub closed: bool,
@@ -35,33 +39,47 @@ pub struct PollOut {
 }
 
 #[derive(Deserialize)]
-struct PollContent {
-    question: Option<String>,
-    options: Option<Vec<PollOptionOut>>,
+struct PollContent<'a> {
+    #[serde(borrow)]
+    question: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    options: Option<Vec<PollOptionOut<'a>>>,
 }
 
-use soshal_nostr_core::models::find_tag_value;
-
-pub(crate) fn parse_poll_event(ev: &CalendarEventInput, now_ms: f64) -> Option<PollOut> {
+pub(crate) fn parse_poll_event<'a>(
+    ev: &'a CalendarEventInput<'a>,
+    now_ms: f64,
+) -> Option<PollOut<'a>> {
     if ev.tags.len() > MAX_TAGS_ENTRIES {
         return None;
     }
-    let question: String;
-    let mut options: Vec<PollOptionOut> = Vec::new();
+    let question: Cow<'a, str>;
+    let mut options: Vec<PollOptionOut<'a>> = Vec::new();
     if ev.content.len() <= 256 * 1024 {
-        match serde_json::from_str::<PollContent>(&ev.content) {
+        match serde_json::from_str::<PollContent>(ev.content.as_ref()) {
             Ok(content) => {
-                question = content.question.unwrap_or_default();
+                question = content
+                    .question
+                    .map(|q| Cow::Owned(q.into_owned()))
+                    .unwrap_or_else(|| Cow::Borrowed(""));
                 if let Some(opts) = content.options {
-                    options.extend(opts.into_iter().take(MAX_POLL_OPTIONS));
+                    options.extend(opts.into_iter().take(MAX_POLL_OPTIONS).map(|o| {
+                        PollOptionOut {
+                            id: o.id,
+                            text: Cow::Owned(o.text.into_owned()),
+                        }
+                    }));
                 }
             }
             Err(_) => {
-                question = ev.content.clone();
+                question = match &ev.content {
+                    Cow::Borrowed(s) => Cow::Borrowed(*s),
+                    Cow::Owned(s) => Cow::Owned(s.clone()),
+                };
             }
         }
     } else {
-        question = String::new();
+        question = Cow::Borrowed("");
     }
     if options.is_empty() {
         for tag in &ev.tags {
@@ -69,7 +87,7 @@ pub(crate) fn parse_poll_event(ev: &CalendarEventInput, now_ms: f64) -> Option<P
                 let id = tag[1].parse::<i64>().unwrap_or(0);
                 options.push(PollOptionOut {
                     id,
-                    text: tag[2].clone(),
+                    text: Cow::Borrowed(tag[2]),
                 });
                 if options.len() >= MAX_POLL_OPTIONS {
                     break;
@@ -77,7 +95,11 @@ pub(crate) fn parse_poll_event(ev: &CalendarEventInput, now_ms: f64) -> Option<P
             }
         }
     }
-    let exp_tag = find_tag_value(&ev.tags, "expiration");
+    let exp_tag = ev
+        .tags
+        .iter()
+        .find(|t| t.len() >= 2 && t[0] == "expiration")
+        .map(|t| t[1]);
     let expires_at = match exp_tag {
         Some(s) if s.len() <= 32 => match s.parse::<f64>() {
             Ok(v) if v.is_finite() && v > 0.0 => v * 1000.0,
@@ -87,8 +109,8 @@ pub(crate) fn parse_poll_event(ev: &CalendarEventInput, now_ms: f64) -> Option<P
     };
     let closed = now_ms > expires_at;
     Some(PollOut {
-        id: ev.id.clone(),
-        pubkey: ev.pubkey.clone(),
+        id: ev.id,
+        pubkey: ev.pubkey,
         question,
         options,
         expires_at,
@@ -98,16 +120,17 @@ pub(crate) fn parse_poll_event(ev: &CalendarEventInput, now_ms: f64) -> Option<P
 }
 
 #[derive(Deserialize)]
-struct PollInput {
-    #[serde(rename = "event")]
-    ev: CalendarEventInput,
+struct PollInput<'a> {
+    #[serde(borrow, rename = "event")]
+    ev: CalendarEventInput<'a>,
     #[serde(rename = "nowMs")]
     now_ms: f64,
 }
 
 pub fn parse_poll_event_json(input: &str) -> String {
-    let Some(parsed) = json_in::<Option<PollInput>>(input, None) else {
+    let Some(parsed) = serde_json::from_str::<PollInput>(input).ok() else {
         return "null".to_string();
     };
-    json_out(&parse_poll_event(&parsed.ev, parsed.now_ms), "null")
+    let res = parse_poll_event(&parsed.ev, parsed.now_ms);
+    json_out(&res, "null")
 }

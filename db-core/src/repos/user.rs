@@ -37,6 +37,20 @@ impl<'a> UserRepo<'a> {
         if pubkeys.is_empty() {
             return Ok(std::collections::HashSet::new());
         }
+        if pubkeys.len() == 1 {
+            let conn = self.db.conn()?;
+            let exists: Option<String> = crate::query::query_first(
+                &conn,
+                "SELECT pubkey FROM users WHERE pubkey = ?1",
+                params![pubkeys[0].as_str()],
+                |row| row.get::<String>(0),
+            )?;
+            let mut set = std::collections::HashSet::with_capacity(exists.is_some() as usize);
+            if let Some(pk) = exists {
+                set.insert(pk);
+            }
+            return Ok(set);
+        }
         let conn = self.db.conn()?;
         let json = serde_json::to_string(pubkeys).unwrap_or_else(|_| "[]".to_string());
         let found = crate::query::query(

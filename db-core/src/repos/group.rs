@@ -141,6 +141,22 @@ impl<'a> GroupRepo<'a> {
         if ids.is_empty() {
             return Ok(std::collections::HashMap::new());
         }
+        if ids.len() == 1 {
+            let conn = self.db.conn()?;
+            let count: Option<i64> = crate::query::query_first(
+                &conn,
+                "SELECT COUNT(*) FROM group_members WHERE group_id = ?1",
+                params![ids[0].as_str()],
+                |row| row.get(0),
+            )?;
+            let mut map = std::collections::HashMap::with_capacity(1);
+            if let Some(c) = count {
+                if c > 0 {
+                    map.insert(ids[0].clone(), c);
+                }
+            }
+            return Ok(map);
+        }
         let conn = self.db.conn()?;
         let json_ids = serde_json::to_string(ids).unwrap_or_else(|_| "[]".to_string());
         crate::query::query(
