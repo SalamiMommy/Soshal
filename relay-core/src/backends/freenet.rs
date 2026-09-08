@@ -41,7 +41,7 @@ impl FreenetBackend {
     pub fn new() -> Self {
         Self {
             client: None,
-            url: "ws://127.0.0.1:8888".to_string(),
+            url: "ws://127.0.0.1:7509".to_string(),
             auth_token: String::new(),
             contract_key: "soshal-mesh-v1".to_string(),
             received: Arc::new(Mutex::new(VecDeque::new())),
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn test_constructor_defaults() {
         let backend = FreenetBackend::new();
-        assert_eq!(backend.url, "ws://127.0.0.1:8888");
+        assert_eq!(backend.url, "ws://127.0.0.1:7509");
         assert!(backend.auth_token.is_empty());
         assert_eq!(backend.contract_key, "soshal-mesh-v1");
         assert!(!backend.running());

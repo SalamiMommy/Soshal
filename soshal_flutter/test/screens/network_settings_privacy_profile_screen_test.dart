@@ -94,7 +94,7 @@ void main() {
     expect(find.text('Network'), findsOneWidget);
     expect(find.text('Transports'), findsOneWidget);
     expect(find.text('I2P tunnel (local i2pd SOCKS 7656)'), findsOneWidget);
-    expect(find.text('Freenet gateway (local port 8888)'), findsOneWidget);
+    expect(find.text('Freenet gateway (local port 7509)'), findsOneWidget);
     expect(find.text('Bundled Daemons'), findsOneWidget);
     expect(find.text('Relays'), findsWidgets);
   });

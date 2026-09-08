@@ -53,7 +53,7 @@ fn reticulum_started() -> bool {
 pub(super) fn resolved_kind() -> (TransportKind, bool) {
     transport_mode().resolve(
         reticulum_started(),
-        super::util::cached_tcp_probe("127.0.0.1", 8888)
+        super::util::cached_tcp_probe("127.0.0.1", 7509)
             || super::relay::mesh_backend_up(TransportKind::Freenet),
         super::util::cached_tcp_probe("127.0.0.1", 7656)
             || super::relay::mesh_backend_up(TransportKind::I2p),
@@ -363,11 +363,11 @@ pub fn network_i2p_status() -> Result<bool, String> {
     Ok(super::util::tcp_probe("127.0.0.1", 7656)).into()
 }
 
-/// Raw TCP probe: is a local Freenet gateway (default HTTP port 8888)
+/// Raw TCP probe: is a local Freenet gateway (default WS-API port 7509)
 /// listening?
 #[frb(serialize)]
 pub fn network_freenet_status() -> Result<bool, String> {
-    Ok(super::util::tcp_probe("127.0.0.1", 8888)).into()
+    Ok(super::util::tcp_probe("127.0.0.1", 7509)).into()
 }
 
 /// Current transport mode: `"default"`, `"reticulum"`, `"freenet"`,

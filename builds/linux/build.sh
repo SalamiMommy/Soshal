@@ -95,6 +95,23 @@ elif [[ -x "$RNSD_BIN" ]]; then
   echo "  WARNING: rnsd is $(stat -c%s "$RNSD_BIN")B (stub, not a real binary) — not bundled" >&2
 fi
 
+# Bundle i2pd + freenet from the host if real binaries are available (same
+# >100KB stub guard as rnsd). usr/bin/daemons/ is also the runtime daemons
+# dir: daemon.rs falls back to the AppImage's exe-sibling usr/bin/daemons.
+I2PD_BIN="$(command -v i2pd || true)"
+FREENET_BIN="$(command -v freenet || true)"
+for daemon in "i2pd:$I2PD_BIN" "freenet:$FREENET_BIN"; do
+  name="${daemon%%:*}"
+  bin="${daemon#*:}"
+  if [[ -x "$bin" ]] && [[ -f "$bin" ]] && [[ $(stat -c%s "$bin") -gt 100000 ]]; then
+    mkdir -p "$STAGE/usr/bin/daemons"
+    cp "$bin" "$STAGE/usr/bin/daemons/$name"
+    echo "  $name: bundled to usr/bin/daemons/ ($(stat -c%s "$bin")B)"
+  else
+    echo "  WARNING: $name host binary not found — $name transport unavailable in AppImage" >&2
+  fi
+done
+
 # Bundle libmpv.so.2 (media_kit video backend) if the host provides it.
 # media_kit_libs_video does NOT bundle mpv on Linux — it dlopens system
 # libmpv.so.2 at runtime; without it every video surfaces the old

@@ -640,7 +640,7 @@ class _AdvancedScreenState extends State<AdvancedScreen> {
             _freenet ? Icons.check_circle : Icons.circle_outlined,
             color: _freenet ? Colors.green : null,
           ),
-          title: const Text('Freenet gateway (local port 8888)'),
+          title: const Text('Freenet gateway (local port 7509)'),
         ),
         const Divider(),
         Text('Sync engine', style: Theme.of(context).textTheme.titleMedium),

@@ -146,17 +146,10 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
     try {
       final msg = jsonDecode(json) as Map<String, dynamic>;
       switch (msg['t']) {
+        // Feed is manual-refresh only: live peer posts/reactions must NOT
+        // mutate FeedService (would re-render the feed without user action).
         case 'feed':
-          _feed?.insertLivePost(FeedPost(
-            eventId: msg['id'] as String? ?? '',
-            pubkey: msg['pubkey'] as String? ?? '',
-            content: msg['content'] as String? ?? '',
-            createdAt: (msg['created_at'] as num?)?.toInt() ?? 0,
-            reactions: 0,
-            replies: 0,
-            reposts: 0,
-            liked: false,
-          ));
+          _scheduleNotify();
         case 'dm':
           _messaging?.insertLiveDm(DirectMessage(
             id: msg['id'] as String? ?? '',
@@ -169,12 +162,7 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
             tagsJson: jsonEncode(msg['tags'] ?? const []),
           ));
         case 'reaction':
-          _feed?.applyLiveReaction(
-            msg['event_id'] as String? ?? '',
-            msg['pubkey'] as String? ?? '',
-            msg['content'] as String? ?? '',
-            msg['id'] as String? ?? '',
-          );
+          _scheduleNotify();
         case 'profile':
         default:
           _scheduleNotify();

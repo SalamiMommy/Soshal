@@ -47,10 +47,24 @@ mod ffi_coverage_tests {
         let _ = sync::sync_running().unwrap();
     }
     #[test]
-    fn network_status_probes_report_false_without_daemons() {
+    fn network_status_probes_report_valid_state() {
         let _g = crate::test_util::lock();
-        assert!(!network::network_i2p_status().unwrap());
-        assert!(!network::network_freenet_status().unwrap());
+        // Status is a raw TCP probe of the local listener. Off this dev box
+        // (CI, no daemons) both are false, but a system freenet node bound
+        // to 7509 — or a started i2pd service on 7656 — legitimately reports
+        // true. Assert the FFI result mirrors the real socket state so the
+        // test stays green either way.
+        fn probe(port: u16) -> bool {
+            use std::net::{SocketAddr, TcpStream};
+            use std::time::Duration;
+            TcpStream::connect_timeout(
+                &SocketAddr::from(([127, 0, 0, 1], port)),
+                Duration::from_millis(300),
+            )
+            .is_ok()
+        }
+        assert_eq!(network::network_i2p_status().unwrap(), probe(7656));
+        assert_eq!(network::network_freenet_status().unwrap(), probe(7509));
     }
     #[test]
     fn reticulum_pure_status_and_announce() {

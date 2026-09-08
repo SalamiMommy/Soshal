@@ -73,7 +73,7 @@ Future<String> networkQueryEvents({required String filterJson}) =>
 Future<bool> networkI2PStatus() =>
     RustLib.instance.api.crateFfiNetworkNetworkI2PStatus();
 
-/// Raw TCP probe: is a local Freenet gateway (default HTTP port 8888)
+/// Raw TCP probe: is a local Freenet gateway (default WS-API port 7509)
 /// listening?
 Future<bool> networkFreenetStatus() =>
     RustLib.instance.api.crateFfiNetworkNetworkFreenetStatus();

@@ -20,7 +20,6 @@ import '../utils/safe_url.dart';
 import '../utils/dialog_guard.dart';
 import 'composer_screen.dart';
 import '../services/zap_service.dart';
-import '../services/layout_service.dart';
 import '../widgets/app_snack.dart';
 import '../widgets/error_state_text.dart';
 
@@ -46,7 +45,6 @@ class _FeedScreenState extends State<FeedScreen> {
   double? _lastScrollPixels;
   DateTime? _lastTelemetryAt;
   FeedService? _feed;
-  bool _listening = false;
   bool _isLoadingMore = false;
   final ValueNotifier<Map<String, int>> _totalsNotifier =
       ValueNotifier<Map<String, int>>({});
@@ -78,7 +76,6 @@ class _FeedScreenState extends State<FeedScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: SelectableText('Feed load error: $e')));
       }
-      _scheduleLayout(feed);
     });
   }
 
@@ -86,21 +83,6 @@ class _FeedScreenState extends State<FeedScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _feed = context.read<FeedService>();
-  }
-
-  void _scheduleLayout(FeedService feed) {
-    if (!mounted || !context.mounted) return;
-    final size = MediaQuery.sizeOf(context);
-    final layout = context.read<LayoutService>();
-    layout.refresh(
-      feed.displayPosts,
-      screenWidth: size.width.round(),
-      textScale: MediaQuery.textScalerOf(context).scale(14),
-    );
-    if (!_listening) {
-      feed.addListener(_onFeedChanged);
-      _listening = true;
-    }
   }
 
   Future<void> _loadTotals() async {
@@ -123,38 +105,25 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
-  Timer? _layoutDebounce;
-
-  /// Feed changed → recompute card extents. Structural changes (new post
-  /// ids) refresh immediately — the next render needs the extents (uncached
-  /// posts fall back to per-card compute, then a default) — while bursts of
-  /// live updates (reactions on already-laid-out posts) are debounced.
-  void _onFeedChanged() {
-    if (!mounted || !context.mounted) return;
-    final layout = context.read<LayoutService>();
-    final posts = context.read<FeedService>().displayPosts;
-    void doRefresh() {
+  /// Manual refresh — only path that refetches the feed from offset 0. The
+  /// live sync stream does NOT mutate the feed anymore (manual-refresh UI),
+  /// so cards stay put until this runs.
+  Future<void> _refreshFeed() async {
+    final feed = _feed;
+    if (feed == null) return;
+    try {
+      await feed.fetchFeed();
+      await _loadTotals();
+    } catch (e) {
+      debugPrint('feed refresh: $e');
       if (!mounted || !context.mounted) return;
-      final size = MediaQuery.sizeOf(context);
-      layout.refresh(
-        posts,
-        screenWidth: size.width.round(),
-        textScale: MediaQuery.textScalerOf(context).scale(14),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Feed load error: $e')));
     }
-
-    _layoutDebounce?.cancel();
-    if (layout.needsLayout(posts)) {
-      doRefresh();
-      return;
-    }
-    _layoutDebounce = Timer(const Duration(milliseconds: 120), doRefresh);
   }
 
   @override
   void dispose() {
-    _layoutDebounce?.cancel();
-    _feed?.removeListener(_onFeedChanged);
     _scrollController.dispose();
     _totalsNotifier.dispose();
     super.dispose();
@@ -243,20 +212,7 @@ class _FeedScreenState extends State<FeedScreen> {
             const Text('No posts yet'),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: () async {
-                final feed = _feed;
-                if (feed == null) return;
-                try {
-                  await feed.fetchFeed();
-                  await _loadTotals();
-                  _scheduleLayout(feed);
-                } catch (e) {
-                  debugPrint('feed refresh: $e');
-                  if (!mounted || !context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: SelectableText('Feed load error: $e')));
-                }
-              },
+              onPressed: _refreshFeed,
               child: const Text('Refresh'),
             ),
           ],
@@ -267,8 +223,6 @@ class _FeedScreenState extends State<FeedScreen> {
         scrollCacheExtent: const ScrollCacheExtent.pixels(600.0),
         controller: _scrollController,
         itemCount: effectiveDisplay.length + 1,
-        itemExtentBuilder: (index, _) =>
-            context.read<LayoutService>().extentFor(index, effectiveDisplay),
         itemBuilder: (context, index) {
           if (index == effectiveDisplay.length) {
             if (feedView.loading) {
@@ -298,6 +252,11 @@ class _FeedScreenState extends State<FeedScreen> {
         title: const Text('Soshal'),
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: _refreshFeed,
+          ),
           Consumer<FeedService>(
             builder: (context, feed, _) => IconButton(
               icon:
@@ -1337,10 +1296,12 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       _offscreenDisposeTimer?.cancel();
       _offscreenDisposeTimer = Timer(const Duration(seconds: 3), () {
         if (!mounted || widget.visible) return;
-        _controller?.player.dispose();
-        _controller = null;
-        _isInitialized = false;
-        _started = false;
+        setState(() {
+          _controller?.player.dispose();
+          _controller = null;
+          _isInitialized = false;
+          _started = false;
+        });
       });
     }
   }
@@ -1388,10 +1349,16 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
     _controller = controller;
     try {
       await player.open(mk.Media(url), play: widget.visible);
-      if (mounted) setState(() => _isInitialized = true);
+      if (!mounted || !_started || _controller != controller) {
+        player.dispose();
+        return;
+      }
+      setState(() => _isInitialized = true);
     } catch (e) {
       player.dispose();
-      if (mounted) setState(() => _error = '$e');
+      if (mounted && _started && _controller == controller) {
+        setState(() => _error = '$e');
+      }
     }
   }
 
@@ -1438,7 +1405,9 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            Video(controller: controller, fit: BoxFit.contain),
+            ExcludeSemantics(
+              child: Video(controller: controller, fit: BoxFit.contain),
+            ),
             Positioned(
               right: 8,
               bottom: 8,

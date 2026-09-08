@@ -10,8 +10,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 use flutter_rust_bridge::frb;
+use std::net::{SocketAddr, TcpStream};
+use std::time::Duration;
 
 const DAEMONS: [&str; 3] = ["i2pd", "freenet", "rnsd"];
+
+const I2PD_SAM_PORT: u16 = 7656;
+const FREENET_API_PORT: u16 = 7509;
 
 const WATCHDOG_INTERVAL_SECS: u64 = 30;
 
@@ -42,8 +47,37 @@ fn files_dir() -> Result<String, String> {
     }
 }
 
+/// AppImage bundle's usr/bin/daemons/ — sibling of the usr/bin directory
+/// holding the app binary. Absent under bare `flutter run` dev builds, so
+/// resolution gracefully falls back to the app-data dir.
+#[cfg(not(target_os = "android"))]
+fn bundle_daemons_dir() -> Option<std::path::PathBuf> {
+    let dir = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .parent()?
+        .join("daemons");
+    dir.is_dir().then_some(dir)
+}
+
+/// True when a local listener already accepts TCP on `port`. Used to reuse an
+/// already-running freenet node / i2pd service instead of spawning a second
+/// instance that would fail to bind.
+fn port_open(port: u16) -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
+}
+
 fn daemons_dir() -> Result<std::path::PathBuf, String> {
-    Ok(std::path::Path::new(&files_dir()?).join("daemons"))
+    let extracted = std::path::Path::new(&files_dir()?).join("daemons");
+    if DAEMONS.iter().any(|d| extracted.join(d).exists()) {
+        return Ok(extracted);
+    }
+    #[cfg(not(target_os = "android"))]
+    if let Some(bundle) = bundle_daemons_dir() {
+        return Ok(bundle);
+    }
+    Ok(extracted)
 }
 
 fn write_file(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
@@ -232,6 +266,11 @@ fn spawn_all() -> Result<bool, String> {
     }
     let dir_i2pd = dir.clone();
     register_spawner("i2pd", move || {
+        // Reuse an already-running i2pd (e.g. enabled systemd service) whose
+        // SAM port is live; spawning our own would fail to bind 7656.
+        if port_open(I2PD_SAM_PORT) {
+            return true;
+        }
         let mut cmd = Command::new(dir_i2pd.join("i2pd"));
         cmd.arg(format!("--datadir={}", i2pd_data.display()))
             .arg(format!("--conf={}", i2pd_conf.display()));
@@ -241,8 +280,13 @@ fn spawn_all() -> Result<bool, String> {
     let freenet_data = files.join("freenet-data");
     let dir_freenet = dir.clone();
     register_spawner("freenet", move || {
+        // Reuse the already-running local node (system/service instance bound
+        // to 7509) instead of spawning a second that would fail to bind.
+        if port_open(FREENET_API_PORT) {
+            return true;
+        }
         let mut cmd = Command::new(dir_freenet.join("freenet"));
-        cmd.current_dir(&freenet_data);
+        cmd.current_dir(&freenet_data).arg("network");
         spawn("freenet", cmd, "freenet.log", &freenet_data)
     });
 
@@ -395,6 +439,15 @@ mod tests {
         assert!(map.contains_key("reticulum"));
         let all = daemon_are_daemons_available().unwrap();
         assert!(!all);
+    }
+
+    #[test]
+    fn test_port_open_detects_listener() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(port_open(port));
+        drop(listener);
+        assert!(!port_open(port));
     }
 
     #[test]

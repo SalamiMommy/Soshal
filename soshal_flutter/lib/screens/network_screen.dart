@@ -911,7 +911,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
                   context,
                   'Freenet',
                   network.freenet,
-                  'Local Freenet gateway (127.0.0.1:8888)',
+                  'Local Freenet gateway (127.0.0.1:7509)',
                 ),
                 ListTile(
                   dense: true,

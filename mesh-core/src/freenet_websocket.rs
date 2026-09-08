@@ -1,8 +1,20 @@
 //! Freenet WebSocket client for contract operations and node communication.
 
 use crate::pqc_link::PQ_LINK_CRYPTO;
+use freenet_stdlib::client_api::{
+    ClientError as FnetClientError, ClientRequest as FnetClientRequest,
+    ContractRequest as FnetContractRequest, HostResponse as FnetHostResponse,
+};
+use freenet_stdlib::prelude::{
+    ContractCode as FnetContractCode, ContractContainer as FnetContractContainer,
+    ContractInstanceId, ContractWasmAPIVersion as FnetContractWasmApi,
+    Parameters as FnetParameters, RelatedContracts as FnetRelatedContracts, State as FnetState,
+    StateSummary as FnetStateSummary, WrappedContract as FnetWrappedContract,
+    WrappedState as FnetWrappedState,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::{client_async, tungstenite::Message, WebSocketStream};
@@ -10,6 +22,22 @@ use tokio_tungstenite::{client_async, tungstenite::Message, WebSocketStream};
 /// Per-phase bound for Freenet node connections (TCP connect, TLS handshake,
 /// WS upgrade). Prevents hangs on unreachable nodes.
 const WS_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The freenet-core node serves the client WebSocket API only on this path
+/// (both v1 and v2 exist; v2 is current). A bare `ws://host:port` root URL
+/// hits the HTML dashboard handler, not the WS upgrade.
+const WS_API_PATH: &str = "/v2/contract/command";
+
+/// Requests the node's native (bincode) message encoding instead of the
+/// default flatbuffers byte format.
+const ENCODING_PROTOCOL_HEADER: &str = "encoding-protocol";
+const ENCODING_PROTOCOL_NATIVE: &str = "native";
+
+/// Maximum frames drained for one request/response exchange. Message types not
+/// matched to the pending request (async subscribe notifications, heartbeats)
+/// are skipped, but the loop is bounded so a misbehaving node cannot pin the
+/// caller.
+const MAX_RESPONSE_DRAIN: usize = 8;
 
 pub use crate::freenet_contract::StateSummary as ContractSummary;
 use crate::freenet_contract::{RelatedContract, StateSummary};
@@ -146,17 +174,34 @@ impl FreenetWebSocketClient {
             return Err("Freenet WebSocket blocked: URL does not resolve".to_string());
         }
 
-        // Auth token travels as a header, never the query string (query
-        // params leak via logs/referrer). Server contract change: the node
-        // must read `X-Freenet-Auth` instead of `?auth=`; header preferred.
+        // The node serves its WebSocket API only under `WS_API_PATH`. A bare
+        // root URL (the historical 8888 gateway convention) points at the
+        // dashboard HTML handler, so normalize the path when it is missing.
+        let mut ws_url = parsed.clone();
+        if ws_url.path() == "/" || ws_url.path().is_empty() {
+            ws_url.set_path(WS_API_PATH);
+        }
+        let ws_url = ws_url.to_string();
+
+        // Auth + encoding travel as headers, never the query string (query
+        // params leak via logs/referrer). The freenet-core node authenticates
+        // with `Authorization: Bearer <token>` (or `?auth_token=`); a token is
+        // OPTIONAL for loopback clients (anonymous connections are accepted,
+        // close code 4401 = AUTH_TOKEN_INVALID only fires for a stale token).
+        // The bespoke `X-Freenet-User-Token` header is reserved for hosted-mode
+        // user contexts and must not be reused here.
         // Every phase (TCP connect, TLS handshake, WS upgrade) is bounded —
         // an unreachable node must fail fast instead of hanging the caller.
         let mut last_err: Option<String> = None;
         for addr in &pinned {
-            let mut builder =
-                tokio_tungstenite::tungstenite::http::Request::builder().uri(self.url.as_str());
+            let mut builder = tokio_tungstenite::tungstenite::http::Request::builder()
+                .uri(ws_url.as_str())
+                .header(ENCODING_PROTOCOL_HEADER, ENCODING_PROTOCOL_NATIVE);
             if !self.auth_token.is_empty() {
-                builder = builder.header("X-Freenet-Auth", self.auth_token.as_str());
+                builder = builder.header(
+                    "Authorization",
+                    format!("Bearer {}", self.auth_token).as_str(),
+                );
             }
             let request = builder
                 .body(())
@@ -227,33 +272,52 @@ impl FreenetWebSocketClient {
         Ok(())
     }
 
-    /// Sends a request to the Freenet node
+    /// Sends a request to the Freenet node over the native (bincode) client
+    /// API and decodes the matching response.
     pub async fn send_request(&self, request: FreenetRequest) -> Result<FreenetResponse, String> {
+        let native_req = to_native_request(&request)?;
+        let request_bytes = bincode::serialize(&native_req)
+            .map_err(|e| format!("Freenet request serialization failed: {e}"))?;
+
         let mut socket_guard = self.socket.lock().await;
         let ws = socket_guard.as_mut().ok_or("WebSocket not connected")?;
 
-        let request_json = serde_json::to_string(&request)
-            .map_err(|e| format!("Request serialization failed: {e}"))?;
-
-        ws.send(Message::Text(request_json))
+        ws.send(Message::Binary(request_bytes))
             .await
-            .map_err(|e| format!("WebSocket send failed: {e}"))?;
+            .map_err(|e| format!("Freenet WebSocket send failed: {e}"))?;
 
-        // Wait for response
-        if let Some(message) = ws.next().await {
-            match message {
-                Ok(Message::Text(text)) => {
-                    let response: FreenetResponse = serde_json::from_str(&text)
-                        .map_err(|e| format!("Response deserialization failed: {e}"))?;
-                    Ok(response)
+        // Drain until the response matching the pending request arrives.
+        // Subscribe notifications and unrelated messages are skipped inside a
+        // bounded window; a close frame surfaces the node's rejection reason.
+        for _ in 0..MAX_RESPONSE_DRAIN {
+            match ws.next().await {
+                Some(Ok(Message::Binary(bytes))) => {
+                    let native_resp: Result<FnetHostResponse, FnetClientError> =
+                        bincode::deserialize(&bytes)
+                            .map_err(|e| format!("Freenet response deserialization failed: {e}"))?;
+                    if let Some(response) = from_native_response(&request, &native_resp) {
+                        return Ok(response);
+                    }
                 }
-                Ok(Message::Close(_)) => Err("Connection closed by server".to_string()),
-                Err(e) => Err(format!("WebSocket receive error: {e}")),
-                _ => Err("Unexpected message type".to_string()),
+                Some(Ok(Message::Ping(payload))) => {
+                    let _ = ws.send(Message::Pong(payload)).await;
+                }
+                Some(Ok(Message::Pong(_))) | Some(Ok(Message::Frame(_))) => {}
+                Some(Ok(Message::Close(frame))) => {
+                    let reason = frame
+                        .map(|f| {
+                            let text = f.reason.to_string();
+                            format!("{text} (code {})", f.code)
+                        })
+                        .unwrap_or_else(|| "no reason".to_string());
+                    return Err(format!("Freenet connection closed by server: {reason}"));
+                }
+                Some(Ok(Message::Text(_))) => {}
+                Some(Err(e)) => return Err(format!("Freenet WebSocket receive error: {e}")),
+                None => return Err("No response received".to_string()),
             }
-        } else {
-            Err("No response received".to_string())
         }
+        Err("Freenet: no matching response within the drain window".to_string())
     }
 
     /// Fetches contract state from the Freenet node. With a ratchet peer
@@ -324,6 +388,140 @@ impl FreenetWebSocketClient {
             FreenetResponse::Error(err) => Err(format!("Subscribe failed: {}", err.message)),
             _ => Err("Unexpected response type".to_string()),
         }
+    }
+}
+
+/// Parses a freenet contract id (base58) from the JSON-facing key string.
+fn parse_instance_id(key: &str) -> Result<ContractInstanceId, String> {
+    key.parse::<ContractInstanceId>()
+        .map_err(|e| format!("invalid Freenet contract id '{key}': {e}"))
+}
+
+/// Maps the JSON-facing request to the node's native `ClientRequest`.
+///
+/// Get/Subscribe/Disconnect map 1:1. Put requires a contract container: a
+/// freenet Put creates a NEW contract from (code, params); "upsert state under
+/// this key" has no native equivalent (that is `Update`, which needs the full
+/// key incl. code hash and a pre-seeded contract). Container-less puts (the
+/// historical relay default) therefore return an advisory error so the caller
+/// can seed a carrier contract first.
+fn to_native_request(request: &FreenetRequest) -> Result<FnetClientRequest<'static>, String> {
+    match request {
+        FreenetRequest::Get(g) => Ok(FnetClientRequest::ContractOp(FnetContractRequest::Get {
+            key: parse_instance_id(&g.key)?,
+            return_contract_code: g.fetch_contract,
+            subscribe: g.subscribe,
+            blocking_subscribe: g.blocking_subscribe,
+        })),
+        FreenetRequest::Put(p) => {
+            let container = p.container.as_ref().ok_or_else(|| {
+                "local Freenet node: Put without contract code is unsupported; \
+                 seed a carrier contract (Put with a container) first"
+                    .to_string()
+            })?;
+            let code = FnetContractCode::from(container.contract_code.clone());
+            let params = FnetParameters::from(code.hash().as_ref().to_vec());
+            let contract = FnetContractContainer::Wasm(FnetContractWasmApi::V1(
+                FnetWrappedContract::new(Arc::new(code), params),
+            ));
+            let state = p
+                .wrapped_state
+                .as_ref()
+                .map(|s| s.state.clone())
+                .unwrap_or_else(|| container.state.clone());
+            Ok(FnetClientRequest::ContractOp(FnetContractRequest::Put {
+                contract,
+                state: FnetWrappedState::from(state),
+                related_contracts: to_native_related(&p.related_contracts)?,
+                subscribe: p.subscribe,
+                blocking_subscribe: p.blocking_subscribe,
+            }))
+        }
+        FreenetRequest::Subscribe(s) => Ok(FnetClientRequest::ContractOp(
+            FnetContractRequest::Subscribe {
+                key: parse_instance_id(&s.key)?,
+                summary: s
+                    .summary
+                    .as_ref()
+                    .map(|sm| FnetStateSummary::from(sm.data.clone())),
+            },
+        )),
+        FreenetRequest::Update(_) => Err(
+            "local Freenet node: Update unsupported over the native bridge \
+             (requires the full contract key incl. code hash and a seeded contract)"
+                .to_string(),
+        ),
+        FreenetRequest::Disconnect(d) => Ok(FnetClientRequest::Disconnect {
+            cause: d.cause.clone().map(Into::into),
+        }),
+    }
+}
+
+fn to_native_related(related: &[RelatedContract]) -> Result<FnetRelatedContracts<'static>, String> {
+    let mut map: HashMap<ContractInstanceId, Option<FnetState<'static>>> = HashMap::new();
+    for rc in related {
+        let id = parse_instance_id(&rc.key)?;
+        let state = rc.summary.as_ref().map(|s| FnetState::from(s.data.clone()));
+        map.insert(id, state);
+    }
+    Ok(FnetRelatedContracts::from(map))
+}
+
+/// Maps a native response (or error) to the JSON-facing response expected by
+/// the pending request. Returns `None` for unrelated frames (e.g. async
+/// subscribe notifications) so the reader keeps draining.
+fn from_native_response(
+    request: &FreenetRequest,
+    native: &Result<FnetHostResponse, FnetClientError>,
+) -> Option<FreenetResponse> {
+    let want_subscribe = match request {
+        FreenetRequest::Get(g) => g.subscribe,
+        FreenetRequest::Put(p) => p.subscribe,
+        _ => false,
+    };
+    match native {
+        Ok(FnetHostResponse::ContractResponse(
+            freenet_stdlib::client_api::ContractResponse::GetResponse { key, state, .. },
+        )) => Some(FreenetResponse::GetResult(GetResult {
+            state: ContractState {
+                key: key.encoded_contract_id(),
+                state: state.as_ref().to_vec(),
+                contract_code: None,
+            },
+            subscribed: want_subscribe,
+        })),
+        Ok(FnetHostResponse::ContractResponse(
+            freenet_stdlib::client_api::ContractResponse::PutResponse { key },
+        )) => Some(FreenetResponse::PutResult(PutResult {
+            key: key.encoded_contract_id(),
+            subscribed: want_subscribe,
+        })),
+        Ok(FnetHostResponse::ContractResponse(
+            freenet_stdlib::client_api::ContractResponse::SubscribeResponse { key, subscribed },
+        )) => Some(FreenetResponse::SubscribeResult(SubscribeResult {
+            key: key.encoded_contract_id(),
+            subscribed: *subscribed,
+        })),
+        Ok(FnetHostResponse::ContractResponse(
+            freenet_stdlib::client_api::ContractResponse::UpdateResponse { key, .. },
+        )) => Some(FreenetResponse::UpdateResult(UpdateResult {
+            key: key.encoded_contract_id(),
+            success: true,
+        })),
+        Ok(FnetHostResponse::ContractResponse(
+            freenet_stdlib::client_api::ContractResponse::NotFound { instance_id },
+        )) => Some(FreenetResponse::Error(ErrorResponse {
+            message: format!(
+                "Freenet contract not found: {} — seed it with a Put (container) first",
+                instance_id.encode()
+            ),
+            code: Some(404),
+        })),
+        Err(e) => Some(FreenetResponse::Error(ErrorResponse {
+            message: format!("Freenet node error: {e:?}"),
+            code: None,
+        })),
+        _ => None,
     }
 }
 
@@ -433,6 +631,147 @@ pub struct StateUpdate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_native_parse_instance_id() {
+        let id = ContractInstanceId::from_params_and_code(
+            FnetParameters::from(vec![1u8; 32]),
+            FnetContractCode::from(vec![0u8; 8]),
+        );
+        let encoded = id.encode();
+        assert_eq!(parse_instance_id(&encoded).unwrap(), id);
+        assert!(parse_instance_id("soshal-mesh-v1").is_err());
+        assert!(parse_instance_id("&&&").is_err());
+    }
+
+    #[test]
+    fn test_native_get_maps_to_contract_get() {
+        let req = FreenetRequest::Get(GetRequest {
+            key: "soshal-mesh-v1".to_string(),
+            fetch_contract: true,
+            subscribe: true,
+            blocking_subscribe: false,
+        });
+        assert!(to_native_request(&req).is_err(), "non-base58 key must fail");
+
+        let id = ContractInstanceId::from_params_and_code(
+            FnetParameters::from(vec![1u8; 32]),
+            FnetContractCode::from(vec![0u8; 8]),
+        );
+        let req = FreenetRequest::Get(GetRequest {
+            key: id.encode(),
+            fetch_contract: true,
+            subscribe: true,
+            blocking_subscribe: true,
+        });
+        let native = to_native_request(&req).unwrap();
+        match native {
+            FnetClientRequest::ContractOp(FnetContractRequest::Get {
+                return_contract_code,
+                subscribe,
+                blocking_subscribe,
+                ..
+            }) => {
+                assert!(return_contract_code);
+                assert!(subscribe);
+                assert!(blocking_subscribe);
+            }
+            other => panic!("expected ContractOp Get, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_native_put_requires_container() {
+        let req = FreenetRequest::Put(PutRequest {
+            container: None,
+            wrapped_state: Some(ContractState {
+                key: "soshal-mesh-v1".to_string(),
+                state: vec![1, 2, 3],
+                contract_code: None,
+            }),
+            related_contracts: vec![],
+            subscribe: false,
+            blocking_subscribe: false,
+        });
+        let err = to_native_request(&req).unwrap_err();
+        assert!(err.contains("carrier contract"), "got: {err}");
+
+        let req = FreenetRequest::Put(PutRequest {
+            container: Some(ContractContainer {
+                contract_code: vec![0u8; 8],
+                state: vec![9, 8, 7],
+            }),
+            wrapped_state: None,
+            related_contracts: vec![],
+            subscribe: true,
+            blocking_subscribe: true,
+        });
+        let native = to_native_request(&req).unwrap();
+        match native {
+            FnetClientRequest::ContractOp(FnetContractRequest::Put {
+                subscribe,
+                blocking_subscribe,
+                ..
+            }) => {
+                assert!(subscribe);
+                assert!(blocking_subscribe);
+            }
+            other => panic!("expected ContractOp Put, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_native_subscribe_maps() {
+        let id = ContractInstanceId::from_params_and_code(
+            FnetParameters::from(vec![1u8; 32]),
+            FnetContractCode::from(vec![0u8; 8]),
+        );
+        let req = FreenetRequest::Subscribe(SubscribeRequest {
+            key: id.encode(),
+            summary: Some(StateSummary { data: vec![1] }),
+        });
+        let native = to_native_request(&req).unwrap();
+        match native {
+            FnetClientRequest::ContractOp(FnetContractRequest::Subscribe { key, summary }) => {
+                assert_eq!(key, id);
+                assert!(summary.is_some());
+            }
+            other => panic!("expected ContractOp Subscribe, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_native_update_unsupported() {
+        let req = FreenetRequest::Update(UpdateRequest {
+            key: Some("x".to_string()),
+            update: None,
+        });
+        assert!(to_native_request(&req).is_err());
+    }
+
+    #[test]
+    fn test_native_response_mapping() {
+        // NotFound seeds an explicit error response.
+        let id = ContractInstanceId::from_params_and_code(
+            FnetParameters::from(vec![1u8; 32]),
+            FnetContractCode::from(vec![0u8; 8]),
+        );
+        let not_found =
+            Ok::<FnetHostResponse, FnetClientError>(FnetHostResponse::ContractResponse(
+                freenet_stdlib::client_api::ContractResponse::NotFound { instance_id: id },
+            ));
+        let req = FreenetRequest::Get(GetRequest {
+            key: id.encode(),
+            fetch_contract: true,
+            subscribe: false,
+            blocking_subscribe: false,
+        });
+        let mapped = from_native_response(&req, &not_found);
+        match mapped {
+            Some(FreenetResponse::Error(e)) if e.code == Some(404) => {}
+            _ => panic!("expected NotFound mapped to Error(404), got {mapped:?}"),
+        }
+    }
 
     #[test]
     fn test_request_serialization() {
@@ -642,17 +981,17 @@ mod tests {
     #[tokio::test]
     async fn test_connect_rejects_ssrf_and_bad_urls() {
         for bad in [
-            "ws://localhost:8888",
-            "ws://127.0.0.1:8888",
-            "ws://127.1:8888",
-            "ws://0x7f000001:8888",
-            "ws://10.0.0.1:8888",
-            "ws://192.168.1.1:8888",
-            "ws://169.254.169.254:8888",
-            "ws://1.2.3.4.nip.io:8888",
-            "ws://1.2.3.4:8888",
+            "ws://localhost:7509",
+            "ws://127.0.0.1:7509",
+            "ws://127.1:7509",
+            "ws://0x7f000001:7509",
+            "ws://10.0.0.1:7509",
+            "ws://192.168.1.1:7509",
+            "ws://169.254.169.254:7509",
+            "ws://1.2.3.4.nip.io:7509",
+            "ws://1.2.3.4:7509",
             "wss://relay.example.com:443",
-            "http://example.com:8888",
+            "http://example.com:7509",
         ] {
             let client = FreenetWebSocketClient::new(bad.to_string(), "tok".to_string());
             assert!(

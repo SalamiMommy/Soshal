@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 base64 = { workspace = true }
 blake3 = { workspace = true }
+bincode = "1"
+freenet-stdlib = "0.8.4"
 futures-util = { workspace = true }
 hex = { workspace = true }
 ring = { workspace = true }
