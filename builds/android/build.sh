@@ -13,14 +13,24 @@ resolve_script_dir
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 MODE="debug"
+SPLIT_PER_ABI=0
 OUT_NAME="soshal_flutter.apk"
-if [[ "${1:-}" == "--release" ]]; then
-  MODE="release"
-  OUT_NAME="soshal_flutter-release.apk"
-elif [[ $# -gt 0 ]]; then
-  echo "Unknown argument: $1 (expected --release or nothing)" >&2
-  exit 1
-fi
+
+for arg in "$@"; do
+  case "$arg" in
+    --release)
+      MODE="release"
+      OUT_NAME="soshal_flutter-release.apk"
+      ;;
+    --split-per-abi)
+      SPLIT_PER_ABI=1
+      ;;
+    *)
+      echo "Unknown argument: $arg (expected --release, --split-per-abi, or nothing)" >&2
+      exit 1
+      ;;
+  esac
+done
 
 ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 NDK_VERSION="${NDK_VERSION:-27.1.12297006}"
@@ -315,16 +325,41 @@ else
 fi
 
 cd "$PROJECT_ROOT/soshal_flutter"
+BUILD_FLAGS=()
+if [[ "$SPLIT_PER_ABI" -eq 1 ]]; then
+  BUILD_FLAGS+=(--split-per-abi)
+fi
+
 if [[ "$MODE" == "release" ]]; then
-  "$FLUTTER_BIN" build apk --release
-  OUT="$SCRIPT_DIR/$OUT_NAME"
-  rm -f "$OUT"
-  cp "build/app/outputs/flutter-apk/app-release.apk" "$OUT"
+  "$FLUTTER_BIN" build apk --release "${BUILD_FLAGS[@]}"
+  if [[ "$SPLIT_PER_ABI" -eq 1 ]]; then
+    for split_apk in build/app/outputs/flutter-apk/app-*-release.apk; do
+      if [[ -f "$split_apk" ]]; then
+        cp "$split_apk" "$SCRIPT_DIR/"
+        echo "  copied: $SCRIPT_DIR/$(basename "$split_apk")"
+      fi
+    done
+    OUT="$SCRIPT_DIR/app-arm64-v8a-release.apk"
+  else
+    OUT="$SCRIPT_DIR/$OUT_NAME"
+    rm -f "$OUT"
+    cp "build/app/outputs/flutter-apk/app-release.apk" "$OUT"
+  fi
 else
-  "$FLUTTER_BIN" build apk --debug
-  OUT="$SCRIPT_DIR/$OUT_NAME"
-  rm -f "$OUT"
-  cp "build/app/outputs/flutter-apk/app-debug.apk" "$OUT"
+  "$FLUTTER_BIN" build apk --debug "${BUILD_FLAGS[@]}"
+  if [[ "$SPLIT_PER_ABI" -eq 1 ]]; then
+    for split_apk in build/app/outputs/flutter-apk/app-*-debug.apk; do
+      if [[ -f "$split_apk" ]]; then
+        cp "$split_apk" "$SCRIPT_DIR/"
+        echo "  copied: $SCRIPT_DIR/$(basename "$split_apk")"
+      fi
+    done
+    OUT="$SCRIPT_DIR/app-arm64-v8a-debug.apk"
+  else
+    OUT="$SCRIPT_DIR/$OUT_NAME"
+    rm -f "$OUT"
+    cp "build/app/outputs/flutter-apk/app-debug.apk" "$OUT"
+  fi
 fi
 
 echo "  bundling: $OUT"

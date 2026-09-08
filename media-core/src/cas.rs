@@ -45,7 +45,7 @@ pub struct ChunkStore {
     mmap_cache: Arc<Mutex<FifoCache<memmap2::Mmap>>>,
 }
 
-/// FIFO-capped cache of Arc'd values keyed by hash string.
+/// LRU-capped cache of Arc'd values keyed by hash string.
 struct FifoCache<T> {
     order: std::collections::VecDeque<String>,
     map: HashMap<String, Arc<T>>,
@@ -63,12 +63,21 @@ impl<T> Default for FifoCache<T> {
 }
 
 impl<T> FifoCache<T> {
-    fn get(&self, key: &str) -> Option<Arc<T>> {
-        self.map.get(key).cloned()
+    fn get(&mut self, key: &str) -> Option<Arc<T>> {
+        if let Some(val) = self.map.get(key).cloned() {
+            self.order.retain(|k| k != key);
+            self.order.push_back(key.to_string());
+            Some(val)
+        } else {
+            None
+        }
     }
 
     fn put(&mut self, key: String, value: Arc<T>) {
         if self.map.contains_key(&key) {
+            self.order.retain(|k| k != &key);
+            self.order.push_back(key.clone());
+            self.map.insert(key, value);
             return;
         }
         if self.map.len() >= self.cap {
@@ -255,7 +264,7 @@ impl ChunkStore {
         if hash.len() != 64 {
             return None;
         }
-        if let Ok(cache) = self.mmap_cache.lock() {
+        if let Ok(mut cache) = self.mmap_cache.lock() {
             if let Some(m) = cache.get(hash) {
                 return Some(m);
             }
@@ -510,7 +519,7 @@ impl ChunkStore {
         if !is_valid_hash(blob_hash) {
             return None;
         }
-        if let Ok(cache) = self.manifest_cache.lock() {
+        if let Ok(mut cache) = self.manifest_cache.lock() {
             if let Some(m) = cache.get(blob_hash) {
                 return Some(m.as_ref().clone());
             }
@@ -855,6 +864,17 @@ mod tests {
         assert!(cache.get("k0").is_none());
         assert!(cache.get("k1").is_some());
         assert!(cache.get("k64").is_some());
+
+        // LRU verification: accessing k1 moves it to MRU, so adding k65 evicts k2 instead of k1.
+        let _ = cache.get("k1");
+        cache.put("k65".to_string(), Arc::new(mk(65)));
+        assert_eq!(cache.map.len(), 64);
+        assert!(
+            cache.get("k1").is_some(),
+            "recently accessed k1 must be preserved"
+        );
+        assert!(cache.get("k2").is_none(), "unaccessed k2 must be evicted");
+        assert!(cache.get("k65").is_some());
 
         // ChunkIndex::build skips garbage and structurally invalid manifests.
         let root = soshal_test_util::tmp_root("cas");

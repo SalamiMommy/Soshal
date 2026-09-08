@@ -408,7 +408,7 @@ pub fn streaming_post_story(
 #[frb(sync, serialize)]
 pub fn streaming_fetch_stories(user_pubkey: String) -> Result<String, String> {
     let now = soshal_common_core::format::now_secs();
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT id, pubkey, content, created_at, tags_json, 0 AS views FROM posts \
              WHERE kind = {KIND_STORY} AND pubkey = ?1 AND is_deleted = 0 \
@@ -416,7 +416,6 @@ pub fn streaming_fetch_stories(user_pubkey: String) -> Result<String, String> {
         ),
         &[user_pubkey],
     )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     super::util::json_ok(
         rows.into_iter()
             .filter_map(|v| story_from_value(&v))
@@ -444,7 +443,7 @@ pub fn streaming_fetch_followed_stories(audience: String) -> Result<String, Stri
         }
         None => "",
     };
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json, 0 AS views FROM posts p \
              WHERE p.kind = {KIND_STORY} AND p.is_deleted = 0{author_clause} \
@@ -452,7 +451,6 @@ pub fn streaming_fetch_followed_stories(audience: String) -> Result<String, Stri
         ),
         &params,
     )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     super::util::json_ok(
         rows.into_iter()
             .filter_map(|v| story_from_value(&v))

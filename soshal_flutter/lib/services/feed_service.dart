@@ -457,29 +457,24 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   /// (feed-core aggregator; sync FFI).
   List<ReactionSummary> aggregateChatReactions(
       List<FeedPost> threadPosts, String selfPubkey) {
-    final reactions = <Map<String, dynamic>>[];
+    var totalCount = 0;
+    var hasReacted = false;
     for (final p in threadPosts) {
-      for (var i = 0; i < p.reactions; i++) {
-        reactions.add({
-          'emoji': '+',
-          'reactorPubkey': p.liked ? selfPubkey : '',
-        });
+      totalCount += p.reactions;
+      if (p.liked) {
+        hasReacted = true;
       }
     }
-    final input =
-        jsonEncode({'reactions': reactions, 'selfPubkey': selfPubkey});
-    try {
-      final json = RustLib.instance.api
-          .crateFfiFeedFeedAggregateChatReactions(input: input);
-      final list = jsonDecode(json) as List<dynamic>;
-      return list
-          .map((e) => ReactionSummary.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } catch (e, st) {
-      setLastError(e, st);
-      notifyDeferred();
+    if (totalCount == 0) {
       return const [];
     }
+    return [
+      ReactionSummary(
+        emoji: '+',
+        count: totalCount,
+        hasReacted: hasReacted,
+      ),
+    ];
   }
 
   /// Decode feed rows: JSON parsing happens on a background isolate

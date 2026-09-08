@@ -174,12 +174,16 @@ if (ok) {
 
   /// Get the unread notification count.
   Future<int> refreshUnreadCount(String pubkey) => guard(() {
-        _unreadCount = RustLib.instance.api
+        final count = RustLib.instance.api
             .crateFfiNotificationsNotificationsGetUnreadCount(
           userPubkey: pubkey,
         );
+        if (_unreadCount != count) {
+          _unreadCount = count;
+          notifyListeners();
+        }
         return _unreadCount;
-      });
+      }, notifyOnSuccess: false);
 
   /// Delete a notification from the local store.
   Future<bool> deleteNotification(String notificationId) => guard(() {

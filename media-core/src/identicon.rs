@@ -3,7 +3,7 @@
 //! Renders a 5x5 mirrored grid (classic identicon style) as a PNG using only
 //! std FNV-1a hashing and the `image` crate — no randomness, no extra deps.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::{Mutex, OnceLock};
 
@@ -28,8 +28,8 @@ const BORDER: u32 = 4;
 const CACHE_CAP: usize = 256;
 
 struct LruAvatarCache {
-    map: HashMap<String, Vec<u8>>,
-    order: VecDeque<String>,
+    current: HashMap<String, Vec<u8>>,
+    previous: HashMap<String, Vec<u8>>,
 }
 
 static AVATAR_CACHE: OnceLock<Mutex<LruAvatarCache>> = OnceLock::new();
@@ -56,19 +56,18 @@ fn colors(hash: u64) -> ([u8; 3], [u8; 3]) {
 pub fn identicon_png(seed: &str) -> Vec<u8> {
     let cache = AVATAR_CACHE.get_or_init(|| {
         Mutex::new(LruAvatarCache {
-            map: HashMap::new(),
-            order: VecDeque::new(),
+            current: HashMap::with_capacity(CACHE_CAP),
+            previous: HashMap::with_capacity(CACHE_CAP),
         })
     });
     {
         let mut guard = cache.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(png) = guard.map.get(seed) {
-            let res = png.clone();
-            if let Some(pos) = guard.order.iter().position(|s| s == seed) {
-                guard.order.remove(pos);
-                guard.order.push_back(seed.to_string());
-            }
-            return res;
+        if let Some(png) = guard.current.get(seed) {
+            return png.clone();
+        }
+        if let Some(png) = guard.previous.remove(seed) {
+            guard.current.insert(seed.to_string(), png.clone());
+            return png;
         }
     }
     let hash = fnv1a(seed);
@@ -130,15 +129,13 @@ pub fn identicon_png(seed: &str) -> Vec<u8> {
         };
     {
         let mut guard = cache.lock().unwrap_or_else(|p| p.into_inner());
-        if !guard.map.contains_key(seed) {
-            if guard.order.len() >= CACHE_CAP {
-                if let Some(oldest) = guard.order.pop_front() {
-                    guard.map.remove(&oldest);
-                }
-            }
-            guard.order.push_back(seed.to_string());
-            guard.map.insert(seed.to_string(), png.clone());
+        let guard = &mut *guard;
+        if guard.current.len() >= CACHE_CAP {
+            let LruAvatarCache { current, previous } = guard;
+            std::mem::swap(previous, current);
+            current.clear();
         }
+        guard.current.insert(seed.to_string(), png.clone());
     }
     png
 }

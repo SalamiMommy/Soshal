@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/notifications_service.dart';
@@ -247,10 +248,14 @@ class _NotificationList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<NotificationService>(
-      builder: (context, api, _) {
+    return Selector<NotificationService, List<AppNotification>>(
+      selector: (_, api) {
         final source = type == null ? api.notifications : api.byType(type!);
-        final items = source.where((n) => !unreadOnly || !n.read).toList();
+        return source.where((n) => !unreadOnly || !n.read).toList();
+      },
+      shouldRebuild: (prev, next) => !listEquals(prev, next),
+      builder: (context, items, _) {
+        final api = context.read<NotificationService>();
         if (items.isEmpty) {
           return RefreshIndicator(
             onRefresh: () => _refresh(api),

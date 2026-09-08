@@ -125,24 +125,32 @@ pub async fn feed_rank_posts(events_json: String) -> Result<String, String> {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct EngagementCounters {
+    reactions: i32,
+    replies: i32,
+    reposts: i32,
+    liked: bool,
+}
+
 fn feed_engagement_counters(
     db: &soshal_db_core::Database,
     ids: &[String],
-) -> std::collections::HashMap<String, FeedPost> {
+) -> std::collections::HashMap<String, EngagementCounters> {
     if ids.is_empty() {
         return std::collections::HashMap::new();
     }
     let id_json = serde_json::to_string(ids).unwrap_or_else(|_| "[]".to_string());
     let active_pubkey: String = super::db::active_pubkey().unwrap_or_default();
     soshal_db_core::block_on(async {
-        let r: Result<std::collections::HashMap<String, FeedPost>, String> = async {
+        let r: Result<std::collections::HashMap<String, EngagementCounters>, String> = async {
             let conn = db.conn().map_err(|e| e.to_string())?;
             let stmt = conn
                 .prepare(
                     "SELECT p.id,
                             (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
                             (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.kind = 1 AND rp.is_deleted = 0),
-                            (SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id),
+                            p.reposts_count,
                             EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?2)
                      FROM posts p
                      WHERE p.id IN (SELECT value FROM json_each(?1))",
@@ -162,16 +170,11 @@ fn feed_engagement_counters(
                 let liked: i64 = row.get(4).map_err(|e| e.to_string())?;
                 out.insert(
                     event_id,
-                    FeedPost {
-                        event_id: String::new(),
-                        pubkey: String::new(),
-                        content: String::new(),
-                        created_at: 0,
+                    EngagementCounters {
                         reactions: reactions.min(i32::MAX as i64) as i32,
                         replies: replies.min(i32::MAX as i64) as i32,
                         reposts: reposts.min(i32::MAX as i64) as i32,
                         liked: liked != 0,
-                        media_json: None,
                     },
                 );
             }
@@ -391,12 +394,15 @@ pub async fn feed_fetch_events(options_json: String) -> Result<String, String> {
                     rows.extend(chunk);
                 }
             }
-            let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
-            let counters = feed_engagement_counters(db, &ids);
-            let posts: Vec<FeedPost> = rows
+            let clean_rows: Vec<PostMetaRow> = rows
                 .into_iter()
                 .filter(|row| is_content_clean(&row.content, &filters))
                 .take(limit as usize)
+                .collect();
+            let ids: Vec<String> = clean_rows.iter().map(|r| r.id.clone()).collect();
+            let counters = feed_engagement_counters(db, &ids);
+            let posts: Vec<FeedPost> = clean_rows
+                .into_iter()
                 .map(|row| {
                     let ref_id = row.id.clone();
                     let content =
@@ -478,8 +484,7 @@ pub async fn feed_fetch_thread(event_id: String) -> Result<String, String> {
                 .into_iter()
                 .filter(|row| is_content_clean(&row.content, &filters))
                 .map(|row| {
-                    let ref_id = row.id.clone();
-                    let engagement = counters.get(&ref_id);
+                    let engagement = counters.get(&row.id);
                     FeedPost {
                         event_id: row.id,
                         pubkey: row.pubkey,

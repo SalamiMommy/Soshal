@@ -47,22 +47,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (pubkey != null) {
         final me = sessionService.activePubkey;
-        if (me != null && me != pubkey) {
+        final isOther = me != null && me != pubkey;
+        if (isOther) {
           _trustScoreFuture = identityService.getTrustScore(me, pubkey);
         }
-        if (widget.pubkey == null) {
-          await identityService.getSelfProfile(pubkey);
-        } else {
-          await identityService.getProfile(pubkey);
-        }
-        if (!mounted) return;
-        if (me != null && me != pubkey) {
-          final blocked = await identityService.isBlocked(me, pubkey);
-          if (mounted) setState(() => _isBlocked = blocked);
-        }
-        await _loadWot(pubkey, me ?? pubkey);
+
+        final profileFuture = widget.pubkey == null
+            ? identityService.getSelfProfile(pubkey)
+            : identityService.getProfile(pubkey);
+
+        final blockedFuture = isOther
+            ? identityService.isBlocked(me, pubkey).then((blocked) {
+                if (mounted) setState(() => _isBlocked = blocked);
+              })
+            : Future<void>.value();
+
+        final wotFuture = _loadWot(pubkey, me ?? pubkey);
+        final postsFuture = _loadPosts(pubkey);
+
+        await Future.wait([profileFuture, blockedFuture, wotFuture, postsFuture]);
+      } else {
+        await _loadPosts(pubkey);
       }
-      await _loadPosts(pubkey);
     } catch (e) {
       debugPrint('profile load: $e');
       if (mounted) setState(() => _loadError = '$e');
@@ -74,8 +80,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadWot(String pubkey, String viewer) async {
     try {
       final identity = context.read<IdentityService>();
-      final status = await identity.getWotStatus(pubkey, viewer);
-      final score = await identity.getTrustScore(viewer, pubkey);
+      final statusFuture = identity.getWotStatus(pubkey, viewer);
+      final scoreFuture = _trustScoreFuture ?? identity.getTrustScore(viewer, pubkey);
+      final status = await statusFuture;
+      final score = await scoreFuture;
       if (!mounted) return;
       setState(() {
         _wotStatus = status;

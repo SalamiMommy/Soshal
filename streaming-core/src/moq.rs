@@ -21,9 +21,15 @@ const MAX_GROUP_BYTES: usize = 64 * 1024 * 1024;
 /// Encodes a group into the on-stream binary framing above. The payload is
 /// copied; callers wanting zero-copy can slice `bytes[offset..]` per object.
 pub fn encode_group_stream(group: &MoqGroup) -> Result<Vec<u8>, String> {
+    if group.objects.len() > MAX_GROUP_OBJECTS {
+        return Err("moq group too many objects".to_string());
+    }
     let total_payload: usize = group.objects.iter().map(|o| o.payload.len()).sum();
+    if total_payload > MAX_GROUP_BYTES {
+        return Err("moq group oversized".to_string());
+    }
     let mut out = Vec::with_capacity(8 + 4 + group.objects.len() * 40 + total_payload);
-    encode_group_stream_to_writer(group, &mut out)?;
+    encode_group_stream_to_writer_inner(group, &mut out)?;
     Ok(out)
 }
 
@@ -38,6 +44,13 @@ pub fn encode_group_stream_to_writer<W: Write>(
     if total_payload > MAX_GROUP_BYTES {
         return Err("moq group oversized".to_string());
     }
+    encode_group_stream_to_writer_inner(group, out)
+}
+
+fn encode_group_stream_to_writer_inner<W: Write>(
+    group: &MoqGroup,
+    out: &mut W,
+) -> Result<(), String> {
     push_u64(out, group.group_sequence)?;
     push_u32(out, group.objects.len() as u32)?;
     for obj in &group.objects {
@@ -125,6 +138,11 @@ pub fn decode_group_stream_bytes(bytes: Bytes) -> Result<MoqGroup, String> {
 /// Decodes a group slice from on-stream binary framing into a zero-copy MoqGroup.
 pub fn decode_group_stream(bytes: &[u8]) -> Result<MoqGroup, String> {
     decode_group_stream_bytes(Bytes::copy_from_slice(bytes))
+}
+
+/// Decodes owned bytes from on-stream binary framing into a zero-copy MoqGroup.
+pub fn decode_group_stream_vec(bytes: Vec<u8>) -> Result<MoqGroup, String> {
+    decode_group_stream_bytes(Bytes::from(bytes))
 }
 
 fn push_u32<W: Write>(out: &mut W, v: u32) -> Result<(), String> {
@@ -258,15 +276,20 @@ impl MoqPublisherSession {
     }
 }
 
+#[derive(Debug, Default)]
+struct SubscriberBuffer {
+    objects: std::collections::VecDeque<MoqObject>,
+    bytes: u64,
+}
+
 /// Live MoQ Subscriber Session for receiving and decoding P2P media streams.
 #[derive(Debug, Clone)]
 pub struct MoqSubscriberSession {
     pub stream_id: String,
     pub subscriber_pubkey: String,
     // VecDeque: oldest-object eviction is pop_front (O(1)); Vec::remove(0)
-    // shifted the whole buffer per drop.
-    received_objects: Arc<Mutex<std::collections::VecDeque<MoqObject>>>,
-    received_bytes: Arc<Mutex<u64>>,
+    // shifted the whole buffer per drop. Guarded with byte counter in a single mutex.
+    buffer: Arc<Mutex<SubscriberBuffer>>,
 }
 
 /// Aggregate byte budget for buffered subscriber objects. 1000 objects × up to
@@ -278,37 +301,31 @@ impl MoqSubscriberSession {
         Self {
             stream_id,
             subscriber_pubkey,
-            received_objects: Arc::new(Mutex::new(std::collections::VecDeque::new())),
-            received_bytes: Arc::new(Mutex::new(0)),
+            buffer: Arc::new(Mutex::new(SubscriberBuffer::default())),
         }
     }
 
     pub fn push_incoming_object(&self, object: MoqObject) {
         let object_len = object.payload.len() as u64;
-        if let Ok(mut lock) = self.received_objects.lock() {
-            if let Ok(mut bytes) = self.received_bytes.lock() {
-                *bytes += object_len;
-                lock.push_back(object);
-                while lock.len() > 1000 || *bytes > MAX_SUBSCRIBER_BUFFER_BYTES {
-                    if lock.is_empty() {
-                        break;
-                    }
-                    let dropped = lock.pop_front();
-                    if let Some(d) = dropped {
-                        *bytes = bytes.saturating_sub(d.payload.len() as u64);
-                    }
+        if let Ok(mut buf) = self.buffer.lock() {
+            buf.bytes += object_len;
+            buf.objects.push_back(object);
+            while buf.objects.len() > 1000 || buf.bytes > MAX_SUBSCRIBER_BUFFER_BYTES {
+                if buf.objects.is_empty() {
+                    break;
+                }
+                let dropped = buf.objects.pop_front();
+                if let Some(d) = dropped {
+                    buf.bytes = buf.bytes.saturating_sub(d.payload.len() as u64);
                 }
             }
         }
     }
 
     pub fn drain_pending_objects(&self) -> Vec<MoqObject> {
-        if let Ok(mut lock) = self.received_objects.lock() {
-            let taken: Vec<MoqObject> = std::mem::take(&mut *lock).into_iter().collect();
-            if let Ok(mut bytes) = self.received_bytes.lock() {
-                *bytes = 0;
-            }
-            taken
+        if let Ok(mut buf) = self.buffer.lock() {
+            buf.bytes = 0;
+            std::mem::take(&mut buf.objects).into_iter().collect()
         } else {
             Vec::new()
         }

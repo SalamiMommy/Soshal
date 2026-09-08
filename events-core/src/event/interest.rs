@@ -21,7 +21,7 @@ pub fn compute_interest_score(
     my_interests: &[String],
     peer_interests: &[String],
 ) -> InterestScoreOutput {
-    if my_interests.is_empty() && peer_interests.is_empty() {
+    if my_interests.is_empty() || peer_interests.is_empty() {
         return InterestScoreOutput {
             score: 0.0,
             common: vec![],

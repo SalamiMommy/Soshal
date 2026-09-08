@@ -28,18 +28,26 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Timer? _callTimer;
   Timer? _lockoutTimer;
   int? _lastLockoutNotified;
+  bool _isPaused = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bootstrap();
+    _startTimers();
+  }
+
+  void _startTimers() {
+    _callTimer?.cancel();
+    _lockoutTimer?.cancel();
     // Poll relay kind-20001 call signals addressed to the active account.
     _callTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (!mounted) return;
+      if (!mounted || _isPaused) return;
       final pubkey = context.read<SessionService>().activePubkey;
       if (pubkey != null) {
         context.read<ShellService>().pollCallSignals(pubkey);
@@ -47,7 +55,7 @@ class _AppShellState extends State<AppShell> {
     });
     // Keep the PIN lock countdown honest while the lock screen is up.
     _lockoutTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      if (!mounted) return;
+      if (!mounted || _isPaused) return;
       final shell = context.read<ShellService>();
       if (!shell.locked) return;
       await shell.refreshLockout(notify: false);
@@ -58,10 +66,36 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
+  void _stopTimers() {
+    _callTimer?.cancel();
+    _callTimer = null;
+    _lockoutTimer?.cancel();
+    _lockoutTimer = null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      _isPaused = true;
+      _stopTimers();
+    } else if (state == AppLifecycleState.resumed) {
+      if (_isPaused) {
+        _isPaused = false;
+        _startTimers();
+        final pubkey = context.read<SessionService>().activePubkey;
+        if (pubkey != null) {
+          context.read<ShellService>().pollCallSignals(pubkey);
+        }
+      }
+    }
+  }
+
   @override
   void dispose() {
-    _callTimer?.cancel();
-    _lockoutTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _stopTimers();
     super.dispose();
   }
 

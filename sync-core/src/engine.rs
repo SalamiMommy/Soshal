@@ -388,7 +388,7 @@ pub async fn engine_loop_with_client_sealed(
     // so events near the boundary are re-fetched and re-ingested once on
     // start. Track recently-seen event ids (FIFO-bounded) and skip them —
     // re-ingest is idempotent but re-parses + re-hashes every duplicate.
-    let mut seen: soshal_common_core::bounded::BoundedSet<String> =
+    let mut seen: soshal_common_core::bounded::BoundedSet<[u8; 32]> =
         soshal_common_core::bounded::BoundedSet::new(SEEN_CAP);
     const SEEN_CAP: usize = 8192;
 
@@ -401,8 +401,7 @@ pub async fn engine_loop_with_client_sealed(
         };
         match tokio::time::timeout(poll, stream.next()).await {
             Ok(Some(ClientNotification::Event { event, .. })) => {
-                let id = event.id.to_hex();
-                if seen.insert(id.clone()) {
+                if seen.insert(*event.id.as_bytes()) {
                     batch.push(*event);
                 }
             }

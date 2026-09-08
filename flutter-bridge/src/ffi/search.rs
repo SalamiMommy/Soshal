@@ -160,14 +160,13 @@ pub fn search_profiles(query: String, limit: i32) -> Result<String, String> {
     let mut results = run_search(&query, limit, Some(0), None)?;
     if results.is_empty() && !query.trim().is_empty() {
         let pattern = format!("%{}%", escape_like(&query.trim().to_lowercase()));
-        let json = super::db::db_query_params(
+        let rows = super::db::db_query_json(
             "SELECT pubkey, name, display_name, about FROM users \
              WHERE lower(name) LIKE ?1 ESCAPE '\\' OR lower(display_name) LIKE ?1 ESCAPE '\\' \
              OR lower(about) LIKE ?1 ESCAPE '\\' OR pubkey = ?2 \
              ORDER BY follower_count DESC LIMIT ?3",
             &[pattern, query.trim().to_string(), limit.to_string()],
         )?;
-        let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
         for r in rows {
             if let Some(pk) = r["pubkey"].as_str() {
                 results.push(SearchResult {

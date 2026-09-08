@@ -52,15 +52,6 @@ fn row_to_group(
     }
 }
 
-fn member_count(group_id: &str) -> i32 {
-    super::db::with_db_result(|db| {
-        let repo = GroupRepo::new(db);
-        let counts = repo.member_count_many(&[group_id.to_string()])?;
-        Ok(counts.get(group_id).copied().unwrap_or(0))
-    })
-    .unwrap_or(0) as i32
-}
-
 /// Read a group shared key, healing legacy plaintext rows into `seal1:`
 /// at-rest envelopes on first access. Returns the raw hex key for envelope
 /// construction. A key stored bare (pre-seal) is re-written sealed in place so
@@ -143,7 +134,8 @@ fn get_group_info_with_viewer(group_id: &str, viewer: Option<&str>) -> Result<St
             None => false,
         };
         let mut g = row_to_group(&row, viewer, is_member);
-        g.members = member_count(group_id);
+        let counts = repo.member_count_many(&[group_id.to_string()])?;
+        g.members = counts.get(group_id).copied().unwrap_or(0) as i32;
         Ok(g)
     })
     .map(super::util::json_ok)?

@@ -43,27 +43,6 @@ pub struct OrderInfo {
     pub created_at: u64,
 }
 
-/// Core's parsed listing (subset of marketplace-core `ListingOut` mapped
-/// into the bridge `ListingInfo`; dTag/videos/contactMethods stay bridge-side
-/// unexposed — no FFI surface change).
-#[derive(Deserialize)]
-struct CoreListingOut {
-    id: String,
-    title: String,
-    price: f64,
-    currency: String,
-    condition: String,
-    description: Option<String>,
-    #[serde(rename = "locationGeohash")]
-    location_geohash: Option<String>,
-    images: Vec<String>,
-    tags: Vec<String>,
-    #[serde(rename = "createdAt")]
-    created_at: f64,
-    #[serde(rename = "escrowEnabled")]
-    escrow_enabled: bool,
-}
-
 fn has_tag(tags: &[Vec<String>], name: &str) -> bool {
     tags.iter()
         .any(|t| t.first().map(String::as_str) == Some(name))
@@ -129,11 +108,9 @@ fn listing_event_from_row(v: &serde_json::Value) -> Option<serde_json::Value> {
 
 fn listing_from_value(v: &serde_json::Value) -> Option<ListingInfo> {
     let ev = listing_event_from_row(v)?;
-    let parsed = soshal_marketplace_core::listing::parse_listing_value(ev);
-    if parsed == "null" {
-        return None;
-    }
-    let out: CoreListingOut = serde_json::from_str(&parsed).ok()?;
+    let ev_struct: soshal_marketplace_core::listing::ListingEvent =
+        serde_json::from_value(ev).ok()?;
+    let out = soshal_marketplace_core::listing::parse_listing(&ev_struct)?;
     Some(ListingInfo {
         id: out.id,
         seller_pubkey: v["seller_pubkey"].as_str().unwrap_or("").to_string(),
@@ -189,10 +166,8 @@ fn listings_sql(prelude: &str, limit: i32, offset: i32, authors: Option<&[String
     )
 }
 
-fn parse_listings(json: String) -> Vec<ListingInfo> {
-    serde_json::from_str::<Vec<serde_json::Value>>(&json)
-        .unwrap_or_default()
-        .into_iter()
+fn parse_listings_values(rows: Vec<serde_json::Value>) -> Vec<ListingInfo> {
+    rows.into_iter()
         .filter_map(|v| {
             let mut info = listing_from_value(&v)?;
             info.seller_pubkey = v["seller_pubkey"].as_str().unwrap_or("").to_string();
@@ -206,13 +181,7 @@ fn db_listings(sql: String) -> Result<Vec<ListingInfo>, String> {
 }
 
 fn db_listings_params(sql: &str, params: &[String]) -> Result<Vec<ListingInfo>, String> {
-    let (rows, _names) = {
-        let json = super::db::db_query_params(sql, params)?;
-        (
-            serde_json::from_str::<Vec<serde_json::Value>>(&json).unwrap_or_default(),
-            (),
-        )
-    };
+    let rows = super::db::db_query_json(sql, params)?;
     let mut out: Vec<ListingInfo> = Vec::new();
     for v in rows {
         if let Some(mut info) = listing_from_value(&v) {
@@ -279,7 +248,8 @@ pub fn marketplace_search(query: String, limit: i32, audience: String) -> Result
     if let Some(a) = &authors {
         params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
     }
-    super::util::json_ok(parse_listings(super::db::db_query_params(&sql, &params)?))
+    let rows = super::db::db_query_json(&sql, &params)?;
+    super::util::json_ok(parse_listings_values(rows))
 }
 
 /// Get listing by id.
@@ -514,7 +484,8 @@ pub fn marketplace_get_by_category(
     if let Some(a) = &authors {
         params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
     }
-    super::util::json_ok(parse_listings(super::db::db_query_params(&sql, &params)?))
+    let rows = super::db::db_query_json(&sql, &params)?;
+    super::util::json_ok(parse_listings_values(rows))
 }
 
 /// Trending listings: most reposts/reactions in the local DB, newest first
@@ -545,7 +516,8 @@ pub fn marketplace_get_trending(limit: i32, audience: String) -> Result<String, 
          LIMIT {}",
         limit.clamp(1, 100)
     );
-    super::util::json_ok(parse_listings(super::db::db_query_params(&sql, &params)?))
+    let rows = super::db::db_query_json(&sql, &params)?;
+    super::util::json_ok(parse_listings_values(rows))
 }
 
 /// Create an order for a listing (kind 30403 row + local insert).

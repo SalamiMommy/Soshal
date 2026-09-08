@@ -31,7 +31,8 @@ class RustNativeImage extends StatefulWidget {
 
 class _RustNativeImageState extends State<RustNativeImage> {
   static final Map<String, ui.Image> _imageCache = {};
-  static const int _maxCacheSize = 16;
+  static final Map<ui.Image, int> _imageRefs = {};
+  static const int _maxCacheSize = 48;
 
   ui.Image? _decodedImage;
   bool _isFromCache = false;
@@ -48,23 +49,44 @@ class _RustNativeImageState extends State<RustNativeImage> {
   void didUpdateWidget(RustNativeImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.filePathOrUrl != widget.filePathOrUrl) {
+      _releaseCurrentImage();
       _loadImage();
+    }
+  }
+
+  void _releaseCurrentImage() {
+    if (_decodedImage != null) {
+      if (_isFromCache) {
+        final count = (_imageRefs[_decodedImage!] ?? 1) - 1;
+        if (count <= 0) {
+          _imageRefs.remove(_decodedImage!);
+          // If not in cache anymore, dispose now
+          if (!_imageCache.containsValue(_decodedImage!)) {
+            _decodedImage!.dispose();
+          }
+        } else {
+          _imageRefs[_decodedImage!] = count;
+        }
+      } else {
+        _decodedImage!.dispose();
+      }
+      _decodedImage = null;
+      _isFromCache = false;
     }
   }
 
   Future<void> _loadImage() async {
     final cacheKey = widget.filePathOrUrl;
     if (_imageCache.containsKey(cacheKey)) {
-      final cached = _imageCache[cacheKey];
+      final cached = _imageCache.remove(cacheKey)!;
+      // Re-insert at end for true LRU
+      _imageCache[cacheKey] = cached;
+      _releaseCurrentImage();
+      _decodedImage = cached;
+      _isFromCache = true;
+      _imageRefs[cached] = (_imageRefs[cached] ?? 0) + 1;
       if (mounted) {
         setState(() {
-          if (_decodedImage != null &&
-              _decodedImage != cached &&
-              !_isFromCache) {
-            _decodedImage!.dispose();
-          }
-          _decodedImage = cached;
-          _isFromCache = true;
           _isLoading = false;
           _hasError = false;
         });
@@ -106,19 +128,23 @@ class _RustNativeImageState extends State<RustNativeImage> {
       if (_imageCache.length >= _maxCacheSize) {
         final oldestKey = _imageCache.keys.first;
         final evicted = _imageCache.remove(oldestKey);
-        if (evicted != _decodedImage && evicted != null) {
-          evicted.dispose();
+        if (evicted != null) {
+          final refs = _imageRefs[evicted] ?? 0;
+          if (refs <= 0) {
+            evicted.dispose();
+            _imageRefs.remove(evicted);
+          }
         }
       }
       _imageCache[cacheKey] = frameInfo.image;
 
-      if (_decodedImage != null && !_isFromCache) {
-        _decodedImage!.dispose();
-      }
+      _releaseCurrentImage();
+      _decodedImage = frameInfo.image;
+      _isFromCache = true;
+      _imageRefs[frameInfo.image] = (_imageRefs[frameInfo.image] ?? 0) + 1;
+
       if (mounted) {
         setState(() {
-          _decodedImage = frameInfo.image;
-          _isFromCache = true;
           _isLoading = false;
         });
       }
@@ -134,9 +160,7 @@ class _RustNativeImageState extends State<RustNativeImage> {
 
   @override
   void dispose() {
-    if (!_isFromCache) {
-      _decodedImage?.dispose();
-    }
+    _releaseCurrentImage();
     super.dispose();
   }
 

@@ -329,6 +329,56 @@ void main() {
       expect(post.content, 'hello');
       expect(post.createdAt, 1000);
     });
+
+    test('aggregateChatReactions correctly aggregates reaction counts and liked status', () {
+      final feed = FeedService();
+      final posts = <FeedPost>[
+        FeedPost(
+          eventId: 'e1',
+          pubkey: 'pk1',
+          content: 'post 1',
+          createdAt: 1000,
+          reactions: 5,
+          replies: 1,
+          reposts: 0,
+          liked: false,
+        ),
+        FeedPost(
+          eventId: 'e2',
+          pubkey: 'pk2',
+          content: 'post 2',
+          createdAt: 1001,
+          reactions: 3,
+          replies: 2,
+          reposts: 0,
+          liked: true,
+        ),
+      ];
+
+      final summary = feed.aggregateChatReactions(posts, 'my_pk');
+      expect(summary.length, 1);
+      expect(summary.first.emoji, '+');
+      expect(summary.first.count, 8);
+      expect(summary.first.hasReacted, true);
+
+      // Empty posts list returns empty summary
+      expect(feed.aggregateChatReactions([], 'my_pk'), isEmpty);
+
+      // Posts with 0 reactions return empty summary
+      final zeroPosts = <FeedPost>[
+        FeedPost(
+          eventId: 'e3',
+          pubkey: 'pk3',
+          content: 'post 3',
+          createdAt: 1002,
+          reactions: 0,
+          replies: 0,
+          reposts: 0,
+          liked: false,
+        ),
+      ];
+      expect(feed.aggregateChatReactions(zeroPosts, 'my_pk'), isEmpty);
+    });
   });
 }
 

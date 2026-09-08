@@ -11,6 +11,9 @@ pub fn interest_overlap_details<'a>(
     b: &'a [String],
     case_insensitive: bool,
 ) -> (Vec<&'a str>, usize, usize, usize) {
+    if a.is_empty() && b.is_empty() {
+        return (Vec::new(), 0, 0, 0);
+    }
     use std::borrow::Cow;
     let norm = |s: &'a str| -> &'a str { s.trim() };
     let key = |t: &'a str| -> Cow<'a, str> {

@@ -1,12 +1,36 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::sync::RwLock;
 
-/// Cache key = (event id, signature bytes) so a replayed event id with a
-/// forged signature can never be served a cached verification result.
+use sha2::{Digest, Sha256};
+
+/// Cache key = SHA-256(event id || signature bytes) so a replayed event id with a
+/// forged signature can never be served a cached verification result, while keeping
+/// the key size at 32 bytes (66% memory reduction over (id, sig)).
+///
+/// Implements an O(1) 2-generation LRU set: on hit in `previous`, the key is
+/// promoted to `current`. When `current` reaches half of max capacity, `previous`
+/// is replaced by `current` and `current` resets.
 struct VerifiedCache {
-    set: HashSet<([u8; 32], [u8; 64])>,
-    queue: VecDeque<([u8; 32], [u8; 64])>,
+    current: HashSet<[u8; 32]>,
+    previous: HashSet<[u8; 32]>,
+}
+
+impl VerifiedCache {
+    fn with_capacity(cap: usize) -> Self {
+        let half = (cap / 2).max(512);
+        Self {
+            current: HashSet::with_capacity(half),
+            previous: HashSet::with_capacity(half),
+        }
+    }
+}
+
+fn compute_verify_cache_key(e: &nostr::event::Event) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(e.id.as_bytes());
+    hasher.update(e.sig.as_bytes());
+    hasher.finalize().into()
 }
 
 fn max_cache_capacity() -> usize {
@@ -28,31 +52,48 @@ pub fn clear_verified_cache() {
     *guard = None;
 }
 
-/// Verifies a Nostr event's Schnorr signature, using an in-memory bounded LRU cache.
+/// Verifies a Nostr event's Schnorr signature, using an in-memory bounded generational LRU cache.
 pub fn verify_event(e: &nostr::event::Event) -> bool {
-    let key = (*e.id.as_bytes(), *e.sig.as_bytes());
-    let guard = VERIFIED_CACHE.read().unwrap_or_else(|e| e.into_inner());
-    if let Some(cache) = guard.as_ref() {
-        if cache.set.contains(&key) {
-            return true;
+    let key = compute_verify_cache_key(e);
+    {
+        let guard = VERIFIED_CACHE.read().unwrap_or_else(|e| e.into_inner());
+        if let Some(cache) = guard.as_ref() {
+            if cache.current.contains(&key) {
+                return true;
+            }
+            if cache.previous.contains(&key) {
+                // Promotion handled below under write lock
+            } else {
+                // Fast path: not in cache, drop read lock and verify
+            }
         }
     }
-    drop(guard);
+
+    // Check if promotion from previous is needed
+    {
+        let mut guard = VERIFIED_CACHE.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(cache) = guard.as_mut() {
+            if cache.current.contains(&key) {
+                return true;
+            }
+            if cache.previous.contains(&key) {
+                cache.current.insert(key);
+                return true;
+            }
+        }
+    }
+
     if e.verify().is_ok() {
         let mut guard = VERIFIED_CACHE.write().unwrap_or_else(|e| e.into_inner());
-        let cache = guard.get_or_insert_with(|| VerifiedCache {
-            set: HashSet::with_capacity(1024),
-            queue: VecDeque::with_capacity(1024),
-        });
         let max_cap = max_cache_capacity();
-        if cache.set.insert(key) {
-            if cache.set.len() > max_cap {
-                if let Some(oldest) = cache.queue.pop_front() {
-                    cache.set.remove(&oldest);
-                }
-            }
-            cache.queue.push_back(key);
+        let cache = guard.get_or_insert_with(|| VerifiedCache::with_capacity(max_cap));
+        let half_cap = (max_cap / 2).max(512);
+
+        if cache.current.len() >= half_cap {
+            cache.previous =
+                std::mem::replace(&mut cache.current, HashSet::with_capacity(half_cap));
         }
+        cache.current.insert(key);
         true
     } else {
         false

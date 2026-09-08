@@ -319,7 +319,7 @@ pub fn decrypt(payload: &str, key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static s
     }
     if decoded[0] == VERSION_PADDED && is_spec_shape(&decoded) {
         // v2 payload: succeed or fail — never fall through to the legacy path.
-        return decrypt_spec(&decoded, key);
+        return decrypt_spec(decoded, key);
     }
     decrypt_legacy(&decoded, key)
 }
@@ -344,31 +344,41 @@ fn is_spec_shape(decoded: &[u8]) -> bool {
         || (decoded.len() >= V2_MIN_LARGE && (decoded.len() - V2_FIXED_LARGE).is_multiple_of(32))
 }
 
-fn decrypt_spec(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static str> {
+fn decrypt_spec(mut decoded: Vec<u8>, key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static str> {
     if decoded[0] != VERSION_PADDED {
+        decoded.zeroize();
         return Err("unsupported payload version");
     }
     if decoded.len() < VERSION_LEN + SALT_LEN + 2 + 32 + 32 {
+        decoded.zeroize();
         return Err("payload too short");
     }
-    let nonce = &decoded[VERSION_LEN..VERSION_LEN + SALT_LEN];
-    let buffer = &decoded[VERSION_LEN + SALT_LEN..decoded.len() - 32];
-    let mac = &decoded[decoded.len() - 32..];
+    let (expected, nonce_arr, enc_key_bytes, nonce12) = {
+        let nonce = &decoded[VERSION_LEN..VERSION_LEN + SALT_LEN];
+        let buffer = &decoded[VERSION_LEN + SALT_LEN..decoded.len() - 32];
+        let mac = &decoded[decoded.len() - 32..];
 
-    let ck = derive_conversation_key(key);
-    let nonce_arr: [u8; SALT_LEN] = nonce.try_into().map_err(|_| "bad nonce")?;
-    let (mut enc_key_bytes, mut nonce12, mut auth_key_bytes) = spec_derive_keys(&ck, &nonce_arr);
+        let ck = derive_conversation_key(key);
+        let nonce_arr: [u8; SALT_LEN] = match nonce.try_into() {
+            Ok(arr) => arr,
+            Err(_) => {
+                decoded.zeroize();
+                return Err("bad nonce");
+            }
+        };
+        let (enc_key_bytes, nonce12, mut auth_key_bytes) = spec_derive_keys(&ck, &nonce_arr);
 
-    // Constant-time authenticator check before any keystream work.
-    let expected = hash::hmac_sha256_slices(&auth_key_bytes, &[nonce, buffer]);
-    auth_key_bytes.zeroize();
-    if expected.len() != mac.len() || !constant_time_eq(&expected, mac) {
-        enc_key_bytes.zeroize();
-        nonce12.zeroize();
-        return Err("decrypt failed");
-    }
+        // Constant-time authenticator check before any keystream work.
+        let expected = hash::hmac_sha256_slices(&auth_key_bytes, &[nonce, buffer]);
+        auth_key_bytes.zeroize();
+        if expected.len() != mac.len() || !constant_time_eq(&expected, mac) {
+            decoded.zeroize();
+            return Err("decrypt failed");
+        }
+        (expected, nonce_arr, enc_key_bytes, nonce12)
+    };
+    let _ = (expected, nonce_arr);
 
-    let mut decoded = decoded.to_vec();
     let payload_len = decoded.len();
     let buffer_range = VERSION_LEN + SALT_LEN..payload_len - 32;
 
@@ -377,16 +387,14 @@ fn decrypt_spec(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'static
         chacha20::Key::from_slice(&enc_key_bytes),
         chacha20::Nonce::from_slice(&nonce12),
     );
-    cipher.apply_keystream(&mut decoded[buffer_range.clone()]);
-    enc_key_bytes.zeroize();
-    nonce12.zeroize();
+    cipher.apply_keystream(&mut decoded[buffer_range]);
 
-    let plaintext = decoded[buffer_range.clone()].to_vec();
-    // Scrub ciphertext residue: decoded holds decrypted keystream output
-    // until return. Zeroize full buffer before unpad consumes copy.
-    let result = unpad_in_place(plaintext);
-    decoded.zeroize();
-    result
+    // Truncate the 32-byte HMAC from the end
+    decoded.truncate(payload_len - 32);
+    // Drain the version byte and 32-byte nonce from the beginning
+    decoded.drain(0..VERSION_LEN + SALT_LEN);
+
+    unpad_in_place(decoded)
 }
 
 /// Legacy encryption format (pre-spec): random salt, then
@@ -653,11 +661,11 @@ mod tests {
     fn test_decrypt_spec_rejects_malformed() {
         let key = [0x42u8; 32];
         assert_eq!(
-            decrypt_spec(&[VERSION_PADDED; 1], &key),
+            decrypt_spec(vec![VERSION_PADDED; 1], &key),
             Err("payload too short")
         );
         assert_eq!(
-            decrypt_spec(&[VERSION_LEGACY; 100], &key),
+            decrypt_spec(vec![VERSION_LEGACY; 100], &key),
             Err("unsupported payload version")
         );
         assert_eq!(decrypt_legacy(&[], &key), Err("payload too short"));

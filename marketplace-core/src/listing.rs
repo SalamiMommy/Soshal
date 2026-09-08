@@ -6,13 +6,13 @@ const MAX_TAGS_ENTRIES: usize = 100_000;
 const MAX_PRICE: f64 = 1.0e15;
 
 #[derive(Deserialize)]
-struct ListingEvent {
-    id: String,
-    pubkey: String,
-    content: String,
-    created_at: f64,
+pub struct ListingEvent {
+    pub id: String,
+    pub pubkey: String,
+    pub content: String,
+    pub created_at: f64,
     #[serde(default)]
-    tags: Vec<Vec<String>>,
+    pub tags: Vec<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -51,7 +51,7 @@ struct ListingContent {
     escrow_enabled: Option<bool>,
 }
 
-fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
+pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
     if ev.tags.len() > MAX_TAGS_ENTRIES {
         return None;
     }

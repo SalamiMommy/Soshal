@@ -248,11 +248,10 @@ fn attribute_content(
     })
 }
 
-fn cards_from_json(
-    json: String,
+fn cards_from_values(
+    rows: Vec<serde_json::Value>,
     scores: &std::collections::HashMap<String, f32>,
 ) -> Vec<DatingCardInfo> {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     rows.into_iter()
         .filter_map(|mut v| {
             let id = v["id"].as_str().unwrap_or_default().to_string();
@@ -278,7 +277,7 @@ fn cards_by_pubkey(
             .collect::<Vec<_>>(),
     )
     .unwrap_or_else(|_| "[]".into());
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
              FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
@@ -289,7 +288,7 @@ fn cards_by_pubkey(
         &[ids_json, viewer.to_string()],
     )?;
     let mut map = std::collections::HashMap::new();
-    for card in cards_from_json(json, &std::collections::HashMap::new()) {
+    for card in cards_from_values(rows, &std::collections::HashMap::new()) {
         map.entry(card.pubkey.clone()).or_insert(card);
     }
     Ok(map)
@@ -345,7 +344,7 @@ fn self_profile_input(user_pubkey: &str) -> soshal_dating_core::DatingProfileInp
         preference_weights: Some(weights.clone()),
         ..Default::default()
     };
-    let json = match super::db::db_query_params(
+    let rows = match super::db::db_query_json(
         &format!(
             "SELECT content FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0 \
              ORDER BY created_at DESC LIMIT 1"
@@ -355,7 +354,6 @@ fn self_profile_input(user_pubkey: &str) -> soshal_dating_core::DatingProfileInp
         Ok(j) => j,
         Err(_) => return fallback(),
     };
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let Some(content) = rows.first().and_then(|r| r["content"].as_str()) else {
         return fallback();
     };
@@ -429,22 +427,22 @@ fn rank_cards_by_interest_distance(
 /// user already reacted to (liked/passed) or blocked. Ranked by shared
 /// interests + proximity (see [rank_cards_by_interest_distance]).
 #[frb(sync, serialize)]
-pub fn dating_fetch_profiles(
-    user_pubkey: String,
+fn fetch_profiles_internal(
+    user_pubkey: &str,
     limit: i32,
-    audience: String,
-) -> Result<String, String> {
-    let authors = super::identity::resolve_audience_authors(&audience)?;
-    let mut params: Vec<String> = vec![user_pubkey.clone()];
+    audience: &str,
+) -> Result<Vec<DatingCardInfo>, String> {
+    let authors = super::identity::resolve_audience_authors(audience)?;
+    let mut params: Vec<String> = vec![user_pubkey.to_string()];
     let mut audience_clause = String::new();
     if let Some(a) = &authors {
         if a.is_empty() {
-            return super::util::json_ok(Vec::<serde_json::Value>::new());
+            return Ok(Vec::new());
         }
         audience_clause = " AND p.pubkey IN (SELECT value FROM json_each(?2))".to_string();
         params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
     }
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &profile_rows_sql(
             &format!(
                 "AND p.pubkey != ?1 AND p.id NOT IN \
@@ -456,20 +454,28 @@ pub fn dating_fetch_profiles(
         ),
         &params,
     )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    let cards = rank_cards_by_interest_distance(
-        user_pubkey.as_str(),
+    Ok(rank_cards_by_interest_distance(
+        user_pubkey,
         rows.into_iter()
             .filter_map(|v| card_from_value(&v))
             .collect(),
-    );
+    ))
+}
+
+#[frb(sync, serialize)]
+pub fn dating_fetch_profiles(
+    user_pubkey: String,
+    limit: i32,
+    audience: String,
+) -> Result<String, String> {
+    let cards = fetch_profiles_internal(&user_pubkey, limit, &audience)?;
     super::util::json_ok(cards)
 }
 
 /// Fetch a single dating profile by profile event id.
 #[frb(sync, serialize)]
 pub fn dating_get_profile(profile_id: String) -> Result<String, String> {
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
              FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
@@ -477,7 +483,6 @@ pub fn dating_get_profile(profile_id: String) -> Result<String, String> {
         ),
         &[profile_id],
     )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let card = rows
         .first()
         .and_then(card_from_value)
@@ -721,7 +726,7 @@ pub fn dating_update_profile(
 /// Get the user's own latest profile.
 #[frb(sync, serialize)]
 pub fn dating_get_own_profile(user_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
              FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
@@ -730,7 +735,6 @@ pub fn dating_get_own_profile(user_pubkey: String) -> Result<String, String> {
         ),
         &[user_pubkey],
     )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let card = rows
         .first()
         .and_then(card_from_value)
@@ -759,16 +763,15 @@ fn react(user_pubkey: &str, profile_pubkey: &str, content: &str) -> Result<bool,
     // stored event_id must be the profile *event id*, not the author pubkey.
     // Resolve the author's newest non-deleted profile event; fail loudly if
     // none exists rather than writing a reaction that can never surface.
-    let profile_ids = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id FROM posts p WHERE p.kind = {KIND_PROFILE} \
              AND p.pubkey = ?1 AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT 1"
         ),
         &[profile_pubkey.to_string()],
     )?;
-    let profile_event_id = serde_json::from_str::<Vec<serde_json::Value>>(&profile_ids)
-        .ok()
-        .and_then(|r| r.into_iter().next())
+    let profile_event_id = rows
+        .first()
         .and_then(|v| v["id"].as_str().map(|s| s.to_string()))
         .ok_or_else(|| format!("no profile event for {profile_pubkey}"))?;
     let builder =
@@ -863,7 +866,7 @@ pub fn dating_reset_passes(user_pubkey: String) -> Result<i64, String> {
 /// events).
 #[frb(sync, serialize)]
 pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT r.event_id, r.pubkey FROM reactions r \
              WHERE r.content = '+' AND r.event_id IN \
@@ -872,11 +875,11 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
         ),
         &[user_pubkey.clone()],
     )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let mut likers: Vec<String> = Vec::new();
+    let mut seen_likers = std::collections::HashSet::new();
     for row in &rows {
         let pk = row["pubkey"].as_str().unwrap_or_default();
-        if !likers.iter().any(|l| l == pk) {
+        if seen_likers.insert(pk) {
             likers.push(pk.to_string());
         }
     }
@@ -893,7 +896,7 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
 /// Fetch matches: profiles the user liked that also like the user back.
 #[frb(sync, serialize)]
 pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT r.event_id, r.pubkey, p.pubkey AS profile_owner FROM reactions r \
              JOIN posts p ON p.id = r.event_id \
@@ -904,11 +907,11 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
         ),
         &[user_pubkey.clone()],
     )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let mut owners: Vec<String> = Vec::new();
+    let mut seen_owners = std::collections::HashSet::new();
     for row in &rows {
         let pk = row["profile_owner"].as_str().unwrap_or_default();
-        if !owners.iter().any(|l| l == pk) {
+        if seen_owners.insert(pk) {
             owners.push(pk.to_string());
         }
     }
@@ -1006,12 +1009,7 @@ pub fn dating_filter_profiles(
     education: String,
     interests_json: String,
 ) -> Result<String, String> {
-    let mut cards: Vec<DatingCardInfo> = serde_json::from_str(&dating_fetch_profiles(
-        user_pubkey.clone(),
-        100,
-        "public".to_string(),
-    )?)
-    .map_err(|e| format!("parse profiles: {e}"))?;
+    let mut cards = fetch_profiles_internal(&user_pubkey, 100, "public")?;
     if !interests_json.is_empty() {
         let interests: Vec<String> = serde_json::from_str(&interests_json).unwrap_or_default();
         if !interests.is_empty() {

@@ -348,7 +348,7 @@ pub fn p2p_moq_encode_group(group_json: String) -> Result<Vec<u8>, String> {
 /// `MoQGroup`. Bounds-checked against hostile input.
 #[frb(sync, serialize)]
 pub fn p2p_moq_decode_group(bytes: Vec<u8>) -> Result<String, String> {
-    let group = soshal_streaming_core::moq::decode_group_stream(&bytes)?;
+    let group = soshal_streaming_core::moq::decode_group_stream_vec(bytes)?;
     serde_json::to_string(&group).map_err(|e| format!("moq serde: {e}"))
 }
 

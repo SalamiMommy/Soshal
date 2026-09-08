@@ -13,9 +13,14 @@ import '../utils/service_guard.dart';
 class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   List<SearchResultItem> _results = [];
   List<SearchResultItem> _trendingProfiles = [];
+  DateTime? _trendingProfilesFetchedAt;
   List<String> _hashtags = [];
   List<String> _trendingHashtags = [];
+  DateTime? _trendingHashtagsFetchedAt;
   List<Map<String, dynamic>> _dbTrendingHashtags = [];
+  DateTime? _dbTrendingHashtagsFetchedAt;
+
+  static const Duration _trendingCacheTtl = Duration(seconds: 30);
 
   List<SearchResultItem> get results => _results;
   List<SearchResultItem> get trendingProfilesList => _trendingProfiles;
@@ -28,9 +33,12 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   void resetForAccountSwitch() {
     _results = [];
     _trendingProfiles = [];
+    _trendingProfilesFetchedAt = null;
     _hashtags = [];
     _trendingHashtags = [];
+    _trendingHashtagsFetchedAt = null;
     _dbTrendingHashtags = [];
+    _dbTrendingHashtagsFetchedAt = null;
     clearLastError();
     notifyListeners();
   }
@@ -106,20 +114,34 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
 
   /// Trending hashtags.
   Future<List<String>> trendingHashtags({int limit = 20}) => guard(() {
+        if (_trendingHashtagsFetchedAt != null &&
+            DateTime.now().difference(_trendingHashtagsFetchedAt!) <
+                _trendingCacheTtl &&
+            _trendingHashtags.isNotEmpty) {
+          return _trendingHashtags;
+        }
         _trendingHashtags =
             RustLib.instance.api.crateFfiSearchSearchTrendingHashtags(
           limit: limit,
         );
+        _trendingHashtagsFetchedAt = DateTime.now();
         return _trendingHashtags;
       });
 
   /// Trending profiles.
   Future<List<SearchResultItem>> trendingProfiles({int limit = 20}) =>
       guard(() async {
+        if (_trendingProfilesFetchedAt != null &&
+            DateTime.now().difference(_trendingProfilesFetchedAt!) <
+                _trendingCacheTtl &&
+            _trendingProfiles.isNotEmpty) {
+          return _trendingProfiles;
+        }
         final json = RustLib.instance.api.crateFfiSearchSearchTrendingProfiles(
           limit: limit,
         );
         _trendingProfiles = await runOffThread(() => _parseSearchResults(json));
+        _trendingProfilesFetchedAt = DateTime.now();
         return _trendingProfiles;
       });
 
@@ -137,10 +159,17 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   /// name-only list above.
   Future<List<Map<String, dynamic>>> dbTrendingHashtags({int limit = 20}) =>
       guard(() async {
+        if (_dbTrendingHashtagsFetchedAt != null &&
+            DateTime.now().difference(_dbTrendingHashtagsFetchedAt!) <
+                _trendingCacheTtl &&
+            _dbTrendingHashtags.isNotEmpty) {
+          return _dbTrendingHashtags;
+        }
         final json =
             RustLib.instance.api.crateFfiDbDbGetTrendingHashtags(limit: limit);
         _dbTrendingHashtags =
             await runOffThread(() => _parseTrendingHashtags(json));
+        _dbTrendingHashtagsFetchedAt = DateTime.now();
         return _dbTrendingHashtags;
       });
 }

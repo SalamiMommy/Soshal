@@ -4,7 +4,7 @@ pub mod interests;
 pub mod lifestyle;
 pub mod metrics;
 
-use crate::{PreferenceWeights, ProfileScoringFields};
+use crate::ProfileScoringFields;
 use interests::*;
 use lifestyle::*;
 use metrics::*;
@@ -33,55 +33,45 @@ pub(crate) fn compute_compatibility_score_d<P: ProfileScoringFields>(
     compute_compatibility_score_inner(self_p, other_p, distance_km)
 }
 
+/// Returns true if dealbreaker matches the target snake_case field without heap allocation.
+fn matches_field(dealbreaker: &str, field_snake: &str) -> bool {
+    let mut field_bytes = field_snake.bytes();
+    for b in dealbreaker.bytes() {
+        if b.is_ascii_uppercase() {
+            if field_bytes.next() != Some(b'_') {
+                return false;
+            }
+            if field_bytes.next() != Some(b.to_ascii_lowercase()) {
+                return false;
+            }
+        } else if field_bytes.next() != Some(b) {
+            return false;
+        }
+    }
+    field_bytes.next().is_none()
+}
+
+fn has_dealbreaker(dealbreakers: Option<&[String]>, field_snake: &str) -> bool {
+    dealbreakers.is_some_and(|list| list.iter().any(|d| matches_field(d.as_str(), field_snake)))
+}
+
 fn compute_compatibility_score_inner<P: ProfileScoringFields>(
     self_p: &P,
     other_p: &P,
     distance_km: Option<f64>,
 ) -> u32 {
-    // Weights come from untrusted profile JSON: clamp each to [0.0, 1.0] so
-    // negatives become zero and huge/non-finite values can't distort or
-    // saturate the weighted average.
-    let weights = self_p.preference_weights().map(|w| PreferenceWeights {
-        age: w.age.map(clamp_weight),
-        height: w.height.map(clamp_weight),
-        body_type: w.body_type.map(clamp_weight),
-        interests: w.interests.map(clamp_weight),
-        smoking: w.smoking.map(clamp_weight),
-        drinking: w.drinking.map(clamp_weight),
-        politics: w.politics.map(clamp_weight),
-        ethnicity: w.ethnicity.map(clamp_weight),
-        education: w.education.map(clamp_weight),
-        language: w.language.map(clamp_weight),
-        relationship_intent: w.relationship_intent.map(clamp_weight),
-        distance: w.distance.map(clamp_weight),
-    });
-    let dealbreakers: Vec<String> = self_p
-        .dealbreakers()
-        .unwrap_or(&[])
-        .iter()
-        .map(|d| {
-            let mut n = String::with_capacity(d.len() + 4);
-            for c in d.chars() {
-                if c.is_ascii_uppercase() {
-                    n.push('_');
-                    n.push(c.to_ascii_lowercase());
-                } else {
-                    n.push(c);
-                }
-            }
-            n
-        })
-        .collect();
+    let pref_weights = self_p.preference_weights();
+    let dealbreakers = self_p.dealbreakers();
     let mut total_weighted_score = 0.0f64;
     let mut total_weight = 0.0f64;
 
     macro_rules! check_field {
         ($field_name:expr, $score_val:expr, $weight_val:expr) => {
             let score = $score_val;
-            let weight = $weight_val.unwrap_or(1.0);
+            let weight = $weight_val.map(clamp_weight).unwrap_or(1.0);
             // Dealbreaker = hard requirement: any mismatch below perfect
             // (score < 1.0) on a declared dealbreaker field rejects outright.
-            if score < 1.0 && dealbreakers.iter().any(|d| d == $field_name) {
+            if score < 1.0 && has_dealbreaker(dealbreakers, $field_name) {
                 return 0;
             }
             total_weighted_score += score * weight;
@@ -91,63 +81,63 @@ fn compute_compatibility_score_inner<P: ProfileScoringFields>(
     check_field!(
         "age",
         score_age(self_p.age(), other_p.age()),
-        weights.as_ref().and_then(|w| w.age)
+        pref_weights.and_then(|w| w.age)
     );
     check_field!(
         "height",
         score_height(self_p.height(), other_p.height()),
-        weights.as_ref().and_then(|w| w.height)
+        pref_weights.and_then(|w| w.height)
     );
     check_field!(
         "body_type",
         score_body_type(self_p.body_type(), other_p.body_type()),
-        weights.as_ref().and_then(|w| w.body_type)
+        pref_weights.and_then(|w| w.body_type)
     );
     check_field!(
         "interests",
         score_interests(self_p.interests(), other_p.interests()),
-        weights.as_ref().and_then(|w| w.interests).or(Some(1.0))
+        pref_weights.and_then(|w| w.interests).or(Some(1.0))
     );
     check_field!(
         "smoking",
         score_smoking(self_p.smoking(), other_p.smoking()),
-        weights.as_ref().and_then(|w| w.smoking)
+        pref_weights.and_then(|w| w.smoking)
     );
     check_field!(
         "drinking",
         score_drinking(self_p.drinking(), other_p.drinking()),
-        weights.as_ref().and_then(|w| w.drinking)
+        pref_weights.and_then(|w| w.drinking)
     );
     check_field!(
         "politics",
         score_politics(self_p.politics(), other_p.politics()),
-        weights.as_ref().and_then(|w| w.politics)
+        pref_weights.and_then(|w| w.politics)
     );
     check_field!(
         "ethnicity",
         score_ethnicity(self_p.ethnicity(), other_p.ethnicity()),
-        weights.as_ref().and_then(|w| w.ethnicity)
+        pref_weights.and_then(|w| w.ethnicity)
     );
     check_field!(
         "education",
         score_education(self_p.education(), other_p.education()),
-        weights.as_ref().and_then(|w| w.education)
+        pref_weights.and_then(|w| w.education)
     );
     check_field!(
         "language",
         score_language(self_p.language(), other_p.language()),
-        weights.as_ref().and_then(|w| w.language)
+        pref_weights.and_then(|w| w.language)
     );
     check_field!(
         "relationship_intent",
         score_relationship_intent(self_p.relationship_intent(), other_p.relationship_intent()),
-        weights.as_ref().and_then(|w| w.relationship_intent)
+        pref_weights.and_then(|w| w.relationship_intent)
     );
     if let Some(km) = distance_km {
         check_field!(
             "distance",
             score_distance(km),
-            weights.as_ref().and_then(|w| w.distance)
+            pref_weights.and_then(|w| w.distance)
         );
     }
     if total_weight == 0.0 {
@@ -184,6 +174,7 @@ pub fn compute_mutual_score<P: ProfileScoringFields>(self_p: &P, other_p: &P) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PreferenceWeights;
 
     struct TestProfile {
         age: Option<f64>,

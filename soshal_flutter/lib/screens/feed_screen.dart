@@ -48,7 +48,8 @@ class _FeedScreenState extends State<FeedScreen> {
   FeedService? _feed;
   bool _listening = false;
   bool _isLoadingMore = false;
-  final Map<String, int> _totals = {};
+  final ValueNotifier<Map<String, int>> _totalsNotifier =
+      ValueNotifier<Map<String, int>>({});
   String _selectedFeedTab = 'All';
   final List<String> _feedTabs = const [
     'All',
@@ -107,15 +108,16 @@ class _FeedScreenState extends State<FeedScreen> {
     if (!mounted || feed == null) return;
     // Fetch only ids we haven't seen yet — refetching the whole page on
     // every refresh/loadMore re-queries the DB for already-known totals.
+    final currentTotals = _totalsNotifier.value;
     final missing = feed.displayPosts
-        .where((p) => !_totals.containsKey(p.eventId))
+        .where((p) => !currentTotals.containsKey(p.eventId))
         .toList();
     if (missing.isEmpty) return;
     final ids = missing.map((p) => p.eventId).toList();
     try {
       final totals = await context.read<ZapService>().fetchTotals(ids);
       if (!mounted) return;
-      setState(() => _totals.addAll(totals));
+      _totalsNotifier.value = {..._totalsNotifier.value, ...totals};
     } catch (e) {
       debugPrint('feed totals: $e');
     }
@@ -154,6 +156,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _layoutDebounce?.cancel();
     _feed?.removeListener(_onFeedChanged);
     _scrollController.dispose();
+    _totalsNotifier.dispose();
     super.dispose();
   }
 
@@ -282,7 +285,7 @@ class _FeedScreenState extends State<FeedScreen> {
             child: FeedPostCard(
               key: ValueKey(post.eventId),
               post: post,
-              totals: _totals,
+              totalsNotifier: _totalsNotifier,
               isFirst: index == 0,
               visible: _isIndexVisible(index),
             ),
@@ -370,6 +373,7 @@ class _FeedScreenState extends State<FeedScreen> {
 class FeedPostCard extends StatefulWidget {
   final FeedPost post;
   final Map<String, int>? totals;
+  final ValueNotifier<Map<String, int>>? totalsNotifier;
   final bool isFirst;
   final bool visible;
 
@@ -377,6 +381,7 @@ class FeedPostCard extends StatefulWidget {
     super.key,
     required this.post,
     this.totals,
+    this.totalsNotifier,
     this.isFirst = false,
     this.visible = true,
   });
@@ -406,15 +411,30 @@ class _FeedPostCardState extends State<FeedPostCard> {
     _liked = widget.post.liked;
     final raw = widget.post.content;
     _preview = _truncateContent(raw);
+    widget.totalsNotifier?.addListener(_onTotalsChanged);
     _loadTotal();
+  }
+
+  void _onTotalsChanged() {
+    final notifier = widget.totalsNotifier;
+    if (notifier == null) return;
+    final val = notifier.value[widget.post.eventId];
+    if (val != null && val != _totalMsat) {
+      if (mounted) setState(() => _totalMsat = val);
+    }
   }
 
   @override
   void didUpdateWidget(FeedPostCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.totalsNotifier != widget.totalsNotifier) {
+      oldWidget.totalsNotifier?.removeListener(_onTotalsChanged);
+      widget.totalsNotifier?.addListener(_onTotalsChanged);
+    }
     if (oldWidget.post.eventId != widget.post.eventId ||
         oldWidget.post.content != widget.post.content ||
-        oldWidget.post.liked != widget.post.liked) {
+        oldWidget.post.liked != widget.post.liked ||
+        oldWidget.totals != widget.totals) {
       _liked = widget.post.liked;
       final raw = widget.post.content;
       _preview = _truncateContent(raw);
@@ -422,7 +442,18 @@ class _FeedPostCardState extends State<FeedPostCard> {
     }
   }
 
+  @override
+  void dispose() {
+    widget.totalsNotifier?.removeListener(_onTotalsChanged);
+    super.dispose();
+  }
+
   Future<void> _loadTotal() async {
+    final notifier = widget.totalsNotifier;
+    if (notifier != null && notifier.value.containsKey(widget.post.eventId)) {
+      _totalMsat = notifier.value[widget.post.eventId] ?? 0;
+      return;
+    }
     final totals = widget.totals;
     if (totals != null) {
       _totalMsat = totals[widget.post.eventId] ?? 0;
@@ -1287,16 +1318,30 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
     if (widget.eager || widget.visible) _start();
   }
 
+  Timer? _offscreenDisposeTimer;
+
   @override
   void didUpdateWidget(covariant _VideoPlayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_started && widget.visible) {
-      _start();
-    } else if (_isInitialized &&
-        !widget.visible &&
-        oldWidget.visible &&
-        _controller != null) {
+    if (widget.visible) {
+      _offscreenDisposeTimer?.cancel();
+      _offscreenDisposeTimer = null;
+      if (!_started) {
+        _start();
+      } else if (_isInitialized && _controller != null) {
+        // Player is initialized and becoming visible again
+      }
+    } else if (_isInitialized && oldWidget.visible && _controller != null) {
       _controller!.player.pause();
+      // Schedule resource release after 3 seconds off-screen to avoid decoder exhaustion
+      _offscreenDisposeTimer?.cancel();
+      _offscreenDisposeTimer = Timer(const Duration(seconds: 3), () {
+        if (!mounted || widget.visible) return;
+        _controller?.player.dispose();
+        _controller = null;
+        _isInitialized = false;
+        _started = false;
+      });
     }
   }
 
@@ -1352,6 +1397,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
 
   @override
   void dispose() {
+    _offscreenDisposeTimer?.cancel();
     _controller?.player.dispose();
     super.dispose();
   }

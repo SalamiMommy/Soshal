@@ -134,9 +134,10 @@ fn post_row(event: &Event) -> Option<PostRow> {
     if event.content.len() > MAX_CACHED_CONTENT {
         return None;
     }
-    let mut es: Vec<String> = Vec::new();
-    let mut ps: Vec<String> = Vec::new();
-    let mut ts: Vec<String> = Vec::new();
+    let mut first_e: Option<String> = None;
+    let mut last_e: Option<String> = None;
+    let mut ps: Vec<&str> = Vec::new();
+    let mut ts: Vec<&str> = Vec::new();
     let mut tags_json: Vec<&[String]> = Vec::with_capacity(event.tags.len());
     let mut freenet_key: Option<String> = None;
     for tag in event.tags.iter().take(MAX_TAGS) {
@@ -144,17 +145,20 @@ fn post_row(event: &Event) -> Option<PostRow> {
         match vec.first().map(|s| s.as_str()) {
             Some("e") => {
                 if let Some(c) = vec.get(1) {
-                    es.push(c.clone());
+                    if first_e.is_none() {
+                        first_e = Some(c.clone());
+                    }
+                    last_e = Some(c.clone());
                 }
             }
             Some("p") => {
                 if let Some(c) = vec.get(1) {
-                    ps.push(c.clone());
+                    ps.push(c.as_str());
                 }
             }
             Some("t") => {
                 if let Some(c) = vec.get(1) {
-                    ts.push(c.clone());
+                    ts.push(c.as_str());
                 }
             }
             Some("freenet") if freenet_key.is_none() => {
@@ -165,12 +169,12 @@ fn post_row(event: &Event) -> Option<PostRow> {
         tags_json.push(vec);
     }
     let reply_to = if event.kind == Kind::TextNote || event.kind == Kind::ZapRequest {
-        es.last().cloned()
+        last_e.clone()
     } else {
         None
     };
     let root_id = if event.kind == Kind::TextNote || event.kind == Kind::ZapRequest {
-        es.first().cloned()
+        first_e.clone()
     } else {
         None
     };
@@ -195,7 +199,7 @@ fn post_row(event: &Event) -> Option<PostRow> {
         freenet_key: freenet_key.clone(),
         is_freenet_native: freenet_key.is_some(),
         rsvp_event_id: if event.kind.as_u16() == KIND_EVENT_RSVP {
-            es.first().cloned()
+            first_e
         } else {
             None
         },
@@ -206,17 +210,21 @@ fn post_row(event: &Event) -> Option<PostRow> {
 /// id, pubkey, created_at, kind, tags, content, sig). The payer's wallet
 /// hashed exactly this byte string into the invoice description hash.
 fn zap_request_canonical_json(req: &PostRow) -> String {
-    let tags = serde_json::from_str::<serde_json::Value>(&req.tags_json)
-        .unwrap_or(serde_json::Value::Null);
+    let raw_tags = req.tags_json.trim();
+    let tags_slice = if raw_tags.is_empty() || !raw_tags.starts_with('[') {
+        "[]"
+    } else {
+        raw_tags
+    };
     format!(
         "{{\"id\":{},\"pubkey\":{},\"created_at\":{},\"kind\":{},\"tags\":{},\"content\":{},\"sig\":{}}}",
         serde_json::to_string(&req.id).unwrap_or_default(),
         serde_json::to_string(&req.pubkey).unwrap_or_default(),
         req.created_at,
         req.kind,
-        serde_json::to_string(&tags).unwrap_or_default(),
+        tags_slice,
         serde_json::to_string(&req.content).unwrap_or_default(),
-        serde_json::to_string(&req.sig.clone().unwrap_or_default()).unwrap_or_default(),
+        serde_json::to_string(&req.sig.as_deref().unwrap_or_default()).unwrap_or_default(),
     )
 }
 
@@ -739,6 +747,7 @@ pub fn handle_batch(
     soshal_db_core::query::with_tx(&conn, |t| async move {
         let mut rows: Vec<PostRow> = Vec::with_capacity(events.len());
         let mut ok_pos: Vec<usize> = Vec::with_capacity(events.len());
+        let mut seen_authors: std::collections::HashSet<String> = std::collections::HashSet::new();
         for (pos, event) in events.iter().enumerate() {
             if !verified_mask[pos] {
                 continue;
@@ -767,8 +776,15 @@ pub fn handle_batch(
                             // sibling branches above: previously the `?` aborted
                             // the whole batch transaction (rolling back every
                             // event) on one bad author write. Skip just this row.
-                            match ensure_author_user(db, &t, event).await {
+                            let pk_hex = event.pubkey.to_hex();
+                            let ensure_res = if seen_authors.contains(&pk_hex) {
+                                Ok(())
+                            } else {
+                                ensure_author_user(db, &t, event).await
+                            };
+                            match ensure_res {
                                 Ok(()) => {
+                                    seen_authors.insert(pk_hex);
                                     rows.push(row);
                                     ok_pos.push(pos);
                                 }

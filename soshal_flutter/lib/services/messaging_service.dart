@@ -148,12 +148,16 @@ class MessagingService extends ChangeNotifier
     }
     try {
       final cached = _conversationsCacheTime[otherPubkey];
-      if (cached != null && DateTime.now().difference(cached).inSeconds > 5) {
+      if (cached != null && DateTime.now().difference(cached).inSeconds > 30) {
         _conversations.remove(otherPubkey);
         _conversationsCacheTime.remove(otherPubkey);
       }
-      if (_conversations.containsKey(otherPubkey)) {
-        return _conversations[otherPubkey]!;
+      final existing = _conversations[otherPubkey];
+      if (existing != null &&
+          (existing.length >= limit ||
+              _conversationExhausted[otherPubkey] == true ||
+              !_conversationsCacheTime.containsKey(otherPubkey))) {
+        return existing;
       }
 
       await _flushPendingStores();

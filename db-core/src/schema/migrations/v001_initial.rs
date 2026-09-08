@@ -562,14 +562,14 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_posts_reply_to ON posts(reply_to);
         CREATE INDEX IF NOT EXISTS idx_posts_root_id ON posts(root_id);
-        CREATE INDEX IF NOT EXISTS idx_posts_kind ON posts(kind);
+        CREATE INDEX IF NOT EXISTS idx_posts_feed_cursor ON posts(created_at DESC, id DESC) WHERE is_deleted = 0 AND kind = 1;
         CREATE INDEX IF NOT EXISTS idx_posts_pubkey_created ON posts(pubkey, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_posts_freenet_key ON posts(freenet_key);
         CREATE INDEX IF NOT EXISTS idx_posts_scheduled ON posts(pubkey, scheduled_at ASC);
         CREATE INDEX IF NOT EXISTS idx_posts_pubkey_scheduled_deleted ON posts(pubkey, is_deleted, scheduled_at ASC);
         CREATE INDEX IF NOT EXISTS idx_posts_rsvp_event ON posts(rsvp_event_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_posts_kind_category ON posts(kind, category, is_deleted, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_posts_kind_content_rsvp ON posts(kind, content, rsvp_event_id);
+        CREATE INDEX IF NOT EXISTS idx_posts_kind_rsvp ON posts(kind, rsvp_event_id);
         CREATE INDEX IF NOT EXISTS idx_posts_root_created ON posts(root_id, is_deleted, created_at ASC);
         CREATE INDEX IF NOT EXISTS idx_posts_kind_deleted_created ON posts(kind, is_deleted, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_posts_event_lat_lng ON posts(event_lat, event_lng);
@@ -578,6 +578,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         -- Messages
         CREATE INDEX IF NOT EXISTS idx_messages_pubkey ON messages(pubkey);
+        CREATE INDEX IF NOT EXISTS idx_messages_conversation_desc ON messages(conversation_id, is_deleted, created_at DESC, id DESC);
 
         -- Reactions
         CREATE INDEX IF NOT EXISTS idx_reactions_pubkey ON reactions(pubkey);
@@ -626,15 +627,11 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         CREATE INDEX IF NOT EXISTS idx_group_members_group_joined ON group_members(group_id, joined_at ASC);
 
         -- Ephemeral media
-        CREATE INDEX IF NOT EXISTS idx_ephemeral_media_recipient ON ephemeral_media(recipient_pubkey, state);
         CREATE INDEX IF NOT EXISTS idx_ephemeral_media_message ON ephemeral_media(message_id);
         CREATE INDEX IF NOT EXISTS idx_ephemeral_media_recipient_created ON ephemeral_media(recipient_pubkey, state, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_ephemeral_media_expires ON ephemeral_media(expires_at) WHERE expires_at IS NOT NULL;
 
         -- Escrows
-        CREATE INDEX IF NOT EXISTS idx_escrows_listing ON escrows(listing_id);
-        CREATE INDEX IF NOT EXISTS idx_escrows_buyer ON escrows(buyer_pubkey);
-        CREATE INDEX IF NOT EXISTS idx_escrows_seller ON escrows(seller_pubkey);
         CREATE INDEX IF NOT EXISTS idx_escrows_listing_created ON escrows(listing_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_escrows_buyer_created ON escrows(buyer_pubkey, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_escrows_seller_created ON escrows(seller_pubkey, created_at DESC);
@@ -714,7 +711,9 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
             DELETE FROM users_fts WHERE rowid = old.rowid;
         END;
 
-        CREATE TRIGGER IF NOT EXISTS users_au AFTER UPDATE ON users BEGIN
+        CREATE TRIGGER IF NOT EXISTS users_au AFTER UPDATE OF name, display_name, npub ON users
+        WHEN old.name IS NOT new.name OR old.display_name IS NOT new.display_name OR old.npub != new.npub
+        BEGIN
             DELETE FROM users_fts WHERE rowid = old.rowid;
             INSERT OR REPLACE INTO users_fts(rowid, pubkey, npub, name, display_name)
             SELECT new.rowid, new.pubkey, new.npub, coalesce(new.name,''), coalesce(new.display_name,'');

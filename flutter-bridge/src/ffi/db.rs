@@ -467,9 +467,20 @@ fn raw_sql_allowed(sql: &str) -> bool {
 }
 
 /// Internal helper: raw SELECT with bound ?N parameters (Vec<String>),
+/// Internal helper: raw SELECT with bound ?N parameters (Vec<String>),
 /// rows as a JSON array of objects. Not an FFI surface.
 pub fn db_query_params(sql: &str, params: &[String]) -> Result<String, String> {
-    db_query_json(sql, params).map(|rows| super::util::json_ok_or_empty(&rows))
+    with_db(|db| {
+        let conn = db.conn()?;
+        let out = block_on(async {
+            let stmt = conn.prepare(sql).await?;
+            let mut rows = stmt
+                .query(params_from_iter(params.iter().map(|p| p.as_str())))
+                .await?;
+            rows_to_json_string(&stmt, &mut rows).await
+        })?;
+        Ok(out)
+    })
 }
 
 /// Internal helper: raw SELECT with bound ?N parameters, rows directly as
@@ -491,6 +502,70 @@ pub fn db_query_json(sql: &str, params: &[String]) -> Result<Vec<serde_json::Val
     })
 }
 
+async fn rows_to_json_string(
+    stmt: &libsql::Statement,
+    rows: &mut libsql::Rows,
+) -> Result<String, libsql::Error> {
+    let key_prefixes: Vec<String> = stmt
+        .columns()
+        .iter()
+        .map(|c| {
+            let name = c.name();
+            if let Ok(key_json) = serde_json::to_string(name) {
+                format!("{key_json}:")
+            } else {
+                format!("\"{name}\":")
+            }
+        })
+        .collect();
+    let mut out = String::with_capacity(512);
+    out.push('[');
+    let mut first_row = true;
+    while let Some(row) = rows.next().await? {
+        if !first_row {
+            out.push(',');
+        }
+        first_row = false;
+        out.push('{');
+        for (i, prefix) in key_prefixes.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(prefix);
+            match row.get_value(i as i32) {
+                Ok(Value::Null) | Err(_) => out.push_str("null"),
+                Ok(Value::Integer(n)) => {
+                    use std::fmt::Write;
+                    let _ = write!(out, "{n}");
+                }
+                Ok(Value::Real(r)) => {
+                    if r.is_finite() {
+                        use std::fmt::Write;
+                        let _ = write!(out, "{r}");
+                    } else {
+                        out.push_str("null");
+                    }
+                }
+                Ok(Value::Text(t)) => {
+                    if let Ok(str_json) = serde_json::to_string(&t) {
+                        out.push_str(&str_json);
+                    } else {
+                        out.push_str("\"\"");
+                    }
+                }
+                Ok(Value::Blob(b)) => {
+                    out.push('"');
+                    out.push_str(&hex::encode(b));
+                    out.push('"');
+                }
+            }
+        }
+        out.push('}');
+    }
+    out.push(']');
+    Ok(out)
+}
+
 async fn rows_json(
     stmt: &libsql::Statement,
     rows: &mut libsql::Rows,
@@ -500,9 +575,10 @@ async fn rows_json(
         .iter()
         .map(|c| c.name().to_string())
         .collect();
+    let num_cols = names.len();
     let mut out = Vec::new();
     while let Some(row) = rows.next().await? {
-        let mut obj = serde_json::Map::new();
+        let mut obj = serde_json::Map::with_capacity(num_cols);
         for (i, name) in names.iter().enumerate() {
             let val = match row.get_value(i as i32) {
                 Ok(Value::Null) => serde_json::Value::Null,

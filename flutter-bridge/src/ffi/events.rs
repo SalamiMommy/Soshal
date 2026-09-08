@@ -107,8 +107,7 @@ fn event_rows_sql(extra: &str, limit: i32) -> String {
         + &format!(" ORDER BY p.created_at DESC LIMIT {}", limit.clamp(1, 100))
 }
 
-fn events_from_json(json: String) -> Vec<EventInfo> {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+fn events_from_values(rows: Vec<serde_json::Value>) -> Vec<EventInfo> {
     rows.into_iter()
         .filter_map(|v| event_from_value(&v))
         .collect()
@@ -131,7 +130,7 @@ fn attendee_counts_for_ids(ids: &[String]) -> std::collections::HashMap<String, 
         return counts;
     }
     let ids_json = serde_json::to_string(ids).unwrap_or_else(|_| "[]".into());
-    if let Ok(json) = super::db::db_query_params(
+    if let Ok(rows) = super::db::db_query_json(
         &format!(
             "SELECT rsvp_event_id, COUNT(*) FROM posts p WHERE kind = ?1 \
              AND content = 'accepted' AND rsvp_event_id IN (SELECT value FROM json_each(?2)) \
@@ -140,11 +139,9 @@ fn attendee_counts_for_ids(ids: &[String]) -> std::collections::HashMap<String, 
         ),
         &[KIND_EVENT_RSVP.to_string(), ids_json],
     ) {
-        if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
-            for r in rows {
-                if let Some(id) = r["rsvp_event_id"].as_str() {
-                    counts.insert(id.to_string(), r["COUNT(*)"].as_i64().unwrap_or(0) as i32);
-                }
+        for r in rows {
+            if let Some(id) = r["rsvp_event_id"].as_str() {
+                counts.insert(id.to_string(), r["COUNT(*)"].as_i64().unwrap_or(0) as i32);
             }
         }
     }
@@ -152,17 +149,15 @@ fn attendee_counts_for_ids(ids: &[String]) -> std::collections::HashMap<String, 
 }
 
 fn attendees_count(event_id: &str) -> i32 {
-    if let Ok(json) = super::db::db_query_params(
+    if let Ok(rows) = super::db::db_query_json(
         &format!(
             "SELECT COUNT(*) FROM posts p WHERE kind = ?1 AND content = 'accepted' \
              AND rsvp_event_id = ?2 AND {RSVP_NOT_SUPERSEDED}",
         ),
         &[KIND_EVENT_RSVP.to_string(), event_id.to_string()],
     ) {
-        if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
-            if let Some(row) = rows.first() {
-                return row["COUNT(*)"].as_i64().unwrap_or(0) as i32;
-            }
+        if let Some(row) = rows.first() {
+            return row["COUNT(*)"].as_i64().unwrap_or(0) as i32;
         }
     }
     0
@@ -199,8 +194,8 @@ pub async fn events_fetch_nearby(
         }
         if radius_km <= 0.0 {
             let filter = format!("{audience_clause} ");
-            let json = super::db::db_query_params(&event_rows_sql(&filter, limit), &params)?;
-            return super::util::json_ok(events_from_json(json));
+            let rows = super::db::db_query_json(&event_rows_sql(&filter, limit), &params)?;
+            return super::util::json_ok(events_from_values(rows));
         }
         let radius = radius_km.min(5000.0);
         let lat_deg = radius as f64 / 110.574;
@@ -211,8 +206,8 @@ pub async fn events_fetch_nearby(
             "AND p.event_lat BETWEEN {lat1:.6} AND {lat2:.6} \
              AND p.event_lng BETWEEN {lon1:.6} AND {lon2:.6} {audience_clause}"
         );
-        let json = super::db::db_query_params(&event_rows_sql(&geo_filter, limit), &params)?;
-        let mut out: Vec<EventInfo> = events_from_json(json);
+        let rows = super::db::db_query_json(&event_rows_sql(&geo_filter, limit), &params)?;
+        let mut out: Vec<EventInfo> = events_from_values(rows);
         let center = (latitude, longitude);
         out.retain(|e| {
             if e.latitude == 0.0 && e.longitude == 0.0 {
@@ -364,14 +359,13 @@ pub fn events_create(
 /// Single-row fetch of the event host pubkey, kind + d-tag (avoids the
 /// events_get_event + tags_json double query).
 fn event_host_kind_and_d_tag(event_id: &str) -> Option<(String, u16, String)> {
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT pubkey, kind, tags_json FROM posts WHERE kind IN ({EVENT_KINDS}) AND id = ?1"
         ),
         &[event_id.to_string()],
     )
     .ok()?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).ok()?;
     let row = rows.first()?;
     let host = row["pubkey"].as_str().unwrap_or("").to_string();
     let kind = row["kind"].as_i64().unwrap_or(KIND_EVENT as i64) as u16;
@@ -562,14 +556,13 @@ pub fn events_check_in(
 /// Event details: includes local RSVP + attendee counts.
 #[frb(sync, serialize)]
 pub fn events_get_event(event_id: String) -> Result<String, String> {
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
              WHERE p.kind IN ({EVENT_KINDS}) AND p.id = ?1"
         ),
         &[event_id.clone()],
     )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let v = rows.first().ok_or("Event not found".to_string())?;
     let mut info = event_from_value(v).ok_or("Event not found".to_string())?;
     info.attendees = attendees_count(&event_id);
@@ -581,14 +574,13 @@ pub fn events_get_event(event_id: String) -> Result<String, String> {
 /// no tags_json LIKE scan.
 #[frb(sync, serialize)]
 pub fn events_get_attendees(event_id: String) -> Result<Vec<String>, String> {
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         &format!(
             "SELECT DISTINCT pubkey FROM posts p WHERE kind = {KIND_EVENT_RSVP} AND content = 'accepted' \
              AND rsvp_event_id = ?1 AND {RSVP_NOT_SUPERSEDED} ORDER BY created_at DESC LIMIT 200"
         ),
         &[event_id],
     )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     Ok(rows
         .into_iter()
         .filter_map(|r| r["pubkey"].as_str().map(|s| s.to_string()))
@@ -887,22 +879,15 @@ pub fn events_score_events(
     }
     let events: Vec<EventText> =
         serde_json::from_str(&events_json).map_err(|e| format!("invalid events JSON: {e}"))?;
+    let my_interests: Vec<String> = serde_json::from_str(&my_interests_json).unwrap_or_default();
     let mut out = serde_json::Map::with_capacity(events.len());
     for ev in events {
         let tags =
             soshal_content_core::hashtag::extract(&format!("{} {}", ev.title, ev.description));
-        let score = if tags.is_empty() {
+        let score = if tags.is_empty() || my_interests.is_empty() {
             0.0
         } else {
-            let json = soshal_events_core::event::interest::compute_interest_score_json(&format!(
-                r#"{{"myInterests":{},"peerInterests":{}}}"#,
-                my_interests_json,
-                serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into()),
-            ));
-            serde_json::from_str::<serde_json::Value>(&json)
-                .ok()
-                .and_then(|v| v["score"].as_f64())
-                .unwrap_or(0.0)
+            soshal_events_core::event::interest::compute_interest_score(&my_interests, &tags).score
         };
         out.insert(ev.id, serde_json::json!(score));
     }

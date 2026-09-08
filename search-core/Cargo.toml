@@ -9,6 +9,7 @@ serde_json = { workspace = true }
 soshal-nostr-core = { path = "../nostr-core" }
 soshal-content-core = { path = "../content-core" }
 soshal-common-core = { path = "../common-core" }
+rayon = { workspace = true }
 
 [dev-dependencies]
 soshal-test-util = { path = "../test-util" }

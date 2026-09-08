@@ -184,11 +184,14 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
 pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, String> {
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
+        let pattern_prefix = format!("conv:{pubkey}:%");
+        let pattern_suffix = format!("conv:%:{pubkey}");
         let cids: Vec<String> = soshal_db_core::query::query(
             &conn,
-            "SELECT conversation_id FROM conversations WHERE conversation_id LIKE 'conv:%' \
+            "SELECT conversation_id FROM conversations \
+             WHERE (conversation_id LIKE ?1 OR conversation_id LIKE ?2) \
              ORDER BY last_message_at DESC LIMIT 100",
-            (),
+            libsql::params![pattern_prefix.as_str(), pattern_suffix.as_str()],
             |r| r.get(0),
         )?;
         let mut peers = extract_peers_from_cids(&cids, &pubkey);

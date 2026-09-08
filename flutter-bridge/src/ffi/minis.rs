@@ -231,11 +231,10 @@ pub fn minis_save(event_id: String) -> Result<bool, String> {
     if event_id.is_empty() {
         return Err("event_id must not be empty".into());
     }
-    let json = super::db::db_query_params(
+    let rows = super::db::db_query_json(
         "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE id=?1 AND kind=31020 AND is_deleted=0",
         &[event_id.clone()],
     )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
     let Some(row) = rows.first() else {
         return Err(format!("mini not found: {event_id}"));
     };

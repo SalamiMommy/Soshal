@@ -121,6 +121,12 @@ impl EpochGarbageCollector {
                 return Err(format!("Commit failed: {}", e));
             }
 
+            // Post-commit maintenance: optimize FTS index and reclaim freed pages
+            if pruned_count > 0 {
+                let _ = conn.execute("INSERT INTO posts_fts(posts_fts) VALUES('optimize')", ()).await;
+                let _ = conn.execute("PRAGMA incremental_vacuum(500)", ()).await;
+            }
+
             Ok((pruned_count as u64, reclaimed_i64.max(0) as u64))
         })
         .map(|(pruned, reclaimed)| {

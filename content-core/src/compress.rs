@@ -12,7 +12,7 @@ pub const ZSTD_DICT_MAGIC: [u8; 6] = [0x5A, 0x48, 0x01, 0x00, 0x00, 0x00];
 pub const ZSTD_DICT_ID: u32 = 1;
 /// Compressed-dict frame header: [`ZSTD_DICT_MAGIC`] + id (LE u32).
 pub const ZSTD_DICT_HEADER_LEN: usize = ZSTD_DICT_MAGIC.len() + 4;
-const ZSTD_DICT_LEVEL: i32 = 19;
+const ZSTD_DICT_LEVEL: i32 = 7;
 
 pub fn compress(data: &[u8]) -> Result<Vec<u8>, String> {
     let cap = (data.len() / 2).max(128);

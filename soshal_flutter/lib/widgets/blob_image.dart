@@ -57,12 +57,26 @@ class _BlobImageState extends State<BlobImage> {
     return null;
   }
 
+  static bool _checkIsUrl(String src) {
+    final trimmed = src.trim();
+    if (trimmed.isEmpty) return false;
+    if (hashFromSource(trimmed) != null) return false;
+    final uri = Uri.tryParse(trimmed);
+    return uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        SafeUrl.isSafeMediaUrl(trimmed);
+  }
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _resolve();
-    });
+    if (_checkIsUrl(widget.source)) {
+      _isUrl = true;
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _resolve();
+      });
+    }
   }
 
   @override
@@ -71,11 +85,15 @@ class _BlobImageState extends State<BlobImage> {
     if (oldWidget.source != widget.source) {
       _generation++;
       _path = null;
-      _isUrl = false;
       _failed = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _resolve();
-      });
+      if (_checkIsUrl(widget.source)) {
+        _isUrl = true;
+      } else {
+        _isUrl = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _resolve();
+        });
+      }
     }
   }
 
