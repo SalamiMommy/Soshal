@@ -22,12 +22,22 @@ object RnsdRunner {
     @Volatile
     private var lastError: String? = null
 
+    @Volatile
+    private var attemptMade = false
+
     private var thread: Thread? = null
     private var py: Python? = null
 
     @Synchronized
     fun start(context: Context, configDir: String): Boolean {
         if (running) return true
+        // One launch attempt per enable: RNS never clears its process-wide
+        // Reticulum singleton, so a failed init can't be retried without a
+        // process restart, and the daemon watchdog would otherwise stack a
+        // new thread (and hit "Attempt to reinitialise Reticulum") every
+        // sweep. stop() resets the latch for a manual retry.
+        if (attemptMade) return false
+        attemptMade = true
         return try {
             if (py == null) {
                 Python.start(AndroidPlatform(context))
@@ -72,6 +82,7 @@ object RnsdRunner {
     @Synchronized
     fun stop(context: Context): Boolean {
         running = false
+        attemptMade = false
         try {
             py?.getModule("rnsd_service")?.callAttr("stop")
         } catch (e: Exception) {

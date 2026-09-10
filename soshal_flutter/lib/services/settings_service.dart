@@ -69,9 +69,18 @@ class SettingsService extends ChangeNotifier {
   String b64UrlEncode(String input) =>
       RustLib.instance.api.crateFfiUtilUtilBase64UrlEncode(input: input);
 
-  /// Base64url (no padding) decode; empty string on invalid input.
-  String b64UrlDecode(String input) =>
-      RustLib.instance.api.crateFfiUtilUtilBase64UrlDecode(input: input);
+  /// Base64url (no padding) decode; returns empty string on invalid input.
+  /// The underlying Rust function now returns Err on malformed input; this
+  /// wrapper catches that and falls back to empty string for callers that
+  /// pass speculative/optional data.
+  String b64UrlDecode(String input) {
+    if (input.isEmpty) return '';
+    try {
+      return RustLib.instance.api.crateFfiUtilUtilBase64UrlDecode(input: input);
+    } catch (_) {
+      return '';
+    }
+  }
 
   /// Purge geohash peer rows not seen within `cutoffSecsAgo`; rows removed.
   int purgeStaleGeohashPeers(int cutoffSecsAgo) => RustLib.instance.api

@@ -1,9 +1,7 @@
 //! Waveform extraction. Container formats via symphonia; raw Opus voice
 //! notes via audiopus. Output: `bins` normalized peak values in 0..1.
 
-use std::io::{Seek, Write};
-#[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
+use std::io::Cursor;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
@@ -23,7 +21,7 @@ pub const WAVEFORM_MAX_BINS: usize = 2048;
 const MAX_CONTAINER_SAMPLES: usize = 64 * 1024 * 1024;
 
 /// Decode a whole audio file (or raw Opus voice-note stream) into mono f32.
-/// Byte payloads are spilled to a temp file so symphonia can seek (m4a etc).
+/// Payloads are decoded in-memory via Cursor to avoid disk I/O.
 fn decode_all(data: &[u8], hint_ext: Option<&str>) -> Result<MonoF32, String> {
     if crate::is_opus_stream(data) {
         return voice::decode_packets(&data[crate::OPUS_STREAM_MAGIC.len()..]);
@@ -33,41 +31,8 @@ fn decode_all(data: &[u8], hint_ext: Option<&str>) -> Result<MonoF32, String> {
     if let Some(ext) = hint_ext {
         hint.with_extension(ext);
     }
-    let (mut file, tmp_path) = create_secure_temp_file()?;
-    file.write_all(data).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp_path);
-        format!("write temp: {e}")
-    })?;
-    let _ = file.seek(std::io::SeekFrom::Start(0));
-    let result = decode_reader(file, &hint);
-    let _ = std::fs::remove_file(&tmp_path);
-    result
-}
-
-fn create_secure_temp_file() -> Result<(std::fs::File, std::path::PathBuf), String> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    for _ in 0..100 {
-        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "soshal-waveform-{}-{}-{seq}.bin",
-            std::process::id(),
-            std::thread::current()
-                .name()
-                .unwrap_or("t")
-                .replace(['/', '\\'], "_")
-        ));
-        let mut opts = std::fs::OpenOptions::new();
-        opts.read(true).write(true).create_new(true);
-        #[cfg(unix)]
-        opts.mode(0o600);
-        match opts.open(&path) {
-            Ok(f) => return Ok((f, path)),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(format!("create temp file: {e}")),
-        }
-    }
-    Err("failed to create unique temp file".to_string())
+    let cursor = Cursor::new(data.to_vec());
+    decode_reader(cursor, &hint)
 }
 
 fn decode_reader<R: std::io::Read + std::io::Seek + Send + Sync + 'static>(

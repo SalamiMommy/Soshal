@@ -62,6 +62,51 @@ impl GossipSyncBridge {
 
         outgoing
     }
+
+    /// Process a batch of incoming mesh gossip messages and update local DB / sync channels.
+    /// Ingests all valid un-seen events in a single database transaction with parallel signature checks.
+    pub async fn process_gossip_batch(
+        &self,
+        db: &Database,
+        messages: &[(&str, PlumTreeMessage)],
+        tx: &Sender<SyncUpdate>,
+    ) -> Vec<(String, PlumTreeMessage)> {
+        let mut all_outgoing = Vec::new();
+        let my_pubkey = {
+            let mut pt = self.node.write().await;
+            for (from_peer, msg) in messages {
+                let out = pt.handle_incoming(from_peer, (*msg).clone());
+                all_outgoing.extend(out);
+            }
+            pt.self_peer_id.clone()
+        };
+
+        let mut events_to_ingest = Vec::new();
+        for (_, msg) in messages {
+            if let PlumTreeMessage::Gossip { payload_json, .. } = msg {
+                if let Ok(event) =
+                    serde_json::from_str::<nostr::event::Event>(payload_json.as_ref())
+                {
+                    let key = event.id.to_hex();
+                    let fresh = {
+                        let mut seen = SEEN_GOSSIP.lock().unwrap_or_else(|e| e.into_inner());
+                        seen.insert(key)
+                    };
+                    if fresh {
+                        events_to_ingest.push(event);
+                    }
+                }
+            }
+        }
+
+        if !events_to_ingest.is_empty() {
+            if let Err(e) = crate::ingest::handle_batch(db, &my_pubkey, &events_to_ingest, tx) {
+                eprintln!("gossip batch ingest failed: {e}");
+            }
+        }
+
+        all_outgoing
+    }
 }
 
 #[cfg(test)]
@@ -220,5 +265,45 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.content, "mesh roundtrip");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn gossip_batch_event_roundtrip_ingests() {
+        let db = soshal_test_util::test_db();
+        let keys = Keys::generate();
+        soshal_test_util::seed_user(&db, &keys.public_key().to_hex());
+        let event1 =
+            soshal_test_util::signed_event(&keys, Kind::TextNote, "batch note 1", 1_700_000_001);
+        let event2 =
+            soshal_test_util::signed_event(&keys, Kind::TextNote, "batch note 2", 1_700_000_002);
+        let msg1 = PlumTreeMessage::Gossip {
+            message_id: event1.id.to_hex(),
+            payload_json: serde_json::to_string(&event1).unwrap().into(),
+            round: 0,
+        };
+        let msg2 = PlumTreeMessage::Gossip {
+            message_id: event2.id.to_hex(),
+            payload_json: serde_json::to_string(&event2).unwrap().into(),
+            round: 0,
+        };
+
+        let bridge = GossipSyncBridge::new("self");
+        let (tx, _rx) = channel();
+        let outgoing = bridge
+            .process_gossip_batch(&db, &[("sender", msg1), ("sender", msg2)], &tx)
+            .await;
+        assert!(outgoing.is_empty());
+
+        let row1 = PostRepo::new(&db)
+            .get_by_id(&event1.id.to_hex())
+            .unwrap()
+            .unwrap();
+        assert_eq!(row1.content, "batch note 1");
+
+        let row2 = PostRepo::new(&db)
+            .get_by_id(&event2.id.to_hex())
+            .unwrap()
+            .unwrap();
+        assert_eq!(row2.content, "batch note 2");
     }
 }

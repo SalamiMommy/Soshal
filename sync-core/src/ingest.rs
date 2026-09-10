@@ -383,10 +383,8 @@ async fn handle_impl(
     already_verified: bool,
     t: &libsql::Transaction,
 ) -> Result<(), DbError> {
-    if !already_verified {
-        event
-            .verify()
-            .map_err(|e| DbError::Migration(format!("event verification failed: {e}")))?;
+    if !already_verified && !soshal_nostr_core::models::verify_event(event) {
+        return Err(DbError::Migration("event verification failed".to_string()));
     }
 
     // DM kind: only keep payloads addressed to us (p-tag mine) or authored by

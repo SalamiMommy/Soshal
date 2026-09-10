@@ -83,7 +83,7 @@ class DatingService extends ChangeNotifier
       final json = RustLib.instance.api.crateFfiDatingDatingFetchMatches(
         userPubkey: userPubkey,
       );
-      final cards = await runOffThread(() => _parseCards(json));
+      final cards = await runOffThreadCompute(_parseCards, json);
       _matches.clear();
       _matches.addAll(cards);
       clearLastError();
@@ -101,7 +101,7 @@ class DatingService extends ChangeNotifier
       final json = RustLib.instance.api.crateFfiDatingDatingFetchLikes(
         userPubkey: userPubkey,
       );
-      final cards = await runOffThread(() => _parseCards(json));
+      final cards = await runOffThreadCompute(_parseCards, json);
       _likes.clear();
       _likes.addAll(cards);
       clearLastError();
@@ -119,7 +119,7 @@ class DatingService extends ChangeNotifier
           final json = RustLib.instance.api.crateFfiDatingDatingFetchLikes(
             userPubkey: userPubkey,
           );
-          return await runOffThread(() => _parseCards(json));
+          return await runOffThreadCompute(_parseCards, json);
         },
         onNotify: notifyDeferred,
         notifyOnSuccess: false,
@@ -405,7 +405,7 @@ class DatingService extends ChangeNotifier
   Future<List<DatingCard>> _decode(String Function() call) async {
     return guard(() async {
       final json = call();
-      _cards = await runOffThread(() => _parseCards(json));
+      _cards = await runOffThreadCompute(_parseCards, json);
       return _cards;
     });
   }

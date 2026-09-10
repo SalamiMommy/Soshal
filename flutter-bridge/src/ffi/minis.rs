@@ -28,8 +28,13 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
     let mut params: Vec<String> = Vec::new();
     let author_clause = match &authors {
         Some(a) => {
-            params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
-            " AND pubkey IN (SELECT value FROM json_each(?1))"
+            if a.len() == 1 {
+                params.push(a[0].clone());
+                " AND pubkey = ?1"
+            } else {
+                params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+                " AND pubkey IN (SELECT value FROM json_each(?1))"
+            }
         }
         None => "",
     };
@@ -53,25 +58,59 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
     let mut reaction_map: std::collections::HashMap<String, (u64, bool)> =
         std::collections::HashMap::new();
     if !mini_ids.is_empty() {
-        let ids_json = serde_json::to_string(&mini_ids).unwrap_or_else(|_| "[]".to_string());
-        let reactors = super::db::db_query_json(
-            "SELECT event_id, pubkey FROM reactions WHERE event_id IN (SELECT value FROM json_each(?1))",
-            &[ids_json],
-        )
-        .unwrap_or_default();
-        for r in reactors {
-            if let Some(eid) = r["event_id"].as_str() {
-                let e = reaction_map.entry(eid.to_string()).or_insert((0, false));
-                e.0 += 1;
-                if let Some(m) = &me_pubkey {
-                    if r["pubkey"].as_str() == Some(m.as_str()) {
-                        e.1 = true;
+        if mini_ids.len() == 1 {
+            let reactors = super::db::db_query_json(
+                "SELECT event_id, pubkey FROM reactions WHERE event_id = ?1",
+                &[mini_ids[0].clone()],
+            )
+            .unwrap_or_default();
+            for r in reactors {
+                if let Some(eid) = r["event_id"].as_str() {
+                    let e = reaction_map.entry(eid.to_string()).or_insert((0, false));
+                    e.0 += 1;
+                    if let Some(m) = &me_pubkey {
+                        if r["pubkey"].as_str() == Some(m.as_str()) {
+                            e.1 = true;
+                        }
+                    }
+                }
+            }
+        } else {
+            let ids_json = serde_json::to_string(&mini_ids).unwrap_or_else(|_| "[]".to_string());
+            let reactors = super::db::db_query_json(
+                "SELECT event_id, pubkey FROM reactions WHERE event_id IN (SELECT value FROM json_each(?1))",
+                &[ids_json],
+            )
+            .unwrap_or_default();
+            for r in reactors {
+                if let Some(eid) = r["event_id"].as_str() {
+                    let e = reaction_map.entry(eid.to_string()).or_insert((0, false));
+                    e.0 += 1;
+                    if let Some(m) = &me_pubkey {
+                        if r["pubkey"].as_str() == Some(m.as_str()) {
+                            e.1 = true;
+                        }
                     }
                 }
             }
         }
     }
-    let mut out: Vec<serde_json::Value> = Vec::new();
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct MiniResponseItem {
+        id: String,
+        pubkey: String,
+        video_url: String,
+        blob_hash: String,
+        media_size: u64,
+        text_overlay: String,
+        thumbnail: String,
+        audience: String,
+        created_at: u64,
+        reactions: u64,
+        liked: bool,
+    }
+    let mut out: Vec<MiniResponseItem> = Vec::with_capacity(rows.len());
     for row in rows {
         let tags: Vec<Vec<String>> =
             serde_json::from_str(row["tags_json"].as_str().unwrap_or("[]")).unwrap_or_default();
@@ -83,14 +122,21 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
             created_at: row["created_at"].as_f64().unwrap_or(0.0),
             kind: 31020,
         };
-        if let Some(mut mapped) = minis_events::mini_from_event(&ev) {
-            let id = row["id"].as_str().unwrap_or_default().to_string();
-            if !id.is_empty() {
-                let (reactions, liked) = reaction_map.get(&id).copied().unwrap_or((0, false));
-                mapped["reactions"] = serde_json::json!(reactions);
-                mapped["liked"] = serde_json::json!(liked);
-            }
-            out.push(mapped);
+        if let Some(mini) = minis_events::mini_event_out(&ev) {
+            let (reactions, liked) = reaction_map.get(&mini.id).copied().unwrap_or((0, false));
+            out.push(MiniResponseItem {
+                id: mini.id,
+                pubkey: mini.pubkey,
+                video_url: mini.video_url,
+                blob_hash: mini.blob_hash,
+                media_size: mini.media_size,
+                text_overlay: mini.text_overlay,
+                thumbnail: mini.thumbnail,
+                audience: mini.audience,
+                created_at: mini.created_at,
+                reactions,
+                liked,
+            });
         }
     }
     super::util::json_ok(out)

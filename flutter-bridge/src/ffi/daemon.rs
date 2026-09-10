@@ -192,6 +192,14 @@ pub fn daemon_get_daemon_status() -> Result<String, String> {
         };
         map.insert(key.to_string(), serde_json::Value::Bool(present));
     }
+    // Surface the in-process Chaquopy daemon's last-start error so the UI can
+    // explain "reticulum down" instead of leaving it blind.
+    if let Ok(status) = crate::platform::rnsd_status() {
+        map.insert(
+            "reticulum_status".to_string(),
+            serde_json::Value::String(status.trim().to_string()),
+        );
+    }
     Ok(serde_json::Value::Object(map).to_string())
 }
 
@@ -282,7 +290,7 @@ fn spawn_all() -> Result<bool, String> {
     // `proxy`/`http`). `[http]` alone configures the control panel, not an
     // HTTP proxy on 4444.
     let conf = format!(
-        "log = file\nlogfile = {}\n[sam]\nenabled = true\nport = 7656\n[socksproxy]\nenabled = true\nport = 4447\n[httpproxy]\nenabled = true\nport = 4444\n",
+        "log = file\ndaemon = false\nlogfile = {}\n[sam]\nenabled = true\nport = 7656\n[socksproxy]\nenabled = true\nport = 4447\n[httpproxy]\nenabled = true\nport = 4444\n",
         i2pd_data.join("i2pd.log").display()
     );
     if write_file(&i2pd_conf, conf.as_bytes()).is_err() {
@@ -313,7 +321,24 @@ fn spawn_all() -> Result<bool, String> {
             return SpawnOutcome::Running;
         }
         let mut cmd = Command::new(dir_freenet.join("freenet"));
-        cmd.current_dir(&freenet_data).arg("network");
+        // Android app processes have no $HOME/XDG dirs and no passwd entry for
+        // the app UID, so freenet's default ProjectDirs resolution aborts the
+        // node before it binds the WS API. Pin both dirs into freenet-data;
+        // gateways are auto-fetched from the remote index. Auto-update is
+        // disabled: there is no supervisor on Android to act on freenet's
+        // exit-42 self-update signal, so a release build would exit shortly
+        // after detecting a newer version.
+        cmd.current_dir(&freenet_data)
+            .arg("network")
+            .arg(format!(
+                "--config-dir={}",
+                freenet_data.join("conf").display()
+            ))
+            .arg(format!(
+                "--data-dir={}",
+                freenet_data.join("data").display()
+            ))
+            .arg("--disable-auto-update");
         match spawn("freenet", cmd, "freenet.log", &freenet_data) {
             true => SpawnOutcome::Spawned,
             false => SpawnOutcome::Failed,
@@ -383,7 +408,14 @@ fn watchdog_loop() {
             if WATCHDOG_STOP.load(Ordering::Relaxed) {
                 break;
             }
-            if is_running(name) || !is_real_binary(name) {
+            // rnsd on Android runs in-process (Chaquopy thread), not as a
+            // child — check its own liveness so the watchdog doesn't respawn
+            // a healthy daemon or stack threads against a failed one.
+            let live = is_running(name)
+                || (name == "rnsd"
+                    && cfg!(target_os = "android")
+                    && crate::platform::rnsd_running().unwrap_or(false));
+            if live || !is_real_binary(name) {
                 continue;
             }
             if crate::ffi::util::lock(&RESPAWN_FAILURES)

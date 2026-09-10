@@ -38,7 +38,7 @@ class MusicService extends ChangeNotifier
           author: author,
           audience: 'public',
         );
-        _tracks = await runOffThread(() => _parseTracks(json));
+        _tracks = await runOffThreadCompute(_parseTracks, json);
         return _tracks;
       });
 
@@ -109,13 +109,13 @@ class MusicService extends ChangeNotifier
           trackPubkey: trackPubkey,
           trackD: trackD,
         );
-        return await runOffThread(() => _parseComments(json));
+        return await runOffThreadCompute(_parseComments, json);
       }, notifyOnSuccess: false);
 
   /// Saved tracks from the local `saved_content` store, newest saved first.
   Future<List<MusicTrack>> fetchSavedTracks() => guard(() async {
         final json = RustLib.instance.api.crateFfiMusicMusicSaved();
-        _savedTracks = await runOffThread(() => _parseTracks(json));
+        _savedTracks = await runOffThreadCompute(_parseTracks, json);
         return _savedTracks;
       });
 
@@ -155,11 +155,7 @@ class MusicService extends ChangeNotifier
   /// The user's playlists, newest first.
   Future<List<MusicPlaylist>> fetchPlaylists() => guard(() async {
         final json = RustLib.instance.api.crateFfiMusicMusicPlaylistList();
-        _playlists = await runOffThread(
-          () => (jsonDecode(json) as List<dynamic>)
-              .map((e) => MusicPlaylist.fromJson(e as Map<String, dynamic>))
-              .toList(),
-        );
+        _playlists = await runOffThreadCompute(_parsePlaylists, json);
         return _playlists;
       });
 
@@ -226,7 +222,7 @@ class MusicService extends ChangeNotifier
       guard(() async {
         final json = RustLib.instance.api
             .crateFfiMusicMusicPlaylistTracks(playlistId: playlistId);
-        return await runOffThread(() => _parseTracks(json));
+        return await runOffThreadCompute(_parseTracks, json);
       }, notifyOnSuccess: false);
 }
 
@@ -407,4 +403,12 @@ List<TrackComment> _parseComments(String json) {
     (i) => TrackComment.fromJson(decoded[i] as Map<String, dynamic>),
     growable: true,
   );
+}
+
+/// JSON → [MusicPlaylist] list, top-level so [runOffThreadCompute] can decode on a
+/// background isolate.
+List<MusicPlaylist> _parsePlaylists(String json) {
+  return (jsonDecode(json) as List<dynamic>)
+      .map((e) => MusicPlaylist.fromJson(e as Map<String, dynamic>))
+      .toList();
 }

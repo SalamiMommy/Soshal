@@ -70,9 +70,18 @@ class _InboxScreenState extends State<InboxScreen> {
       if (activePubkey == null) return;
 
       final partners = await messagingService.fetchConversations(activePubkey);
-      await Future.wait(
-        partners.map((partner) => messagingService.fetchDMs(partner, limit: 1)),
-      );
+      // Hydrate snippets in small batches for the most recent conversation partners
+      // to avoid flooding the DB connection pool and causing frame drops.
+      const batchSize = 5;
+      final eagerLimit = partners.length < 25 ? partners.length : 25;
+      for (var i = 0; i < eagerLimit; i += batchSize) {
+        if (!mounted) break;
+        final end = (i + batchSize < eagerLimit) ? i + batchSize : eagerLimit;
+        final chunk = partners.sublist(i, end);
+        await Future.wait(
+          chunk.map((partner) => messagingService.fetchDMs(partner, limit: 1)),
+        );
+      }
     } catch (e) {
       debugPrint('load conversations: $e');
     }

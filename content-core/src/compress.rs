@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use flate2::Compression;
 use std::io::{Cursor, Read, Write};
+use std::sync::LazyLock;
 
 /// zstd dictionary trained over feed/post JSON payloads
 /// (see scripts/train-zstd-dict.py). Bundled with the app binary.
@@ -13,6 +14,12 @@ pub const ZSTD_DICT_ID: u32 = 1;
 /// Compressed-dict frame header: [`ZSTD_DICT_MAGIC`] + id (LE u32).
 pub const ZSTD_DICT_HEADER_LEN: usize = ZSTD_DICT_MAGIC.len() + 4;
 const ZSTD_DICT_LEVEL: i32 = 7;
+
+static ENCODER_DICT: LazyLock<zstd::dict::EncoderDictionary<'static>> =
+    LazyLock::new(|| zstd::dict::EncoderDictionary::copy(FEED_DICT, ZSTD_DICT_LEVEL));
+
+static DECODER_DICT: LazyLock<zstd::dict::DecoderDictionary<'static>> =
+    LazyLock::new(|| zstd::dict::DecoderDictionary::copy(FEED_DICT));
 
 pub fn compress(data: &[u8]) -> Result<Vec<u8>, String> {
     let cap = (data.len() / 2).max(128);
@@ -85,9 +92,8 @@ pub fn is_dict_frame(data: &[u8]) -> bool {
 /// Compresses with the bundled trained dictionary. Output = magic || zstd
 /// frame. Up to ~70% smaller than deflate on small repetitive JSON.
 pub fn compress_dict(data: &[u8]) -> Result<Vec<u8>, String> {
-    let mut encoder =
-        zstd::stream::Encoder::with_dictionary(Vec::new(), ZSTD_DICT_LEVEL, FEED_DICT)
-            .map_err(|e| format!("compress_dict init: {}", e))?;
+    let mut encoder = zstd::stream::Encoder::with_prepared_dictionary(Vec::new(), &ENCODER_DICT)
+        .map_err(|e| format!("compress_dict init: {}", e))?;
     encoder
         .write_all(data)
         .map_err(|e| format!("compress_dict: {}", e))?;
@@ -121,8 +127,9 @@ pub fn decompress_dict_limited(data: &[u8], max_bytes: usize) -> Result<Vec<u8>,
         return Err(format!("dict id mismatch: expected {ZSTD_DICT_ID}"));
     }
     let frame = &data[ZSTD_DICT_MAGIC.len() + 4..];
-    let decoder = zstd::stream::read::Decoder::with_dictionary(Cursor::new(frame), FEED_DICT)
-        .map_err(|e| format!("decompress_dict init: {}", e))?;
+    let decoder =
+        zstd::stream::read::Decoder::with_prepared_dictionary(Cursor::new(frame), &DECODER_DICT)
+            .map_err(|e| format!("decompress_dict init: {}", e))?;
     let mut out = Vec::new();
     let mut limited = decoder.take(max_bytes as u64 + 1);
     limited

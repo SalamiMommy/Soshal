@@ -480,8 +480,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   /// ([_parseFeedRowsStatic]); decompress (FFI, main-isolate only) + [FeedPost]
   /// construction happen here.
   Future<List<FeedPost>> _decodePosts(String json) async {
-    // Don't capture 'this' in the isolate - use a static function instead
-    final rows = await runOffThread(() => _parseFeedRowsStatic(json));
+    final rows = await runOffThreadCompute(_parseFeedRowsStatic, json);
     final posts = <FeedPost>[];
     for (final m in rows) {
       final content = m['content'] as String? ?? '';
@@ -502,7 +501,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   /// when running on an isolate via runOffThread/compute.
   static List<Map<String, dynamic>> _parseFeedRowsStatic(String json) {
     return (jsonDecode(json) as List<dynamic>)
-        .map((e) => Map<String, dynamic>.from(e as Map))
+        .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
   }
 

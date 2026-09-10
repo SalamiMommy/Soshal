@@ -178,7 +178,7 @@ class EventsService extends ChangeNotifier
   Future<List<SoshalEvent>> _decode(FutureOr<String> Function() call) async {
     return guard(() async {
       final json = await call();
-      final parsed = await runOffThread(() => _parseEvents(json));
+      final parsed = await runOffThreadCompute(_parseEvents, json);
       _events = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
       return _events;
     }, onNotify: notifyDeferred);

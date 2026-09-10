@@ -166,7 +166,7 @@ class MessagingService extends ChangeNotifier
         withPubkey: otherPubkey,
         limit: limit,
       );
-      final messages = await runOffThread(() => _parseDmsJson(json));
+      final messages = await runOffThreadCompute(_parseDmsJson, json);
 
       if (messages.length > 200) {
         _conversations[otherPubkey] = messages.sublist(messages.length - 200);
@@ -544,7 +544,7 @@ class IdentityService extends ChangeNotifier
         query: query,
         limit: limit,
       );
-      return await runOffThread(() => _parseProfiles(json));
+      return await runOffThreadCompute(_parseProfiles, json);
     } catch (e) {
       setLastError(e);
       notifyDeferred();

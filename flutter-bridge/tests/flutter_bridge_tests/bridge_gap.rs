@@ -46,6 +46,7 @@ mod bridge_gap_tests {
         let db = crate::test_util::init_db("bridge_gap", "music");
         let (pk, secret) = gen_keys();
         signer::signer_lock().unwrap();
+        network::network_set_transport_mode("nostr".to_string()).unwrap();
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -124,6 +125,7 @@ mod bridge_gap_tests {
             );
             let _ = db;
         });
+        network::network_set_transport_mode("default".to_string()).unwrap();
     }
     #[test]
     fn background_sync_task_guards() {

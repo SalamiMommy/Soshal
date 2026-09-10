@@ -1,19 +1,29 @@
 //! Network heuristics engine: tracking connection quality, RTT, and bandwidth.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum ConnectionType {
-    Wifi,
-    Cellular,
-    Offline,
+    Wifi = 0,
+    Cellular = 1,
+    Offline = 2,
+}
+
+impl ConnectionType {
+    fn from_u8(val: u8) -> Self {
+        match val {
+            0 => ConnectionType::Wifi,
+            1 => ConnectionType::Cellular,
+            _ => ConnectionType::Offline,
+        }
+    }
 }
 
 pub struct NetworkHeuristics {
     rtt_ms: AtomicU64,
     bandwidth_kbps: AtomicU64,
-    conn_type: RwLock<ConnectionType>,
+    conn_type: AtomicU8,
 }
 
 impl Default for NetworkHeuristics {
@@ -27,7 +37,7 @@ impl NetworkHeuristics {
         Self {
             rtt_ms: AtomicU64::new(50),
             bandwidth_kbps: AtomicU64::new(10_000),
-            conn_type: RwLock::new(ConnectionType::Wifi),
+            conn_type: AtomicU8::new(ConnectionType::Wifi as u8),
         }
     }
 
@@ -44,14 +54,16 @@ impl NetworkHeuristics {
     }
 
     pub fn set_connection_type(&self, conn: ConnectionType) {
-        if let Ok(mut c) = self.conn_type.write() {
-            *c = conn;
-        }
+        self.conn_type.store(conn as u8, Ordering::Relaxed);
+    }
+
+    pub fn connection_type(&self) -> ConnectionType {
+        ConnectionType::from_u8(self.conn_type.load(Ordering::Relaxed))
     }
 
     pub fn is_high_bandwidth(&self) -> bool {
-        let conn = *self.conn_type.read().unwrap_or_else(|e| e.into_inner());
-        conn == ConnectionType::Wifi && self.bandwidth_kbps.load(Ordering::Relaxed) > 3_000
+        self.conn_type.load(Ordering::Relaxed) == (ConnectionType::Wifi as u8)
+            && self.bandwidth_kbps.load(Ordering::Relaxed) > 3_000
     }
 }
 

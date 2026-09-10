@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../ffi/daemon.dart' as ffi_daemon;
 
@@ -41,15 +43,54 @@ class DaemonService {
     }
   }
 
-  /// Gets daemon status information.
-  static Future<Map<String, bool>> getDaemonStatus() async {
+  /// Gets daemon status information. Values are booleans (asset/daemon
+  /// presence) plus an optional `reticulum_status` string holding the
+  /// in-process Chaquopy daemon's running/error fragment for diagnosis.
+  static Future<Map<String, dynamic>> getDaemonStatus() async {
     try {
       final json = ffi_daemon.daemonGetDaemonStatus();
       final map = jsonDecode(json) as Map<String, dynamic>;
-      return map.map((k, v) => MapEntry(k, v as bool));
+      return map.cast<String, dynamic>();
     } catch (e) {
       debugPrint('Failed to get daemon status: $e');
       return {};
+    }
+  }
+
+  /// Trailing lines of each daemon's on-disk log as `name -> text`. Logs live
+  /// under the app files dir (same dir the Rust bridge extracts to):
+  /// i2pd → `<files>/i2pd-data/i2pd.log` / `i2pd.stdout.log`, freenet →
+  /// `<files>/freenet-data/freenet.log`, rnsd →
+  /// `<files>/reticulum-data/logfile`. Missing files report empty text.
+  static Future<Map<String, String>> readDaemonLogs() async {
+    final base = await getApplicationDocumentsDirectory();
+    final candidates = <String, List<String>>{
+      DaemonService.i2pd: [
+        '${base.path}/i2pd-data/i2pd.log',
+        '${base.path}/i2pd-data/i2pd.stdout.log',
+      ],
+      DaemonService.freenet: ['${base.path}/freenet-data/freenet.log'],
+      DaemonService.reticulum: ['${base.path}/reticulum-data/logfile'],
+    };
+    return candidates.map((name, paths) {
+      final text = paths
+          .map((p) => _tailLines(p, 80))
+          .where((t) => t.isNotEmpty)
+          .join('\n---\n');
+      return MapEntry(name, text);
+    });
+  }
+
+  static String _tailLines(String path, int maxLines) {
+    try {
+      final f = File(path);
+      if (!f.existsSync()) return '';
+      final lines = f.readAsLinesSync();
+      return lines.length > maxLines
+          ? lines.sublist(lines.length - maxLines).join('\n')
+          : lines.join('\n');
+    } catch (e) {
+      return '(read failed: $e)';
     }
   }
 
@@ -143,11 +184,12 @@ class DaemonStatus {
     required this.reticulumAvailable,
   });
 
-  factory DaemonStatus.fromMap(Map<String, bool> map) {
+  factory DaemonStatus.fromMap(Map<String, dynamic> map) {
     return DaemonStatus(
-      i2pdAvailable: map['i2pd'] ?? false,
-      freenetAvailable: map['freenet'] ?? false,
-      reticulumAvailable: map['reticulum'] ?? false,
+      i2pdAvailable: map['i2pd'] is bool ? map['i2pd'] as bool : false,
+      freenetAvailable: map['freenet'] is bool ? map['freenet'] as bool : false,
+      reticulumAvailable:
+          map['reticulum'] is bool ? map['reticulum'] as bool : false,
     );
   }
 

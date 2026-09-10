@@ -105,7 +105,12 @@ pub fn groups_fetch_groups(user_pubkey: String, audience: String) -> Result<Stri
         let owners = super::identity::resolve_audience_authors(&audience)
             .map_err(soshal_db_core::error::DbError::Migration)?;
         let rows: Vec<_> = match &owners {
-            Some(a) => rows.into_iter().filter(|r| a.contains(&r.pubkey)).collect(),
+            Some(a) => {
+                let set: std::collections::HashSet<&str> = a.iter().map(|s| s.as_str()).collect();
+                rows.into_iter()
+                    .filter(|r| set.contains(r.pubkey.as_str()))
+                    .collect()
+            }
             None => rows,
         };
         let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();

@@ -8,7 +8,7 @@
 //! Dedup is implicit: five posts sharing one audio clip produce five identical
 //! chunk hashes, all resolving to a single on-disk file.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -45,53 +45,59 @@ pub struct ChunkStore {
     mmap_cache: Arc<Mutex<FifoCache<memmap2::Mmap>>>,
 }
 
-/// LRU-capped cache of Arc'd values keyed by hash string.
+/// LRU-capped cache of Arc'd values keyed by hash string with O(log C) generational eviction.
 struct FifoCache<T> {
-    order: std::collections::VecDeque<String>,
-    map: HashMap<String, Arc<T>>,
+    order: BTreeSet<(u64, String)>,
+    map: HashMap<String, (u64, Arc<T>)>,
     cap: usize,
+    next_epoch: u64,
 }
 
 impl<T> Default for FifoCache<T> {
     fn default() -> Self {
         Self {
-            order: std::collections::VecDeque::new(),
+            order: BTreeSet::new(),
             map: HashMap::new(),
             cap: 0,
+            next_epoch: 0,
         }
     }
 }
 
 impl<T> FifoCache<T> {
     fn get(&mut self, key: &str) -> Option<Arc<T>> {
-        if let Some(val) = self.map.get(key).cloned() {
-            self.order.retain(|k| k != key);
-            self.order.push_back(key.to_string());
-            Some(val)
-        } else {
-            None
-        }
+        let (epoch, val) = self.map.get_mut(key)?;
+        let old_epoch = *epoch;
+        self.next_epoch += 1;
+        *epoch = self.next_epoch;
+        self.order.remove(&(old_epoch, key.to_string()));
+        self.order.insert((self.next_epoch, key.to_string()));
+        Some(val.clone())
     }
 
     fn put(&mut self, key: String, value: Arc<T>) {
-        if self.map.contains_key(&key) {
-            self.order.retain(|k| k != &key);
-            self.order.push_back(key.clone());
-            self.map.insert(key, value);
+        self.next_epoch += 1;
+        if let Some((epoch, old_val)) = self.map.get_mut(&key) {
+            let old_epoch = *epoch;
+            *epoch = self.next_epoch;
+            *old_val = value;
+            self.order.remove(&(old_epoch, key.clone()));
+            self.order.insert((self.next_epoch, key));
             return;
         }
-        if self.map.len() >= self.cap {
-            if let Some(oldest) = self.order.pop_front() {
+        if self.cap > 0 && self.map.len() >= self.cap {
+            if let Some((_, oldest)) = self.order.pop_first() {
                 self.map.remove(&oldest);
             }
         }
-        self.order.push_back(key.clone());
-        self.map.insert(key, value);
+        self.order.insert((self.next_epoch, key.clone()));
+        self.map.insert(key, (self.next_epoch, value));
     }
 
     fn invalidate(&mut self, blob_hash: &str) {
-        self.map.remove(blob_hash);
-        self.order.retain(|h| h != blob_hash);
+        if let Some((epoch, _)) = self.map.remove(blob_hash) {
+            self.order.remove(&(epoch, blob_hash.to_string()));
+        }
     }
 }
 
@@ -205,15 +211,19 @@ impl ChunkStore {
             } else {
                 "00"
             };
-            return self
-                .root
-                .join("invalid")
-                .join(prefix)
-                .join(&safe_hash)
-                .with_extension("chunk");
+            let mut p = PathBuf::with_capacity(self.root.as_os_str().len() + safe_hash.len() + 24);
+            p.push(&self.root);
+            p.push("invalid");
+            p.push(prefix);
+            p.push(format!("{safe_hash}.chunk"));
+            return p;
         }
         let (a, b) = hash.split_at(2);
-        self.root.join(a).join(b).with_extension("chunk")
+        let mut p = PathBuf::with_capacity(self.root.as_os_str().len() + hash.len() + 10);
+        p.push(&self.root);
+        p.push(a);
+        p.push(format!("{b}.chunk"));
+        p
     }
 
     pub fn contains(&self, hash: &str) -> bool {

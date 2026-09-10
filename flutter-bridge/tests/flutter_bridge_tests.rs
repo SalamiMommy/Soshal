@@ -125,7 +125,10 @@ mod integration_tests {
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
         db::db_init(path.clone()).unwrap();
-        let diag = db::db_query_raw("SELECT COUNT(*) AS n FROM sqlite_master".to_string()).unwrap();
+        // The raw-SQL console guard blocks sqlite_master/sqlite_schema
+        // introspection (gradient for schema fingerprinting); count applied
+        // migrations instead to prove the schema bootstrapped.
+        let diag = db::db_query_raw("SELECT COUNT(*) AS n FROM _migrations".to_string()).unwrap();
         assert!(diag.contains("\"n\":"));
         let v: serde_json::Value = serde_json::from_str(&diag).unwrap();
         let n = v[0]["n"].as_i64().unwrap_or(0);

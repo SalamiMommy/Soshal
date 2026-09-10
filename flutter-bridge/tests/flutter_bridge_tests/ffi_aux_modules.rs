@@ -174,18 +174,18 @@ mod ffi_aux_modules_tests {
         let db_path = format!("{dir}/app.db");
         assert!(db::db_init(db_path.clone()).is_ok());
         session::session_load(db_path).unwrap();
+        let keys_a = soshal_nostr_core::keys::generate_keys();
+        let keys_b = soshal_nostr_core::keys::generate_keys();
+        let pk_a = keys_a.public_key().to_hex();
+        let pk_b = keys_b.public_key().to_hex();
         session::session_add_account(
-            "spk1".to_string(),
-            "npub1spk1".to_string(),
+            pk_a.clone(),
+            "npub1pk1valid".to_string(),
             "[\"wss://relay.a\"]".to_string(),
         )
         .unwrap();
-        session::session_add_account(
-            "spk2".to_string(),
-            "npub1spk2".to_string(),
-            "[]".to_string(),
-        )
-        .unwrap();
+        session::session_add_account(pk_b.clone(), "npub1pk2valid".to_string(), "[]".to_string())
+            .unwrap();
         let list = session::session_list_accounts().unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&list)
             .unwrap()
@@ -194,11 +194,10 @@ mod ffi_aux_modules_tests {
             .clone();
         assert_eq!(arr.len(), 2);
         // The identity gate requires an unlocked signer before switching.
-        let keys = soshal_nostr_core::keys::generate_keys();
-        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-        assert!(session::session_switch_account("spk2".to_string()).unwrap());
+        signer::signer_unlock(keys_a.secret_key().to_secret_hex()).unwrap();
+        assert!(session::session_switch_account(pk_b.clone()).unwrap());
         let active = session::session_get_active().unwrap();
-        assert!(active.contains("\"pubkey\":\"spk2\""));
+        assert!(active.contains(&format!("\"pubkey\":\"{pk_b}\"")));
         signer::signer_lock().unwrap();
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -239,12 +238,10 @@ mod ffi_aux_modules_tests {
         let db_path = format!("{dir}/app.db");
         assert!(db::db_init(db_path.clone()).is_ok());
         session::session_load(db_path.clone()).unwrap();
-        session::session_add_account(
-            "spk1".to_string(),
-            "npub1spk1".to_string(),
-            "[]".to_string(),
-        )
-        .unwrap();
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        session::session_add_account(pk.clone(), "npub1pkvalid".to_string(), "[]".to_string())
+            .unwrap();
         assert!(session::session_register_push_token("aux_tok".to_string()).unwrap());
         let reloaded = session::session_load(db_path.clone()).unwrap();
         assert!(reloaded.contains("aux_tok"));

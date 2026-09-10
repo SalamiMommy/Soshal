@@ -107,12 +107,31 @@ NDK clang on PATH is required for ring's build script (probes
 - Cargo target dirs are big (~2GB/ABI); `/tmp` is tmpfs — both build scripts
   default them to disk-backed `$HOME/.cache/soshal-targets/` (override
   `SOSHAL_TARGET_DIR`).
-- **Known-desync (2026-09-05)**: shipped `jniLibs` `.so` predates the round-3/4
-  Rust fixes (relay mesh ingest multi_thread, minis reactions, zap amount_msat,
-  saved_at, i2p/freenet/relay, cas always-rehash, voice 5760 buffer, FTS v013,
-  notifications ignore). Dart↔wire surface still 1:1 (no `#[frb]` signature
-  changes), so no ABI crash — but the binary lacks those fixes until
-  `builds/android/build.sh` re-runs before the next Android ship.
+- **Known-desync (RESOLVED 2026-09-10)**: `builds/android/build.sh --release`
+  re-ran — shipped `jniLibs` `.so`s now carry the round-3/4 Rust fixes (relay
+  mesh ingest multi_thread, minis reactions, zap amount_msat, saved_at,
+  i2p/freenet/relay, cas always-rehash, voice 5760 buffer, FTS v013,
+  notifications ignore) plus the 2026-09-10 daemon fixes below.
+- **Bundled daemons — Android runtime gotchas (fixed 2026-09-10)**:
+  - freenet has NO $HOME/XDG/passwd for the app UID → `ProjectDirs::from`
+    returns NotFound and the node aborts before binding the WS API. `daemon.rs`
+    now spawns `freenet network --config-dir=<files>/freenet-data/conf
+    --data-dir=<files>/freenet-data/data --disable-auto-update` (gateways
+    auto-fetch from the remote index; no manual seeding). Auto-update OFF —
+    no supervisor on Android to act on freenet's exit-42 self-update signal.
+  - i2pd defaults `daemon = true` (forks to background) → Rust `Child` parent
+    exits, watchdog sees dead, respawn-loops into 7656 bind conflicts.
+    daemon.rs writes `daemon = false` into the i2pd conf.
+  - rnsd runs in-process (Chaquopy thread, `RnsdRunner.kt`). RNS never clears
+    its process-wide singleton → a failed init can't retry without a process
+    restart; the watchdog used to stack threads + "Attempt to reinitialise
+    Reticulum" poison. `RnsdRunner` now one-attempt latched (reset on stop/);
+    `platform::rnsd_status()` surfaces the last-start error through
+    `daemon_get_daemon_status` (`reticulum_status` JSON fragment); watchdog
+    checks `rnsd_running()` for in-process liveness instead of respawning.
+  - Daemon logs readable in-app: Network settings → Bundled Daemons → Logs
+    (reads `<files>/i2pd-data/i2pd.log`, `<files>/freenet-data/freenet.log`,
+    `<files>/reticulum-data/logfile` via path_provider — no FFI regen).
 
 **P2P transports** (network-core): TCP HMAC LAN chunk server (`lan_transport.rs`)
 is the legacy bulk path; QUIC stream channel (`quic.rs` stream section) is the

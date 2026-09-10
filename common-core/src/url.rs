@@ -250,6 +250,20 @@ pub fn is_private_ipv6_str(host: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// True when `ip` points to loopback, private, link-local, CGNAT, multicast,
+/// or unspecified space (IPv4 and IPv6).
+pub fn is_private_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => is_private_ipv4(v4),
+        std::net::IpAddr::V6(v6) => {
+            if let Some(mapped_v4) = v6.to_ipv4_mapped() {
+                return is_private_ipv4(mapped_v4);
+            }
+            is_private_ipv6(v6)
+        }
+    }
+}
+
 /// True when `host` is a raw IP literal pointing at loopback, private, link-local,
 /// CGNAT, multicast, or unspecified space (IPv4 and IPv6). Used for post-DNS-resolve
 /// checks to block SSRF into internal networks.
@@ -259,18 +273,7 @@ pub fn is_private_ip_str(host: &str) -> bool {
         Ok(ip) => ip,
         Err(_) => return false,
     };
-    match ip {
-        std::net::IpAddr::V4(v4) => is_private_ipv4(v4),
-        std::net::IpAddr::V6(v6) => {
-            // IPv4-mapped IPv6 (::ffff:127.0.0.1) must be judged as the
-            // embedded IPv4 address; otherwise loopback/private guards
-            // are bypassed with a V6-form literal.
-            if let Some(mapped_v4) = v6.to_ipv4_mapped() {
-                return is_private_ipv4(mapped_v4);
-            }
-            is_private_ipv6(v6)
-        }
-    }
+    is_private_ip(ip)
 }
 
 /// True when `host` is a loopback literal: `localhost`, `127.0.0.1` (and

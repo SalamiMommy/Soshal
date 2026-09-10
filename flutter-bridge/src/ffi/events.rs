@@ -138,38 +138,64 @@ fn attendee_counts_for_ids(ids: &[String]) -> std::collections::HashMap<String, 
     if ids.is_empty() {
         return counts;
     }
-    let ids_json = serde_json::to_string(ids).unwrap_or_else(|_| "[]".into());
-    if let Ok(rows) = super::db::db_query_json(
-        &format!(
-            "SELECT rsvp_event_id, COUNT(*) FROM posts p WHERE kind = ?1 \
-             AND content = 'accepted' AND rsvp_event_id IN (SELECT value FROM json_each(?2)) \
-             AND {RSVP_NOT_SUPERSEDED} \
-             GROUP BY rsvp_event_id",
-        ),
-        &[KIND_EVENT_RSVP.to_string(), ids_json],
-    ) {
-        for r in rows {
-            if let Some(id) = r["rsvp_event_id"].as_str() {
-                counts.insert(id.to_string(), r["COUNT(*)"].as_i64().unwrap_or(0) as i32);
-            }
+    let res: Result<_, String> = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        if ids.len() == 1 {
+            let sql = format!(
+                "SELECT rsvp_event_id, COUNT(*) FROM posts p WHERE kind = ?1 \
+                 AND content = 'accepted' AND rsvp_event_id = ?2 \
+                 AND {RSVP_NOT_SUPERSEDED} \
+                 GROUP BY rsvp_event_id"
+            );
+            let rows = soshal_db_core::query::query(
+                &conn,
+                &sql,
+                libsql::params![KIND_EVENT_RSVP as i64, ids[0].as_str()],
+                |r| Ok((r.get::<String>(0)?, r.get::<i64>(1)? as i32)),
+            )?;
+            Ok(rows)
+        } else {
+            let ids_json = serde_json::to_string(ids).unwrap_or_else(|_| "[]".into());
+            let sql = format!(
+                "SELECT rsvp_event_id, COUNT(*) FROM posts p WHERE kind = ?1 \
+                 AND content = 'accepted' AND rsvp_event_id IN (SELECT value FROM json_each(?2)) \
+                 AND {RSVP_NOT_SUPERSEDED} \
+                 GROUP BY rsvp_event_id"
+            );
+            let rows = soshal_db_core::query::query(
+                &conn,
+                &sql,
+                libsql::params![KIND_EVENT_RSVP as i64, ids_json.as_str()],
+                |r| Ok((r.get::<String>(0)?, r.get::<i64>(1)? as i32)),
+            )?;
+            Ok(rows)
+        }
+    });
+    if let Ok(rows) = res {
+        for (id, count) in rows {
+            counts.insert(id, count);
         }
     }
     counts
 }
 
 fn attendees_count(event_id: &str) -> i32 {
-    if let Ok(rows) = super::db::db_query_json(
-        &format!(
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let sql = format!(
             "SELECT COUNT(*) FROM posts p WHERE kind = ?1 AND content = 'accepted' \
-             AND rsvp_event_id = ?2 AND {RSVP_NOT_SUPERSEDED}",
-        ),
-        &[KIND_EVENT_RSVP.to_string(), event_id.to_string()],
-    ) {
-        if let Some(row) = rows.first() {
-            return row["COUNT(*)"].as_i64().unwrap_or(0) as i32;
-        }
-    }
-    0
+             AND rsvp_event_id = ?2 AND {RSVP_NOT_SUPERSEDED}"
+        );
+        let count = soshal_db_core::query::query_first(
+            &conn,
+            &sql,
+            libsql::params![KIND_EVENT_RSVP as i64, event_id],
+            |r| r.get::<i64>(0),
+        )?
+        .unwrap_or(0);
+        Ok(count as i32)
+    })
+    .unwrap_or(0)
 }
 
 /// Fetch nearby events (distance filter computed client-side over the
@@ -198,8 +224,13 @@ pub async fn events_fetch_nearby(
             if a.is_empty() {
                 return super::util::json_ok(Vec::<EventInfo>::new());
             }
-            audience_clause = " AND p.pubkey IN (SELECT value FROM json_each(?1))".to_string();
-            params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+            if a.len() == 1 {
+                audience_clause = " AND p.pubkey = ?1".to_string();
+                params.push(a[0].clone());
+            } else {
+                audience_clause = " AND p.pubkey IN (SELECT value FROM json_each(?1))".to_string();
+                params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+            }
         }
         if radius_km <= 0.0 {
             let filter = format!("{audience_clause} ");
@@ -368,18 +399,24 @@ pub fn events_create(
 /// Single-row fetch of the event host pubkey, kind + d-tag (avoids the
 /// events_get_event + tags_json double query).
 fn event_host_kind_and_d_tag(event_id: &str) -> Option<(String, u16, String)> {
-    let rows = super::db::db_query_json(
-        &format!(
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let sql = format!(
             "SELECT pubkey, kind, tags_json FROM posts WHERE kind IN ({EVENT_KINDS}) AND id = ?1"
-        ),
-        &[event_id.to_string()],
-    )
-    .ok()?;
-    let row = rows.first()?;
-    let host = row["pubkey"].as_str().unwrap_or("").to_string();
-    let kind = row["kind"].as_i64().unwrap_or(KIND_EVENT as i64) as u16;
-    let d_tag =
-        serde_json::from_str::<Vec<Vec<String>>>(row["tags_json"].as_str().unwrap_or_default())
+        );
+        let res =
+            soshal_db_core::query::query_first(&conn, &sql, libsql::params![event_id], |r| {
+                Ok((
+                    r.get::<String>(0)?,
+                    r.get::<i64>(1)? as u16,
+                    r.get::<String>(2)?,
+                ))
+            })?;
+        Ok(res)
+    })
+    .ok()?
+    .map(|(host, kind, tags_json)| {
+        let d_tag = serde_json::from_str::<Vec<Vec<String>>>(&tags_json)
             .ok()
             .and_then(|t| {
                 t.into_iter()
@@ -387,7 +424,8 @@ fn event_host_kind_and_d_tag(event_id: &str) -> Option<(String, u16, String)> {
                     .and_then(|t| t.get(1).cloned())
             })
             .unwrap_or_default();
-    Some((host, kind, d_tag))
+        (host, kind, d_tag)
+    })
 }
 
 fn valid_rsvp(status: &str) -> bool {
@@ -583,18 +621,17 @@ pub fn events_get_event(event_id: String) -> Result<String, String> {
 /// no tags_json LIKE scan.
 #[frb(sync, serialize)]
 pub fn events_get_attendees(event_id: String) -> Result<Vec<String>, String> {
-    let rows = super::db::db_query_json(
-        &format!(
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let sql = format!(
             "SELECT DISTINCT pubkey FROM posts p WHERE kind = {KIND_EVENT_RSVP} AND content = 'accepted' \
              AND rsvp_event_id = ?1 AND {RSVP_NOT_SUPERSEDED} ORDER BY created_at DESC LIMIT 200"
-        ),
-        &[event_id],
-    )?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|r| r["pubkey"].as_str().map(|s| s.to_string()))
-        .collect())
-    .into()
+        );
+        let pubkeys = soshal_db_core::query::query(&conn, &sql, libsql::params![event_id], |r| {
+            r.get::<String>(0)
+        })?;
+        Ok(pubkeys)
+    })
 }
 
 #[cfg(test)]

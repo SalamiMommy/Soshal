@@ -8,6 +8,7 @@ extension JsonMap on Map<String, dynamic> {
   List<String> stringsOf(String key) {
     final v = this[key];
     if (v is List) {
+      if (v.isEmpty) return const [];
       return List<String>.generate(v.length, (i) => v[i]?.toString() ?? '');
     }
     return const [];

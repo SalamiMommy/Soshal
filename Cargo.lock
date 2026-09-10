@@ -4443,6 +4443,7 @@ dependencies = [
  "sha2",
  "soshal-common-core",
  "soshal-network-core",
+ "soshal-nostr-core",
  "tokio",
 ]
 

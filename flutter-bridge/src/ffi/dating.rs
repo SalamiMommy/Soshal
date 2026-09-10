@@ -60,11 +60,10 @@ struct ProfileContent {
 }
 
 fn card_from_value(v: &serde_json::Value) -> Option<DatingCardInfo> {
-    let content_value: serde_json::Value = match v["content"].as_str() {
-        Some(s) => serde_json::from_str(s).unwrap_or(serde_json::Value::Null),
-        None => v["content"].clone(),
+    let content: ProfileContent = match v["content"].as_str() {
+        Some(s) => serde_json::from_str(s).ok()?,
+        None => serde_json::from_value(v["content"].clone()).ok()?,
     };
-    let content: ProfileContent = serde_json::from_value(content_value).ok()?;
     Some(DatingCardInfo {
         pubkey: v["pubkey"].as_str().unwrap_or("").to_string(),
         name: v["name"].as_str().unwrap_or("").to_string(),
@@ -396,7 +395,7 @@ fn self_profile_input(user_pubkey: &str) -> soshal_dating_core::DatingProfileInp
 /// compatibility) and stamp each card's % badge with the blend score.
 fn rank_cards_by_interest_distance(
     user_pubkey: &str,
-    cards: Vec<DatingCardInfo>,
+    mut cards: Vec<DatingCardInfo>,
 ) -> Vec<DatingCardInfo> {
     if cards.is_empty() {
         return cards;
@@ -410,19 +409,23 @@ fn rank_cards_by_interest_distance(
             self_contacts: Vec::new(),
             sort_by: None,
         });
-    let mut ranked: Vec<DatingCardInfo> = Vec::with_capacity(cards.len());
-    let mut remaining: std::collections::HashMap<String, DatingCardInfo> =
-        cards.into_iter().map(|c| (c.pubkey.clone(), c)).collect();
-    for s in &sorted {
-        if let Some(mut card) = remaining.remove(&s.pubkey) {
-            card.compatibility_score = s.compatibility_score as f32;
-            ranked.push(card);
+    let rank_map: std::collections::HashMap<&str, (usize, f32)> = sorted
+        .iter()
+        .enumerate()
+        .map(|(rank, s)| (s.pubkey.as_str(), (rank, s.compatibility_score as f32)))
+        .collect();
+    for card in &mut cards {
+        if let Some((_, score)) = rank_map.get(card.pubkey.as_str()) {
+            card.compatibility_score = *score;
         }
     }
-    for (_, card) in remaining {
-        ranked.push(card);
-    }
-    ranked
+    cards.sort_by_key(|c| {
+        rank_map
+            .get(c.pubkey.as_str())
+            .map(|(r, _)| *r)
+            .unwrap_or(usize::MAX)
+    });
+    cards
 }
 
 /// Fetch dating profiles to swipe on: excludes own profile and profiles the
@@ -441,8 +444,13 @@ fn fetch_profiles_internal(
         if a.is_empty() {
             return Ok(Vec::new());
         }
-        audience_clause = " AND p.pubkey IN (SELECT value FROM json_each(?2))".to_string();
-        params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+        if a.len() == 1 {
+            audience_clause = " AND p.pubkey = ?2".to_string();
+            params.push(a[0].clone());
+        } else {
+            audience_clause = " AND p.pubkey IN (SELECT value FROM json_each(?2))".to_string();
+            params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+        }
     }
     let rows = super::db::db_query_json(
         &profile_rows_sql(

@@ -35,6 +35,19 @@ impl ProllyTree {
         hash
     }
 
+    /// Determines if a key-value boundary occurs across key and value without intermediate allocation.
+    pub fn is_kv_boundary(k: &str, v: &str) -> bool {
+        let mut hash: u32 = 0;
+        for &b in k.as_bytes() {
+            hash = (hash << 1).wrapping_add(b as u32);
+        }
+        hash = (hash << 1).wrapping_add(b':' as u32);
+        for &b in v.as_bytes() {
+            hash = (hash << 1).wrapping_add(b as u32);
+        }
+        (hash & GEAR_MASK) == 0
+    }
+
     /// Determines if a key-value boundary occurs at `data`.
     pub fn is_boundary(data: &[u8]) -> bool {
         (Self::gear_hash(data) & GEAR_MASK) == 0
@@ -73,7 +86,6 @@ impl ProllyTree {
         let mut current_vals: Vec<String> = kv_pairs.iter().map(|(_, v)| v.clone()).collect();
         let mut all_nodes = Vec::new();
         let mut level = 0;
-        let mut kv_bytes = String::new();
 
         loop {
             let mut level_nodes = Vec::new();
@@ -81,11 +93,7 @@ impl ProllyTree {
             let mut chunk_vals = Vec::new();
 
             for (k, v) in current_keys.into_iter().zip(current_vals) {
-                kv_bytes.clear();
-                kv_bytes.push_str(&k);
-                kv_bytes.push(':');
-                kv_bytes.push_str(&v);
-                let boundary = Self::is_boundary(kv_bytes.as_bytes());
+                let boundary = Self::is_kv_boundary(&k, &v);
 
                 chunk_keys.push(k);
                 chunk_vals.push(v);

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use soshal_network_core::i2p_sam::I2PSessionManager;
 use soshal_network_core::transport::{TransportKind, TransportMode, I2P_SOCKS_PORT};
 use std::net::SocketAddr;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 
 /// Max events handed back from a single `network_query_events` call. Relay
 /// fetch results are untrusted and unbounded by nature; capping protects the
@@ -51,13 +51,24 @@ fn reticulum_started() -> bool {
 /// A transport counts as up when its local probe succeeds OR the mesh relay
 /// node has that backend running.
 pub(super) fn resolved_kind() -> (TransportKind, bool) {
-    transport_mode().resolve(
-        reticulum_started(),
-        super::util::cached_tcp_probe("127.0.0.1", 7509)
-            || super::relay::mesh_backend_up(TransportKind::Freenet),
-        super::util::cached_tcp_probe("127.0.0.1", 7656)
-            || super::relay::mesh_backend_up(TransportKind::I2p),
-    )
+    #[cfg(test)]
+    {
+        transport_mode().resolve(
+            reticulum_started(),
+            super::relay::mesh_backend_up(TransportKind::Freenet),
+            super::relay::mesh_backend_up(TransportKind::I2p),
+        )
+    }
+    #[cfg(not(test))]
+    {
+        transport_mode().resolve(
+            reticulum_started(),
+            super::util::cached_tcp_probe("127.0.0.1", 7509)
+                || super::relay::mesh_backend_up(TransportKind::Freenet),
+            super::util::cached_tcp_probe("127.0.0.1", 7656)
+                || super::relay::mesh_backend_up(TransportKind::I2p),
+        )
+    }
 }
 
 /// Whether outgoing traffic should ride the local i2pd daemon right now
@@ -86,7 +97,36 @@ pub struct HttpResponseDto {
     pub body: Vec<u8>,
 }
 
-static HTTP3_CLIENT: OnceLock<soshal_network_core::http3_client::Http3Client> = OnceLock::new();
+/// Cached HTTP/3 client keyed on the proxy address in use at build time.
+/// Rebuilt automatically when the transport mode (and therefore the SOCKS5
+/// proxy address) changes. `Http3Client` is `Clone` (Arc-backed), so
+/// `get_or_rebuild` returns a cheap clone for each call.
+static HTTP3_CLIENT: std::sync::Mutex<
+    Option<(
+        Option<std::net::SocketAddr>,
+        soshal_network_core::http3_client::Http3Client,
+    )>,
+> = std::sync::Mutex::new(None);
+
+fn get_or_rebuild_http3_client() -> soshal_network_core::http3_client::Http3Client {
+    let proxy = i2p_socks_addr();
+    let mut guard = crate::ffi::util::lock(&HTTP3_CLIENT);
+    // Rebuild the client if the proxy address has changed since last call.
+    let needs_rebuild = guard
+        .as_ref()
+        .map(|(cached_proxy, _)| *cached_proxy != proxy)
+        .unwrap_or(true);
+    if needs_rebuild {
+        let client = match proxy {
+            Some(addr) => {
+                soshal_network_core::http3_client::Http3Client::with_socks_proxy(Some(addr))
+            }
+            None => soshal_network_core::http3_client::Http3Client::new(),
+        };
+        *guard = Some((proxy, client));
+    }
+    guard.as_ref().unwrap().1.clone()
+}
 
 /// Perform a network request via the HTTP/3 & QUIC network stack.
 /// Defense-in-depth: the SSRF policy runs here AND inside `Http3Client::request`
@@ -108,14 +148,7 @@ pub async fn network_fetch_http3(
     let headers: std::collections::HashMap<String, String> =
         serde_json::from_str(&headers_json).map_err(|e| format!("invalid headers json: {e}"))?;
 
-    let client = HTTP3_CLIENT
-        .get_or_init(|| match i2p_socks_addr() {
-            Some(addr) => {
-                soshal_network_core::http3_client::Http3Client::with_socks_proxy(Some(addr))
-            }
-            None => soshal_network_core::http3_client::Http3Client::new(),
-        })
-        .clone();
+    let client = get_or_rebuild_http3_client();
     let resp = client.request(&method, &url, headers, body).await?;
     Ok(HttpResponseDto {
         status: resp.status,
@@ -931,7 +964,7 @@ mod tests {
         assert!(super::network_set_transport_mode("auto".to_string()).unwrap());
         assert_eq!(super::network_get_transport_mode().unwrap(), "default");
         assert!(super::network_set_transport_mode("bogus".to_string()).is_err());
-        assert!(super::network_set_transport_mode("nostr".to_string()).unwrap());
+        assert!(super::network_set_transport_mode("default".to_string()).unwrap());
     }
 
     #[test]
@@ -943,6 +976,7 @@ mod tests {
         assert_eq!(v["mode"], "nostr");
         assert_eq!(v["resolved"], "nostr");
         assert_eq!(v["satisfied"], true);
+        assert!(super::network_set_transport_mode("default".to_string()).unwrap());
     }
 
     #[test]
@@ -968,7 +1002,7 @@ mod tests {
             .contains("\"running\":true"));
         super::network_reticulum_stop().unwrap();
         assert_eq!(resolve()["resolved"], "nostr");
-        assert!(super::network_set_transport_mode("nostr".to_string()).unwrap());
+        assert!(super::network_set_transport_mode("default".to_string()).unwrap());
     }
 
     #[test]
@@ -980,7 +1014,7 @@ mod tests {
             // SOCKS proxy stays off (decoupled from mesh traffic).
             assert!(super::i2p_socks_addr().is_none(), "mode {name}");
         }
-        assert!(super::network_set_transport_mode("nostr".to_string()).unwrap());
+        assert!(super::network_set_transport_mode("default".to_string()).unwrap());
     }
 
     #[tokio::test]

@@ -169,7 +169,7 @@ class GroupsService extends ChangeNotifier
           limit: limit,
           offset: offset,
         );
-        final parsed = await runOffThread(() => _parseGroupMessages(json));
+        final parsed = await runOffThreadCompute(_parseGroupMessages, json);
         _messages = parsed.length > 200 ? parsed.sublist(0, 200) : parsed;
         return _messages;
       }, onNotify: notifyDeferred);

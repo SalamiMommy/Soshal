@@ -113,6 +113,67 @@ pub fn basic_compatibility(a_interest: &[String], b_interest: &[String]) -> f64 
     common.len() as f64 / max as f64
 }
 
+fn interest_overlap_counts<'a>(
+    a: &'a [String],
+    b: &'a [String],
+    case_insensitive: bool,
+) -> (usize, usize) {
+    if a.is_empty() || b.is_empty() {
+        return (0, 0);
+    }
+    let norm = |s: &'a str| -> &'a str { s.trim() };
+
+    if !case_insensitive {
+        let mut seen_b: HashSet<&'a str> = HashSet::with_capacity(b.len());
+        for s in b {
+            let t = norm(s);
+            if !t.is_empty() {
+                seen_b.insert(t);
+            }
+        }
+        let len_b = seen_b.len();
+        let mut seen_a: HashSet<&'a str> = HashSet::with_capacity(a.len());
+        let mut common_count = 0usize;
+        for s in a {
+            let t = norm(s);
+            if !t.is_empty() && seen_a.insert(t) && seen_b.remove(t) {
+                common_count += 1;
+            }
+        }
+        let len_a = seen_a.len();
+        let union = len_a + len_b - common_count;
+        return (common_count, union);
+    }
+
+    use std::borrow::Cow;
+    let key = |t: &'a str| -> Cow<'a, str> {
+        if t.bytes().any(|b| b.is_ascii_uppercase()) {
+            Cow::Owned(t.to_ascii_lowercase())
+        } else {
+            Cow::Borrowed(t)
+        }
+    };
+    let mut seen_b: HashSet<Cow<'a, str>> = HashSet::with_capacity(b.len());
+    for s in b {
+        let t = norm(s);
+        if !t.is_empty() {
+            seen_b.insert(key(t));
+        }
+    }
+    let len_b = seen_b.len();
+    let mut seen_a: HashSet<Cow<'a, str>> = HashSet::with_capacity(a.len());
+    let mut common_count = 0usize;
+    for s in a {
+        let t = norm(s);
+        if !t.is_empty() && seen_a.insert(key(t)) && seen_b.remove(&key(t)) {
+            common_count += 1;
+        }
+    }
+    let len_a = seen_a.len();
+    let union = len_a + len_b - common_count;
+    (common_count, union)
+}
+
 /// Jaccard similarity (common / union) on deduplicated, optionally
 /// case-insensitive interests.
 pub fn jaccard_similarity(
@@ -126,9 +187,9 @@ pub fn jaccard_similarity(
     if a_interest == b_interest {
         return 1.0;
     }
-    let (common, union) = interest_overlap(a_interest, b_interest, case_insensitive);
+    let (common_len, union) = interest_overlap_counts(a_interest, b_interest, case_insensitive);
     if union == 0 {
         return 0.0;
     }
-    common.len() as f64 / union as f64
+    common_len as f64 / union as f64
 }

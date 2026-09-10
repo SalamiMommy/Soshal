@@ -54,7 +54,11 @@ pub fn bolt11_checksum_valid(bolt11: &str) -> bool {
     if bolt11.is_empty() || bolt11.len() > 4096 {
         return false;
     }
-    let lower = bolt11.to_ascii_lowercase();
+    let lower = if bolt11.bytes().any(|b| b.is_ascii_uppercase()) {
+        std::borrow::Cow::Owned(bolt11.to_ascii_lowercase())
+    } else {
+        std::borrow::Cow::Borrowed(bolt11)
+    };
     bech32::decode(&lower).is_ok()
 }
 
@@ -67,7 +71,11 @@ pub fn parse_msats_from_bolt11(bolt11: &str) -> Result<u64, String> {
         return Ok(0);
     }
 
-    let lower = bolt11.to_ascii_lowercase();
+    let lower = if bolt11.bytes().any(|b| b.is_ascii_uppercase()) {
+        std::borrow::Cow::Owned(bolt11.to_ascii_lowercase())
+    } else {
+        std::borrow::Cow::Borrowed(bolt11)
+    };
     let rest = if let Some(r) = lower.strip_prefix("lnbcrt") {
         r
     } else if let Some(r) = lower.strip_prefix("lnbc") {

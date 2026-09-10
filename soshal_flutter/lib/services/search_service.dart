@@ -85,7 +85,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
           query: query,
           limit: limit,
         );
-        return await runOffThread(() => _parseSearchResults(json));
+        return await runOffThreadCompute(_parseSearchResults, json);
       }, clearOnSuccess: false, notifyOnSuccess: false, notifyOnError: false);
 
   /// Global search across all indexes (SearchResult rows).
@@ -140,7 +140,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         final json = RustLib.instance.api.crateFfiSearchSearchTrendingProfiles(
           limit: limit,
         );
-        _trendingProfiles = await runOffThread(() => _parseSearchResults(json));
+        _trendingProfiles = await runOffThreadCompute(_parseSearchResults, json);
         _trendingProfilesFetchedAt = DateTime.now();
         return _trendingProfiles;
       });
@@ -148,7 +148,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   Future<List<SearchResultItem>> _run(String Function() call) async {
     return guard(() async {
       final json = call();
-      final results = await runOffThread(() => _parseSearchResults(json));
+      final results = await runOffThreadCompute(_parseSearchResults, json);
       _results = results;
       return _results;
     });
@@ -168,7 +168,7 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         final json =
             RustLib.instance.api.crateFfiDbDbGetTrendingHashtags(limit: limit);
         _dbTrendingHashtags =
-            await runOffThread(() => _parseTrendingHashtags(json));
+            await runOffThreadCompute(_parseTrendingHashtags, json);
         _dbTrendingHashtagsFetchedAt = DateTime.now();
         return _dbTrendingHashtags;
       });

@@ -53,7 +53,7 @@ fn hkdf(ikm: &[u8], salt: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, &'s
 /// initiator from its encapsulate to the peer's static key and by the
 /// responder from the decapsulation of the first received header.
 pub fn init_root(shared_secret: &[u8], context: &str) -> Result<[u8; 32], &'static str> {
-    let info = format!("{}:{}", String::from_utf8_lossy(RATCHET_DOMAIN), context);
+    let info = format!("soshal-ratchet-v3:{context}");
     let root = hkdf(shared_secret, INIT_SALT, info.as_bytes(), 32)?;
     let mut out = [0u8; 32];
     out.copy_from_slice(&root);
@@ -68,7 +68,7 @@ pub fn derive_root_step(
     context: &str,
 ) -> Result<([u8; 32], [u8; 32]), &'static str> {
     let root = hex_decode(root_key_hex).map_err(|_| "bad root hex")?;
-    let info = format!("{}:{}", String::from_utf8_lossy(ROOT_INFO), context);
+    let info = format!("soshal-ratchet-v3:root:{context}");
     let out = hkdf(shared_secret, &root, info.as_bytes(), 64)?;
     let mut new_root = [0u8; 32];
     let mut new_chain = [0u8; 32];
@@ -80,7 +80,7 @@ pub fn derive_root_step(
 /// Derives a fresh sending/receiving chain from the root key.
 pub fn derive_chain(root_key_hex: &str, context: &str) -> Result<[u8; 32], &'static str> {
     let root = hex_decode(root_key_hex).map_err(|_| "bad root hex")?;
-    let info = format!("{}:{}", String::from_utf8_lossy(CHAIN_INFO), context);
+    let info = format!("soshal-ratchet-v3:chain:{context}");
     let out = hkdf(&root, CHAIN_SALT, info.as_bytes(), 32)?;
     let mut chain = [0u8; 32];
     chain.copy_from_slice(&out);

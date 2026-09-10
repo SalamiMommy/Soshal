@@ -41,8 +41,9 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   String? _error;
   int _frames = 0;
   int? _lastSeq;
-  ui.Image? _frameImage;
   int _frameOrd = 0;
+  final ValueNotifier<ui.Image?> _frameNotifier =
+      ValueNotifier<ui.Image?>(null);
   int _appliedOrd = -1;
 
   /// Per-track watermark: group_sequence last processed for each track_id.
@@ -208,10 +209,9 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
     }
     _appliedOrd = ord;
     _frames++;
-    setState(() {
-      _frameImage?.dispose();
-      _frameImage = frame.image;
-    });
+    final old = _frameNotifier.value;
+    _frameNotifier.value = frame.image;
+    old?.dispose();
   }
 
   /// Feed one AAC blob to the native decoder. Payloads carry the native tag
@@ -250,7 +250,8 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   void dispose() {
     _running = false;
     _streamingService?.stopMoqStream();
-    _frameImage?.dispose();
+    _frameNotifier.value?.dispose();
+    _frameNotifier.dispose();
     _chatInput.dispose();
     H264Codec.release();
     AudioCodec.release();
@@ -292,8 +293,11 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
       ),
       body: Stack(
         children: [
-          _frameImage == null
-              ? Center(
+          ValueListenableBuilder<ui.Image?>(
+            valueListenable: _frameNotifier,
+            builder: (context, frameImage, _) {
+              if (frameImage == null) {
+                return Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -304,16 +308,21 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
                           : ErrorStateText('$_error'),
                     ],
                   ),
-                )
-              : Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
+                );
+              }
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: RepaintBoundary(
                     child: RawImage(
-                      image: _frameImage,
+                      image: frameImage,
                       fit: BoxFit.contain,
                     ),
                   ),
                 ),
+              );
+            },
+          ),
           if (_showChatOverlay)
             Positioned(
               left: 16,

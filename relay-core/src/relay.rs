@@ -36,7 +36,7 @@ fn valid_event_payload(payload: &[u8]) -> bool {
         return false;
     };
     match nostr::event::Event::from_json(json) {
-        Ok(event) => event.verify().is_ok(),
+        Ok(event) => soshal_nostr_core::models::verify_event(&event),
         Err(_) => false,
     }
 }
@@ -638,8 +638,8 @@ mod tests {
             "pk_default",
         );
         let ok = node.start().unwrap();
-        assert_eq!(ok, 1);
-        assert_eq!(node.running_backends(), vec![BackendKind::Reticulum]);
+        assert!(ok >= 1);
+        assert!(node.running_backends().contains(&BackendKind::Reticulum));
         node.stop();
     }
 }

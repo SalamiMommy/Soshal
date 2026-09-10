@@ -53,7 +53,9 @@ fn has_tag(tags: &[Vec<String>], name: &str) -> bool {
 /// tags per NIP-15). Content-provided values become synthetic tags only
 /// when the row's tags_json lacks them, so relay-synced tag-form rows pass
 /// through untouched.
-fn listing_event_from_row(v: &serde_json::Value) -> Option<serde_json::Value> {
+fn listing_event_from_row(
+    v: &serde_json::Value,
+) -> Option<soshal_marketplace_core::listing::ListingEvent> {
     let id = v["id"].as_str()?.to_string();
     let pubkey = v["seller_pubkey"].as_str().unwrap_or("").to_string();
     let content: String = match v["content"].as_str() {
@@ -97,19 +99,17 @@ fn listing_event_from_row(v: &serde_json::Value) -> Option<serde_json::Value> {
             }
         }
     }
-    Some(serde_json::json!({
-        "id": id,
-        "pubkey": pubkey,
-        "content": content,
-        "created_at": created_at,
-        "tags": tags,
-    }))
+    Some(soshal_marketplace_core::listing::ListingEvent {
+        id,
+        pubkey,
+        content,
+        created_at,
+        tags,
+    })
 }
 
 fn listing_from_value(v: &serde_json::Value) -> Option<ListingInfo> {
-    let ev = listing_event_from_row(v)?;
-    let ev_struct: soshal_marketplace_core::listing::ListingEvent =
-        serde_json::from_value(ev).ok()?;
+    let ev_struct = listing_event_from_row(v)?;
     let out = soshal_marketplace_core::listing::parse_listing(&ev_struct)?;
     Some(ListingInfo {
         id: out.id,
@@ -134,20 +134,43 @@ fn listing_from_value(v: &serde_json::Value) -> Option<ListingInfo> {
     })
 }
 
+#[derive(serde::Deserialize)]
+struct OrderContent<'a> {
+    #[serde(rename = "listingId", borrow)]
+    listing_id: Option<&'a str>,
+    #[serde(borrow)]
+    seller: Option<&'a str>,
+    #[serde(borrow)]
+    status: Option<&'a str>,
+    amount: Option<f64>,
+}
+
 fn order_from_fields(id: String, content_str: &str, pubkey: String, created_at: i64) -> OrderInfo {
-    let content: serde_json::Value =
-        serde_json::from_str(content_str).unwrap_or(serde_json::Value::Null);
+    let content: Option<OrderContent> = serde_json::from_str(content_str).ok();
     OrderInfo {
         id,
-        listing_id: content["listingId"].as_str().unwrap_or("").to_string(),
+        listing_id: content
+            .as_ref()
+            .and_then(|c| c.listing_id)
+            .unwrap_or("")
+            .to_string(),
         buyer_pubkey: pubkey,
-        seller_pubkey: content["seller"].as_str().unwrap_or("").to_string(),
-        status: content["status"].as_str().unwrap_or("created").to_string(),
-        amount: content["amount"].as_f64().unwrap_or(0.0) as u64,
+        seller_pubkey: content
+            .as_ref()
+            .and_then(|c| c.seller)
+            .unwrap_or("")
+            .to_string(),
+        status: content
+            .as_ref()
+            .and_then(|c| c.status)
+            .unwrap_or("created")
+            .to_string(),
+        amount: content.as_ref().and_then(|c| c.amount).unwrap_or(0.0) as u64,
         created_at: created_at.max(0) as u64,
     }
 }
 
+#[cfg(test)]
 fn order_from_value(v: &serde_json::Value) -> Option<OrderInfo> {
     let content: serde_json::Value = match v["content"].as_str() {
         Some(s) => serde_json::from_str(s).unwrap_or(serde_json::Value::Null),
@@ -166,6 +189,7 @@ fn order_from_value(v: &serde_json::Value) -> Option<OrderInfo> {
 
 fn listings_sql(prelude: &str, limit: i32, offset: i32, authors: Option<&[String]>) -> String {
     let author_clause = match authors {
+        Some(a) if a.len() == 1 => " AND p.pubkey = ?1",
         Some(a) if !a.is_empty() => " AND p.pubkey IN (SELECT value FROM json_each(?1))",
         _ => "",
     };
@@ -247,6 +271,7 @@ pub fn marketplace_search(query: String, limit: i32, audience: String) -> Result
         }
     }
     let author_clause = match &authors {
+        Some(a) if a.len() == 1 => " AND p.pubkey = ?2",
         Some(a) if !a.is_empty() => " AND p.pubkey IN (SELECT value FROM json_each(?2))",
         _ => "",
     };
@@ -260,7 +285,11 @@ pub fn marketplace_search(query: String, limit: i32, audience: String) -> Result
     );
     let mut params: Vec<String> = vec![escaped];
     if let Some(a) = &authors {
-        params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+        if a.len() == 1 {
+            params.push(a[0].clone());
+        } else {
+            params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+        }
     }
     let rows = super::db::db_query_json(&sql, &params)?;
     super::util::json_ok(parse_listings_values(rows))
@@ -288,18 +317,21 @@ pub fn marketplace_get_listing(listing_id: String) -> Result<String, String> {
 /// Get raw listing content JSON string by listing id.
 #[frb(sync, serialize)]
 pub fn marketplace_get_content(listing_id: String) -> Result<String, String> {
-    let json = super::db::db_query_params(
-        &format!("SELECT content FROM posts WHERE id = ?1 AND kind = {KIND_LISTING} LIMIT 1"),
-        &[listing_id],
-    )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    if let Some(first) = rows.first() {
-        if let Some(content_str) = first["content"].as_str() {
-            return Ok(content_str.to_string());
-        }
-        return Ok(first["content"].to_string());
-    }
-    Ok("{}".to_string())
+    let content = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let res = soshal_db_core::query::query_first(
+            &conn,
+            &format!("SELECT content FROM posts WHERE id = ?1 AND kind = {KIND_LISTING} LIMIT 1"),
+            libsql::params![listing_id.as_str()],
+            |r| match r.get_value(0)? {
+                libsql::Value::Text(t) => Ok(t),
+                libsql::Value::Blob(b) => Ok(hex::encode(b)),
+                _ => Ok(String::new()),
+            },
+        )?;
+        Ok(res)
+    })?;
+    Ok(content.unwrap_or_else(|| "{}".to_string()))
 }
 
 /// Create a listing (kind 30402). Signs with the unlocked signer and
@@ -575,18 +607,26 @@ pub fn marketplace_create_order(
 /// Get order details.
 #[frb(sync, serialize)]
 pub fn marketplace_get_order(order_id: String) -> Result<String, String> {
-    let json = super::db::db_query_params(
-        &format!(
-            "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
-             WHERE p.kind = {KIND_ORDER} AND p.id = ?1"
-        ),
-        &[order_id],
-    )?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
-    let order = rows
-        .first()
-        .and_then(order_from_value)
-        .ok_or("Order not found".to_string())?;
+    let order: OrderInfo = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let res = soshal_db_core::query::query_first(
+            &conn,
+            &format!(
+                "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
+                 WHERE p.kind = {KIND_ORDER} AND p.id = ?1"
+            ),
+            libsql::params![order_id.as_str()],
+            |r| {
+                let id: String = r.get(0)?;
+                let content: String = r.get(1)?;
+                let pubkey: String = r.get(2)?;
+                let created_at: i64 = r.get(3)?;
+                Ok(order_from_fields(id, &content, pubkey, created_at))
+            },
+        )?;
+        res.ok_or_else(|| soshal_db_core::error::DbError::NotFound)
+    })
+    .map_err(|_| "Order not found".to_string())?;
     super::util::json_ok(order)
 }
 

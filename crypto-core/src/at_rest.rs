@@ -50,12 +50,14 @@ pub fn seal_at_rest_bin(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, Str
     let nonce = Nonce::assume_unique_for_key(nonce_bytes);
     let mut out = Vec::with_capacity(NONCE_LEN + plaintext.len() + AES_256_GCM.tag_len());
     out.extend_from_slice(&nonce_bytes);
-    let mut in_out = plaintext.to_vec();
-    sealing
-        .seal_in_place_append_tag(nonce, Aad::empty(), &mut in_out)
-        .map_err(|e| format!("seal: {e}"))?;
-    out.extend_from_slice(&in_out);
-    in_out.zeroize();
+    out.extend_from_slice(plaintext);
+    let tag = sealing
+        .seal_in_place_separate_tag(nonce, Aad::empty(), &mut out[NONCE_LEN..])
+        .map_err(|e| {
+            out.zeroize();
+            format!("seal: {e}")
+        })?;
+    out.extend_from_slice(tag.as_ref());
     Ok(out)
 }
 

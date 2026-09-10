@@ -55,7 +55,7 @@ class NotificationService extends ChangeNotifier
         limit: limit,
         offset: 0,
       );
-      final parsed = await runOffThread(() => parseNotifications(json));
+      final parsed = await runOffThreadCompute(parseNotifications, json);
       final capped = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
       _isLoading = false;
       if (_sameNotifications(_notifications, capped)) {
@@ -83,7 +83,7 @@ class NotificationService extends ChangeNotifier
         userPubkey: pubkey,
         limit: limit,
       );
-      final parsed = await runOffThread(() => parseNotifications(json));
+      final parsed = await runOffThreadCompute(parseNotifications, json);
       if (_sameNotifications(_unread, parsed)) return _unread;
       _unread = parsed;
       clearLastError();
@@ -269,7 +269,7 @@ if (ok) {
     }
     try {
       final json = call();
-      final list = await runOffThread(() => parseNotifications(json));
+      final list = await runOffThreadCompute(parseNotifications, json);
       if (_sameNotifications(_byType[type] ?? const [], list)) {
         _byTypeFetchedAt[type] = DateTime.now();
         return _byType[type]!;

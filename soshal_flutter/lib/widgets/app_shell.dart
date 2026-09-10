@@ -44,7 +44,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   void _startTimers() {
     _callTimer?.cancel();
-    _lockoutTimer?.cancel();
     // Poll relay kind-20001 call signals addressed to the active account.
     _callTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted || _isPaused) return;
@@ -53,17 +52,28 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         context.read<ShellService>().pollCallSignals(pubkey);
       }
     });
-    // Keep the PIN lock countdown honest while the lock screen is up.
-    _lockoutTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      if (!mounted || _isPaused) return;
-      final shell = context.read<ShellService>();
-      if (!shell.locked) return;
-      await shell.refreshLockout(notify: false);
-      if (shell.lockoutRemaining != _lastLockoutNotified) {
-        _lastLockoutNotified = shell.lockoutRemaining;
-        shell.refreshLockout();
-      }
-    });
+  }
+
+  void _syncLockoutTimer(bool locked) {
+    if (locked && _lockoutTimer == null && !_isPaused) {
+      _lockoutTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+        if (!mounted || _isPaused) return;
+        final shell = context.read<ShellService>();
+        if (!shell.locked) {
+          _lockoutTimer?.cancel();
+          _lockoutTimer = null;
+          return;
+        }
+        await shell.refreshLockout(notify: false);
+        if (shell.lockoutRemaining != _lastLockoutNotified) {
+          _lastLockoutNotified = shell.lockoutRemaining;
+          shell.refreshLockout();
+        }
+      });
+    } else if (!locked && _lockoutTimer != null) {
+      _lockoutTimer?.cancel();
+      _lockoutTimer = null;
+    }
   }
 
   void _stopTimers() {
@@ -84,6 +94,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       if (_isPaused) {
         _isPaused = false;
         _startTimers();
+        _syncLockoutTimer(context.read<ShellService>().locked);
         final pubkey = context.read<SessionService>().activePubkey;
         if (pubkey != null) {
           context.read<ShellService>().pollCallSignals(pubkey);
@@ -154,6 +165,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final incomingCall = context.select((ShellService s) => s.incomingCall);
     final audioPlaying = context.select((ShellService s) => s.audioPlaying);
     final locked = context.select((ShellService s) => s.locked);
+    _syncLockoutTimer(locked);
     final signedIn =
         context.select((SessionService s) => s.activePubkey != null);
     final signerLocked = context.select((SignerService s) => s.locked);

@@ -11,6 +11,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../services/permissions_service.dart';
 import '../services/bookmarks_service.dart';
 import '../services/feed_service.dart';
+import '../services/layout_service.dart';
 import '../services/moderation_service.dart';
 import '../services/media_service.dart';
 import '../services/p2p_service.dart';
@@ -88,6 +89,15 @@ class _FeedScreenState extends State<FeedScreen> {
   Future<void> _loadTotals() async {
     final feed = _feed;
     if (!mounted || feed == null) return;
+    if (context.mounted && feed.displayPosts.isNotEmpty) {
+      final width = MediaQuery.sizeOf(context).width.round();
+      final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+      unawaited(context.read<LayoutService>().refresh(
+            feed.displayPosts,
+            screenWidth: width > 0 ? width : 360,
+            textScale: textScale > 0 ? textScale : 1.0,
+          ));
+    }
     // Fetch only ids we haven't seen yet — refetching the whole page on
     // every refresh/loadMore re-queries the DB for already-known totals.
     final currentTotals = _totalsNotifier.value;
@@ -201,6 +211,7 @@ class _FeedScreenState extends State<FeedScreen> {
         ? allDisplay
         : filteredPosts;
 
+    final layout = context.watch<LayoutService>();
     final Widget body;
     if (feedView.loading && feedView.posts.isEmpty) {
       body = const Center(child: CircularProgressIndicator());
@@ -219,9 +230,24 @@ class _FeedScreenState extends State<FeedScreen> {
         ),
       );
     } else {
+      if (layout.needsLayout(effectiveDisplay) && effectiveDisplay.isNotEmpty) {
+        final width = MediaQuery.sizeOf(context).width.round();
+        final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.read<LayoutService>().refresh(
+                  effectiveDisplay,
+                  screenWidth: width > 0 ? width : 360,
+                  textScale: textScale > 0 ? textScale : 1.0,
+                );
+          }
+        });
+      }
       body = ListView.builder(
         scrollCacheExtent: const ScrollCacheExtent.pixels(600.0),
         controller: _scrollController,
+        itemExtentBuilder: (index, _) =>
+            layout.extentFor(index, effectiveDisplay),
         itemCount: effectiveDisplay.length + 1,
         itemBuilder: (context, index) {
           if (index == effectiveDisplay.length) {
@@ -433,9 +459,11 @@ class _FeedPostCardState extends State<FeedPostCard> {
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        child: SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Author header
             Row(
               children: [
@@ -641,6 +669,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
               ],
             ),
           ],
+        ),
         ),
       ),
     );

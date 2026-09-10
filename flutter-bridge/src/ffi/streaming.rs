@@ -137,26 +137,41 @@ fn stream_from_value(v: &serde_json::Value) -> Option<StreamInfo> {
     })
 }
 
+#[derive(Deserialize)]
+struct StoryMediaItem {
+    url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct StoryContent {
+    text: Option<String>,
+    media: Option<Vec<StoryMediaItem>>,
+}
+
 fn story_from_value(v: &serde_json::Value) -> Option<StoryInfo> {
-    let tags = v["tags_json"].as_str().unwrap_or("").to_string();
-    let content_value: serde_json::Value = match v["content"].as_str() {
-        Some(s) => serde_json::from_str(s).unwrap_or(serde_json::Value::Null),
-        None => v["content"].clone(),
+    let tags = v["tags_json"].as_str().unwrap_or("");
+    let content: StoryContent = match v["content"].as_str() {
+        Some(s) => serde_json::from_str(s).unwrap_or(StoryContent {
+            text: None,
+            media: None,
+        }),
+        None => serde_json::from_value(v["content"].clone()).unwrap_or(StoryContent {
+            text: None,
+            media: None,
+        }),
     };
-    let images: Vec<String> = content_value["media"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|m| m["url"].as_str().map(|u| u.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
+    let images: Vec<String> = content
+        .media
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|m| m.url)
+        .collect();
     Some(StoryInfo {
         id: v["id"].as_str()?.to_string(),
         author_pubkey: v["pubkey"].as_str().unwrap_or("").to_string(),
-        content: content_value["text"].as_str().unwrap_or("").to_string(),
+        content: content.text.unwrap_or_default(),
         images,
-        expires_at: tag_value(&tags, "expiration")
+        expires_at: tag_value(tags, "expiration")
             .map(|e| e.parse::<u64>().unwrap_or(1))
             .unwrap_or(0),
         views: v["views"].as_i64().unwrap_or(0) as i32,
@@ -432,8 +447,13 @@ pub fn streaming_fetch_followed_stories(audience: String) -> Result<String, Stri
     let mut params: Vec<String> = Vec::new();
     let author_clause = match &authors {
         Some(a) => {
-            params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
-            " AND p.pubkey IN (SELECT value FROM json_each(?1))"
+            if a.len() == 1 {
+                params.push(a[0].clone());
+                " AND p.pubkey = ?1"
+            } else {
+                params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
+                " AND p.pubkey IN (SELECT value FROM json_each(?1))"
+            }
         }
         None => "",
     };

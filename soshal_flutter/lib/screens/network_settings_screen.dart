@@ -71,9 +71,10 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
   String? _zkInfo;
   bool _daemonBusy = false;
   bool? _daemonsAvailable;
-  Map<String, bool> _daemonStatus = {};
+  Map<String, dynamic> _daemonStatus = {};
   bool? _i2pdRunning;
   bool? _rnsdRunning;
+  String? _rnsdError;
   bool? _serviceRunning;
   String? _daemonInfo;
 
@@ -542,6 +543,100 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     }
   }
 
+  /// Extracts the `error` field from `RnsdRunner.status()`'s JSON fragment
+  /// (`"running":true,"error":"..."`) or falls back to the raw text.
+  String? _parseRnsdError(String fragment) {
+    final trimmed = fragment.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      // Wrap in braces to make the fragment valid JSON.
+      final decoded = jsonDecode('{$trimmed}') as Map<String, dynamic>;
+      final error = decoded['error'] as String?;
+      if (error != null && error.trim().isNotEmpty) return error;
+    } catch (_) {}
+    if (trimmed == '"running":false') return null;
+    return trimmed;
+  }
+
+  Future<void> _showDaemonLogs() async {
+    final logs = await DaemonService.readDaemonLogs();
+    if (!mounted) return;
+    final labels = {
+      DaemonService.i2pd: 'i2pd',
+      DaemonService.freenet: 'freenet',
+      DaemonService.reticulum: 'rnsd',
+    };
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Daemon logs',
+                      style: Theme.of(ctx).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  if (_rnsdError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: ErrorStateText('rnsd: $_rnsdError'),
+                    ),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        for (final entry in logs.entries)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${labels[entry.key] ?? entry.key} — '
+                                  '${entry.value.isEmpty ? 'no log yet' : 'last ${entry.value.split('\n').length} lines'}',
+                                  style: Theme.of(ctx).textTheme.titleSmall,
+                                ),
+                                if (entry.value.isNotEmpty)
+                                  SelectableText(
+                                    entry.value,
+                                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                                  ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () async {
+                          final fresh = await DaemonService.readDaemonLogs();
+                          if (ctx.mounted) setSheetState(() => logs..addAll(fresh));
+                        },
+                        child: const Text('Reload'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _daemonsRefresh() async {
     setState(() => _daemonBusy = true);
     try {
@@ -556,6 +651,8 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
           _daemonStatus = status;
           _i2pdRunning = i2pd;
           _rnsdRunning = rnsd;
+          final rnsdStatus = status['reticulum_status'] as String?;
+          _rnsdError = rnsdStatus == null ? null : _parseRnsdError(rnsdStatus);
           _serviceRunning = service;
           _daemonInfo = null;
         });
@@ -884,10 +981,16 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                       : 'stopped'),
             ),
             for (final entry in _daemonStatus.entries)
-              ListTile(
-                dense: true,
-                title: Text(entry.key),
-                trailing: Text(entry.value ? 'present' : 'missing'),
+              if (entry.value is bool)
+                ListTile(
+                  dense: true,
+                  title: Text(entry.key),
+                  trailing: Text(entry.value as bool ? 'present' : 'missing'),
+                ),
+            if (_rnsdError != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: ErrorStateText('rnsd: $_rnsdError'),
               ),
             if (_daemonInfo != null)
               Padding(
@@ -918,6 +1021,11 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                     onPressed: _daemonBusy ? null : _daemonsStop,
                     icon: const Icon(Icons.stop),
                     label: const Text('Stop daemons'),
+                  ),
+                  TextButton.icon(
+                    onPressed: _daemonBusy ? null : _showDaemonLogs,
+                    icon: const Icon(Icons.receipt_long),
+                    label: const Text('Logs'),
                   ),
                   TextButton.icon(
                     onPressed: () => _daemonPath(DaemonService.i2pd),

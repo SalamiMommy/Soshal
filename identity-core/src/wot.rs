@@ -237,14 +237,70 @@ fn partition_wot_peers(
     users: &[WotUser],
     max_distance: u32,
 ) -> HashMap<u32, Vec<String>> {
-    let updates = recalculate_wot(self_pubkey, users);
+    if max_distance == 0 || users.is_empty() {
+        return HashMap::new();
+    }
+
+    const MAX_CONTACTS: usize = 2000;
+    const MAX_EDGES: usize = 100_000;
+
+    let mut contact_map: HashMap<&str, &[String]> = HashMap::with_capacity(users.len());
+    let mut total_edges = 0usize;
+
+    for user in users {
+        if total_edges >= MAX_EDGES {
+            contact_map.entry(&user.pubkey).or_insert(&[]);
+            continue;
+        }
+        let slice = if user.contacts.len() > MAX_CONTACTS {
+            &user.contacts[..MAX_CONTACTS]
+        } else {
+            &user.contacts
+        };
+        total_edges += slice.len();
+        contact_map.insert(&user.pubkey, slice);
+    }
+
+    let mut distances: HashMap<&str, u32> = HashMap::with_capacity(users.len());
+    let mut queue: VecDeque<(&str, u32)> = VecDeque::with_capacity(users.len().min(10_000));
+
+    distances.insert(self_pubkey, 0);
+    queue.push_back((self_pubkey, 0));
+
+    let max_processed = users.len().min(10_000);
+    let mut processed = 0usize;
+
+    while let Some((current, current_dist)) = queue.pop_front() {
+        processed += 1;
+        if processed > max_processed {
+            break;
+        }
+        if let Some(contacts) = contact_map.get(current) {
+            let new_dist = current_dist.saturating_add(1).min(3);
+            for contact in *contacts {
+                let contact_str = contact.as_str();
+                if let Some(&existing) = distances.get(contact_str) {
+                    if new_dist >= existing {
+                        continue;
+                    }
+                } else {
+                    distances.insert(contact_str, new_dist);
+                    if new_dist < 2 {
+                        queue.push_back((contact_str, new_dist));
+                    }
+                }
+            }
+        }
+    }
+
     let mut result: HashMap<u32, Vec<String>> = HashMap::new();
-    for update in updates {
-        if update.distance > 0 && update.distance <= max_distance {
+    for user in users {
+        let distance = *distances.get(user.pubkey.as_str()).unwrap_or(&3);
+        if distance > 0 && distance <= max_distance {
             result
-                .entry(update.distance)
+                .entry(distance)
                 .or_default()
-                .push(update.pubkey);
+                .push(user.pubkey.clone());
         }
     }
     result

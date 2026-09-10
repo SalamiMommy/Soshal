@@ -44,6 +44,25 @@ pub fn query<T>(
     query_capacity(conn, sql, params, 32, map)
 }
 
+/// Execute a query and fold rows into an accumulator.
+pub fn query_fold<A>(
+    conn: &Connection,
+    sql: &str,
+    params: impl IntoParams,
+    init: A,
+    mut fold: impl FnMut(A, &Row) -> libsql::Result<A>,
+) -> Result<A, DbError> {
+    block_on(async {
+        let stmt = conn.prepare(sql).await?;
+        let mut rows = stmt.query(params).await?;
+        let mut acc = init;
+        while let Some(row) = rows.next().await? {
+            acc = fold(acc, &row)?;
+        }
+        Ok(acc)
+    })
+}
+
 /// Execute a query that returns at most one row.
 pub fn query_first<T>(
     conn: &Connection,

@@ -272,22 +272,33 @@ fn build_result_json(passed: bool, category: Option<&str>) -> String {
     }
 }
 
+/// Maximum custom word regexes held in memory to prevent unbounded allocation.
+const MAX_CUSTOM_WORD_REGEX_CACHE: usize = 512;
+
 /// Whole-token match: `w` must be bounded by non-word chars or string edges
 /// (ASCII alphanumeric + `_` count as word chars).
 fn custom_word_matches(text: &str, w: &str) -> bool {
     static CACHE: OnceLock<Mutex<HashMap<String, regex::Regex>>> = OnceLock::new();
-    let pattern = format!(r"(?i)\b{}\b", regex::escape(w));
     let mut guard = CACHE
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(|p| p.into_inner());
-    if !guard.contains_key(&pattern) {
-        let Ok(re) = regex::Regex::new(&pattern) else {
-            return false;
-        };
-        guard.insert(pattern.clone(), re);
+
+    if let Some(re) = guard.get(w) {
+        return re.is_match(text);
     }
-    guard.get(&pattern).expect("just inserted").is_match(text)
+
+    if guard.len() >= MAX_CUSTOM_WORD_REGEX_CACHE {
+        guard.clear();
+    }
+
+    let pattern = format!(r"(?i)\b{}\b", regex::escape(w));
+    let Ok(re) = regex::Regex::new(&pattern) else {
+        return false;
+    };
+    let is_match = re.is_match(text);
+    guard.insert(w.to_string(), re);
+    is_match
 }
 
 /// Evaluates content across all layers (CSAM, Gore, Hate/Harassment, Spam, Custom Word Filters).

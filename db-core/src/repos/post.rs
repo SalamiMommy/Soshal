@@ -35,8 +35,12 @@ const POST_SELECT_PAGED_META_CURSOR: &str =
 /// array of reachable pubkeys (audience filter: friends / network).
 const POST_SELECT_PAGED_META_AUTHORS: &str =
     "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey IN (SELECT value FROM json_each(?3)) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
+const POST_SELECT_PAGED_META_SINGLE_AUTHOR: &str =
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey = ?3 ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_CURSOR_AUTHORS: &str =
     "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey IN (SELECT value FROM json_each(?4)) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
+const POST_SELECT_PAGED_META_CURSOR_SINGLE_AUTHOR: &str =
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey = ?4 AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
 const POST_SELECT_SCHEDULED: &str = concat!("SELECT ", post_columns_no_rsvp!(), " FROM posts WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC");
 
 pub struct PostRepo<'a> {
@@ -377,9 +381,17 @@ impl<'a> PostRepo<'a> {
         if authors.is_empty() {
             return Ok(Vec::new());
         }
+        let conn = self.db.conn()?;
+        if authors.len() == 1 {
+            return crate::query::query(
+                &conn,
+                POST_SELECT_PAGED_META_SINGLE_AUTHOR,
+                params![limit, offset, authors[0].as_str()],
+                Self::map_meta_row,
+            );
+        }
         let authors_json = serde_json::to_string(authors)
             .map_err(|e| crate::error::DbError::Migration(e.to_string()))?;
-        let conn = self.db.conn()?;
         crate::query::query(
             &conn,
             POST_SELECT_PAGED_META_AUTHORS,
@@ -418,9 +430,17 @@ impl<'a> PostRepo<'a> {
         if authors.is_empty() {
             return Ok(Vec::new());
         }
+        let conn = self.db.conn()?;
+        if authors.len() == 1 {
+            return crate::query::query(
+                &conn,
+                POST_SELECT_PAGED_META_CURSOR_SINGLE_AUTHOR,
+                params![before_created_at, limit, before_id, authors[0].as_str()],
+                Self::map_meta_row,
+            );
+        }
         let authors_json = serde_json::to_string(authors)
             .map_err(|e| crate::error::DbError::Migration(e.to_string()))?;
-        let conn = self.db.conn()?;
         crate::query::query(
             &conn,
             POST_SELECT_PAGED_META_CURSOR_AUTHORS,

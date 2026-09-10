@@ -236,8 +236,13 @@ pub fn keyring_available() -> bool {
 }
 
 /// Remove the stored secret key for an account from the OS keychain.
+/// Only the currently-unlocked identity may remove its own credential.
 #[frb(sync, serialize)]
 pub fn signer_remove_from_keyring(pubkey: String) -> Result<bool, String> {
+    // Require the caller to be the identity being removed: prevents a compromised
+    // Dart layer from performing a denial-of-service by wiping a victim account's
+    // stored credential without knowing the nsec.
+    require_identity(&pubkey)?;
     let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&pubkey)) {
         Ok(e) => e,
         Err(e) => return Err(format!("keychain unavailable: {e}")).into(),

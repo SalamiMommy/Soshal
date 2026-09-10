@@ -1338,34 +1338,6 @@ where
     }
 }
 
-/// One-shot QUIC stream fetch of a blob range from a peer. Only private
-/// addresses are dialable (SSRF guard on outbound, mirrors TCP fetch). The
-/// HMAC beacon authenticates the client; the response is verified by the
-/// caller (or `fetch_quic_verified_chunk`).
-pub fn fetch_quic_chunk(
-    addr: SocketAddr,
-    key: [u8; 32],
-    my_pubkey: &str,
-    req: &crate::lan_transport::LanChunkRequest,
-) -> Result<Vec<u8>, String> {
-    if !lan::is_private_ip(addr.ip()) {
-        return Err("refusing non-private LAN peer".to_string());
-    }
-    if req.hash.len() != 64 || req.length == 0 || req.length > MAX_STREAM_FRAME {
-        return Err("bad chunk request".to_string());
-    }
-    let my_pubkey = my_pubkey.to_owned();
-    let req = req.clone();
-    run_async_blocking(async move {
-        tokio::time::timeout(STREAM_EXCHANGE_TIMEOUT, async {
-            let (_endpoint, conn) = quic_connect(addr).await?;
-            exchange_chunk(&conn, key, &my_pubkey, &req).await
-        })
-        .await
-        .map_err(|_| "quic exchange timed out".to_string())?
-    })
-}
-
 /// Reusable QUIC client for bulk chunk fetches: one endpoint and one
 /// connection per peer, reused across chunks — the swarm download path avoids
 /// a fresh socket + full TLS handshake per chunk.
@@ -1474,6 +1446,50 @@ impl QuicChunkPool {
         }
         Err("chunk fetch failed".to_string())
     }
+}
+
+static SHARED_QUIC_POOL: LazyLock<std::sync::Mutex<Option<Arc<QuicChunkPool>>>> =
+    LazyLock::new(|| std::sync::Mutex::new(QuicChunkPool::new().ok().map(Arc::new)));
+
+pub fn shared_quic_pool() -> Option<Arc<QuicChunkPool>> {
+    let mut guard = SHARED_QUIC_POOL.lock().ok()?;
+    if guard.is_none() {
+        *guard = QuicChunkPool::new().ok().map(Arc::new);
+    }
+    guard.clone()
+}
+
+/// One-shot QUIC stream fetch of a blob range from a peer. Only private
+/// addresses are dialable (SSRF guard on outbound, mirrors TCP fetch). The
+/// HMAC beacon authenticates the client; the response is verified by the
+/// caller (or `fetch_quic_verified_chunk`).
+pub fn fetch_quic_chunk(
+    addr: SocketAddr,
+    key: [u8; 32],
+    my_pubkey: &str,
+    req: &crate::lan_transport::LanChunkRequest,
+) -> Result<Vec<u8>, String> {
+    if !lan::is_private_ip(addr.ip()) {
+        return Err("refusing non-private LAN peer".to_string());
+    }
+    if req.hash.len() != 64 || req.length == 0 || req.length > MAX_STREAM_FRAME {
+        return Err("bad chunk request".to_string());
+    }
+    let my_pubkey = my_pubkey.to_owned();
+    let req = req.clone();
+    run_async_blocking(async move {
+        tokio::time::timeout(STREAM_EXCHANGE_TIMEOUT, async {
+            if let Some(pool) = shared_quic_pool() {
+                if let Ok(data) = pool.fetch_chunk(addr, key, &my_pubkey, &req).await {
+                    return Ok(data);
+                }
+            }
+            let (_endpoint, conn) = quic_connect(addr).await?;
+            exchange_chunk(&conn, key, &my_pubkey, &req).await
+        })
+        .await
+        .map_err(|_| "quic exchange timed out".to_string())?
+    })
 }
 
 /// QUIC stream fetch of a blob manifest (JSON) by blob hash. The crawl step

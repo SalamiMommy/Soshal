@@ -179,27 +179,47 @@ fn protocol_metadata_media(path: &str) -> Result<ProtocolResponse, String> {
 
     match parts[0] {
         "local" => {
+            let filename = parts[1];
+            // Reject filenames with path separators or dot-traversal sequences.
+            // Mirrors the validation in protocol_load_from_cache so the metadata
+            // path is as hardened as the read path.
+            if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+                return Err(
+                    "invalid filename: path separators and '..' are not allowed".to_string()
+                );
+            }
+            if filename.is_empty() {
+                return Err("filename must not be empty".to_string());
+            }
             let cache_dir = dirs::cache_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join("soshal_flutter_cache");
+            // Canonicalize only the *directory* (not the full path) so that
+            // non-existent files don't cause canonicalize to fail with ENOENT.
+            // The joined path cannot escape canon_cache because filename has
+            // no separator characters.
+            let canon_cache = cache_dir
+                .canonicalize()
+                .map_err(|e| format!("Cache dir: {e}"))?;
+            let file_path = canon_cache.join(filename);
 
-            let candidate = cache_dir.join(parts[1]);
-            if let Ok(canonical) = candidate.canonicalize() {
-                if !canonical.starts_with(&cache_dir) {
-                    return Err("path traversal rejected".to_string());
-                }
-            } else if candidate.to_string_lossy().contains("..") {
-                return Err("path traversal rejected".to_string());
-            }
-
-            match fs::metadata(&candidate) {
+            match fs::metadata(&file_path) {
                 Ok(meta) => {
-                    let mime_type = infer_mime_from_path(parts[1]);
+                    let mime_type = infer_mime_from_path(filename);
+                    // Include mtime in the ETag so stale cached responses are
+                    // invalidated after an update (size-only ETags are guessable
+                    // and provide no staleness detection).
+                    let mtime = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
                     Ok(ProtocolResponse {
                         content_type: mime_type,
                         content_length: meta.len(),
                         cache_control: "public, max-age=86400".to_string(),
-                        etag: format!("{:x}", meta.len()), // Simple ETag
+                        etag: format!("{:x}-{:x}", meta.len(), mtime),
                     })
                 }
                 Err(e) => Err(format!("Metadata read failed: {}", e)),

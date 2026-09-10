@@ -449,6 +449,21 @@ fn raw_sql_allowed(sql: &str) -> bool {
         || lower.contains("replace ")
         || lower.contains("update ")
         || lower.contains("delete ")
+        // Prevent UNION-based data-exfiltration that bypasses the table
+        // blocklist: `SELECT 1 UNION SELECT value FROM settings` would pass
+        // the first-token gate and the settings check without this block.
+        || lower.contains("union ")
+        // Block RETURNING clauses (SQLite 3.35+): they can piggy-back on
+        // mutations that slip through normalization edge-cases.
+        || lower.contains("returning ")
+        // Block SQLite internal schema tables; these expose all table/index
+        // names and could aid fingerprinting or injection planning.
+        || lower.contains("sqlite_master")
+        || lower.contains("sqlite_schema")
+        || lower.contains("sqlite_temp_master")
+        // Block recursive CTEs: they can enumerate schema or perform
+        // side-channel timing queries.
+        || lower.contains("with recursive")
     {
         return false;
     }
@@ -1535,5 +1550,46 @@ mod tests {
         assert!(res.is_err());
         *DB.lock().unwrap() = None;
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_raw_sql_union_blocked() {
+        assert!(!raw_sql_allowed(
+            "SELECT 1 UNION SELECT value FROM settings"
+        ));
+        assert!(!raw_sql_allowed(
+            "select id UNION ALL select pin_hash from settings"
+        ));
+        assert!(!raw_sql_allowed(
+            "WITH x AS (SELECT 1) SELECT * FROM x UNION SELECT * FROM settings"
+        ));
+        // Non-union SELECTs should still pass.
+        assert!(raw_sql_allowed("SELECT id FROM posts LIMIT 10"));
+    }
+
+    #[test]
+    fn test_raw_sql_schema_tables_blocked() {
+        assert!(!raw_sql_allowed(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ));
+        assert!(!raw_sql_allowed("SELECT * FROM sqlite_schema"));
+        assert!(!raw_sql_allowed("SELECT * FROM sqlite_temp_master"));
+    }
+
+    #[test]
+    fn test_raw_sql_recursive_cte_blocked() {
+        assert!(!raw_sql_allowed(
+            "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM r) SELECT n FROM r LIMIT 10"
+        ));
+        // Non-recursive WITH should still be allowed (first-token gate passes).
+        assert!(raw_sql_allowed(
+            "WITH cte AS (SELECT id FROM posts) SELECT id FROM cte"
+        ));
+    }
+
+    #[test]
+    fn test_raw_sql_returning_blocked() {
+        // RETURNING requires INSERT/UPDATE/DELETE, but block it as a belt-and-suspenders guard.
+        assert!(!raw_sql_allowed("SELECT id FROM posts RETURNING id"));
     }
 }

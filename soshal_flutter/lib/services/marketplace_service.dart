@@ -461,7 +461,7 @@ class MarketplaceService extends ChangeNotifier
   Future<List<ListingInfo>> _decode(String Function() call) async {
     try {
       final json = call();
-      final parsed = await runOffThread(() => _parseListings(json));
+      final parsed = await runOffThreadCompute(_parseListings, json);
       _listings = parsed.length > 100 ? parsed.sublist(0, 100) : parsed;
       _listingsLoading = false;
       clearLastError();
@@ -478,7 +478,7 @@ class MarketplaceService extends ChangeNotifier
   Future<List<OrderInfo>> _decodeOrders(String Function() call) async {
     try {
       final json = call();
-      _orders = await runOffThread(() => _parseOrders(json));
+      _orders = await runOffThreadCompute(_parseOrders, json);
       clearLastError();
       notifyDeferred();
       return _orders;
@@ -494,7 +494,7 @@ class MarketplaceService extends ChangeNotifier
       guard(() async {
         final json = RustLib.instance.api
             .crateFfiDbDbGetEscrowsByParticipant(pubkey: pubkey);
-        return await runOffThread(() => _parseEscrows(json));
+        return await runOffThreadCompute(_parseEscrows, json);
       }, onNotify: notifyDeferred, notifyOnSuccess: false);
 }
 

@@ -14,7 +14,18 @@ use std::sync::MutexGuard;
 /// `.lock().unwrap_or_else(|e| e.into_inner())` idiom used at every global
 /// handle site in the bridge.
 pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
+    m.lock().unwrap_or_else(|e| {
+        // A thread panicked while holding this mutex. The guard is recovered so
+        // the process can continue, but the event is logged. Any occurrence in
+        // production warrants investigation: the guarded state may be inconsistent.
+        eprintln!(
+            "[soshal] WARN: mutex poisoning recovered ({}:{}); \
+             inspect for state inconsistency",
+            file!(),
+            line!()
+        );
+        e.into_inner()
+    })
 }
 
 /// Bounded, TTL'd key/value cache for the function-global caches scattered
@@ -57,8 +68,19 @@ impl<K: Eq + Hash + Clone, V> TtlCache<K, V> {
     /// bounds actual staleness; eviction order is arbitrary).
     pub(crate) fn insert(&mut self, k: K, v: V, now: i64) {
         if !self.entries.contains_key(&k) && self.entries.len() >= self.cap {
-            if let Some(oldest) = self.entries.keys().next().cloned() {
-                self.entries.remove(&oldest);
+            let victim = self
+                .entries
+                .iter()
+                .find(|(_, (ts, _))| now.saturating_sub(*ts) >= self.ttl_secs)
+                .map(|(k, _)| k.clone())
+                .or_else(|| {
+                    self.entries
+                        .iter()
+                        .min_by_key(|(_, (ts, _))| *ts)
+                        .map(|(k, _)| k.clone())
+                });
+            if let Some(victim_key) = victim {
+                self.entries.remove(&victim_key);
             }
         }
         self.entries.insert(k, (now, v));
@@ -99,12 +121,16 @@ pub fn util_base64url_encode(input: String) -> Result<String, String> {
 }
 
 /// Base64URL (no padding) decode; returns the decoded string if valid UTF-8.
+/// Returns `Err` on malformed base64url input or if the decoded bytes are not
+/// valid UTF-8. Callers that pass speculative/optional data should handle the
+/// error gracefully (e.g., treat it as an absent value).
 #[frb(sync, serialize)]
 pub fn util_base64url_decode(input: String) -> Result<String, String> {
-    match soshal_crypto_core::base64url::base64url_decode(&input) {
-        Some(bytes) => Ok(String::from_utf8(bytes).unwrap_or_default()).into(),
-        None => Ok(String::new()).into(),
-    }
+    let bytes = soshal_crypto_core::base64url::base64url_decode(&input)
+        .ok_or_else(|| "base64url decode failed: invalid input".to_string())?;
+    String::from_utf8(bytes)
+        .map_err(|_| "base64url decode failed: decoded bytes are not valid UTF-8".to_string())
+        .into()
 }
 
 /// Truncate string to max length (char-boundary safe).
@@ -147,6 +173,7 @@ pub(crate) fn tcp_probe(host: &str, port: u16) -> bool {
 }
 
 /// Cached TCP probe with a 5-second TTL to avoid repeated socket connections on hot paths.
+#[cfg_attr(test, allow(dead_code))] // only referenced from cfg(not(test)) paths
 pub(crate) fn cached_tcp_probe(host: &str, port: u16) -> bool {
     use std::sync::OnceLock;
 
@@ -202,8 +229,8 @@ mod tests {
             util_base64url_decode("aGVsbG8gd29ybGQ".to_string()).unwrap(),
             "hello world"
         );
-        // base64_decode swallows decode failures into an empty string.
-        assert_eq!(util_base64url_decode("!!!".to_string()).unwrap(), "");
+        // Garbage input is an explicit decode error, not an empty string.
+        assert!(util_base64url_decode("!!!".to_string()).is_err());
     }
 
     #[test]

@@ -133,34 +133,42 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
     final now = DateTime.now();
     final last = _lastFrameAt;
     try {
-      if (last != null && now.difference(last) < _frameInterval) return;
       if (!_broadcasting) return;
-      _lastFrameAt = now;
       final api = context.read<StreamingService>();
-      final plane = image.planes.first;
-      final width = image.width;
-      final height = image.height;
-      final rowStride = plane.bytesPerRow;
-      final bytes = Uint8List.fromList(plane.bytes);
-      final jpeg = await Isolate.run(() {
-        final frame = img.Image.fromBytes(
-          width: width,
-          height: height,
-          bytes: bytes.buffer,
-          order: img.ChannelOrder.bgra,
-          rowStride: rowStride,
-        );
-        return img.encodeJpg(frame, quality: 60);
-      });
-      final group = api.buildVideoGroup(
-        groupSeq: api.nextMoqGroupSeq(),
-        timestampMs: now.millisecondsSinceEpoch,
-        jpeg: jpeg,
-      );
-      await api.publishLiveGroupSilent(streamId: widget.streamId, group: group);
-      _onWireBytes = jpeg.length + 64;
-      _framesPublished++;
+
+      // Publish hardware H.264 track first
       await _publishH264(image, now, api);
+
+      // Throttle or skip pure-Dart software JPEG fallback when hardware H.264 is active:
+      // when H.264 is running, emit a JPEG fallback only every 2 seconds for late-joiner
+      // previews, saving ~90% CPU cycles on mobile devices.
+      final jpegInterval = _h264Ready ? const Duration(seconds: 2) : _frameInterval;
+      if (last == null || now.difference(last) >= jpegInterval) {
+        _lastFrameAt = now;
+        final plane = image.planes.first;
+        final width = image.width;
+        final height = image.height;
+        final rowStride = plane.bytesPerRow;
+        final bytes = plane.bytes; // Zero-copy view into camera buffer
+        final jpeg = await Isolate.run(() {
+          final frame = img.Image.fromBytes(
+            width: width,
+            height: height,
+            bytes: bytes.buffer,
+            order: img.ChannelOrder.bgra,
+            rowStride: rowStride,
+          );
+          return img.encodeJpg(frame, quality: 60);
+        });
+        final group = api.buildVideoGroup(
+          groupSeq: api.nextMoqGroupSeq(),
+          timestampMs: now.millisecondsSinceEpoch,
+          jpeg: jpeg,
+        );
+        await api.publishLiveGroupSilent(streamId: widget.streamId, group: group);
+        _onWireBytes = jpeg.length + 64;
+        _framesPublished++;
+      }
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {

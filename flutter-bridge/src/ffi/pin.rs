@@ -109,17 +109,18 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
             .unwrap_or(false);
     if is_locked {
         let verdict = apply_pin_attempt(&mut state, now, false, permanent);
+        // Lockout/permanent-lock state MUST be persisted durably. A failure
+        // here is a hard error: returning Ok would let the caller bypass the
+        // lockout by causing repeated DB write failures.
         with_repo(|r| {
-            if let Err(e) = r.set(
+            r.set(
                 "pin_lockout_state",
                 &serde_json::to_string(&state).unwrap_or_default(),
-            ) {
-                eprintln!("pin state persist failed: {e}");
-            }
+            )
+            .map_err(|e| format!("pin lockout state persist failed: {e}"))?;
             if matches!(verdict, PinVerdict::PermanentlyLocked) {
-                if let Err(e) = r.set("pin_permanently_locked", "true") {
-                    eprintln!("pin state persist failed: {e}");
-                }
+                r.set("pin_permanently_locked", "true")
+                    .map_err(|e| format!("pin permanent lock persist failed: {e}"))?;
             }
             Ok(())
         })?;
@@ -142,35 +143,39 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
 
     with_repo(|r| {
         let verdict = apply_pin_attempt(&mut state, now, ok, permanent);
-        let persist = || {
-            if let Err(e) = r.set(
-                "pin_lockout_state",
-                &serde_json::to_string(&state).unwrap_or_default(),
-            ) {
-                eprintln!("pin state persist failed: {e}");
-            }
-        };
+        let state_json = serde_json::to_string(&state).unwrap_or_default();
         match verdict {
             PinVerdict::Ok => {
-                persist();
+                // Success: log-and-continue on persist failure (authenticated user
+                // should not be locked out because of a logging error).
+                if let Err(e) = r.set("pin_lockout_state", &state_json) {
+                    eprintln!("pin state persist failed (non-critical, user authenticated): {e}");
+                }
                 if let Err(e) = r.set("pin_permanently_locked", "false") {
-                    eprintln!("pin state persist failed: {e}");
+                    eprintln!("pin state persist failed (non-critical, user authenticated): {e}");
                 }
                 Ok(())
             }
             PinVerdict::Incorrect { .. } => {
-                persist();
+                // Wrong PIN: log-and-continue; next attempt will re-read fresh state.
+                if let Err(e) = r.set("pin_lockout_state", &state_json) {
+                    eprintln!("pin state persist failed (non-critical, wrong PIN): {e}");
+                }
                 Err("incorrect PIN".into())
             }
             PinVerdict::LockedOutUntil(_) => {
-                persist();
+                // Lockout: MUST persist durably — a failure here is a hard error to
+                // prevent brute-force via repeated DB write failures.
+                r.set("pin_lockout_state", &state_json)
+                    .map_err(|e| format!("pin lockout state persist failed: {e}"))?;
                 Err("too many incorrect PIN attempts; try again later".into())
             }
             PinVerdict::PermanentlyLocked => {
-                persist();
-                if let Err(e) = r.set("pin_permanently_locked", "true") {
-                    eprintln!("pin state persist failed: {e}");
-                }
+                // Permanent lock: MUST persist both fields durably.
+                r.set("pin_lockout_state", &state_json)
+                    .map_err(|e| format!("pin lockout state persist failed: {e}"))?;
+                r.set("pin_permanently_locked", "true")
+                    .map_err(|e| format!("pin permanent lock persist failed: {e}"))?;
                 Err("account permanently locked after too many failed PIN attempts".into())
             }
         }
@@ -208,12 +213,10 @@ pub async fn pin_clear(pin: String) -> Result<bool, String> {
     check_pin_with_lockout(&pin)?;
     with_repo(|r| {
         r.set(PIN_HASH_KEY, "").map_err(super::util::to_err)?;
-        if let Err(e) = r.set("pin_lockout_state", "{}") {
-            eprintln!("pin state persist failed: {e}");
-        }
-        if let Err(e) = r.set("pin_permanently_locked", "false") {
-            eprintln!("pin state persist failed: {e}");
-        }
+        r.set("pin_lockout_state", "{}")
+            .map_err(|e| format!("pin lockout reset failed: {e}"))?;
+        r.set("pin_permanently_locked", "false")
+            .map_err(|e| format!("pin lock reset failed: {e}"))?;
         Ok(())
     })?;
     Ok(true)

@@ -53,13 +53,16 @@ impl<'a> UserRepo<'a> {
         }
         let conn = self.db.conn()?;
         let json = serde_json::to_string(pubkeys).unwrap_or_else(|_| "[]".to_string());
-        let found = crate::query::query(
+        crate::query::query_fold(
             &conn,
             "SELECT pubkey FROM users WHERE pubkey IN (SELECT value FROM json_each(?1))",
             params![json.as_str()],
-            |row| row.get::<String>(0),
-        )?;
-        Ok(found.into_iter().collect())
+            std::collections::HashSet::with_capacity(pubkeys.len()),
+            |mut set, row| {
+                set.insert(row.get::<String>(0)?);
+                Ok(set)
+            },
+        )
     }
 
     pub async fn get_by_pubkey_in(

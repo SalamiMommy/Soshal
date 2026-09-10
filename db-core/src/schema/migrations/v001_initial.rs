@@ -573,8 +573,8 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         CREATE INDEX IF NOT EXISTS idx_posts_root_created ON posts(root_id, is_deleted, created_at ASC);
         CREATE INDEX IF NOT EXISTS idx_posts_kind_deleted_created ON posts(kind, is_deleted, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_posts_event_lat_lng ON posts(event_lat, event_lng);
-        CREATE INDEX IF NOT EXISTS idx_posts_kind_pubkey_deleted_created ON posts(kind, pubkey, is_deleted, created_at DESC, id);
-        CREATE INDEX IF NOT EXISTS idx_posts_kind_rsvp_pubkey_created ON posts(kind, rsvp_event_id, pubkey, created_at DESC, id);
+        CREATE INDEX IF NOT EXISTS idx_posts_kind_pubkey_deleted_created ON posts(kind, pubkey, is_deleted, created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_posts_kind_rsvp_pubkey_created ON posts(kind, rsvp_event_id, pubkey, created_at DESC, id DESC);
 
         -- Messages
         CREATE INDEX IF NOT EXISTS idx_messages_pubkey ON messages(pubkey);
@@ -583,6 +583,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         -- Reactions
         CREATE INDEX IF NOT EXISTS idx_reactions_pubkey ON reactions(pubkey);
         CREATE INDEX IF NOT EXISTS idx_reactions_event_created ON reactions(event_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_reactions_event_pubkey ON reactions(event_id, pubkey);
 
         -- Zaps
         CREATE INDEX IF NOT EXISTS idx_zaps_event ON zaps(event_id);
@@ -595,6 +596,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         -- Notifications
         CREATE INDEX IF NOT EXISTS idx_notifications_pubkey ON notifications(pubkey, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_notifications_unread_created ON notifications(pubkey, is_read, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_notifications_unread_type ON notifications(pubkey, is_read, type, created_at DESC);
 
         -- Bookmarks
         CREATE INDEX IF NOT EXISTS idx_bookmarks_pubkey_created ON bookmarks(pubkey, created_at DESC);

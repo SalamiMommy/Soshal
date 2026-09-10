@@ -72,12 +72,17 @@ pub fn apply_event_patch(old_bytes: &[u8], patch: &EventPatch) -> Result<Vec<u8>
 }
 
 fn verify_new_id(bytes: Vec<u8>, expected: &str) -> Result<Vec<u8>, String> {
-    let hex = soshal_crypto_core::hash::sha256_hex(&bytes);
-    if hex == expected {
+    let mut expected_bytes = [0u8; 32];
+    if expected.len() != 64 || hex::decode_to_slice(expected, &mut expected_bytes).is_err() {
+        return Err(format!("invalid expected hash hex: {expected}"));
+    }
+    let actual_bytes = soshal_crypto_core::hash::sha256(&bytes);
+    if actual_bytes == expected_bytes {
         Ok(bytes)
     } else {
         Err(format!(
-            "patch result hash mismatch: got {hex}, expected {expected}"
+            "patch result hash mismatch: got {}, expected {expected}",
+            hex::encode(actual_bytes)
         ))
     }
 }

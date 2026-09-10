@@ -17,6 +17,8 @@ String redactSensitive(String text) {
       .replaceAll(_hex64Re, '[redacted]');
 }
 
+bool _chmodDone = false;
+
 /// Appends a runtime error to `<app documents>/soshal-error.log` so failures
 /// shown only in the debug banner / SnackBar remain readable and copyable.
 /// Never throws: logging must not crash the app.
@@ -30,17 +32,19 @@ Future<void> logRuntimeError(Object error, [StackTrace? stack]) async {
     final dir = await getApplicationDocumentsDirectory();
     await dir.create(recursive: true);
     final file = File('${dir.path}/soshal-error.log');
-    // Restrict the log file to owner-only on POSIX so sensitive paths/stack
-    // frames aren't world-readable on shared/Android devices. Best-effort:
-    // on platforms without `sh` this throws and is swallowed.
-    try {
-      await Process.run('sh', [
-        '-c',
-        r'chmod 600 "$1"',
-        'sh',
-        file.path,
-      ]);
-    } catch (_) {}
+    // Restrict the log file to owner-only on POSIX once at initialization so
+    // we don't fork a shell process on every error write. Best-effort.
+    if (!_chmodDone) {
+      _chmodDone = true;
+      try {
+        await Process.run('sh', [
+          '-c',
+          r'chmod 600 "$1"',
+          'sh',
+          file.path,
+        ]);
+      } catch (_) {}
+    }
     await file.writeAsString(buffer.toString(), mode: FileMode.append);
   } catch (e) {
     debugPrint('error log write: $e');

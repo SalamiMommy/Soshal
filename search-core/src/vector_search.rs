@@ -70,14 +70,15 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         return 0.0;
     }
 
-    let dot = dot_product(a, b);
     let norm_a = embedding_norm(a);
     let norm_b = embedding_norm(b);
 
     if norm_a <= 0.0 || norm_b <= 0.0 {
         0.0
     } else {
-        let sim = dot / (norm_a * norm_b).sqrt();
+        let dot = dot_product(a, b);
+        let inv_norm = 1.0 / (norm_a * norm_b).sqrt();
+        let sim = dot * inv_norm;
         if sim.is_finite() {
             sim.clamp(-1.0, 1.0)
         } else {
@@ -126,7 +127,8 @@ pub fn cosine_similarity_with_norms(a: &[f32], norm_a: f32, b: &[f32], norm_b: f
     }
 
     let dot = dot_product(a, b);
-    let sim = dot / (norm_a * norm_b).sqrt();
+    let inv_norm = 1.0 / (norm_a * norm_b).sqrt();
+    let sim = dot * inv_norm;
     if sim.is_finite() {
         sim.clamp(-1.0, 1.0)
     } else {
@@ -143,15 +145,15 @@ pub fn rank_vector_documents(
     if query_norm <= 0.0 || docs.is_empty() {
         return Vec::new();
     }
-    let query_sqrt = query_norm.sqrt();
+    let inv_query_sqrt = 1.0 / query_norm.sqrt();
     let score_doc = |(idx, doc): (usize, &VectorDocument)| {
         let doc_norm = doc.compute_norm();
         let score = if doc_norm <= 0.0 || query_embedding.len() != doc.embedding.len() {
             0.0
         } else {
             let dot = dot_product(query_embedding, &doc.embedding);
-            let denom = query_sqrt * doc_norm.sqrt();
-            let sim = dot / denom;
+            let inv_doc_sqrt = 1.0 / doc_norm.sqrt();
+            let sim = dot * (inv_query_sqrt * inv_doc_sqrt);
             if sim.is_finite() {
                 sim.clamp(-1.0, 1.0)
             } else {

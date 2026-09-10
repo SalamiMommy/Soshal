@@ -582,15 +582,20 @@ mod tests {
         let db_path = dir.join("app.db").to_string_lossy().to_string();
         let _ = crate::ffi::db::db_init(db_path.clone());
         session::session_load(db_path).unwrap();
-        session::session_add_account("pk1".to_string(), "npub1pk1".to_string(), "[]".to_string())
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        let pk_other = soshal_nostr_core::keys::generate_keys()
+            .public_key()
+            .to_hex();
+        session::session_add_account(pk.clone(), "npub1pk1valid".to_string(), "[]".to_string())
             .unwrap();
         // Wrong account for the active session.
-        assert!(notifications_register_push("pk2".to_string(), "tok".to_string()).is_err());
+        assert!(notifications_register_push(pk_other, "tok".to_string()).is_err());
         // Valid token for the active account.
-        assert!(notifications_register_push("pk1".to_string(), "tok123".to_string()).unwrap());
+        assert!(notifications_register_push(pk.clone(), "tok123".to_string()).unwrap());
         // Empty / oversized tokens rejected.
-        assert!(notifications_register_push("pk1".to_string(), String::new()).is_err());
-        assert!(notifications_register_push("pk1".to_string(), "x".repeat(5000)).is_err());
+        assert!(notifications_register_push(pk.clone(), String::new()).is_err());
+        assert!(notifications_register_push(pk.clone(), "x".repeat(5000)).is_err());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -825,14 +830,19 @@ mod tests {
         db::db_init(db_path.clone()).unwrap();
         // Empty session: no active account.
         session::session_load(db_path).unwrap();
-        let err = notifications_unregister_push("pk1".to_string()).unwrap_err();
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        let pk_other = soshal_nostr_core::keys::generate_keys()
+            .public_key()
+            .to_hex();
+        let err = notifications_unregister_push(pk.clone()).unwrap_err();
         assert_eq!(err, "push token must be registered for the active account");
         // Wrong account vs the active one.
-        session::session_add_account("pk1".to_string(), "npub1pk1".to_string(), "[]".to_string())
+        session::session_add_account(pk.clone(), "npub1pk1valid".to_string(), "[]".to_string())
             .unwrap();
-        let err = notifications_unregister_push("pk2".to_string()).unwrap_err();
+        let err = notifications_unregister_push(pk_other).unwrap_err();
         assert_eq!(err, "push token must be registered for the active account");
-        assert!(notifications_unregister_push("pk1".to_string()).unwrap());
+        assert!(notifications_unregister_push(pk).unwrap());
         std::fs::remove_dir_all(&dir).ok();
     }
 }

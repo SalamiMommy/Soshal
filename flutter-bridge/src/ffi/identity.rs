@@ -364,23 +364,23 @@ pub(crate) fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
             return Ok(snap.users.clone());
         }
     }
-    let rows: Vec<serde_json::Value> =
-        super::db::db_query_json("SELECT pubkey, contact_pubkeys FROM users", &[])?;
-    let users: Vec<wot::WotUser> = rows
-        .into_iter()
-        .map(|r| wot::WotUser {
-            pubkey: r
-                .get("pubkey")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            contacts: r
-                .get("contact_pubkeys")
-                .and_then(|v| v.as_str())
-                .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
-                .unwrap_or_default(),
-        })
-        .collect();
+    let users = super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        soshal_db_core::query::query(
+            &conn,
+            "SELECT pubkey, contact_pubkeys FROM users",
+            (),
+            |r| {
+                let pubkey: String = r.get(0)?;
+                let contacts_raw: Option<String> = r.get(1).ok();
+                let contacts = contacts_raw
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+                    .unwrap_or_default();
+                Ok(wot::WotUser { pubkey, contacts })
+            },
+        )
+    })?;
     *guard = Some(WotGraphSnapshot {
         db_path: current_db,
         fetched_at: std::time::Instant::now(),
@@ -417,7 +417,7 @@ pub(crate) fn resolve_audience_authors(audience: &str) -> Result<Option<Vec<Stri
             vec![author.to_string()]
         }));
     }
-    if trimmed.len() == 64 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+    if trimmed.len() == 64 && trimmed.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
         return Ok(Some(vec![trimmed.to_string()]));
     }
     let level = match trimmed {
@@ -438,7 +438,7 @@ pub(crate) fn resolve_audience_authors(audience: &str) -> Result<Option<Vec<Stri
             authors.extend(set.iter().cloned());
         }
     }
-    authors.sort();
+    authors.sort_unstable();
     authors.dedup();
     Ok(Some(authors))
 }

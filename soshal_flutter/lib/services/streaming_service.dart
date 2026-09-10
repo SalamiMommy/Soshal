@@ -435,7 +435,7 @@ class StreamingService extends ChangeNotifier
 
   Future<List<StreamRow>> _decode(String Function() call) => guard(() async {
         final json = call();
-        return await runOffThread(() => _parseStreamRows(json));
+        return await runOffThreadCompute(_parseStreamRows, json);
       }, onNotify: notifyDeferred);
 
   @override

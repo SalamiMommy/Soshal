@@ -481,6 +481,23 @@ mod android {
         .map_err(|e| e.0)
     }
 
+    /// Reticulum daemon status + last-start error fragment from
+    /// `RnsdRunner.status()` (e.g. `"running":true,"error":"..."`). Surfaced
+    /// through the daemon status JSON so the UI can explain why rnsd is down.
+    pub fn rnsd_status() -> Result<String, String> {
+        let mut env = attach()?;
+        env.with_local_frame(8, |env| -> Result<String, JniErr> {
+            let runner = rnsd_runner(env)?;
+            match env.call_method(&runner, "status", "()Ljava/lang/String;", &[])? {
+                jni::objects::JValueOwned::Object(o) => {
+                    Ok(l_string(env, jni::objects::JValueOwned::Object(o))?)
+                }
+                _ => Err(JniErr("rnsd status unreadable".to_string())),
+            }
+        })
+        .map_err(|e| e.0)
+    }
+
     /// First entry of Build.SUPPORTED_ABIS (e.g. "arm64-v8a") — used to pick
     /// the per-ABI daemon binary asset.
     pub fn supported_abi() -> Result<String, String> {
@@ -907,6 +924,10 @@ mod android {
     pub fn cellular_connection() -> Result<bool, String> {
         Err("platform bridge unavailable off-Android".to_string())
     }
+
+    pub fn rnsd_status() -> Result<String, String> {
+        Err("rnsd_status only available on Android".to_string())
+    }
 }
 
 #[allow(unused_imports)] // host: consumed only by cfg(android) code
@@ -915,6 +936,6 @@ pub use android::{
     daemon_service_stop, files_dir, live_recorder_start, live_recorder_stop,
     live_recorder_write_audio, live_recorder_write_video, location_enabled, open_app_settings,
     permission_granted, power_save_mode, read_asset, request_ignore_battery_optimizations,
-    request_permissions, rnsd_running, rnsd_start, rnsd_stop, sdk_int, should_show_rationale,
-    supported_abi,
+    request_permissions, rnsd_running, rnsd_start, rnsd_status, rnsd_stop, sdk_int,
+    should_show_rationale, supported_abi,
 };

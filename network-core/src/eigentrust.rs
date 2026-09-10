@@ -142,9 +142,10 @@ impl EigenTrustEngine {
 
         // 3. Power Iteration: t = p initial
         let mut t = p.clone();
+        let mut t_next = vec![0.0; n];
 
         for _ in 0..MAX_EIGENTRUST_ITERATIONS {
-            let mut t_next = vec![0.0; n];
+            t_next.fill(0.0);
 
             // t_next = (1 - alpha) * C^T * t + alpha * p
             for (i, row) in rows.iter().enumerate() {
@@ -166,7 +167,7 @@ impl EigenTrustEngine {
                 .zip(t_next.iter())
                 .map(|(a, b)| (a - b).abs())
                 .sum();
-            t = t_next;
+            std::mem::swap(&mut t, &mut t_next);
             if diff < CONVERGENCE_EPSILON {
                 break;
             }
