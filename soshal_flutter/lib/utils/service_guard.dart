@@ -61,11 +61,23 @@ mixin ServiceGuard on ChangeNotifier, LastErrorMixin {
         });
       }
       if (clearOnSuccess) clearLastError();
-      if (notifyOnSuccess) scheduleMicrotask(n);
+      if (notifyOnSuccess) {
+        if (onNotify != null) {
+          onNotify();
+        } else {
+          scheduleMicrotask(n);
+        }
+      }
       return Future<T>.value(r);
     } catch (e, st) {
       setLastError(e, st);
-      if (notifyOnError) scheduleMicrotask(n);
+      if (notifyOnError) {
+        if (onNotify != null) {
+          onNotify();
+        } else {
+          scheduleMicrotask(n);
+        }
+      }
       return Future<T>.error(e, st);
     }
   }

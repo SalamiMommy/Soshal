@@ -72,49 +72,11 @@ cat > "$BUILD_DIR/rnsd_wrapper.py" << 'EOF'
 Reticulum daemon wrapper for PyInstaller bundling.
 """
 import sys
-import os
-import logging
-from pathlib import Path
 
-# Try to find and run rnsd from installed rns package
 try:
-    import rns
-    # RNS has a built-in daemon via RNS CLI
-    # We'll create a minimal daemon that sets up the transport
-    from rns.vendor.configobj import ConfigObj
-    
-    log = logging.getLogger("rnsd")
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    
-    log.info("Reticulum daemon starting...")
-    
-    # Import and start RNS in daemon mode
-    from rns import RNS
-    
-    # Initialize RNS with default config
-    # The daemon will listen for connections on 127.0.0.1:4242
-    reticulum = RNS.Reticulum()
-    log.info(f"Reticulum initialized: {reticulum}")
-    log.info("Daemon ready. Press Ctrl+C to exit.")
-    
-    # Keep daemon running
-    import signal
-    import time
-    
-    def signal_handler(sig, frame):
-        log.info("Shutting down...")
-        sys.exit(0)
-    
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
-    # Block forever
-    while True:
-        time.sleep(1)
-        
+    import RNS
+    from RNS.Utilities.rnsd import main
+    main()
 except ImportError as e:
     print(f"Error: Could not import RNS: {e}", file=sys.stderr)
     sys.exit(1)
@@ -133,6 +95,8 @@ pyinstaller \
     --name rnsd \
     --distpath "$RELEASE_DIR" \
     --console \
+    --collect-all RNS \
+    --copy-metadata rns \
     "$BUILD_DIR/rnsd_wrapper.py" 2>&1 | tail -10 || {
     echo "PyInstaller failed; creating stub"
     create_stub "" "Reticulum daemon stub - PyInstaller failed"

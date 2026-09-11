@@ -7,4 +7,15 @@ package com.soshal.app
 object PlatformBridge {
     @Volatile
     var activity: MainActivity? = null
+        set(value) {
+            field = value
+            if (value != null) {
+                try {
+                    nativeInit(value, value.applicationContext)
+                } catch (_: Throwable) {}
+            }
+        }
+
+    @JvmStatic
+    external fun nativeInit(activity: Any, context: Any)
 }

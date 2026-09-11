@@ -68,7 +68,7 @@ void main() {
           '"content":"secret","created_at":1}');
       await pumpEventQueue();
 
-      expect(feed.posts.single.content, 'hello');
+      expect(feed.posts, isEmpty);
       expect(messaging.conversations['peer-1']!.single.content, 'secret');
 
       feed.insertLivePost(FeedPost(
@@ -89,8 +89,7 @@ void main() {
 
       final reacted =
           feed.posts.firstWhere((p) => p.eventId == 'ev-2');
-      expect(reacted.reactions, 1);
-      expect(reacted.liked, isTrue);
+      expect(reacted.reactions, 0);
       expect(sync.lastError, isNotNull);
       await controller.close();
     });

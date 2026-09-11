@@ -10,8 +10,29 @@ routed to <configdir>/logfile, which the Rust bridge surfaces for debug.
 """
 
 import os
+import signal
 import sys
 import time
+
+# Reticulum's Reticulum.__init__ unconditionally registers signal handlers:
+#   signal.signal(signal.SIGINT, Reticulum.sigint_handler)
+#   signal.signal(signal.SIGTERM, Reticulum.sigterm_handler)
+# In Android (Chaquopy), the daemon runs on a background worker thread.
+# Calling signal.signal() on any thread other than Python's main thread
+# raises ValueError: signal only works in main thread of the main interpreter.
+# Catch and ignore ValueError so Reticulum starts cleanly in-process.
+try:
+    _orig_signal = signal.signal
+
+    def _safe_signal(sig, handler):
+        try:
+            return _orig_signal(sig, handler)
+        except (ValueError, AttributeError):
+            return None
+
+    signal.signal = _safe_signal
+except Exception:
+    pass
 
 _running = False
 _start_error = None
@@ -31,6 +52,19 @@ def start(configdir):
     _configdir = configdir
     try:
         import RNS
+
+        inst = None
+        try:
+            inst = RNS.Reticulum.get_instance()
+        except Exception:
+            inst = getattr(RNS.Reticulum, "_Reticulum__instance", None)
+        if inst is not None:
+            _reticulum = inst
+            _running = True
+            _start_error = None
+            _started_at = _started_at or time.time()
+            RNS.log("rnsd resumed (Chaquopy, RNS %s)" % RNS.version(), RNS.LOG_NOTICE)
+            return True
 
         RNS.log("rnsd starting (Chaquopy, configdir=%s)" % configdir, RNS.LOG_NOTICE)
         # logdest=RNS.LOG_FILE makes RNS write to <configdir>/logfile

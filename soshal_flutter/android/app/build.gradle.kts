@@ -70,6 +70,12 @@ android {
             }
         }
     }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 kotlin {
@@ -92,3 +98,30 @@ chaquopy {
         }
     }
 }
+
+tasks.register("copyDaemonsToJniLibs") {
+    doLast {
+        val assetsDir = file("src/main/assets/daemons")
+        val jniLibsDir = file("src/main/jniLibs")
+        val abis = listOf("arm64-v8a", "x86_64", "armeabi-v7a")
+        for (abi in abis) {
+            val i2pdSrc = file("$assetsDir/$abi/i2pd")
+            if (i2pdSrc.exists() && i2pdSrc.length() > 100000) {
+                val targetDir = file("$jniLibsDir/$abi")
+                targetDir.mkdirs()
+                i2pdSrc.copyTo(file("$targetDir/libi2pd.so"), overwrite = true)
+            }
+        }
+        val freenetSrc = file("$assetsDir/freenet")
+        if (freenetSrc.exists() && freenetSrc.length() > 100000) {
+            val targetDir = file("$jniLibsDir/arm64-v8a")
+            targetDir.mkdirs()
+            freenetSrc.copyTo(file("$targetDir/libfreenet.so"), overwrite = true)
+        }
+    }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
+    dependsOn("copyDaemonsToJniLibs")
+}
+

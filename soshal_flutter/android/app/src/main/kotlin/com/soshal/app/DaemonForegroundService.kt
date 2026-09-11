@@ -36,19 +36,33 @@ object DaemonForegroundService {
     var running: Boolean = false
 
     fun start(context: Context): Boolean {
-        val intent = Intent(context, DaemonServiceInstance::class.java)
-            .setAction(SERVICE_ACTION_START)
-        context.startService(intent)
-        running = true
-        return true
+        return try {
+            val intent = Intent(context, DaemonServiceInstance::class.java)
+                .setAction(SERVICE_ACTION_START)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            running = true
+            true
+        } catch (e: Exception) {
+            android.util.Log.w("DaemonForegroundService", "startForegroundService failed: $e")
+            false
+        }
     }
 
     fun stop(context: Context): Boolean {
-        val intent = Intent(context, DaemonServiceInstance::class.java)
-            .setAction(SERVICE_ACTION_STOP)
-        context.stopService(intent)
-        running = false
-        return true
+        return try {
+            val intent = Intent(context, DaemonServiceInstance::class.java)
+                .setAction(SERVICE_ACTION_STOP)
+            context.stopService(intent)
+            running = false
+            true
+        } catch (e: Exception) {
+            android.util.Log.w("DaemonForegroundService", "stopService failed: $e")
+            false
+        }
     }
 
     internal fun notification(context: Context): Notification {
@@ -108,10 +122,14 @@ class DaemonServiceInstance : Service() {
             return START_NOT_STICKY
         }
         DaemonForegroundService.running = true
-        DaemonForegroundService.startForegroundCompat(
-            this,
-            DaemonForegroundService.notification(this),
-        )
+        try {
+            DaemonForegroundService.startForegroundCompat(
+                this,
+                DaemonForegroundService.notification(this),
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("DaemonForegroundService", "startForegroundCompat failed: $e")
+        }
         return START_STICKY
     }
 

@@ -8,12 +8,49 @@ mod android {
     use std::ffi::c_void;
     use std::sync::Mutex;
 
-    use jni::objects::{JObject, JString};
+    use jni::objects::{GlobalRef, JClass, JObject, JString, JValue};
     use jni::{JNIEnv, JavaVM};
 
     const PLATFORM_BRIDGE_CLASS: &str = "com/soshal/app/PlatformBridge";
     const MAIN_ACTIVITY_FIELD: &str = "activity";
     const MAIN_ACTIVITY_SIG: &str = "Lcom/soshal/app/MainActivity;";
+
+    static CACHED_ACTIVITY: Mutex<Option<GlobalRef>> = Mutex::new(None);
+    static CACHED_CONTEXT: Mutex<Option<GlobalRef>> = Mutex::new(None);
+    static CACHED_CLASS_LOADER: Mutex<Option<GlobalRef>> = Mutex::new(None);
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_soshal_app_PlatformBridge_nativeInit(
+        mut env: JNIEnv,
+        _class: JClass,
+        activity: JObject,
+        context: JObject,
+    ) {
+        if !activity.is_null() {
+            if let Ok(glob) = env.new_global_ref(&activity) {
+                *CACHED_ACTIVITY.lock().unwrap_or_else(|e| e.into_inner()) = Some(glob);
+            }
+        }
+        if !context.is_null() {
+            if let Ok(loader_val) =
+                env.call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])
+            {
+                if let Ok(loader_obj) = loader_val.l() {
+                    if !loader_obj.is_null() {
+                        if let Ok(glob) = env.new_global_ref(&loader_obj) {
+                            *CACHED_CLASS_LOADER
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner()) = Some(glob);
+                        }
+                    }
+                }
+            }
+            let _ = env.exception_clear();
+            if let Ok(glob) = env.new_global_ref(&context) {
+                *CACHED_CONTEXT.lock().unwrap_or_else(|e| e.into_inner()) = Some(glob);
+            }
+        }
+    }
 
     type JniGetCreatedJavaVMs =
         unsafe extern "C" fn(*mut *mut jni::sys::JavaVM, i32, *mut i32) -> i32;
@@ -110,13 +147,147 @@ mod android {
         .map_err(|e| e.0)
     }
 
-    fn activity<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, JniErr> {
-        let class = env.find_class(PLATFORM_BRIDGE_CLASS)?;
-        let value = env.get_static_field(class, MAIN_ACTIVITY_FIELD, MAIN_ACTIVITY_SIG)?;
-        match value {
-            jni::objects::JValueOwned::Object(obj) if !obj.is_null() => Ok(obj),
-            _ => Err(JniErr("PlatformBridge.activity not set".to_string())),
+    fn get_context<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, JniErr> {
+        if let Some(ctx_ref) = CACHED_CONTEXT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            return Ok(env.new_local_ref(ctx_ref.as_obj())?);
         }
+        if let Some(act_ref) = CACHED_ACTIVITY
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            return Ok(env.new_local_ref(act_ref.as_obj())?);
+        }
+        // Fallback: ActivityThread.currentApplication()
+        match env.find_class("android/app/ActivityThread") {
+            Ok(app_thread_class) => {
+                let app_res = env.call_static_method(
+                    &app_thread_class,
+                    "currentApplication",
+                    "()Landroid/app/Application;",
+                    &[],
+                );
+                match app_res {
+                    Ok(val) => match val.l() {
+                        Ok(obj) if !obj.is_null() => {
+                            if let Ok(glob) = env.new_global_ref(&obj) {
+                                *CACHED_CONTEXT.lock().unwrap_or_else(|e| e.into_inner()) =
+                                    Some(glob);
+                            }
+                            return Ok(obj);
+                        }
+                        _ => {
+                            let _ = env.exception_clear();
+                        }
+                    },
+                    Err(_) => {
+                        let _ = env.exception_clear();
+                    }
+                }
+            }
+            Err(_) => {
+                let _ = env.exception_clear();
+            }
+        }
+        Err(JniErr("application context not available".to_string()))
+    }
+
+    fn get_class_loader<'local>(
+        env: &mut JNIEnv<'local>,
+    ) -> Result<Option<JObject<'local>>, JniErr> {
+        if let Some(loader_ref) = CACHED_CLASS_LOADER
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            return Ok(Some(env.new_local_ref(loader_ref.as_obj())?));
+        }
+        if let Ok(ctx) = get_context(env) {
+            let loader_res =
+                env.call_method(&ctx, "getClassLoader", "()Ljava/lang/ClassLoader;", &[]);
+            match loader_res {
+                Ok(val) => match val.l() {
+                    Ok(obj) if !obj.is_null() => {
+                        if let Ok(glob) = env.new_global_ref(&obj) {
+                            *CACHED_CLASS_LOADER
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner()) = Some(glob);
+                        }
+                        return Ok(Some(obj));
+                    }
+                    _ => {
+                        let _ = env.exception_clear();
+                    }
+                },
+                Err(_) => {
+                    let _ = env.exception_clear();
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn find_app_class<'local>(
+        env: &mut JNIEnv<'local>,
+        class_name: &str,
+    ) -> Result<JClass<'local>, JniErr> {
+        if let Ok(Some(loader)) = get_class_loader(env) {
+            let name_dots = class_name.replace('/', ".");
+            if let Ok(name_j) = env.new_string(&name_dots) {
+                let call_res = env.call_method(
+                    &loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&name_j)],
+                );
+                match call_res {
+                    Ok(val) => match val.l() {
+                        Ok(obj) if !obj.is_null() => {
+                            return Ok(obj.into());
+                        }
+                        _ => {
+                            let _ = env.exception_clear();
+                        }
+                    },
+                    Err(_) => {
+                        let _ = env.exception_clear();
+                    }
+                }
+            }
+        }
+        match env.find_class(class_name) {
+            Ok(c) => Ok(c),
+            Err(e) => {
+                let _ = env.exception_clear();
+                Err(JniErr(format!("class {class_name} not found: {e}")))
+            }
+        }
+    }
+
+    fn activity<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, JniErr> {
+        if let Some(act_ref) = CACHED_ACTIVITY
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            return Ok(env.new_local_ref(act_ref.as_obj())?);
+        }
+        if let Ok(class) = find_app_class(env, PLATFORM_BRIDGE_CLASS) {
+            if let Ok(value) = env.get_static_field(&class, MAIN_ACTIVITY_FIELD, MAIN_ACTIVITY_SIG)
+            {
+                if let Ok(obj) = value.l() {
+                    if !obj.is_null() {
+                        return Ok(obj);
+                    }
+                }
+            }
+            let _ = env.exception_clear();
+        }
+        get_context(env)
     }
 
     /// Absolute app files directory, from the Activity's Context.
@@ -130,6 +301,30 @@ mod android {
                 env.call_method(&file_obj, "getAbsolutePath", "()Ljava/lang/String;", &[])?;
             let path_obj = path.l()?;
             let jstr = JString::from(path_obj);
+            let s = env.get_string(&jstr)?;
+            Ok(s.into())
+        })
+        .map_err(|e| e.0)
+    }
+
+    /// Absolute app native library directory (where .so files and binaries in jniLibs are extracted).
+    /// Untrusted apps on Android 10+ have SELinux rx_file_perms on apk_data_file here.
+    pub fn native_library_dir() -> Result<String, String> {
+        let mut env = attach()?;
+        env.with_local_frame(8, |env| -> Result<String, JniErr> {
+            let activity = activity(env)?;
+            let app_info = env
+                .call_method(
+                    &activity,
+                    "getApplicationInfo",
+                    "()Landroid/content/pm/ApplicationInfo;",
+                    &[],
+                )?
+                .l()?;
+            let lib_dir = env
+                .get_field(&app_info, "nativeLibraryDir", "Ljava/lang/String;")?
+                .l()?;
+            let jstr = jni::objects::JString::from(lib_dir);
             let s = env.get_string(&jstr)?;
             Ok(s.into())
         })
@@ -215,8 +410,8 @@ mod android {
         sig: &str,
         args: &[jni::objects::JValue<'_, '_>],
     ) -> Result<jni::objects::JValueOwned<'local>, JniErr> {
-        let class = env.find_class("com/soshal/app/LiveRecorder")?;
-        let instance = env.get_static_field(class, "INSTANCE", "Lcom/soshal/app/LiveRecorder;")?;
+        let class = find_app_class(env, "com/soshal/app/LiveRecorder")?;
+        let instance = env.get_static_field(&class, "INSTANCE", "Lcom/soshal/app/LiveRecorder;")?;
         let obj = match instance {
             jni::objects::JValueOwned::Object(o) if !o.is_null() => o,
             _ => return Err(JniErr("LiveRecorder.INSTANCE not set".to_string())),
@@ -374,8 +569,8 @@ mod android {
     pub fn daemon_service_running() -> Result<bool, String> {
         let mut env = attach()?;
         env.with_local_frame(8, |env| -> Result<bool, JniErr> {
-            let class = env.find_class(DAEMON_SERVICE_CLASS)?;
-            let value = env.get_static_field(class, "running", "Z")?;
+            let class = find_app_class(env, DAEMON_SERVICE_CLASS)?;
+            let value = env.get_static_field(&class, "running", "Z")?;
             match value {
                 jni::objects::JValueOwned::Bool(b) => Ok(b != 0),
                 _ => Err(JniErr("daemon service running unreadable".to_string())),
@@ -391,9 +586,9 @@ mod android {
         args: &[jni::objects::JValue<'_, '_>],
     ) -> Result<bool, JniErr> {
         let activity = activity(env)?;
-        let class = env.find_class(DAEMON_SERVICE_CLASS)?;
+        let class = find_app_class(env, DAEMON_SERVICE_CLASS)?;
         let instance = env.get_static_field(
-            class,
+            &class,
             "INSTANCE",
             "Lcom/soshal/app/DaemonForegroundService;",
         )?;
@@ -417,8 +612,8 @@ mod android {
     const RNSD_RUNNER_CLASS: &str = "com/soshal/app/RnsdRunner";
 
     fn rnsd_runner<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, JniErr> {
-        let class = env.find_class(RNSD_RUNNER_CLASS)?;
-        let instance = env.get_static_field(class, "INSTANCE", "Lcom/soshal/app/RnsdRunner;")?;
+        let class = find_app_class(env, RNSD_RUNNER_CLASS)?;
+        let instance = env.get_static_field(&class, "INSTANCE", "Lcom/soshal/app/RnsdRunner;")?;
         match instance {
             jni::objects::JValueOwned::Object(o) if !o.is_null() => Ok(o),
             _ => Err(JniErr("RnsdRunner.INSTANCE not set".to_string())),
@@ -831,6 +1026,10 @@ mod android {
         Err("platform bridge unavailable off-Android".to_string())
     }
 
+    pub fn native_library_dir() -> Result<String, String> {
+        Err("platform bridge unavailable off-Android".to_string())
+    }
+
     pub fn read_asset(_name: &str) -> Result<Vec<u8>, String> {
         Err("platform bridge unavailable off-Android".to_string())
     }
@@ -934,8 +1133,8 @@ mod android {
 pub use android::{
     battery_state, cellular_connection, daemon_service_running, daemon_service_start,
     daemon_service_stop, files_dir, live_recorder_start, live_recorder_stop,
-    live_recorder_write_audio, live_recorder_write_video, location_enabled, open_app_settings,
-    permission_granted, power_save_mode, read_asset, request_ignore_battery_optimizations,
-    request_permissions, rnsd_running, rnsd_start, rnsd_status, rnsd_stop, sdk_int,
-    should_show_rationale, supported_abi,
+    live_recorder_write_audio, live_recorder_write_video, location_enabled, native_library_dir,
+    open_app_settings, permission_granted, power_save_mode, read_asset,
+    request_ignore_battery_optimizations, request_permissions, rnsd_running, rnsd_start,
+    rnsd_status, rnsd_stop, sdk_int, should_show_rationale, supported_abi,
 };

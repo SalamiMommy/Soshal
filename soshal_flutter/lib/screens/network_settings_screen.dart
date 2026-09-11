@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../services/daemon_service.dart';
 import '../services/ebpf_service.dart';
 import '../services/network_service.dart';
+import '../services/permissions_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
@@ -553,8 +554,9 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
       final decoded = jsonDecode('{$trimmed}') as Map<String, dynamic>;
       final error = decoded['error'] as String?;
       if (error != null && error.trim().isNotEmpty) return error;
+      return null;
     } catch (_) {}
-    if (trimmed == '"running":false') return null;
+    if (trimmed == '"running":false' || trimmed == '"running":true') return null;
     return trimmed;
   }
 
@@ -570,7 +572,8 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
@@ -604,7 +607,8 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                                 if (entry.value.isNotEmpty)
                                   SelectableText(
                                     entry.value,
-                                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                                    style: const TextStyle(
+                                        fontFamily: 'monospace', fontSize: 11),
                                   ),
                               ],
                             ),
@@ -618,7 +622,9 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                       TextButton(
                         onPressed: () async {
                           final fresh = await DaemonService.readDaemonLogs();
-                          if (ctx.mounted) setSheetState(() => logs..addAll(fresh));
+                          if (ctx.mounted) {
+                            setSheetState(() => logs..addAll(fresh));
+                          }
                         },
                         child: const Text('Reload'),
                       ),
@@ -815,7 +821,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                     : Icons.circle_outlined,
                 color: service.freenet == true ? Colors.green : null,
               ),
-              title: const Text('Freenet gateway (local port 8888)'),
+              title: const Text('Freenet gateway (local port 7509)'),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -950,7 +956,9 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                   ? 'unknown'
                   : _serviceRunning!
                       ? 'active'
-                      : 'off (desktop)'),
+                      : (PermissionsService.isAndroid
+                          ? 'inactive'
+                          : 'off (desktop)')),
             ),
             ListTile(
               dense: true,

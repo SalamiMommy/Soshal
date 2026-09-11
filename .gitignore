@@ -77,3 +77,5 @@ target/
 *.idsig
 __pycache__/
 *.pyc
+soshal_flutter/android/app/src/main/jniLibs/**/libi2pd.so
+soshal_flutter/android/app/src/main/jniLibs/**/libfreenet.so

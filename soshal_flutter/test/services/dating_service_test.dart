@@ -143,9 +143,12 @@ void main() {
       expect(matches.single.name, 'Mia');
       expect(dating.matches.single.pubkey, 'pk-m');
 
+      await Future<void>.delayed(Duration.zero);
+
       final likes = await dating.fetchLikes('me');
       expect(likes.single.name, 'Leo');
       expect(dating.likes.single.pubkey, 'pk-l');
+      await Future<void>.delayed(Duration.zero);
       expect(notified, 2);
     });
 

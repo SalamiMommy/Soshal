@@ -69,8 +69,14 @@ class DaemonService {
         '${base.path}/i2pd-data/i2pd.log',
         '${base.path}/i2pd-data/i2pd.stdout.log',
       ],
-      DaemonService.freenet: ['${base.path}/freenet-data/freenet.log'],
-      DaemonService.reticulum: ['${base.path}/reticulum-data/logfile'],
+      DaemonService.freenet: [
+        '${base.path}/freenet-data/freenet.log',
+        '${base.path}/freenet-data/freenet.stdout.log',
+      ],
+      DaemonService.reticulum: [
+        '${base.path}/reticulum-data/logfile',
+        '${base.path}/reticulum-data/rnsd.log',
+      ],
     };
     return candidates.map((name, paths) {
       final text = paths

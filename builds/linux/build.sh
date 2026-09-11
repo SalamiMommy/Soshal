@@ -85,8 +85,29 @@ INSTALL_BIN="$STAGE/usr/bin"
 mkdir -p "$INSTALL_BIN"
 mv "$STAGE/app" "$INSTALL_BIN/soshal_flutter"
 
+find_host_bin() {
+  local name="$1"
+  for candidate in \
+    "$(command -v "$name" 2>/dev/null || true)" \
+    "$HOME/.local/bin/$name" \
+    "$HOME/.cargo/bin/$name" \
+    "/usr/local/bin/$name" \
+    "/usr/bin/$name" \
+    "$PROJECT_ROOT/target/release/$name"; do
+    if [[ -n "$candidate" ]] && [[ -x "$candidate" ]] && [[ -f "$candidate" ]] && [[ $(stat -c%s "$candidate") -gt 100000 ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Bundle rnsd daemon if available. Real binaries are >100KB; anything smaller
 # is a stub/error placeholder and is never bundled as a real daemon.
+if [[ ! -x "$RNSD_BIN" ]] || [[ $(stat -c%s "$RNSD_BIN") -le 100000 ]]; then
+  RNSD_BIN="$(find_host_bin rnsd || echo "$PROJECT_ROOT/target/release/rnsd")"
+fi
+
 if [[ -x "$RNSD_BIN" ]] && [[ $(stat -c%s "$RNSD_BIN") -gt 100000 ]]; then
   mkdir -p "$STAGE/usr/bin/daemons"
   cp "$RNSD_BIN" "$STAGE/usr/bin/daemons/rnsd"
@@ -98,12 +119,12 @@ fi
 # Bundle i2pd + freenet from the host if real binaries are available (same
 # >100KB stub guard as rnsd). usr/bin/daemons/ is also the runtime daemons
 # dir: daemon.rs falls back to the AppImage's exe-sibling usr/bin/daemons.
-I2PD_BIN="$(command -v i2pd || true)"
-FREENET_BIN="$(command -v freenet || true)"
+I2PD_BIN="$(find_host_bin i2pd || true)"
+FREENET_BIN="$(find_host_bin freenet || true)"
 for daemon in "i2pd:$I2PD_BIN" "freenet:$FREENET_BIN"; do
   name="${daemon%%:*}"
   bin="${daemon#*:}"
-  if [[ -x "$bin" ]] && [[ -f "$bin" ]] && [[ $(stat -c%s "$bin") -gt 100000 ]]; then
+  if [[ -n "$bin" ]] && [[ -x "$bin" ]] && [[ -f "$bin" ]] && [[ $(stat -c%s "$bin") -gt 100000 ]]; then
     mkdir -p "$STAGE/usr/bin/daemons"
     cp "$bin" "$STAGE/usr/bin/daemons/$name"
     echo "  $name: bundled to usr/bin/daemons/ ($(stat -c%s "$bin")B)"

@@ -13,6 +13,11 @@ pub struct SessionAccount {
     pub npub: String,
     pub last_used: u64,
     pub relay_list: Vec<String>,
+    /// FCM/APNs device registration token. Stored in `session.json` (owner-only
+    /// 0600 permissions + HMAC-signed). A leaked push token allows a push server
+    /// to deliver notifications to this device but does not expose message content
+    /// or private keys. For deployments with higher sensitivity requirements,
+    /// store this in the OS keychain instead.
     #[serde(default)]
     pub push_token: Option<String>,
 }
@@ -502,8 +507,12 @@ pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
             .and_then(|s| s.active_pubkey.as_deref());
         match active {
             Some(active_pk) => {
-                // Require the signer to hold the currently-active account's key.
-                super::signer::require_identity(active_pk)?;
+                // Allow the switch if the caller holds the key for either the
+                // currently-active account or the destination account being switched to
+                // (e.g. onboarding/importing a new identity into an existing session).
+                if super::signer::require_identity(active_pk).is_err() {
+                    super::signer::require_identity(&pubkey)?;
+                }
             }
             None => {
                 // No active account yet: require at minimum that the signer is unlocked.

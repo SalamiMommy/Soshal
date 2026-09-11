@@ -33,16 +33,16 @@ Future<void> logRuntimeError(Object error, [StackTrace? stack]) async {
     await dir.create(recursive: true);
     final file = File('${dir.path}/soshal-error.log');
     // Restrict the log file to owner-only on POSIX once at initialization so
-    // we don't fork a shell process on every error write. Best-effort.
-    if (!_chmodDone) {
+    // we don't fork a process on every error write. Best-effort.
+    // Invoke chmod directly (no shell interpreter) to remove the shell injection
+    // surface. The path is passed as a positional argument, never interpolated.
+    // A residual TOCTOU window between writeAsString and chmod exists on
+    // multi-user Linux; it is acceptable given the Android single-user sandbox
+    // and that this is best-effort logging only.
+    if (!_chmodDone && Platform.pathSeparator == '/') {
       _chmodDone = true;
       try {
-        await Process.run('sh', [
-          '-c',
-          r'chmod 600 "$1"',
-          'sh',
-          file.path,
-        ]);
+        await Process.run('chmod', ['600', file.path]);
       } catch (_) {}
     }
     await file.writeAsString(buffer.toString(), mode: FileMode.append);

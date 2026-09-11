@@ -6,11 +6,19 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
+
+bool get _isTest =>
+    Platform.environment['FLUTTER_TEST'] == 'true' ||
+    const bool.fromEnvironment('FLUTTER_TEST');
 
 /// Call [fn] off the main UI isolate when possible, falling back to in-isolate
 /// execution if the closure captures unsendable state.
 Future<T> runOffThread<T>(FutureOr<T> Function() fn) async {
+  if (_isTest) {
+    return await fn();
+  }
   try {
     return await Isolate.run(fn);
   } catch (_) {
@@ -22,6 +30,9 @@ Future<T> runOffThread<T>(FutureOr<T> Function() fn) async {
 /// Typed helper that passes [payload] explicitly to [parser] in an isolate,
 /// guaranteeing that no lexical instance scope is captured.
 Future<R> runOffThreadCompute<T, R>(R Function(T) parser, T payload) async {
+  if (_isTest) {
+    return parser(payload);
+  }
   try {
     return await Isolate.run(() => parser(payload));
   } catch (_) {

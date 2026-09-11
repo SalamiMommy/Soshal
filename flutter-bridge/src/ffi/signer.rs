@@ -215,14 +215,17 @@ pub fn keyring_available() -> bool {
             Ok(e) => {
                 let wrote = e.set_password("probe").is_ok();
                 if wrote {
-                    // Attempt deletion; on failure, log a warning but do not
-                    // fail the availability check — the orphaned entry is still
-                    // random and non-guessable.
+                    // Retry delete once with a short delay before logging the
+                    // orphan. Transient secret-service races can cause spurious
+                    // first-attempt failures on GNOME Keyring / KWallet.
                     if e.delete_credential().is_err() {
-                        eprintln!(
-                            "[signer] keyring probe cleanup failed for {probe_name}; \
-                            entry may be orphaned in the OS keychain"
-                        );
+                        std::thread::sleep(std::time::Duration::from_millis(200));
+                        if e.delete_credential().is_err() {
+                            eprintln!(
+                                "[signer] keyring probe cleanup failed for {probe_name}; \
+                                entry may be orphaned in the OS keychain"
+                            );
+                        }
                     }
                 }
                 wrote

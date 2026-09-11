@@ -273,7 +273,7 @@ unsafe fn drain_encoder(codec: *mut AMediaCodec, width: i32, height: i32) -> Vec
     out
 }
 
-/// Drain the decoder: YUV_420_888 → I420 → RGB → JPEG.
+/// Drain the decoder: raw YUV420 → RGB → JPEG.
 #[cfg(target_os = "android")]
 unsafe fn drain_decoder(codec: *mut AMediaCodec) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
@@ -296,12 +296,45 @@ unsafe fn drain_decoder(codec: *mut AMediaCodec) -> Vec<Vec<u8>> {
         if idx < 0 {
             break;
         }
-        let mut image: *mut AImage = std::ptr::null_mut();
-        if AMediaCodec_getOutputImage(codec, idx as usize, &mut image) == 0 && !image.is_null() {
-            if let Ok(jpeg) = image_to_jpeg(image) {
-                out.push(jpeg);
+        let mut size = 0usize;
+        let buf = AMediaCodec_getOutputBuffer(codec, idx as usize, &mut size);
+        if !buf.is_null() && info.size > 0 && info.offset >= 0 {
+            let fmt = AMediaCodec_getOutputFormat(codec);
+            let mut w = 0i32;
+            let mut h = 0i32;
+            let mut color_fmt = 0i32;
+            let mut stride = 0i32;
+            let mut slice_height = 0i32;
+            if !fmt.is_null() {
+                AMediaFormat_getInt32(fmt, c"width".as_ptr(), &mut w);
+                AMediaFormat_getInt32(fmt, c"height".as_ptr(), &mut h);
+                AMediaFormat_getInt32(fmt, c"color-format".as_ptr(), &mut color_fmt);
+                AMediaFormat_getInt32(fmt, c"stride".as_ptr(), &mut stride);
+                AMediaFormat_getInt32(fmt, c"slice-height".as_ptr(), &mut slice_height);
+                AMediaFormat_delete(fmt);
             }
-            AImage_release(image);
+            if stride <= 0 {
+                stride = w;
+            }
+            if slice_height <= 0 {
+                slice_height = h;
+            }
+            if w > 0 && h > 0 && (info.offset as usize).saturating_add(info.size as usize) <= size {
+                let payload = std::slice::from_raw_parts(
+                    buf.offset(info.offset as isize),
+                    info.size as usize,
+                );
+                if let Ok(jpeg) = yuv420_to_jpeg(
+                    payload,
+                    w as usize,
+                    h as usize,
+                    stride as usize,
+                    slice_height as usize,
+                    color_fmt,
+                ) {
+                    out.push(jpeg);
+                }
+            }
         }
         AMediaCodec_releaseOutputBuffer(codec, idx as usize, 0);
         if out.len() >= 8 {
@@ -311,80 +344,51 @@ unsafe fn drain_decoder(codec: *mut AMediaCodec) -> Vec<Vec<u8>> {
     out
 }
 
-/// AImage (YUV_420_888, planar with strides) → JPEG q60.
+/// YUV420 buffer (I420, NV12, or NV21) → JPEG q60.
 #[cfg(target_os = "android")]
-unsafe fn image_to_jpeg(image: *mut AImage) -> Result<Vec<u8>, String> {
-    let mut w = 0i32;
-    let mut h = 0i32;
-    if AImage_getWidth(image, &mut w) != 0 || AImage_getHeight(image, &mut h) != 0 {
-        return Err("image dims".to_string());
+unsafe fn yuv420_to_jpeg(
+    yuv: &[u8],
+    w: usize,
+    h: usize,
+    stride: usize,
+    slice_h: usize,
+    color_format: i32,
+) -> Result<Vec<u8>, String> {
+    if w == 0 || h == 0 || yuv.is_empty() {
+        return Err("empty dims or buffer".to_string());
     }
-    if w % 2 != 0 || h % 2 != 0 || w <= 0 || h <= 0 {
-        return Err("bad dims".to_string());
-    }
-    const MAX_DIM: i32 = 7680;
-    const MAX_PIXELS: i64 = 33_177_600;
-    if w > MAX_DIM || h > MAX_DIM || (w as i64) * (h as i64) > MAX_PIXELS {
+    const MAX_DIM: usize = 7680;
+    const MAX_PIXELS: usize = 33_177_600;
+    if w > MAX_DIM || h > MAX_DIM || w * h > MAX_PIXELS {
         return Err("dims too large".to_string());
-    }
-    let mut planes = 0i32;
-    if AImage_getNumberOfPlanes(image, &mut planes) != 0 || planes < 3 {
-        return Err("no planes".to_string());
-    }
-    let mut y = std::ptr::null_mut();
-    let mut y_len = 0i32;
-    let mut y_stride = 0i32;
-    let mut y_ps = 0i32;
-    AImage_getPlaneData(image, 0, &mut y, &mut y_len);
-    AImage_getPlaneRowStride(image, 0, &mut y_stride);
-    AImage_getPlanePixelStride(image, 0, &mut y_ps);
-    let mut u = std::ptr::null_mut();
-    let mut u_len = 0i32;
-    let mut u_stride = 0i32;
-    let mut u_ps = 0i32;
-    AImage_getPlaneData(image, 1, &mut u, &mut u_len);
-    AImage_getPlaneRowStride(image, 1, &mut u_stride);
-    AImage_getPlanePixelStride(image, 1, &mut u_ps);
-    let mut v = std::ptr::null_mut();
-    let mut v_len = 0i32;
-    let mut v_stride = 0i32;
-    let mut v_ps = 0i32;
-    AImage_getPlaneData(image, 2, &mut v, &mut v_len);
-    AImage_getPlaneRowStride(image, 2, &mut v_stride);
-    AImage_getPlanePixelStride(image, 2, &mut v_ps);
-    if y.is_null()
-        || u.is_null()
-        || v.is_null()
-        || y_ps <= 0
-        || u_ps <= 0
-        || v_ps <= 0
-        || y_stride <= 0
-        || u_stride <= 0
-        || v_stride <= 0
-    {
-        return Err("plane data".to_string());
-    }
-    if y_len <= 0 || u_len <= 0 || v_len <= 0 {
-        return Err("plane lengths invalid".to_string());
     }
 
     let mut rgb = image::RgbImage::new(w as u32, h as u32);
-    let (y_b, u_b, v_b) = (
-        std::slice::from_raw_parts(y, y_len as usize),
-        std::slice::from_raw_parts(u, u_len as usize),
-        std::slice::from_raw_parts(v, v_len as usize),
-    );
+    let y_plane_size = stride * slice_h;
+    let is_semi_planar = color_format != 19; // 19 is COLOR_FormatYUV420Planar (I420)
     for row in 0..h {
         for col in 0..w {
-            let y_idx = (row as i64) * (y_stride as i64) + (col as i64) * (y_ps as i64);
-            let yv = *y_b.get(y_idx as usize).unwrap_or(&16) as i32;
+            let y_idx = row * stride + col;
+            let yv = *yuv.get(y_idx).unwrap_or(&16) as i32;
             let uv_row = row / 2;
             let uv_col = col / 2;
-            let uv_idx = (uv_row as i64) * (u_stride as i64) + (uv_col as i64) * (u_ps as i64);
-            let uv = *u_b.get(uv_idx as usize).unwrap_or(&128) as i32;
-            let vv = *v_b
-                .get((uv_row as i64 * (v_stride as i64) + (uv_col as i64) * (v_ps as i64)) as usize)
-                .unwrap_or(&128) as i32;
+            let (uv, vv) = if is_semi_planar {
+                let uv_idx = y_plane_size + uv_row * stride + uv_col * 2;
+                let u = *yuv.get(uv_idx).unwrap_or(&128) as i32;
+                let v = *yuv.get(uv_idx + 1).unwrap_or(&128) as i32;
+                if color_format == 21 {
+                    (v, u)
+                } else {
+                    (u, v)
+                }
+            } else {
+                let uv_stride = (stride + 1) / 2;
+                let u_idx = y_plane_size + uv_row * uv_stride + uv_col;
+                let v_idx = y_plane_size + (y_plane_size / 4) + uv_row * uv_stride + uv_col;
+                let u = *yuv.get(u_idx).unwrap_or(&128) as i32;
+                let v = *yuv.get(v_idx).unwrap_or(&128) as i32;
+                (u, v)
+            };
             let c = yv - 16;
             let d = uv - 128;
             let e = vv - 128;

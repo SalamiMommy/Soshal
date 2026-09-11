@@ -94,13 +94,7 @@ extern "C" {
         idx: usize,
         render: u8, // C _Bool
     ) -> mediastatus_t;
-    pub fn AMediaCodec_getOutputImage(
-        codec: *mut AMediaCodec,
-        idx: usize,
-        image: *mut *mut AImage,
-    ) -> mediastatus_t;
     pub fn AMediaCodec_getOutputFormat(codec: *mut AMediaCodec) -> *mut AMediaFormat;
-    pub fn AMediaCodec_getInputFormat(codec: *mut AMediaCodec) -> *mut AMediaFormat;
 
     pub fn AMediaFormat_new() -> *mut AMediaFormat;
     pub fn AMediaFormat_delete(format: *mut AMediaFormat);
@@ -115,32 +109,11 @@ extern "C" {
         key: *const c_char,
         out: *mut i32,
     ) -> bool;
-
-    pub fn AImage_release(image: *mut AImage);
-    pub fn AImage_getWidth(image: *const AImage, width: *mut i32) -> mediastatus_t;
-    pub fn AImage_getHeight(image: *const AImage, height: *mut i32) -> mediastatus_t;
-    pub fn AImage_getNumberOfPlanes(image: *const AImage, num_planes: *mut i32) -> mediastatus_t;
-    pub fn AImage_getPlaneData(
-        image: *const AImage,
-        plane_idx: i32,
-        data: *mut *mut u8,
-        data_length: *mut i32,
-    ) -> mediastatus_t;
-    pub fn AImage_getPlaneRowStride(
-        image: *const AImage,
-        plane_idx: i32,
-        row_stride: *mut i32,
-    ) -> mediastatus_t;
-    pub fn AImage_getPlanePixelStride(
-        image: *const AImage,
-        plane_idx: i32,
-        pixel_stride: *mut i32,
-    ) -> mediastatus_t;
 }
 
 #[link(name = "aaudio")]
 extern "C" {
-    pub fn AAudioStreamBuilder_create(builder: *mut *mut AAudioStreamBuilder) -> aaudio_result_t;
+    pub fn AAudio_createStreamBuilder(builder: *mut *mut AAudioStreamBuilder) -> aaudio_result_t;
     pub fn AAudioStreamBuilder_delete(builder: *mut AAudioStreamBuilder);
     pub fn AAudioStreamBuilder_setDirection(builder: *mut AAudioStreamBuilder, direction: i32);
     pub fn AAudioStreamBuilder_setFormat(builder: *mut AAudioStreamBuilder, format: i32);
@@ -149,7 +122,6 @@ extern "C" {
         builder: *mut AAudioStreamBuilder,
         channel_count: i32,
     );
-    pub fn AAudioStreamBuilder_setInputPreset(builder: *mut AAudioStreamBuilder, preset: i32);
     pub fn AAudioStreamBuilder_setPerformanceMode(builder: *mut AAudioStreamBuilder, mode: i32);
     pub fn AAudioStreamBuilder_setBufferCapacityInFrames(
         builder: *mut AAudioStreamBuilder,

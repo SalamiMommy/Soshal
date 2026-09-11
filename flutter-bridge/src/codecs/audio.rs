@@ -93,7 +93,7 @@ pub fn init_encode() -> bool {
 
             // AAudio input stream.
             let mut builder = std::ptr::null_mut();
-            if AAudioStreamBuilder_create(&mut builder) != AAUDIO_OK {
+            if AAudio_createStreamBuilder(&mut builder) != AAUDIO_OK {
                 AMediaCodec_delete(codec);
                 return false;
             }
@@ -101,7 +101,7 @@ pub fn init_encode() -> bool {
             AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
             AAudioStreamBuilder_setSampleRate(builder, SAMPLE_RATE);
             AAudioStreamBuilder_setChannelCount(builder, 1);
-            AAudioStreamBuilder_setInputPreset(builder, AAUDIO_INPUT_PRESET_VOICE_RECOGNITION);
+            set_input_preset(builder, AAUDIO_INPUT_PRESET_VOICE_RECOGNITION);
             AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
             let mut mic = std::ptr::null_mut();
             let rc = AAudioStreamBuilder_openStream(builder, &mut mic);
@@ -152,11 +152,31 @@ pub fn drain() -> Vec<Vec<u8>> {
     out
 }
 
-/// Set up AAC decoder + AAudio output. Safe to call once per viewer session.
+#[cfg(target_os = "android")]
+unsafe fn set_input_preset(builder: *mut AAudioStreamBuilder, preset: i32) {
+    type FnType = unsafe extern "C" fn(*mut AAudioStreamBuilder, i32);
+    static FN: std::sync::OnceLock<Option<FnType>> = std::sync::OnceLock::new();
+    let f = FN.get_or_init(|| {
+        let handle = libc::dlopen(c"libaaudio.so".as_ptr(), libc::RTLD_NOW);
+        if handle.is_null() {
+            return None;
+        }
+        let sym = libc::dlsym(handle, c"AAudioStreamBuilder_setInputPreset".as_ptr());
+        if sym.is_null() {
+            return None;
+        }
+        Some(std::mem::transmute(sym))
+    });
+    if let Some(f) = f {
+        f(builder, preset);
+    }
+}
+
+/// Configure AAC-LC decoder (payload in → PCM frames) + AAudio output stream.
 pub fn init_decode() -> bool {
     #[cfg(target_os = "android")]
     {
-        if !super::sdk_gate() {
+        if !is_supported() {
             return false;
         }
         let mut s = audio_state();
@@ -185,7 +205,7 @@ pub fn init_decode() -> bool {
             }
 
             let mut builder = std::ptr::null_mut();
-            if AAudioStreamBuilder_create(&mut builder) != AAUDIO_OK {
+            if AAudio_createStreamBuilder(&mut builder) != AAUDIO_OK {
                 AMediaCodec_delete(codec);
                 return false;
             }

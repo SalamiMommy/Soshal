@@ -204,7 +204,9 @@ bundle_daemons() {
        [[ $(stat -c%s "$DAEMONS_CACHE/i2pd/$bin") -gt 100000 ]]; then
       mkdir -p "$ASSETS_DIR/$abi"
       cp "$DAEMONS_CACHE/i2pd/$bin" "$ASSETS_DIR/$abi/i2pd"
-      echo "  i2pd: $abi binary bundled"
+      mkdir -p "$JNI_LIBS/$abi"
+      cp "$DAEMONS_CACHE/i2pd/$bin" "$JNI_LIBS/$abi/libi2pd.so"
+      echo "  i2pd: $abi binary bundled (assets + jniLibs)"
     else
       # Create stub if download failed (only reachable on non-arm64 ABIs;
       # the aarch64 build is verified separately below).
@@ -215,7 +217,9 @@ bundle_daemons() {
   if [[ -f "$DAEMONS_CACHE/freenet/freenet" ]] &&
      [[ $(stat -c%s "$DAEMONS_CACHE/freenet/freenet") -gt 100000 ]]; then
     cp "$DAEMONS_CACHE/freenet/freenet" "$ASSETS_DIR/freenet"
-    echo "  freenet: binary bundled"
+    mkdir -p "$JNI_LIBS/arm64-v8a"
+    cp "$DAEMONS_CACHE/freenet/freenet" "$JNI_LIBS/arm64-v8a/libfreenet.so"
+    echo "  freenet: binary bundled (assets + jniLibs)"
   else
     # Create stub if no binary available
     create_stub "$ASSETS_DIR/freenet" "Freenet daemon: no official Android binary - not bundled in APK"
@@ -223,7 +227,7 @@ bundle_daemons() {
 
   # rnsd needs no asset (Chaquopy Python, see ensure_reticulum).
 
-  echo "  daemons: bundled to assets/daemons/"
+  echo "  daemons: bundled to assets/daemons/ and jniLibs/"
 }
 
 # audiopus_sys has no Android cross-build support of its own: its build.rs

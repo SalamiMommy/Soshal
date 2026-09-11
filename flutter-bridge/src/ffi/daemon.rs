@@ -119,15 +119,48 @@ pub fn daemon_extract_daemons() -> Result<bool, String> {
     fs::create_dir_all(&dir).map_err(super::util::to_err)?;
     let mut any = false;
     for name in DAEMONS {
+        let target = dir.join(name);
+        // If already available in nativeLibraryDir (Android 10+ SELinux execution path),
+        // skip extracting to app_data_file.
+        #[cfg(target_os = "android")]
+        if let Ok(lib_dir) = crate::platform::native_library_dir() {
+            let lib_p = std::path::Path::new(&lib_dir).join(format!("lib{name}.so"));
+            if lib_p.is_file() && lib_p.metadata().map(|m| m.len() > 100_000).unwrap_or(false) {
+                any = true;
+                continue;
+            }
+        }
+        // If the binary is already extracted and non-empty, skip re-extracting
+        // on every app startup to avoid ETXTBSY if it's currently running,
+        // and eliminate UI frame drops during launch.
+        if target.is_file() {
+            if let Ok(meta) = target.metadata() {
+                if meta.len() > 100_000 || (*name == *"rnsd" && meta.len() > 0) {
+                    any = true;
+                    continue;
+                }
+            }
+        }
         let bytes = match crate::platform::read_asset(&asset_name(name)) {
             Ok(b) => b,
             Err(_) => continue,
         };
-        let target = dir.join(name);
-        write_file(&target, &bytes)?;
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o755))
-            .map_err(super::util::to_err)?;
+        // Write to a temporary file in the same directory first, set permissions,
+        // then atomically rename it over the target. On POSIX, renaming over an
+        // active executable never fails with ETXTBSY (unlike truncate/write).
+        let tmp_target = dir.join(format!(".{name}.tmp.{}", std::process::id()));
+        write_file(&tmp_target, &bytes)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&tmp_target, fs::Permissions::from_mode(0o755));
+        }
+        fs::rename(&tmp_target, &target).map_err(super::util::to_err)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
+        }
         any = true;
     }
     Ok(any)
@@ -146,6 +179,117 @@ fn asset_name(name: &'static str) -> String {
     format!("daemons/{name}")
 }
 
+/// Resolve a daemon executable: checks Android nativeLibraryDir, app's extracted daemons dir,
+/// AppImage bundle dir, release target dir (for dev builds), and system PATH.
+fn find_daemon_binary(name: &str) -> Option<std::path::PathBuf> {
+    // 1. Android nativeLibraryDir: lib<name>.so extracted from jniLibs by PackageManager.
+    // On Android 10+ (API 29+), SELinux restricts execve() on app_data_file (files/),
+    // but permits execution of apk_data_file in nativeLibraryDir.
+    #[cfg(target_os = "android")]
+    if let Ok(lib_dir) = crate::platform::native_library_dir() {
+        let p = std::path::Path::new(&lib_dir).join(format!("lib{name}.so"));
+        if p.is_file() && p.metadata().map(|m| m.len() > 100_000).unwrap_or(false) {
+            return Some(p);
+        }
+    }
+    // 2. Extracted binary in files/daemons/
+    if let Ok(dir) = daemons_dir() {
+        let p = dir.join(name);
+        if p.is_file() && p.metadata().map(|m| m.len() > 100_000).unwrap_or(false) {
+            return Some(p);
+        }
+    }
+    // 2. AppImage bundle daemons/
+    #[cfg(not(target_os = "android"))]
+    if let Some(bundle) = bundle_daemons_dir() {
+        let p = bundle.join(name);
+        if p.is_file() && p.metadata().map(|m| m.len() > 100_000).unwrap_or(false) {
+            return Some(p);
+        }
+    }
+    // 3. Dev build binary in target/release/
+    #[cfg(not(target_os = "android"))]
+    {
+        if let Ok(exe) = std::env::current_exe() {
+            let mut cur = exe.parent();
+            for _ in 0..5 {
+                if let Some(parent) = cur {
+                    let candidate = parent.join("target").join("release").join(name);
+                    if candidate.is_file()
+                        && candidate
+                            .metadata()
+                            .map(|m| m.len() > 100_000)
+                            .unwrap_or(false)
+                    {
+                        return Some(candidate);
+                    }
+                    cur = parent.parent();
+                } else {
+                    break;
+                }
+            }
+        }
+        let cwd_candidate = std::path::Path::new("target").join("release").join(name);
+        if cwd_candidate.is_file()
+            && cwd_candidate
+                .metadata()
+                .map(|m| m.len() > 100_000)
+                .unwrap_or(false)
+        {
+            return cwd_candidate.canonicalize().ok().or(Some(cwd_candidate));
+        }
+    }
+    // 4. System PATH
+    #[cfg(not(target_os = "android"))]
+    if let Some(paths) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&paths) {
+            let candidate = dir.join(name);
+            if candidate.is_file()
+                && candidate
+                    .metadata()
+                    .map(|m| m.len() > 100_000)
+                    .unwrap_or(false)
+            {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn is_daemon_port_open(name: &str) -> bool {
+    match name {
+        "i2pd" => port_open(I2PD_SAM_PORT),
+        "freenet" => port_open(FREENET_API_PORT),
+        "rnsd" => port_open(4242),
+        _ => false,
+    }
+}
+
+fn is_daemon_available(name: &str) -> bool {
+    if name == "rnsd" && cfg!(target_os = "android") {
+        return true;
+    }
+    if let Ok(dir) = daemons_dir() {
+        if dir.join(name).exists() {
+            return true;
+        }
+    }
+    find_daemon_binary(name).is_some() || is_daemon_port_open(name)
+}
+
+fn any_daemons_available() -> Result<bool, String> {
+    if daemon_are_daemons_available()? {
+        return Ok(true);
+    }
+    for name in DAEMONS {
+        if is_daemon_available(name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Absolute path to an extracted daemon binary (empty if missing).
 #[frb(sync, serialize)]
 pub fn daemon_get_daemon_path(daemon_name: String) -> Result<String, String> {
@@ -154,10 +298,12 @@ pub fn daemon_get_daemon_path(daemon_name: String) -> Result<String, String> {
     }
     let path = daemons_dir()?.join(&daemon_name);
     if path.exists() {
-        Ok(path.to_string_lossy().into_owned())
-    } else {
-        Ok(String::new())
+        return Ok(path.to_string_lossy().into_owned());
     }
+    if let Some(p) = find_daemon_binary(&daemon_name) {
+        return Ok(p.to_string_lossy().into_owned());
+    }
+    Ok(String::new())
 }
 
 /// Whether all extracted daemons are present. rnsd on Android ships inside
@@ -178,18 +324,13 @@ pub fn daemon_are_daemons_available() -> Result<bool, String> {
 /// asset presence — the daemon runs inside the app, not as a child process.
 #[frb(sync, serialize)]
 pub fn daemon_get_daemon_status() -> Result<String, String> {
-    let dir = daemons_dir()?;
     let mut map = serde_json::Map::new();
     for (key, name) in [
         ("i2pd", "i2pd"),
         ("freenet", "freenet"),
         ("reticulum", "rnsd"),
     ] {
-        let present = if name == "rnsd" && cfg!(target_os = "android") {
-            crate::platform::rnsd_running().unwrap_or(false)
-        } else {
-            dir.join(name).exists()
-        };
+        let present = is_daemon_available(name);
         map.insert(key.to_string(), serde_json::Value::Bool(present));
     }
     // Surface the in-process Chaquopy daemon's last-start error so the UI can
@@ -208,10 +349,11 @@ fn spawn(name: &'static str, mut cmd: Command, log_name: &str, data_dir: &std::p
         return true;
     }
     fs::create_dir_all(data_dir).ok();
+    let log_path = data_dir.join(log_name);
     let log = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(data_dir.join(log_name))
+        .open(&log_path)
         .ok();
     let stdout = match log.as_ref() {
         Some(f) => f.try_clone().map(Stdio::from).unwrap_or(Stdio::null()),
@@ -227,7 +369,13 @@ fn spawn(name: &'static str, mut cmd: Command, log_name: &str, data_dir: &std::p
             crate::ffi::util::lock(&CHILDREN).insert(name, child);
             true
         }
-        Err(_) => false,
+        Err(e) => {
+            eprintln!("spawn failed for {name}: {e}");
+            if let Some(mut f) = log {
+                let _ = writeln!(f, "spawn failed for {name}: {e}");
+            }
+            false
+        }
     }
 }
 
@@ -244,7 +392,7 @@ fn is_running(name: &'static str) -> bool {
 #[frb(sync, serialize)]
 pub fn daemon_start_daemons() -> Result<bool, String> {
     let extracted = daemon_extract_daemons()?;
-    if !extracted && !daemon_are_daemons_available()? {
+    if !extracted && !any_daemons_available()? {
         return Ok(false);
     }
     let ok = spawn_all()?;
@@ -277,7 +425,6 @@ fn is_real_binary(name: &str) -> bool {
 }
 
 fn spawn_all() -> Result<bool, String> {
-    let dir = daemons_dir()?;
     let files_dir = files_dir()?;
     let files = std::path::Path::new(&files_dir);
 
@@ -289,38 +436,67 @@ fn spawn_all() -> Result<bool, String> {
     // proxy services use their section names (`socksproxy`/`httpproxy`, not
     // `proxy`/`http`). `[http]` alone configures the control panel, not an
     // HTTP proxy on 4444.
+    let certs_line = if std::path::Path::new("/usr/share/i2pd/certificates").is_dir() {
+        "certsdir = /usr/share/i2pd/certificates\n".to_string()
+    } else if files.join("daemons").join("certificates").is_dir() {
+        format!(
+            "certsdir = {}\n",
+            files.join("daemons").join("certificates").display()
+        )
+    } else {
+        String::new()
+    };
     let conf = format!(
-        "log = file\ndaemon = false\nlogfile = {}\n[sam]\nenabled = true\nport = 7656\n[socksproxy]\nenabled = true\nport = 4447\n[httpproxy]\nenabled = true\nport = 4444\n",
+        "log = file\ndaemon = false\nlogfile = {}\n{certs_line}[sam]\nenabled = true\nport = 7656\n[socksproxy]\nenabled = true\nport = 4447\n[httpproxy]\nenabled = true\nport = 4444\n",
         i2pd_data.join("i2pd.log").display()
     );
     if write_file(&i2pd_conf, conf.as_bytes()).is_err() {
         return Err("failed to write i2pd.conf".to_string());
     }
-    let dir_i2pd = dir.clone();
+    let i2pd_data_clone = i2pd_data.clone();
+    let i2pd_conf_clone = i2pd_conf.clone();
     register_spawner("i2pd", move || {
         // Reuse an already-running i2pd (e.g. enabled systemd service) whose
         // SAM port is live; spawning our own would fail to bind 7656.
         if port_open(I2PD_SAM_PORT) {
             return SpawnOutcome::Running;
         }
-        let mut cmd = Command::new(dir_i2pd.join("i2pd"));
-        cmd.arg(format!("--datadir={}", i2pd_data.display()))
-            .arg(format!("--conf={}", i2pd_conf.display()));
-        match spawn("i2pd", cmd, "i2pd.stdout.log", &i2pd_data) {
+        let bin = match find_daemon_binary("i2pd") {
+            Some(b) => b,
+            None => return SpawnOutcome::Failed,
+        };
+        let mut cmd = Command::new(bin);
+        cmd.arg(format!("--datadir={}", i2pd_data_clone.display()))
+            .arg(format!("--conf={}", i2pd_conf_clone.display()));
+        match spawn("i2pd", cmd, "i2pd.stdout.log", &i2pd_data_clone) {
             true => SpawnOutcome::Spawned,
             false => SpawnOutcome::Failed,
         }
     });
 
     let freenet_data = files.join("freenet-data");
-    let dir_freenet = dir.clone();
+    let conf_dir = freenet_data.join("conf");
+    let data_dir = freenet_data.join("data");
+    let _ = fs::create_dir_all(&conf_dir);
+    let _ = fs::create_dir_all(&data_dir);
+    let conf_dir_clone = conf_dir.clone();
+    let data_dir_clone = data_dir.clone();
+    let freenet_data_clone = freenet_data.clone();
     register_spawner("freenet", move || {
         // Reuse the already-running local node (system/service instance bound
         // to 7509) instead of spawning a second that would fail to bind.
         if port_open(FREENET_API_PORT) {
             return SpawnOutcome::Running;
         }
-        let mut cmd = Command::new(dir_freenet.join("freenet"));
+        let bin = match find_daemon_binary("freenet") {
+            Some(b) => b,
+            None => return SpawnOutcome::Failed,
+        };
+        let _ = fs::create_dir_all(&conf_dir_clone);
+        let _ = fs::create_dir_all(&data_dir_clone);
+        let tmp_dir = freenet_data_clone.join("tmp");
+        let _ = fs::create_dir_all(&tmp_dir);
+        let mut cmd = Command::new(bin);
         // Android app processes have no $HOME/XDG dirs and no passwd entry for
         // the app UID, so freenet's default ProjectDirs resolution aborts the
         // node before it binds the WS API. Pin both dirs into freenet-data;
@@ -328,33 +504,31 @@ fn spawn_all() -> Result<bool, String> {
         // disabled: there is no supervisor on Android to act on freenet's
         // exit-42 self-update signal, so a release build would exit shortly
         // after detecting a newer version.
-        cmd.current_dir(&freenet_data)
+        // Additionally, std::env::temp_dir() defaults to /data/local/tmp on Android,
+        // which untrusted apps cannot write to. Provide app-writable tmp dir.
+        cmd.current_dir(&freenet_data_clone)
+            .env("TMPDIR", &tmp_dir)
+            .env("TMP", &tmp_dir)
+            .env("TEMP", &tmp_dir)
             .arg("network")
-            .arg(format!(
-                "--config-dir={}",
-                freenet_data.join("conf").display()
-            ))
-            .arg(format!(
-                "--data-dir={}",
-                freenet_data.join("data").display()
-            ))
+            .arg(format!("--config-dir={}", conf_dir_clone.display()))
+            .arg(format!("--data-dir={}", data_dir_clone.display()))
             .arg("--disable-auto-update");
-        match spawn("freenet", cmd, "freenet.log", &freenet_data) {
+        match spawn("freenet", cmd, "freenet.log", &freenet_data_clone) {
             true => SpawnOutcome::Spawned,
             false => SpawnOutcome::Failed,
         }
     });
 
     let rnsd_data = files.join("reticulum-data");
-    #[cfg_attr(target_os = "android", allow(unused_variables))]
-    let dir_rnsd = dir;
+    let rnsd_data_clone = rnsd_data.clone();
     register_spawner("rnsd", move || {
         #[cfg(target_os = "android")]
         {
             // rnsd has no Android binary — runs in the Chaquopy Python
             // runtime inside the app process (RnsdRunner).
-            let _ = std::fs::create_dir_all(&rnsd_data);
-            let dir_str = rnsd_data.to_string_lossy().into_owned();
+            let _ = std::fs::create_dir_all(&rnsd_data_clone);
+            let dir_str = rnsd_data_clone.to_string_lossy().into_owned();
             match crate::platform::rnsd_start(&dir_str) {
                 Ok(true) => SpawnOutcome::Spawned,
                 Ok(false) => SpawnOutcome::Failed,
@@ -363,16 +537,25 @@ fn spawn_all() -> Result<bool, String> {
         }
         #[cfg(not(target_os = "android"))]
         {
-            let mut cmd = Command::new(dir_rnsd.join("rnsd"));
-            cmd.current_dir(&rnsd_data);
-            match spawn("rnsd", cmd, "rnsd.log", &rnsd_data) {
+            if port_open(4242) {
+                return SpawnOutcome::Running;
+            }
+            let bin = match find_daemon_binary("rnsd") {
+                Some(b) => b,
+                None => return SpawnOutcome::Failed,
+            };
+            let _ = std::fs::create_dir_all(&rnsd_data_clone);
+            let mut cmd = Command::new(bin);
+            cmd.arg("--config").arg(&rnsd_data_clone).arg("-s");
+            cmd.current_dir(&rnsd_data_clone);
+            match spawn("rnsd", cmd, "rnsd.log", &rnsd_data_clone) {
                 true => SpawnOutcome::Spawned,
                 false => SpawnOutcome::Failed,
             }
         }
     });
 
-    let mut all_ok = true;
+    let mut any_ok = false;
     for name in DAEMONS {
         let outcome = {
             let spawners = crate::ffi::util::lock(&SPAWNERS);
@@ -381,11 +564,11 @@ fn spawn_all() -> Result<bool, String> {
                 .map(|s| s())
                 .unwrap_or(SpawnOutcome::Failed)
         };
-        if outcome == SpawnOutcome::Failed {
-            all_ok = false;
+        if outcome == SpawnOutcome::Spawned || outcome == SpawnOutcome::Running {
+            any_ok = true;
         }
     }
-    Ok(all_ok)
+    Ok(any_ok)
 }
 
 fn register_spawner<F>(name: &'static str, f: F)
@@ -412,9 +595,12 @@ fn watchdog_loop() {
             // child — check its own liveness so the watchdog doesn't respawn
             // a healthy daemon or stack threads against a failed one.
             let live = is_running(name)
+                || (name == "i2pd" && port_open(I2PD_SAM_PORT))
+                || (name == "freenet" && port_open(FREENET_API_PORT))
                 || (name == "rnsd"
-                    && cfg!(target_os = "android")
-                    && crate::platform::rnsd_running().unwrap_or(false));
+                    && ((cfg!(target_os = "android")
+                        && crate::platform::rnsd_running().unwrap_or(false))
+                        || (!cfg!(target_os = "android") && port_open(4242))));
             if live || !is_real_binary(name) {
                 continue;
             }
@@ -444,7 +630,14 @@ fn watchdog_loop() {
                     // so verify it actually came up before counting the
                     // respawn as a win.
                     std::thread::sleep(std::time::Duration::from_secs(5));
-                    if is_running(name) || !is_real_binary(name) {
+                    let now_live = is_running(name)
+                        || (name == "i2pd" && port_open(I2PD_SAM_PORT))
+                        || (name == "freenet" && port_open(FREENET_API_PORT))
+                        || (name == "rnsd"
+                            && ((cfg!(target_os = "android")
+                                && crate::platform::rnsd_running().unwrap_or(false))
+                                || (!cfg!(target_os = "android") && port_open(4242))));
+                    if now_live || !is_real_binary(name) {
                         crate::ffi::util::lock(&RESPAWN_FAILURES).remove(name);
                         eprintln!("daemon watchdog: respawned {name}");
                     } else {
@@ -513,16 +706,16 @@ pub fn daemon_request_battery_exemption() -> Result<bool, String> {
     }
 }
 
-/// Liveness of the spawned i2pd process.
+/// Liveness of the spawned i2pd process or active SAM port.
 #[frb(sync, serialize)]
 pub fn daemon_is_i2pd_running() -> Result<bool, String> {
-    Ok(crate::ffi::util::lock(&CHILDREN)
-        .get_mut("i2pd")
-        .map(|c| c.try_wait().ok().map(|s| s.is_none()).unwrap_or(false))
-        .unwrap_or(false))
+    if is_running("i2pd") || port_open(I2PD_SAM_PORT) {
+        return Ok(true);
+    }
+    Ok(false)
 }
 
-/// Liveness of the spawned rnsd process (Chaquopy thread on Android).
+/// Liveness of the spawned rnsd process (Chaquopy thread on Android) or active 4242 port.
 #[frb(sync, serialize)]
 pub fn daemon_is_rnsd_running() -> Result<bool, String> {
     #[cfg(target_os = "android")]
@@ -531,10 +724,10 @@ pub fn daemon_is_rnsd_running() -> Result<bool, String> {
     }
     #[cfg(not(target_os = "android"))]
     {
-        Ok(crate::ffi::util::lock(&CHILDREN)
-            .get_mut("rnsd")
-            .map(|c| c.try_wait().ok().map(|s| s.is_none()).unwrap_or(false))
-            .unwrap_or(false))
+        if is_running("rnsd") || port_open(4242) {
+            return Ok(true);
+        }
+        Ok(false)
     }
 }
 
@@ -600,5 +793,30 @@ mod tests {
         assert!(!is_real_binary("i2pd"));
         assert!(!is_real_binary("freenet"));
         assert!(!is_real_binary("rnsd"));
+    }
+
+    #[test]
+    fn test_find_daemon_binary_finds_built_rnsd() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _path = super::super::db::tmp_db("daemon-find", "daemon");
+        if std::path::Path::new("target/release/rnsd").exists() {
+            let bin = find_daemon_binary("rnsd");
+            assert!(bin.is_some());
+            assert!(bin.unwrap().exists());
+        }
+    }
+
+    #[test]
+    fn test_freenet_conf_dirs_created() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _path = super::super::db::tmp_db("daemon-freenet-dirs", "daemon");
+        let files = files_dir().unwrap();
+        let freenet_data = std::path::Path::new(&files).join("freenet-data");
+        let conf_dir = freenet_data.join("conf");
+        let data_dir = freenet_data.join("data");
+        fs::create_dir_all(&conf_dir).unwrap();
+        fs::create_dir_all(&data_dir).unwrap();
+        assert!(conf_dir.exists());
+        assert!(data_dir.exists());
     }
 }
