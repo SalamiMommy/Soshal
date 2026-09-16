@@ -257,8 +257,10 @@ pub async fn music_comments(
 /// Returns true when the audio blob is already in the local chunk store
 /// (host-ready). Materialize remote bytes into the CAS before saving if
 /// re-hosting is intended.
+/// Save a track into `saved_content` for the active account.
 #[frb(sync, serialize)]
 pub fn music_save(track_json: String) -> Result<bool, String> {
+    let _my_pk = super::signer::signer_pubkey()?;
     let t: serde_json::Value =
         serde_json::from_str(&track_json).map_err(|e| format!("parse track json: {e}"))?;
     let id = t["id"].as_str().unwrap_or_default().to_string();
@@ -298,6 +300,7 @@ pub fn music_save(track_json: String) -> Result<bool, String> {
 /// Remove a saved track (kind-31022) from `saved_content`.
 #[frb(sync, serialize)]
 pub fn music_unsave(track_id: String) -> Result<bool, String> {
+    let _my_pk = super::signer::signer_pubkey()?;
     super::db::with_db_result(|db| SavedContentRepo::new(db).delete(31022, &track_id))?;
     Ok(true)
 }
@@ -355,6 +358,21 @@ pub fn music_saved() -> Result<String, String> {
     serde_json::to_string(&out).map_err(|e| format!("serialize saved tracks: {e}"))
 }
 
+fn require_playlist_owner(
+    db: &soshal_db_core::Database,
+    playlist_id: &str,
+) -> Result<String, String> {
+    let my_pk = super::signer::signer_pubkey()?;
+    let playlist = MusicloudPlaylistRepo::new(db)
+        .get(playlist_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "playlist not found".to_string())?;
+    if playlist.pubkey != my_pk {
+        return Err("only playlist owner can modify playlist".to_string());
+    }
+    Ok(my_pk)
+}
+
 /// Create a playlist for the active account. Returns the new playlist id.
 #[frb(sync, serialize)]
 pub fn music_playlist_create(title: String, is_private: bool) -> Result<String, String> {
@@ -362,8 +380,8 @@ pub fn music_playlist_create(title: String, is_private: bool) -> Result<String, 
     if title.is_empty() {
         return Err("playlist title must not be empty".into());
     }
+    let pubkey = super::signer::signer_pubkey()?;
     let id = super::util::uuid_like();
-    let pubkey = super::db::active_pubkey().unwrap_or_default();
     super::db::with_db_result(|db| {
         MusicloudPlaylistRepo::new(db).create(&id, &pubkey, &title, is_private)
     })?;
@@ -387,7 +405,7 @@ struct PlaylistSummaryDto<'a> {
 /// createdAt, trackCount. Newest first.
 #[frb(sync, serialize)]
 pub fn music_playlist_list() -> Result<String, String> {
-    let pubkey = super::db::active_pubkey().unwrap_or_default();
+    let pubkey = super::signer::signer_pubkey()?;
     let rows = super::db::with_db_result(|db| MusicloudPlaylistRepo::new(db).list(&pubkey, 200))?;
     let mut out = Vec::with_capacity(rows.len());
     for p in &rows {
@@ -410,14 +428,24 @@ pub fn music_playlist_rename(playlist_id: String, title: String) -> Result<bool,
     if title.is_empty() {
         return Err("playlist title must not be empty".into());
     }
-    super::db::with_db_result(|db| MusicloudPlaylistRepo::new(db).rename(&playlist_id, &title))?;
+    super::db::with_db_string(|db| {
+        require_playlist_owner(db, &playlist_id)?;
+        MusicloudPlaylistRepo::new(db)
+            .rename(&playlist_id, &title)
+            .map_err(|e| e.to_string())
+    })?;
     Ok(true)
 }
 
 /// Delete a playlist owned by the active account and its track rows.
 #[frb(sync, serialize)]
 pub fn music_playlist_delete(playlist_id: String) -> Result<bool, String> {
-    super::db::with_db_result(|db| MusicloudPlaylistRepo::new(db).delete(&playlist_id))?;
+    super::db::with_db_string(|db| {
+        require_playlist_owner(db, &playlist_id)?;
+        MusicloudPlaylistRepo::new(db)
+            .delete(&playlist_id)
+            .map_err(|e| e.to_string())
+    })?;
     Ok(true)
 }
 
@@ -432,23 +460,26 @@ pub fn music_playlist_add_track(playlist_id: String, track_json: String) -> Resu
         return Err("track id missing".into());
     }
     let hashtags = t["hashtags"].as_array().cloned().unwrap_or_default();
-    super::db::with_db_result(|db| {
-        MusicloudPlaylistRepo::new(db).add_track(&PlaylistTrackRow {
-            playlist_id: playlist_id.clone(),
-            track_id: track_id.clone(),
-            pubkey: t["pubkey"].as_str().unwrap_or_default().to_string(),
-            d: t["d"].as_str().unwrap_or_default().to_string(),
-            title: t["title"].as_str().unwrap_or_default().to_string(),
-            thumbnail: t["thumbnail"].as_str().unwrap_or_default().to_string(),
-            audio_url: t["audioUrl"].as_str().unwrap_or_default().to_string(),
-            blob_hash: t["blobHash"].as_str().unwrap_or_default().to_string(),
-            media_size: t["mediaSize"].as_i64().unwrap_or(0),
-            audience: t["audience"].as_str().unwrap_or("public").to_string(),
-            hashtags: serde_json::to_string(&hashtags).unwrap_or_else(|_| "[]".to_string()),
-            created_at: t["createdAt"].as_i64().unwrap_or(0),
-            position: 0,
-            added_at: soshal_common_core::format::now_secs(),
-        })
+    super::db::with_db_string(|db| {
+        require_playlist_owner(db, &playlist_id)?;
+        MusicloudPlaylistRepo::new(db)
+            .add_track(&PlaylistTrackRow {
+                playlist_id: playlist_id.clone(),
+                track_id: track_id.clone(),
+                pubkey: t["pubkey"].as_str().unwrap_or_default().to_string(),
+                d: t["d"].as_str().unwrap_or_default().to_string(),
+                title: t["title"].as_str().unwrap_or_default().to_string(),
+                thumbnail: t["thumbnail"].as_str().unwrap_or_default().to_string(),
+                audio_url: t["audioUrl"].as_str().unwrap_or_default().to_string(),
+                blob_hash: t["blobHash"].as_str().unwrap_or_default().to_string(),
+                media_size: t["mediaSize"].as_i64().unwrap_or(0),
+                audience: t["audience"].as_str().unwrap_or("public").to_string(),
+                hashtags: serde_json::to_string(&hashtags).unwrap_or_else(|_| "[]".to_string()),
+                created_at: t["createdAt"].as_i64().unwrap_or(0),
+                position: 0,
+                added_at: soshal_common_core::format::now_secs(),
+            })
+            .map_err(|e| e.to_string())
     })?;
     Ok(true)
 }
@@ -456,8 +487,11 @@ pub fn music_playlist_add_track(playlist_id: String, track_json: String) -> Resu
 /// Remove a track from a playlist.
 #[frb(sync, serialize)]
 pub fn music_playlist_remove_track(playlist_id: String, track_id: String) -> Result<bool, String> {
-    super::db::with_db_result(|db| {
-        MusicloudPlaylistRepo::new(db).remove_track(&playlist_id, &track_id)
+    super::db::with_db_string(|db| {
+        require_playlist_owner(db, &playlist_id)?;
+        MusicloudPlaylistRepo::new(db)
+            .remove_track(&playlist_id, &track_id)
+            .map_err(|e| e.to_string())
     })?;
     Ok(true)
 }
@@ -486,27 +520,37 @@ struct PlaylistTrackDto<'a> {
 /// title, thumbnail, hashtags, d, audience, createdAt).
 #[frb(sync, serialize)]
 pub fn music_playlist_tracks(playlist_id: String) -> Result<String, String> {
-    let rows =
-        super::db::with_db_result(|db| MusicloudPlaylistRepo::new(db).tracks(&playlist_id, 500))?;
-    let mut out = Vec::with_capacity(rows.len());
-    for r in &rows {
-        let hashtags: serde_json::Value =
-            serde_json::from_str(&r.hashtags).unwrap_or_else(|_| serde_json::json!([]));
-        out.push(PlaylistTrackDto {
-            id: &r.track_id,
-            pubkey: &r.pubkey,
-            audio_url: &r.audio_url,
-            blob_hash: &r.blob_hash,
-            media_size: r.media_size,
-            title: &r.title,
-            thumbnail: &r.thumbnail,
-            hashtags,
-            d: &r.d,
-            audience: &r.audience,
-            created_at: r.created_at,
-        });
-    }
-    serde_json::to_string(&out).map_err(|e| format!("serialize playlist tracks: {e}"))
+    let caller = super::signer::signer_pubkey().ok();
+    super::db::with_db_string(|db| {
+        let repo = MusicloudPlaylistRepo::new(db);
+        if let Some(p) = repo.get(&playlist_id).map_err(|e| e.to_string())? {
+            if p.is_private && caller.as_deref() != Some(p.pubkey.as_str()) {
+                return Err("playlist is private".into());
+            }
+        } else {
+            return Err("playlist not found".into());
+        }
+        let rows = repo.tracks(&playlist_id, 500).map_err(|e| e.to_string())?;
+        let mut out = Vec::with_capacity(rows.len());
+        for r in &rows {
+            let hashtags: serde_json::Value =
+                serde_json::from_str(&r.hashtags).unwrap_or_else(|_| serde_json::json!([]));
+            out.push(PlaylistTrackDto {
+                id: &r.track_id,
+                pubkey: &r.pubkey,
+                audio_url: &r.audio_url,
+                blob_hash: &r.blob_hash,
+                media_size: r.media_size,
+                title: &r.title,
+                thumbnail: &r.thumbnail,
+                hashtags,
+                d: &r.d,
+                audience: &r.audience,
+                created_at: r.created_at,
+            });
+        }
+        serde_json::to_string(&out).map_err(|e| format!("serialize playlist tracks: {e}"))
+    })
 }
 
 #[cfg(test)]
@@ -552,7 +596,11 @@ mod tests {
     #[test]
     fn save_unsave_saved_roundtrip() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let path = init_db("saved");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+
         let empty =
             serde_json::from_str::<Vec<serde_json::Value>>(&music_saved().unwrap()).unwrap();
         assert!(empty.is_empty());
@@ -567,13 +615,18 @@ mod tests {
         assert!(music_unsave("t1".to_string()).unwrap());
         let after: Vec<serde_json::Value> = serde_json::from_str(&music_saved().unwrap()).unwrap();
         assert!(after.is_empty());
+        super::super::signer::signer_lock().unwrap();
         cleanup(&path);
     }
 
     #[test]
     fn playlist_lifecycle() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let path = init_db("playlist");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+
         let pl_id = music_playlist_create("Road Trip".to_string(), true).unwrap();
         assert!(!pl_id.is_empty());
         assert!(music_playlist_create("  ".to_string(), true)
@@ -599,6 +652,7 @@ mod tests {
         let after: Vec<serde_json::Value> =
             serde_json::from_str(&music_playlist_list().unwrap()).unwrap();
         assert!(after.is_empty());
+        super::super::signer::signer_lock().unwrap();
         cleanup(&path);
     }
 }

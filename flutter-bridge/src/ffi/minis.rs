@@ -274,6 +274,7 @@ pub fn minis_wasm_rank_feed(
 /// re-hosting is intended.
 #[frb(sync, serialize)]
 pub fn minis_save(event_id: String) -> Result<bool, String> {
+    let _my_pk = super::signer::signer_pubkey()?;
     if event_id.is_empty() {
         return Err("event_id must not be empty".into());
     }
@@ -333,6 +334,7 @@ pub fn minis_save(event_id: String) -> Result<bool, String> {
 /// Remove a previously saved mini from `saved_content`.
 #[frb(sync, serialize)]
 pub fn minis_unsave(event_id: String) -> Result<bool, String> {
+    let _my_pk = super::signer::signer_pubkey()?;
     super::db::with_db_result(|db| SavedContentRepo::new(db).delete(31020, &event_id))?;
     Ok(true)
 }
@@ -422,6 +424,7 @@ mod tests {
     #[test]
     fn saved_roundtrip() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let path = format!(
             "{}/soshal_minis_{}_{}.db",
             std::env::temp_dir().to_string_lossy(),
@@ -432,6 +435,8 @@ mod tests {
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
         assert!(super::super::db::db_init(path.clone()).is_ok());
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         super::super::db::insert_test_user("pk");
         assert!(super::super::db::db_execute_raw_test(
             "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
@@ -455,6 +460,7 @@ mod tests {
         let after = minis_saved().unwrap();
         let rows: Vec<serde_json::Value> = serde_json::from_str(&after).unwrap_or_default();
         assert!(rows.is_empty());
+        super::super::signer::signer_lock().unwrap();
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));

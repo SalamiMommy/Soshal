@@ -49,6 +49,9 @@ impl Default for EbpfShaper {
     }
 }
 
+/// Maximum number of blocked IPs allowed in memory to prevent exhaustion.
+pub const MAX_BLOCKED_IPS: usize = 10_000;
+
 impl EbpfShaper {
     /// Create a new traffic shaper instance with requested mechanism tag.
     /// Kernel eBPF modes are NOT implemented — returns `Err` for them; only
@@ -68,23 +71,35 @@ impl EbpfShaper {
         }
     }
 
-    /// Block a peer IP (user-space blocklist; no kernel attach)
+    /// Block a peer IP (user-space blocklist; no kernel attach).
+    /// Validates IP address format and bounds capacity to MAX_BLOCKED_IPS.
     pub fn block_ip(&self, ip: &str) -> bool {
+        let trimmed = ip.trim();
+        if trimmed.parse::<std::net::IpAddr>().is_err() {
+            return false;
+        }
         let mut ips = self.blocked_ips.lock().unwrap_or_else(|e| e.into_inner());
-        ips.insert(ip.to_string())
+        if ips.len() >= MAX_BLOCKED_IPS && !ips.contains(trimmed) {
+            return false;
+        }
+        ips.insert(trimmed.to_string())
     }
 
     /// Unblock a peer IP address
     pub fn unblock_ip(&self, ip: &str) -> bool {
+        let trimmed = ip.trim();
+        if trimmed.parse::<std::net::IpAddr>().is_err() {
+            return false;
+        }
         let mut ips = self.blocked_ips.lock().unwrap_or_else(|e| e.into_inner());
-        ips.remove(ip)
+        ips.remove(trimmed)
     }
 
     /// User-space packet admission check against blocklist.
     /// Returns `true` if allowed, `false` if dropped (in-process, pre-buffer).
     pub fn inspect_packet(&self, src_ip: &str, _payload_len: usize) -> bool {
         let ips = self.blocked_ips.lock().unwrap_or_else(|e| e.into_inner());
-        if ips.contains(src_ip) {
+        if ips.contains(src_ip.trim()) {
             self.dropped_packets.fetch_add(1, Ordering::SeqCst);
             false
         } else {
@@ -184,5 +199,37 @@ mod tests {
             EbpfShaper::default().stats().mode,
             EbpfMode::UserSpaceFallback
         );
+    }
+
+    #[test]
+    fn test_ebpf_ip_validation() {
+        let shaper = EbpfShaper::new(EbpfMode::UserSpaceFallback).unwrap();
+        assert!(!shaper.block_ip("not-an-ip"));
+        assert!(!shaper.block_ip("999.999.999.999"));
+        assert!(!shaper.block_ip(""));
+        assert!(!shaper.unblock_ip("invalid"));
+
+        // Valid IPv4 and IPv6
+        assert!(shaper.block_ip("192.168.1.1"));
+        assert!(shaper.block_ip("2001:db8::1"));
+        assert_eq!(shaper.stats().blocked_peers_count, 2);
+    }
+
+    #[test]
+    fn test_ebpf_capacity_limit() {
+        let shaper = EbpfShaper::new(EbpfMode::UserSpaceFallback).unwrap();
+        {
+            let mut ips = shaper.blocked_ips.lock().unwrap();
+            for i in 0..MAX_BLOCKED_IPS {
+                ips.insert(format!("10.0.{}.{}", i / 256, i % 256));
+            }
+        }
+        // At capacity: adding new IP fails
+        assert!(!shaper.block_ip("192.168.1.100"));
+        assert_eq!(shaper.stats().blocked_peers_count, MAX_BLOCKED_IPS);
+
+        // Re-adding an existing IP returns false because already in set, but doesn't increase count
+        assert!(!shaper.block_ip("10.0.0.0"));
+        assert_eq!(shaper.stats().blocked_peers_count, MAX_BLOCKED_IPS);
     }
 }

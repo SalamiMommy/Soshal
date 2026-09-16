@@ -107,8 +107,9 @@ pub fn permissions_location_enabled() -> bool {
 pub async fn permissions_location_portal_fix() -> Result<Option<LocationFixDto>, String> {
     #[cfg(target_os = "linux")]
     {
-        let fix = ashpd_location().await?;
-        Ok(fix)
+        tokio::time::timeout(std::time::Duration::from_secs(10), ashpd_location())
+            .await
+            .map_err(|_| "location portal request timed out after 10 seconds".to_string())?
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -171,5 +172,11 @@ mod tests {
         assert!(!permissions_location_granted());
         assert!(!permissions_location_request());
         assert!(!permissions_location_enabled());
+    }
+
+    #[test]
+    fn platform_current_returns_known_string() {
+        let platform = permissions_platform_current();
+        assert!(["android", "linux", "other"].contains(&platform.as_str()));
     }
 }

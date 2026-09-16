@@ -443,6 +443,9 @@ class ShellService extends ChangeNotifier {
         if (now - created > 60) continue;
         final callId = v['call_id'] as String? ?? '';
         if (callId.isEmpty || _seenCalls.contains(callId)) continue;
+        if (_seenCalls.length >= 200) {
+          _seenCalls.removeAt(0);
+        }
         _seenCalls.add(callId);
         _incomingCall = v;
         notifyListeners();
@@ -451,6 +454,15 @@ class ShellService extends ChangeNotifier {
     } catch (e) {
       debugPrint('poll call signals: $e');
     }
+  }
+
+  /// Reset account-specific shell state (incoming calls, active audio)
+  /// on account switch or logout.
+  void resetForAccountSwitch() {
+    _incomingCall = null;
+    _seenCalls.clear();
+    stopAudio();
+    notifyListeners();
   }
 
   void acceptCall() {

@@ -26,6 +26,9 @@ static FRAME_BUFFERS: LazyLock<Mutex<HashMap<usize, FrameBuffer>>> =
 /// leaked allocation and is reclaimed on the next allocate call.
 const FRAME_BUFFER_TTL: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// Maximum concurrent active frame buffers before oldest unreleased buffer is evicted.
+const MAX_ACTIVE_FRAME_BUFFERS: usize = 16;
+
 /// Frame metadata for decoded video/media buffer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImpellerFrameBufferInfo {
@@ -42,6 +45,9 @@ pub fn raster_allocate_frame_buffer(
     width: u32,
     height: u32,
 ) -> Result<ImpellerFrameBufferInfo, String> {
+    if width == 0 || height == 0 {
+        return Err("raster: width and height must be greater than zero".to_string());
+    }
     let bytes_per_pixel = 4u32;
     let stride = width
         .checked_mul(bytes_per_pixel)
@@ -72,6 +78,12 @@ pub fn raster_allocate_frame_buffer(
         .collect();
     for ptr in stale {
         registry.remove(&ptr);
+    }
+
+    if registry.len() >= MAX_ACTIVE_FRAME_BUFFERS {
+        if let Some((&oldest_ptr, _)) = registry.iter().min_by_key(|(_, (_, created))| *created) {
+            registry.remove(&oldest_ptr);
+        }
     }
 
     // Tracked allocation: reclaimed via raster_release_frame_buffer(ptr_addr).
@@ -137,5 +149,23 @@ mod tests {
         assert!(raster_release_frame_buffer(info.buffer_ptr_addr).unwrap());
         // double release -> Err, not UB
         assert!(raster_release_frame_buffer(info.buffer_ptr_addr).is_err());
+    }
+
+    #[test]
+    fn test_raster_allocate_zero_dimensions_rejected() {
+        assert!(raster_allocate_frame_buffer(0, 100).is_err());
+        assert!(raster_allocate_frame_buffer(100, 0).is_err());
+        assert!(raster_allocate_frame_buffer(0, 0).is_err());
+    }
+
+    #[test]
+    fn test_raster_allocate_max_capacity_evicts_oldest() {
+        // Allocate up to MAX_ACTIVE_FRAME_BUFFERS + 1
+        let first = raster_allocate_frame_buffer(10, 10).unwrap();
+        for _ in 0..MAX_ACTIVE_FRAME_BUFFERS {
+            let _ = raster_allocate_frame_buffer(10, 10).unwrap();
+        }
+        // First buffer should have been evicted
+        assert!(raster_release_frame_buffer(first.buffer_ptr_addr).is_err());
     }
 }

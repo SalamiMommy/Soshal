@@ -141,7 +141,7 @@ fn validated_session_path(db_path: &str) -> Result<std::path::PathBuf, String> {
 /// This adds additional runtime checks to prevent time-of-check-time-of-use
 /// race conditions where the filesystem state might change between validation
 /// and actual file operations.
-fn validated_session_path_hardened(db_path: &str) -> Result<std::path::PathBuf, String> {
+pub(crate) fn validated_session_path_hardened(db_path: &str) -> Result<std::path::PathBuf, String> {
     let session_path = validated_session_path(db_path)?;
 
     // Additional runtime check before file operations
@@ -361,6 +361,30 @@ fn write_session_file(
         }
     }
     Err("Failed to write session".to_string())
+}
+
+/// Load and validate session data directly from disk.
+/// Enforces path hardening, HMAC signature check, and expiration check.
+pub(crate) fn load_session_from_disk(db_path: &str) -> Result<SessionData, String> {
+    let session_path = validated_session_path_hardened(db_path)?;
+    if !session_path.exists() {
+        return Err("Session file not found".to_string());
+    }
+    let content = std::fs::read_to_string(&session_path)
+        .map_err(|e| format!("Failed to read session file: {e}"))?;
+    let session = serde_json::from_str::<SessionData>(&content)
+        .map_err(|e| format!("Failed to parse session: {e}"))?;
+    let session_key = load_or_create_session_key(&session_path)?;
+    if !session_sig_valid(&session_key, &session) && session.sig.is_some() {
+        return Err("session file failed integrity check".to_string());
+    }
+    let now = soshal_common_core::format::now_secs() as u64;
+    if let Some(loaded_at) = session.loaded_at {
+        if now.saturating_sub(loaded_at) > SESSION_MAX_AGE_SECS {
+            return Err("session expired, please re-authenticate".to_string());
+        }
+    }
+    Ok(session)
 }
 
 /// Load session from file

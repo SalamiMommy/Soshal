@@ -23,6 +23,7 @@ import 'notifications_service.dart';
 import 'p2p_service.dart';
 import 'scheduled_service.dart';
 import 'search_service.dart';
+import 'shell_service.dart';
 import 'stealth_service.dart';
 import 'streaming_service.dart';
 import 'sync_service.dart';
@@ -84,6 +85,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   ChatrandomService? _chatrandom;
   P2pService? _p2p;
   TursoService? _turso;
+  ShellService? _shell;
 
   /// Attach the account-scoped services (wired from main.dart) so an account
   /// switch can clear their caches before the new account's data arrives.
@@ -109,6 +111,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     ChatrandomService? chatrandom,
     P2pService? p2p,
     TursoService? turso,
+    ShellService? shell,
   }) {
     _feed = feed;
     _messaging = messaging;
@@ -131,6 +134,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     _chatrandom = chatrandom;
     _p2p = p2p;
     _turso = turso;
+    _shell = shell;
     if (_activePubkey != null && _activePubkey!.isNotEmpty) {
       _stealth?.setActivePubkey(_activePubkey);
     }
@@ -158,6 +162,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     _chatrandom?.resetForAccountSwitch();
     _p2p?.resetForAccountSwitch();
     _turso?.resetForAccountSwitch();
+    _shell?.resetForAccountSwitch();
   }
 
   void reset() {

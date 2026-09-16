@@ -105,18 +105,33 @@ pub async fn guestbook_add(profile_pubkey: String, content: String) -> Result<St
 }
 
 /// List guestbook entries for a profile pubkey from the local DB.
+/// Unapproved entries are strictly private: only the profile owner or the
+/// author of a pending entry may view unapproved entries; third parties
+/// always receive approved entries only.
 #[frb(sync, serialize)]
 pub fn guestbook_list(
     profile_pubkey: String,
     limit: i32,
     only_approved: bool,
 ) -> Result<String, String> {
+    let caller = super::signer::signer_pubkey().ok();
+    let is_owner = caller.as_deref() == Some(profile_pubkey.as_str());
+
     super::db::with_db_string(|db| {
         let rows = soshal_db_core::repos::guestbook::GuestbookRepo::new(db)
             .list_by_profile(&profile_pubkey, i64::from(limit), only_approved)
             .map_err(|e| e.to_string())?;
         let dtos: Vec<GuestbookEntryDto> = rows
             .iter()
+            .filter(|r| {
+                if only_approved {
+                    r.approved
+                } else if is_owner {
+                    true
+                } else {
+                    r.approved || caller.as_deref() == Some(r.sender_pubkey.as_str())
+                }
+            })
             .map(|r| GuestbookEntryDto {
                 id: &r.id,
                 pubkey: &r.sender_pubkey,
@@ -308,6 +323,43 @@ mod tests {
         assert!(guestbook_add("f".repeat(64), "x".repeat(2_001))
             .await
             .is_err());
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_guestbook_unapproved_privacy() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("guestbook-priv", "gb");
+        let alice = nostr::key::Keys::generate();
+        let bob = nostr::key::Keys::generate();
+        let eve = nostr::key::Keys::generate();
+        let bob_pk = bob.public_key().to_hex();
+
+        // Alice adds unapproved entry to Bob's guestbook
+        super::super::signer::signer_unlock(alice.secret_key().to_secret_hex()).unwrap();
+        let _ = guestbook_add(bob_pk.clone(), "secret note".to_string())
+            .await
+            .unwrap();
+
+        // Alice (author) can see it when only_approved is false
+        let alice_view = guestbook_list(bob_pk.clone(), 50, false).unwrap();
+        let arr: serde_json::Value = serde_json::from_str(&alice_view).unwrap();
+        assert_eq!(arr.as_array().unwrap().len(), 1);
+
+        // Eve (third party) cannot see it even with only_approved = false
+        super::super::signer::signer_unlock(eve.secret_key().to_secret_hex()).unwrap();
+        let eve_view = guestbook_list(bob_pk.clone(), 50, false).unwrap();
+        let arr: serde_json::Value = serde_json::from_str(&eve_view).unwrap();
+        assert_eq!(arr.as_array().unwrap().len(), 0);
+
+        // Bob (owner) can see it
+        super::super::signer::signer_unlock(bob.secret_key().to_secret_hex()).unwrap();
+        let bob_view = guestbook_list(bob_pk.clone(), 50, false).unwrap();
+        let arr: serde_json::Value = serde_json::from_str(&bob_view).unwrap();
+        assert_eq!(arr.as_array().unwrap().len(), 1);
+
         super::super::signer::signer_lock().unwrap();
     }
 }

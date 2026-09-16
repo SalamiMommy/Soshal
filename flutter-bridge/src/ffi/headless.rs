@@ -33,6 +33,9 @@ pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
     if db_path.is_empty() {
         return Err("Database path cannot be empty".to_string());
     }
+    if !Path::new(&db_path).is_absolute() {
+        return Err("Database path must be an absolute path".to_string());
+    }
 
     let db = match soshal_db_core::Database::open(&db_path) {
         Ok(db) => db,
@@ -46,15 +49,9 @@ pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
     // Load the active account + relay list from session.json (next to the
     // DB file). Headless runs may execute in a separate process, so the
     // in-memory SESSION static is not trusted here.
-    let session_path = Path::new(&db_path)
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("session.json");
-    let (pubkey, relays) = match std::fs::read_to_string(&session_path)
-        .ok()
-        .and_then(|c| serde_json::from_str::<super::session::SessionData>(&c).ok())
-    {
-        Some(session) => {
+    // Enforce path traversal hardening, HMAC signature check, and expiration check.
+    let (pubkey, relays) = match super::session::load_session_from_disk(&db_path) {
+        Ok(session) => {
             let active = session.active_pubkey.clone().unwrap_or_default();
             let relays = session
                 .accounts
@@ -64,7 +61,10 @@ pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
                 .unwrap_or_default();
             (active, relays)
         }
-        None => (String::new(), Vec::new()),
+        Err(e) => {
+            log::debug!("Headless background sync session read skipped: {e}");
+            (String::new(), Vec::new())
+        }
     };
 
     if pubkey.is_empty() || relays.is_empty() {
@@ -123,4 +123,26 @@ pub async fn background_sync_task(db_path: String) -> Result<i32, String> {
     stop.store(true, Ordering::Relaxed);
     let _ = handle.await;
     Ok(1).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn background_sync_task_rejects_relative_path() {
+        let err = soshal_db_core::block_on(background_sync_task("relative/db.sqlite".to_string()))
+            .unwrap_err();
+        assert!(err.contains("absolute"), "{err}");
+    }
+
+    #[test]
+    fn background_sync_task_handles_missing_session() {
+        let dir = std::env::temp_dir().join(format!("headless_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let db_path = dir.join("test.db").to_string_lossy().to_string();
+        let res = soshal_db_core::block_on(background_sync_task(db_path)).unwrap();
+        assert_eq!(res, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

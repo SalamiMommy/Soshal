@@ -6,6 +6,9 @@ use soshal_spatial_core::wgpu_engine::{get_wgpu_manager, wgpu_create_session_jso
 /// Create a new WGPU compute session for rendering offscreen mesh layout
 #[frb(sync, serialize)]
 pub fn render_create_session(width: u32, height: u32) -> Result<String, String> {
+    if width == 0 || height == 0 || width > 4096 || height > 4096 {
+        return Err("Dimensions must be between 1 and 4096".to_string());
+    }
     Ok(wgpu_create_session_json(width, height))
 }
 
@@ -92,5 +95,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(buf.len(), 4 * 4 * 4);
+    }
+
+    #[test]
+    fn render_create_session_rejects_zero_or_excessive_dimensions() {
+        assert!(render_create_session(0, 100).is_err());
+        assert!(render_create_session(100, 0).is_err());
+        assert!(render_create_session(5000, 100).is_err());
+        assert!(render_create_session(100, 5000).is_err());
     }
 }

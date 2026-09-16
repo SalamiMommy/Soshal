@@ -17,7 +17,7 @@ struct AnalyticsStatsDto {
 #[frb(serialize)]
 pub async fn analytics_compute_stats() -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let my_pubkey = super::signer::signer_pubkey().unwrap_or_default();
+        let my_pubkey = super::signer::signer_pubkey()?;
         super::db::with_db_result(|db| {
             let conn = db.conn()?;
             let (total_posts, total_reactions): (i64, i64) = soshal_db_core::query::query_first(
@@ -117,6 +117,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_compute_stats_ok() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let path = format!(
             "{}/soshal_analytics_{}_{}.db",
             std::env::temp_dir().to_string_lossy(),
@@ -135,5 +138,15 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
+        let _ = super::super::signer::signer_lock();
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_compute_stats_unauthorized_when_locked() {
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _ = super::super::signer::signer_lock();
+        let err = analytics_compute_stats().await.unwrap_err();
+        assert!(err.contains("signer locked"));
     }
 }

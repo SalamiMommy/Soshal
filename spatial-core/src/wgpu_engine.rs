@@ -55,6 +55,11 @@ impl WgpuMeshEngineSession {
 
     /// Step force-directed 3D physics layout simulation step
     pub fn step_simulation(&self, delta_time: f32) {
+        let dt = if delta_time.is_finite() && delta_time > 0.0 {
+            delta_time.min(1.0)
+        } else {
+            0.016
+        };
         let mut nodes = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
         let len = nodes.len();
         if len == 0 {
@@ -138,13 +143,13 @@ impl WgpuMeshEngineSession {
 
         // Apply forces & integrate positions
         for (i, node) in nodes.iter_mut().enumerate() {
-            node.vx = (node.vx + forces[i].0 * delta_time) * 0.92;
-            node.vy = (node.vy + forces[i].1 * delta_time) * 0.92;
-            node.vz = (node.vz + forces[i].2 * delta_time) * 0.92;
+            node.vx = (node.vx + forces[i].0 * dt) * 0.92;
+            node.vy = (node.vy + forces[i].1 * dt) * 0.92;
+            node.vz = (node.vz + forces[i].2 * dt) * 0.92;
 
-            node.x += node.vx * delta_time;
-            node.y += node.vy * delta_time;
-            node.z += node.vz * delta_time;
+            node.x += node.vx * dt;
+            node.y += node.vy * dt;
+            node.z += node.vz * dt;
         }
 
         let mut fc = self.frame_counter.lock().unwrap_or_else(|e| e.into_inner());
@@ -195,6 +200,11 @@ impl WgpuMeshEngineSession {
     }
 }
 
+/// Maximum active WGPU compute sessions kept in memory.
+pub const MAX_SESSIONS: usize = 16;
+/// Maximum allowed texture width or height.
+pub const MAX_DIMENSION: u32 = 4096;
+
 /// Global WGPU session registry
 #[derive(Default)]
 pub struct WgpuEngineManager {
@@ -211,17 +221,29 @@ impl WgpuEngineManager {
     }
 
     pub fn create_session(&self, width: u32, height: u32) -> i64 {
+        let w = width.clamp(1, MAX_DIMENSION);
+        let h = height.clamp(1, MAX_DIMENSION);
         let mut id_guard = self.next_id.lock().unwrap_or_else(|e| e.into_inner());
         let id = *id_guard;
         *id_guard += 1;
 
-        let session = WgpuMeshEngineSession::new(id, width, height);
-        self.sessions.lock().unwrap().insert(id, session);
+        let session = WgpuMeshEngineSession::new(id, w, h);
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if sessions.len() >= MAX_SESSIONS {
+            if let Some(&oldest_id) = sessions.keys().min() {
+                sessions.remove(&oldest_id);
+            }
+        }
+        sessions.insert(id, session);
         id
     }
 
     pub fn get_session(&self, id: i64) -> Option<WgpuMeshEngineSession> {
-        self.sessions.lock().unwrap().get(&id).cloned()
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&id)
+            .cloned()
     }
 }
 
@@ -279,5 +301,51 @@ mod tests {
 
         let buf = session.render_pixel_buffer();
         assert_eq!(buf.len(), 100 * 100 * 4);
+    }
+
+    #[test]
+    fn test_wgpu_engine_manager_eviction_and_clamping() {
+        let mgr = WgpuEngineManager::new();
+
+        // Clamping check
+        let s0_id = mgr.create_session(0, 5000);
+        let s0 = mgr.get_session(s0_id).unwrap();
+        assert_eq!(s0.width, 1);
+        assert_eq!(s0.height, 4096);
+
+        // Fill up to MAX_SESSIONS
+        for _ in 1..MAX_SESSIONS {
+            mgr.create_session(10, 10);
+        }
+        assert!(mgr.get_session(s0_id).is_some());
+
+        // Create one more session, which should evict s0 (oldest)
+        let s_new_id = mgr.create_session(20, 20);
+        assert!(
+            mgr.get_session(s0_id).is_none(),
+            "oldest session should be evicted"
+        );
+        assert!(mgr.get_session(s_new_id).is_some());
+    }
+
+    #[test]
+    fn test_wgpu_simulation_nan_delta_time_resilience() {
+        let session = WgpuMeshEngineSession::new(1, 10, 10);
+        let node = WgpuMeshNode {
+            id: "n1".to_string(),
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            vx: 0.1,
+            vy: 0.1,
+            vz: 0.1,
+            latency_ms: 10,
+            connections: vec![],
+        };
+        session.set_nodes(vec![node]);
+        session.step_simulation(f32::NAN);
+        let nodes = session.nodes.lock().unwrap();
+        assert!(nodes[0].x.is_finite());
+        assert!(nodes[0].vx.is_finite());
     }
 }

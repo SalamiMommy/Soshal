@@ -15,6 +15,7 @@ import 'package:soshal_flutter/services/music_service.dart';
 import 'package:soshal_flutter/services/notifications_service.dart';
 import 'package:soshal_flutter/services/search_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
+import 'package:soshal_flutter/services/shell_service.dart';
 import 'package:soshal_flutter/services/turso_service.dart';
 
 import '../helpers/test_env.dart';
@@ -567,6 +568,33 @@ void main() {
       session.reset();
       expect(turso.isConfigured, isFalse);
       expect(turso.url, isEmpty);
+    });
+
+    test('reset clears shell service state on account switch', () async {
+      final session = SessionService();
+      final shell = ShellService();
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      api.stubString('crateFfiCallsCallsFetchSignals', '[{"kind":20001,"created_at":$now,"call_id":"c1"}]');
+      await shell.pollCallSignals('mypk');
+      expect(shell.incomingCall, isNotNull);
+
+      session.attachAccountScopedServices(
+        feed: FeedService(),
+        messaging: MessagingService(),
+        notifications: NotificationService(),
+        search: SearchService(),
+        dating: DatingService(),
+        marketplace: MarketplaceService(),
+        events: EventsService(),
+        groups: GroupsService(),
+        bookmarks: BookmarksService(),
+        moderation: ModerationService(),
+        calls: CallsService(),
+        shell: shell,
+      );
+
+      session.reset();
+      expect(shell.incomingCall, isNull);
     });
   });
 }

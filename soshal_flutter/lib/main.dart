@@ -220,6 +220,7 @@ class _SoshalAppState extends State<SoshalApp> {
             chatrandom: context.read<ChatrandomService>(),
             p2p: context.read<P2pService>(),
             turso: context.read<TursoService>(),
+            shell: context.read<ShellService>(),
           );
       // Tell the Rust network stack we came up on Wi-Fi. Resolves the real
       // local IP + QUIC port; no-ops silently when unavailable.

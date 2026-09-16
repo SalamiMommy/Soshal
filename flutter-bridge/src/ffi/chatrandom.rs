@@ -31,6 +31,19 @@ pub async fn chatrandom_send(
     content_json: String,
 ) -> Result<String, String> {
     let (kind, mut content) = streaming_events::chatrandom_request_parts(&request_type)?;
+    if peers.is_empty() {
+        return Err("Recipient peer list cannot be empty for chatrandom handshake".to_string());
+    }
+    if content_json.len() > 65536 {
+        return Err("Content exceeds maximum length of 64KB".to_string());
+    }
+    let my_pk = super::signer::signer_pubkey()?;
+    for p in &peers {
+        super::session::validate_pubkey_hex(p)?;
+        if p == &my_pk {
+            return Err("Cannot pair with yourself".to_string());
+        }
+    }
     if !content_json.trim().is_empty() {
         content = content_json;
     }
@@ -56,8 +69,12 @@ pub async fn chatrandom_fetch(
     author: Option<String>,
     limit: u64,
 ) -> Result<String, String> {
+    super::session::validate_pubkey_hex(&my_pubkey)?;
+    if let Some(ref auth) = author {
+        super::session::validate_pubkey_hex(auth)?;
+    }
     super::signer::require_identity(&my_pubkey)?;
-    let lim = limit.min(100);
+    let lim = limit.clamp(1, 100);
     let events: Vec<nostr::event::Event> = if let Some(p) = author {
         let filter = serde_json::json!({
             "kinds": [20030, 20031, 20032],
@@ -188,7 +205,34 @@ mod tests {
         let _g = crate::ffi::util::lock(&CHATRANDOM_TEST_LOCK);
         let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
+        let peer_keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let err = chatrandom_send(
+            "request".to_string(),
+            vec![peer_keys.public_key().to_hex()],
+            "{}".to_string(),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("relay client not initialized"));
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_send_validates_peers_and_self_pairing() {
+        let _g = crate::ffi::util::lock(&CHATRANDOM_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+
+        // Empty peers
+        let err = chatrandom_send("request".to_string(), Vec::new(), "{}".to_string())
+            .await
+            .unwrap_err();
+        assert!(err.contains("cannot be empty"), "{err}");
+
+        // Self-pairing
         let err = chatrandom_send(
             "request".to_string(),
             vec![keys.public_key().to_hex()],
@@ -196,7 +240,28 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(err.contains("relay client not initialized"));
+        assert!(err.contains("Cannot pair with yourself"), "{err}");
+
+        // Invalid hex
+        let err = chatrandom_send(
+            "request".to_string(),
+            vec!["not-a-valid-hex-pubkey".to_string()],
+            "{}".to_string(),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("invalid pubkey"), "{err}");
+
+        // Oversized content
+        let peer = soshal_nostr_core::keys::generate_keys()
+            .public_key()
+            .to_hex();
+        let big = "x".repeat(70000);
+        let err = chatrandom_send("request".to_string(), vec![peer], big)
+            .await
+            .unwrap_err();
+        assert!(err.contains("exceeds maximum length"), "{err}");
+
         super::super::signer::signer_lock().unwrap();
     }
 
@@ -223,5 +288,13 @@ mod tests {
         let pk = "deadbeef".repeat(8);
         let err = chatrandom_fetch(pk.clone(), None, 50).await.unwrap_err();
         assert!(err.contains("signer locked") || err.contains("signer key mismatch"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_rejects_invalid_hex() {
+        let err = chatrandom_fetch("invalid-hex".to_string(), None, 50)
+            .await
+            .unwrap_err();
+        assert!(err.contains("invalid pubkey"), "{err}");
     }
 }

@@ -8,6 +8,7 @@ use flutter_rust_bridge::frb;
 /// `{id, group_id, actor_pubkey, action, target_pubkey, details, created_at}`.
 #[frb(sync, serialize)]
 pub fn audit_list(limit: i64, actor_pubkey: Option<String>) -> Result<String, String> {
+    super::signer::signer_pubkey()?;
     super::db::with_db_result(|db| {
         let repo = soshal_db_core::repos::audit_log::AuditLogRepo::new(db);
         let rows = match actor_pubkey {
@@ -52,13 +53,20 @@ mod tests {
     #[test]
     fn test_audit_list_empty() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        crate::ffi::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let _p = tmp_db("empty");
         assert_eq!(audit_list(10, None).unwrap(), "[]");
+        let _ = crate::ffi::signer::signer_lock();
     }
 
     #[test]
     fn test_audit_list_newest_first_and_limit_clamp() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        crate::ffi::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let _p = tmp_db("order");
         insert_log("a1", "pk1", "kick", 1000);
         insert_log("a2", "pk1", "ban", 3000);
@@ -72,11 +80,15 @@ mod tests {
         let arr = parse_arr(&audit_list(0, None).unwrap());
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["id"], "a2");
+        let _ = crate::ffi::signer::signer_lock();
     }
 
     #[test]
     fn test_audit_list_actor_filter() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        crate::ffi::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let _p = tmp_db("actor");
         insert_log("a1", "pk1", "kick", 1000);
         insert_log("a2", "pk2", "ban", 3000);
@@ -85,11 +97,15 @@ mod tests {
         assert_eq!(arr.len(), 2, "json: {arr:?}");
         assert_eq!(arr[0]["id"], "a3");
         assert_eq!(arr[1]["id"], "a1");
+        let _ = crate::ffi::signer::signer_lock();
     }
 
     #[test]
     fn test_audit_list_nullable_fields() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        crate::ffi::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let _p = tmp_db("nullable");
         db::db_execute_raw_test(
             "INSERT INTO audit_logs (id, group_id, actor_pubkey, action, created_at) VALUES ('a1','g1','pk1','kick',1000)"
@@ -100,14 +116,27 @@ mod tests {
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["target_pubkey"], serde_json::Value::Null);
         assert_eq!(arr[0]["details"], serde_json::Value::Null);
+        let _ = crate::ffi::signer::signer_lock();
     }
 
     #[test]
     fn test_audit_list_errors_when_db_not_initialized() {
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        crate::ffi::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         if db::db_path().is_err() {
             assert!(audit_list(10, None)
                 .unwrap_err()
                 .contains("not initialized"));
         }
+        let _ = crate::ffi::signer::signer_lock();
+    }
+
+    #[test]
+    fn test_audit_list_unauthorized_when_locked() {
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _ = crate::ffi::signer::signer_lock();
+        let err = audit_list(10, None).unwrap_err();
+        assert!(err.contains("signer locked"));
     }
 }

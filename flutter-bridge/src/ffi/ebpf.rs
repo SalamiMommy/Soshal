@@ -6,7 +6,11 @@ use soshal_network_core::ebpf::{ebpf_block_ip_json, ebpf_get_stats_json, ebpf_un
 /// Block a peer IP address in the eBPF kernel / socket filter
 #[frb(sync, serialize)]
 pub fn ebpf_block_ip(ip: String) -> Result<bool, String> {
-    let json_req = serde_json::json!({ "ip": ip }).to_string();
+    let trimmed = ip.trim();
+    trimmed
+        .parse::<std::net::IpAddr>()
+        .map_err(|e| format!("invalid IP address: {e}"))?;
+    let json_req = serde_json::json!({ "ip": trimmed }).to_string();
     let res_json = ebpf_block_ip_json(&json_req);
     let res: bool = serde_json::from_str(&res_json).map_err(|e| format!("ebpf parse: {e}"))?;
     Ok(res)
@@ -15,7 +19,11 @@ pub fn ebpf_block_ip(ip: String) -> Result<bool, String> {
 /// Unblock a peer IP address in the eBPF kernel / socket filter
 #[frb(sync, serialize)]
 pub fn ebpf_unblock_ip(ip: String) -> Result<bool, String> {
-    let json_req = serde_json::json!({ "ip": ip }).to_string();
+    let trimmed = ip.trim();
+    trimmed
+        .parse::<std::net::IpAddr>()
+        .map_err(|e| format!("invalid IP address: {e}"))?;
+    let json_req = serde_json::json!({ "ip": trimmed }).to_string();
     let res_json = ebpf_unblock_ip_json(&json_req);
     let res: bool = serde_json::from_str(&res_json).map_err(|e| format!("ebpf parse: {e}"))?;
     Ok(res)
@@ -52,5 +60,14 @@ mod tests {
 
         assert!(!ebpf_unblock_ip("203.0.113.9".to_string()).unwrap());
         assert_eq!(blocked_count(), 1);
+    }
+
+    #[test]
+    fn test_ebpf_invalid_ip_rejected() {
+        let err = ebpf_block_ip("not-an-ip".to_string()).unwrap_err();
+        assert!(err.contains("invalid IP address"), "{err}");
+
+        let err = ebpf_unblock_ip("1234.5678.9".to_string()).unwrap_err();
+        assert!(err.contains("invalid IP address"), "{err}");
     }
 }
