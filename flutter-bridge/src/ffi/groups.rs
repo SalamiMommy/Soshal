@@ -853,6 +853,24 @@ pub fn groups_voice_channels_delete(channel_id: String, actor: String) -> Result
 pub fn groups_voice_join(channel_id: String, pubkey: String) -> Result<bool, String> {
     super::signer::require_identity(&pubkey)?;
     super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let group_id: Option<String> = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT group_id FROM group_voice_channels WHERE id = ?1",
+            libsql::params![channel_id.as_str()],
+            |r| r.get(0),
+        )?;
+        let gid = group_id.ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
+        if !GroupRepo::new(db).is_member(&gid, &pubkey)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "not a group member".to_string(),
+            ));
+        }
+        if BannedMemberRepo::new(db).is_banned(&gid, &pubkey)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "banned from this group".to_string(),
+            ));
+        }
         soshal_db_core::repos::voice::GroupVoiceRepo::new(db).join(&channel_id, &pubkey)?;
         Ok(true)
     })
@@ -1722,6 +1740,13 @@ mod tests {
         assert!(ch.starts_with("vc_"));
 
         super::super::signer::signer_unlock(member_keys.secret_key().to_secret_hex()).unwrap();
+        // Non-member is rejected from joining voice channel
+        let non_member_join = groups_voice_join(ch.clone(), member.clone());
+        assert!(non_member_join.is_err());
+        assert!(non_member_join.unwrap_err().contains("not a group member"));
+
+        // Join group as member
+        groups_join("g8".to_string(), member.clone(), None).unwrap();
         assert!(groups_voice_join(ch.clone(), member.clone()).unwrap());
 
         super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
@@ -1734,6 +1759,25 @@ mod tests {
         assert!(groups_voice_leave(ch.clone(), member.clone()).unwrap());
         let presence = groups_voice_presence(ch.clone()).unwrap();
         assert!(!presence.contains(&format!("\"pubkey\":\"{}\"", member)));
+
+        // Ban member and verify voice join is rejected
+        super::super::db::with_db_result(|db| {
+            soshal_db_core::repos::banned_member::BannedMemberRepo::new(db).insert(
+                &soshal_db_core::repos::banned_member::BannedMemberRow {
+                    group_id: "g8".to_string(),
+                    pubkey: member.clone(),
+                    banned_by: owner.clone(),
+                    reason: "disruptive".to_string(),
+                    banned_at: soshal_common_core::format::now_secs(),
+                },
+            )
+        })
+        .unwrap();
+
+        super::super::signer::signer_unlock(member_keys.secret_key().to_secret_hex()).unwrap();
+        let banned_join = groups_voice_join(ch.clone(), member.clone());
+        assert!(banned_join.is_err());
+        assert!(banned_join.unwrap_err().contains("banned from this group"));
 
         assert!(groups_voice_channels_delete(ch.clone(), member).is_err());
         super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();

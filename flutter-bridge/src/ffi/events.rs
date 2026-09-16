@@ -455,6 +455,7 @@ pub fn events_rsvp(
         vec![
             vec!["a".to_string(), format!("{event_kind}:{host}:{event_d}")],
             vec!["e".to_string(), event_id.clone()],
+            vec!["p".to_string(), host.clone()],
         ]
         .into_iter()
         .filter_map(|t| nostr::event::Tag::parse(t).ok()),
@@ -490,7 +491,9 @@ pub fn events_rsvp(
         content: rsvp_status.clone(),
         kind: KIND_EVENT_RSVP as i64,
         created_at: soshal_common_core::format::now_secs(),
-        tags_json: format!(r#"[["a","{event_kind}:{host}:{event_d}"],["e","{event_id}"]]"#),
+        tags_json: format!(
+            r#"[["a","{event_kind}:{host}:{event_d}"],["e","{event_id}"],["p","{host}"]]"#
+        ),
         sig: None,
         reply_to: None,
         root_id: None,
@@ -502,7 +505,7 @@ pub fn events_rsvp(
         scheduled_at: None,
         freenet_key: None,
         is_freenet_native: false,
-        rsvp_event_id: None,
+        rsvp_event_id: Some(event_id.clone()),
     };
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
@@ -791,10 +794,14 @@ mod tests {
         let event_id = created_id["id"].as_str().unwrap().to_string();
 
         assert!(events_rsvp(event_id.clone(), pk.clone(), "accepted".into()).unwrap());
+        // Denormalized rsvp_event_id is now recorded locally on RSVP creation
+        let attendees_accepted = events_get_attendees(event_id.clone()).unwrap();
+        assert_eq!(attendees_accepted, vec![pk.clone()]);
+        let detail: EventInfo =
+            serde_json::from_str(&events_get_event(event_id.clone()).unwrap()).unwrap();
+        assert_eq!(detail.attendees, 1);
+
         assert!(events_rsvp(event_id.clone(), pk.clone(), "declined".into()).unwrap());
-        // Local RSVP rows are relay-synced; the denormalized rsvp_event_id
-        // column is only set by the sync ingest path, so attendee counts
-        // stay empty until the RSVP event comes back through sync.
         assert!(events_get_attendees(event_id.clone()).unwrap().is_empty());
 
         let detail: EventInfo =
@@ -837,6 +844,12 @@ mod tests {
         assert!(events_reminders_list().unwrap().contains(&rid));
         assert!(events_reminder_delete(rid.clone()).unwrap());
         assert!(!events_reminders_list().unwrap().contains(&rid));
+
+        // When locked, reminder endpoints must reject
+        super::super::signer::signer_lock().unwrap();
+        assert!(events_reminders_list().is_err());
+        assert!(events_reminder_upsert(String::new(), "e".into(), "t".into(), 123, 10).is_err());
+        assert!(events_reminder_delete(rid).is_err());
     }
 }
 
@@ -847,6 +860,7 @@ mod tests {
 /// All reminder rows, soonest first, as JSON array.
 #[frb(sync, serialize)]
 pub fn events_reminders_list() -> Result<String, String> {
+    super::signer::signer_pubkey()?;
     super::db::with_db_result(|db| {
         let rows = soshal_db_core::repos::reminder::ReminderRepo::new(db).list()?;
         serde_json::to_string(&rows)
@@ -866,6 +880,7 @@ pub fn events_reminder_upsert(
     if minutes_before < 0 {
         return Err("minutes_before must be >= 0".to_string()).into();
     }
+    super::signer::signer_pubkey()?;
     let now = soshal_common_core::format::now_secs();
     let id = if reminder_id.is_empty() {
         format!("rem_{now}_{:x}", rand::random::<u32>())
@@ -890,6 +905,7 @@ pub fn events_reminder_upsert(
 /// Delete a reminder.
 #[frb(sync, serialize)]
 pub fn events_reminder_delete(reminder_id: String) -> Result<bool, String> {
+    super::signer::signer_pubkey()?;
     super::db::with_db_result(|db| {
         soshal_db_core::repos::reminder::ReminderRepo::new(db).delete(&reminder_id)?;
         Ok(true)

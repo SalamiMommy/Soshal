@@ -264,6 +264,7 @@ mod ffi_coverage_tests {
     fn events_reminders_ffi_roundtrip() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("coverage", "reminders_ffi");
+        let _pk = unlock_signer();
         let e = events::events_reminder_upsert(
             String::new(),
             "ev1".into(),
@@ -289,6 +290,7 @@ mod ffi_coverage_tests {
         let list = events::events_reminders_list().unwrap();
         let v: serde_json::Value = serde_json::from_str(&list).unwrap();
         assert!(v.as_array().unwrap().is_empty());
+        let _ = signer::signer_lock();
         crate::test_util::cleanup(&path);
     }
     #[test]
@@ -318,14 +320,25 @@ mod ffi_coverage_tests {
         let dms = messaging::messaging_fetch_dms("peer_a".into(), 50).unwrap();
         let v: serde_json::Value = serde_json::from_str(&dms).unwrap();
         assert_eq!(v.as_array().unwrap().len(), 1);
-        let conversations = messaging::messaging_fetch_conversations(pk).unwrap();
+        let conversations = messaging::messaging_fetch_conversations(pk.clone()).unwrap();
         assert!(
             conversations.contains(&"peer_a".to_string()),
             "got {conversations:?}"
         );
+        // Storing DM where authenticated user is neither sender nor recipient fails
+        let foreign_err = messaging::messaging_store_dm(
+            "dm_foreign".into(),
+            "peer_a".into(),
+            "peer_b".into(),
+            "injected".into(),
+            1500,
+            "[]".into(),
+        )
+        .unwrap_err();
+        assert!(foreign_err.contains("authenticated user must be sender or recipient"));
+
         assert!(messaging::messaging_store_dms(
-            r#"[{"id":"dm2","sender":"peer_b","recipient":"me","content":"x","created_at":2000}]"#
-                .into()
+            format!(r#"[{{"id":"dm2","sender":"peer_b","recipient":"{pk}","content":"x","created_at":2000}}]"#)
         )
         .unwrap());
         let e = messaging::messaging_store_dms("junk".into()).unwrap_err();

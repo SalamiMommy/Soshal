@@ -215,6 +215,8 @@ mod ffi_more_gap_tests {
     async fn events_reminders_and_interest_scoring() {
         let _g = crate::test_util::lock();
         let db = crate::test_util::init_db("more_gap", "events");
+        let (_, sec) = gen_keys();
+        signer::signer_unlock(sec).unwrap();
         let err =
             events::events_reminder_upsert(String::new(), "e1".into(), "R".into(), 1700000000, -1)
                 .unwrap_err();
@@ -267,6 +269,7 @@ mod ffi_more_gap_tests {
             events::events_get_attendees("nope".into()).unwrap(),
             Vec::<String>::new()
         );
+        let _ = signer::signer_lock();
         let _ = db;
     }
 

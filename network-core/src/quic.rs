@@ -68,8 +68,41 @@ const REGISTRATION_KIND: &str = "__peer_key__";
 /// happens in the datagram handler after the TLS handshake, so first-contact
 /// peers receive a connection-closed error from TLS and must retry after HMAC
 /// succeeds on a subsequent attempt. mDNS-discovered LAN peers will retry quickly.
-static TRUSTED_PEER_CERTS: LazyLock<Mutex<HashSet<[u8; 32]>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
+const MAX_TRUSTED_PEER_CERTS: usize = 1024;
+
+struct TrustedCertRegistry {
+    set: HashSet<[u8; 32]>,
+    queue: std::collections::VecDeque<[u8; 32]>,
+}
+
+impl TrustedCertRegistry {
+    fn new() -> Self {
+        Self {
+            set: HashSet::new(),
+            queue: std::collections::VecDeque::new(),
+        }
+    }
+
+    fn insert(&mut self, fp: [u8; 32]) {
+        if self.set.contains(&fp) {
+            return;
+        }
+        while self.queue.len() >= MAX_TRUSTED_PEER_CERTS {
+            if let Some(old) = self.queue.pop_front() {
+                self.set.remove(&old);
+            }
+        }
+        self.set.insert(fp);
+        self.queue.push_back(fp);
+    }
+
+    fn contains(&self, fp: &[u8; 32]) -> bool {
+        self.set.contains(fp)
+    }
+}
+
+static TRUSTED_PEER_CERTS: LazyLock<Mutex<TrustedCertRegistry>> =
+    LazyLock::new(|| Mutex::new(TrustedCertRegistry::new()));
 
 /// Compute the SHA-256 fingerprint of a DER-encoded certificate.
 fn cert_fingerprint(cert: &CertificateDer<'_>) -> [u8; 32] {
@@ -1944,5 +1977,43 @@ mod stream_tests {
                 .unwrap_err();
         assert!(err.contains("not found"), "{err}");
         server.stop();
+    }
+
+    #[test]
+    fn test_trusted_cert_registry_bounded_eviction() {
+        let mut registry = TrustedCertRegistry::new();
+        assert_eq!(registry.set.len(), 0);
+
+        // Fill up to capacity
+        for i in 0..MAX_TRUSTED_PEER_CERTS {
+            let mut fp = [0u8; 32];
+            fp[..usize::min(8, 32)].copy_from_slice(&(i as u64).to_le_bytes());
+            registry.insert(fp);
+        }
+        assert_eq!(registry.set.len(), MAX_TRUSTED_PEER_CERTS);
+        assert_eq!(registry.queue.len(), MAX_TRUSTED_PEER_CERTS);
+
+        // Oldest entry (index 0) must be present
+        let mut fp0 = [0u8; 32];
+        fp0[..8].copy_from_slice(&0u64.to_le_bytes());
+        assert!(registry.contains(&fp0));
+
+        // Insert one more entry beyond capacity
+        let mut fp_new = [0u8; 32];
+        fp_new[..8].copy_from_slice(&(MAX_TRUSTED_PEER_CERTS as u64).to_le_bytes());
+        registry.insert(fp_new);
+
+        // Size must remain bounded
+        assert_eq!(registry.set.len(), MAX_TRUSTED_PEER_CERTS);
+        assert_eq!(registry.queue.len(), MAX_TRUSTED_PEER_CERTS);
+
+        // Oldest entry 0 must have been evicted
+        assert!(!registry.contains(&fp0));
+        // New entry must be present
+        assert!(registry.contains(&fp_new));
+        // Entry 1 must still be present
+        let mut fp1 = [0u8; 32];
+        fp1[..8].copy_from_slice(&1u64.to_le_bytes());
+        assert!(registry.contains(&fp1));
     }
 }

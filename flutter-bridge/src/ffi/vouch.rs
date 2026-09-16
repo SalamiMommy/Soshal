@@ -8,6 +8,16 @@ use flutter_rust_bridge::frb;
 /// Publish a vouch (kind 31989) for `target_pubkey`. Returns the event id.
 #[frb(serialize)]
 pub async fn vouch_publish(target_pubkey: String, content: String) -> Result<String, String> {
+    if target_pubkey.len() != 64 || !target_pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("invalid target_pubkey: must be 64-character hex string".to_string());
+    }
+    let my_pk = super::signer::signer_pubkey()?;
+    if target_pubkey == my_pk {
+        return Err("cannot vouch for yourself".to_string());
+    }
+    if content.len() > 1000 {
+        return Err("content too long: max 1000 characters".to_string());
+    }
     let mut builder = nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(31989), content);
     if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), target_pubkey]) {
         builder = builder.tag(tag);
@@ -24,6 +34,9 @@ pub async fn vouch_publish(target_pubkey: String, content: String) -> Result<Str
 /// signatures are returned. Returns JSON array of relation entries.
 #[frb(serialize)]
 pub async fn vouch_fetch(target_pubkey: String) -> Result<String, String> {
+    if target_pubkey.len() != 64 || !target_pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("invalid target_pubkey: must be 64-character hex string".to_string());
+    }
     let filter = serde_json::json!({
         "kinds": [31989],
         "#p": [target_pubkey],
@@ -36,6 +49,10 @@ pub async fn vouch_fetch(target_pubkey: String) -> Result<String, String> {
     let mut out = Vec::new();
     for e in events {
         if e.kind.as_u16() != 31989 {
+            continue;
+        }
+        if e.pubkey.to_hex() == target_pubkey {
+            // Drop invalid self-attestations
             continue;
         }
         if !soshal_nostr_core::models::verify_event(&e) {
@@ -76,10 +93,24 @@ mod tests {
         let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-        let result = vouch_publish(keys.public_key().to_hex(), "trusted".to_string()).await;
+        let target_pk = "b".repeat(64);
+        let result = vouch_publish(target_pk, "trusted".to_string()).await;
         let err = result.unwrap_err();
         assert!(err.contains("relay client not initialized"), "{err}");
         assert!(!err.contains("signer locked"));
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_vouch_publish_self_vouch_rejected() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let result = vouch_publish(keys.public_key().to_hex(), "trusted".to_string()).await;
+        let err = result.unwrap_err();
+        assert!(err.contains("cannot vouch for yourself"), "{err}");
         super::super::signer::signer_lock().unwrap();
     }
 
@@ -127,17 +158,14 @@ mod tests {
 
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn test_vouch_publish_garbage_target_reaches_relay() {
+    async fn test_vouch_publish_garbage_target_rejected() {
         let _g = TEST_LOCK.lock().unwrap();
         let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
-        // nostr Tag::parse only rejects empty tag vecs — garbage pubkey parses fine.
-        assert!(nostr::event::Tag::parse(vec!["p".to_string(), "zzz".to_string()]).is_ok());
         let result = vouch_publish("zzz-not-a-pubkey".to_string(), "trusted".to_string()).await;
         let err = result.unwrap_err();
-        assert!(err.contains("relay client not initialized"), "{err}");
-        assert!(!err.contains("signer locked"));
+        assert!(err.contains("invalid target_pubkey"), "{err}");
         super::super::signer::signer_lock().unwrap();
     }
 }

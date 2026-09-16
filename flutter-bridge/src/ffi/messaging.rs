@@ -267,6 +267,10 @@ pub fn messaging_store_dm(
     created_at: u64,
     tags_json: String,
 ) -> Result<bool, String> {
+    let my_pk = super::signer::signer_pubkey()?;
+    if my_pk != sender && my_pk != recipient {
+        return Err("authenticated user must be sender or recipient of DM".to_string());
+    }
     let content = seal_dm_content(content)?;
     let cid = conv_id(&sender, &recipient);
     let row = soshal_db_core::repos::message::MessageRow {
@@ -304,6 +308,12 @@ pub fn messaging_store_dms(dms_json: String) -> Result<bool, String> {
         serde_json::from_str(&dms_json).map_err(|e| format!("invalid DMs JSON: {e}"))?;
     if dms.is_empty() {
         return Ok(true).into();
+    }
+    let my_pk = super::signer::signer_pubkey()?;
+    for dm in &dms {
+        if my_pk != dm.sender && my_pk != dm.recipient {
+            return Err("authenticated user must be sender or recipient of DM".to_string());
+        }
     }
     let key = super::signer::signer_at_rest_key()?;
     super::db::with_db_result(|db| {

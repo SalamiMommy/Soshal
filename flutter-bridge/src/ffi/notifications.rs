@@ -127,6 +127,7 @@ fn require_db_rows(
 /// Fetch unread notifications.
 #[frb(sync, serialize)]
 pub fn notifications_fetch_unread(user_pubkey: String, limit: i32) -> Result<String, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::util::json_ok(require_db_rows(
         &user_pubkey,
         limit.clamp(1, 100) as i64,
@@ -138,6 +139,7 @@ pub fn notifications_fetch_unread(user_pubkey: String, limit: i32) -> Result<Str
 /// `limit` rows).
 #[frb(sync, serialize)]
 pub fn notifications_fetch(user_pubkey: String, limit: i32, offset: i32) -> Result<String, String> {
+    super::signer::require_identity(&user_pubkey)?;
     let limit = limit.clamp(1, 500);
     let offset = offset.max(0);
     super::db::with_db_result(|db| {
@@ -277,6 +279,7 @@ pub fn notifications_unignore_thread(
 /// List all ignore rows for the Ignored List dashboard.
 #[frb(sync, serialize)]
 pub fn notifications_list_ignored(user_pubkey: String) -> Result<String, String> {
+    super::signer::require_identity(&user_pubkey)?;
     #[derive(Serialize)]
     struct IgnoredRow<'a> {
         kind: &'a str,
@@ -305,6 +308,7 @@ pub fn notifications_is_ignored(
     from_pubkey: String,
     event_id: String,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         IgnoredNotificationRepo::new(db).is_ignored(
             &user_pubkey,
@@ -319,6 +323,7 @@ pub fn notifications_is_ignored(
 /// Get unread count.
 #[frb(sync, serialize)]
 pub fn notifications_get_unread_count(user_pubkey: String) -> Result<i32, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let count: i64 = soshal_db_core::query::query_first(
@@ -339,6 +344,7 @@ pub fn notifications_fetch_by_type(
     notification_type: String,
     limit: i32,
 ) -> Result<String, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::util::json_ok(require_db_rows(
         &user_pubkey,
         limit.clamp(1, 100) as i64,
@@ -386,6 +392,22 @@ mod tests {
         db::tmp_db(label, "notif")
     }
 
+    fn setup_test_context(
+        label: &str,
+    ) -> (
+        String,
+        std::sync::MutexGuard<'static, ()>,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let db_lock = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let signer_lock = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _ = tmp_db(label);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pubkey = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        (pubkey, db_lock, signer_lock)
+    }
+
     fn insert_notification(
         id: &str,
         pubkey: &str,
@@ -425,14 +447,13 @@ mod tests {
 
     #[test]
     fn test_fetch_unread_happy() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("unread");
-        insert_user("pk1", "tester");
-        insert_notification("n1", "pk1", "mention", Some("pk1"), "hi", 3000, false);
-        insert_notification("n2", "pk1", "like", Some("pk1"), "like", 2000, false);
-        insert_notification("n3", "pk1", "follow", Some("pk1"), "read", 1000, true);
+        let (pk1, _g, _s) = setup_test_context("unread");
+        insert_user(&pk1, "tester");
+        insert_notification("n1", &pk1, "mention", Some(&pk1), "hi", 3000, false);
+        insert_notification("n2", &pk1, "like", Some(&pk1), "like", 2000, false);
+        insert_notification("n3", &pk1, "follow", Some(&pk1), "read", 1000, true);
         insert_notification("n4", "pk2", "mention", Some("pk2"), "other", 1000, false);
-        let json = notifications_fetch_unread("pk1".to_string(), 10).unwrap();
+        let json = notifications_fetch_unread(pk1.clone(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -441,7 +462,7 @@ mod tests {
         assert_eq!(arr.len(), 2, "json: {json}");
         assert_eq!(arr[0]["id"], "n1");
         assert_eq!(arr[0]["notification_type"], "mention");
-        assert_eq!(arr[0]["from_pubkey"], "pk1");
+        assert_eq!(arr[0]["from_pubkey"], pk1);
         assert_eq!(arr[0]["from_name"], "tester");
         assert_eq!(arr[0]["read"], false);
         assert!(arr.iter().all(|n| n["pubkey"] != "pk2"));
@@ -449,12 +470,11 @@ mod tests {
 
     #[test]
     fn test_fetch_unread_limit_clamped() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("clamp");
+        let (pk1, _g, _s) = setup_test_context("clamp");
         for i in 0..3 {
             insert_notification(
                 &format!("n{i}"),
-                "pk1",
+                &pk1,
                 "mention",
                 None,
                 "x",
@@ -462,14 +482,14 @@ mod tests {
                 false,
             );
         }
-        let json = notifications_fetch_unread("pk1".to_string(), 0).unwrap();
+        let json = notifications_fetch_unread(pk1.clone(), 0).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
             .unwrap()
             .clone();
         assert_eq!(arr.len(), 1);
-        let json = notifications_fetch_unread("pk1".to_string(), -5).unwrap();
+        let json = notifications_fetch_unread(pk1, -5).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -480,10 +500,9 @@ mod tests {
 
     #[test]
     fn test_fetch_unread_empty() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("empty");
+        let (nobody, _g, _s) = setup_test_context("empty");
         insert_notification("n1", "pk1", "mention", None, "x", 1000, false);
-        let json = notifications_fetch_unread("nobody".to_string(), 10).unwrap();
+        let json = notifications_fetch_unread(nobody, 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -494,12 +513,11 @@ mod tests {
 
     #[test]
     fn test_fetch_paginated_includes_read() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("fetch");
-        insert_notification("n1", "pk1", "mention", None, "a", 3000, false);
-        insert_notification("n2", "pk1", "like", None, "b", 2000, true);
-        insert_notification("n3", "pk1", "follow", None, "c", 1000, false);
-        let json = notifications_fetch("pk1".to_string(), 2, 0).unwrap();
+        let (pk1, _g, _s) = setup_test_context("fetch");
+        insert_notification("n1", &pk1, "mention", None, "a", 3000, false);
+        insert_notification("n2", &pk1, "like", None, "b", 2000, true);
+        insert_notification("n3", &pk1, "follow", None, "c", 1000, false);
+        let json = notifications_fetch(pk1.clone(), 2, 0).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -508,7 +526,7 @@ mod tests {
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0]["id"], "n1");
         assert_eq!(arr[1]["id"], "n2");
-        let json = notifications_fetch("pk1".to_string(), 10, 2).unwrap();
+        let json = notifications_fetch(pk1, 10, 2).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -520,15 +538,11 @@ mod tests {
 
     #[test]
     fn test_mark_read() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("markread");
-        insert_notification("n1", "pk1", "mention", None, "x", 1000, false);
+        let (pk1, _g, _s) = setup_test_context("markread");
+        insert_notification("n1", &pk1, "mention", None, "x", 1000, false);
         assert!(notifications_mark_read("n1".to_string()).unwrap());
-        assert_eq!(
-            notifications_get_unread_count("pk1".to_string()).unwrap(),
-            0
-        );
-        let json = notifications_fetch_unread("pk1".to_string(), 10).unwrap();
+        assert_eq!(notifications_get_unread_count(pk1.clone()).unwrap(), 0);
+        let json = notifications_fetch_unread(pk1, 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -545,16 +559,21 @@ mod tests {
         let _p = tmp_db("markall");
         let keys1 = soshal_nostr_core::keys::generate_keys();
         let pk1 = keys1.public_key().to_hex();
+        let keys2 = soshal_nostr_core::keys::generate_keys();
+        let pk2 = keys2.public_key().to_hex();
         super::super::signer::signer_unlock(keys1.secret_key().to_secret_hex()).unwrap();
         insert_notification("n1", &pk1, "mention", None, "x", 2000, false);
         insert_notification("n2", &pk1, "like", None, "x", 1000, false);
-        insert_notification("n3", "pk2", "follow", None, "x", 1000, false);
+        insert_notification("n3", &pk2, "follow", None, "x", 1000, false);
         assert!(notifications_mark_all_read(pk1.clone()).unwrap());
         assert_eq!(notifications_get_unread_count(pk1).unwrap(), 0);
-        assert_eq!(
-            notifications_get_unread_count("pk2".to_string()).unwrap(),
-            1
-        );
+
+        // While pk1 is active, attempting to read pk2's unread count fails identity check
+        assert!(notifications_get_unread_count(pk2.clone()).is_err());
+
+        // Unlocking as pk2 allows reading pk2's unread count
+        super::super::signer::signer_unlock(keys2.secret_key().to_secret_hex()).unwrap();
+        assert_eq!(notifications_get_unread_count(pk2).unwrap(), 1);
         let _ = super::super::signer::signer_lock();
     }
 
@@ -589,12 +608,11 @@ mod tests {
 
     #[test]
     fn test_delete() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("delete");
-        insert_notification("n1", "pk1", "mention", None, "x", 1000, false);
+        let (pk1, _g, _s) = setup_test_context("delete");
+        insert_notification("n1", &pk1, "mention", None, "x", 1000, false);
         assert!(notifications_delete("n1".to_string()).unwrap());
         assert!(!notifications_delete("n1".to_string()).unwrap());
-        let json = notifications_fetch("pk1".to_string(), 10, 0).unwrap();
+        let json = notifications_fetch(pk1, 10, 0).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -637,29 +655,21 @@ mod tests {
 
     #[test]
     fn test_get_unread_count() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("count");
-        insert_notification("n1", "pk1", "mention", None, "x", 3000, false);
-        insert_notification("n2", "pk1", "like", None, "x", 2000, false);
-        insert_notification("n3", "pk1", "follow", None, "x", 1000, true);
-        assert_eq!(
-            notifications_get_unread_count("pk1".to_string()).unwrap(),
-            2
-        );
-        assert_eq!(
-            notifications_get_unread_count("pk2".to_string()).unwrap(),
-            0
-        );
+        let (pk1, _g, _s) = setup_test_context("count");
+        insert_notification("n1", &pk1, "mention", None, "x", 3000, false);
+        insert_notification("n2", &pk1, "like", None, "x", 2000, false);
+        insert_notification("n3", &pk1, "follow", None, "x", 1000, true);
+        assert_eq!(notifications_get_unread_count(pk1.clone()).unwrap(), 2);
+        assert!(notifications_get_unread_count("pk2".to_string()).is_err());
     }
 
     #[test]
     fn test_fetch_by_type_filters() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("bytype");
-        insert_notification("n1", "pk1", "mention", None, "x", 3000, false);
-        insert_notification("n2", "pk1", "like", None, "x", 2000, false);
-        insert_notification("n3", "pk1", "follow", None, "x", 1000, false);
-        let json = notifications_fetch_by_type("pk1".to_string(), "like".to_string(), 10).unwrap();
+        let (pk1, _g, _s) = setup_test_context("bytype");
+        insert_notification("n1", &pk1, "mention", None, "x", 3000, false);
+        insert_notification("n2", &pk1, "like", None, "x", 2000, false);
+        insert_notification("n3", &pk1, "follow", None, "x", 1000, false);
+        let json = notifications_fetch_by_type(pk1, "like".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -672,11 +682,9 @@ mod tests {
 
     #[test]
     fn test_fetch_mentions() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("mentions");
-        insert_notification("n1", "pk1", "mention", None, "x", 1000, false);
-        let json =
-            notifications_fetch_by_type("pk1".to_string(), "mention".to_string(), 10).unwrap();
+        let (pk1, _g, _s) = setup_test_context("mentions");
+        insert_notification("n1", &pk1, "mention", None, "x", 1000, false);
+        let json = notifications_fetch_by_type(pk1, "mention".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -688,10 +696,9 @@ mod tests {
 
     #[test]
     fn test_fetch_reactions() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("reactions");
-        insert_notification("n1", "pk1", "like", None, "x", 1000, false);
-        let json = notifications_fetch_by_type("pk1".to_string(), "like".to_string(), 10).unwrap();
+        let (pk1, _g, _s) = setup_test_context("reactions");
+        insert_notification("n1", &pk1, "like", None, "x", 1000, false);
+        let json = notifications_fetch_by_type(pk1, "like".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -703,10 +710,9 @@ mod tests {
 
     #[test]
     fn test_fetch_replies() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("replies");
-        insert_notification("n1", "pk1", "reply", None, "x", 1000, false);
-        let json = notifications_fetch_by_type("pk1".to_string(), "reply".to_string(), 10).unwrap();
+        let (pk1, _g, _s) = setup_test_context("replies");
+        insert_notification("n1", &pk1, "reply", None, "x", 1000, false);
+        let json = notifications_fetch_by_type(pk1, "reply".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -718,11 +724,9 @@ mod tests {
 
     #[test]
     fn test_fetch_messages() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("messages");
-        insert_notification("n1", "pk1", "message", None, "x", 1000, false);
-        let json =
-            notifications_fetch_by_type("pk1".to_string(), "message".to_string(), 10).unwrap();
+        let (pk1, _g, _s) = setup_test_context("messages");
+        insert_notification("n1", &pk1, "message", None, "x", 1000, false);
+        let json = notifications_fetch_by_type(pk1, "message".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -734,11 +738,9 @@ mod tests {
 
     #[test]
     fn test_fetch_follows() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("follows");
-        insert_notification("n1", "pk1", "follow", None, "x", 1000, false);
-        let json =
-            notifications_fetch_by_type("pk1".to_string(), "follow".to_string(), 10).unwrap();
+        let (pk1, _g, _s) = setup_test_context("follows");
+        insert_notification("n1", &pk1, "follow", None, "x", 1000, false);
+        let json = notifications_fetch_by_type(pk1, "follow".to_string(), 10).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -779,21 +781,24 @@ mod tests {
 
     #[test]
     fn test_errors_when_db_not_initialized() {
-        if db::db_path().is_err() {
-            assert!(notifications_fetch_unread("pk1".to_string(), 10)
-                .unwrap_err()
-                .contains("not initialized"));
-        }
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        crate::ffi::db::reset_db_global();
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        assert!(notifications_fetch_unread(pk, 10)
+            .unwrap_err()
+            .contains("database not initialized"));
     }
 
     #[test]
     fn test_fetch_offset_and_limit_clamped() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("offclamp");
+        let (pk1, _g, _s) = setup_test_context("offclamp");
         for i in 0..501 {
             insert_notification(
                 &format!("n{i}"),
-                "pk1",
+                &pk1,
                 "mention",
                 None,
                 "x",
@@ -802,7 +807,7 @@ mod tests {
             );
         }
         // limit 600 clamps to 500; offset -1 clamps to 0.
-        let json = notifications_fetch("pk1".to_string(), 600, -1).unwrap();
+        let json = notifications_fetch(pk1.clone(), 600, -1).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -812,7 +817,7 @@ mod tests {
         assert_eq!(arr[0]["id"], "n0");
         assert_eq!(arr[499]["id"], "n499");
         // limit 0 clamps to 1.
-        let json = notifications_fetch("pk1".to_string(), 0, 0).unwrap();
+        let json = notifications_fetch(pk1.clone(), 0, 0).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -821,7 +826,7 @@ mod tests {
         assert_eq!(arr.len(), 1, "json: {json}");
         assert_eq!(arr[0]["id"], "n0");
         // Negative offset reads from the start.
-        let json = notifications_fetch("pk1".to_string(), 10, -1).unwrap();
+        let json = notifications_fetch(pk1, 10, -1).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -832,15 +837,13 @@ mod tests {
 
     #[test]
     fn test_fetch_by_type_limit_clamped() {
-        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let _p = tmp_db("byclamp");
-        insert_notification("n1", "pk1", "like", None, "x", 3000, false);
-        insert_notification("n2", "pk1", "like", None, "x", 2000, false);
-        insert_notification("n3", "pk1", "like", None, "x", 1000, false);
-        insert_notification("n4", "pk1", "mention", None, "x", 500, false);
+        let (pk1, _g, _s) = setup_test_context("byclamp");
+        insert_notification("n1", &pk1, "like", None, "x", 3000, false);
+        insert_notification("n2", &pk1, "like", None, "x", 2000, false);
+        insert_notification("n3", &pk1, "like", None, "x", 1000, false);
+        insert_notification("n4", &pk1, "mention", None, "x", 500, false);
         for limit in [0, -5] {
-            let json =
-                notifications_fetch_by_type("pk1".to_string(), "like".to_string(), limit).unwrap();
+            let json = notifications_fetch_by_type(pk1.clone(), "like".to_string(), limit).unwrap();
             let arr = serde_json::from_str::<serde_json::Value>(&json)
                 .unwrap()
                 .as_array()
@@ -849,13 +852,36 @@ mod tests {
             assert_eq!(arr.len(), 1, "limit {limit}: {json}");
             assert_eq!(arr[0]["notification_type"], "like");
         }
-        let json = notifications_fetch_by_type("pk1".to_string(), "like".to_string(), 100).unwrap();
+        let json = notifications_fetch_by_type(pk1, "like".to_string(), 100).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
             .unwrap()
             .clone();
         assert_eq!(arr.len(), 3, "json: {json}");
+    }
+
+    #[test]
+    fn test_notifications_cross_account_snooping_rejected() {
+        let (_pk1, _g, _s) = setup_test_context("snoop");
+        let keys2 = soshal_nostr_core::keys::generate_keys();
+        let pk2 = keys2.public_key().to_hex();
+
+        // While pk1 is the active signer, queries for pk2's notifications must fail
+        let err_unread = notifications_fetch_unread(pk2.clone(), 10).unwrap_err();
+        assert!(err_unread.contains("identity mismatch"), "{err_unread}");
+
+        let err_fetch = notifications_fetch(pk2.clone(), 10, 0).unwrap_err();
+        assert!(err_fetch.contains("identity mismatch"), "{err_fetch}");
+
+        let err_by_type = notifications_fetch_by_type(pk2.clone(), "like".into(), 10).unwrap_err();
+        assert!(err_by_type.contains("identity mismatch"), "{err_by_type}");
+
+        let err_count = notifications_get_unread_count(pk2.clone()).unwrap_err();
+        assert!(err_count.contains("identity mismatch"), "{err_count}");
+
+        let err_ignored = notifications_list_ignored(pk2).unwrap_err();
+        assert!(err_ignored.contains("identity mismatch"), "{err_ignored}");
     }
 
     #[test]

@@ -39,14 +39,15 @@ pub fn score_post_with_set(
     weights: &AlgoWeights,
     now_secs: f64,
 ) -> f64 {
-    let hours_ago = (now_secs - stats.created_at_secs).max(0.1) / HOUR_SEC;
+    let hours_ago = (now_secs - stats.created_at_secs).max(0.0) / HOUR_SEC;
 
     let velocity_term = if weights.velocity != 0.0 {
         let engagement = (stats.likes_count as u64)
             + (stats.reposts_count as u64)
             + (stats.zaps_count as u64)
             + (stats.replies_count as u64);
-        (engagement as f64 / hours_ago) * weights.velocity
+        let effective_hours = hours_ago + 1.0;
+        (engagement as f64 / effective_hours) * weights.velocity
     } else {
         0.0
     };
@@ -59,7 +60,7 @@ pub fn score_post_with_set(
     };
 
     let recency_term = if weights.recency != 0.0 {
-        let recency_factor = 1.0 / (hours_ago + 1.0).log2();
+        let recency_factor = 1.0 / (hours_ago + 2.0).log2();
         recency_factor * weights.recency
     } else {
         0.0
@@ -184,5 +185,28 @@ mod tests {
         let score = score_post(&stats, &[], &[], &weights, 1000.0);
         assert!(score.is_finite());
         assert!(score >= 0.0);
+    }
+
+    #[test]
+    fn test_score_new_post_bounded() {
+        let now = 1_000_000.0;
+        let stats = PostStats {
+            created_at_secs: now, // 0 seconds old
+            likes_count: 1,
+            replies_count: 0,
+            zaps_count: 0,
+            reposts_count: 0,
+            wot_distance: 0,
+        };
+        let weights = AlgoWeights::default();
+        let score = score_post(&stats, &[], &[], &weights, now);
+        // velocity: 1 / 1.0 = 1.0
+        // wot: 2.0
+        // recency: 1.0 / log2(2.0) = 1.0
+        // total: 4.0
+        assert!(
+            (score - 4.0).abs() < 1e-6,
+            "score should be exactly 4.0, got {score}"
+        );
     }
 }

@@ -28,6 +28,7 @@ pub fn bookmarks_save(pubkey: String, event_id: String) -> Result<String, String
 /// `{id, pubkey, event_id, created_at}`.
 #[frb(sync, serialize)]
 pub fn bookmarks_list(pubkey: String, limit: i64, offset: i64) -> Result<String, String> {
+    super::signer::require_identity(&pubkey)?;
     super::db::with_db_result(|db| {
         let rows = soshal_db_core::repos::bookmark::BookmarkRepo::new(db)
             .get_user_bookmarks(&pubkey, limit, offset)?;
@@ -211,8 +212,11 @@ mod tests {
         let id2 = bookmarks_save(pk2.clone(), "evt1".into()).unwrap();
         assert_ne!(id1, id2);
 
-        let list1 = bookmarks_list(pk1.clone(), 10, 0).unwrap();
-        assert!(list1.contains("evt1"));
+        // User 2 cannot list User 1's private bookmarks
+        let denied = bookmarks_list(pk1.clone(), 10, 0);
+        assert!(denied.is_err());
+        assert!(denied.unwrap_err().contains("identity mismatch"));
+
         let list2 = bookmarks_list(pk2.clone(), 10, 0).unwrap();
         assert!(list2.contains("evt1"));
 
@@ -223,9 +227,12 @@ mod tests {
 
         // User 1 deletes their own bookmark
         super::super::signer::signer_unlock(keys1.secret_key().to_secret_hex()).unwrap();
+        let list1 = bookmarks_list(pk1, 10, 0).unwrap();
+        assert!(list1.contains("evt1"));
         assert!(bookmarks_delete(id1).unwrap());
 
         // User 2's bookmark remains intact
+        super::super::signer::signer_unlock(keys2.secret_key().to_secret_hex()).unwrap();
         let list2_after = bookmarks_list(pk2, 10, 0).unwrap();
         assert!(list2_after.contains("evt1"));
 
