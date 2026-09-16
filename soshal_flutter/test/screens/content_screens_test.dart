@@ -29,7 +29,7 @@ late FakeApi api;
 
 class FakeStealthService extends StealthService {
   @override
-  Future<List<String>> load() async {
+  Future<List<String>> load([String? pubkey]) async {
     await Future<void>.delayed(Duration.zero);
     notifyListeners();
     return [];

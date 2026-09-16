@@ -984,4 +984,14 @@ mod tests {
         .unwrap_err();
         assert!(e.contains("Insufficient Fountain packets"), "got {e}");
     }
+
+    #[test]
+    fn test_mdns_advertise_unauthorized_rejected() {
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _ = super::super::signer::signer_lock();
+        let res = super::p2p_mdns_advertise_start(String::new(), 8080, None);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.contains("signer locked"));
+    }
 }

@@ -132,7 +132,7 @@ mod integration_tests {
         assert!(diag.contains("\"n\":"));
         let v: serde_json::Value = serde_json::from_str(&diag).unwrap();
         let n = v[0]["n"].as_i64().unwrap_or(0);
-        assert!(n > 10, "expected schema tables, got {n}");
+        assert_eq!(n, soshal_db_core::schema::SCHEMA_VERSION);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));

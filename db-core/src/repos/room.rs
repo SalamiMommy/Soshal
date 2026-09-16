@@ -16,6 +16,14 @@ pub struct GroupRoomRow {
     pub created_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomReactionSummaryRow {
+    pub message_id: String,
+    pub emoji: String,
+    pub count: i64,
+    pub reacted: bool,
+}
+
 pub struct GroupRoomRepo<'a> {
     db: &'a Database,
 }
@@ -92,7 +100,75 @@ impl<'a> GroupRoomRepo<'a> {
 
     pub fn delete(&self, room_id: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        crate::query::execute(
+            &conn,
+            "UPDATE group_room_reactions SET room_id = '' WHERE room_id = ?1",
+            [room_id],
+        )?;
         crate::query::execute(&conn, "DELETE FROM group_rooms WHERE id = ?1", [room_id])?;
         Ok(())
+    }
+
+    /// Toggle an emoji reaction on a post in a room; returns true when added, false when removed.
+    pub fn toggle_reaction(
+        &self,
+        group_id: &str,
+        room_id: &str,
+        message_id: &str,
+        pubkey: &str,
+        emoji: &str,
+    ) -> Result<bool, crate::error::DbError> {
+        let conn = self.db.conn()?;
+        let deleted = crate::query::execute(
+            &conn,
+            "DELETE FROM group_room_reactions
+             WHERE message_id = ?1 AND pubkey = ?2 AND emoji = ?3",
+            params![message_id, pubkey, emoji],
+        )?;
+        if deleted > 0 {
+            return Ok(false);
+        }
+        crate::query::execute(
+            &conn,
+            "INSERT INTO group_room_reactions (group_id, room_id, message_id, pubkey, emoji, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                group_id,
+                room_id,
+                message_id,
+                pubkey,
+                emoji,
+                soshal_common_core::format::now_secs()
+            ],
+        )?;
+        Ok(true)
+    }
+
+    /// Emoji reaction counts for all posts in a room, each with whether `viewer_pubkey` reacted.
+    pub fn reaction_summary(
+        &self,
+        group_id: &str,
+        room_id: &str,
+        viewer_pubkey: &str,
+    ) -> Result<Vec<RoomReactionSummaryRow>, crate::error::DbError> {
+        let conn = self.db.conn()?;
+        crate::query::query(
+            &conn,
+            "SELECT r.message_id, r.emoji, COUNT(*) AS cnt,
+                    MAX(CASE WHEN r.pubkey = ?3 THEN 1 ELSE 0 END) AS reacted
+             FROM group_room_reactions r
+             WHERE r.group_id = ?1 AND r.room_id = ?2
+             GROUP BY r.message_id, r.emoji
+             ORDER BY cnt DESC, r.emoji ASC",
+            [group_id, room_id, viewer_pubkey],
+            |row| {
+                Ok(RoomReactionSummaryRow {
+                    message_id: row.get(0)?,
+                    emoji: row.get(1)?,
+                    count: row.get(2)?,
+                    reacted: row.get::<i64>(3)? != 0,
+                })
+            },
+        )
     }
 }

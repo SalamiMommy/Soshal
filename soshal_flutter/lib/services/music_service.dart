@@ -30,6 +30,14 @@ class MusicService extends ChangeNotifier
 
   bool isTrackSaved(String id) => _savedTracks.any((t) => t.id == id);
 
+  /// Clears in-memory saved tracks, playlists, and transient state on account switch.
+  void resetForAccountSwitch() {
+    _savedTracks = [];
+    _playlists = [];
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Fetch tracks (kind 31022), optionally filtered by author pubkey.
   Future<List<MusicTrack>> fetchTracks({String? author, int limit = 50}) =>
       guard(() async {

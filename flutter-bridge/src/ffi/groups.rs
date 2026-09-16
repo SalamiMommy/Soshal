@@ -336,15 +336,7 @@ pub fn groups_set_member_role(
     role: String,
     admin_pubkey: String,
 ) -> Result<bool, String> {
-    let owner = super::db::with_db_result(|db| {
-        GroupRepo::new(db)
-            .get_by_id(&group_id)?
-            .map(|r| r.pubkey)
-            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)
-    })?;
-    if owner != admin_pubkey {
-        return Err("only the group owner can change roles".to_string()).into();
-    }
+    require_owner(&group_id, &admin_pubkey)?;
     super::db::with_db_result(|db| {
         GroupRepo::new(db).add_member(
             &group_id,
@@ -363,15 +355,7 @@ pub fn groups_remove_member(
     member_pubkey: String,
     admin_pubkey: String,
 ) -> Result<bool, String> {
-    let owner = super::db::with_db_result(|db| {
-        GroupRepo::new(db)
-            .get_by_id(&group_id)?
-            .map(|r| r.pubkey)
-            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)
-    })?;
-    if owner != admin_pubkey {
-        return Err("only the group owner can remove members".to_string()).into();
-    }
+    require_owner(&group_id, &admin_pubkey)?;
     super::db::with_db_result(|db| {
         GroupRepo::new(db).remove_member(&group_id, &member_pubkey)?;
         Ok(true)
@@ -460,6 +444,7 @@ fn require_owner(group_id: &str, actor: &str) -> Result<(), String> {
     if owner != actor {
         return Err("only the group owner can do that".to_string());
     }
+    super::signer::require_identity(actor)?;
     Ok(())
 }
 
@@ -560,6 +545,59 @@ pub fn groups_rooms_delete(room_id: String, actor: String) -> Result<bool, Strin
     })
 }
 
+/// Toggle an emoji reaction on a post in a room; returns true when added, false when removed.
+#[frb(sync, serialize)]
+pub fn groups_rooms_react(
+    group_id: String,
+    room_id: String,
+    message_id: String,
+    pubkey: String,
+    emoji: String,
+) -> Result<bool, String> {
+    if emoji.is_empty() || emoji.chars().count() > 16 {
+        return Err("invalid reaction emoji".into());
+    }
+    super::signer::require_identity(&pubkey)?;
+    super::db::with_db_result(|db| {
+        let group_repo = GroupRepo::new(db);
+        if !group_repo.is_member(&group_id, &pubkey)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "not a member of this group".to_string(),
+            ));
+        }
+        if BannedMemberRepo::new(db).is_banned(&group_id, &pubkey)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "banned from this group".to_string(),
+            ));
+        }
+        soshal_db_core::repos::room::GroupRoomRepo::new(db).toggle_reaction(
+            &group_id,
+            &room_id,
+            &message_id,
+            &pubkey,
+            &emoji,
+        )
+    })
+}
+
+/// Emoji reaction counts for all posts in a room, with whether `viewer_pubkey` reacted (JSON rows).
+#[frb(sync, serialize)]
+pub fn groups_rooms_reactions(
+    group_id: String,
+    room_id: String,
+    viewer_pubkey: String,
+) -> Result<String, String> {
+    super::db::with_db_result(|db| {
+        let rows = soshal_db_core::repos::room::GroupRoomRepo::new(db).reaction_summary(
+            &group_id,
+            &room_id,
+            &viewer_pubkey,
+        )?;
+        serde_json::to_string(&rows)
+            .map_err(|e| soshal_db_core::error::DbError::Oversized(e.to_string()))
+    })
+}
+
 /// List group threads, pinned-first, sorted by recency or hot engagement
 /// (JSON rows with reply + reaction counts).
 #[frb(sync, serialize)]
@@ -580,20 +618,32 @@ pub fn groups_threads_create(
     body: String,
     author: String,
 ) -> Result<String, String> {
+    super::signer::require_identity(&author)?;
     let now = soshal_common_core::format::now_secs();
     let id = format!("thr_{now}_{:x}", rand::random::<u32>());
     let row = soshal_db_core::repos::thread::GroupThreadRow {
         id: id.clone(),
-        group_id,
+        group_id: group_id.clone(),
         title,
         body,
-        author,
+        author: author.clone(),
         created_at: now,
         is_pinned: false,
         reply_count: 0,
         reaction_count: 0,
     };
     super::db::with_db_result(|db| {
+        let group_repo = GroupRepo::new(db);
+        if !group_repo.is_member(&group_id, &author)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "not a member of this group".to_string(),
+            ));
+        }
+        if BannedMemberRepo::new(db).is_banned(&group_id, &author)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "banned from this group".to_string(),
+            ));
+        }
         soshal_db_core::repos::thread::GroupThreadRepo::new(db).upsert(&row)?;
         Ok(())
     })?;
@@ -640,19 +690,34 @@ pub fn groups_threads_reply(
     content: String,
     author: String,
 ) -> Result<String, String> {
+    super::signer::require_identity(&author)?;
     let now = soshal_common_core::format::now_secs();
     let id = format!("rpl_{now}_{:x}", rand::random::<u32>());
     let row = soshal_db_core::repos::thread::GroupThreadReplyRow {
         id: id.clone(),
-        thread_id,
+        thread_id: thread_id.clone(),
         parent_id,
-        author,
+        author: author.clone(),
         content,
         created_at: now,
     };
     super::db::with_db_result(|db| {
-        let repo = soshal_db_core::repos::thread::GroupThreadRepo::new(db);
-        repo.add_reply(&row)?;
+        let thread_repo = soshal_db_core::repos::thread::GroupThreadRepo::new(db);
+        let thread = thread_repo
+            .get(&thread_id)?
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
+        let group_repo = GroupRepo::new(db);
+        if !group_repo.is_member(&thread.group_id, &author)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "not a member of this group".to_string(),
+            ));
+        }
+        if BannedMemberRepo::new(db).is_banned(&thread.group_id, &author)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "banned from this group".to_string(),
+            ));
+        }
+        thread_repo.add_reply(&row)?;
         Ok(())
     })?;
     Ok(id).into()
@@ -677,12 +742,27 @@ pub fn groups_threads_react(
     pubkey: String,
     emoji: String,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&pubkey)?;
     if emoji.is_empty() || emoji.chars().count() > 16 {
         return Err("invalid reaction emoji".into());
     }
     super::db::with_db_result(|db| {
-        soshal_db_core::repos::thread::GroupThreadRepo::new(db)
-            .toggle_reaction(&thread_id, &reply_id, &pubkey, &emoji)
+        let thread_repo = soshal_db_core::repos::thread::GroupThreadRepo::new(db);
+        let thread = thread_repo
+            .get(&thread_id)?
+            .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
+        let group_repo = GroupRepo::new(db);
+        if !group_repo.is_member(&thread.group_id, &pubkey)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "not a member of this group".to_string(),
+            ));
+        }
+        if BannedMemberRepo::new(db).is_banned(&thread.group_id, &pubkey)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "banned from this group".to_string(),
+            ));
+        }
+        thread_repo.toggle_reaction(&thread_id, &reply_id, &pubkey, &emoji)
     })
 }
 
@@ -771,6 +851,7 @@ pub fn groups_voice_channels_delete(channel_id: String, actor: String) -> Result
 /// surface; this only records intent).
 #[frb(sync, serialize)]
 pub fn groups_voice_join(channel_id: String, pubkey: String) -> Result<bool, String> {
+    super::signer::require_identity(&pubkey)?;
     super::db::with_db_result(|db| {
         soshal_db_core::repos::voice::GroupVoiceRepo::new(db).join(&channel_id, &pubkey)?;
         Ok(true)
@@ -780,6 +861,7 @@ pub fn groups_voice_join(channel_id: String, pubkey: String) -> Result<bool, Str
 /// Clear local presence from a voice channel.
 #[frb(sync, serialize)]
 pub fn groups_voice_leave(channel_id: String, pubkey: String) -> Result<bool, String> {
+    super::signer::require_identity(&pubkey)?;
     super::db::with_db_result(|db| {
         soshal_db_core::repos::voice::GroupVoiceRepo::new(db).leave(&channel_id, &pubkey)?;
         Ok(true)
@@ -1098,7 +1180,8 @@ mod tests {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("role_gate");
-        let owner = "a".repeat(64);
+        let owner_keys = soshal_nostr_core::keys::generate_keys();
+        let owner = owner_keys.public_key().to_hex();
         let keys = soshal_nostr_core::keys::generate_keys();
         let member = keys.public_key().to_hex();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
@@ -1114,6 +1197,7 @@ mod tests {
         );
         assert!(denied.unwrap_err().contains("only the group owner"));
 
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
         assert!(groups_set_member_role(
             "g3".to_string(),
             member.clone(),
@@ -1124,12 +1208,16 @@ mod tests {
         let with_roles = groups_members_with_roles("g3".to_string()).unwrap();
         assert!(with_roles.contains("\"role\":\"mod\""));
 
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let denied = groups_remove_member("g3".to_string(), member.clone(), member.clone());
         assert!(denied.unwrap_err().contains("only the group owner"));
+
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
         assert!(groups_remove_member("g3".to_string(), member, owner).unwrap());
 
         let members = groups_get_members("g3".to_string()).unwrap();
         assert_eq!(members.len(), 1);
+        let _ = super::super::signer::signer_lock();
     }
 
     #[test]
@@ -1251,17 +1339,14 @@ mod tests {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
         let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("rooms");
-        let owner = "a".repeat(64);
-        create_group("g6", &owner);
         super::super::signer::signer_unlock(
             "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
         )
         .unwrap();
-        // The message sender (active signer) must be a member: post-message
-        // now enforces membership.
-        let sender_pk = super::super::signer::signer_pubkey().unwrap();
-        crate::ffi::db::insert_test_user(&sender_pk);
-        groups_join("g6".to_string(), sender_pk, None).unwrap();
+        let owner = super::super::signer::signer_pubkey().unwrap();
+        create_group("g6", &owner);
+        insert_user(&owner);
+        groups_join("g6".to_string(), owner.clone(), None).unwrap();
 
         assert_eq!(groups_rooms_list("g6".to_string()).unwrap(), "[]");
         let room_id = groups_rooms_create(
@@ -1314,11 +1399,19 @@ mod tests {
     #[test]
     fn test_threads_crud_replies_pin() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("threads");
-        let owner = "a".repeat(64);
-        let member = "b".repeat(64);
+        let owner_keys = soshal_nostr_core::keys::generate_keys();
+        let owner = owner_keys.public_key().to_hex();
+        let member_keys = soshal_nostr_core::keys::generate_keys();
+        let member = member_keys.public_key().to_hex();
         create_group("g7", &owner);
         insert_user(&member);
+        crate::ffi::db::with_db_result(|db| {
+            GroupRepo::new(db).add_member("g7", &member, "member", 0)
+        })
+        .unwrap();
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
 
         assert_eq!(
             groups_threads_list("g7".to_string(), "newest".to_string()).unwrap(),
@@ -1333,6 +1426,7 @@ mod tests {
         .unwrap();
         assert!(thread_id.starts_with("thr_"));
 
+        super::super::signer::signer_unlock(member_keys.secret_key().to_secret_hex()).unwrap();
         let reply_id = groups_threads_reply(
             thread_id.clone(),
             String::new(),
@@ -1360,6 +1454,8 @@ mod tests {
 
         let denied = groups_threads_pin(thread_id.clone(), true, member);
         assert!(denied.unwrap_err().contains("only the group owner"));
+
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
         assert!(groups_threads_pin(thread_id.clone(), true, owner.clone()).unwrap());
         let pinned = groups_threads_list("g7".to_string(), "newest".to_string()).unwrap();
         assert!(pinned.contains("\"is_pinned\":true"));
@@ -1370,18 +1466,30 @@ mod tests {
             groups_threads_list("g7".to_string(), "newest".to_string()).unwrap(),
             "[]"
         );
+        let _ = super::super::signer::signer_lock();
     }
 
     #[test]
     fn test_thread_reactions_and_popular_sort() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("thread_reacts");
-        let owner = "a".repeat(64);
-        let member = "b".repeat(64);
-        let other = "c".repeat(64);
+        let owner_keys = soshal_nostr_core::keys::generate_keys();
+        let owner = owner_keys.public_key().to_hex();
+        let member_keys = soshal_nostr_core::keys::generate_keys();
+        let member = member_keys.public_key().to_hex();
+        let other_keys = soshal_nostr_core::keys::generate_keys();
+        let other = other_keys.public_key().to_hex();
         create_group("g9", &owner);
         insert_user(&member);
         insert_user(&other);
+        crate::ffi::db::with_db_result(|db| {
+            let repo = GroupRepo::new(db);
+            repo.add_member("g9", &member, "member", 0)?;
+            repo.add_member("g9", &other, "member", 0)
+        })
+        .unwrap();
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
 
         let old = groups_threads_create(
             "g9".to_string(),
@@ -1400,14 +1508,17 @@ mod tests {
         )
         .unwrap();
 
+        super::super::signer::signer_unlock(member_keys.secret_key().to_secret_hex()).unwrap();
         assert!(
             groups_threads_react(old.clone(), String::new(), member.clone(), "👍".to_string(),)
                 .unwrap()
         );
+        super::super::signer::signer_unlock(other_keys.secret_key().to_secret_hex()).unwrap();
         assert!(
             groups_threads_react(old.clone(), String::new(), other.clone(), "👍".to_string(),)
                 .unwrap()
         );
+        super::super::signer::signer_unlock(member_keys.secret_key().to_secret_hex()).unwrap();
         assert!(
             groups_threads_react(old.clone(), String::new(), member.clone(), "❤️".to_string(),)
                 .unwrap()
@@ -1438,12 +1549,14 @@ mod tests {
             member.clone(),
         )
         .unwrap();
+        super::super::signer::signer_unlock(other_keys.secret_key().to_secret_hex()).unwrap();
         assert!(groups_threads_react(old.clone(), rpl.clone(), other, "🔥".to_string(),).unwrap());
         let summary = groups_threads_reactions(old.clone(), member.clone()).unwrap();
         assert!(summary.contains(&format!("\"reply_id\":\"{}\"", rpl)));
         assert!(summary.contains("\"emoji\":\"🔥\""));
 
         // Empty/oversized emoji rejected.
+        super::super::signer::signer_unlock(member_keys.secret_key().to_secret_hex()).unwrap();
         assert!(
             groups_threads_react(old.clone(), String::new(), member.clone(), String::new())
                 .is_err()
@@ -1465,40 +1578,169 @@ mod tests {
             groups_threads_list("g9".to_string(), "bogus".to_string()).unwrap(),
             newest
         );
+        let _ = super::super::signer::signer_lock();
+    }
+
+    #[test]
+    fn test_threads_member_and_ban_checks() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _db = TestDb::init("threads_auth_ban");
+        let owner_keys = soshal_nostr_core::keys::generate_keys();
+        let owner = owner_keys.public_key().to_hex();
+        let user_keys = soshal_nostr_core::keys::generate_keys();
+        let user = user_keys.public_key().to_hex();
+        create_group("g_auth", &owner);
+        insert_user(&user);
+
+        // 1. Non-member cannot create a thread
+        super::super::signer::signer_unlock(user_keys.secret_key().to_secret_hex()).unwrap();
+        let res = groups_threads_create(
+            "g_auth".to_string(),
+            "Non-member thread".to_string(),
+            "body".to_string(),
+            user.clone(),
+        );
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("not a member"));
+
+        // Owner creates a thread
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
+        let thread_id = groups_threads_create(
+            "g_auth".to_string(),
+            "Owner thread".to_string(),
+            "body".to_string(),
+            owner.clone(),
+        )
+        .unwrap();
+
+        // Non-member cannot reply or react
+        super::super::signer::signer_unlock(user_keys.secret_key().to_secret_hex()).unwrap();
+        let reply_res = groups_threads_reply(
+            thread_id.clone(),
+            String::new(),
+            "reply".to_string(),
+            user.clone(),
+        );
+        assert!(reply_res.is_err());
+        assert!(reply_res.unwrap_err().contains("not a member"));
+
+        let react_res = groups_threads_react(
+            thread_id.clone(),
+            String::new(),
+            user.clone(),
+            "👍".to_string(),
+        );
+        assert!(react_res.is_err());
+        assert!(react_res.unwrap_err().contains("not a member"));
+
+        // 2. Add user as member -> now they can reply and react
+        crate::ffi::db::with_db_result(|db| {
+            GroupRepo::new(db).add_member("g_auth", &user, "member", 0)
+        })
+        .unwrap();
+
+        let reply_ok = groups_threads_reply(
+            thread_id.clone(),
+            String::new(),
+            "member reply".to_string(),
+            user.clone(),
+        );
+        assert!(reply_ok.is_ok());
+
+        let react_ok = groups_threads_react(
+            thread_id.clone(),
+            String::new(),
+            user.clone(),
+            "👍".to_string(),
+        );
+        assert!(react_ok.is_ok());
+
+        // 3. Ban user -> now banned from creating threads, replies, and reactions
+        crate::ffi::db::with_db_result(|db| {
+            BannedMemberRepo::new(db).insert(
+                &soshal_db_core::repos::banned_member::BannedMemberRow {
+                    group_id: "g_auth".to_string(),
+                    pubkey: user.clone(),
+                    banned_by: owner.clone(),
+                    reason: "violating rules".to_string(),
+                    banned_at: soshal_common_core::format::now_secs(),
+                },
+            )
+        })
+        .unwrap();
+
+        let banned_create = groups_threads_create(
+            "g_auth".to_string(),
+            "Banned thread".to_string(),
+            "body".to_string(),
+            user.clone(),
+        );
+        assert!(banned_create.is_err());
+        assert!(banned_create
+            .unwrap_err()
+            .contains("banned from this group"));
+
+        let banned_reply = groups_threads_reply(
+            thread_id.clone(),
+            String::new(),
+            "banned reply".to_string(),
+            user.clone(),
+        );
+        assert!(banned_reply.is_err());
+        assert!(banned_reply.unwrap_err().contains("banned from this group"));
+
+        let banned_react = groups_threads_react(thread_id, String::new(), user, "❤️".to_string());
+        assert!(banned_react.is_err());
+        assert!(banned_react.unwrap_err().contains("banned from this group"));
+
+        let _ = super::super::signer::signer_lock();
     }
 
     #[test]
     fn test_voice_channels_and_presence() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("voice");
-        let owner = "a".repeat(64);
-        let member = "b".repeat(64);
+        let owner_keys = soshal_nostr_core::keys::generate_keys();
+        let owner = owner_keys.public_key().to_hex();
+        let member_keys = soshal_nostr_core::keys::generate_keys();
+        let member = member_keys.public_key().to_hex();
         create_group("g8", &owner);
         insert_user(&member);
 
         assert_eq!(groups_voice_channels_list("g8".to_string()).unwrap(), "[]");
+        super::super::signer::signer_unlock(member_keys.secret_key().to_secret_hex()).unwrap();
         let denied =
             groups_voice_channels_create("g8".to_string(), "Lounge".to_string(), member.clone());
         assert!(denied.unwrap_err().contains("only the group owner"));
+
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
         let ch =
             groups_voice_channels_create("g8".to_string(), "Lounge".to_string(), owner.clone())
                 .unwrap();
         assert!(ch.starts_with("vc_"));
 
+        super::super::signer::signer_unlock(member_keys.secret_key().to_secret_hex()).unwrap();
         assert!(groups_voice_join(ch.clone(), member.clone()).unwrap());
+
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
         assert!(groups_voice_join(ch.clone(), owner.clone()).unwrap());
         let presence = groups_voice_presence(ch.clone()).unwrap();
         assert!(presence.contains(&format!("\"pubkey\":\"{}\"", member)));
         assert!(presence.contains(&format!("\"pubkey\":\"{}\"", owner)));
 
+        super::super::signer::signer_unlock(member_keys.secret_key().to_secret_hex()).unwrap();
         assert!(groups_voice_leave(ch.clone(), member.clone()).unwrap());
         let presence = groups_voice_presence(ch.clone()).unwrap();
         assert!(!presence.contains(&format!("\"pubkey\":\"{}\"", member)));
 
         assert!(groups_voice_channels_delete(ch.clone(), member).is_err());
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
         assert!(groups_voice_channels_delete(ch.clone(), owner).unwrap());
         assert_eq!(groups_voice_channels_list("g8".to_string()).unwrap(), "[]");
         assert_eq!(groups_voice_presence(ch).unwrap(), "[]");
+        let _ = super::super::signer::signer_lock();
     }
 
     #[test]
@@ -1591,8 +1833,10 @@ mod tests {
     #[test]
     fn test_set_password_and_verify() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _db = TestDb::init("set_pwd");
-        let owner = "a".repeat(64);
+        let owner_keys = soshal_nostr_core::keys::generate_keys();
+        let owner = owner_keys.public_key().to_hex();
         let non_owner = "b".repeat(64);
         insert_user(&owner);
         insert_user(&non_owner);
@@ -1611,6 +1855,7 @@ mod tests {
         .is_err());
 
         // Owner sets password -> becomes private
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
         assert!(groups_set_password(
             "pub_grp".to_string(),
             Some("NewSecret99".to_string()),
@@ -1631,6 +1876,7 @@ mod tests {
         let info3: serde_json::Value =
             serde_json::from_str(&groups_get_group_info("pub_grp".to_string()).unwrap()).unwrap();
         assert_eq!(info3["is_private"], false);
+        let _ = super::super::signer::signer_lock();
     }
 
     /// Helper to reset the ATTEMPTS static for a specific group between tests.
@@ -1779,5 +2025,119 @@ mod tests {
         let key2 = crate::ffi::db::with_db_result(|db| shared_key_for_group(db, "gheal")).unwrap();
         assert_eq!(key2.as_deref(), Some(raw_hex));
         super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_room_messages_reactions() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _db = TestDb::init("room-react");
+
+        let group_id = "g_room_rx".to_string();
+        let room_id = "room_abc".to_string();
+        let msg_id = "msg_123".to_string();
+        let keys_alice = soshal_nostr_core::keys::generate_keys();
+        let alice = keys_alice.public_key().to_hex();
+        let keys_bob = soshal_nostr_core::keys::generate_keys();
+        let bob = keys_bob.public_key().to_hex();
+
+        create_group(&group_id, &alice);
+        insert_user(&bob);
+        crate::ffi::db::with_db_result(|db| {
+            GroupRepo::new(db).add_member(&group_id, &bob, "member", 0)
+        })
+        .unwrap();
+
+        crate::ffi::signer::signer_unlock(keys_alice.secret_key().to_secret_hex()).unwrap();
+
+        // Reacting with invalid emoji fails
+        assert!(groups_rooms_react(
+            group_id.clone(),
+            room_id.clone(),
+            msg_id.clone(),
+            alice.clone(),
+            String::new()
+        )
+        .is_err());
+        assert!(groups_rooms_react(
+            group_id.clone(),
+            room_id.clone(),
+            msg_id.clone(),
+            alice.clone(),
+            "x".repeat(20)
+        )
+        .is_err());
+
+        // Alice reacts 👍
+        assert!(groups_rooms_react(
+            group_id.clone(),
+            room_id.clone(),
+            msg_id.clone(),
+            alice.clone(),
+            "👍".to_string()
+        )
+        .unwrap());
+
+        // Identity mismatch check: Alice is active signer, so reacting as Bob fails
+        assert!(groups_rooms_react(
+            group_id.clone(),
+            room_id.clone(),
+            msg_id.clone(),
+            bob.clone(),
+            "👍".to_string()
+        )
+        .is_err());
+
+        // Bob unlocks and reacts 👍
+        crate::ffi::signer::signer_unlock(keys_bob.secret_key().to_secret_hex()).unwrap();
+        assert!(groups_rooms_react(
+            group_id.clone(),
+            room_id.clone(),
+            msg_id.clone(),
+            bob.clone(),
+            "👍".to_string()
+        )
+        .unwrap());
+
+        // Alice unlocks and reacts ❤️
+        crate::ffi::signer::signer_unlock(keys_alice.secret_key().to_secret_hex()).unwrap();
+        assert!(groups_rooms_react(
+            group_id.clone(),
+            room_id.clone(),
+            msg_id.clone(),
+            alice.clone(),
+            "❤️".to_string()
+        )
+        .unwrap());
+
+        // Summary for Alice
+        let summary_alice =
+            groups_rooms_reactions(group_id.clone(), room_id.clone(), alice.clone()).unwrap();
+        assert!(summary_alice.contains("\"emoji\":\"👍\""));
+        assert!(summary_alice.contains("\"count\":2"));
+        assert!(summary_alice.contains("\"reacted\":true"));
+        assert!(summary_alice.contains("\"emoji\":\"❤️\""));
+
+        // Summary for Bob
+        let summary_bob =
+            groups_rooms_reactions(group_id.clone(), room_id.clone(), bob.clone()).unwrap();
+        assert!(summary_bob.contains("\"count\":2"));
+
+        // Alice toggles 👍 off
+        assert!(!groups_rooms_react(
+            group_id.clone(),
+            room_id.clone(),
+            msg_id.clone(),
+            alice.clone(),
+            "👍".to_string()
+        )
+        .unwrap());
+
+        let summary_after = groups_rooms_reactions(group_id, room_id, alice).unwrap();
+        assert!(summary_after.contains("\"emoji\":\"👍\""));
+        assert!(summary_after.contains("\"count\":1"));
+        assert!(summary_after.contains("\"reacted\":false"));
+
+        crate::ffi::signer::signer_lock().unwrap();
     }
 }

@@ -113,8 +113,8 @@ class _AccountsScreenState extends State<AccountsScreen> {
                             var unlocked = false;
                             if (!shell.hasPin &&
                                 context.read<SettingsService>().getSetting(
-                                        'keychain_unlock_enabled') ==
-                                    'true') {
+                                        'keychain_unlock_enabled') !=
+                                    'false') {
                               try {
                                 unlocked = await signer
                                     .unlockFromKeyring(account.pubkey);

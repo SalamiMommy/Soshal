@@ -24,6 +24,16 @@ class ZapService extends ChangeNotifier
   bool get isConnected =>
       (_nwcStatus ?? '').isNotEmpty && (_nwcStatus ?? '') != 'disconnected';
 
+  /// Clear wallet connection + cached receipts on account switch so Account B
+  /// never inherits Account A's NWC connection or payment capability.
+  void resetForAccountSwitch() {
+    disconnect();
+    _totalMsat = 0;
+    _receipts.clear();
+    clearLastError();
+    notifyDeferred();
+  }
+
   /// Connect to a Nostr Wallet Connect URI.
   Future<bool> connect(String nwcUri) => guard(() async {
         final ok =

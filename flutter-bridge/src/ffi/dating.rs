@@ -733,9 +733,7 @@ pub fn dating_update_profile(
     Ok(true).into()
 }
 
-/// Get the user's own latest profile.
-#[frb(sync, serialize)]
-pub fn dating_get_own_profile(user_pubkey: String) -> Result<String, String> {
+fn get_own_profile_internal(user_pubkey: &str) -> Option<DatingCardInfo> {
     let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
@@ -743,12 +741,22 @@ pub fn dating_get_own_profile(user_pubkey: String) -> Result<String, String> {
              WHERE p.kind = {KIND_PROFILE} AND p.pubkey = ?1 AND p.is_deleted = 0 \
              ORDER BY p.created_at DESC LIMIT 1"
         ),
-        &[user_pubkey],
-    )?;
-    let card = rows
-        .first()
-        .and_then(card_from_value)
-        .ok_or("No dating profile yet".to_string())?;
+        &[user_pubkey.to_string()],
+    )
+    .ok()?;
+    rows.first().and_then(card_from_value)
+}
+
+/// Get the user's own latest profile.
+#[frb(sync, serialize)]
+pub fn dating_get_own_profile(user_pubkey: String) -> Result<String, String> {
+    if let Ok(caller) = super::signer::signer_pubkey() {
+        if caller != user_pubkey {
+            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
+        }
+    }
+    let card = get_own_profile_internal(&user_pubkey)
+        .ok_or_else(|| "No dating profile yet".to_string())?;
     super::util::json_ok(card)
 }
 
@@ -756,6 +764,7 @@ pub fn dating_get_own_profile(user_pubkey: String) -> Result<String, String> {
 /// relay-side counterpart).
 #[frb(sync, serialize)]
 pub fn dating_delete_profile(user_pubkey: String) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::db_execute_params(
         &format!("UPDATE posts SET is_deleted = 1 WHERE kind = {KIND_PROFILE} AND pubkey = ?1"),
         &[user_pubkey],
@@ -865,6 +874,7 @@ pub fn dating_pass(user_pubkey: String, profile_id: String) -> Result<bool, Stri
 /// untouched. Returns the number of passes reset.
 #[frb(sync, serialize)]
 pub fn dating_reset_passes(user_pubkey: String) -> Result<i64, String> {
+    super::signer::require_identity(&user_pubkey)?;
     let n = super::db::db_execute_params(
         "DELETE FROM reactions WHERE pubkey = ?1 AND content = 'pass'",
         &[user_pubkey],
@@ -876,6 +886,7 @@ pub fn dating_reset_passes(user_pubkey: String) -> Result<i64, String> {
 /// events).
 #[frb(sync, serialize)]
 pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
+    super::signer::require_identity(&user_pubkey)?;
     let rows = super::db::db_query_json(
         &format!(
             "SELECT r.event_id, r.pubkey FROM reactions r \
@@ -906,6 +917,7 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
 /// Fetch matches: profiles the user liked that also like the user back.
 #[frb(sync, serialize)]
 pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
+    super::signer::require_identity(&user_pubkey)?;
     let rows = super::db::db_query_json(
         &format!(
             "SELECT r.event_id, r.pubkey, p.pubkey AS profile_owner FROM reactions r \
@@ -942,6 +954,7 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
 /// swiping on the same device.
 #[frb(sync, serialize)]
 pub fn dating_unmatch(user_pubkey: String, profile_id: String) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         soshal_db_core::repos::dating_unmatch::DatingUnmatchRepo::new(db).upsert(
             &user_pubkey,
@@ -1026,9 +1039,7 @@ pub fn dating_filter_profiles(
             cards.retain(|c| c.interests.iter().any(|i| interests.contains(i)));
         }
     }
-    let own_card = dating_get_own_profile(user_pubkey.clone())
-        .ok()
-        .and_then(|p| serde_json::from_str::<DatingCardInfo>(&p).ok());
+    let own_card = get_own_profile_internal(&user_pubkey);
     let own_location = own_card
         .as_ref()
         .and_then(|c| (!c.location.is_empty()).then(|| c.location.clone()));
@@ -1091,6 +1102,7 @@ pub fn dating_filter_profiles(
 /// Dating profile statistics from the local graph.
 #[frb(sync, serialize)]
 pub fn dating_get_stats(user_pubkey: String) -> Result<String, String> {
+    super::signer::require_identity(&user_pubkey)?;
     let (own_id, photo_count, likes, superlikes, views, matches) = super::db::with_db_result(
         |db| {
             let conn = db.conn()?;
@@ -1188,6 +1200,7 @@ pub fn dating_block_profile(user_pubkey: String, target_pubkey: String) -> Resul
 /// Unblock a profile.
 #[frb(sync, serialize)]
 pub fn dating_unblock_profile(user_pubkey: String, target_pubkey: String) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         soshal_db_core::repos::block::BlockRepo::new(db).delete(&user_pubkey, &target_pubkey)?;
         Ok(true)
@@ -1202,6 +1215,7 @@ pub fn dating_report_profile(
     target_pubkey: String,
     reason: String,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&reporter_pubkey)?;
     let reason = soshal_common_core::format::truncate(&reason, 512);
     let now = soshal_common_core::format::now_secs();
     let row = soshal_db_core::repos::spam_report::SpamReportRow {
@@ -1518,10 +1532,9 @@ mod tests {
         let own: DatingCardInfo =
             serde_json::from_str(&dating_get_own_profile(pk.clone()).unwrap()).unwrap();
         assert_eq!(own.bio, "hello");
-        assert_eq!(
-            dating_get_own_profile("otherpk".to_string()).unwrap_err(),
-            "No dating profile yet"
-        );
+        assert!(dating_get_own_profile("otherpk".to_string())
+            .unwrap_err()
+            .contains("identity mismatch"));
 
         std::thread::sleep(std::time::Duration::from_millis(1100));
         assert!(dating_update_profile(
@@ -1704,8 +1717,12 @@ mod tests {
     #[test]
     fn test_fetch_likes_matches_unmatch() {
         let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
         let path = crate::ffi::db::tmp_db("dating_graph", "dt");
-        crate::ffi::db::insert_test_user("me");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        crate::ffi::db::insert_test_user(&me);
         crate::ffi::db::insert_test_user("likera");
         crate::ffi::db::insert_test_user("likerb");
         crate::ffi::db::insert_test_user("cand");
@@ -1722,7 +1739,7 @@ mod tests {
                  VALUES ('{id}','{event_id}','{pubkey}','{content}',{ts},7)"
             ))
         };
-        assert!(insert_post("own1", "me", "u33dc0", 400).is_ok());
+        assert!(insert_post("own1", &me, "u33dc0", 400).is_ok());
         assert!(insert_post("la1", "likera", "u33dc0", 300).is_ok());
         assert!(insert_post("lb1", "likerb", "u33dc0", 200).is_ok());
         assert!(insert_post("cand1", "cand", "u33dc0", 100).is_ok());
@@ -1731,7 +1748,7 @@ mod tests {
         assert!(insert_react("r2", "own1", "likera", "+", 200).is_ok());
         assert!(insert_react("r3", "own1", "likerb", "+", 100).is_ok());
 
-        let likes = dating_fetch_likes("me".to_string()).unwrap();
+        let likes = dating_fetch_likes(me.clone()).unwrap();
         let lv: Vec<DatingCardInfo> = serde_json::from_str(&likes).unwrap();
         let mut seen: Vec<String> = lv.iter().map(|c| c.pubkey.clone()).collect();
         seen.sort();
@@ -1747,20 +1764,21 @@ mod tests {
         uniq.dedup();
         assert_eq!(uniq, vec!["likera".to_string(), "likerb".to_string()]);
 
-        assert!(insert_react("r4", "la1", "me", "+", 250).is_ok());
-        let matches = dating_fetch_matches("me".to_string()).unwrap();
+        assert!(insert_react("r4", "la1", &me, "+", 250).is_ok());
+        let matches = dating_fetch_matches(me.clone()).unwrap();
         let mv: Vec<DatingCardInfo> = serde_json::from_str(&matches).unwrap();
         assert_eq!(mv.len(), 1, "{matches}");
         assert_eq!(mv[0].pubkey, "likera");
 
-        assert!(dating_unmatch("me".to_string(), "candb".to_string()).unwrap());
-        let profiles = dating_fetch_profiles("me".to_string(), 100, "public".to_string()).unwrap();
+        assert!(dating_unmatch(me.clone(), "candb".to_string()).unwrap());
+        let profiles = dating_fetch_profiles(me.clone(), 100, "public".to_string()).unwrap();
         let pv: Vec<DatingCardInfo> = serde_json::from_str(&profiles).unwrap();
         let pubs: Vec<String> = pv.iter().map(|c| c.pubkey.clone()).collect();
         assert!(pubs.contains(&"cand".to_string()), "{pubs:?}");
         assert!(!pubs.contains(&"candb".to_string()), "{pubs:?}");
         assert!(!pubs.contains(&"likera".to_string()), "{pubs:?}");
-        assert!(!pubs.contains(&"me".to_string()), "{pubs:?}");
+        assert!(!pubs.contains(&me), "{pubs:?}");
+        let _ = super::super::signer::signer_lock();
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
@@ -1931,6 +1949,7 @@ mod tests {
         let tags_v: serde_json::Value =
             serde_json::from_str(rv[0]["tags"].as_str().unwrap()).unwrap();
         assert_eq!(tags_v, serde_json::json!(["dating"]));
+        let _ = super::super::signer::signer_lock();
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));

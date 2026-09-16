@@ -57,7 +57,7 @@ struct FeedRankItem {
     content: Option<String>,
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Deserialize)]
 struct PostStatsInput {
     #[serde(default)]
     created_at_secs: f64,
@@ -127,7 +127,7 @@ pub async fn feed_rank_posts(events_json: String) -> Result<String, String> {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct EngagementCounters {
     reactions: i32,
     replies: i32,
@@ -313,8 +313,33 @@ pub async fn feed_publish_reply(
     if let Ok(tag) = nostr::event::Tag::parse(["e", &root_event_id]) {
         builder = builder.tag(tag);
     }
-    if let Ok(tag) = nostr::event::Tag::parse(["e", &reply_to_event_id]) {
-        builder = builder.tag(tag);
+    if reply_to_event_id != root_event_id {
+        if let Ok(tag) = nostr::event::Tag::parse(["e", &reply_to_event_id]) {
+            builder = builder.tag(tag);
+        }
+    }
+    // NIP-10: Add 'p' tags for thread participants / authors of root and reply
+    let mut author_pks: Vec<String> = Vec::new();
+    let _ = super::db::with_db_result(|db| {
+        let repo = PostRepo::new(db);
+        if let Ok(Some(post)) = repo.get_by_id(&reply_to_event_id) {
+            if !author_pks.contains(&post.pubkey) {
+                author_pks.push(post.pubkey);
+            }
+        }
+        if root_event_id != reply_to_event_id {
+            if let Ok(Some(post)) = repo.get_by_id(&root_event_id) {
+                if !author_pks.contains(&post.pubkey) {
+                    author_pks.push(post.pubkey);
+                }
+            }
+        }
+        Ok(())
+    });
+    for pk in author_pks {
+        if let Ok(tag) = nostr::event::Tag::parse(["p", &pk]) {
+            builder = builder.tag(tag);
+        }
     }
     let signed_json = super::signer::sign_builder(builder)?;
     if let Ok(signed) = serde_json::from_str::<SignedEventHeader>(&signed_json) {
@@ -337,9 +362,29 @@ pub async fn feed_create_reaction(
     event_id: String,
     reaction_type: String,
 ) -> Result<String, String> {
+    // NIP-7 reactions are typically +, -, or a single emoji. 200 bytes is a
+    // generous ceiling that prevents oversized events being signed and relayed.
+    if reaction_type.is_empty() || reaction_type.len() > 200 {
+        return Err("reaction_type must be 1–200 bytes".to_string()).into();
+    }
     let mut builder = nostr::event::EventBuilder::new(nostr::event::Kind::Reaction, reaction_type);
-    if let Ok(tag) = nostr::event::Tag::parse(vec!["e".to_string(), event_id]) {
+    if let Ok(tag) = nostr::event::Tag::parse(vec!["e".to_string(), event_id.clone()]) {
         builder = builder.tag(tag);
+    }
+    // NIP-25: Add 'p' tag pointing to the author of the event being reacted to
+    let target_author: Option<String> = super::db::with_db_result(|db| {
+        let repo = PostRepo::new(db);
+        if let Ok(Some(post)) = repo.get_by_id(&event_id) {
+            return Ok(Some(post.pubkey));
+        }
+        Ok(None)
+    })
+    .unwrap_or(None);
+
+    if let Some(author_pk) = target_author {
+        if let Ok(tag) = nostr::event::Tag::parse(["p", &author_pk]) {
+            builder = builder.tag(tag);
+        }
     }
     let signed_json = super::signer::sign_builder(builder)?;
     super::sync::publish_or_enqueue("reaction", &signed_json).await?;
@@ -349,6 +394,20 @@ pub async fn feed_create_reaction(
 /// Delete a post (kind 5 deletion request). Publishes or queues offline.
 #[frb(serialize)]
 pub async fn feed_delete_post(event_id: String) -> Result<String, String> {
+    let caller = super::signer::signer_pubkey()?;
+    if event_id.len() != 64 || hex::decode(&event_id).is_err() {
+        return Err("invalid event_id: must be 64-character hex".to_string());
+    }
+    super::db::with_db_string(|db| {
+        let repo = PostRepo::new(db);
+        if let Ok(Some(post)) = repo.get_by_id(&event_id) {
+            if post.pubkey != caller {
+                return Err("cannot delete post authored by another user".to_string());
+            }
+            repo.delete(&event_id).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })?;
     let mut builder =
         nostr::event::EventBuilder::new(nostr::event::Kind::EventDeletion, "deleted by user");
     if let Ok(tag) = nostr::event::Tag::parse(vec!["e".to_string(), event_id]) {
@@ -887,6 +946,25 @@ mod tests {
         assert_eq!(arr[0]["id"], "a");
         assert_eq!(arr[1]["id"], "b");
         assert!(feed_compute_card_layouts("nope".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_create_reaction_validates_reaction_type() {
+        // Empty reaction_type must be rejected.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let err = rt
+            .block_on(feed_create_reaction("a".repeat(64), "".to_string()))
+            .unwrap_err();
+        assert!(err.contains("reaction_type"), "got: {err}");
+
+        // reaction_type exceeding 200 bytes must be rejected.
+        let err = rt
+            .block_on(feed_create_reaction("a".repeat(64), "x".repeat(201)))
+            .unwrap_err();
+        assert!(err.contains("200"), "got: {err}");
     }
 }
 

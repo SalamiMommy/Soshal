@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -11,7 +12,6 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../services/permissions_service.dart';
 import '../services/bookmarks_service.dart';
 import '../services/feed_service.dart';
-import '../services/layout_service.dart';
 import '../services/moderation_service.dart';
 import '../services/media_service.dart';
 import '../services/p2p_service.dart';
@@ -21,7 +21,10 @@ import '../utils/safe_url.dart';
 import '../utils/dialog_guard.dart';
 import 'composer_screen.dart';
 import '../services/zap_service.dart';
+import '../services/friends_service.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/audience_filter_dropdown.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/error_state_text.dart';
 
 /// Narrow view of [FeedService] — rebuilds only when list identity or
@@ -49,6 +52,7 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _isLoadingMore = false;
   final ValueNotifier<Map<String, int>> _totalsNotifier =
       ValueNotifier<Map<String, int>>({});
+  AudienceFilter _audienceFilter = AudienceFilter.all;
   String _selectedFeedTab = 'All';
   final List<String> _feedTabs = const [
     'All',
@@ -66,6 +70,10 @@ class _FeedScreenState extends State<FeedScreen> {
     // Load initial feed
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      final myPk = context.read<SessionService>().activePubkey;
+      if (myPk != null) {
+        context.friendsServiceReadOrNull?.loadAudienceGraph(myPk);
+      }
       final feed = _feed;
       if (feed == null) return;
       try {
@@ -89,15 +97,6 @@ class _FeedScreenState extends State<FeedScreen> {
   Future<void> _loadTotals() async {
     final feed = _feed;
     if (!mounted || feed == null) return;
-    if (context.mounted && feed.displayPosts.isNotEmpty) {
-      final width = MediaQuery.sizeOf(context).width.round();
-      final textScale = MediaQuery.textScalerOf(context).scale(1.0);
-      unawaited(context.read<LayoutService>().refresh(
-            feed.displayPosts,
-            screenWidth: width > 0 ? width : 360,
-            textScale: textScale > 0 ? textScale : 1.0,
-          ));
-    }
     // Fetch only ids we haven't seen yet — refetching the whole page on
     // every refresh/loadMore re-queries the DB for already-known totals.
     final currentTotals = _totalsNotifier.value;
@@ -196,22 +195,31 @@ class _FeedScreenState extends State<FeedScreen> {
     final feedView = context.select<FeedService, _FeedView>(
         (f) => (posts: f.posts, display: f.displayPosts, loading: f.isLoading));
     final allDisplay = feedView.display;
+    final friendsService = context.friendsServiceOrNull;
+    final myPk = context.select<SessionService, String?>((s) => s.activePubkey);
+    final audiencePosts = friendsService != null
+        ? friendsService.filterList(
+            allDisplay,
+            _audienceFilter,
+            (p) => p.pubkey,
+            myPubkey: myPk,
+          )
+        : allDisplay;
     final List<FeedPost> filteredPosts = switch (_selectedFeedTab) {
       'Favorites' =>
-        allDisplay.where((p) => p.reactions > 0 || p.liked).toList(),
+        audiencePosts.where((p) => p.reactions > 0 || p.liked).toList(),
       'Friends' =>
-        allDisplay.where((p) => p.reposts > 0 || p.reactions > 0).toList(),
-      'Groups' => allDisplay
+        audiencePosts.where((p) => p.reposts > 0 || p.reactions > 0).toList(),
+      'Groups' => audiencePosts
           .where((p) =>
               p.content.contains('#group') || p.content.contains('group'))
           .toList(),
-      _ => allDisplay,
+      _ => audiencePosts,
     };
     final effectiveDisplay = filteredPosts.isEmpty && _selectedFeedTab != 'All'
-        ? allDisplay
+        ? audiencePosts
         : filteredPosts;
 
-    final layout = context.watch<LayoutService>();
     final Widget body;
     if (feedView.loading && feedView.posts.isEmpty) {
       body = const Center(child: CircularProgressIndicator());
@@ -229,25 +237,20 @@ class _FeedScreenState extends State<FeedScreen> {
           ],
         ),
       );
+    } else if (effectiveDisplay.isEmpty) {
+      body = EmptyState(
+        icon: Icons.filter_list_off,
+        title: 'No posts match this filter',
+        body: 'Try switching your feed tab or audience filter to see more posts.',
+        action: ElevatedButton(
+          onPressed: _refreshFeed,
+          child: const Text('Refresh'),
+        ),
+      );
     } else {
-      if (layout.needsLayout(effectiveDisplay) && effectiveDisplay.isNotEmpty) {
-        final width = MediaQuery.sizeOf(context).width.round();
-        final textScale = MediaQuery.textScalerOf(context).scale(1.0);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            context.read<LayoutService>().refresh(
-                  effectiveDisplay,
-                  screenWidth: width > 0 ? width : 360,
-                  textScale: textScale > 0 ? textScale : 1.0,
-                );
-          }
-        });
-      }
       body = ListView.builder(
         scrollCacheExtent: const ScrollCacheExtent.pixels(600.0),
         controller: _scrollController,
-        itemExtentBuilder: (index, _) =>
-            layout.extentFor(index, effectiveDisplay),
         itemCount: effectiveDisplay.length + 1,
         itemBuilder: (context, index) {
           if (index == effectiveDisplay.length) {
@@ -278,6 +281,10 @@ class _FeedScreenState extends State<FeedScreen> {
         title: const Text('Soshal'),
         elevation: 0,
         actions: [
+          AudienceFilterDropdown(
+            value: _audienceFilter,
+            onChanged: (val) => setState(() => _audienceFilter = val),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
@@ -459,11 +466,9 @@ class _FeedPostCardState extends State<FeedPostCard> {
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: SingleChildScrollView(
-          physics: const NeverScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             // Author header
             Row(
               children: [
@@ -629,19 +634,24 @@ class _FeedPostCardState extends State<FeedPostCard> {
             // Media attachments
             if (widget.post.media != null) _buildMediaCard(),
             const SizedBox(height: 12),
-            // Reactions
+            // Reactions & options
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _buildReactionButton(
-                    Icons.favorite, _liked ? Colors.red : Colors.grey, () {
-                  setState(() => _liked = !_liked);
-                  context.read<FeedService>().createReaction(
-                        widget.post.eventId,
-                        _liked ? '+' : '-',
-                        context.read<SessionService>().activePubkey ?? '',
-                      );
-                }, label: '${widget.post.reactions}'),
+                  Icons.favorite,
+                  _liked ? Colors.red : Colors.grey,
+                  () {
+                    setState(() => _liked = !_liked);
+                    context.read<FeedService>().createReaction(
+                          widget.post.eventId,
+                          _liked ? '+' : '-',
+                          context.read<SessionService>().activePubkey ?? '',
+                        );
+                  },
+                  label: '${widget.post.reactions}',
+                  tooltip: _liked ? 'Unlike' : 'Like',
+                ),
                 _buildReactionButton(
                   Icons.chat_bubble_outline,
                   Colors.grey,
@@ -649,27 +659,35 @@ class _FeedPostCardState extends State<FeedPostCard> {
                     context.push('/post/${widget.post.eventId}');
                   },
                   label: '${widget.post.replies}',
+                  tooltip: 'Reply',
+                ),
+                _buildReactionButton(
+                  Icons.share_outlined,
+                  Colors.grey,
+                  _showShareDialog,
+                  label: '${widget.post.reposts}',
+                  tooltip: 'Share',
                 ),
                 _buildReactionButton(
                   Icons.mood,
                   Colors.grey,
                   _showEmojiPicker,
+                  tooltip: 'React',
                 ),
-                _buildReactionButton(Icons.bolt, Colors.amber, () {
-                  _showZapDialog();
-                }),
-                if (_totalMsat > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8, top: 8),
-                    child: Text(
-                      '${(_totalMsat / 1000).toStringAsFixed(2)} sats',
-                      style: const TextStyle(fontSize: 11, color: Colors.amber),
-                    ),
-                  ),
+                _buildReactionButton(
+                  Icons.bolt,
+                  Colors.amber,
+                  () {
+                    _showZapDialog();
+                  },
+                  label: _totalMsat > 0
+                      ? '${(_totalMsat / 1000).toStringAsFixed(1)} sats'
+                      : null,
+                  tooltip: 'Zap',
+                ),
               ],
             ),
           ],
-        ),
         ),
       ),
     );
@@ -882,7 +900,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
 
   Widget _buildReactionButton(
       IconData icon, Color color, VoidCallback onPressed,
-      {String? label}) {
+      {String? label, String? tooltip}) {
     return Expanded(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -890,14 +908,78 @@ class _FeedPostCardState extends State<FeedPostCard> {
           IconButton(
             icon: Icon(icon),
             color: color,
+            tooltip: tooltip,
             onPressed: onPressed,
           ),
           if (label != null)
             Text(
               label,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 11,
+                color: color == Colors.amber ? Colors.amber : Colors.grey,
+              ),
             ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _showShareDialog() async {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.repeat),
+              title: const Text('Repost to feed'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final session = context.read<SessionService>();
+                final pubkey = session.activePubkey;
+                if (pubkey == null) {
+                  _snack('Sign in to repost');
+                  return;
+                }
+                try {
+                  await context.read<FeedService>().publishTextNote(
+                        'nostr:${widget.post.eventId}',
+                        [
+                          ['e', widget.post.eventId, '', 'mention'],
+                          ['q', widget.post.eventId],
+                        ],
+                        pubkey,
+                      );
+                  _snack('Reposted to feed');
+                } catch (e) {
+                  _snack('Repost failed: $e');
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: const Text('Copy post text'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                Clipboard.setData(ClipboardData(text: widget.post.content));
+                _snack('Post text copied to clipboard');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('Copy post ID'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                Clipboard.setData(ClipboardData(text: widget.post.eventId));
+                _snack('Post ID copied to clipboard');
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

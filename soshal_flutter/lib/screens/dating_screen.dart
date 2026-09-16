@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/dating_service.dart';
+import '../services/friends_service.dart';
 import '../services/session_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/dating_options.dart';
 import '../utils/format.dart';
+import '../widgets/audience_filter_dropdown.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/empty_state.dart';
 
@@ -26,6 +28,7 @@ class _DatingScreenState extends State<DatingScreen>
   bool _hasProfile = false;
   DatingCard? _matchCard;
   final Map<String, Future<double>> _scores = {};
+  AudienceFilter _audienceFilter = AudienceFilter.all;
 
   @override
   void initState() {
@@ -50,6 +53,7 @@ class _DatingScreenState extends State<DatingScreen>
         setState(() => _loading = false);
         return;
       }
+      context.friendsServiceReadOrNull?.loadAudienceGraph(pubkey);
       try {
         await api.getOwnProfile(pubkey);
         _hasProfile = true;
@@ -81,6 +85,10 @@ class _DatingScreenState extends State<DatingScreen>
       appBar: AppBar(
         title: const Text('Dating'),
         actions: [
+          AudienceFilterDropdown(
+            value: _audienceFilter,
+            onChanged: (val) => setState(() => _audienceFilter = val),
+          ),
           IconButton(
             icon: const Icon(Icons.tune),
             tooltip: 'Filter',
@@ -341,13 +349,22 @@ class _DatingScreenState extends State<DatingScreen>
   Widget _buildBrowse(String pubkey) {
     return Consumer<DatingService>(
       builder: (context, api, _) {
-        if (api.cards.isEmpty) {
+        final friendsService = context.friendsServiceOrNull;
+        final cards = friendsService != null
+            ? friendsService.filterList(
+                api.cards,
+                _audienceFilter,
+                (c) => c.pubkey,
+                myPubkey: pubkey,
+              )
+            : api.cards;
+        if (cards.isEmpty) {
           return const EmptyState(
             icon: Icons.person_search_outlined,
             title: 'No profiles nearby yet',
           );
         }
-        final card = api.cards[_cardIndex.clamp(0, api.cards.length - 1)];
+        final card = cards[_cardIndex.clamp(0, cards.length - 1)];
         return Column(
           children: [
             Expanded(

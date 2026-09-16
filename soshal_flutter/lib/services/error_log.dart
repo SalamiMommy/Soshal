@@ -8,7 +8,7 @@ import 'package:path_provider/path_provider.dart';
 /// nostr event ids (privacy: feed content must not leak into logs).
 final RegExp _nsecRe = RegExp(r'nsec1[0-9a-z]{20,}');
 final RegExp _nwcRe = RegExp(r'nostr\+walletconnect://[^\s"<>]+');
-final RegExp _hex64Re = RegExp(r'\b[0-9a-f]{64}\b');
+final RegExp _hex64Re = RegExp(r'\b[0-9a-fA-F]{64}\b');
 
 String redactSensitive(String text) {
   return text

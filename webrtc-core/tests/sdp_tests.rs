@@ -75,6 +75,7 @@ fn sanitize_sdp_rewrites_origin_ip4_address() {
     let sdp = "v=0\r\no=- 1234 5678 IN IP4 192.168.1.5\r\n";
     let out = sanitize_sdp(sdp, false);
     assert!(out.contains("o=- 1234 5678 IN IP4 0.0.0.0"));
+    assert!(!out.contains("o=o="));
     assert!(!out.contains("192.168.1.5"));
 }
 
@@ -82,7 +83,8 @@ fn sanitize_sdp_rewrites_origin_ip4_address() {
 fn sanitize_sdp_rewrites_origin_ip6_address() {
     let sdp = "v=0\r\no=- 1 2 IN IP6 fe80::aabb\r\n";
     let out = sanitize_sdp(sdp, false);
-    assert!(out.contains("IN IP6 ::"));
+    assert!(out.contains("o=- 1 2 IN IP6 ::"));
+    assert!(!out.contains("o=o="));
     assert!(!out.contains("fe80::aabb"));
 }
 
@@ -90,7 +92,8 @@ fn sanitize_sdp_rewrites_origin_ip6_address() {
 fn sanitize_sdp_rewrites_origin_address_to_placeholder() {
     let sdp = "v=0\r\no=- 1 2 IN IP4 93.184.216.34\r\n";
     let out = sanitize_sdp(sdp, false);
-    assert!(out.contains("0.0.0.0"));
+    assert!(out.contains("o=- 1 2 IN IP4 0.0.0.0"));
+    assert!(!out.contains("o=o="));
     assert!(!out.contains("93.184.216.34"));
 }
 

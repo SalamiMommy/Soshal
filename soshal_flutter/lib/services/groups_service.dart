@@ -23,6 +23,7 @@ class GroupsService extends ChangeNotifier
   List<GroupThread> _threads = [];
   List<GroupThreadReply> _replies = [];
   final Map<String, List<ThreadReaction>> _reactionsByThread = {};
+  final Map<String, List<RoomReaction>> _reactionsByRoom = {};
   List<GroupVoiceChannel> _voiceChannels = [];
   List<GroupVoicePresence> _presence = [];
 
@@ -66,6 +67,7 @@ class GroupsService extends ChangeNotifier
     _threads = [];
     _replies = [];
     _reactionsByThread.clear();
+    _reactionsByRoom.clear();
     _voiceChannels = [];
     _presence = [];
     clearLastError();
@@ -80,6 +82,17 @@ class GroupsService extends ChangeNotifier
     for (final list in _reactionsByThread.values) {
       for (final r in list) {
         if (r.matches(targetId)) out.add(r);
+      }
+    }
+    return out;
+  }
+
+  /// Emoji reactions for a room message.
+  List<RoomReaction> roomReactionsFor(String messageId) {
+    final out = <RoomReaction>[];
+    for (final list in _reactionsByRoom.values) {
+      for (final r in list) {
+        if (r.messageId == messageId) out.add(r);
       }
     }
     return out;
@@ -369,6 +382,43 @@ class GroupsService extends ChangeNotifier
             .map((e) => ThreadReaction.fromJson(e as Map<String, dynamic>))
             .toList();
         _reactionsByThread[threadId] = list;
+        return list;
+      }, onNotify: notifyDeferred);
+
+  /// Toggle an emoji reaction on a post in a room.
+  Future<bool> reactToRoomMessage(
+    String groupId,
+    String roomId,
+    String messageId,
+    String emoji,
+    String pubkey,
+  ) =>
+      guard(() {
+        return RustLib.instance.api.crateFfiGroupsGroupsRoomsReact(
+          groupId: groupId,
+          roomId: roomId,
+          messageId: messageId,
+          pubkey: pubkey,
+          emoji: emoji,
+        );
+      }, onNotify: notifyDeferred);
+
+  /// Fetch emoji reaction summaries for all messages in a room.
+  Future<List<RoomReaction>> fetchRoomReactions(
+    String groupId,
+    String roomId, {
+    String? viewerPubkey,
+  }) =>
+      guard(() {
+        final json = RustLib.instance.api.crateFfiGroupsGroupsRoomsReactions(
+          groupId: groupId,
+          roomId: roomId,
+          viewerPubkey: viewerPubkey ?? '',
+        );
+        final list = (jsonDecode(json) as List<dynamic>)
+            .map((e) => RoomReaction.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _reactionsByRoom[roomId] = list;
         return list;
       }, onNotify: notifyDeferred);
 
@@ -819,6 +869,30 @@ class ThreadReaction {
     return ThreadReaction(
       threadId: json.strOf('thread_id'),
       replyId: json.strOf('reply_id'),
+      emoji: json.strOf('emoji'),
+      count: json.intOf('count'),
+      reacted: json.boolOf('reacted'),
+    );
+  }
+}
+
+/// An emoji reaction summary row for a group room post/message.
+class RoomReaction {
+  final String messageId;
+  final String emoji;
+  final int count;
+  final bool reacted;
+
+  RoomReaction({
+    required this.messageId,
+    required this.emoji,
+    required this.count,
+    required this.reacted,
+  });
+
+  factory RoomReaction.fromJson(Map<String, dynamic> json) {
+    return RoomReaction(
+      messageId: json.strOf('message_id'),
       emoji: json.strOf('emoji'),
       count: json.intOf('count'),
       reacted: json.boolOf('reacted'),

@@ -147,23 +147,24 @@ mod bridge_gap_tests {
     fn bookmarks_crud_and_resolve() {
         let _g = crate::test_util::lock();
         let db = crate::test_util::init_db("bridge_gap", "bookmarks");
-        let (pk, _) = gen_keys();
+        let (pk, sk) = gen_keys();
+        signer::signer_unlock(sk).unwrap();
         db::db_execute_params(
             "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]')",
             &[pk.clone()],
         )
         .unwrap();
         let id = bookmarks::bookmarks_save(pk.clone(), "evt1".into()).unwrap();
-        assert_eq!(id, "bm:evt1");
+        assert_eq!(id, format!("bm:{pk}:evt1"));
         let id2 = bookmarks::bookmarks_save(pk.clone(), "evt2".into()).unwrap();
-        assert_eq!(id2, "bm:evt2");
+        assert_eq!(id2, format!("bm:{pk}:evt2"));
         let list = bookmarks::bookmarks_list(pk.clone(), 10, 0).unwrap();
         let v: serde_json::Value = serde_json::from_str(&list).unwrap();
         assert_eq!(v.as_array().unwrap().len(), 2);
         let paged = bookmarks::bookmarks_list(pk.clone(), 1, 1).unwrap();
         let pv: serde_json::Value = serde_json::from_str(&paged).unwrap();
         assert_eq!(pv.as_array().unwrap().len(), 1);
-        assert!(bookmarks::bookmarks_delete("bm:evt1".into()).unwrap());
+        assert!(bookmarks::bookmarks_delete(format!("bm:{pk}:evt1")).unwrap());
         assert!(bookmarks::bookmarks_list(pk, 10, 0)
             .unwrap()
             .contains("evt2"));
@@ -188,6 +189,7 @@ mod bridge_gap_tests {
         assert!(mv.get("missing").is_none());
         let bad = bookmarks::bookmarks_resolve_posts("not-json".into()).unwrap_err();
         assert!(bad.contains("invalid ids JSON"), "{bad}");
+        let _ = signer::signer_lock();
         let _ = db;
     }
 }

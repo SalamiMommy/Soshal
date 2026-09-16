@@ -10,7 +10,6 @@ import '../services/error_log.dart';
 import '../utils/format.dart';
 import '../services/network_service.dart';
 import '../services/session_service.dart';
-import '../services/settings_service.dart';
 import '../services/shell_service.dart';
 import '../services/signer_service.dart';
 
@@ -119,63 +118,28 @@ class _AuthScreenState extends State<AuthScreen> {
 
   /// Recovery-phrase import is the fallback when keychain unlock is disabled
   /// or has no stored key for the account. Route the existing account to the
-  /// import screen instead of leaving the user on a dead-end snackbar.
-  void _offerRecoveryImport() {
-    if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Import recovery phrase'),
-        content: const SelectableText(
-          'Keychain unlock is not available for this account. Importing its '
-          'recovery phrase signs back in.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              setState(() => _currentStep = 3);
-            },
-            child: const Text('Import phrase'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Unlock an account that already has a keychain entry and make it active.
-  /// Falls back to import (recovery phrase) when no key is stored or when
-  /// keychain unlock is disabled in settings.
+  /// Unlock a locally stored account and make it active.
   Future<void> _useExistingAccount(SessionAccount account) async {
     final signer = context.read<SignerService>();
     final session = context.read<SessionService>();
     final shell = context.read<ShellService>();
     final pinUser = shell.hasPin;
-    final keychainEnabled =
-        context.read<SettingsService>().getSetting('keychain_unlock_enabled') ==
-            'true';
     try {
-      if (!pinUser && !keychainEnabled) {
-        _offerRecoveryImport();
-        return;
-      }
-      var unlocked = false;
       if (!pinUser) {
-        unlocked = await signer.unlockFromKeyring(account.pubkey);
+        final unlocked = await signer.unlockFromKeyring(account.pubkey);
         if (!unlocked) {
-          _offerRecoveryImport();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: SelectableText('Could not unlock local profile.'),
+              ),
+            );
+          }
           return;
         }
       }
       await session.switchAccount(account.pubkey);
       await session.saveSession();
-      if (!unlocked) {
-        await signer.lock();
-      }
       // Start the Rust-side background relay sync for the newly active
       // account so its feed/DM ingest runs.
       final relays = session.activeAccount?.relayList ?? <String>[];
@@ -232,7 +196,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       vertical: 16,
                     ),
                   ),
-                  child: const Text('Import Existing Key'),
+                  child: const Text('Import from friends\' cache'),
                 ),
               ],
             ),
@@ -444,8 +408,14 @@ class _ImportMnemonicWidgetState extends State<ImportMnemonicWidget> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Text(
-            'Enter Your Recovery Phrase',
+            'Import from Friends\' Cache',
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Enter your recovery phrase to restore your account from your friends\' cache.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: Colors.grey),
           ),
           const SizedBox(height: 16),
           TextField(
@@ -592,7 +562,21 @@ class _ConfirmMnemonicWidgetState extends State<ConfirmMnemonicWidget> {
       // the signer without the recovery phrase (desktop keychains only;
       // swallowed when unavailable, e.g. Android without keystore backend).
       try {
-        await signer.saveToKeyring(keypair.publicKey);
+        final fullySaved = await signer.saveToKeyring(keypair.publicKey);
+        if (!fullySaved && mounted) {
+          // OS keychain unavailable — local sealed storage succeeded.
+          // Warn the user: the next launch may still require the recovery
+          // phrase if the sealed file is lost (device wipe, app uninstall).
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: SelectableText(
+                'Key saved locally — OS keychain unavailable. '
+                'Biometric protection is not active. '
+                'The next launch may require your recovery phrase.',
+              ),
+            ),
+          );
+        }
       } catch (e, st) {
         debugPrint('onboarding keychain save failed: $e');
         logRuntimeError('onboarding keychain save: $e', st);

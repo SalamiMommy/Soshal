@@ -61,7 +61,7 @@ fn lock_session() -> Result<std::sync::MutexGuard<'static, Option<SessionData>>,
 }
 
 /// Validate that `pubkey` is a 64-character lowercase hex string.
-fn validate_pubkey_hex(pubkey: &str) -> Result<(), String> {
+pub(crate) fn validate_pubkey_hex(pubkey: &str) -> Result<(), String> {
     if pubkey.len() != 64 || !pubkey.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')) {
         return Err(format!(
             "invalid pubkey: expected 64 lowercase hex chars, got {:?}",
@@ -216,11 +216,11 @@ fn validate_path_security(path: &std::path::Path) -> Result<(), String> {
         }
     }
 
-    // Ensure the path doesn't contain suspicious components
-    let path_str = path.to_string_lossy();
-    if path_str.contains("..") || path_str.contains("~") {
-        return Err("Security: path contains suspicious components".to_string());
-    }
+    // Note: path traversal components (`..`, `~`) and symlinks are already
+    // fully resolved by `validated_session_path`'s `canonicalize()` call
+    // before this function is invoked. No additional string-level traversal
+    // check is needed here — the `O_NOFOLLOW | O_EXCL` flags at write time
+    // are the true TOCTOU guard.
 
     Ok(())
 }
@@ -237,7 +237,9 @@ fn session_key_path(session_path: &std::path::Path) -> std::path::PathBuf {
 
 /// Load the 32-byte device session key, creating it (0600) on first use.
 /// Always succeeds in a writable app-data dir; failing closes session ops.
-fn load_or_create_session_key(session_path: &std::path::Path) -> Result<Vec<u8>, String> {
+pub(crate) fn load_or_create_session_key(
+    session_path: &std::path::Path,
+) -> Result<Vec<u8>, String> {
     let key_path = session_key_path(session_path);
     if let Ok(content) = std::fs::read_to_string(&key_path) {
         let key =
@@ -388,6 +390,19 @@ pub fn session_load(db_path: String) -> Result<String, String> {
                     }
                     let mut session = session;
                     session.loaded_at = Some(now);
+                    if !session.accounts.is_empty() {
+                        let active_valid = session
+                            .active_pubkey
+                            .as_ref()
+                            .map_or(false, |pk| session.accounts.iter().any(|a| &a.pubkey == pk));
+                        if !active_valid {
+                            if let Some(last_acc) =
+                                session.accounts.iter().max_by_key(|a| a.last_used)
+                            {
+                                session.active_pubkey = Some(last_acc.pubkey.clone());
+                            }
+                        }
+                    }
                     // loaded_at changed (or the file was legacy/unsigned):
                     // re-sign and persist so the on-disk tag stays valid.
                     let _ = write_session_file(&session_path, &session_key, &session);
@@ -493,31 +508,22 @@ pub fn session_add_account(
 /// Switch to an account
 #[frb(sync, serialize)]
 pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
-    // Identity gate: the caller must prove they control the *currently active*
-    // account before switching away from it. This prevents a compromised Dart
-    // layer from changing the active identity without key ownership.
-    //
-    // Exception: if there is no active account yet (fresh session), only
-    // a generic "signer unlocked" check is needed — there is no prior account
-    // to prove ownership of.
+    // Identity gate: if the signer is unlocked, the caller must prove they control
+    // the currently active account or the destination account. If the signer is
+    // currently locked, switching between already-persisted accounts in the local
+    // session is permitted (the destination account will be unlocked afterwards).
     {
         let session_guard = lock_session()?;
-        let active = session_guard
+        let session = session_guard
             .as_ref()
-            .and_then(|s| s.active_pubkey.as_deref());
-        match active {
-            Some(active_pk) => {
-                // Allow the switch if the caller holds the key for either the
-                // currently-active account or the destination account being switched to
-                // (e.g. onboarding/importing a new identity into an existing session).
+            .ok_or_else(|| "Session not loaded".to_string())?;
+        if !session.accounts.iter().any(|a| a.pubkey == pubkey) {
+            return Err("Account not found".to_string());
+        }
+        if let Some(ref active_pk) = session.active_pubkey {
+            if !super::signer::signer_is_locked().unwrap_or(true) {
                 if super::signer::require_identity(active_pk).is_err() {
                     super::signer::require_identity(&pubkey)?;
-                }
-            }
-            None => {
-                // No active account yet: require at minimum that the signer is unlocked.
-                if super::signer::signer_is_locked().unwrap_or(true) {
-                    return Err("signer must be unlocked to switch accounts".to_string());
                 }
             }
         }

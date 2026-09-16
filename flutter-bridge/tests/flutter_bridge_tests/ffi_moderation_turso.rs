@@ -217,6 +217,14 @@ mod ffi_tests {
     fn test_turso_sync_paths() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("moderation", "tursosync");
+        signer::signer_lock().unwrap();
+        assert!(
+            turso::db_turso_configure("https://sync.turso.io".to_string(), "tok".to_string())
+                .unwrap_err()
+                .contains("signer locked")
+        );
+        let keys = soshal_nostr_core::keys::generate_keys();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         assert!(turso::db_turso_sync()
             .unwrap_err()
             .contains("Turso credentials not configured"));
@@ -228,6 +236,7 @@ mod ffi_tests {
         assert!(err.contains("unavailable (roadmap)"), "{err}");
         let after = turso::db_turso_status().unwrap();
         assert!(after.contains(r#""status":"error""#));
+        signer::signer_lock().unwrap();
         crate::test_util::cleanup(&path);
     }
 

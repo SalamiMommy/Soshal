@@ -40,11 +40,24 @@ where
     T: Send + 'static,
 {
     if let Ok(h) = tokio::runtime::Handle::try_current() {
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        h.spawn(async move {
-            let _ = tx.send(fut.await);
-        });
-        rx.recv().map_err(|_| "chunk oneshot closed".to_string())
+        match h.runtime_flavor() {
+            tokio::runtime::RuntimeFlavor::MultiThread => tokio::task::block_in_place(|| {
+                let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                h.spawn(async move {
+                    let _ = tx.send(fut.await);
+                });
+                rx.recv().map_err(|_| "chunk oneshot closed".to_string())
+            }),
+            _ => std::thread::spawn(move || {
+                let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                h.spawn(async move {
+                    let _ = tx.send(fut.await);
+                });
+                rx.recv().map_err(|_| "chunk oneshot closed".to_string())
+            })
+            .join()
+            .map_err(|_| "chunk worker thread panicked".to_string())?,
+        }
     } else {
         let rt = SHARED_RT.get_or_init(|| {
             tokio::runtime::Builder::new_multi_thread()

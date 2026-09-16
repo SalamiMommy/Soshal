@@ -90,4 +90,15 @@ class TursoService extends ChangeNotifier with LastErrorMixin {
       debugPrint('Error fetching Turso status: $e');
     }
   }
+
+  /// Reset in-memory state on account switch or logout.
+  void resetForAccountSwitch() {
+    _isConfigured = false;
+    _status = 'idle';
+    _lastSyncedAt = null;
+    _url = '';
+    _isSyncing = false;
+    clearLastError();
+    notifyListeners();
+  }
 }

@@ -13,9 +13,8 @@ import '../services/session_service.dart';
 import '../utils/format.dart';
 import '../utils/media_upload.dart';
 import '../utils/safe_url.dart';
+import '../widgets/audience_filter_dropdown.dart';
 import '../widgets/empty_state.dart';
-
-enum _AudienceMode { all, friends, fof, mine }
 
 /// Event photo: blob refs (`n<hash>`, `blob://<hash>`, bare hex) resolve via
 /// the chunk store; http(s) load directly. Falls back to an icon when missing
@@ -103,8 +102,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   bool _loading = true;
 
-  _AudienceMode _audienceMode = _AudienceMode.all;
-  List<String> _friendSet = const [];
+  AudienceFilter _audienceFilter = AudienceFilter.all;
 
   List<SoshalEvent>? _sortedCache;
   List<SoshalEvent>? _sortedCacheKey;
@@ -125,11 +123,16 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   List<SoshalEvent> _visibleEvents(List<SoshalEvent> events) {
-    if (_audienceMode != _AudienceMode.friends &&
-        _audienceMode != _AudienceMode.fof) {
-      return events;
-    }
-    return events.where((e) => _friendSet.contains(e.creatorPubkey)).toList();
+    final friendsService = context.friendsServiceOrNull;
+    final myPk = context.activePubkeyOrNull;
+    return friendsService != null
+        ? friendsService.filterList(
+            events,
+            _audienceFilter,
+            (e) => e.creatorPubkey,
+            myPubkey: myPk,
+          )
+        : events;
   }
 
   String _viewMode = 'calendar';
@@ -150,20 +153,15 @@ class _EventsScreenState extends State<EventsScreen> {
       final api = context.read<EventsService>();
       final session = context.read<SessionService>();
       final dating = context.read<DatingService>();
-      if (_audienceMode == _AudienceMode.mine && session.activePubkey != null) {
-        await api.fetchUserEvents(session.activePubkey!);
-      } else {
-        await api.fetchNearby(
-          radiusKm: _radiusKm,
-          limit: _audienceMode == _AudienceMode.friends ||
-                  _audienceMode == _AudienceMode.fof
-              ? 100
-              : 50,
-        );
-      }
-      await _loadFriendSet(session);
-      var mine = const <String>[];
       final pk = session.activePubkey;
+      if (pk != null) {
+        context.friendsServiceReadOrNull?.loadAudienceGraph(pk);
+      }
+      await api.fetchNearby(
+        radiusKm: _radiusKm,
+        limit: _audienceFilter == AudienceFilter.all ? 50 : 100,
+      );
+      var mine = const <String>[];
       if (pk != null) {
         try {
           mine = (await dating.getOwnProfile(pk)).interests;
@@ -176,49 +174,6 @@ class _EventsScreenState extends State<EventsScreen> {
       debugPrint('events load: $e');
     }
     if (mounted) setState(() => _loading = false);
-  }
-
-  Future<void> _loadFriendSet(SessionService session) async {
-    try {
-      if (_audienceMode != _AudienceMode.friends &&
-          _audienceMode != _AudienceMode.fof) {
-        _friendSet = const [];
-        return;
-      }
-      final pk = session.activePubkey;
-      if (pk == null) {
-        _friendSet = const [];
-        return;
-      }
-      final friends = context.read<FriendsService>();
-      var mine = <String>[];
-      try {
-        mine = (jsonDecode(await friends.fetchFollows(pk)) as List<dynamic>)
-            .whereType<String>()
-            .toList();
-      } catch (_) {
-        mine = const [];
-      }
-      if (_audienceMode == _AudienceMode.friends) {
-        _friendSet = mine;
-        return;
-      }
-      final union = <String>{};
-      for (final f in mine.take(100)) {
-        try {
-          union.addAll(
-              (jsonDecode(await friends.fetchFollows(f)) as List<dynamic>)
-                  .whereType<String>());
-        } catch (e) {
-          debugPrint('fof follows: $e');
-        }
-      }
-      union.remove(pk);
-      _friendSet = union.toList();
-    } catch (e) {
-      debugPrint('friend set: $e');
-      _friendSet = const [];
-    }
   }
 
   Future<void> _createDialog() async {
@@ -253,19 +208,19 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
-  String _audienceLabel(_AudienceMode m) {
-    if (m == _AudienceMode.all) return 'All';
-    if (m == _AudienceMode.friends) return 'Friends';
-    if (m == _AudienceMode.fof) return 'Friends of friends';
-    return 'Mine';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Events'),
         actions: [
+          AudienceFilterDropdown(
+            value: _audienceFilter,
+            onChanged: (m) {
+              setState(() => _audienceFilter = m);
+              _load();
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.travel_explore),
             tooltip: 'Discover by audience',
@@ -277,40 +232,6 @@ class _EventsScreenState extends State<EventsScreen> {
               );
             },
           ),
-          PopupMenuButton<_AudienceMode>(
-            tooltip: 'Find events',
-            onSelected: (m) {
-              setState(() => _audienceMode = m);
-              _load();
-            },
-            itemBuilder: (context) => [
-              for (final m in _AudienceMode.values)
-                PopupMenuItem(
-                  value: m,
-                  child: Row(
-                    children: [
-                      if (_audienceMode == m) const Icon(Icons.check, size: 16),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          _audienceLabel(m),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.explore_outlined, size: 18),
-                SizedBox(width: 4),
-                Text('Find events'),
-              ],
-            ),
-          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -318,39 +239,36 @@ class _EventsScreenState extends State<EventsScreen> {
         tooltip: 'Create event',
         child: const Icon(Icons.add),
       ),
-      bottomNavigationBar: _audienceMode == _AudienceMode.mine
-          ? null
-          : Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  const Icon(Icons.radar, size: 18),
-                  Expanded(
-                    child: SizedBox(
-                      height: 48,
-                      child: Slider(
-                        min: 0,
-                        max: 500,
-                        divisions: 10,
-                        value: _radiusKm,
-                        label: _radiusKm == 0
-                            ? 'Everywhere'
-                            : '${_radiusKm.round()} km',
-                        onChanged: (v) {
-                          _radiusKm = v;
-                          setState(() {});
-                        },
-                        onChangeEnd: (_) => _load(),
-                      ),
-                    ),
-                  ),
-                  Text(
-                    _radiusKm == 0 ? 'Anywhere' : '${_radiusKm.round()} km',
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                ],
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            const Icon(Icons.radar, size: 18),
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: Slider(
+                  min: 0,
+                  max: 500,
+                  divisions: 10,
+                  value: _radiusKm,
+                  label:
+                      _radiusKm == 0 ? 'Everywhere' : '${_radiusKm.round()} km',
+                  onChanged: (v) {
+                    _radiusKm = v;
+                    setState(() {});
+                  },
+                  onChangeEnd: (_) => _load(),
+                ),
               ),
             ),
+            Text(
+              _radiusKm == 0 ? 'Anywhere' : '${_radiusKm.round()} km',
+              style: const TextStyle(fontSize: 11),
+            ),
+          ],
+        ),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Consumer<EventsService>(
@@ -1293,12 +1211,14 @@ class _EventsAudienceDiscoveryScreenState
     final pk = session.activePubkey;
     if (pk == null) return;
     try {
-      final friends = context.read<FriendsService>();
-      final followsJson = await friends.fetchFollows(pk);
-      final decoded = (jsonDecode(followsJson) as List<dynamic>)
-          .whereType<String>()
-          .toList();
-      if (mounted) setState(() => _friendPubkeys = decoded);
+      final friends = context.friendsServiceReadOrNull;
+      if (friends != null) {
+        final followsJson = await friends.fetchFollows(pk);
+        final decoded = (jsonDecode(followsJson) as List<dynamic>)
+            .whereType<String>()
+            .toList();
+        if (mounted) setState(() => _friendPubkeys = decoded);
+      }
     } catch (e) {
       debugPrint('audience discovery load friends: $e');
     }

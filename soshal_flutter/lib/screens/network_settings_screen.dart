@@ -556,7 +556,9 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
       if (error != null && error.trim().isNotEmpty) return error;
       return null;
     } catch (_) {}
-    if (trimmed == '"running":false' || trimmed == '"running":true') return null;
+    if (trimmed == '"running":false' || trimmed == '"running":true') {
+      return null;
+    }
     return trimmed;
   }
 

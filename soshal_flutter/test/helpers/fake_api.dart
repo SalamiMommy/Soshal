@@ -27,6 +27,8 @@ class FakeApi extends RustLibApi {
     #crateFfiMusicMusicSaved: (_) => '[]',
     #crateFfiMusicMusicPlaylistList: (_) => '[]',
     #crateFfiMinisMinisSaved: (_) => '[]',
+    #crateFfiGroupsGroupsRoomsReactions: (_) => '[]',
+    #crateFfiGroupsGroupsRoomsReact: (_) => true,
   };
 
   void stub(String method, ApiHandler handler) {

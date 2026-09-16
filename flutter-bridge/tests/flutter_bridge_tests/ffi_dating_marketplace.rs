@@ -602,11 +602,14 @@ fn test_marketplace_order_escrow_lifecycle() {
         serde_json::from_str(&marketplace::marketplace_fetch_buyer_orders(buyer.clone()).unwrap())
             .unwrap();
     assert_eq!(buyer_orders.len(), 1);
+    assert!(marketplace::marketplace_fetch_seller_orders(seller.clone()).is_err());
+    unlock(&seller_secret);
     let seller_orders: Vec<serde_json::Value> = serde_json::from_str(
         &marketplace::marketplace_fetch_seller_orders(seller.clone()).unwrap(),
     )
     .unwrap();
     assert_eq!(seller_orders.len(), 1);
+    unlock(&buyer_secret);
     assert!(marketplace::marketplace_create_escrow(
         order_id.clone(),
         "".to_string(),

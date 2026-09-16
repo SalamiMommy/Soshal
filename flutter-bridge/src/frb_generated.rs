@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -443388222;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1110419274;
 
 // Section: executor
 
@@ -5447,6 +5447,82 @@ fn wire__crate__ffi__groups__groups_rooms_list_impl(
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::groups::groups_rooms_list(api_group_id)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__groups__groups_rooms_react_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "groups_rooms_react",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_group_id = <String>::sse_decode(&mut deserializer);
+            let api_room_id = <String>::sse_decode(&mut deserializer);
+            let api_message_id = <String>::sse_decode(&mut deserializer);
+            let api_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_emoji = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::groups::groups_rooms_react(
+                    api_group_id,
+                    api_room_id,
+                    api_message_id,
+                    api_pubkey,
+                    api_emoji,
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__groups__groups_rooms_reactions_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "groups_rooms_reactions",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_group_id = <String>::sse_decode(&mut deserializer);
+            let api_room_id = <String>::sse_decode(&mut deserializer);
+            let api_viewer_pubkey = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::groups::groups_rooms_reactions(
+                    api_group_id,
+                    api_room_id,
+                    api_viewer_pubkey,
+                )?;
                 Ok(output_ok)
             })())
         },
@@ -19618,6 +19694,24 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__groups__groups_rooms_react(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__groups__groups_rooms_react_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__groups__groups_rooms_reactions(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__groups__groups_rooms_reactions_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__groups__groups_rooms_update(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -25002,6 +25096,24 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__groups__groups_rooms_list_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__groups__groups_rooms_react(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__groups__groups_rooms_react_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__groups__groups_rooms_reactions(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__groups__groups_rooms_reactions_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]

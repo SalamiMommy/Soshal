@@ -8,17 +8,12 @@ pub mod migrations;
 
 use crate::block_on;
 use crate::libsql::{params, Connection};
-use migrations::{
-    create_dating_unmatch_actor_column, v11_index_cleanup, v12_saved_content_playlists,
-    v13_category_fts, v1_create_tables, v2_group_channels, v3_group_thread_reactions,
-    v4_group_password, v5_performance_indexes, v6_index_cleanup, v7_query_optimizations,
-    v8_index_cleanup, v9_trigger_optimization,
-};
+use migrations::v1_create_tables;
 
 /// Latest schema version the migration runner produces.
-pub const SCHEMA_VERSION: i64 = 13;
+pub const SCHEMA_VERSION: i64 = 1;
 
-/// Columns added by ALTER TABLE in the pre-squash migrations v008-v013 but
+/// Columns added by ALTER TABLE in the pre-squash migrations but
 /// lost when they were collapsed into v001_initial. Legacy databases created
 /// before the squash lack them; `CREATE TABLE IF NOT EXISTS` silently skips
 /// existing tables, so v001's index batch fails unless the columns are healed
@@ -33,13 +28,14 @@ const LEGACY_ALTER_COLUMNS: &[(&str, &str, &str)] = &[
     ("users", "follower_count", "INTEGER NOT NULL DEFAULT 0"),
     ("escrows", "buyer_confirmed", "INTEGER NOT NULL DEFAULT 0"),
     ("escrows", "seller_confirmed", "INTEGER NOT NULL DEFAULT 0"),
+    ("groups", "password_hash", "TEXT"),
+    ("group_messages", "room_id", "TEXT NOT NULL DEFAULT ''"),
 ];
 
-/// Adds columns lost in the migration squash to legacy databases. Runs before
-/// the version short-circuit so both empty-`_migrations` databases and
-/// pre-squash databases (versions 1-13) converge on the canonical schema.
-/// Idempotent: a column is added only when its table exists and the column is
-/// missing.
+/// Adds columns and tables lost in the migration squash to legacy databases.
+/// Runs before the version short-circuit so both empty-`_migrations` databases
+/// and pre-squash databases (versions 1-13) converge on the canonical schema.
+/// Idempotent: columns and tables are only added when missing.
 fn heal_legacy_schema(conn: &Connection) -> Result<(), crate::error::DbError> {
     for &(table, column, ddl) in LEGACY_ALTER_COLUMNS {
         let table_exists: bool = crate::query::query_first(
@@ -92,11 +88,7 @@ fn heal_legacy_schema(conn: &Connection) -> Result<(), crate::error::DbError> {
         ))?;
     }
 
-    // ignored_notifications lives in v001 but pre-squash/older dev databases
-    // already past v1 won't re-run it. Ensure the table exists idempotently so
-    // the Ignore/Mute repo queries never hit a missing table. (Flattened into
-    // v001 per the "no new migrations pre-release" convention; this heals any
-    // database that predates the table.)
+    // Ensure tables from earlier migrations exist idempotently for legacy DBs.
     block_on(conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS ignored_notifications (
             pubkey TEXT NOT NULL,
@@ -105,14 +97,8 @@ fn heal_legacy_schema(conn: &Connection) -> Result<(), crate::error::DbError> {
             kind TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             PRIMARY KEY (pubkey, kind, from_pubkey, event_id)
-        );",
-    ))?;
-
-    // musicloud_playlists and musicloud_timed_comments live in v001 but older
-    // dev databases already past v1 won't re-run it. Ensure the tables exist
-    // idempotently so Musicloud queries never hit a missing table.
-    block_on(conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS musicloud_playlists (
+        );
+        CREATE TABLE IF NOT EXISTS musicloud_playlists (
             id TEXT PRIMARY KEY,
             pubkey TEXT NOT NULL,
             title TEXT NOT NULL,
@@ -126,7 +112,124 @@ fn heal_legacy_schema(conn: &Connection) -> Result<(), crate::error::DbError> {
             timestamp_ms INTEGER NOT NULL DEFAULT 0,
             content TEXT NOT NULL,
             created_at INTEGER NOT NULL DEFAULT 0
-        );",
+        );
+        CREATE TABLE IF NOT EXISTS group_rooms (
+            id TEXT PRIMARY KEY,
+            group_id TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL DEFAULT '',
+            topic TEXT NOT NULL DEFAULT '',
+            emoji TEXT NOT NULL DEFAULT '',
+            color TEXT NOT NULL DEFAULT '#8b5cf6',
+            position INTEGER NOT NULL DEFAULT 0,
+            created_by TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS group_threads (
+            id TEXT PRIMARY KEY,
+            group_id TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            body TEXT NOT NULL DEFAULT '',
+            author TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0,
+            is_pinned INTEGER NOT NULL DEFAULT 0,
+            reply_count INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS group_thread_replies (
+            id TEXT PRIMARY KEY,
+            thread_id TEXT NOT NULL DEFAULT '',
+            parent_id TEXT NOT NULL DEFAULT '',
+            author TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS group_voice_channels (
+            id TEXT PRIMARY KEY,
+            group_id TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            created_by TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS group_voice_presence (
+            channel_id TEXT NOT NULL DEFAULT '',
+            pubkey TEXT NOT NULL DEFAULT '',
+            joined_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (channel_id, pubkey)
+        );
+        CREATE TABLE IF NOT EXISTS group_thread_reactions (
+            thread_id TEXT NOT NULL DEFAULT '',
+            reply_id TEXT NOT NULL DEFAULT '',
+            pubkey TEXT NOT NULL DEFAULT '',
+            emoji TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (thread_id, reply_id, pubkey, emoji)
+        );
+        CREATE TABLE IF NOT EXISTS group_room_reactions (
+            group_id TEXT NOT NULL DEFAULT '',
+            room_id TEXT NOT NULL DEFAULT '',
+            message_id TEXT NOT NULL DEFAULT '',
+            pubkey TEXT NOT NULL DEFAULT '',
+            emoji TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (message_id, pubkey, emoji)
+        );
+        CREATE TABLE IF NOT EXISTS zk_state_rollups (
+            thread_id TEXT PRIMARY KEY,
+            genesis_root TEXT NOT NULL,
+            final_state_root TEXT NOT NULL,
+            operation_count INTEGER NOT NULL,
+            verified_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS saved_content (
+            kind INTEGER NOT NULL,
+            id TEXT NOT NULL,
+            pubkey TEXT NOT NULL DEFAULT '',
+            d TEXT NOT NULL DEFAULT '',
+            media_type TEXT NOT NULL DEFAULT '',
+            media_url TEXT NOT NULL DEFAULT '',
+            text_overlay TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            thumbnail TEXT NOT NULL DEFAULT '',
+            blob_hash TEXT NOT NULL DEFAULT '',
+            media_size INTEGER NOT NULL DEFAULT 0,
+            audience TEXT NOT NULL DEFAULT 'public',
+            hashtags TEXT NOT NULL DEFAULT '[]',
+            host_ready INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT 0,
+            saved_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (kind, id)
+        );
+        CREATE TABLE IF NOT EXISTS musicloud_playlist_tracks (
+            playlist_id TEXT NOT NULL,
+            track_id TEXT NOT NULL,
+            pubkey TEXT NOT NULL DEFAULT '',
+            d TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            thumbnail TEXT NOT NULL DEFAULT '',
+            audio_url TEXT NOT NULL DEFAULT '',
+            blob_hash TEXT NOT NULL DEFAULT '',
+            media_size INTEGER NOT NULL DEFAULT 0,
+            audience TEXT NOT NULL DEFAULT 'public',
+            hashtags TEXT NOT NULL DEFAULT '[]',
+            created_at INTEGER NOT NULL DEFAULT 0,
+            position INTEGER NOT NULL DEFAULT 0,
+            added_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (playlist_id, track_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_group_rooms_group ON group_rooms(group_id, position ASC);
+        CREATE INDEX IF NOT EXISTS idx_group_threads_group ON group_threads(group_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_group_threads_pinned ON group_threads(group_id, is_pinned DESC, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_group_thread_replies_thread ON group_thread_replies(thread_id, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_group_thread_replies_parent ON group_thread_replies(parent_id, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_group_voice_channels_group ON group_voice_channels(group_id, position ASC);
+        CREATE INDEX IF NOT EXISTS idx_group_voice_presence_pubkey ON group_voice_presence(pubkey);
+        CREATE INDEX IF NOT EXISTS idx_gtr_thread ON group_thread_reactions(thread_id);
+        CREATE INDEX IF NOT EXISTS idx_gtr_reply ON group_thread_reactions(reply_id);
+        CREATE INDEX IF NOT EXISTS idx_grr_room ON group_room_reactions(group_id, room_id);
+        CREATE INDEX IF NOT EXISTS idx_grr_msg ON group_room_reactions(message_id);
+        CREATE INDEX IF NOT EXISTS idx_saved_content_saved_at ON saved_content (saved_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_saved_content_kind_saved ON saved_content (kind, saved_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_playlist_tracks_pos ON musicloud_playlist_tracks (playlist_id, position);",
     ))?;
 
     // idx_users_follower_count lives in v001 but pre-squash databases skipped
@@ -184,6 +287,61 @@ fn heal_legacy_schema(conn: &Connection) -> Result<(), crate::error::DbError> {
             ALTER TABLE dating_unmatches_new RENAME TO dating_unmatches;",
         ))?;
     }
+
+    // Ensure posts_fts includes the category column if it was created in older builds
+    let posts_fts_exists: bool = crate::query::query_first(
+        conn,
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='posts_fts'",
+        (),
+        |r| r.get::<i64>(0),
+    )?
+    .unwrap_or(0)
+        > 0;
+    if posts_fts_exists {
+        let has_category: bool = crate::query::query_first(
+            conn,
+            "SELECT COUNT(*) FROM pragma_table_info('posts_fts') WHERE name='category'",
+            (),
+            |r| r.get::<i64>(0),
+        )?
+        .unwrap_or(0)
+            > 0;
+        if !has_category {
+            block_on(conn.execute_batch(
+                "DROP TRIGGER IF EXISTS posts_ai;
+                DROP TRIGGER IF EXISTS posts_au;
+                DROP TABLE IF EXISTS posts_fts;
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS posts_fts USING fts5(
+                    id UNINDEXED,
+                    pubkey UNINDEXED,
+                    content,
+                    subject,
+                    category,
+                    tokenize='unicode61 remove_diacritics 2'
+                );
+
+                CREATE TRIGGER IF NOT EXISTS posts_ai AFTER INSERT ON posts WHEN new.is_deleted = 0 BEGIN
+                    INSERT OR REPLACE INTO posts_fts(rowid, id, pubkey, content, subject, category)
+                    VALUES (new.rowid, new.id, new.pubkey, new.content, new.subject, new.category);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS posts_au AFTER UPDATE OF content, subject, category, is_deleted ON posts
+                WHEN old.content != new.content OR old.subject IS NOT new.subject OR old.category IS NOT new.category OR old.is_deleted != new.is_deleted
+                BEGIN
+                    DELETE FROM posts_fts WHERE rowid = old.rowid;
+                    INSERT OR REPLACE INTO posts_fts(rowid, id, pubkey, content, subject, category)
+                    SELECT new.rowid, new.id, new.pubkey, new.content, new.subject, new.category WHERE new.is_deleted = 0;
+                END;
+
+                INSERT INTO posts_fts(rowid, id, pubkey, content, subject, category)
+                SELECT rowid, id, pubkey, content, subject, category FROM posts WHERE is_deleted = 0;
+
+                INSERT INTO posts_fts(posts_fts) VALUES('rebuild');",
+            ))?;
+        }
+    }
+
     Ok(())
 }
 
@@ -225,23 +383,7 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
     }
 
     type StepFn = fn(&Connection) -> Result<(), crate::error::DbError>;
-    let steps: &[(i64, StepFn)] = &[
-        (1, |c| v1_create_tables(c).map_err(Into::into)),
-        (2, |c| v2_group_channels(c).map_err(Into::into)),
-        (3, |c| v3_group_thread_reactions(c).map_err(Into::into)),
-        (4, |c| v4_group_password(c).map_err(Into::into)),
-        (5, |c| v5_performance_indexes(c).map_err(Into::into)),
-        (6, |c| v6_index_cleanup(c).map_err(Into::into)),
-        (7, |c| v7_query_optimizations(c).map_err(Into::into)),
-        (8, |c| v8_index_cleanup(c).map_err(Into::into)),
-        (9, |c| v9_trigger_optimization(c).map_err(Into::into)),
-        (10, |c| {
-            create_dating_unmatch_actor_column(c).map_err(Into::into)
-        }),
-        (11, |c| v11_index_cleanup(c).map_err(Into::into)),
-        (12, |c| v12_saved_content_playlists(c).map_err(Into::into)),
-        (13, |c| v13_category_fts(c).map_err(Into::into)),
-    ];
+    let steps: &[(i64, StepFn)] = &[(1, |c| v1_create_tables(c).map_err(Into::into))];
 
     for &(version, step_fn) in steps {
         if version > current {

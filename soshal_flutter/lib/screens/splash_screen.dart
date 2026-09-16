@@ -51,7 +51,8 @@ class _SplashScreenState extends State<SplashScreen> {
       ]);
 
       // Check if user is logged in
-      if (sessionService.hasActiveSession()) {
+      final hasAccounts = sessionService.getAccounts().isNotEmpty;
+      if (sessionService.hasActiveSession() || hasAccounts) {
         // Autologin setting: when off, require explicit login even if a
         // session exists.
         if (!autologinEnabled) {
@@ -60,16 +61,22 @@ class _SplashScreenState extends State<SplashScreen> {
           }
           return;
         }
+
+        if (sessionService.activePubkey == null && hasAccounts) {
+          final lastUsed = sessionService.lastUsedAccount;
+          if (lastUsed != null) {
+            await sessionService.switchAccount(lastUsed.pubkey);
+          }
+        }
+
         // Persistence: a session with no loaded keys auto-unlocks from the
-        // OS keychain when no PIN is configured and keychain unlock is
-        // enabled. PIN users get the lock screen first; the signer unlocks
-        // after PIN verification. Recovery phrase is the last resort when
-        // neither is available.
+        // local keystore/keychain when no PIN is configured and keychain unlock is
+        // enabled (defaults to true).
         if (!mounted) return;
         final keychainUnlockEnabled = context
                 .read<SettingsService>()
-                .getSetting('keychain_unlock_enabled') ==
-            'true';
+                .getSetting('keychain_unlock_enabled') !=
+            'false';
         if (signer.locked && !shell.hasPin && keychainUnlockEnabled) {
           final activePubkey = sessionService.activePubkey;
           if (activePubkey != null) {
@@ -80,10 +87,11 @@ class _SplashScreenState extends State<SplashScreen> {
             }
           }
         }
-        // If the signer is still locked (a PIN user skips the keyring block,
-        // or keychain unlock failed), route through the auth/lock path first
-        // instead of falling through to /feed with no unlocked signing.
-        if (signer.locked) {
+        // If the signer is still locked and no PIN is configured (keychain
+        // unlock failed or was disabled), route to /auth to re-authenticate.
+        // If a PIN is configured, proceed to /feed where LockScreen prompts
+        // for the PIN to unlock the signer.
+        if (signer.locked && !shell.hasPin) {
           if (mounted) {
             context.go('/auth');
           }

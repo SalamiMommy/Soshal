@@ -106,6 +106,7 @@ pub fn moderation_unblock_user(
 /// Get muted users for an account.
 #[frb(sync, serialize)]
 pub fn moderation_get_muted(user_pubkey: String) -> Result<Vec<String>, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         let raw = SettingsRepo::new(db)
             .get(&muted_list_key(&user_pubkey))?
@@ -117,6 +118,7 @@ pub fn moderation_get_muted(user_pubkey: String) -> Result<Vec<String>, String> 
 /// Get blocked users for an account.
 #[frb(sync, serialize)]
 pub fn moderation_get_blocked(user_pubkey: String) -> Result<Vec<String>, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| BlockRepo::new(db).list(&user_pubkey))
 }
 

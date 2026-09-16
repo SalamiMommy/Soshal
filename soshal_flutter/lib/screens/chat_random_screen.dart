@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/chatrandom_service.dart';
+import '../services/friends_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/audience_filter_dropdown.dart';
 import '../widgets/empty_state.dart';
 
 /// Chat Random: interest-based random pairing with strangers via relay
@@ -29,6 +31,7 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
   String? _pubkey;
   Timer? _pollTimer;
   int _pollCount = 0;
+  AudienceFilter _audienceFilter = AudienceFilter.all;
 
   static const _pollInterval = Duration(seconds: 5);
   static const _maxPolls = 6;
@@ -38,6 +41,7 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
     super.initState();
     _pubkey = context.read<SessionService>().activePubkey;
     if (_pubkey != null) {
+      context.friendsServiceReadOrNull?.loadAudienceGraph(_pubkey!);
       _refreshAvailability();
       _fetchOnce();
     }
@@ -75,6 +79,7 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
     final pubkey = _pubkey;
     if (pubkey == null) return;
     try {
+      context.friendsServiceReadOrNull?.loadAudienceGraph(pubkey);
       await context.read<ChatrandomService>().fetch(pubkey, limit: 20);
     } catch (e) {
       debugPrint('chatrandom fetch: $e');
@@ -190,7 +195,7 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
     }
   }
 
-  List<Widget> _headerChildren(ChatrandomService service) {
+  List<Widget> _headerChildren(int peerCount) {
     return [
       Text('Your Status', style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 8),
@@ -277,13 +282,15 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
         ],
       ),
       const SizedBox(height: 24),
-      Text('Peers (${service.peers.length})',
+      Text('Peers ($peerCount)',
           style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 4),
-      if (service.peers.isEmpty)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
-          child: Text('No peers yet. Find a peer above.'),
+      if (peerCount == 0)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(_audienceFilter == AudienceFilter.all
+              ? 'No peers yet. Find a peer above.'
+              : 'No peers match ${_audienceFilter.label}.'),
         ),
     ];
   }
@@ -291,7 +298,15 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Chat Random')),
+      appBar: AppBar(
+        title: const Text('Chat Random'),
+        actions: [
+          AudienceFilterDropdown(
+            value: _audienceFilter,
+            onChanged: (filter) => setState(() => _audienceFilter = filter),
+          ),
+        ],
+      ),
       body: _pubkey == null
           ? const EmptyState(
               icon: Icons.casino_outlined,
@@ -299,15 +314,24 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
             )
           : Consumer<ChatrandomService>(
               builder: (context, service, _) {
-                final headers = _headerChildren(service);
+                final friendsService = context.friendsServiceOrNull;
+                final peers = friendsService != null
+                    ? friendsService.filterList(
+                        service.peers,
+                        _audienceFilter,
+                        (p) => p.pubkey,
+                        myPubkey: _pubkey,
+                      )
+                    : service.peers;
+                final headers = _headerChildren(peers.length);
                 return RefreshIndicator(
                   onRefresh: _fetchOnce,
                   child: ListView.builder(
                     padding: const EdgeInsets.all(16),
-                    itemCount: headers.length + service.peers.length,
+                    itemCount: headers.length + peers.length,
                     itemBuilder: (context, index) {
                       if (index < headers.length) return headers[index];
-                      final peer = service.peers[index - headers.length];
+                      final peer = peers[index - headers.length];
                       final content = _peerContent(peer);
                       final interests =
                           (content['interests'] as List?) ?? const [];

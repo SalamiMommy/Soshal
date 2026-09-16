@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `active_pubkey`, `chmod_0600`, `raw_sql_allowed`, `rows_json`, `same_parent_dir`, `upsert_post_row`, `verify_restored_schema`, `with_db_result`, `with_db_string`, `with_db`
+// These functions are ignored because they are not marked as `pub`: `active_pubkey`, `chmod_0600`, `db_query_json`, `raw_sql_allowed`, `rows_json`, `rows_to_json_string`, `same_parent_dir`, `upsert_post_row`, `verify_restored_schema`, `with_db_result`, `with_db_string`, `with_db`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `TempCleanup`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `drop`
 

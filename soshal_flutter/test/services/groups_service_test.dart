@@ -217,5 +217,83 @@ void main() {
       );
       expect(groups.lastError, contains('create boom'));
     });
+
+    test('fetchRoomReactions parses summary and exposes via roomReactionsFor',
+        () async {
+      final groups = GroupsService();
+      api.stubString(
+        'crateFfiGroupsGroupsRoomsReactions',
+        jsonEncode([
+          {
+            'message_id': 'm-1',
+            'emoji': '👍',
+            'count': 3,
+            'reacted': true,
+          },
+          {
+            'message_id': 'm-1',
+            'emoji': '❤️',
+            'count': 1,
+            'reacted': false,
+          },
+          {
+            'message_id': 'm-2',
+            'emoji': '🔥',
+            'count': 5,
+            'reacted': false,
+          },
+        ]),
+      );
+
+      final reactions = await groups.fetchRoomReactions(
+        'g-1',
+        'room-alpha',
+        viewerPubkey: 'pk-me',
+      );
+
+      expect(reactions.length, 3);
+      expect(reactions[0].messageId, 'm-1');
+      expect(reactions[0].emoji, '👍');
+      expect(reactions[0].count, 3);
+      expect(reactions[0].reacted, isTrue);
+
+      final m1Reactions = groups.roomReactionsFor('m-1');
+      expect(m1Reactions.length, 2);
+      expect(m1Reactions.map((r) => r.emoji), containsAll(['👍', '❤️']));
+
+      final m2Reactions = groups.roomReactionsFor('m-2');
+      expect(m2Reactions.length, 1);
+      expect(m2Reactions.single.emoji, '🔥');
+
+      final inv = api.callsOf('crateFfiGroupsGroupsRoomsReactions').single;
+      expect(api.namedArg(inv, 'groupId'), 'g-1');
+      expect(api.namedArg(inv, 'roomId'), 'room-alpha');
+      expect(api.namedArg(inv, 'viewerPubkey'), 'pk-me');
+
+      // Verify resetForAccountSwitch clears room reactions
+      groups.resetForAccountSwitch();
+      expect(groups.roomReactionsFor('m-1'), isEmpty);
+    });
+
+    test('reactToRoomMessage passes args to bridge', () async {
+      final groups = GroupsService();
+      api.stubBool('crateFfiGroupsGroupsRoomsReact', true);
+
+      final ok = await groups.reactToRoomMessage(
+        'g-1',
+        'room-alpha',
+        'm-1',
+        '🎉',
+        'pk-me',
+      );
+
+      expect(ok, isTrue);
+      final inv = api.callsOf('crateFfiGroupsGroupsRoomsReact').single;
+      expect(api.namedArg(inv, 'groupId'), 'g-1');
+      expect(api.namedArg(inv, 'roomId'), 'room-alpha');
+      expect(api.namedArg(inv, 'messageId'), 'm-1');
+      expect(api.namedArg(inv, 'emoji'), '🎉');
+      expect(api.namedArg(inv, 'pubkey'), 'pk-me');
+    });
   });
 }

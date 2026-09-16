@@ -16,6 +16,14 @@ class ScheduledService extends ChangeNotifier
 
   List<ScheduledPost> get drafts => _drafts;
 
+  /// Clear draft posts on account switch so Account B never sees Account A's
+  /// scheduled posts.
+  void resetForAccountSwitch() {
+    _drafts = [];
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Create a scheduled post draft. `scheduledAt` is a unix timestamp in
   /// the future. Returns the draft id.
   Future<String> create({

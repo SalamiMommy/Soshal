@@ -125,7 +125,7 @@ void main() {
     await tester.tap(find.widgetWithText(OutlinedButton, 'Save'));
     await tester.pumpAndSettle();
     expect(api.callCount('crateFfiSignerSignerSaveToKeyring'), 1);
-    expect(find.textContaining('Saved to keychain'), findsOneWidget);
+    expect(find.textContaining('Saved to OS keychain'), findsOneWidget);
     var inv = api.callsOf('crateFfiSignerSignerSaveToKeyring').single;
     expect(api.namedArg(inv, 'pubkey'), 'pk123');
 

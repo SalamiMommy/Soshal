@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../services/friends_service.dart';
 import '../services/media_service.dart';
 import '../services/music_service.dart';
 import '../services/p2p_service.dart';
 import '../services/shell_service.dart';
 import '../utils/format.dart';
+import '../widgets/audience_filter_dropdown.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_state_text.dart';
@@ -25,6 +27,7 @@ class MusicloudScreen extends StatefulWidget {
 class _MusicloudScreenState extends State<MusicloudScreen>
     with SingleTickerProviderStateMixin {
   bool _loading = true;
+  AudienceFilter _audienceFilter = AudienceFilter.all;
   late TabController _tabs;
   final Map<String, List<MusicTrack>> _playlistTracks = {};
   final Set<String> _loadingPlaylists = {};
@@ -34,6 +37,10 @@ class _MusicloudScreenState extends State<MusicloudScreen>
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
     _tabs.addListener(_onTabChanged);
+    final myPk = context.activePubkeyOrNull;
+    if (myPk != null) {
+      context.friendsServiceReadOrNull?.loadAudienceGraph(myPk);
+    }
     _load();
     _warm();
   }
@@ -145,6 +152,10 @@ class _MusicloudScreenState extends State<MusicloudScreen>
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
+      final myPk = context.activePubkeyOrNull;
+      if (myPk != null) {
+        context.friendsServiceReadOrNull?.loadAudienceGraph(myPk);
+      }
       await context.read<MusicService>().fetchTracks();
     } catch (e) {
       debugPrint('musicloud load: $e');
@@ -321,6 +332,12 @@ class _MusicloudScreenState extends State<MusicloudScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Musicloud'),
+        actions: [
+          AudienceFilterDropdown(
+            value: _audienceFilter,
+            onChanged: (filter) => setState(() => _audienceFilter = filter),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           tabs: const [
@@ -360,7 +377,17 @@ class _MusicloudScreenState extends State<MusicloudScreen>
   }
 
   Widget _buildBrowse() {
-    final tracks = context.select((MusicService s) => s.tracks);
+    final rawTracks = context.select((MusicService s) => s.tracks);
+    final friendsService = context.friendsServiceOrNull;
+    final myPk = context.activePubkeyOrNull;
+    final tracks = friendsService != null
+        ? friendsService.filterList(
+            rawTracks,
+            _audienceFilter,
+            (t) => t.pubkey,
+            myPubkey: myPk,
+          )
+        : rawTracks;
     return _loading
         ? const Center(child: CircularProgressIndicator())
         : RefreshIndicator(
@@ -371,9 +398,12 @@ class _MusicloudScreenState extends State<MusicloudScreen>
                       const SizedBox(height: 120),
                       EmptyState(
                         icon: Icons.music_note,
-                        title: 'No songs found',
-                        body:
-                            'Be the first to publish an audio track on Musicloud — tap +.',
+                        title: _audienceFilter == AudienceFilter.all
+                            ? 'No songs found'
+                            : 'No songs match ${_audienceFilter.label}',
+                        body: _audienceFilter == AudienceFilter.all
+                            ? 'Be the first to publish an audio track on Musicloud — tap +.'
+                            : null,
                       ),
                     ],
                   )
@@ -386,19 +416,32 @@ class _MusicloudScreenState extends State<MusicloudScreen>
   }
 
   Widget _buildSaved() {
-    final saved = context.select((MusicService s) => s.savedTracks);
+    final rawSaved = context.select((MusicService s) => s.savedTracks);
+    final friendsService = context.friendsServiceOrNull;
+    final myPk = context.activePubkeyOrNull;
+    final saved = friendsService != null
+        ? friendsService.filterList(
+            rawSaved,
+            _audienceFilter,
+            (t) => t.pubkey,
+            myPubkey: myPk,
+          )
+        : rawSaved;
     return RefreshIndicator(
       onRefresh: _loadSaved,
       child: saved.isEmpty
           ? ListView(
-              children: const [
-                SizedBox(height: 120),
+              children: [
+                const SizedBox(height: 120),
                 EmptyState(
                   icon: Icons.bookmark_border,
-                  title: 'No saved tracks',
-                  body:
-                      'Tap the bookmark on a song that you like — saving also '
-                      'hosts its audio from your device for other users.',
+                  title: _audienceFilter == AudienceFilter.all
+                      ? 'No saved tracks'
+                      : 'No saved tracks match ${_audienceFilter.label}',
+                  body: _audienceFilter == AudienceFilter.all
+                      ? 'Tap the bookmark on a song that you like — saving also '
+                          'hosts its audio from your device for other users.'
+                      : null,
                 ),
               ],
             )

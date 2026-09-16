@@ -7,10 +7,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../widgets/mini_video_player.dart';
 import '../services/feed_service.dart';
+import '../services/friends_service.dart';
 import '../services/media_service.dart';
 import '../services/minis_service.dart';
 import '../services/p2p_service.dart';
 import '../services/session_service.dart';
+import '../widgets/audience_filter_dropdown.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/empty_state.dart';
 import '../utils/format.dart';
@@ -31,6 +33,7 @@ class _MinisScreenState extends State<MinisScreen>
     with SingleTickerProviderStateMixin {
   List<MiniItem> _minis = [];
   bool _loading = true;
+  AudienceFilter _audienceFilter = AudienceFilter.all;
   String _filterText = '';
   String? _filterResult;
   bool _rankOn = false;
@@ -46,8 +49,25 @@ class _MinisScreenState extends State<MinisScreen>
     super.initState();
     _tabs = TabController(length: 4, vsync: this);
     _tabs.addListener(_onTabChanged);
+    final myPk = context.read<SessionService>().activePubkey;
+    if (myPk != null) {
+      context.friendsServiceReadOrNull?.loadAudienceGraph(myPk);
+    }
     _load();
     _loadSaved();
+  }
+
+  List<MiniItem> get _filteredMinis {
+    final friendsService = context.friendsServiceOrNull;
+    final myPk = context.activePubkeyOrNull;
+    return friendsService != null
+        ? friendsService.filterList(
+            _minis,
+            _audienceFilter,
+            (m) => m.pubkey,
+            myPubkey: myPk,
+          )
+        : _minis;
   }
 
   Future<void> _load() => _loadRecent();
@@ -397,6 +417,10 @@ class _MinisScreenState extends State<MinisScreen>
       appBar: AppBar(
         title: const Text('Minis'),
         actions: [
+          AudienceFilterDropdown(
+            value: _audienceFilter,
+            onChanged: (filter) => setState(() => _audienceFilter = filter),
+          ),
           IconButton(
             icon: Icon(
                 _reelsMode ? Icons.view_list : Icons.video_collection_outlined),
@@ -432,11 +456,12 @@ class _MinisScreenState extends State<MinisScreen>
   }
 
   Widget _buildForYou() {
-    final display = _rankOn && _ranked.isNotEmpty ? _ranked : _minis;
+    final activeList = _filteredMinis;
+    final display = _rankOn && _ranked.isNotEmpty ? _ranked : activeList;
     return _loading
         ? const Center(child: CircularProgressIndicator())
-        : _reelsMode && _minis.isNotEmpty
-            ? _buildReelsFeed()
+        : _reelsMode && activeList.isNotEmpty
+            ? _buildReelsFeed(activeList)
             : RefreshIndicator(
                 onRefresh: _load,
                 child: ListView(
@@ -535,13 +560,13 @@ class _MinisScreenState extends State<MinisScreen>
                         const Divider(height: 1),
                       ]
                     else
-                      for (var i = 0; i < display.length; i++) ...[
+                      for (var i = 0; i < activeList.length; i++) ...[
                         ListTile(
-                          leading: _minis[i].thumbnail.isNotEmpty
+                          leading: activeList[i].thumbnail.isNotEmpty
                               ? ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
                                   child: BlobImage(
-                                    source: _minis[i].thumbnail,
+                                    source: activeList[i].thumbnail,
                                     width: 48,
                                     height: 48,
                                     fit: BoxFit.cover,
@@ -557,18 +582,18 @@ class _MinisScreenState extends State<MinisScreen>
                                   color: Theme.of(context).colorScheme.primary,
                                 ),
                           title: Text(
-                            _minis[i].textOverlay.isEmpty
-                                ? (mediaBlobHash(_minis[i].videoUrl) != null
+                            activeList[i].textOverlay.isEmpty
+                                ? (mediaBlobHash(activeList[i].videoUrl) != null
                                     ? 'Mini video'
-                                    : _minis[i].videoUrl)
-                                : _minis[i].textOverlay,
+                                    : activeList[i].videoUrl)
+                                : activeList[i].textOverlay,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           subtitle: Text(
-                            mediaBlobHash(_minis[i].videoUrl) != null
+                            mediaBlobHash(activeList[i].videoUrl) != null
                                 ? 'Mini video · hosted from device caches'
-                                : 'Mini video · ${_minis[i].videoUrl}',
+                                : 'Mini video · ${activeList[i].videoUrl}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -580,7 +605,7 @@ class _MinisScreenState extends State<MinisScreen>
                                   builder: (ctx) {
                                     final saved = ctx
                                         .watch<MinisService>()
-                                        .isSaved(_minis[i].id);
+                                        .isSaved(activeList[i].id);
                                     return IconButton(
                                       icon: Icon(
                                         saved
@@ -590,20 +615,21 @@ class _MinisScreenState extends State<MinisScreen>
                                       tooltip: saved
                                           ? 'Unsave'
                                           : 'Save (and host on this device)',
-                                      onPressed: () => _toggleSave(_minis[i]),
+                                      onPressed: () =>
+                                          _toggleSave(activeList[i]),
                                     );
                                   },
                                 ),
                               IconButton(
                                 icon: const Icon(Icons.play_circle_outline),
                                 tooltip: 'Play',
-                                onPressed: () => _play(_minis[i]),
+                                onPressed: () => _play(activeList[i]),
                               ),
                             ],
                           ),
-                          onTap: () => _play(_minis[i]),
+                          onTap: () => _play(activeList[i]),
                         ),
-                        if (i < display.length - 1) const Divider(height: 1),
+                        if (i < activeList.length - 1) const Divider(height: 1),
                       ],
                   ],
                 ),
@@ -685,13 +711,14 @@ class _MinisScreenState extends State<MinisScreen>
     );
   }
 
-  Widget _buildReelsFeed() {
+  Widget _buildReelsFeed([List<MiniItem>? items]) {
+    final list = items ?? _filteredMinis;
     return PageView.builder(
       controller: _pageController,
       scrollDirection: Axis.vertical,
-      itemCount: _minis.length,
+      itemCount: list.length,
       itemBuilder: (context, index) {
-        final mini = _minis[index];
+        final mini = list[index];
         final liked = _likedState[mini.id] ?? mini.liked;
         final count =
             (mini.reactions + (_likeDelta[mini.id] ?? 0)).clamp(0, 1 << 30);

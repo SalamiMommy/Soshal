@@ -207,4 +207,65 @@ void main() {
 
     await flushSnackBars(tester);
   });
+
+  testWidgets('options row is visible under feed posts', (tester) async {
+    api.stubString('crateFfiFeedFeedFetchEvents', _twoPostsJson);
+
+    await pumpFeed(tester);
+
+    // Verify all 5 action buttons are rendered for each post
+    expect(find.byIcon(Icons.favorite), findsNWidgets(2));
+    expect(find.byIcon(Icons.chat_bubble_outline), findsNWidgets(2));
+    expect(find.byIcon(Icons.share_outlined), findsNWidgets(2));
+    expect(find.byIcon(Icons.mood), findsNWidgets(2));
+    expect(find.byIcon(Icons.bolt), findsNWidgets(2));
+
+    // Post 1 stats labels: 3 reactions, 1 reply, 2 reposts
+    // Post 2 stats labels: 1 reaction, 0 replies, 0 reposts
+    expect(find.text('3'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    expect(find.text('1'), findsNWidgets(2));
+  });
+
+  testWidgets('tapping share button opens modal with repost and copy options',
+      (tester) async {
+    api.stubString('crateFfiFeedFeedFetchEvents', _twoPostsJson);
+    api.stubString('crateFfiFeedFeedPublishTextNote', 'repost-ev-1');
+
+    await pumpFeed(tester, sessionPubkey: _pkA);
+
+    await tester.tap(find.byIcon(Icons.share_outlined).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Repost to feed'), findsOneWidget);
+    expect(find.text('Copy post text'), findsOneWidget);
+    expect(find.text('Copy post ID'), findsOneWidget);
+
+    // Tap Repost to feed
+    await tester.tap(find.text('Repost to feed'));
+    await tester.pumpAndSettle();
+
+    expect(api.callCount('crateFfiFeedFeedPublishTextNote'), 1);
+    final inv = api.callsOf('crateFfiFeedFeedPublishTextNote').single;
+    expect(api.namedArg(inv, 'content'), 'nostr:ev-1');
+
+    await flushSnackBars(tester);
+  });
+
+  testWidgets('share modal copy post text copies content to clipboard',
+      (tester) async {
+    api.stubString('crateFfiFeedFeedFetchEvents', _twoPostsJson);
+
+    await pumpFeed(tester);
+
+    await tester.tap(find.byIcon(Icons.share_outlined).first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Copy post text'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Post text copied to clipboard'), findsOneWidget);
+
+    await flushSnackBars(tester);
+  });
 }

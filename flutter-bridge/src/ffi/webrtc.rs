@@ -337,11 +337,11 @@ mod tests {
     fn test_sanitize_sdp_rewrites_origin_address() {
         assert_eq!(
             webrtc_sanitize_sdp("o=- 0 0 IN IP4 192.168.1.5".to_string(), false).unwrap(),
-            "o=o=- 0 0 IN IP4 0.0.0.0"
+            "o=- 0 0 IN IP4 0.0.0.0"
         );
         assert_eq!(
             webrtc_sanitize_sdp("o=- 0 0 IN IP4 8.8.8.8".to_string(), false).unwrap(),
-            "o=o=- 0 0 IN IP4 0.0.0.0"
+            "o=- 0 0 IN IP4 0.0.0.0"
         );
     }
 

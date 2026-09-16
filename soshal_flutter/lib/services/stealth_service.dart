@@ -8,16 +8,41 @@ import '../utils/service_guard.dart';
 /// Local whitelist of pubkeys allowed to see you when stealth mode is
 /// active, stored as a newline-separated setting via the local DB.
 class StealthService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
-  static const _whitelistKey = 'stealth_whitelist';
-
+  String? _activePubkey;
   List<String> _whitelist = [];
 
   List<String> get whitelist => _whitelist;
 
+  String _keyFor([String? pubkey]) {
+    final pk = pubkey ?? _activePubkey;
+    if (pk != null && pk.isNotEmpty) {
+      return 'stealth_whitelist_$pk';
+    }
+    return 'stealth_whitelist';
+  }
+
+  /// Sets the active account pubkey for scoped whitelist storage.
+  void setActivePubkey(String? pubkey) {
+    if (_activePubkey != pubkey) {
+      _activePubkey = pubkey;
+      _whitelist = [];
+      clearLastError();
+      notifyListeners();
+    }
+  }
+
+  /// Reset in-memory state on account switch or logout.
+  void resetForAccountSwitch() {
+    _activePubkey = null;
+    _whitelist = [];
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Load the whitelist from the local DB setting.
-  Future<List<String>> load() => guard(() {
+  Future<List<String>> load([String? pubkey]) => guard(() {
         final raw = RustLib.instance.api.crateFfiDbDbGetSetting(
-          key: _whitelistKey,
+          key: _keyFor(pubkey),
         );
         _whitelist = (raw ?? '')
             .split('\n')
@@ -28,10 +53,10 @@ class StealthService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       });
 
   /// Persist the whitelist as a newline-separated setting value.
-  Future<bool> save(List<String> items) async {
+  Future<bool> save(List<String> items, [String? pubkey]) async {
     try {
       final ok = RustLib.instance.api.crateFfiDbDbSetSetting(
-        key: _whitelistKey,
+        key: _keyFor(pubkey),
         value: items.join('\n'),
       );
       if (ok) {
@@ -48,9 +73,9 @@ class StealthService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   }
 
   /// Delete the stored whitelist setting.
-  Future<bool> clear() => guard(() {
+  Future<bool> clear([String? pubkey]) => guard(() {
         final ok = RustLib.instance.api.crateFfiDbDbDeleteSetting(
-          key: _whitelistKey,
+          key: _keyFor(pubkey),
         );
         _whitelist = [];
         return ok;

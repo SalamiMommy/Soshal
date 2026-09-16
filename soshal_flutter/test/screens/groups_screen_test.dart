@@ -237,6 +237,86 @@ void main() {
     expect(api.callCount('crateFfiGroupsGroupsFetchMessages'), 2);
   });
 
+  testWidgets('rooms tab renders reactions and toggles emoji', (tester) async {
+    const memberJson =
+        '{"id":"g1","name":"Soshal Devs","description":"build stuff",'
+        '"picture":"","owner":"pk123","members":42,"is_member":true,'
+        '"role":"owner","created_at":0}';
+    const msgJson =
+        '[{"id":"m1","group_id":"g1","sender_pubkey":"pk123456789012",'
+        '"content":"welcome","created_at":0}]';
+    const reactionJson =
+        '[{"message_id":"m1","emoji":"👍","count":2,"reacted":false},'
+        '{"message_id":"m1","emoji":"🔥","count":1,"reacted":true}]';
+
+    final session = SessionService();
+    api.stubString('crateFfiSessionSessionLoad', sessionJson);
+    await session.loadSession();
+    api.stubString('crateFfiDbDbGetSetting', '300');
+    api.stubString('crateFfiGroupsGroupsGetGroupInfo', memberJson);
+    api.stubListString('crateFfiGroupsGroupsGetMembers', ['pkA']);
+    api.stubString('crateFfiGroupsGroupsMembersWithRoles', '[]');
+    api.stubString('crateFfiGroupsGroupsRolesList', '[]');
+    api.stubString('crateFfiGroupsGroupsRoomsList', '[]');
+    api.stubString('crateFfiGroupsGroupsThreadsList', '[]');
+    api.stubString('crateFfiGroupsGroupsVoiceChannelsList', '[]');
+    api.stubString('crateFfiGroupsGroupsFetchMessages', msgJson);
+    api.stubString('crateFfiGroupsGroupsRoomsReactions', reactionJson);
+    api.stubBool('crateFfiGroupsGroupsRoomsReact', true);
+
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SessionService>.value(value: session),
+          ChangeNotifierProvider(create: (_) => GroupsService()),
+          ChangeNotifierProvider(create: (_) => SettingsService()),
+        ],
+        child: const MaterialApp(
+          home: GroupDetailScreen(groupId: 'g1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Switch to Rooms tab
+    await tester.tap(find.text('Rooms'));
+    await tester.pumpAndSettle();
+
+    // Verify reactions rendered
+    expect(find.text('welcome'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget); // 👍 count: 2
+    expect(find.text('1'), findsOneWidget); // 🔥 count: 1
+
+    // Tap on 👍 reaction chip to toggle
+    await tester.tap(find.widgetWithText(FilterChip, '2'));
+    await tester.pumpAndSettle();
+
+    expect(api.callCount('crateFfiGroupsGroupsRoomsReact'), 1);
+    final inv = api.callsOf('crateFfiGroupsGroupsRoomsReact').single;
+    expect(api.namedArg(inv, 'groupId'), 'g1');
+    expect(api.namedArg(inv, 'roomId'), '');
+    expect(api.namedArg(inv, 'messageId'), 'm1');
+    expect(api.namedArg(inv, 'emoji'), '👍');
+    expect(api.namedArg(inv, 'pubkey'), 'pk123');
+
+    // Tap more reactions icon
+    await tester.tap(find.byIcon(Icons.add_reaction_outlined));
+    await tester.pumpAndSettle();
+
+    // Bottom sheet with emoji picker should open
+    expect(find.text('🎉'), findsOneWidget);
+    await tester.tap(find.text('🎉'));
+    await tester.pumpAndSettle();
+
+    expect(api.callCount('crateFfiGroupsGroupsRoomsReact'), 2);
+    final inv2 = api.callsOf('crateFfiGroupsGroupsRoomsReact').last;
+    expect(api.namedArg(inv2, 'emoji'), '🎉');
+  });
+
   testWidgets('private group renders lock icon and prompts for password on join',
       (tester) async {
     const privateGroupJson =

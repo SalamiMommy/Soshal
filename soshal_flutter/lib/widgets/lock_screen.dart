@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/session_service.dart';
 import '../services/shell_service.dart';
@@ -60,6 +61,50 @@ class _LockScreenState extends State<LockScreen> {
   void _pressDigit(String d) {
     if (_pin.text.length >= 12) return;
     _pin.text = _pin.text + d;
+  }
+
+  Future<void> _showSecretKeyDialog(ShellService shell) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enter Secret Key or Recovery Phrase'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'nsec1... or 12-word phrase or hex key',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Unlock'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty && mounted) {
+      try {
+        final signer = context.read<SignerService>();
+        await signer.unlock(result);
+        if (mounted) {
+          await shell.unlockWithRecovery();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to unlock with key: $e')),
+          );
+        }
+      }
+    }
   }
 
   @override
@@ -146,6 +191,17 @@ class _LockScreenState extends State<LockScreen> {
                     onUnlock: () => _submit(shell),
                   ),
                 ],
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: () => _showSecretKeyDialog(shell),
+                  icon: const Icon(Icons.key),
+                  label: const Text('Unlock with key or phrase'),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => context.go('/auth'),
+                  child: const Text('Switch or import account'),
+                ),
               ],
             ),
           ),

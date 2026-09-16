@@ -54,6 +54,8 @@ import '../services/music_service.dart';
 import '../services/session_service.dart';
 import '../widgets/app_shell.dart';
 
+import '../services/signer_service.dart';
+
 class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: '/',
@@ -62,6 +64,12 @@ class AppRouter {
       if (path == '/' || path == '/auth') return null;
       final session = context.read<SessionService>();
       if (session.activePubkey == null) return '/';
+      // Also redirect when the signer is locked: a session record exists
+      // (activePubkey set) but the in-memory key is wiped. Signing operations
+      // would fail at the Rust layer; redirect to splash so the user can
+      // re-authenticate via keychain or recovery phrase.
+      final signer = context.read<SignerService>();
+      if (signer.locked) return '/';
       return null;
     },
     errorBuilder: (context, state) => Scaffold(

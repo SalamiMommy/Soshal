@@ -35,7 +35,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
     final settings = context.read<SettingsService>();
     final value = settings.getSetting('keychain_unlock_enabled');
     setState(() {
-      _keychainUnlockEnabled = value == 'true';
+      _keychainUnlockEnabled = value != 'false';
       _autologinEnabled = settings.getSetting('autologin_enabled') != 'false';
     });
   }
@@ -163,11 +163,17 @@ class _SecurityScreenState extends State<SecurityScreen> {
             onPressed: () async {
               if (pubkey.isEmpty) return;
               try {
-                await signer.saveToKeyring(pubkey);
+                final fullySaved = await signer.saveToKeyring(pubkey);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                        content: SelectableText('Saved to keychain ($pubkey)')),
+                      content: SelectableText(
+                        fullySaved
+                            ? 'Saved to OS keychain ($pubkey)'
+                            : 'Saved locally only — OS keychain unavailable. '
+                                'Biometric protection is not active.',
+                      ),
+                    ),
                   );
                 }
               } catch (e) {

@@ -131,7 +131,8 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
             updated_at INTEGER NOT NULL DEFAULT 0,
             access_type TEXT NOT NULL DEFAULT 'open',
             relay TEXT,
-            sync_status TEXT NOT NULL DEFAULT 'synced'
+            sync_status TEXT NOT NULL DEFAULT 'synced',
+            password_hash TEXT
         );
 
         CREATE TABLE IF NOT EXISTS group_members (
@@ -149,7 +150,8 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
             content TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL DEFAULT 0,
             sync_status INTEGER NOT NULL DEFAULT 0,
-            is_deleted INTEGER NOT NULL DEFAULT 0
+            is_deleted INTEGER NOT NULL DEFAULT 0,
+            room_id TEXT NOT NULL DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS settings (
@@ -477,8 +479,10 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         );
 
         CREATE TABLE IF NOT EXISTS dating_unmatches (
-            pubkey TEXT PRIMARY KEY,
-            unmatched_at INTEGER NOT NULL DEFAULT 0
+            actor_pubkey TEXT NOT NULL,
+            pubkey TEXT NOT NULL,
+            unmatched_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (actor_pubkey, pubkey)
         );
 
         CREATE TABLE IF NOT EXISTS ignored_entities (
@@ -531,6 +535,119 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
             created_at INTEGER NOT NULL DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS musicloud_playlist_tracks (
+            playlist_id TEXT NOT NULL,
+            track_id TEXT NOT NULL,
+            pubkey TEXT NOT NULL DEFAULT '',
+            d TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            thumbnail TEXT NOT NULL DEFAULT '',
+            audio_url TEXT NOT NULL DEFAULT '',
+            blob_hash TEXT NOT NULL DEFAULT '',
+            media_size INTEGER NOT NULL DEFAULT 0,
+            audience TEXT NOT NULL DEFAULT 'public',
+            hashtags TEXT NOT NULL DEFAULT '[]',
+            created_at INTEGER NOT NULL DEFAULT 0,
+            position INTEGER NOT NULL DEFAULT 0,
+            added_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (playlist_id, track_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS saved_content (
+            kind INTEGER NOT NULL,
+            id TEXT NOT NULL,
+            pubkey TEXT NOT NULL DEFAULT '',
+            d TEXT NOT NULL DEFAULT '',
+            media_type TEXT NOT NULL DEFAULT '',
+            media_url TEXT NOT NULL DEFAULT '',
+            text_overlay TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            thumbnail TEXT NOT NULL DEFAULT '',
+            blob_hash TEXT NOT NULL DEFAULT '',
+            media_size INTEGER NOT NULL DEFAULT 0,
+            audience TEXT NOT NULL DEFAULT 'public',
+            hashtags TEXT NOT NULL DEFAULT '[]',
+            host_ready INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT 0,
+            saved_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (kind, id)
+        );
+
+        CREATE TABLE IF NOT EXISTS group_rooms (
+            id TEXT PRIMARY KEY,
+            group_id TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL DEFAULT '',
+            topic TEXT NOT NULL DEFAULT '',
+            emoji TEXT NOT NULL DEFAULT '',
+            color TEXT NOT NULL DEFAULT '#8b5cf6',
+            position INTEGER NOT NULL DEFAULT 0,
+            created_by TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS group_threads (
+            id TEXT PRIMARY KEY,
+            group_id TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            body TEXT NOT NULL DEFAULT '',
+            author TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0,
+            is_pinned INTEGER NOT NULL DEFAULT 0,
+            reply_count INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS group_thread_replies (
+            id TEXT PRIMARY KEY,
+            thread_id TEXT NOT NULL DEFAULT '',
+            parent_id TEXT NOT NULL DEFAULT '',
+            author TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS group_voice_channels (
+            id TEXT PRIMARY KEY,
+            group_id TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            created_by TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS group_voice_presence (
+            channel_id TEXT NOT NULL DEFAULT '',
+            pubkey TEXT NOT NULL DEFAULT '',
+            joined_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (channel_id, pubkey)
+        );
+
+        CREATE TABLE IF NOT EXISTS group_thread_reactions (
+            thread_id TEXT NOT NULL DEFAULT '',
+            reply_id TEXT NOT NULL DEFAULT '',
+            pubkey TEXT NOT NULL DEFAULT '',
+            emoji TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (thread_id, reply_id, pubkey, emoji)
+        );
+
+        CREATE TABLE IF NOT EXISTS group_room_reactions (
+            group_id TEXT NOT NULL DEFAULT '',
+            room_id TEXT NOT NULL DEFAULT '',
+            message_id TEXT NOT NULL DEFAULT '',
+            pubkey TEXT NOT NULL DEFAULT '',
+            emoji TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (message_id, pubkey, emoji)
+        );
+
+        CREATE TABLE IF NOT EXISTS zk_state_rollups (
+            thread_id TEXT PRIMARY KEY,
+            genesis_root TEXT NOT NULL,
+            final_state_root TEXT NOT NULL,
+            operation_count INTEGER NOT NULL,
+            verified_at INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS group_shared_keys (
             group_id TEXT PRIMARY KEY,
             key_hex TEXT NOT NULL,
@@ -547,6 +664,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
             pubkey UNINDEXED,
             content,
             subject,
+            category,
             tokenize='unicode61 remove_diacritics 2'
         );
 
@@ -563,6 +681,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         CREATE INDEX IF NOT EXISTS idx_posts_reply_to ON posts(reply_to);
         CREATE INDEX IF NOT EXISTS idx_posts_root_id ON posts(root_id);
         CREATE INDEX IF NOT EXISTS idx_posts_feed_cursor ON posts(created_at DESC, id DESC) WHERE is_deleted = 0 AND kind = 1;
+        CREATE INDEX IF NOT EXISTS idx_posts_recent_cursor ON posts(is_deleted, created_at DESC, id);
         CREATE INDEX IF NOT EXISTS idx_posts_pubkey_created ON posts(pubkey, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_posts_freenet_key ON posts(freenet_key);
         CREATE INDEX IF NOT EXISTS idx_posts_scheduled ON posts(pubkey, scheduled_at ASC);
@@ -579,6 +698,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         -- Messages
         CREATE INDEX IF NOT EXISTS idx_messages_pubkey ON messages(pubkey);
         CREATE INDEX IF NOT EXISTS idx_messages_conversation_desc ON messages(conversation_id, is_deleted, created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_messages_conversation_asc ON messages(conversation_id, is_deleted, created_at ASC);
 
         -- Reactions
         CREATE INDEX IF NOT EXISTS idx_reactions_pubkey ON reactions(pubkey);
@@ -596,7 +716,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         -- Notifications
         CREATE INDEX IF NOT EXISTS idx_notifications_pubkey ON notifications(pubkey, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_notifications_unread_created ON notifications(pubkey, is_read, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_notifications_unread_type ON notifications(pubkey, is_read, type, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_notifications_filter ON notifications(pubkey, type, is_read, created_at DESC);
 
         -- Bookmarks
         CREATE INDEX IF NOT EXISTS idx_bookmarks_pubkey_created ON bookmarks(pubkey, created_at DESC);
@@ -621,6 +741,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         -- Reposts / hashtags
         CREATE INDEX IF NOT EXISTS idx_reposts_event ON reposts(event_id);
+        CREATE INDEX IF NOT EXISTS idx_reposts_event_pubkey ON reposts(event_id, pubkey);
         CREATE INDEX IF NOT EXISTS idx_hashtags_count ON hashtags(count DESC);
         CREATE INDEX IF NOT EXISTS idx_hashtags_tag_count ON hashtags(tag, count DESC);
 
@@ -637,6 +758,7 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         CREATE INDEX IF NOT EXISTS idx_escrows_listing_created ON escrows(listing_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_escrows_buyer_created ON escrows(buyer_pubkey, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_escrows_seller_created ON escrows(seller_pubkey, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_escrows_created ON escrows(created_at DESC);
 
         -- Groups
         CREATE INDEX IF NOT EXISTS idx_groups_updated_at ON groups(updated_at DESC);
@@ -653,9 +775,12 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         -- Additional indexes from migrations
         CREATE INDEX IF NOT EXISTS idx_group_messages_group_id ON group_messages(group_id);
+        CREATE INDEX IF NOT EXISTS idx_group_messages_room ON group_messages(group_id, room_id, is_deleted, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_group_messages_fetch ON group_messages(group_id, is_deleted, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_polls_pubkey ON polls(pubkey);
         CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_id ON poll_votes(poll_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_poll_votes_poll_voter ON poll_votes(poll_id, voter_pubkey);
+        CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_option ON poll_votes(poll_id, option_id);
         CREATE INDEX IF NOT EXISTS idx_marketplace_reviews_listing_id ON marketplace_reviews(listing_id);
         CREATE INDEX IF NOT EXISTS idx_spam_reports_target_pubkey ON spam_reports(target_pubkey);
         CREATE INDEX IF NOT EXISTS idx_tx_nodes_created_at ON tx_nodes(created_at DESC);
@@ -672,7 +797,9 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
         CREATE INDEX IF NOT EXISTS idx_geohash_peers_last_seen ON geohash_peers(last_seen);
         CREATE INDEX IF NOT EXISTS idx_link_previews_cached ON link_previews(cached_at DESC);
         CREATE INDEX IF NOT EXISTS idx_stream_chat_stream ON stream_chat(stream_id, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_stream_chat_pubkey ON stream_chat(pubkey, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_guestbook_entries_profile ON guestbook_entries(profile_pubkey, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_guestbook_entries_approved ON guestbook_entries(profile_pubkey, approved, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_huddle_posts_huddle ON huddle_posts(huddle_id, created_at ASC);
         CREATE INDEX IF NOT EXISTS idx_huddle_posts_expires ON huddle_posts(expires_at);
         CREATE INDEX IF NOT EXISTS idx_banned_members_group ON banned_members(group_id, banned_at DESC);
@@ -686,21 +813,41 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
 
         CREATE INDEX IF NOT EXISTS idx_conversations_recent ON conversations(last_message_at DESC);
 
+        -- Group channels & threads
+        CREATE INDEX IF NOT EXISTS idx_group_rooms_group ON group_rooms(group_id, position ASC);
+        CREATE INDEX IF NOT EXISTS idx_group_threads_group ON group_threads(group_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_group_threads_pinned ON group_threads(group_id, is_pinned DESC, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_group_thread_replies_thread ON group_thread_replies(thread_id, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_group_thread_replies_parent ON group_thread_replies(parent_id, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_group_voice_channels_group ON group_voice_channels(group_id, position ASC);
+        CREATE INDEX IF NOT EXISTS idx_group_voice_presence_pubkey ON group_voice_presence(pubkey);
+        CREATE INDEX IF NOT EXISTS idx_gtr_thread ON group_thread_reactions(thread_id);
+        CREATE INDEX IF NOT EXISTS idx_gtr_reply ON group_thread_reactions(reply_id);
+        CREATE INDEX IF NOT EXISTS idx_grr_room ON group_room_reactions(group_id, room_id);
+        CREATE INDEX IF NOT EXISTS idx_grr_msg ON group_room_reactions(message_id);
+
+        -- Saved content & playlist tracks
+        CREATE INDEX IF NOT EXISTS idx_saved_content_saved_at ON saved_content (saved_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_saved_content_kind_saved ON saved_content (kind, saved_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_playlist_tracks_pos ON musicloud_playlist_tracks (playlist_id, position);
+
         -- FTS5 sync triggers, rowid-mapped: post updates/deletes hit a single
         -- FTS row instead of scanning on id.
         CREATE TRIGGER IF NOT EXISTS posts_ai AFTER INSERT ON posts WHEN new.is_deleted = 0 BEGIN
-            INSERT OR REPLACE INTO posts_fts(rowid, id, pubkey, content, subject)
-            VALUES (new.rowid, new.id, new.pubkey, new.content, new.subject);
+            INSERT OR REPLACE INTO posts_fts(rowid, id, pubkey, content, subject, category)
+            VALUES (new.rowid, new.id, new.pubkey, new.content, new.subject, new.category);
         END;
 
         CREATE TRIGGER IF NOT EXISTS posts_ad AFTER DELETE ON posts BEGIN
             DELETE FROM posts_fts WHERE rowid = old.rowid;
         END;
 
-        CREATE TRIGGER IF NOT EXISTS posts_au AFTER UPDATE ON posts BEGIN
+        CREATE TRIGGER IF NOT EXISTS posts_au AFTER UPDATE OF content, subject, category, is_deleted ON posts
+        WHEN old.content != new.content OR old.subject IS NOT new.subject OR old.category IS NOT new.category OR old.is_deleted != new.is_deleted
+        BEGIN
             DELETE FROM posts_fts WHERE rowid = old.rowid;
-            INSERT OR REPLACE INTO posts_fts(rowid, id, pubkey, content, subject)
-            SELECT new.rowid, new.id, new.pubkey, new.content, new.subject WHERE new.is_deleted = 0;
+            INSERT OR REPLACE INTO posts_fts(rowid, id, pubkey, content, subject, category)
+            SELECT new.rowid, new.id, new.pubkey, new.content, new.subject, new.category WHERE new.is_deleted = 0;
         END;
 
         -- Users FTS triggers

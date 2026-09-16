@@ -182,6 +182,7 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
 /// of scanning + grouping every message row.
 #[frb(sync, serialize)]
 pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, String> {
+    super::signer::require_identity(&pubkey)?;
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let pattern_prefix = format!("conv:{pubkey}:%");

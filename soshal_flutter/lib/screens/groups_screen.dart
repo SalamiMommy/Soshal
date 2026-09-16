@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/groups_service.dart';
+import '../services/friends_service.dart';
 import '../services/media_service.dart';
 import '../services/session_service.dart';
 import '../services/settings_service.dart';
 import '../utils/media_upload.dart';
+import '../widgets/audience_filter_dropdown.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/group_sidebar.dart';
 import '../widgets/group_tabs.dart';
@@ -106,6 +108,8 @@ class _PasswordDialogState extends State<_PasswordDialog> {
 }
 
 class _GroupsScreenState extends State<GroupsScreen> {
+  AudienceFilter _audienceFilter = AudienceFilter.all;
+
   @override
   void initState() {
     super.initState();
@@ -117,6 +121,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
       final session = context.read<SessionService>();
       final pubkey = session.activePubkey;
       if (pubkey != null) {
+        context.friendsServiceReadOrNull?.loadAudienceGraph(pubkey);
         await context.read<GroupsService>().fetchGroups(pubkey);
       }
     } catch (e) {
@@ -183,7 +188,15 @@ class _GroupsScreenState extends State<GroupsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Groups')),
+      appBar: AppBar(
+        title: const Text('Groups'),
+        actions: [
+          AudienceFilterDropdown(
+            value: _audienceFilter,
+            onChanged: (val) => setState(() => _audienceFilter = val),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _createDialog,
         tooltip: 'Create group',
@@ -191,10 +204,21 @@ class _GroupsScreenState extends State<GroupsScreen> {
       ),
       body: Consumer<GroupsService>(
         builder: (context, api, _) {
-          if (api.groupsLoading && api.groups.isEmpty) {
+          final friendsService = context.friendsServiceOrNull;
+          final myPk = context.activePubkeyOrNull;
+          final visibleGroups = friendsService != null
+              ? friendsService.filterList(
+                  api.groups,
+                  _audienceFilter,
+                  (g) => g.owner,
+                  myPubkey: myPk,
+                )
+              : api.groups;
+
+          if (api.groupsLoading && visibleGroups.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (api.groups.isEmpty) {
+          if (visibleGroups.isEmpty) {
             return const EmptyState(
               icon: Icons.groups_outlined,
               title: 'No groups yet',
@@ -204,9 +228,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
             onRefresh: _load,
             child: ListView.builder(
               itemExtent: 72.0,
-              itemCount: api.groups.length,
+              itemCount: visibleGroups.length,
               itemBuilder: (context, index) {
-                final g = api.groups[index];
+                final g = visibleGroups[index];
                 return ListTile(
                   leading: g.picture.isNotEmpty
                       ? ClipOval(

@@ -6,7 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `asset_name`, `daemons_dir`, `files_dir`, `is_real_binary`, `is_running`, `register_spawner`, `spawn_all`, `spawn`, `watchdog_loop`, `write_file`
+// These functions are ignored because they are not marked as `pub`: `any_daemons_available`, `asset_name`, `bundle_daemons_dir`, `daemons_dir`, `files_dir`, `find_daemon_binary`, `is_daemon_available`, `is_daemon_port_open`, `is_real_binary`, `is_running`, `port_open`, `register_spawner`, `spawn_all`, `spawn`, `watchdog_loop`, `write_file`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SpawnOutcome`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `eq`
 
 /// Extract the three bundled daemons from assets into files/daemons/.
 /// Returns false if extraction is unsupported (no bundled assets).
@@ -49,10 +51,10 @@ bool daemonServiceRunning() =>
 bool daemonRequestBatteryExemption() =>
     RustLib.instance.api.crateFfiDaemonDaemonRequestBatteryExemption();
 
-/// Liveness of the spawned i2pd process.
+/// Liveness of the spawned i2pd process or active SAM port.
 bool daemonIsI2PdRunning() =>
     RustLib.instance.api.crateFfiDaemonDaemonIsI2PdRunning();
 
-/// Liveness of the spawned rnsd process (Chaquopy thread on Android).
+/// Liveness of the spawned rnsd process (Chaquopy thread on Android) or active 4242 port.
 bool daemonIsRnsdRunning() =>
     RustLib.instance.api.crateFfiDaemonDaemonIsRnsdRunning();

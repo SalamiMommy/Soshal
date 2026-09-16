@@ -65,7 +65,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final wotFuture = _loadWot(pubkey, me ?? pubkey);
         final postsFuture = _loadPosts(pubkey);
 
-        await Future.wait([profileFuture, blockedFuture, wotFuture, postsFuture]);
+        await Future.wait(
+            [profileFuture, blockedFuture, wotFuture, postsFuture]);
       } else {
         await _loadPosts(pubkey);
       }
@@ -81,7 +82,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final identity = context.read<IdentityService>();
       final statusFuture = identity.getWotStatus(pubkey, viewer);
-      final scoreFuture = _trustScoreFuture ?? identity.getTrustScore(viewer, pubkey);
+      final scoreFuture =
+          _trustScoreFuture ?? identity.getTrustScore(viewer, pubkey);
       final status = await statusFuture;
       final score = await scoreFuture;
       if (!mounted) return;

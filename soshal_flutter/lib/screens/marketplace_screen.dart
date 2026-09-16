@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../services/friends_service.dart';
 import '../services/marketplace_service.dart';
 import '../services/media_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 import '../utils/media_upload.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/audience_filter_dropdown.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/empty_state.dart';
 
@@ -28,6 +30,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
   Future<List<ListingInfo>>? _sellerListingsFuture;
   bool _trending = false;
   int _radiusKm = 25;
+  AudienceFilter _audienceFilter = AudienceFilter.all;
   String _selectedCondition = 'All';
   final List<String> _conditions = const [
     'All',
@@ -57,6 +60,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
       final session = context.read<SessionService>();
       final q = _search.text.trim();
       if (session.activePubkey != null) {
+        context.friendsServiceReadOrNull
+            ?.loadAudienceGraph(session.activePubkey!);
         _sellerListingsFuture = api.sellerListings(session.activePubkey!);
       }
       if (q.isNotEmpty) {
@@ -366,6 +371,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
           onSubmitted: (_) => _load(),
         ),
         actions: [
+          AudienceFilterDropdown(
+            value: _audienceFilter,
+            onChanged: (val) => setState(() => _audienceFilter = val),
+          ),
           IconButton(
             icon: const Icon(Icons.tune),
             tooltip: 'Filter by radius and condition',
@@ -548,9 +557,20 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
     return Consumer<MarketplaceService>(
       builder: (context, api, _) {
         final rawListings = api.listings;
+        final friendsService = context.friendsServiceOrNull;
+        final myPk =
+            context.select<SessionService, String?>((s) => s.activePubkey);
+        final audienceListings = friendsService != null
+            ? friendsService.filterList(
+                rawListings,
+                _audienceFilter,
+                (l) => l.sellerPubkey,
+                myPubkey: myPk,
+              )
+            : rawListings;
         final listings = _selectedCondition == 'All'
-            ? rawListings
-            : rawListings
+            ? audienceListings
+            : audienceListings
                 .where((l) =>
                     l.condition.toLowerCase() ==
                     _selectedCondition.toLowerCase())

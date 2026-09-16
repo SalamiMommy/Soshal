@@ -140,10 +140,12 @@ mod ffi_coverage_tests {
     fn db_save_and_get_custom_profile_nodes() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("coverage", "profile_nodes");
-        let pk = "pk_profile".to_string();
+        let pk = unlock_signer();
         assert_eq!(db::db_get_custom_profile_nodes(pk.clone()).unwrap(), "[]");
         let profile = r#"{"name":"alice","bio":"hi"}"#;
         assert!(db::db_save_custom_profile(pk.clone(), profile.into()).unwrap());
+        // Attempting to save under a different pubkey fails identity verification
+        assert!(db::db_save_custom_profile("other_pk".into(), profile.into()).is_err());
         let got = db::db_get_custom_profile_nodes(pk).unwrap();
         assert_eq!(got, profile);
         crate::test_util::cleanup(&path);
@@ -152,10 +154,11 @@ mod ffi_coverage_tests {
     fn db_delete_posts_trending_escrows_geohash() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("coverage", "db_misc_cov");
+        let pk = unlock_signer();
         assert_eq!(db::db_delete_all_posts().unwrap(), 0);
         let trending = db::db_get_trending_hashtags(10).unwrap();
         assert_eq!(trending, "[]");
-        let escrows = db::db_get_escrows_by_participant("pk".into()).unwrap();
+        let escrows = db::db_get_escrows_by_participant(pk).unwrap();
         assert_eq!(escrows, "[]");
         assert_eq!(db::db_purge_stale_geohash_peers(3600).unwrap(), 0);
         crate::test_util::cleanup(&path);
@@ -403,10 +406,11 @@ mod ffi_coverage_tests {
     fn dating_report_profile_stores_report() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("coverage", "dating_cov");
-        assert!(
-            dating::dating_report_profile("reporter".into(), "target".into(), "spam".into(),)
-                .unwrap()
-        );
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let reporter = keys.public_key().to_hex();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        assert!(dating::dating_report_profile(reporter, "target".into(), "spam".into(),).unwrap());
+        let _ = signer::signer_lock();
         crate::test_util::cleanup(&path);
     }
     #[test]

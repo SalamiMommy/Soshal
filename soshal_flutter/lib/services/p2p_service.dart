@@ -498,6 +498,11 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     notifyListeners();
   }
 
+  /// Reset in-memory state and stop P2P network operations on account switch or logout.
+  void resetForAccountSwitch() {
+    stopAll();
+  }
+
   /// Poll swarm downloads + drain peers every [interval]; call from a
   /// lifecycle-aware owner so the timer stops when the app backgrounds.
   void startPolling(Duration interval, {String? activeDownloadId}) {

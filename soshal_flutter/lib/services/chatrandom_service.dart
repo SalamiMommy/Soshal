@@ -91,6 +91,13 @@ class ChatrandomService extends ChangeNotifier
     }
     return true;
   }
+
+  /// Reset in-memory state on account switch or logout.
+  void resetForAccountSwitch() {
+    _peers = [];
+    clearLastError();
+    notifyDeferred();
+  }
 }
 
 /// A chatrandom peer event (availability, request or accept).

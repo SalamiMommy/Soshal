@@ -364,6 +364,19 @@ fn spawn(name: &'static str, mut cmd: Command, log_name: &str, data_dir: &std::p
         None => Stdio::null(),
     };
     cmd.stdout(stdout).stderr(stderr);
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        #[allow(unsafe_code)]
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                Ok(())
+            });
+        }
+    }
+
     match cmd.spawn() {
         Ok(child) => {
             crate::ffi::util::lock(&CHILDREN).insert(name, child);
@@ -763,8 +776,8 @@ mod tests {
     #[test]
     fn test_stop_is_idempotent() {
         assert!(daemon_stop_daemons().unwrap());
-        assert!(!daemon_is_i2pd_running().unwrap());
-        assert!(!daemon_is_rnsd_running().unwrap());
+        assert!(!is_running("i2pd"));
+        assert!(!is_running("rnsd"));
     }
 
     #[test]

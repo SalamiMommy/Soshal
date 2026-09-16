@@ -142,7 +142,8 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
       // Throttle or skip pure-Dart software JPEG fallback when hardware H.264 is active:
       // when H.264 is running, emit a JPEG fallback only every 2 seconds for late-joiner
       // previews, saving ~90% CPU cycles on mobile devices.
-      final jpegInterval = _h264Ready ? const Duration(seconds: 2) : _frameInterval;
+      final jpegInterval =
+          _h264Ready ? const Duration(seconds: 2) : _frameInterval;
       if (last == null || now.difference(last) >= jpegInterval) {
         _lastFrameAt = now;
         final plane = image.planes.first;
@@ -165,7 +166,8 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
           timestampMs: now.millisecondsSinceEpoch,
           jpeg: jpeg,
         );
-        await api.publishLiveGroupSilent(streamId: widget.streamId, group: group);
+        await api.publishLiveGroupSilent(
+            streamId: widget.streamId, group: group);
         _onWireBytes = jpeg.length + 64;
         _framesPublished++;
       }

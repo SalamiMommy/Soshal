@@ -79,12 +79,21 @@ pub fn signer_unlock(mut secret: String) -> Result<String, String> {
 }
 
 /// Lock the signer: drop the in-memory key (zeroized on drop).
+///
+/// Caches are cleared INSIDE the SIGNER lock, mirroring the fix applied to
+/// `signer_unlock`. Without this ordering, a concurrent `lan_key()` call
+/// between cache-clear and SIGNER-clear would re-derive and re-cache the LAN
+/// key from the still-loaded SIGNER, leaving stale key material alive after
+/// the caller's intent to lock.
 #[frb(sync, serialize)]
 pub fn signer_lock() -> Result<bool, String> {
+    let mut guard = crate::ffi::util::lock(&SIGNER);
     clear_derived_cache();
-    *crate::ffi::util::lock(&SIGNER) = None;
     soshal_crypto_core::nip44::clear_conversation_key_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
+    *guard = None;
+    let _ = super::zap::zap_disconnect_nwc();
+    let _ = super::p2p::p2p_stop_all();
     Ok(true).into()
 }
 
@@ -125,8 +134,90 @@ fn pubkey_matches(actual_hex: &str, expected_hex: &str) -> bool {
     soshal_common_core::util::constant_time_eq(actual_hex.as_bytes(), expected_hex.as_bytes())
 }
 
-/// Persist the unlocked secret key to the OS keychain (desktop keyring).
-/// Only called explicitly after the user opts into "remember this device".
+/// Path to local sealed key for a given pubkey: `<db_dir>/keys/<pubkey>.key`.
+fn local_sealed_key_path(pubkey: &str) -> Result<std::path::PathBuf, String> {
+    super::session::validate_pubkey_hex(pubkey)?;
+    let db_path = super::db::db_path()?;
+    if db_path.is_empty() {
+        return Err("database path not set".to_string());
+    }
+    let p = std::path::Path::new(&db_path);
+    let parent = p
+        .parent()
+        .ok_or_else(|| "db_path has no parent".to_string())?;
+    let keys_dir = parent.join("keys");
+    let _ = std::fs::create_dir_all(&keys_dir);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&keys_dir, std::fs::Permissions::from_mode(0o700));
+    }
+    Ok(keys_dir.join(format!("{pubkey}.key")))
+}
+
+/// Helper to get the 32-byte session key for sealing/unsealing local keys.
+fn get_device_session_key() -> Result<[u8; 32], String> {
+    let db_path = super::db::db_path()?;
+    if db_path.is_empty() {
+        return Err("database path not set".to_string());
+    }
+    let p = std::path::Path::new(&db_path);
+    let parent = p
+        .parent()
+        .ok_or_else(|| "db_path has no parent".to_string())?;
+    let session_path = parent.join("session.json");
+    let key_vec = super::session::load_or_create_session_key(&session_path)?;
+    key_vec
+        .try_into()
+        .map_err(|_| "invalid session key length".to_string())
+}
+
+/// Save sealed secret key locally.
+fn save_local_sealed_key(pubkey: &str, secret: &str) -> Result<(), String> {
+    let key = get_device_session_key()?;
+    let path = local_sealed_key_path(pubkey)?;
+    let sealed = soshal_crypto_core::at_rest::seal_at_rest(&key, secret.as_bytes())?;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    use std::io::Write;
+    let mut f = opts
+        .open(&path)
+        .map_err(|e| format!("failed to open local key file: {e}"))?;
+    f.write_all(sealed.as_bytes())
+        .map_err(|e| format!("failed to write local key file: {e}"))?;
+    f.flush()
+        .map_err(|e| format!("failed to flush local key file: {e}"))?;
+    Ok(())
+}
+
+/// Read sealed secret key locally.
+fn read_local_sealed_key(pubkey: &str) -> Result<String, String> {
+    let key = get_device_session_key()?;
+    let path = local_sealed_key_path(pubkey)?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("local key file unreadable: {e}"))?;
+    let unsealed = soshal_crypto_core::at_rest::open_at_rest(&key, content.trim())?;
+    let secret = String::from_utf8(unsealed).map_err(|e| format!("invalid utf-8 secret: {e}"))?;
+    Ok(secret)
+}
+
+/// Remove sealed secret key locally.
+fn remove_local_sealed_key(pubkey: &str) -> bool {
+    if let Ok(path) = local_sealed_key_path(pubkey) {
+        if path.exists() {
+            return std::fs::remove_file(path).is_ok();
+        }
+    }
+    false
+}
+
+/// Persist the unlocked secret key to the OS keychain (desktop keyring) and local sealed storage.
+/// Allows locally stored profiles to unlock without needing a recovery phrase.
 #[frb(serialize)]
 pub async fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
     // Clone the secret under the guard, then release before the blocking
@@ -143,8 +234,10 @@ pub async fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
         }
         zeroize::Zeroizing::new(keys.secret_key().to_secret_hex())
     };
+    // Also save sealed secret locally so locally stored profiles never lose their keys
+    let _ = save_local_sealed_key(&pubkey, &secret);
     let entry_pubkey = pubkey.clone();
-    tokio::task::spawn_blocking(move || {
+    let keyring_res = tokio::task::spawn_blocking(move || {
         let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&entry_pubkey)) {
             Ok(e) => e,
             Err(e) => return Err(format!("keychain unavailable: {e}")),
@@ -155,27 +248,51 @@ pub async fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
         Ok::<_, String>(true)
     })
     .await
-    .map_err(|e| format!("spawn_blocking join: {e}"))?
-    .into()
+    .map_err(|e| format!("spawn_blocking join: {e}"))?;
+
+    match keyring_res {
+        Ok(_) => Ok(true).into(),
+        Err(e) => {
+            // OS keychain write failed; local sealed storage succeeded (saved
+            // above, before the keyring attempt). Return Ok(false) so callers
+            // can distinguish "OS keychain active" (true) from "local-only
+            // fallback" (false) and surface an appropriate warning to the user:
+            // biometric / keychain protection is NOT active in this case.
+            if local_sealed_key_path(&pubkey).is_ok_and(|p| p.exists()) {
+                log::warn!(
+                    "signer_save_to_keyring: OS keychain unavailable ({e}); \
+                     falling back to local sealed key (biometric protection inactive)"
+                );
+                Ok(false).into()
+            } else {
+                Err(e).into()
+            }
+        }
+    }
 }
 
-/// Unlock the signer from the OS keychain for the given pubkey.
+/// Unlock the signer from the OS keychain or local sealed storage for the given pubkey.
 #[frb(serialize)]
 pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> {
-    let mut secret = {
-        let entry_pubkey = pubkey.clone();
-        tokio::task::spawn_blocking(move || {
-            let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&entry_pubkey))
-            {
-                Ok(e) => e,
-                Err(e) => return Err(format!("keychain unavailable: {e}")),
-            };
-            entry
-                .get_password()
-                .map_err(|e| format!("no stored key: {e}"))
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking join: {e}"))??
+    let entry_pubkey = pubkey.clone();
+    let keyring_res: Result<String, String> = tokio::task::spawn_blocking(move || {
+        let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&entry_pubkey)) {
+            Ok(e) => e,
+            Err(e) => return Err(format!("keychain unavailable: {e}")),
+        };
+        entry
+            .get_password()
+            .map_err(|e| format!("no stored key: {e}"))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join: {e}"))?;
+
+    let mut secret = match keyring_res {
+        Ok(s) => s,
+        Err(_) => {
+            // Fall back to local sealed key
+            read_local_sealed_key(&pubkey)?
+        }
     };
     let keys = match Keys::parse(&secret) {
         Ok(k) => {
@@ -238,7 +355,7 @@ pub fn keyring_available() -> bool {
         .unwrap_or_default()
 }
 
-/// Remove the stored secret key for an account from the OS keychain.
+/// Remove the stored secret key for an account from the OS keychain and local sealed storage.
 /// Only the currently-unlocked identity may remove its own credential.
 #[frb(sync, serialize)]
 pub fn signer_remove_from_keyring(pubkey: String) -> Result<bool, String> {
@@ -246,13 +363,20 @@ pub fn signer_remove_from_keyring(pubkey: String) -> Result<bool, String> {
     // Dart layer from performing a denial-of-service by wiping a victim account's
     // stored credential without knowing the nsec.
     require_identity(&pubkey)?;
+    let local_removed = remove_local_sealed_key(&pubkey);
     let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&pubkey)) {
         Ok(e) => e,
-        Err(e) => return Err(format!("keychain unavailable: {e}")).into(),
+        Err(e) => {
+            if local_removed {
+                return Ok(true).into();
+            } else {
+                return Err(format!("keychain unavailable: {e}")).into();
+            }
+        }
     };
     match entry.delete_credential() {
         Ok(_) => Ok(true).into(),
-        Err(_) => Ok(false).into(),
+        Err(_) => Ok(local_removed).into(),
     }
 }
 
@@ -387,6 +511,13 @@ pub fn signer_sign_unsigned(event_json: String) -> Result<String, String> {
                 Ok(u) => u,
                 Err(e) => return Err(format!("invalid unsigned event: {e}")).into(),
             };
+            // Pre-check: verify the event's pubkey matches the active signer
+            // before attempting signing. Without this, a mismatched pubkey
+            // would produce an error from nostr-sdk that may expose the
+            // signer's actual pubkey in its message.
+            if !pubkey_matches(&keys.public_key().to_hex(), &unsigned.pubkey.to_hex()) {
+                return Err("event pubkey does not match active signer".to_string()).into();
+            }
             sign_event_core(keys, unsigned).into()
         }
         None => Err("signer locked".to_string()),
@@ -678,7 +809,13 @@ mod tests {
         })
         .to_string();
         let err = signer_sign_unsigned(json).unwrap_err();
-        assert!(err.starts_with("sign failed: "), "got: {err}");
+        // Our pubkey pre-check fires before the sign attempt; the error is
+        // now "event pubkey does not match active signer" rather than the
+        // downstream "sign failed: …" from nostr-sdk.
+        assert_eq!(
+            err, "event pubkey does not match active signer",
+            "got: {err}"
+        );
 
         signer_lock().unwrap();
         let err = signer_nip44_encrypt("hi".to_string(), bob.public_key().to_hex()).unwrap_err();
@@ -730,6 +867,110 @@ mod tests {
             rest_first,
             "at-rest order-independent of lan-first derivation"
         );
+        signer_lock().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_local_sealed_key_save_unlock_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _db = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let dir = std::env::temp_dir().join(format!("soshal_signer_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("soshal.db").to_string_lossy().to_string();
+        super::super::db::db_init(db_path).unwrap();
+
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk_hex = keys.public_key().to_hex();
+        signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+
+        // Save locally sealed
+        assert!(signer_save_to_keyring(pk_hex.clone()).await.unwrap());
+
+        // Lock signer
+        signer_lock().unwrap();
+        assert!(signer_is_locked().unwrap());
+
+        // Unlock without recovery phrase
+        assert!(signer_unlock_from_keyring(pk_hex.clone()).await.unwrap());
+        assert!(!signer_is_locked().unwrap());
+        assert_eq!(signer_pubkey().unwrap(), pk_hex);
+
+        // Remove key
+        assert!(signer_remove_from_keyring(pk_hex.clone()).unwrap());
+        signer_lock().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_local_sealed_key_path_traversal_rejected() {
+        assert!(local_sealed_key_path("../../../etc/passwd").is_err());
+        assert!(local_sealed_key_path("not_hex").is_err());
+        assert!(local_sealed_key_path("").is_err());
+    }
+
+    /// M8 — Verify signer_lock clears derived caches atomically inside the
+    /// SIGNER mutex. After lock+unlock, lan_key must return a fresh value
+    /// matching the new signer identity, not stale material from before lock.
+    #[test]
+    fn test_signer_lock_clears_derived_cache_atomically() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+
+        let alice = soshal_nostr_core::keys::generate_keys();
+        let bob = soshal_nostr_core::keys::generate_keys();
+
+        // Unlock as Alice and derive LAN key.
+        signer_unlock(alice.secret_key().to_secret_hex()).unwrap();
+        let alice_lan = lan_key().unwrap();
+        assert_ne!(alice_lan, [0u8; 32]);
+
+        // Lock then unlock as Bob.
+        signer_lock().unwrap();
+        signer_unlock(bob.secret_key().to_secret_hex()).unwrap();
+        let bob_lan = lan_key().unwrap();
+        assert_ne!(bob_lan, [0u8; 32]);
+
+        // The LAN keys must differ — a stale cache would return Alice's key.
+        assert_ne!(
+            alice_lan, bob_lan,
+            "signer_lock must clear LAN key cache; stale key returned"
+        );
+
+        signer_lock().unwrap();
+    }
+
+    /// L4/M5 — signer_sign_unsigned must reject events whose pubkey does not
+    /// match the active signer without leaking the signer's actual pubkey in
+    /// the error message.
+    #[test]
+    fn test_sign_unsigned_pubkey_mismatch_rejected() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+
+        let alice = soshal_nostr_core::keys::generate_keys();
+        let bob = soshal_nostr_core::keys::generate_keys();
+        signer_unlock(alice.secret_key().to_secret_hex()).unwrap();
+
+        // Unsigned event claiming Bob's pubkey, signed by Alice's key — reject.
+        let json = serde_json::json!({
+            "pubkey": bob.public_key().to_hex(),
+            "created_at": soshal_common_core::format::now_secs(),
+            "kind": 1,
+            "tags": [],
+            "content": "mismatch test",
+        })
+        .to_string();
+        let err = signer_sign_unsigned(json).unwrap_err();
+        assert_eq!(err, "event pubkey does not match active signer");
+        // Error must NOT contain Alice's actual pubkey hex.
+        assert!(
+            !err.contains(&alice.public_key().to_hex()),
+            "error leaks signer pubkey: {err}"
+        );
+
         signer_lock().unwrap();
     }
 }

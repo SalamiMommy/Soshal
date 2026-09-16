@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../services/friends_service.dart';
 import '../services/session_service.dart';
 import '../services/streaming_service.dart';
 import '../services/p2p_service.dart';
 import '../utils/format.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/audience_filter_dropdown.dart';
 import '../widgets/empty_state.dart';
 
 /// Live streams: presence list + start/end own stream.
@@ -19,11 +21,15 @@ class LiveScreen extends StatefulWidget {
 
 class _LiveScreenState extends State<LiveScreen> {
   bool _loading = true;
-  bool _followedOnly = false;
+  AudienceFilter _audienceFilter = AudienceFilter.all;
 
   @override
   void initState() {
     super.initState();
+    final pubkey = context.read<SessionService>().activePubkey;
+    if (pubkey != null) {
+      context.friendsServiceReadOrNull?.loadAudienceGraph(pubkey);
+    }
     _load();
   }
 
@@ -33,11 +39,10 @@ class _LiveScreenState extends State<LiveScreen> {
       final api = context.read<StreamingService>();
       final session = context.read<SessionService>();
       final pubkey = session.activePubkey;
-      if (_followedOnly && pubkey != null) {
-        await api.fetchFollowedLive(pubkey);
-      } else {
-        await api.fetchLive();
+      if (pubkey != null) {
+        context.friendsServiceReadOrNull?.loadAudienceGraph(pubkey);
       }
+      await api.fetchLive();
     } catch (e) {
       debugPrint('live load: $e');
     }
@@ -184,12 +189,9 @@ class _LiveScreenState extends State<LiveScreen> {
       appBar: AppBar(
         title: const Text('Live'),
         actions: [
-          TextButton(
-            onPressed: () {
-              setState(() => _followedOnly = !_followedOnly);
-              _load();
-            },
-            child: Text(_followedOnly ? 'All' : 'Following'),
+          AudienceFilterDropdown(
+            value: _audienceFilter,
+            onChanged: (filter) => setState(() => _audienceFilter = filter),
           ),
         ],
       ),
@@ -205,19 +207,30 @@ class _LiveScreenState extends State<LiveScreen> {
                 Expanded(
                   child: Consumer<StreamingService>(
                     builder: (context, api, _) {
-                      if (api.live.isEmpty) {
-                        return const EmptyState(
+                      final friendsService = context.friendsServiceOrNull;
+                      final filtered = friendsService != null
+                          ? friendsService.filterList(
+                              api.live,
+                              _audienceFilter,
+                              (s) => s.pubkey,
+                              myPubkey: me,
+                            )
+                          : api.live;
+                      if (filtered.isEmpty) {
+                        return EmptyState(
                           icon: Icons.videocam_off_outlined,
-                          title: 'No streams right now',
+                          title: _audienceFilter == AudienceFilter.all
+                              ? 'No streams right now'
+                              : 'No streams match ${_audienceFilter.label}',
                         );
                       }
                       return RefreshIndicator(
                         onRefresh: _load,
                         child: ListView.builder(
                           itemExtent: 72.0,
-                          itemCount: api.live.length,
+                          itemCount: filtered.length,
                           itemBuilder: (context, index) {
-                            final s = api.live[index];
+                            final s = filtered[index];
                             final isMine = s.pubkey == me;
                             return ListTile(
                               leading: CircleAvatar(

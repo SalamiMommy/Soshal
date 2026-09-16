@@ -503,7 +503,10 @@ pub fn db_query_params(sql: &str, params: &[String]) -> Result<String, String> {
 /// round-trip that `db_query_params` imposes on every caller. Use this on
 /// hot paths that parse rows back into Rust values (batch queries, feed,
 /// events, minis). Not an FFI surface.
-pub fn db_query_json(sql: &str, params: &[String]) -> Result<Vec<serde_json::Value>, String> {
+pub(crate) fn db_query_json(
+    sql: &str,
+    params: &[String],
+) -> Result<Vec<serde_json::Value>, String> {
     with_db(|db| {
         let conn = db.conn()?;
         let out = block_on(async {
@@ -822,6 +825,22 @@ pub fn db_backup(backup_path: String) -> Result<String, String> {
             .clone()
             .ok_or_else(|| "database not initialized".to_string())?
     };
+    if backup_path == src_path
+        || backup_path == format!("{src_path}-wal")
+        || backup_path == format!("{src_path}-shm")
+        || backup_path.ends_with("-wal")
+        || backup_path.ends_with("-shm")
+    {
+        return Err("backup_path cannot be the database or its journal files".to_string());
+    }
+    if let (Ok(canon_src), Ok(canon_backup)) = (
+        std::fs::canonicalize(&src_path),
+        std::fs::canonicalize(&backup_path),
+    ) {
+        if canon_src == canon_backup {
+            return Err("backup_path cannot be the database file itself".to_string());
+        }
+    }
     same_parent_dir(&src_path, &backup_path, "backup")?;
     with_db(|db| {
         let conn = db.conn()?;
@@ -890,6 +909,9 @@ pub fn db_restore(backup_path: String) -> Result<String, String> {
             .clone()
             .ok_or_else(|| "database not initialized".to_string())?
     };
+    if backup_path == dst {
+        return Err("backup_path cannot be the database itself".to_string());
+    }
     same_parent_dir(&dst, &backup_path, "restore")?;
     // Only SOSHBK01-sealed backups are accepted. A plaintext DB file could
     // be a forged store that bypasses every guard (raw-SQL, protected
@@ -1117,6 +1139,10 @@ pub fn db_get_custom_profile_nodes(pubkey: String) -> Result<String, String> {
 /// Save custom profile for a user to the database.
 #[frb(sync, serialize)]
 pub fn db_save_custom_profile(pubkey: String, profile_json: String) -> Result<bool, String> {
+    if pubkey.is_empty() {
+        return Err("pubkey cannot be empty".to_string());
+    }
+    super::signer::require_identity(&pubkey)?;
     with_db(|db| {
         let conn = db.conn()?;
         let sql = "INSERT INTO custom_profiles (pubkey, data) VALUES (?, ?)
@@ -1150,6 +1176,7 @@ pub fn db_delete_older_than(cutoff_secs: i64) -> Result<usize, String> {
 /// Delete every stored post; returns rows removed.
 #[frb(sync, serialize)]
 pub fn db_delete_all_posts() -> Result<usize, String> {
+    super::signer::signer_pubkey()?;
     with_db(|db| {
         use soshal_db_core::repos::post::PostRepo;
         let repo = PostRepo::new(db);
@@ -1182,6 +1209,10 @@ pub fn db_get_trending_hashtags(limit: i64) -> Result<String, String> {
 /// Escrow rows where `pubkey` participates as buyer or seller (JSON).
 #[frb(sync, serialize)]
 pub fn db_get_escrows_by_participant(pubkey: String) -> Result<String, String> {
+    if pubkey.is_empty() {
+        return Err("pubkey cannot be empty".to_string());
+    }
+    super::signer::require_identity(&pubkey)?;
     with_db(|db| {
         use soshal_db_core::repos::escrow::EscrowRepo;
         let repo = EscrowRepo::new(db);

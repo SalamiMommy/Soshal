@@ -421,6 +421,7 @@ pub fn marketplace_update_listing(
     if existing.seller_pubkey != seller_pubkey {
         return Err("only the seller can update a listing".to_string()).into();
     }
+    super::signer::require_identity(&seller_pubkey)?;
     let content = serde_json::json!({
         "title": title,
         "price": price as f64,
@@ -432,7 +433,7 @@ pub fn marketplace_update_listing(
     let now = soshal_common_core::format::now_secs();
     let row = soshal_db_core::repos::post::PostRow {
         id: listing_id,
-        pubkey: seller_pubkey,
+        pubkey: seller_pubkey.clone(),
         content: content.to_string(),
         kind: KIND_LISTING as i64,
         created_at: now,
@@ -467,6 +468,7 @@ pub fn marketplace_delete_listing(
     if existing.seller_pubkey != seller_pubkey {
         return Err("only the seller can delete a listing".to_string()).into();
     }
+    super::signer::require_identity(&seller_pubkey)?;
     let open: i64 = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let c = soshal_db_core::query::query_first(
@@ -580,6 +582,7 @@ pub fn marketplace_create_order(
     if listing.seller_pubkey != seller_pubkey {
         return Err("seller does not own this listing".to_string()).into();
     }
+    super::signer::require_identity(&buyer_pubkey)?;
     let id = uuid_like();
     let content = serde_json::json!({
         "listingId": listing_id,
@@ -633,6 +636,11 @@ pub fn marketplace_get_order(order_id: String) -> Result<String, String> {
 /// Fetch buyer's orders (posts where the order row's pubkey is the buyer).
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, String> {
+    if let Ok(caller) = super::signer::signer_pubkey() {
+        if caller != buyer_pubkey {
+            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
+        }
+    }
     let orders: Vec<OrderInfo> = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let sql = format!(
@@ -661,6 +669,11 @@ pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, St
 /// content `seller` field matches).
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_seller_orders(seller_pubkey: String) -> Result<String, String> {
+    if let Ok(caller) = super::signer::signer_pubkey() {
+        if caller != seller_pubkey {
+            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
+        }
+    }
     let orders: Vec<OrderInfo> = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let sql = format!(
@@ -699,6 +712,11 @@ pub fn marketplace_create_escrow(
         .map_err(|e| format!("parse order: {e}"))?;
     if order.buyer_pubkey != buyer_pubkey || order.seller_pubkey != seller_pubkey {
         return Err("order parties do not match escrow parties".to_string()).into();
+    }
+    if super::signer::require_identity(&buyer_pubkey).is_err()
+        && super::signer::require_identity(&seller_pubkey).is_err()
+    {
+        return Err("identity mismatch: caller is not buyer or seller".into());
     }
     if amount == 0 {
         return Err("escrow amount must be positive".to_string()).into();
@@ -779,6 +797,8 @@ pub fn marketplace_escrow_confirm_buyer(escrow_id: String, caller: String) -> Re
                 "confirmation must be initiated by the buyer identity".to_string(),
             ));
         }
+        super::signer::require_identity(&caller)
+            .map_err(soshal_db_core::error::DbError::Migration)?;
         repo.set_buyer_confirmed(&escrow_id, true)?;
         Ok(true)
     })
@@ -799,6 +819,8 @@ pub fn marketplace_escrow_confirm_seller(
                 "confirmation must be initiated by the seller identity".to_string(),
             ));
         }
+        super::signer::require_identity(&caller)
+            .map_err(soshal_db_core::error::DbError::Migration)?;
         repo.set_seller_confirmed(&escrow_id, true)?;
         Ok(true)
     })
@@ -820,6 +842,8 @@ pub fn marketplace_dispute_escrow(
         if escrow.buyer_pubkey != disputer_pubkey && escrow.seller_pubkey != disputer_pubkey {
             return Err(soshal_db_core::error::DbError::NotFound);
         }
+        super::signer::require_identity(&disputer_pubkey)
+            .map_err(soshal_db_core::error::DbError::Migration)?;
         repo.update_status(&escrow_id, "disputed")?;
         repo.set_note(&escrow_id, &reason)?;
         Ok(true)
@@ -912,6 +936,12 @@ pub fn marketplace_review_listing(
     rating: i64,
     text: String,
 ) -> Result<bool, String> {
+    if !(1..=5).contains(&rating) {
+        return Err("rating must be between 1 and 5".to_string());
+    }
+    if reviewer_pubkey.is_empty() {
+        return Err("reviewer_pubkey cannot be empty".to_string());
+    }
     let row = soshal_db_core::repos::marketplace_review::MarketplaceReviewRow {
         id: uuid_like(),
         listing_id,
@@ -1016,6 +1046,14 @@ pub fn marketplace_poll_vote(
     voter_pubkey: String,
     option_index: i64,
 ) -> Result<bool, String> {
+    if option_index < 0 {
+        return Err("option_index must be non-negative".to_string());
+    }
+    if let Ok(caller) = super::signer::signer_pubkey() {
+        if caller != voter_pubkey {
+            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
+        }
+    }
     let vote = soshal_db_core::repos::poll::PollVoteRow {
         id: uuid_like(),
         poll_id,
@@ -1032,6 +1070,11 @@ pub fn marketplace_poll_vote(
 /// Close a poll; only the poll owner may close it.
 #[frb(sync, serialize)]
 pub fn marketplace_poll_close(poll_id: String, user_pubkey: String) -> Result<bool, String> {
+    if let Ok(caller) = super::signer::signer_pubkey() {
+        if caller != user_pubkey {
+            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
+        }
+    }
     super::db::with_db_string(|db| {
         let repo = soshal_db_core::repos::poll::PollRepo::new(db);
         let poll = repo
@@ -1161,11 +1204,15 @@ mod tests {
     }
 
     fn insert_escrow(id: &str, listing_id: &str, status: &str) {
-        db::insert_test_user("buyer1");
-        db::insert_test_user("seller1");
+        insert_escrow_parties(id, listing_id, "buyer1", "seller1", status);
+    }
+
+    fn insert_escrow_parties(id: &str, listing_id: &str, buyer: &str, seller: &str, status: &str) {
+        db::insert_test_user(buyer);
+        db::insert_test_user(seller);
         db::db_execute_raw_test(format!(
             "INSERT INTO escrows (id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at) \
-             VALUES ('{id}','{listing_id}','buyer1','seller1',5000,'sats','{status}',NULL,100,100)"
+             VALUES ('{id}','{listing_id}','{buyer}','{seller}',5000,'sats','{status}',NULL,100,100)"
         ))
         .unwrap();
     }
@@ -1173,8 +1220,12 @@ mod tests {
     #[test]
     fn test_listing_queries_and_crud() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = db::tmp_db("listings", "market");
-        insert_listing("l1", "seller1", "rust book", 5000, "books", 2000);
+        let keys_seller = soshal_nostr_core::keys::generate_keys();
+        let seller1 = keys_seller.public_key().to_hex();
+        signer::signer_unlock(keys_seller.secret_key().to_secret_hex()).unwrap();
+        insert_listing("l1", &seller1, "rust book", 5000, "books", 2000);
         insert_listing("l2", "seller2", "chess set", 3000, "games", 1000);
 
         let json = marketplace_fetch_listings(10, 0, "public".to_string()).unwrap();
@@ -1217,10 +1268,10 @@ mod tests {
         assert!(content.contains("rust book"));
         assert_eq!(marketplace_get_content("nope".to_string()).unwrap(), "{}");
 
-        let json = marketplace_fetch_seller_listings("seller1".to_string()).unwrap();
+        let json = marketplace_fetch_seller_listings(seller1.clone()).unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr.len(), 1);
-        assert_eq!(arr[0]["seller_pubkey"], "seller1");
+        assert_eq!(arr[0]["seller_pubkey"], seller1);
         let json = marketplace_fetch_seller_listings("nobody".to_string()).unwrap();
         assert!(serde_json::from_str::<Vec<serde_json::Value>>(&json)
             .unwrap()
@@ -1252,7 +1303,7 @@ mod tests {
         .contains("only the seller can update"));
         assert!(marketplace_update_listing(
             "l1".to_string(),
-            "seller1".to_string(),
+            seller1.clone(),
             "rust book 2nd ed".to_string(),
             "hardcover".to_string(),
             6000,
@@ -1264,18 +1315,19 @@ mod tests {
 
         insert_escrow("esc1", "l1", "created");
         assert!(
-            marketplace_delete_listing("l1".to_string(), "seller1".to_string())
+            marketplace_delete_listing("l1".to_string(), seller1.clone())
                 .unwrap_err()
                 .contains("open escrows")
         );
         db::db_execute_raw_test("DELETE FROM escrows WHERE id='esc1'".to_string()).unwrap();
-        assert!(marketplace_delete_listing("l1".to_string(), "seller1".to_string()).unwrap());
+        assert!(marketplace_delete_listing("l1".to_string(), seller1).unwrap());
         let info = marketplace_get_listing("l1".to_string()).unwrap();
         assert!(info.contains("\"status\":\"active\""), "{info}");
         let json = marketplace_fetch_listings(10, 0, "public".to_string()).unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["id"], "l2");
+        signer::signer_lock().unwrap();
     }
 
     #[test]
@@ -1377,19 +1429,22 @@ mod tests {
         let _p = db::tmp_db("orders", "market");
         let keys = soshal_nostr_core::keys::generate_keys();
         let spk = keys.public_key().to_hex();
+        let bkeys = soshal_nostr_core::keys::generate_keys();
+        let bpk = bkeys.public_key().to_hex();
+
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         insert_listing("l1", &spk, "widget", 5000, "tools", 2000);
 
-        assert!(marketplace_create_order(
-            "l1".to_string(),
-            "buyer1".to_string(),
-            "seller2".to_string(),
-        )
-        .unwrap_err()
-        .contains("seller does not own this listing"));
-        db::insert_test_user("buyer1");
+        // Fail: seller doesn't own listing
+        signer::signer_unlock(bkeys.secret_key().to_secret_hex()).unwrap();
+        assert!(
+            marketplace_create_order("l1".to_string(), bpk.clone(), "seller2".to_string(),)
+                .unwrap_err()
+                .contains("seller does not own this listing")
+        );
+        db::insert_test_user(&bpk);
         let order_id =
-            marketplace_create_order("l1".to_string(), "buyer1".to_string(), spk.clone()).unwrap();
+            marketplace_create_order("l1".to_string(), bpk.clone(), spk.clone()).unwrap();
 
         let order = marketplace_get_order(order_id.clone()).unwrap();
         assert!(order.contains("\"status\":\"created\""), "{order}");
@@ -1398,17 +1453,22 @@ mod tests {
             order.contains(&format!("\"seller_pubkey\":\"{spk}\"")),
             "{order}"
         );
-        assert!(order.contains("\"buyer_pubkey\":\"buyer1\""), "{order}");
+        assert!(
+            order.contains(&format!("\"buyer_pubkey\":\"{bpk}\"")),
+            "{order}"
+        );
         assert!(marketplace_get_order("nope".to_string())
             .unwrap_err()
             .contains("Order not found"));
 
-        let json = marketplace_fetch_buyer_orders("buyer1".to_string()).unwrap();
+        let json = marketplace_fetch_buyer_orders(bpk.clone()).unwrap();
         assert!(json.contains(&order_id), "{json}");
+        assert!(marketplace_fetch_seller_orders(spk.clone()).is_err());
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let json = marketplace_fetch_seller_orders(spk.clone()).unwrap();
         assert!(json.contains(&order_id), "{json}");
-        let json = marketplace_fetch_seller_orders("nobody".to_string()).unwrap();
-        assert_eq!(json, "[]");
+        assert!(marketplace_fetch_seller_orders("nobody".to_string()).is_err());
+        signer::signer_unlock(bkeys.secret_key().to_secret_hex()).unwrap();
 
         assert!(marketplace_create_escrow(
             order_id.clone(),
@@ -1419,13 +1479,12 @@ mod tests {
         .unwrap_err()
         .contains("parties do not match"));
         assert!(
-            marketplace_create_escrow(order_id.clone(), "buyer1".to_string(), spk.clone(), 0,)
+            marketplace_create_escrow(order_id.clone(), bpk.clone(), spk.clone(), 0,)
                 .unwrap_err()
                 .contains("amount must be positive")
         );
         let escrow_id =
-            marketplace_create_escrow(order_id.clone(), "buyer1".to_string(), spk.clone(), 5000)
-                .unwrap();
+            marketplace_create_escrow(order_id.clone(), bpk.clone(), spk.clone(), 5000).unwrap();
 
         let escrow = marketplace_get_escrow(escrow_id.clone()).unwrap();
         assert!(escrow.contains("\"status\":\"created\""), "{escrow}");
@@ -1439,21 +1498,23 @@ mod tests {
             "null"
         );
 
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         assert!(marketplace_release_escrow(escrow_id.clone(), spk.clone()).is_err());
         assert!(
             marketplace_resolve_escrow(escrow_id.clone(), "mediator".to_string(), spk.clone(),)
                 .is_err()
         );
 
+        signer::signer_unlock(bkeys.secret_key().to_secret_hex()).unwrap();
         let escrow2 =
-            marketplace_create_escrow(order_id.clone(), "buyer1".to_string(), spk.clone(), 5000)
-                .unwrap();
+            marketplace_create_escrow(order_id.clone(), bpk.clone(), spk.clone(), 5000).unwrap();
         assert!(marketplace_dispute_escrow(
             escrow2.clone(),
             "outsider".to_string(),
             "bad".to_string()
         )
         .is_err());
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         assert!(marketplace_dispute_escrow(
             escrow2.clone(),
             spk.clone(),
@@ -1464,9 +1525,10 @@ mod tests {
         assert!(marketplace_release_escrow(escrow2, spk.clone()).is_err());
 
         // Non-disputed escrow releases only after BOTH parties confirm.
+        signer::signer_unlock(bkeys.secret_key().to_secret_hex()).unwrap();
         let escrow4 =
-            marketplace_create_escrow(order_id.clone(), "buyer1".to_string(), spk.clone(), 5000)
-                .unwrap();
+            marketplace_create_escrow(order_id.clone(), bpk.clone(), spk.clone(), 5000).unwrap();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         assert!(marketplace_release_escrow(escrow4.clone(), spk.clone()).is_err());
         db::db_execute_raw_test(format!(
             "UPDATE escrows SET buyer_confirmed=1, seller_confirmed=1 WHERE id='{escrow4}'"
@@ -1476,31 +1538,25 @@ mod tests {
         let escrow = marketplace_get_escrow(escrow4).unwrap();
         assert!(escrow.contains("\"status\":\"completed\""), "{escrow}");
 
-        let escrow3 =
-            marketplace_create_escrow(order_id, "buyer1".to_string(), spk.clone(), 5000).unwrap();
+        signer::signer_unlock(bkeys.secret_key().to_secret_hex()).unwrap();
+        let escrow3 = marketplace_create_escrow(order_id, bpk.clone(), spk.clone(), 5000).unwrap();
         assert!(marketplace_resolve_escrow(
             escrow3.clone(),
             "mediator".to_string(),
             "outsider".to_string(),
         )
         .is_err());
-        marketplace_dispute_escrow(escrow3.clone(), "buyer1".to_string(), "refund".to_string())
-            .unwrap();
-        assert!(marketplace_resolve_escrow(
-            escrow3.clone(),
-            "mediator".to_string(),
-            "buyer1".to_string(),
-        )
-        .unwrap());
+        marketplace_dispute_escrow(escrow3.clone(), bpk.clone(), "refund".to_string()).unwrap();
+        assert!(
+            marketplace_resolve_escrow(escrow3.clone(), "mediator".to_string(), bpk.clone(),)
+                .unwrap()
+        );
         let escrow = marketplace_get_escrow(escrow3).unwrap();
         assert!(escrow.contains("\"status\":\"refunded\""), "{escrow}");
         assert!(escrow.contains("resolved by mediator"), "{escrow}");
-        let order5 =
-            marketplace_create_order("l1".to_string(), "buyer1".to_string(), spk.clone()).unwrap();
-        let escrow5 =
-            marketplace_create_escrow(order5, "buyer1".to_string(), spk.clone(), 5000).unwrap();
-        marketplace_dispute_escrow(escrow5.clone(), "buyer1".to_string(), "refund".to_string())
-            .unwrap();
+        let order5 = marketplace_create_order("l1".to_string(), bpk.clone(), spk.clone()).unwrap();
+        let escrow5 = marketplace_create_escrow(order5, bpk.clone(), spk.clone(), 5000).unwrap();
+        marketplace_dispute_escrow(escrow5.clone(), bpk.clone(), "refund".to_string()).unwrap();
         assert!(
             marketplace_resolve_escrow(escrow5.clone(), "mediator".to_string(), spk.clone(),)
                 .unwrap()
@@ -1574,15 +1630,16 @@ mod tests {
 
         let poll = marketplace_poll_get(poll_id.clone()).unwrap();
         assert!(poll.contains("\"votes\":[0,0,0]"), "{poll}");
-        assert!(!marketplace_poll_has_voted(poll_id.clone(), "v1".to_string()).unwrap());
-        assert!(marketplace_poll_vote(poll_id.clone(), "v1".to_string(), 1).unwrap());
-        assert!(marketplace_poll_has_voted(poll_id.clone(), "v1".to_string()).unwrap());
+        assert!(!marketplace_poll_has_voted(poll_id.clone(), pk.clone()).unwrap());
+        assert!(marketplace_poll_vote(poll_id.clone(), "v1".to_string(), 1).is_err());
+        assert!(marketplace_poll_vote(poll_id.clone(), pk.clone(), 1).unwrap());
+        assert!(marketplace_poll_has_voted(poll_id.clone(), pk.clone()).unwrap());
         let poll = marketplace_poll_get(poll_id.clone()).unwrap();
         assert!(poll.contains("\"votes\":[0,1,0]"), "{poll}");
 
         assert!(marketplace_poll_close(poll_id.clone(), "other".to_string())
             .unwrap_err()
-            .contains("not poll owner"));
+            .contains("identity mismatch"));
         assert!(marketplace_poll_close(poll_id, pk.clone()).unwrap());
         assert!(marketplace_poll_get("nope".to_string())
             .unwrap_err()
@@ -1725,13 +1782,15 @@ mod tests {
         let _p = db::tmp_db("mkt_esc", "mk");
         let keys = soshal_nostr_core::keys::generate_keys();
         let spk = keys.public_key().to_hex();
+        let bkeys = soshal_nostr_core::keys::generate_keys();
+        let bpk = bkeys.public_key().to_hex();
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         insert_listing("l1", "seller1", "widget", 5000, "tools", 2000);
-        insert_escrow("escA", "l1", "created");
+        insert_escrow_parties("escA", "l1", &bpk, &spk, "created");
 
         assert!(marketplace_create_escrow(
             "nope".to_string(),
-            "buyer1".to_string(),
+            bpk.clone(),
             "seller1".to_string(),
             5000,
         )
@@ -1740,27 +1799,23 @@ mod tests {
         assert!(marketplace_release_escrow("nope".to_string(), spk.clone())
             .unwrap_err()
             .contains("not found"));
-        assert!(marketplace_dispute_escrow(
-            "nope".to_string(),
-            "buyer1".to_string(),
-            "x".to_string()
-        )
-        .unwrap_err()
-        .contains("not found"));
+        assert!(
+            marketplace_dispute_escrow("nope".to_string(), bpk.clone(), "x".to_string())
+                .unwrap_err()
+                .contains("not found")
+        );
         assert!(marketplace_resolve_escrow(
             "nope".to_string(),
             "mediator".to_string(),
-            "buyer1".to_string(),
+            bpk.clone(),
         )
         .unwrap_err()
         .contains("not found"));
 
         // Long dispute reason truncated to 512 chars (trailing ellipsis).
         let long = "a".repeat(600);
-        assert!(
-            marketplace_dispute_escrow("escA".to_string(), "buyer1".to_string(), long.clone())
-                .unwrap()
-        );
+        signer::signer_unlock(bkeys.secret_key().to_secret_hex()).unwrap();
+        assert!(marketplace_dispute_escrow("escA".to_string(), bpk.clone(), long.clone()).unwrap());
         let escrow = marketplace_get_escrow("escA".to_string()).unwrap();
         let rows: serde_json::Value = serde_json::from_str(&escrow).unwrap();
         let note = rows[0]["escrow_note"].as_str().unwrap();
@@ -1798,15 +1853,13 @@ mod tests {
         assert!(expires < soshal_common_core::format::now_secs());
 
         // Out-of-range option vote skipped in counts.
-        assert!(marketplace_poll_vote(pid.clone(), "v1".to_string(), 5).unwrap());
+        assert!(marketplace_poll_vote(pid.clone(), pk.clone(), 5).unwrap());
         let poll = marketplace_poll_get(pid).unwrap();
         assert!(poll.contains("\"votes\":[0,0]"), "{poll}");
 
-        assert!(
-            marketplace_poll_close("nope".to_string(), "pk1".to_string())
-                .unwrap_err()
-                .contains("poll not found")
-        );
+        assert!(marketplace_poll_close("nope".to_string(), pk.clone())
+            .unwrap_err()
+            .contains("poll not found"));
 
         // Corrupt options_json -> Err from poll_get.
         db::db_execute_raw_test(

@@ -322,12 +322,18 @@ impl I2PTunnelManager {
 /// rebuilding the tunnel per call.
 pub struct I2PSessionManager {
     tunnel: std::sync::Mutex<Option<I2PTunnelManager>>,
+    config: I2PTunnelConfig,
 }
 
 impl I2PSessionManager {
     pub fn new() -> Self {
+        Self::with_config(I2PTunnelConfig::default())
+    }
+
+    pub fn with_config(config: I2PTunnelConfig) -> Self {
         Self {
             tunnel: std::sync::Mutex::new(None),
+            config,
         }
     }
 
@@ -339,10 +345,11 @@ impl I2PSessionManager {
         if let Some(mut t) = guard.take() {
             let _ = t.stop();
         }
-        let mut tunnel = I2PTunnelManager::new(I2PTunnelConfig {
-            destination: destination.map(|d| d.to_string()),
-            ..I2PTunnelConfig::default()
-        });
+        let mut config = self.config.clone();
+        if let Some(d) = destination {
+            config.destination = Some(d.to_string());
+        }
+        let mut tunnel = I2PTunnelManager::new(config);
         let dest = tunnel.start()?;
         *guard = Some(tunnel);
         Ok(dest)
@@ -759,30 +766,24 @@ mod tests {
         assert_eq!(tunnel.client().get_session_id().as_deref(), Some("soshal"));
         handle.join().expect("bridge thread");
 
-        // I2PSessionManager::start builds its own config with the default
-        // SAM port, so the mock must bind 127.0.0.1:SAM_DEFAULT_PORT.
-        let listener =
-            TcpListener::bind(("127.0.0.1", SAM_DEFAULT_PORT)).expect("bind default sam port");
-        let (bridge, _port) = (
-            MockBridge {
-                listener,
-                conn_replies: vec![
-                    vec![
-                        "HELLO REPLY VERSION=3.1".to_string(),
-                        "DEST REPLY DEST=gen-1".to_string(),
-                        "SESSION STATUS RESULT=OK DESTINATION=trans-1".to_string(),
-                    ],
-                    vec![
-                        "HELLO REPLY VERSION=3.1".to_string(),
-                        "DEST REPLY DEST=gen-2".to_string(),
-                        "SESSION STATUS RESULT=OK DESTINATION=trans-2".to_string(),
-                    ],
-                ],
-            },
-            0,
-        );
+        // I2PSessionManager uses with_config so test can use an ephemeral port.
+        let (bridge, mgr_port) = MockBridge::bind(vec![
+            vec![
+                "HELLO REPLY VERSION=3.1".to_string(),
+                "DEST REPLY DEST=gen-1".to_string(),
+                "SESSION STATUS RESULT=OK DESTINATION=trans-1".to_string(),
+            ],
+            vec![
+                "HELLO REPLY VERSION=3.1".to_string(),
+                "DEST REPLY DEST=gen-2".to_string(),
+                "SESSION STATUS RESULT=OK DESTINATION=trans-2".to_string(),
+            ],
+        ]);
         let handle = bridge.serve();
-        let manager = I2PSessionManager::new();
+        let manager = I2PSessionManager::with_config(I2PTunnelConfig {
+            sam_port: mgr_port,
+            ..I2PTunnelConfig::default()
+        });
         assert_eq!(manager.start(None).expect("first start"), "gen-1");
         assert_eq!(manager.start(None).expect("restart"), "gen-2");
         assert!(manager.is_running());

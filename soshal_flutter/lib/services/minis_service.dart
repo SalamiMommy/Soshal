@@ -28,6 +28,13 @@ class MinisService extends ChangeNotifier
 
   bool isSaved(String id) => _saved.any((m) => m.id == id);
 
+  /// Clears in-memory saved minis and transient state on account switch.
+  void resetForAccountSwitch() {
+    _saved = [];
+    clearLastError();
+    notifyListeners();
+  }
+
   /// Fetch known minis from the local registry, newest first.
   List<MiniItem> fetchMinis({String audience = 'public'}) => guardSync(() {
         final json =

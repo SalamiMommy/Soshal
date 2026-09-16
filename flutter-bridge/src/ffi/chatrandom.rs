@@ -56,16 +56,44 @@ pub async fn chatrandom_fetch(
     author: Option<String>,
     limit: u64,
 ) -> Result<String, String> {
-    let mut filter = serde_json::json!({
-        "kinds": [20030, 20031, 20032],
-        "limit": limit.min(100),
-    });
-    if let Some(p) = author {
-        filter["authors"] = serde_json::json!([p]);
-    }
-    let raw = super::network::network_query_events(filter.to_string()).await?;
-    let events: Vec<nostr::event::Event> =
-        serde_json::from_str(&raw).map_err(|e| format!("parse query result: {e}"))?;
+    super::signer::require_identity(&my_pubkey)?;
+    let lim = limit.min(100);
+    let events: Vec<nostr::event::Event> = if let Some(p) = author {
+        let filter = serde_json::json!({
+            "kinds": [20030, 20031, 20032],
+            "authors": [p],
+            "limit": lim,
+        });
+        let raw = super::network::network_query_events(filter.to_string()).await?;
+        serde_json::from_str(&raw).map_err(|e| format!("parse query result: {e}"))?
+    } else {
+        let avail_filter = serde_json::json!({
+            "kinds": [20030],
+            "limit": lim,
+        });
+        let direct_filter = serde_json::json!({
+            "kinds": [20031, 20032],
+            "#p": [&my_pubkey],
+            "limit": lim,
+        });
+        let (raw_avail, raw_direct) = tokio::join!(
+            super::network::network_query_events(avail_filter.to_string()),
+            super::network::network_query_events(direct_filter.to_string())
+        );
+        let mut ev_list = Vec::new();
+        if let Ok(raw) = raw_avail {
+            if let Ok(parsed) = serde_json::from_str::<Vec<nostr::event::Event>>(&raw) {
+                ev_list.extend(parsed);
+            }
+        }
+        if let Ok(raw) = raw_direct {
+            if let Ok(parsed) = serde_json::from_str::<Vec<nostr::event::Event>>(&raw) {
+                ev_list.extend(parsed);
+            }
+        }
+        ev_list
+    };
+
     #[derive(serde::Serialize)]
     struct ChatRandomItem<'a> {
         id: String,
@@ -74,8 +102,13 @@ pub async fn chatrandom_fetch(
         created_at: u64,
     }
 
+    let mut seen_ids = std::collections::HashSet::new();
     let mut out = Vec::with_capacity(events.len().min(100));
     for e in &events {
+        let id_hex = e.id.to_hex();
+        if !seen_ids.insert(id_hex.clone()) {
+            continue;
+        }
         if !soshal_nostr_core::models::verify_event(e) {
             continue;
         }
@@ -92,13 +125,16 @@ pub async fn chatrandom_fetch(
             }
         }
         out.push(ChatRandomItem {
-            id: e.id.to_hex(),
+            id: id_hex,
             pubkey: e.pubkey.to_hex(),
             content: &e.content,
             created_at: e.created_at.as_secs(),
         });
     }
     out.sort_unstable_by_key(|item| std::cmp::Reverse(item.created_at));
+    if out.len() > lim as usize {
+        out.truncate(lim as usize);
+    }
     super::util::json_ok(out)
 }
 
@@ -165,11 +201,27 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_fetch_requires_initialized_relay_client() {
-        let pk = "deadbeef".repeat(8);
+        let _g = crate::ffi::util::lock(&CHATRANDOM_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let err = chatrandom_fetch(pk.clone(), Some(pk), 50)
             .await
             .unwrap_err();
         assert!(err.contains("relay client not initialized"), "got {err}");
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_fetch_unauthorized_rejected() {
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _ = super::super::signer::signer_lock();
+        let pk = "deadbeef".repeat(8);
+        let err = chatrandom_fetch(pk.clone(), None, 50).await.unwrap_err();
+        assert!(err.contains("signer locked") || err.contains("signer key mismatch"));
     }
 }

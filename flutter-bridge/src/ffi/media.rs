@@ -247,9 +247,21 @@ pub fn media_clear_cache(cache_dir: String) -> Result<String, String> {
         return Err("Cache directory does not exist".to_string());
     }
     let canon = std::fs::canonicalize(p).map_err(|e| format!("canonicalize: {e}"))?;
+    let chunk_root = ChunkStore::default_root();
+    let temp_root = std::env::temp_dir();
+    let canon_temp = std::fs::canonicalize(&temp_root).unwrap_or_else(|_| temp_root.clone());
+    if canon == canon_temp {
+        return Err("cannot clear system temp directory itself".to_string()).into();
+    }
+    let is_chunk_root = if let Ok(canon_chunk) = std::fs::canonicalize(&chunk_root) {
+        canon == canon_chunk
+    } else {
+        canon == chunk_root
+    };
+
     // M6 fix: always-available safe roots (chunk store + system temp).
     // These can be checked even before the DB is initialized.
-    let always_safe = [ChunkStore::default_root(), std::env::temp_dir()];
+    let always_safe = [chunk_root, temp_root];
     let in_safe_root = always_safe.iter().any(|root| canon.starts_with(root));
     if !in_safe_root {
         // Not inside a guaranteed-safe root: require the DB to be initialized
@@ -259,12 +271,23 @@ pub fn media_clear_cache(cache_dir: String) -> Result<String, String> {
                 if let Some(parent) = std::path::Path::new(&db_p).parent() {
                     if !parent.as_os_str().is_empty() {
                         if let Ok(canon_parent) = std::fs::canonicalize(parent) {
+                            if canon == canon_parent {
+                                return Err("cannot clear application root directory".to_string())
+                                    .into();
+                            }
                             if !canon.starts_with(&canon_parent) {
                                 return Err(
                                     "cache_dir must be inside application directory or media cache"
                                         .to_string(),
                                 )
                                 .into();
+                            }
+                            if let Ok(canon_db) = std::fs::canonicalize(&db_p) {
+                                if canon_db.starts_with(&canon) {
+                                    return Err("cannot clear directory containing the database"
+                                        .to_string())
+                                    .into();
+                                }
                             }
                         }
                     }
@@ -289,7 +312,12 @@ pub fn media_clear_cache(cache_dir: String) -> Result<String, String> {
         }
     }
     match fs::remove_dir_all(&canon) {
-        Ok(_) => Ok("Cache cleared".to_string()).into(),
+        Ok(_) => {
+            if is_chunk_root {
+                let _ = fs::create_dir_all(&canon);
+            }
+            Ok("Cache cleared".to_string()).into()
+        }
         Err(e) => Err(format!("Clear failed: {e}")).into(),
     }
 }

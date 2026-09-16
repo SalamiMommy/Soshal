@@ -77,6 +77,11 @@ class SignerService extends ChangeNotifier {
   }
 
   /// Persist the signer's nsec into the OS keychain (pubkey-addressed).
+  ///
+  /// Returns `true` if saved to the OS keychain (biometric/PIN protection
+  /// active), or `false` if the OS keychain was unavailable and the key was
+  /// saved to local sealed storage only (biometric protection NOT active).
+  /// Throws on complete failure (no storage succeeded).
   Future<bool> saveToKeyring(String pubkey) async =>
       _api.crateFfiSignerSignerSaveToKeyring(pubkey: pubkey);
 

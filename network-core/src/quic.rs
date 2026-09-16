@@ -56,6 +56,41 @@ const MAX_DATAGRAM: usize = 1200;
 const MAX_DATAGRAM_CONNS: usize = 64;
 const REGISTRATION_KIND: &str = "__peer_key__";
 
+/// SHA-256 fingerprint registry of HMAC-authenticated peer TLS certificates.
+///
+/// When a peer successfully completes the HMAC beacon exchange (proving they
+/// hold the shared LAN key), their TLS certificate fingerprint is inserted here.
+/// `HybridCertVerifier` allows self-signed certs ONLY for peers in this set —
+/// a first-contact attacker presenting an unknown self-signed cert is rejected.
+///
+/// The first connection to a new peer requires a successful HMAC exchange before
+/// QUIC fully authenticates. This is correct security behaviour: the HMAC check
+/// happens in the datagram handler after the TLS handshake, so first-contact
+/// peers receive a connection-closed error from TLS and must retry after HMAC
+/// succeeds on a subsequent attempt. mDNS-discovered LAN peers will retry quickly.
+static TRUSTED_PEER_CERTS: LazyLock<Mutex<HashSet<[u8; 32]>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Compute the SHA-256 fingerprint of a DER-encoded certificate.
+fn cert_fingerprint(cert: &CertificateDer<'_>) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(cert.as_ref());
+    hasher.finalize().into()
+}
+
+/// Register a peer's TLS certificate as trusted after a successful HMAC beacon
+/// exchange. Once registered, subsequent TLS connections from this peer are
+/// accepted by `HybridCertVerifier` without re-running the HMAC check.
+///
+/// Called from the datagram auth path after `beacon_seq().check_and_record` succeeds.
+pub(crate) fn register_trusted_cert(cert: &CertificateDer<'_>) {
+    let fp = cert_fingerprint(cert);
+    if let Ok(mut g) = TRUSTED_PEER_CERTS.lock() {
+        g.insert(fp);
+    }
+}
+
 /// Hybrid certificate verifier: validates certificates when possible,
 /// but allows mesh-internal self-signed certs since identity is app-layer
 /// (peer key datagram with HMAC beacon authentication).
@@ -78,18 +113,33 @@ impl ServerCertVerifier for HybridCertVerifier {
             return Ok(verified);
         }
 
-        // Fallback: allow self-signed certificates for mesh-internal communication
-        // The real security comes from HMAC beacon authentication at the app layer
-        // This maintains compatibility with the existing mesh trust model.
+        // Fallback: allow self-signed certificates ONLY for peers that have
+        // previously passed HMAC beacon authentication. Their certificate
+        // fingerprint was pinned by `register_trusted_cert` at that point.
         //
-        // NOTE: The self-signed acceptance here is balanced by actual signature
-        // verification in verify_tls12/13_signature (below), which now runs for
-        // EVERY handshake — including mesh-internal ones. The chain validation is
-        // relaxed (self-signed allowed), but the key agreement transcript signature
-        // is always cryptographically verified, so a passive MITM cannot inject a
-        // forged key into the handshake.
-        log::debug!("QUIC: accepting self-signed cert, relying on app-layer HMAC auth");
-        Ok(ServerCertVerified::assertion())
+        // A fresh attacker presenting an unknown self-signed cert is rejected.
+        // First-contact LAN peers must complete an HMAC beacon exchange first;
+        // mDNS discovery + the beacon retry loop handles this automatically.
+        let fp = cert_fingerprint(end_entity);
+        let is_trusted = TRUSTED_PEER_CERTS
+            .lock()
+            .map(|g| g.contains(&fp))
+            .unwrap_or(false);
+
+        if is_trusted {
+            log::debug!("QUIC: accepting HMAC-pinned self-signed cert");
+            Ok(ServerCertVerified::assertion())
+        } else {
+            log::warn!(
+                "QUIC: rejecting unknown self-signed cert (not in HMAC-pinned registry); \
+                 peer must complete HMAC beacon exchange first"
+            );
+            Err(rustls::Error::General(
+                "self-signed cert not in HMAC-pinned registry; \
+                 complete HMAC beacon exchange first"
+                    .into(),
+            ))
+        }
     }
 
     fn verify_tls12_signature(
@@ -145,8 +195,7 @@ fn verify_signature(
 /// Server verifier anchored at the bundled Mozilla root store (webpki-roots).
 /// Hosted/public endpoints presenting a real CA chain validate here. Mesh-
 /// internal self-signed certs have no CA anchor and fail this check, falling
-/// through to the self-signed acceptance path whose real trust anchor is the
-/// app-layer HMAC beacon handshake.
+/// through to the HMAC-pinned acceptance path in HybridCertVerifier.
 static WEBPKI_VERIFIER: LazyLock<Arc<WebPkiServerVerifier>> = LazyLock::new(|| {
     let mut roots = rustls::RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
@@ -168,7 +217,7 @@ fn try_system_cert_validation(
 ) -> Result<ServerCertVerified, rustls::Error> {
     // Chain validation against the bundled Mozilla roots: rejects expired or
     // wrong-host public certificates. Mesh self-signed certs (no CA chain)
-    // fail here and fall through to the self-signed acceptance path in
+    // fail here and fall through to the HMAC-pinned acceptance path in
     // HybridCertVerifier::verify_server_cert.
     WEBPKI_VERIFIER.verify_server_cert(end_entity, intermediates, server_name, &[], now)
 }
@@ -455,6 +504,17 @@ fn spawn_conn_task(
                                     if let Ok(mut g) = authed.lock() {
                                         g.insert(remote);
                                     }
+                                    // Pin the peer's TLS cert fingerprint so
+                                    // HybridCertVerifier accepts subsequent
+                                    // self-signed connections from this peer.
+                                    // `peer_certificate()` is Some for verified
+                                    // QUIC connections; skip if unavailable.
+                                    if let Some(cert) = conn.peer_identity()
+                                        .and_then(|id| id.downcast::<Vec<rustls::pki_types::CertificateDer<'static>>>().ok())
+                                        .and_then(|certs| certs.into_iter().next())
+                                    {
+                                        register_trusted_cert(&cert);
+                                    }
                                 }
                             }
                         }
@@ -542,6 +602,11 @@ fn tls_configs() -> Result<(ServerConfig, ClientConfig), String> {
         client_config,
     );
     let _ = CFG.set(pair.clone());
+    // Pre-register the locally generated cert so the node can connect to
+    // itself on loopback (used by stream tests and local chunk fetches).
+    // Remote peer certs are only registered after a successful HMAC beacon
+    // exchange — this line does not relax that invariant for inbound strangers.
+    register_trusted_cert(&cert_der);
     Ok(pair)
 }
 

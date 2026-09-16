@@ -101,7 +101,8 @@ mod ffi_more_gap_tests {
     fn notifications_crud_and_push_scoping() {
         let _g = crate::test_util::lock();
         let db = crate::test_util::init_db("more_gap", "notify");
-        let (me, _) = gen_keys();
+        let (me, me_sec) = gen_keys();
+        signer::signer_unlock(me_sec).unwrap();
         let (other, _) = gen_keys();
         crate::test_util::insert_user(&me);
         crate::test_util::insert_user(&other);
@@ -186,6 +187,7 @@ mod ffi_more_gap_tests {
         let unloaded =
             notifications::notifications_register_push(me.clone(), "tok".into()).unwrap_err();
         assert!(unloaded.contains("Session not loaded"), "{unloaded}");
+        let _ = signer::signer_lock();
         let _ = db;
     }
     #[test]
@@ -266,5 +268,109 @@ mod ffi_more_gap_tests {
             Vec::<String>::new()
         );
         let _ = db;
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn feed_reply_reaction_delete_lifecycle() {
+        let _g = crate::test_util::lock();
+        let path = crate::test_util::init_db("more_gap", "feed_lifecycle");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let author_pk = keys.public_key().to_hex();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+
+        // Insert author's post into DB
+        let post_id =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
+        crate::test_util::insert_user(&author_pk);
+        db::db_execute_params(
+            "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+             VALUES (?1, ?2, 'root post', 1, 1000, '[]', 'synced', 0)",
+            &[post_id.clone(), author_pk.clone()],
+        )
+        .unwrap();
+
+        // feed_publish_reply: should include NIP-10 'p' tag for author_pk
+        let reply_json =
+            feed::feed_publish_reply("my reply".into(), post_id.clone(), post_id.clone())
+                .await
+                .unwrap();
+        let reply_val: serde_json::Value = serde_json::from_str(&reply_json).unwrap();
+        let tags = reply_val["tags"].as_array().unwrap();
+        let has_p_tag = tags.iter().any(|t| {
+            t.get(0).and_then(|v| v.as_str()) == Some("p")
+                && t.get(1).and_then(|v| v.as_str()) == Some(&author_pk)
+        });
+        assert!(
+            has_p_tag,
+            "reply must contain NIP-10 p-tag for root author: {reply_json}"
+        );
+
+        // feed_create_reaction: should include NIP-25 'p' tag for author_pk
+        let reaction_json = feed::feed_create_reaction(post_id.clone(), "+".into())
+            .await
+            .unwrap();
+        let react_val: serde_json::Value = serde_json::from_str(&reaction_json).unwrap();
+        let react_tags = react_val["tags"].as_array().unwrap();
+        let has_react_p = react_tags.iter().any(|t| {
+            t.get(0).and_then(|v| v.as_str()) == Some("p")
+                && t.get(1).and_then(|v| v.as_str()) == Some(&author_pk)
+        });
+        assert!(
+            has_react_p,
+            "reaction must contain NIP-25 p-tag for reacted author: {reaction_json}"
+        );
+
+        // feed_delete_post: rejects invalid hex
+        let bad_hex = feed::feed_delete_post("short".into()).await.unwrap_err();
+        assert!(bad_hex.contains("64-character hex"));
+
+        // Another signer cannot delete author's post
+        let eve_keys = soshal_nostr_core::keys::generate_keys();
+        signer::signer_unlock(eve_keys.secret_key().to_secret_hex()).unwrap();
+        let err = feed::feed_delete_post(post_id.clone()).await.unwrap_err();
+        assert!(err.contains("cannot delete post authored by another user"));
+
+        // Author deletes their own post -> soft-deleted locally in SQLite immediately
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let del_json = feed::feed_delete_post(post_id.clone()).await.unwrap();
+        assert!(del_json.contains("deleted by user"));
+        let raw = db::db_query_raw(format!(
+            "SELECT is_deleted FROM posts WHERE id = '{post_id}'"
+        ))
+        .unwrap();
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            rows[0]["is_deleted"], 1,
+            "post must be marked deleted in local SQLite database"
+        );
+
+        signer::signer_lock().unwrap();
+        crate::test_util::cleanup(&path);
+    }
+
+    #[test]
+    fn identity_follow_self_and_invalid_pubkey() {
+        let _g = crate::test_util::lock();
+        let path = crate::test_util::init_db("more_gap", "identity_self");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+
+        // Invalid pubkey format rejected
+        assert!(identity::identity_follow_user("not_hex".into())
+            .unwrap_err()
+            .contains("64-character hex"));
+        assert!(identity::identity_unfollow_user("not_hex".into())
+            .unwrap_err()
+            .contains("64-character hex"));
+
+        // Self-follow rejected
+        assert!(identity::identity_follow_user(pk)
+            .unwrap_err()
+            .contains("cannot follow yourself"));
+
+        signer::signer_lock().unwrap();
+        crate::test_util::cleanup(&path);
     }
 }

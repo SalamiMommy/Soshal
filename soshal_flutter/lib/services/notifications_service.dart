@@ -133,22 +133,22 @@ class NotificationService extends ChangeNotifier
             RustLib.instance.api.crateFfiNotificationsNotificationsMarkRead(
           notificationId: notificationId,
         );
-if (ok) {
-        final listed = _notifications.any((n) => n.id == notificationId) ||
-            _unread.any((n) => n.id == notificationId);
-        _unread.removeWhere((n) => n.id == notificationId);
-        for (var i = 0; i < _notifications.length; i++) {
-          final n = _notifications[i];
-          if (n.id == notificationId && !n.read) {
-            _notifications[i] = _asRead(n);
+        if (ok) {
+          final listed = _notifications.any((n) => n.id == notificationId) ||
+              _unread.any((n) => n.id == notificationId);
+          _unread.removeWhere((n) => n.id == notificationId);
+          for (var i = 0; i < _notifications.length; i++) {
+            final n = _notifications[i];
+            if (n.id == notificationId && !n.read) {
+              _notifications[i] = _asRead(n);
+            }
+          }
+          if (listed) {
+            _recomputeUnreadCount();
+          } else if (_unreadCount > 0) {
+            _unreadCount -= 1;
           }
         }
-        if (listed) {
-          _recomputeUnreadCount();
-        } else if (_unreadCount > 0) {
-          _unreadCount -= 1;
-        }
-      }
         return ok;
       });
 

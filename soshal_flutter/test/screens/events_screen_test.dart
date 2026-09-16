@@ -11,6 +11,7 @@ import 'package:soshal_flutter/services/friends_service.dart';
 import 'package:soshal_flutter/services/media_service.dart';
 import 'package:soshal_flutter/services/permissions_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
+import 'package:soshal_flutter/widgets/audience_filter_dropdown.dart';
 
 import '../helpers/test_env.dart';
 
@@ -80,6 +81,11 @@ void main() {
     }
 
     stubDefault('crateFfiEventsEventsFetchNearby', '[]');
+    stubDefault('crateFfiEventsEventsScoreEvents', '{}');
+    stubDefault('crateFfiIdentityIdentityFetchFollows', '[]');
+    if (!api.handlers.containsKey(Symbol('crateFfiSocialSocialFriendSuggestions'))) {
+      api.stubListString('crateFfiSocialSocialFriendSuggestions', const []);
+    }
     stubDefault('crateFfiDatingDatingGetOwnProfile', ownProfileJson);
     if (!api.handlers.containsKey(Symbol('crateFfiUtilUtilExtractHashtags'))) {
       api.stub('crateFfiUtilUtilExtractHashtags', (_) => <String>[]);
@@ -149,40 +155,29 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// Opens the Find events menu, picks Mine to hide the radius slider.
-  Future<void> pumpMine(WidgetTester tester) async {
-    await pumpScreen(tester);
-    await tester.tap(find.text('Find events'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Mine'));
-    await tester.pumpAndSettle();
-  }
-
   testWidgets('empty state shows no events yet with controls',
       (tester) async {
-    api.stubString('crateFfiEventsEventsFetchUserEvents', '[]');
-
-    await pumpMine(tester);
+    await pumpScreen(tester);
 
     await tester.tap(find.text('List'));
     await tester.pumpAndSettle();
     expect(find.text('No events yet'), findsOneWidget);
     expect(find.byTooltip('Create event'), findsOneWidget);
-    expect(find.text('Find events'), findsOneWidget);
+    expect(find.byType(AudienceFilterDropdown), findsOneWidget);
     expect(find.text('List'), findsOneWidget);
     expect(find.text('Calendar'), findsOneWidget);
-    expect(find.byType(Slider), findsNothing);
+    expect(find.byType(Slider), findsOneWidget);
   });
 
   testWidgets('renders event rows with location time and attendees',
       (tester) async {
-    api.stubString('crateFfiEventsEventsFetchUserEvents', '[$eventJson]');
+    api.stubString('crateFfiEventsEventsFetchNearby', '[$eventJson]');
     api.stub(
       'crateFfiEventsEventsScoreEvents',
       (_) => '{"ev1":42}',
     );
 
-    await pumpMine(tester);
+    await pumpScreen(tester);
 
     await tester.tap(find.text('List'));
     await tester.pumpAndSettle();
@@ -193,11 +188,11 @@ void main() {
   });
 
   testWidgets('load failure shows empty state without crash', (tester) async {
-    api.stub('crateFfiEventsEventsFetchUserEvents', (_) {
+    api.stub('crateFfiEventsEventsFetchNearby', (_) {
       throw Exception('relay down');
     });
 
-    await pumpMine(tester);
+    await pumpScreen(tester);
 
     await tester.tap(find.text('List'));
     await tester.pumpAndSettle();
@@ -206,10 +201,9 @@ void main() {
 
   testWidgets('create dialog creates event with entered fields',
       (tester) async {
-    api.stubString('crateFfiEventsEventsFetchUserEvents', '[]');
     api.stubString('crateFfiEventsEventsCreate', 'ev9');
 
-    await pumpMine(tester);
+    await pumpScreen(tester);
 
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pumpAndSettle();
@@ -233,16 +227,15 @@ void main() {
     expect(api.namedArg(inv, 'longitude'), 0.0);
     expect(api.namedArg(inv, 'imageUrl'), '');
     expect(api.namedArg(inv, 'startTime') as BigInt, greaterThan(BigInt.zero));
-    expect(api.callCount('crateFfiEventsEventsFetchUserEvents'), 2);
+    expect(api.callCount('crateFfiEventsEventsFetchNearby'), 2);
   });
 
   testWidgets('create failure surfaces snackbar', (tester) async {
-    api.stubString('crateFfiEventsEventsFetchUserEvents', '[]');
     api.stub('crateFfiEventsEventsCreate', (_) {
       throw Exception('publish failed');
     });
 
-    await pumpMine(tester);
+    await pumpScreen(tester);
 
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pumpAndSettle();
@@ -260,24 +253,20 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
-  testWidgets('find events menu mine mode fetches user events', (tester) async {
-    api.stubString('crateFfiEventsEventsFetchUserEvents', '[]');
-
+  testWidgets('audience filter dropdown displays options and changes selection',
+      (tester) async {
     await pumpScreen(tester);
 
-    await tester.tap(find.text('Find events'));
+    await tester.tap(find.byType(AudienceFilterDropdown));
     await tester.pumpAndSettle();
-    expect(find.text('All'), findsOneWidget);
+    expect(find.text('All'), findsWidgets);
     expect(find.text('Friends'), findsOneWidget);
-    expect(find.text('Friends of friends'), findsOneWidget);
-    expect(find.text('Mine'), findsOneWidget);
-    await tester.tap(find.text('Mine'));
+    expect(find.text('Friends of Friends'), findsOneWidget);
+    await tester.tap(find.text('Friends of Friends'));
     await tester.pumpAndSettle();
 
-    expect(api.callCount('crateFfiEventsEventsFetchUserEvents'), 1);
-    final inv = api.callsOf('crateFfiEventsEventsFetchUserEvents').single;
-    expect(api.namedArg(inv, 'userPubkey'), 'pk123');
-    expect(find.byType(Slider), findsNothing);
+    expect(find.byType(AudienceFilterDropdown), findsOneWidget);
+    expect(find.text('Friends of Friends'), findsOneWidget);
   });
 
   testWidgets('calendar view shows month grid and day selection',
@@ -296,9 +285,8 @@ void main() {
       'November',
       'December',
     ];
-    api.stubString('crateFfiEventsEventsFetchUserEvents', '[]');
 
-    await pumpMine(tester);
+    await pumpScreen(tester);
 
     final now = DateTime.now();
     expect(find.text('${monthNames[now.month - 1]} ${now.year}'),
@@ -332,7 +320,7 @@ void main() {
     expect(find.text('Friend Gig'), findsOneWidget);
     expect(find.text('Stranger Meetup'), findsOneWidget);
 
-    await tester.tap(find.text('Find events'));
+    await tester.tap(find.byType(AudienceFilterDropdown));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Friends'));
     await tester.pumpAndSettle();
@@ -343,13 +331,13 @@ void main() {
 
   testWidgets('event tap opens detail and RSVP calls bridge',
       (tester) async {
-    api.stubString('crateFfiEventsEventsFetchUserEvents', '[$eventJson]');
+    api.stubString('crateFfiEventsEventsFetchNearby', '[$eventJson]');
     api.stubString('crateFfiEventsEventsGetEvent', eventJson);
     api.stubString('crateFfiEventsEventsRemindersList', '[]');
     api.stubListString('crateFfiEventsEventsGetAttendees', ['pkA', 'pkB']);
     api.stubBool('crateFfiEventsEventsRsvp', true);
 
-    await pumpMine(tester);
+    await pumpScreen(tester);
 
     await tester.tap(find.text('List'));
     await tester.pumpAndSettle();

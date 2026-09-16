@@ -503,6 +503,12 @@ pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
         Ok(pk) => pk,
         Err(_) => return Err("signer locked".to_string()).into(),
     };
+    if pubkey.len() != 64 || hex::decode(&pubkey).is_err() {
+        return Err("invalid pubkey: must be 64-character hex".to_string());
+    }
+    if pubkey == unlocked {
+        return Err("cannot follow yourself".to_string());
+    }
     let (list, row, was_following) = super::db::with_db_result(|db| {
         let row = UserRepo::new(db).get_by_pubkey(&unlocked)?;
         let mut follows: Vec<String> = match &row {
@@ -566,6 +572,9 @@ pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
         Ok(pk) => pk,
         Err(_) => return Err("signer locked".to_string()).into(),
     };
+    if pubkey.len() != 64 || hex::decode(&pubkey).is_err() {
+        return Err("invalid pubkey: must be 64-character hex".to_string());
+    }
     let (list, row, was_following) = super::db::with_db_result(|db| {
         let row = UserRepo::new(db).get_by_pubkey(&unlocked)?;
         let mut follows: Vec<String> = match &row {
@@ -718,6 +727,7 @@ pub async fn identity_delete_profile(pubkey: String) -> Result<String, String> {
 /// Get the local blocked list for a user.
 #[frb(sync, serialize)]
 pub fn identity_get_blocked_users(pubkey: String) -> Result<Vec<String>, String> {
+    super::signer::require_identity(&pubkey)?;
     super::db::with_db_result(|db| BlockRepo::new(db).list(&pubkey))
 }
 

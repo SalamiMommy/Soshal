@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -443388222;
+  int get rustContentHash => -1110419274;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -619,6 +619,18 @@ abstract class RustLibApi extends BaseApi {
       {required String roomId, required String actor});
 
   String crateFfiGroupsGroupsRoomsList({required String groupId});
+
+  bool crateFfiGroupsGroupsRoomsReact(
+      {required String groupId,
+      required String roomId,
+      required String messageId,
+      required String pubkey,
+      required String emoji});
+
+  String crateFfiGroupsGroupsRoomsReactions(
+      {required String groupId,
+      required String roomId,
+      required String viewerPubkey});
 
   bool crateFfiGroupsGroupsRoomsUpdate(
       {required String roomId,
@@ -6366,6 +6378,72 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "groups_rooms_list",
         argNames: ["groupId"],
+      );
+
+  @override
+  bool crateFfiGroupsGroupsRoomsReact(
+      {required String groupId,
+      required String roomId,
+      required String messageId,
+      required String pubkey,
+      required String emoji}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(groupId, serializer);
+        sse_encode_String(roomId, serializer);
+        sse_encode_String(messageId, serializer);
+        sse_encode_String(pubkey, serializer);
+        sse_encode_String(emoji, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_rooms_react(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsRoomsReactConstMeta,
+      argValues: [groupId, roomId, messageId, pubkey, emoji],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsRoomsReactConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_rooms_react",
+        argNames: ["groupId", "roomId", "messageId", "pubkey", "emoji"],
+      );
+
+  @override
+  String crateFfiGroupsGroupsRoomsReactions(
+      {required String groupId,
+      required String roomId,
+      required String viewerPubkey}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(groupId, serializer);
+        sse_encode_String(roomId, serializer);
+        sse_encode_String(viewerPubkey, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__groups__groups_rooms_reactions(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGroupsGroupsRoomsReactionsConstMeta,
+      argValues: [groupId, roomId, viewerPubkey],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGroupsGroupsRoomsReactionsConstMeta =>
+      const TaskConstMeta(
+        debugName: "groups_rooms_reactions",
+        argNames: ["groupId", "roomId", "viewerPubkey"],
       );
 
   @override

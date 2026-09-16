@@ -395,25 +395,6 @@ class RustLibWire implements BaseWire {
     ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
   ) : _lookup = lookup;
 
-  int AAudioStreamBuilder_create(
-    ffi.Pointer<ffi.Pointer<AAudioStreamBuilder>> builder,
-  ) {
-    return _AAudioStreamBuilder_create(builder);
-  }
-
-  late final _AAudioStreamBuilder_createPtr =
-      _lookup<
-        ffi.NativeFunction<
-          aaudio_result_t Function(
-            ffi.Pointer<ffi.Pointer<AAudioStreamBuilder>>,
-          )
-        >
-      >('AAudioStreamBuilder_create');
-  late final _AAudioStreamBuilder_create =
-      _AAudioStreamBuilder_createPtr.asFunction<
-        int Function(ffi.Pointer<ffi.Pointer<AAudioStreamBuilder>>)
-      >();
-
   void AAudioStreamBuilder_delete(ffi.Pointer<AAudioStreamBuilder> builder) {
     return _AAudioStreamBuilder_delete(builder);
   }
@@ -520,24 +501,6 @@ class RustLibWire implements BaseWire {
       >('AAudioStreamBuilder_setFormat');
   late final _AAudioStreamBuilder_setFormat =
       _AAudioStreamBuilder_setFormatPtr.asFunction<
-        void Function(ffi.Pointer<AAudioStreamBuilder>, int)
-      >();
-
-  void AAudioStreamBuilder_setInputPreset(
-    ffi.Pointer<AAudioStreamBuilder> builder,
-    int preset,
-  ) {
-    return _AAudioStreamBuilder_setInputPreset(builder, preset);
-  }
-
-  late final _AAudioStreamBuilder_setInputPresetPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Void Function(ffi.Pointer<AAudioStreamBuilder>, ffi.Int32)
-        >
-      >('AAudioStreamBuilder_setInputPreset');
-  late final _AAudioStreamBuilder_setInputPreset =
-      _AAudioStreamBuilder_setInputPresetPtr.asFunction<
         void Function(ffi.Pointer<AAudioStreamBuilder>, int)
       >();
 
@@ -666,143 +629,24 @@ class RustLibWire implements BaseWire {
         int Function(ffi.Pointer<AAudioStream>, ffi.Pointer<ffi.Void>, int, int)
       >();
 
-  int AImage_getHeight(
-    ffi.Pointer<AImage> image,
-    ffi.Pointer<ffi.Int32> height,
+  int AAudio_createStreamBuilder(
+    ffi.Pointer<ffi.Pointer<AAudioStreamBuilder>> builder,
   ) {
-    return _AImage_getHeight(image, height);
+    return _AAudio_createStreamBuilder(builder);
   }
 
-  late final _AImage_getHeightPtr =
+  late final _AAudio_createStreamBuilderPtr =
       _lookup<
         ffi.NativeFunction<
-          mediastatus_t Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
-        >
-      >('AImage_getHeight');
-  late final _AImage_getHeight =
-      _AImage_getHeightPtr.asFunction<
-        int Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
-      >();
-
-  int AImage_getNumberOfPlanes(
-    ffi.Pointer<AImage> image,
-    ffi.Pointer<ffi.Int32> num_planes,
-  ) {
-    return _AImage_getNumberOfPlanes(image, num_planes);
-  }
-
-  late final _AImage_getNumberOfPlanesPtr =
-      _lookup<
-        ffi.NativeFunction<
-          mediastatus_t Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
-        >
-      >('AImage_getNumberOfPlanes');
-  late final _AImage_getNumberOfPlanes =
-      _AImage_getNumberOfPlanesPtr.asFunction<
-        int Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
-      >();
-
-  int AImage_getPlaneData(
-    ffi.Pointer<AImage> image,
-    int plane_idx,
-    ffi.Pointer<ffi.Pointer<ffi.Uint8>> data,
-    ffi.Pointer<ffi.Int32> data_length,
-  ) {
-    return _AImage_getPlaneData(image, plane_idx, data, data_length);
-  }
-
-  late final _AImage_getPlaneDataPtr =
-      _lookup<
-        ffi.NativeFunction<
-          mediastatus_t Function(
-            ffi.Pointer<AImage>,
-            ffi.Int32,
-            ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
-            ffi.Pointer<ffi.Int32>,
+          aaudio_result_t Function(
+            ffi.Pointer<ffi.Pointer<AAudioStreamBuilder>>,
           )
         >
-      >('AImage_getPlaneData');
-  late final _AImage_getPlaneData =
-      _AImage_getPlaneDataPtr.asFunction<
-        int Function(
-          ffi.Pointer<AImage>,
-          int,
-          ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
-          ffi.Pointer<ffi.Int32>,
-        )
+      >('AAudio_createStreamBuilder');
+  late final _AAudio_createStreamBuilder =
+      _AAudio_createStreamBuilderPtr.asFunction<
+        int Function(ffi.Pointer<ffi.Pointer<AAudioStreamBuilder>>)
       >();
-
-  int AImage_getPlanePixelStride(
-    ffi.Pointer<AImage> image,
-    int plane_idx,
-    ffi.Pointer<ffi.Int32> pixel_stride,
-  ) {
-    return _AImage_getPlanePixelStride(image, plane_idx, pixel_stride);
-  }
-
-  late final _AImage_getPlanePixelStridePtr =
-      _lookup<
-        ffi.NativeFunction<
-          mediastatus_t Function(
-            ffi.Pointer<AImage>,
-            ffi.Int32,
-            ffi.Pointer<ffi.Int32>,
-          )
-        >
-      >('AImage_getPlanePixelStride');
-  late final _AImage_getPlanePixelStride =
-      _AImage_getPlanePixelStridePtr.asFunction<
-        int Function(ffi.Pointer<AImage>, int, ffi.Pointer<ffi.Int32>)
-      >();
-
-  int AImage_getPlaneRowStride(
-    ffi.Pointer<AImage> image,
-    int plane_idx,
-    ffi.Pointer<ffi.Int32> row_stride,
-  ) {
-    return _AImage_getPlaneRowStride(image, plane_idx, row_stride);
-  }
-
-  late final _AImage_getPlaneRowStridePtr =
-      _lookup<
-        ffi.NativeFunction<
-          mediastatus_t Function(
-            ffi.Pointer<AImage>,
-            ffi.Int32,
-            ffi.Pointer<ffi.Int32>,
-          )
-        >
-      >('AImage_getPlaneRowStride');
-  late final _AImage_getPlaneRowStride =
-      _AImage_getPlaneRowStridePtr.asFunction<
-        int Function(ffi.Pointer<AImage>, int, ffi.Pointer<ffi.Int32>)
-      >();
-
-  int AImage_getWidth(ffi.Pointer<AImage> image, ffi.Pointer<ffi.Int32> width) {
-    return _AImage_getWidth(image, width);
-  }
-
-  late final _AImage_getWidthPtr =
-      _lookup<
-        ffi.NativeFunction<
-          mediastatus_t Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
-        >
-      >('AImage_getWidth');
-  late final _AImage_getWidth =
-      _AImage_getWidthPtr.asFunction<
-        int Function(ffi.Pointer<AImage>, ffi.Pointer<ffi.Int32>)
-      >();
-
-  void AImage_release(ffi.Pointer<AImage> image) {
-    return _AImage_release(image);
-  }
-
-  late final _AImage_releasePtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<AImage>)>>(
-        'AImage_release',
-      );
-  late final _AImage_release =
-      _AImage_releasePtr.asFunction<void Function(ffi.Pointer<AImage>)>();
 
   int AMediaCodec_configure(
     ffi.Pointer<AMediaCodec> codec,
@@ -956,23 +800,6 @@ class RustLibWire implements BaseWire {
         )
       >();
 
-  ffi.Pointer<AMediaFormat> AMediaCodec_getInputFormat(
-    ffi.Pointer<AMediaCodec> codec,
-  ) {
-    return _AMediaCodec_getInputFormat(codec);
-  }
-
-  late final _AMediaCodec_getInputFormatPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Pointer<AMediaFormat> Function(ffi.Pointer<AMediaCodec>)
-        >
-      >('AMediaCodec_getInputFormat');
-  late final _AMediaCodec_getInputFormat =
-      _AMediaCodec_getInputFormatPtr.asFunction<
-        ffi.Pointer<AMediaFormat> Function(ffi.Pointer<AMediaCodec>)
-      >();
-
   ffi.Pointer<ffi.Uint8> AMediaCodec_getOutputBuffer(
     ffi.Pointer<AMediaCodec> codec,
     int idx,
@@ -1015,33 +842,6 @@ class RustLibWire implements BaseWire {
   late final _AMediaCodec_getOutputFormat =
       _AMediaCodec_getOutputFormatPtr.asFunction<
         ffi.Pointer<AMediaFormat> Function(ffi.Pointer<AMediaCodec>)
-      >();
-
-  int AMediaCodec_getOutputImage(
-    ffi.Pointer<AMediaCodec> codec,
-    int idx,
-    ffi.Pointer<ffi.Pointer<AImage>> image,
-  ) {
-    return _AMediaCodec_getOutputImage(codec, idx, image);
-  }
-
-  late final _AMediaCodec_getOutputImagePtr =
-      _lookup<
-        ffi.NativeFunction<
-          mediastatus_t Function(
-            ffi.Pointer<AMediaCodec>,
-            ffi.UintPtr,
-            ffi.Pointer<ffi.Pointer<AImage>>,
-          )
-        >
-      >('AMediaCodec_getOutputImage');
-  late final _AMediaCodec_getOutputImage =
-      _AMediaCodec_getOutputImagePtr.asFunction<
-        int Function(
-          ffi.Pointer<AMediaCodec>,
-          int,
-          ffi.Pointer<ffi.Pointer<AImage>>,
-        )
       >();
 
   int AMediaCodec_queueInputBuffer(
@@ -5699,6 +5499,64 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_rooms_list');
   late final _wire__crate__ffi__groups__groups_rooms_list =
       _wire__crate__ffi__groups__groups_rooms_listPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_rooms_react(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_rooms_react(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_rooms_reactPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_rooms_react');
+  late final _wire__crate__ffi__groups__groups_rooms_react =
+      _wire__crate__ffi__groups__groups_rooms_reactPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_rooms_reactions(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_rooms_reactions(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_rooms_reactionsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__groups__groups_rooms_reactions',
+      );
+  late final _wire__crate__ffi__groups__groups_rooms_reactions =
+      _wire__crate__ffi__groups__groups_rooms_reactionsPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -16182,8 +16040,6 @@ final class AAudioStream extends ffi.Opaque {}
 
 final class AAudioStreamBuilder extends ffi.Opaque {}
 
-final class AImage extends ffi.Opaque {}
-
 const int AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG = 2;
 
 const int AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM = 4;
@@ -16231,10 +16087,9 @@ final class AMediaFormat extends ffi.Opaque {}
 const int COLOR_FormatYUV420Flexible = 2135033992;
 
 
+
 typedef DartPort = ffi.Int64;
 typedef DartDartPort = int;
-
-
 
 typedef __ssize_t = ffi.Long;
 typedef Dart__ssize_t = int;

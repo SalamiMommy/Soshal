@@ -35,6 +35,16 @@ class StreamingService extends ChangeNotifier
     );
   }
 
+  /// Reset in-memory streams and stop active broadcasts on account switch or logout.
+  void resetForAccountSwitch() {
+    _live.clear();
+    _stories.clear();
+    _activeMoqStreamId = null;
+    _moqGroupCounter = 0;
+    clearLastError();
+    notifyDeferred();
+  }
+
   /// Monotonic group sequence for the local broadcast (per session).
   int nextMoqGroupSeq() => _moqGroupCounter++;
 

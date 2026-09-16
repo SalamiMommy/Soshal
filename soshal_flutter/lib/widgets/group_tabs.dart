@@ -28,6 +28,12 @@ class GroupRoomsTab extends StatefulWidget {
 
 class _GroupRoomsTabState extends State<GroupRoomsTab>
     with AutomaticKeepAliveClientMixin {
+  static const List<String> _quickEmojis = ['👍', '❤️', '🔥', '😂'];
+  static const List<String> _allEmojis = [
+    '👍', '❤️', '🔥', '😂', '🎉', '🚀', '👀', '💯',
+    '👏', '🙏', '🤯', '😍', '🤔', '😭', '✨', '⚡',
+  ];
+
   String _roomId = '';
   bool _sending = false;
   final _chat = TextEditingController();
@@ -36,17 +42,38 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
   bool get wantKeepAlive => true;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadReactions());
+  }
+
+  @override
   void dispose() {
     _chat.dispose();
     super.dispose();
   }
 
+  Future<void> _loadReactions() async {
+    final me = _me();
+    try {
+      await context.read<GroupsService>().fetchRoomReactions(
+            widget.groupId,
+            _roomId,
+            viewerPubkey: me,
+          );
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('room reactions: $e');
+    }
+  }
+
   Future<void> _switchRoom(String roomId) async {
     setState(() => _roomId = roomId);
     try {
-      await context
-          .read<GroupsService>()
-          .fetchMessages(widget.groupId, roomId: roomId);
+      final groups = context.read<GroupsService>();
+      await groups.fetchMessages(widget.groupId, roomId: roomId);
+      final me = _me();
+      await groups.fetchRoomReactions(widget.groupId, roomId, viewerPubkey: me);
       if (mounted) setState(() {});
     } catch (e) {
       debugPrint('room messages: $e');
@@ -58,14 +85,13 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
     if (text.isEmpty) return;
     setState(() => _sending = true);
     try {
-      await context
-          .read<GroupsService>()
-          .postMessage(widget.groupId, text, roomId: _roomId);
+      final groups = context.read<GroupsService>();
+      await groups.postMessage(widget.groupId, text, roomId: _roomId);
       _chat.clear();
       if (!mounted) return;
-      await context
-          .read<GroupsService>()
-          .fetchMessages(widget.groupId, roomId: _roomId);
+      await groups.fetchMessages(widget.groupId, roomId: _roomId);
+      final me = _me();
+      await groups.fetchRoomReactions(widget.groupId, _roomId, viewerPubkey: me);
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
@@ -75,6 +101,95 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<void> _react(String messageId, String emoji) async {
+    final me = _me();
+    if (me == null) return;
+    final groups = context.read<GroupsService>();
+    try {
+      await groups.reactToRoomMessage(
+        widget.groupId,
+        _roomId,
+        messageId,
+        emoji,
+        me,
+      );
+      await groups.fetchRoomReactions(widget.groupId, _roomId, viewerPubkey: me);
+      if (!mounted) return;
+      setState(() {});
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: SelectableText('React failed: $e')));
+    }
+  }
+
+  Future<void> _showEmojiPicker(String messageId) async {
+    final me = _me();
+    if (me == null) return;
+    final emoji = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(
+          spacing: 16,
+          runSpacing: 8,
+          children: [
+            for (final e in _allEmojis)
+              IconButton(
+                icon: Text(e, style: const TextStyle(fontSize: 24)),
+                onPressed: () => Navigator.pop(context, e),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (emoji == null || !mounted) return;
+    await _react(messageId, emoji);
+  }
+
+  Widget _reactionRow(String messageId, GroupsService api) {
+    final reactions = api.roomReactionsFor(messageId);
+    final displayedEmojis = <String>{..._quickEmojis};
+    for (final r in reactions) {
+      displayedEmojis.add(r.emoji);
+    }
+
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final emoji in displayedEmojis)
+          Builder(builder: (context) {
+            final match = reactions.firstWhere(
+              (r) => r.emoji == emoji,
+              orElse: () => RoomReaction(
+                messageId: messageId,
+                emoji: emoji,
+                count: 0,
+                reacted: false,
+              ),
+            );
+            return FilterChip(
+              avatar: Text(emoji, style: const TextStyle(fontSize: 12)),
+              label: Text('${match.count}'),
+              selected: match.reacted,
+              showCheckmark: false,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onSelected: (_) => _react(messageId, emoji),
+            );
+          }),
+        ActionChip(
+          label: const Icon(Icons.add_reaction_outlined, size: 16),
+          visualDensity: VisualDensity.compact,
+          tooltip: 'More emoji',
+          onPressed: () => _showEmojiPicker(messageId),
+        ),
+      ],
+    );
   }
 
   Future<void> _roomDialog({GroupRoom? room}) async {
@@ -370,13 +485,51 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
                     itemCount: api.messages.length,
                     itemBuilder: (context, i) {
                       final m = api.messages[api.messages.length - 1 - i];
-                      return ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.person_outline, size: 20),
-                        title: Text(_shortKey(m.senderPubkey),
-                            style: const TextStyle(fontSize: 12)),
-                        subtitle: Text(m.content),
-                        isThreeLine: true,
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const CircleAvatar(
+                              radius: 14,
+                              child: Icon(Icons.person_outline, size: 16),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        _shortKey(m.senderPubkey),
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      if (m.createdAt > 0) ...[
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          formatTimestamp(m.createdAt),
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(m.content),
+                                  const SizedBox(height: 4),
+                                  _reactionRow(m.id, api),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       );
                     },
                   ),

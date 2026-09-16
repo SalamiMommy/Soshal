@@ -307,6 +307,17 @@ class ShellService extends ChangeNotifier {
     }
   }
 
+  /// Emergency unlock via recovery phrase or nsec. Resets lockouts and shell locked state.
+  Future<void> unlockWithRecovery() async {
+    _locked = false;
+    _lockAttempts = 0;
+    _lockoutRemaining = 0;
+    _permanentLocked = false;
+    _unlockError = null;
+    _seenCalls.clear();
+    notifyListeners();
+  }
+
   Future<bool> setPin(String pin) async {
     try {
       await RustLib.instance.api.crateFfiPinPinSet(pin: pin);

@@ -203,6 +203,21 @@ pub fn zap_get_nwc_pubkey() -> Result<String, String> {
 /// make-invoice request is built and exchanged Rust-side (NIP-44 v2
 /// ciphertext, kind 23195 response); returns the serialized response with
 /// the bolt11 invoice.
+///
+/// # Security — NWC URI and Dart FFI
+///
+/// `zap_connect_nwc` accepts the full NWC URI (which contains the wallet
+/// secret) as a plain Dart `String`. Dart's GC heap is not zeroizable, so
+/// a brief window exists where the secret resides in Dart memory before
+/// crossing FFI. Rust immediately stores it in a `ZeroizingString`.
+/// Callers MUST NOT log, persist, or store the URI in Dart state beyond the
+/// single `zap_connect_nwc` call. A keychain-backed path is tracked for a
+/// future codegen cycle.
+///
+/// # Amount limits
+///
+/// `amount_msat` must be a multiple of 1000 (whole satoshis), ≥1000 (≥1 sat),
+/// and ≤`MAX_ZAP_MSAT` (1 BTC) to prevent catastrophic accidental payments.
 #[frb(serialize)]
 pub async fn zap_fetch_invoice(
     lnurl: String,
@@ -210,6 +225,10 @@ pub async fn zap_fetch_invoice(
     _comment: String,
     _nostr_event: String,
 ) -> Result<String, String> {
+    /// Hard ceiling: 1 BTC in millisatoshis. Prevents catastrophically large
+    /// payments caused by UI bugs or attacker-manipulated input.
+    const MAX_ZAP_MSAT: u64 = 100_000_000_000;
+
     let _lud16 = soshal_zap_core::lnurl::parse_lud16_url_secure(&lnurl)
         .map_err(|e| format!("LNURL parse failed: {e}"))?;
     if amount_msat == 0 {
@@ -220,9 +239,16 @@ pub async fn zap_fetch_invoice(
             "amount_msat must be a positive integer multiple of 1000 (whole satoshis)".to_string(),
         );
     }
+    if amount_msat > MAX_ZAP_MSAT {
+        return Err(format!(
+            "amount_msat {amount_msat} exceeds maximum ({MAX_ZAP_MSAT} msat = 1 BTC)"
+        ))
+        .into();
+    }
     // The URI embeds the wallet secret; nwc_uri() returns a ZeroizingString so
     // the secret is zeroed as soon as `uri` is dropped — no extra wrapper needed.
     let uri = nwc_uri()?;
+    super::signer::signer_pubkey()?;
     let description = if _comment.trim().is_empty() {
         "zap".to_string()
     } else {
@@ -260,6 +286,7 @@ pub async fn zap_fetch_invoice(
 pub async fn zap_send_payment(bolt11: String) -> Result<String, String> {
     let expected =
         pending_payment().ok_or("no invoice pending: fetch one via zap_fetch_invoice first")?;
+    super::signer::signer_pubkey()?;
     if expected.0 != bolt11 {
         clear_pending_payment();
         return Err("invoice mismatch: bolt11 does not match the fetched invoice".to_string())
@@ -593,5 +620,38 @@ mod tests {
         assert!(zap_connect_nwc(NWC_URI.to_string()).unwrap());
         assert!(pending_payment().is_none());
         let _ = zap_disconnect_nwc();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fetch_invoice_amount_upper_bound() {
+        // M6: amounts above 1 BTC (100_000_000_000 msat) must be rejected
+        // before any network call is made — no NWC connection needed.
+        // Must be a multiple of 1000 (whole satoshis) so the lower guard passes
+        // and the upper-bound guard is reached.
+        let over_limit = 100_001_000_000u64; // 100_001 BTC worth, multiple of 1000
+        let err = zap_fetch_invoice(
+            "user@example.com".to_string(),
+            over_limit,
+            "".to_string(),
+            "".to_string(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.contains("exceeds maximum"),
+            "expected upper-bound error, got: {err}"
+        );
+
+        // u64::MAX rounded down to nearest 1000 also exceeds the cap.
+        let big_round = (u64::MAX / 1000) * 1000; // largest multiple of 1000
+        let err = zap_fetch_invoice(
+            "user@example.com".to_string(),
+            big_round,
+            "".to_string(),
+            "".to_string(),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("exceeds maximum"), "got: {err}");
     }
 }

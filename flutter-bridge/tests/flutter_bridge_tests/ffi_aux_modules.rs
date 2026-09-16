@@ -5,7 +5,9 @@ mod ffi_aux_modules_tests {
     fn bookmarks_ffi_save_list_delete_roundtrip() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("aux", "bookmarks");
-        let pubkey = "aux_bookmark_user".to_string();
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pubkey = keys.public_key().to_hex();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let event_id = "aux_event_001".to_string();
         db::db_execute_params(
             "INSERT INTO users (pubkey, npub, relay_list) VALUES (?1, '', '[]')",
@@ -13,7 +15,7 @@ mod ffi_aux_modules_tests {
         )
         .unwrap();
         let id = bookmarks::bookmarks_save(pubkey.clone(), event_id.clone()).unwrap();
-        assert_eq!(id, format!("bm:{event_id}"));
+        assert_eq!(id, format!("bm:{pubkey}:{event_id}"));
         let list = bookmarks::bookmarks_list(pubkey.clone(), 10, 0).unwrap();
         let v: serde_json::Value = serde_json::from_str(&list).unwrap();
         let arr = v.as_array().unwrap();
@@ -23,6 +25,7 @@ mod ffi_aux_modules_tests {
         let list = bookmarks::bookmarks_list(pubkey, 10, 0).unwrap();
         let v: serde_json::Value = serde_json::from_str(&list).unwrap();
         assert!(v.as_array().unwrap().is_empty());
+        let _ = signer::signer_lock();
         crate::test_util::cleanup(&path);
     }
     #[test]

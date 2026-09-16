@@ -132,5 +132,102 @@ void main() {
       friends.clearLastError();
       expect(friends.lastError, isNull);
     });
+
+    test('AudienceFilter metadata properties', () {
+      expect(AudienceFilter.all.label, 'All');
+      expect(AudienceFilter.all.shortLabel, 'All');
+      expect(AudienceFilter.friendsOfFriends.label, 'Friends of Friends');
+      expect(AudienceFilter.friendsOfFriends.shortLabel, 'Friends of Friends');
+      expect(AudienceFilter.friends.label, 'Friends');
+      expect(AudienceFilter.friends.shortLabel, 'Friends');
+    });
+
+    test('matchesAudience behaves correctly with in-memory contacts and graph',
+        () async {
+      final friends = FriendsService();
+      // Add a friend via contacts
+      friends.addContact(profile('pk-friend', 'Alice'));
+
+      // AudienceFilter.all matches anyone, even empty or stranger
+      expect(friends.matchesAudience('pk-stranger', AudienceFilter.all), isTrue);
+      expect(friends.matchesAudience(null, AudienceFilter.all), isTrue);
+
+      // User's own pubkey always matches any filter
+      expect(
+        friends.matchesAudience('my-pk', AudienceFilter.friends,
+            myPubkey: 'my-pk'),
+        isTrue,
+      );
+      expect(
+        friends.matchesAudience('my-pk', AudienceFilter.friendsOfFriends,
+            myPubkey: 'my-pk'),
+        isTrue,
+      );
+
+      // Friends filter matches friends only
+      expect(friends.matchesAudience('pk-friend', AudienceFilter.friends),
+          isTrue);
+      expect(friends.matchesAudience('pk-stranger', AudienceFilter.friends),
+          isFalse);
+      expect(friends.matchesAudience(null, AudienceFilter.friends), isFalse);
+
+      // Friends of friends matches friends and FOF
+      expect(
+          friends.matchesAudience('pk-friend', AudienceFilter.friendsOfFriends),
+          isTrue);
+      expect(friends.matchesAudience(
+          'pk-stranger', AudienceFilter.friendsOfFriends), isFalse);
+    });
+
+    test('loadAudienceGraph and filterList filter items accurately', () async {
+      final friends = FriendsService();
+      api.stub('crateFfiIdentityIdentityFetchFollows', (inv) {
+        final pk = api.namedArg(inv, 'pubkey');
+        if (pk == 'my-pk') {
+          return '["pk-friend-1"]';
+        } else if (pk == 'pk-friend-1') {
+          return '["pk-fof-1"]';
+        }
+        return '[]';
+      });
+      api.stubListString('crateFfiSocialSocialFriendSuggestions', const []);
+
+      await friends.loadAudienceGraph('my-pk', force: true);
+
+      final items = [
+        {'id': 1, 'pk': 'my-pk'},
+        {'id': 2, 'pk': 'pk-friend-1'},
+        {'id': 3, 'pk': 'pk-fof-1'},
+        {'id': 4, 'pk': 'pk-stranger'},
+      ];
+
+      // All: 4 items
+      final allFiltered = friends.filterList(
+        items,
+        AudienceFilter.all,
+        (i) => i['pk'] as String,
+        myPubkey: 'my-pk',
+      );
+      expect(allFiltered.length, 4);
+
+      // Friends: my-pk and pk-friend-1
+      final friendsFiltered = friends.filterList(
+        items,
+        AudienceFilter.friends,
+        (i) => i['pk'] as String,
+        myPubkey: 'my-pk',
+      );
+      expect(friendsFiltered.map((i) => i['pk']), ['my-pk', 'pk-friend-1']);
+
+      // Friends of friends: my-pk, pk-friend-1, and pk-fof-1
+      final fofFiltered = friends.filterList(
+        items,
+        AudienceFilter.friendsOfFriends,
+        (i) => i['pk'] as String,
+        myPubkey: 'my-pk',
+      );
+      expect(fofFiltered.map((i) => i['pk']),
+          ['my-pk', 'pk-friend-1', 'pk-fof-1']);
+    });
   });
 }

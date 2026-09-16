@@ -1,6 +1,21 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soshal_flutter/services/bookmarks_service.dart';
+import 'package:soshal_flutter/services/calls_service.dart';
+import 'package:soshal_flutter/services/dating_service.dart';
+import 'package:soshal_flutter/services/events_service.dart';
+import 'package:soshal_flutter/services/feed_service.dart';
+import 'package:soshal_flutter/services/friends_service.dart';
+import 'package:soshal_flutter/services/groups_service.dart';
+import 'package:soshal_flutter/services/marketplace_service.dart';
+import 'package:soshal_flutter/services/messaging_service.dart';
+import 'package:soshal_flutter/services/minis_service.dart';
+import 'package:soshal_flutter/services/moderation_service.dart';
+import 'package:soshal_flutter/services/music_service.dart';
+import 'package:soshal_flutter/services/notifications_service.dart';
+import 'package:soshal_flutter/services/search_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
+import 'package:soshal_flutter/services/turso_service.dart';
 
 import '../helpers/test_env.dart';
 
@@ -363,6 +378,41 @@ void main() {
       expect(active.npub, 'npub1');
     });
 
+    test('lastUsedAccount returns account with highest lastUsed timestamp', () async {
+      final session = SessionService();
+      const sessionJson = '''{
+        "active_pubkey": "pk1",
+        "accounts": [
+          {"pubkey": "pk1", "npub": "npub1", "last_used": 1000, "relay_list": []},
+          {"pubkey": "pk2", "npub": "npub2", "last_used": 5000, "relay_list": []},
+          {"pubkey": "pk3", "npub": "npub3", "last_used": 3000, "relay_list": []}
+        ]
+      }''';
+      api.stubString('crateFfiSessionSessionLoad', sessionJson);
+      api.stubString('crateFfiFfiBridgeGetDbPath', env.$2);
+
+      await session.loadSession();
+      expect(session.lastUsedAccount?.pubkey, 'pk2');
+    });
+
+    test('loadSession defaults activePubkey to lastUsedAccount when active_pubkey is null', () async {
+      final session = SessionService();
+      const sessionJson = '''{
+        "active_pubkey": null,
+        "accounts": [
+          {"pubkey": "pk1", "npub": "npub1", "last_used": 1000, "relay_list": []},
+          {"pubkey": "pk2", "npub": "npub2", "last_used": 5000, "relay_list": []}
+        ]
+      }''';
+      api.stubString('crateFfiSessionSessionLoad', sessionJson);
+      api.stubString('crateFfiFfiBridgeGetDbPath', env.$2);
+
+      final data = await session.loadSession();
+      expect(data.activePubkey, 'pk2');
+      expect(session.activePubkey, 'pk2');
+      expect(session.activeAccount?.pubkey, 'pk2');
+    });
+
     test('SessionAccount.fromJson parses all fields', () {
       const json = {
         'pubkey': 'pk1',
@@ -400,6 +450,123 @@ void main() {
       expect(data.accounts.length, 2);
       expect(data.accounts[0].pubkey, 'pk1');
       expect(data.accounts[1].pubkey, 'pk2');
+    });
+
+    test('reset clears friends service audience on account switch', () {
+      final session = SessionService();
+      final friends = FriendsService();
+      friends.friendPubkeys.add('friend_pk');
+      expect(friends.friendPubkeys, contains('friend_pk'));
+
+      session.attachAccountScopedServices(
+        feed: FeedService(),
+        messaging: MessagingService(),
+        notifications: NotificationService(),
+        search: SearchService(),
+        dating: DatingService(),
+        marketplace: MarketplaceService(),
+        events: EventsService(),
+        groups: GroupsService(),
+        bookmarks: BookmarksService(),
+        moderation: ModerationService(),
+        calls: CallsService(),
+        friends: friends,
+      );
+
+      session.reset();
+      expect(friends.friendPubkeys, isEmpty);
+    });
+
+    test('reset clears minis and music services on account switch', () {
+      final session = SessionService();
+      final minis = MinisService();
+      final music = MusicService();
+      minis.savedMinis.add(MiniItem(
+        id: 'mini1',
+        pubkey: 'pk',
+        videoUrl: 'https://example.com/video.mp4',
+        blobHash: '',
+        mediaSize: 100,
+        textOverlay: '',
+        thumbnail: '',
+        audience: 'public',
+        createdAt: 1000,
+        reactions: 0,
+        liked: false,
+      ));
+      music.savedTracks.add(MusicTrack(
+        id: 'track1',
+        pubkey: 'pk',
+        audioUrl: 'https://example.com/audio.mp3',
+        blobHash: '',
+        mediaSize: 100,
+        title: 'Track',
+        thumbnail: '',
+        hashtags: const [],
+        d: '',
+        audience: 'public',
+        createdAt: 1000,
+      ));
+      music.playlists.add(MusicPlaylist(
+        id: 'pl1',
+        title: 'Playlist',
+        isPrivate: false,
+        createdAt: 1000,
+        trackCount: 1,
+      ));
+      expect(minis.savedMinis, isNotEmpty);
+      expect(music.savedTracks, isNotEmpty);
+      expect(music.playlists, isNotEmpty);
+
+      session.attachAccountScopedServices(
+        feed: FeedService(),
+        messaging: MessagingService(),
+        notifications: NotificationService(),
+        search: SearchService(),
+        dating: DatingService(),
+        marketplace: MarketplaceService(),
+        events: EventsService(),
+        groups: GroupsService(),
+        bookmarks: BookmarksService(),
+        moderation: ModerationService(),
+        calls: CallsService(),
+        minis: minis,
+        music: music,
+      );
+
+      session.reset();
+      expect(minis.savedMinis, isEmpty);
+      expect(music.savedTracks, isEmpty);
+      expect(music.playlists, isEmpty);
+    });
+
+    test('reset clears turso service on account switch', () async {
+      final session = SessionService();
+      final turso = TursoService();
+      api.stubString('crateFfiTursoDbTursoConfigure', 'Turso database credentials saved');
+      api.stubString('crateFfiTursoDbTursoStatus', '{"configured":true,"status":"idle"}');
+      await turso.configure(url: 'https://example.turso.io', authToken: 'tok');
+      expect(turso.isConfigured, isTrue);
+      expect(turso.url, 'https://example.turso.io');
+
+      session.attachAccountScopedServices(
+        feed: FeedService(),
+        messaging: MessagingService(),
+        notifications: NotificationService(),
+        search: SearchService(),
+        dating: DatingService(),
+        marketplace: MarketplaceService(),
+        events: EventsService(),
+        groups: GroupsService(),
+        bookmarks: BookmarksService(),
+        moderation: ModerationService(),
+        calls: CallsService(),
+        turso: turso,
+      );
+
+      session.reset();
+      expect(turso.isConfigured, isFalse);
+      expect(turso.url, isEmpty);
     });
   });
 }

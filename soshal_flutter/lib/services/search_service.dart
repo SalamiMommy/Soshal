@@ -140,7 +140,8 @@ class SearchService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         final json = RustLib.instance.api.crateFfiSearchSearchTrendingProfiles(
           limit: limit,
         );
-        _trendingProfiles = await runOffThreadCompute(_parseSearchResults, json);
+        _trendingProfiles =
+            await runOffThreadCompute(_parseSearchResults, json);
         _trendingProfilesFetchedAt = DateTime.now();
         return _trendingProfiles;
       });

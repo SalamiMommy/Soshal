@@ -60,7 +60,6 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
                 let tail = &line[ip4_pos + "IN IP4".len()..];
                 let addr = tail.trim();
                 if !addr.is_empty() {
-                    out.push_str("o=");
                     out.push_str(&line[..ip4_pos + "IN IP4".len()]);
                     out.push_str(&tail.replace(addr, "0.0.0.0"));
                     continue;
@@ -70,7 +69,6 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
                 let tail = &line[ip6_pos + "IN IP6".len()..];
                 let addr = tail.trim();
                 if !addr.is_empty() {
-                    out.push_str("o=");
                     out.push_str(&line[..ip6_pos + "IN IP6".len()]);
                     out.push_str(&tail.replace(addr, "::"));
                     continue;

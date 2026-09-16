@@ -191,6 +191,7 @@ pub fn notifications_mark_read(notification_id: String) -> Result<bool, String> 
 /// Mark all notifications as read for a user.
 #[frb(sync, serialize)]
 pub fn notifications_mark_all_read(user_pubkey: String) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::db_execute_params(
         "UPDATE notifications SET is_read = 1 WHERE pubkey = ?1",
         &[user_pubkey],
@@ -217,6 +218,7 @@ pub fn notifications_ignore_user(user_pubkey: String, from_pubkey: String) -> Re
     if user_pubkey.is_empty() || from_pubkey.is_empty() {
         return Err("bad ignore-user args".to_string()).into();
     }
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         let at = soshal_common_core::format::now_secs();
         IgnoredNotificationRepo::new(db)
@@ -232,6 +234,7 @@ pub fn notifications_ignore_thread(user_pubkey: String, event_id: String) -> Res
     if user_pubkey.is_empty() || event_id.is_empty() {
         return Err("bad ignore-thread args".to_string()).into();
     }
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         let at = soshal_common_core::format::now_secs();
         IgnoredNotificationRepo::new(db)
@@ -247,6 +250,7 @@ pub fn notifications_unignore_user(
     user_pubkey: String,
     from_pubkey: String,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         IgnoredNotificationRepo::new(db)
             .unignore_user(&user_pubkey, &from_pubkey, "user")
@@ -261,6 +265,7 @@ pub fn notifications_unignore_thread(
     user_pubkey: String,
     event_id: String,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
         IgnoredNotificationRepo::new(db)
             .unignore_thread(&user_pubkey, &event_id, "thread")
@@ -536,19 +541,50 @@ mod tests {
     #[test]
     fn test_mark_all_read() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("markall");
-        insert_notification("n1", "pk1", "mention", None, "x", 2000, false);
-        insert_notification("n2", "pk1", "like", None, "x", 1000, false);
+        let keys1 = soshal_nostr_core::keys::generate_keys();
+        let pk1 = keys1.public_key().to_hex();
+        super::super::signer::signer_unlock(keys1.secret_key().to_secret_hex()).unwrap();
+        insert_notification("n1", &pk1, "mention", None, "x", 2000, false);
+        insert_notification("n2", &pk1, "like", None, "x", 1000, false);
         insert_notification("n3", "pk2", "follow", None, "x", 1000, false);
-        assert!(notifications_mark_all_read("pk1".to_string()).unwrap());
-        assert_eq!(
-            notifications_get_unread_count("pk1".to_string()).unwrap(),
-            0
-        );
+        assert!(notifications_mark_all_read(pk1.clone()).unwrap());
+        assert_eq!(notifications_get_unread_count(pk1).unwrap(), 0);
         assert_eq!(
             notifications_get_unread_count("pk2".to_string()).unwrap(),
             1
         );
+        let _ = super::super::signer::signer_lock();
+    }
+
+    #[test]
+    fn test_ignore_unignore_auth() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = tmp_db("ignore_auth");
+        let keys1 = soshal_nostr_core::keys::generate_keys();
+        let pk1 = keys1.public_key().to_hex();
+        let keys2 = soshal_nostr_core::keys::generate_keys();
+        let _pk2 = keys2.public_key().to_hex();
+
+        // Locked signer fails
+        assert!(notifications_ignore_user(pk1.clone(), "spammer".to_string()).is_err());
+
+        // Unlocked as pk2 cannot modify pk1's ignore list
+        super::super::signer::signer_unlock(keys2.secret_key().to_secret_hex()).unwrap();
+        let err = notifications_ignore_user(pk1.clone(), "spammer".to_string());
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("identity mismatch"));
+
+        // Unlocked as pk1 succeeds
+        super::super::signer::signer_unlock(keys1.secret_key().to_secret_hex()).unwrap();
+        assert!(notifications_ignore_user(pk1.clone(), "spammer".to_string()).unwrap());
+        assert!(notifications_ignore_thread(pk1.clone(), "evt_123".to_string()).unwrap());
+
+        assert!(notifications_unignore_user(pk1.clone(), "spammer".to_string()).unwrap());
+        assert!(notifications_unignore_thread(pk1, "evt_123".to_string()).unwrap());
+        let _ = super::super::signer::signer_lock();
     }
 
     #[test]

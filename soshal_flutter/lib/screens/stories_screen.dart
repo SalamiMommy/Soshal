@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../services/friends_service.dart';
 import '../services/media_service.dart';
 import '../services/session_service.dart';
 import '../services/streaming_service.dart';
 import '../utils/format.dart';
 import '../utils/media_upload.dart';
+import '../widgets/audience_filter_dropdown.dart';
 import '../widgets/empty_state.dart';
 
 /// Stories: followed authors' stories, mark viewed, post your own.
@@ -18,11 +20,16 @@ class StoriesScreen extends StatefulWidget {
 
 class _StoriesScreenState extends State<StoriesScreen> {
   bool _loading = true;
+  AudienceFilter _audienceFilter = AudienceFilter.all;
   final Map<String, bool> _viewed = {};
 
   @override
   void initState() {
     super.initState();
+    final pubkey = context.read<SessionService>().activePubkey;
+    if (pubkey != null) {
+      context.friendsServiceReadOrNull?.loadAudienceGraph(pubkey);
+    }
     _load();
   }
 
@@ -33,6 +40,7 @@ class _StoriesScreenState extends State<StoriesScreen> {
       final session = context.read<SessionService>();
       final pubkey = session.activePubkey;
       if (pubkey != null) {
+        context.friendsServiceReadOrNull?.loadAudienceGraph(pubkey);
         await api.fetchFollowedStories(pubkey);
       } else {
         await api.fetchStories('');
@@ -212,7 +220,15 @@ class _StoriesScreenState extends State<StoriesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Stories')),
+      appBar: AppBar(
+        title: const Text('Stories'),
+        actions: [
+          AudienceFilterDropdown(
+            value: _audienceFilter,
+            onChanged: (filter) => setState(() => _audienceFilter = filter),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _postStoryDialog,
         tooltip: 'Post story',
@@ -222,7 +238,18 @@ class _StoriesScreenState extends State<StoriesScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Consumer<StreamingService>(
               builder: (context, api, _) {
-                if (api.stories.isEmpty) {
+                final friendsService = context.friendsServiceOrNull;
+                final myPk = context
+                    .select<SessionService, String?>((s) => s.activePubkey);
+                final stories = friendsService != null
+                    ? friendsService.filterList(
+                        api.stories,
+                        _audienceFilter,
+                        (s) => s.pubkey,
+                        myPubkey: myPk,
+                      )
+                    : api.stories;
+                if (stories.isEmpty) {
                   return RefreshIndicator(
                     onRefresh: _load,
                     child: ListView(
@@ -231,7 +258,9 @@ class _StoriesScreenState extends State<StoriesScreen> {
                         const SizedBox(height: 120),
                         EmptyState(
                           icon: Icons.auto_stories_outlined,
-                          title: 'No stories from people you follow',
+                          title: _audienceFilter == AudienceFilter.all
+                              ? 'No stories from people you follow'
+                              : 'No stories match ${_audienceFilter.label}',
                         ),
                       ],
                     ),
@@ -240,9 +269,9 @@ class _StoriesScreenState extends State<StoriesScreen> {
                 return RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
-                    itemCount: api.stories.length,
+                    itemCount: stories.length,
                     itemBuilder: (context, index) {
-                      final s = api.stories[index];
+                      final s = stories[index];
                       final viewed = _viewed[s.id] ?? false;
                       return ListTile(
                         leading: CircleAvatar(

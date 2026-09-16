@@ -59,4 +59,43 @@ void main() {
     expect(find.textContaining('abandon'), findsOneWidget);
     expect(api.callCount('crateFfiAuthAuthGenerateMnemonic'), 1);
   });
+
+  testWidgets('auth flow offers Import from friends\' cache',
+      (tester) async {
+    api.handlers.clear();
+
+    final router = GoRouter(
+      initialLocation: '/auth',
+      routes: [
+        GoRoute(path: '/auth', builder: (_, __) => const AuthScreen()),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthService()),
+          ChangeNotifierProvider(create: (_) => SessionService()),
+          ChangeNotifierProvider(create: (_) => SyncService()),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Get Started'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import from friends\' cache'), findsOneWidget);
+    await tester.tap(find.text('Import from friends\' cache'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import from Friends\' Cache'), findsOneWidget);
+    expect(
+      find.text(
+        'Enter your recovery phrase to restore your account from your friends\' cache.',
+      ),
+      findsOneWidget,
+    );
+  });
 }

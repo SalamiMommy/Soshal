@@ -6,18 +6,28 @@ import 'package:flutter/widgets.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'bookmarks_service.dart';
 import 'calls_service.dart';
+import 'chatrandom_service.dart';
 import 'dating_service.dart';
 import 'error_log.dart';
 import 'events_service.dart';
 import 'feed_service.dart';
 import 'ffi_bridge.dart';
+import 'friends_service.dart';
 import 'groups_service.dart';
 import 'marketplace_service.dart';
 import 'messaging_service.dart';
+import 'minis_service.dart';
 import 'moderation_service.dart';
+import 'music_service.dart';
 import 'notifications_service.dart';
+import 'p2p_service.dart';
+import 'scheduled_service.dart';
 import 'search_service.dart';
+import 'stealth_service.dart';
+import 'streaming_service.dart';
 import 'sync_service.dart';
+import 'turso_service.dart';
+import 'zap_service.dart';
 import '../utils/service_guard.dart';
 
 /// Session Service
@@ -64,6 +74,16 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   BookmarksService? _bookmarks;
   ModerationService? _moderation;
   CallsService? _calls;
+  FriendsService? _friends;
+  MinisService? _minis;
+  MusicService? _music;
+  ZapService? _zap;
+  StreamingService? _streaming;
+  ScheduledService? _scheduled;
+  StealthService? _stealth;
+  ChatrandomService? _chatrandom;
+  P2pService? _p2p;
+  TursoService? _turso;
 
   /// Attach the account-scoped services (wired from main.dart) so an account
   /// switch can clear their caches before the new account's data arrives.
@@ -79,6 +99,16 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     required BookmarksService bookmarks,
     required ModerationService moderation,
     required CallsService calls,
+    FriendsService? friends,
+    MinisService? minis,
+    MusicService? music,
+    ZapService? zap,
+    StreamingService? streaming,
+    ScheduledService? scheduled,
+    StealthService? stealth,
+    ChatrandomService? chatrandom,
+    P2pService? p2p,
+    TursoService? turso,
   }) {
     _feed = feed;
     _messaging = messaging;
@@ -91,6 +121,19 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     _bookmarks = bookmarks;
     _moderation = moderation;
     _calls = calls;
+    _friends = friends;
+    _minis = minis;
+    _music = music;
+    _zap = zap;
+    _streaming = streaming;
+    _scheduled = scheduled;
+    _stealth = stealth;
+    _chatrandom = chatrandom;
+    _p2p = p2p;
+    _turso = turso;
+    if (_activePubkey != null && _activePubkey!.isNotEmpty) {
+      _stealth?.setActivePubkey(_activePubkey);
+    }
   }
 
   void _resetAccountScopedServices() {
@@ -105,20 +148,20 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     _bookmarks?.resetForAccountSwitch();
     _moderation?.resetForAccountSwitch();
     _calls?.resetForAccountSwitch();
+    _friends?.resetForAccountSwitch();
+    _minis?.resetForAccountSwitch();
+    _music?.resetForAccountSwitch();
+    _zap?.resetForAccountSwitch();
+    _streaming?.resetForAccountSwitch();
+    _scheduled?.resetForAccountSwitch();
+    _stealth?.resetForAccountSwitch();
+    _chatrandom?.resetForAccountSwitch();
+    _p2p?.resetForAccountSwitch();
+    _turso?.resetForAccountSwitch();
   }
 
   void reset() {
-    _feed?.resetForAccountSwitch();
-    _messaging?.resetForAccountSwitch();
-    _notifications?.resetForAccountSwitch();
-    _search?.resetForAccountSwitch();
-    _dating?.resetForAccountSwitch();
-    _marketplace?.resetForAccountSwitch();
-    _events?.resetForAccountSwitch();
-    _groups?.resetForAccountSwitch();
-    _bookmarks?.resetForAccountSwitch();
-    _moderation?.resetForAccountSwitch();
-    _calls?.resetForAccountSwitch();
+    _resetAccountScopedServices();
   }
 
   SessionData? get session => _session;
@@ -135,6 +178,19 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     return null;
   }
 
+  /// Returns the account with the highest last_used timestamp, or null if no accounts.
+  SessionAccount? get lastUsedAccount {
+    final s = _session;
+    if (s == null || s.accounts.isEmpty) return null;
+    SessionAccount? best;
+    for (final a in s.accounts) {
+      if (best == null || a.lastUsed > best.lastUsed) {
+        best = a;
+      }
+    }
+    return best;
+  }
+
   /// Load session from storage
   Future<SessionData> loadSession() => guard(() async {
         final dbPath = await FfiBridge.getDbPath();
@@ -145,6 +201,17 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
           jsonDecode(sessionJson) as Map<String, dynamic>,
         );
         _activePubkey = _session!.activePubkey;
+        if (_activePubkey == null ||
+            !_session!.accounts.any((a) => a.pubkey == _activePubkey)) {
+          final lastUsed = lastUsedAccount;
+          if (lastUsed != null) {
+            _activePubkey = lastUsed.pubkey;
+            _session = SessionData(
+              activePubkey: _activePubkey,
+              accounts: _session!.accounts,
+            );
+          }
+        }
         return _session!;
       });
 
@@ -258,6 +325,18 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       // stop routing into the switched account's feed/DM.
       await _sync?.stop();
 
+      final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final accIndex = _session!.accounts.indexWhere((a) => a.pubkey == pubkey);
+      if (accIndex >= 0) {
+        final current = _session!.accounts[accIndex];
+        _session!.accounts[accIndex] = SessionAccount(
+          pubkey: current.pubkey,
+          npub: current.npub,
+          lastUsed: nowSec,
+          relayList: current.relayList,
+        );
+      }
+
       RustLib.instance.api.crateFfiSessionSessionSwitchAccount(
         pubkey: pubkey,
       );
@@ -271,6 +350,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       // sync engine starts, so Account B never renders Account A's posts,
       // DMs, notifications, or search results during the switch gap.
       _resetAccountScopedServices();
+      _stealth?.setActivePubkey(pubkey);
 
       // Restart the sync engine for the newly selected account. The earlier
       // stop() killed the old account's ingest; without this restart the
@@ -300,6 +380,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         _resetAccountScopedServices();
         if (_session!.accounts.isNotEmpty) {
           _activePubkey = _session!.accounts.first.pubkey;
+          _stealth?.setActivePubkey(_activePubkey);
           // Restart the sync engine for the surviving account; the stop()
           // above killed the old ingest and without this the survivor's
           // feed/DM updates stay silent until app relaunch.

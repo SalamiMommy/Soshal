@@ -73,7 +73,7 @@ fn max_version(conn: &soshal_db_core::libsql::Connection) -> i64 {
 }
 
 #[test]
-fn v1_creates_base_tables() {
+fn v1_creates_canonical_schema() {
     let (_db, conn) = bare_db();
     migrations::v1_create_tables(&conn).unwrap();
     for t in [
@@ -90,47 +90,32 @@ fn v1_creates_base_tables() {
         "settings",
         "relays",
         "posts_fts",
+        "group_rooms",
+        "group_threads",
+        "group_thread_replies",
+        "group_thread_reactions",
+        "group_room_reactions",
+        "group_voice_channels",
+        "group_voice_presence",
+        "zk_state_rollups",
+        "saved_content",
+        "musicloud_playlist_tracks",
     ] {
         assert!(table_exists(&conn, t), "missing table {t}");
     }
-    assert_eq!(max_version(&conn), 1);
-}
-
-#[test]
-fn full_chain_reaches_schema_version() {
-    let (_db, conn) = bare_db();
-    migrations::v1_create_tables(&conn).unwrap();
-    migrations::v2_group_channels(&conn).unwrap();
-    migrations::v3_group_thread_reactions(&conn).unwrap();
-    migrations::v4_group_password(&conn).unwrap();
-    migrations::v5_performance_indexes(&conn).unwrap();
-    migrations::v6_index_cleanup(&conn).unwrap();
-    migrations::v7_query_optimizations(&conn).unwrap();
-    migrations::v8_index_cleanup(&conn).unwrap();
-    migrations::v9_trigger_optimization(&conn).unwrap();
-    migrations::create_dating_unmatch_actor_column(&conn).unwrap();
-    migrations::v11_index_cleanup(&conn).unwrap();
-    migrations::v12_saved_content_playlists(&conn).unwrap();
-    migrations::v13_category_fts(&conn).unwrap();
     assert_eq!(max_version(&conn), SCHEMA_VERSION);
-    assert!(table_exists(&conn, "group_rooms"));
-    assert!(table_exists(&conn, "group_threads"));
-    assert!(table_exists(&conn, "group_thread_replies"));
-    assert!(table_exists(&conn, "group_thread_reactions"));
-    assert!(table_exists(&conn, "group_voice_channels"));
-    assert!(table_exists(&conn, "group_voice_presence"));
-    assert!(table_exists(&conn, "zk_state_rollups"));
-    assert!(!index_exists(&conn, "idx_posts_user_timeline"));
-    assert!(!index_exists(&conn, "idx_posts_kind"));
-    assert!(!index_exists(&conn, "idx_posts_kind_content_rsvp"));
+    assert!(column_exists(&conn, "group_messages", "room_id"));
+    assert!(column_exists(&conn, "groups", "password_hash"));
+    assert!(column_exists(&conn, "zk_state_rollups", "genesis_root"));
+    assert!(column_exists(&conn, "dating_unmatches", "actor_pubkey"));
     assert!(index_exists(&conn, "idx_posts_kind_rsvp"));
     assert!(index_exists(&conn, "idx_messages_conversation_asc"));
     assert!(index_exists(&conn, "idx_reactions_event_pubkey"));
     assert!(index_exists(&conn, "idx_reposts_event_pubkey"));
-    assert!(column_exists(&conn, "group_messages", "room_id"));
-    assert!(column_exists(&conn, "groups", "password_hash"));
-    assert!(column_exists(&conn, "zk_state_rollups", "genesis_root"));
     assert!(index_exists(&conn, "idx_escrows_created"));
+    assert!(!index_exists(&conn, "idx_posts_user_timeline"));
+    assert!(!index_exists(&conn, "idx_posts_kind"));
+    assert!(!index_exists(&conn, "idx_posts_kind_content_rsvp"));
     assert!(!index_exists(&conn, "idx_posts_feed_lookup"));
     assert!(!index_exists(&conn, "idx_posts_recent_lookup"));
     assert!(!index_exists(&conn, "idx_posts_kind_created"));
@@ -138,9 +123,9 @@ fn full_chain_reaches_schema_version() {
     assert!(!index_exists(&conn, "idx_messages_conv_deleted"));
 }
 
-/// Legacy pre-squash database: the four tables that gained columns via ALTER
-/// TABLE in old migrations v008-v013, without those columns. Everything else
-/// is created fresh by v1_create_tables during migrate.
+/// Legacy pre-squash database: tables that gained columns via ALTER TABLE
+/// in old migrations without those columns. Everything else is created fresh by
+/// v1_create_tables during migrate.
 fn legacy_db() -> Database {
     let db = Database::open_in_memory().unwrap();
     {
@@ -201,6 +186,27 @@ fn legacy_db() -> Database {
                  escrow_note TEXT,
                  created_at INTEGER NOT NULL,
                  updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE groups (
+                 id TEXT PRIMARY KEY,
+                 name TEXT NOT NULL,
+                 about TEXT,
+                 picture TEXT,
+                 pubkey TEXT NOT NULL DEFAULT '',
+                 created_at INTEGER NOT NULL DEFAULT 0,
+                 updated_at INTEGER NOT NULL DEFAULT 0,
+                 access_type TEXT NOT NULL DEFAULT 'open',
+                 relay TEXT,
+                 sync_status TEXT NOT NULL DEFAULT 'synced'
+             );
+             CREATE TABLE group_messages (
+                 id TEXT PRIMARY KEY,
+                 group_id TEXT NOT NULL DEFAULT '',
+                 sender_pubkey TEXT NOT NULL DEFAULT '',
+                 content TEXT NOT NULL DEFAULT '',
+                 created_at INTEGER NOT NULL DEFAULT 0,
+                 sync_status INTEGER NOT NULL DEFAULT 0,
+                 is_deleted INTEGER NOT NULL DEFAULT 0
              );",
         ))
         .unwrap();
@@ -218,6 +224,8 @@ const HEALED_COLUMNS: &[(&str, &str)] = &[
     ("users", "follower_count"),
     ("escrows", "buyer_confirmed"),
     ("escrows", "seller_confirmed"),
+    ("groups", "password_hash"),
+    ("group_messages", "room_id"),
 ];
 
 #[test]
@@ -268,6 +276,10 @@ fn legacy_db_with_old_migrations_heals_before_short_circuit() {
     assert!(
         table_exists(&conn, "musicloud_timed_comments"),
         "musicloud_timed_comments must be healed"
+    );
+    assert!(
+        table_exists(&conn, "group_rooms"),
+        "group_rooms must be healed"
     );
 }
 

@@ -482,6 +482,7 @@ pub fn streaming_mark_story_viewed(
     if story_id.len() != 64 {
         return Err("invalid story id".to_string()).into();
     }
+    super::signer::require_identity(&viewer_pubkey)?;
     super::db::with_db_result(|db| {
         soshal_db_core::repos::post_views::PostViewsRepo::new(db)
             .mark_seen(&viewer_pubkey, &[story_id])?;
@@ -496,6 +497,7 @@ pub fn streaming_story_react(
     pubkey: String,
     emoji: String,
 ) -> Result<bool, String> {
+    super::signer::require_identity(&pubkey)?;
     super::db::with_db_result(|db| {
         soshal_db_core::repos::story_reaction::StoryReactionRepo::new(db).react(
             &soshal_db_core::repos::story_reaction::StoryReactionRow {
@@ -518,6 +520,11 @@ pub fn streaming_moq_publish_object(
     is_keyframe: bool,
     payload_hex: String,
 ) -> Result<String, String> {
+    if let Ok(active_pk) = super::signer::signer_pubkey() {
+        if publisher_pubkey.len() == 64 && active_pk != publisher_pubkey {
+            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
+        }
+    }
     let payload = hex::decode(&payload_hex).map_err(|e| format!("invalid hex payload: {e}"))?;
     let mut publisher =
         soshal_streaming_core::moq::MoqPublisherSession::new(stream_id, publisher_pubkey);
@@ -596,5 +603,28 @@ mod tests {
         assert_eq!(s.images, vec!["https://x/s.png".to_string()]);
         assert_eq!(s.content, "hi story");
         assert_eq!(s.expires_at, 999);
+    }
+
+    #[test]
+    fn test_streaming_unauthorized_rejected() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+
+        let story_id = "a".repeat(64);
+        let fake_pk = "b".repeat(64);
+
+        assert!(streaming_mark_story_viewed(story_id.clone(), fake_pk.clone()).is_err());
+        assert!(streaming_story_react(story_id, fake_pk.clone(), "🔥".to_string()).is_err());
+        assert!(streaming_moq_publish_object(
+            "stream1".to_string(),
+            fake_pk,
+            1,
+            true,
+            "deadbeef".to_string()
+        )
+        .is_err());
+        let _ = super::super::signer::signer_lock();
     }
 }

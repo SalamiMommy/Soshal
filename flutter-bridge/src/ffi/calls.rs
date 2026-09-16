@@ -68,6 +68,7 @@ pub async fn calls_send_signal(
 /// call_id}` — only verified events, p-tag verified to `my_pubkey`.
 #[frb(serialize)]
 pub async fn calls_fetch_signals(my_pubkey: String) -> Result<String, String> {
+    super::signer::require_identity(&my_pubkey)?;
     let filter = serde_json::json!({
         "kinds": [20001, 20002, 20003, 20004],
         "#p": [my_pubkey],
@@ -230,8 +231,25 @@ a=candidate:3 1 UDP 1694498815 8.8.8.8 5000 typ relay\r\n";
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn fetch_signals_requires_initialized_relay_client() {
-        let err = calls_fetch_signals("deadbeef".into()).await.unwrap_err();
+        let _g = crate::ffi::util::lock(&CALLS_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let err = calls_fetch_signals(pk).await.unwrap_err();
         assert!(err.contains("relay client not initialized"));
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn fetch_signals_unauthorized_rejected() {
+        let _g = crate::ffi::util::lock(&CALLS_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _ = super::super::signer::signer_lock();
+        let err = calls_fetch_signals("deadbeef".repeat(8)).await.unwrap_err();
+        assert!(err.contains("signer locked") || err.contains("signer key mismatch"));
     }
 }

@@ -577,8 +577,8 @@ class _TextInputDialogState extends State<_TextInputDialog> {
     final error = await widget.onSubmit(value);
     if (!mounted) return;
     if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: SelectableText(error)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: SelectableText(error)));
     }
     Navigator.of(context).pop();
   }
@@ -594,22 +594,22 @@ class _TextInputDialogState extends State<_TextInputDialog> {
           hintText: widget.hint,
         ),
       ),
-actions: [
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        if (widget.filled)
+          FilledButton(
+            onPressed: _submit,
+            child: Text(widget.actionLabel),
+          )
+        else
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            onPressed: _submit,
+            child: Text(widget.actionLabel),
           ),
-          if (widget.filled)
-            FilledButton(
-              onPressed: _submit,
-              child: Text(widget.actionLabel),
-            )
-          else
-            TextButton(
-              onPressed: _submit,
-              child: Text(widget.actionLabel),
-            ),
-        ],
+      ],
     );
   }
 }

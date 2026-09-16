@@ -24,6 +24,11 @@ pub fn ephemeral_save(
     if max_views < 1 {
         return Err("max_views must be at least 1".to_string()).into();
     }
+    if let Ok(caller) = super::signer::signer_pubkey() {
+        if caller != sender_pubkey && caller != recipient_pubkey {
+            return Err("identity mismatch: caller is neither sender nor recipient".to_string());
+        }
+    }
     let id = uuid_like();
     let now = soshal_common_core::format::now_secs();
     let row = EphemeralMediaRow {
@@ -60,10 +65,18 @@ fn row_json(row: &EphemeralMediaRow) -> String {
 /// Get one row by id.
 #[frb(sync, serialize)]
 pub fn ephemeral_get(id: String) -> Result<String, String> {
+    let caller_opt = super::signer::signer_pubkey().ok();
     super::db::with_db_result(|db| {
         let row = EphemeralMediaRepo::new(db)
             .get(&id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
+        if let Some(ref caller) = caller_opt {
+            if row.recipient_pubkey != *caller && row.sender_pubkey != *caller {
+                return Err(soshal_db_core::error::DbError::Migration(
+                    "unauthorized to view ephemeral media".to_string(),
+                ));
+            }
+        }
         Ok(row_json(&row))
     })
 }
@@ -77,6 +90,11 @@ fn cleanup_expired_best_effort() {
 /// All pending media addressed to `pubkey`, newest first, as a JSON array.
 #[frb(sync, serialize)]
 pub fn ephemeral_list_pending(pubkey: String) -> Result<String, String> {
+    if let Ok(caller) = super::signer::signer_pubkey() {
+        if caller != pubkey {
+            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
+        }
+    }
     cleanup_expired_best_effort();
     super::db::with_db_result(|db| {
         let now = soshal_common_core::format::now_secs();
@@ -93,6 +111,7 @@ pub fn ephemeral_list_pending(pubkey: String) -> Result<String, String> {
 /// the fresh row. Errors once the media is expired.
 #[frb(sync, serialize)]
 pub fn ephemeral_view(id: String) -> Result<String, String> {
+    let caller_opt = super::signer::signer_pubkey().ok();
     cleanup_expired_best_effort();
     super::db::with_db_result(|db| {
         let repo = EphemeralMediaRepo::new(db);
@@ -100,6 +119,13 @@ pub fn ephemeral_view(id: String) -> Result<String, String> {
         let existing = repo
             .get(&id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
+        if let Some(ref caller) = caller_opt {
+            if existing.recipient_pubkey != *caller && existing.sender_pubkey != *caller {
+                return Err(soshal_db_core::error::DbError::Migration(
+                    "unauthorized to view ephemeral media".to_string(),
+                ));
+            }
+        }
         if existing.expires_at.map_or(false, |exp| exp < now) || existing.state != "pending" {
             return Err(soshal_db_core::error::DbError::Migration(
                 "ephemeral media unavailable (expired or burned)".to_string(),
@@ -115,8 +141,19 @@ pub fn ephemeral_view(id: String) -> Result<String, String> {
 /// Delete a row.
 #[frb(sync, serialize)]
 pub fn ephemeral_delete(id: String) -> Result<bool, String> {
+    let caller_opt = super::signer::signer_pubkey().ok();
     super::db::with_db_result(|db| {
-        EphemeralMediaRepo::new(db).delete(&id)?;
+        let repo = EphemeralMediaRepo::new(db);
+        if let Some(existing) = repo.get(&id)? {
+            if let Some(ref caller) = caller_opt {
+                if existing.recipient_pubkey != *caller && existing.sender_pubkey != *caller {
+                    return Err(soshal_db_core::error::DbError::Migration(
+                        "unauthorized to delete ephemeral media".to_string(),
+                    ));
+                }
+            }
+        }
+        repo.delete(&id)?;
         Ok(true)
     })
 }
@@ -140,14 +177,21 @@ mod tests {
         db::tmp_db(label, "eph")
     }
 
-    fn save_media(message_id: &str, recipient: &str, max_views: i64, expires_at: i64) -> String {
+    fn save_media(
+        sender_keys: &nostr::key::Keys,
+        message_id: &str,
+        recipient: &str,
+        max_views: i64,
+        expires_at: i64,
+    ) -> String {
+        super::super::signer::signer_unlock(sender_keys.secret_key().to_secret_hex()).unwrap();
         ephemeral_save(
             message_id.to_string(),
             "conv1".to_string(),
             "dm".to_string(),
             "https://example.com/media.jpg".to_string(),
             "image/jpeg".to_string(),
-            "sender".to_string(),
+            sender_keys.public_key().to_hex(),
             recipient.to_string(),
             max_views,
             expires_at,
@@ -158,8 +202,10 @@ mod tests {
     #[test]
     fn test_save_get_roundtrip() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("roundtrip");
-        let id = save_media("msg1", "pk1", 5, 0);
+        let sender_keys = soshal_nostr_core::keys::generate_keys();
+        let id = save_media(&sender_keys, "msg1", "pk1", 5, 0);
         let json = ephemeral_get(id.clone()).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["id"], id, "json: {json}");
@@ -169,41 +215,56 @@ mod tests {
         assert_eq!(v["current_views"], 0);
         assert_eq!(v["state"], "pending");
         assert!(v["expires_at"].is_null());
+        super::super::signer::signer_lock().unwrap();
     }
 
     #[test]
     fn test_save_rejects_zero_max_views() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("maxviews");
+        let sender_keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(sender_keys.secret_key().to_secret_hex()).unwrap();
         let res = ephemeral_save(
             "msg_bad".to_string(),
             "conv1".to_string(),
             "dm".to_string(),
             "https://example.com/media.jpg".to_string(),
             "image/jpeg".to_string(),
-            "sender".to_string(),
+            sender_keys.public_key().to_hex(),
             "pk1".to_string(),
             0,
             0,
         );
         assert!(res.is_err());
+        super::super::signer::signer_lock().unwrap();
     }
 
     #[test]
     fn test_get_missing_errors() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("getmiss");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         assert!(ephemeral_get("nope".to_string()).is_err());
+        super::super::signer::signer_lock().unwrap();
     }
 
     #[test]
     fn test_list_pending_filters_recipient_and_state() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("pending");
-        let id1 = save_media("msg1", "pk1", 2, 0);
-        let id2 = save_media("msg2", "pk1", 1, 0);
-        save_media("msg3", "pk2", 1, 0);
-        let json = ephemeral_list_pending("pk1".to_string()).unwrap();
+        let sender_keys = soshal_nostr_core::keys::generate_keys();
+        let recip_keys = soshal_nostr_core::keys::generate_keys();
+        let pk1 = recip_keys.public_key().to_hex();
+        let id1 = save_media(&sender_keys, "msg1", &pk1, 2, 0);
+        let id2 = save_media(&sender_keys, "msg2", &pk1, 1, 0);
+        save_media(&sender_keys, "msg3", "pk2", 1, 0);
+
+        super::super::signer::signer_unlock(recip_keys.secret_key().to_secret_hex()).unwrap();
+        let json = ephemeral_list_pending(pk1.clone()).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -215,7 +276,7 @@ mod tests {
         assert!(ids.contains(&id2.as_str()));
         ephemeral_view(id1.clone()).unwrap();
         ephemeral_view(id1).unwrap();
-        let json = ephemeral_list_pending("pk1".to_string()).unwrap();
+        let json = ephemeral_list_pending(pk1).unwrap();
         let arr = serde_json::from_str::<serde_json::Value>(&json)
             .unwrap()
             .as_array()
@@ -223,13 +284,20 @@ mod tests {
             .clone();
         assert_eq!(arr.len(), 1, "expired row should leave pending list");
         assert_eq!(arr[0]["id"], id2);
+        super::super::signer::signer_lock().unwrap();
     }
 
     #[test]
     fn test_view_increments_and_expires_at_max() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("view");
-        let id = save_media("msg1", "pk1", 2, 0);
+        let sender_keys = soshal_nostr_core::keys::generate_keys();
+        let recip_keys = soshal_nostr_core::keys::generate_keys();
+        let pk1 = recip_keys.public_key().to_hex();
+        let id = save_media(&sender_keys, "msg1", &pk1, 2, 0);
+
+        super::super::signer::signer_unlock(recip_keys.secret_key().to_secret_hex()).unwrap();
         let json = ephemeral_view(id.clone()).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["current_views"], 1);
@@ -239,45 +307,89 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["current_views"], 2);
         assert_eq!(v["state"], "expired");
+        super::super::signer::signer_lock().unwrap();
     }
 
     #[test]
     fn test_view_missing_errors() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("viewmiss");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         assert!(ephemeral_view("nope".to_string()).is_err());
+        super::super::signer::signer_lock().unwrap();
     }
 
     #[test]
     fn test_clean_expired() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("clean");
+        let sender_keys = soshal_nostr_core::keys::generate_keys();
         let now = soshal_common_core::format::now_secs();
-        let past = save_media("msg_past", "pk1", 5, now - 100);
-        let future = save_media("msg_future", "pk1", 5, now + 10_000);
-        let never = save_media("msg_never", "pk1", 5, 0);
+        let past = save_media(&sender_keys, "msg_past", "pk1", 5, now - 100);
+        let future = save_media(&sender_keys, "msg_future", "pk1", 5, now + 10_000);
+        let never = save_media(&sender_keys, "msg_never", "pk1", 5, 0);
         let removed = ephemeral_clean_expired().unwrap();
         assert_eq!(removed, vec![past.clone()]);
         assert!(ephemeral_get(past).is_err());
         assert!(ephemeral_get(future).is_ok());
         assert!(ephemeral_get(never).is_ok());
+        super::super::signer::signer_lock().unwrap();
     }
 
     #[test]
     fn test_delete_removes_row() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("delete");
-        let id = save_media("msg1", "pk1", 5, 0);
+        let sender_keys = soshal_nostr_core::keys::generate_keys();
+        let id = save_media(&sender_keys, "msg1", "pk1", 5, 0);
         assert!(ephemeral_delete(id.clone()).unwrap());
         assert!(ephemeral_get(id).is_err());
+        super::super::signer::signer_lock().unwrap();
     }
 
     #[test]
     fn test_empty_store() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = tmp_db("empty");
-        let json = ephemeral_list_pending("pk1".to_string()).unwrap();
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let json = ephemeral_list_pending(keys.public_key().to_hex()).unwrap();
         assert_eq!(json, "[]");
         assert!(ephemeral_clean_expired().unwrap().is_empty());
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_unauthorized_ephemeral_rejected() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = tmp_db("unauthorized");
+        let sender_keys = soshal_nostr_core::keys::generate_keys();
+        let recip_keys = soshal_nostr_core::keys::generate_keys();
+        let third_party = soshal_nostr_core::keys::generate_keys();
+        let id = save_media(
+            &sender_keys,
+            "msg_secret",
+            &recip_keys.public_key().to_hex(),
+            1,
+            0,
+        );
+
+        // Third party cannot view or get the ephemeral message
+        super::super::signer::signer_unlock(third_party.secret_key().to_secret_hex()).unwrap();
+        assert!(ephemeral_get(id.clone()).is_err());
+        assert!(ephemeral_view(id.clone()).is_err());
+        assert!(ephemeral_list_pending(recip_keys.public_key().to_hex()).is_err());
+        assert!(ephemeral_delete(id.clone()).is_err());
+
+        // Recipient can view it
+        super::super::signer::signer_unlock(recip_keys.secret_key().to_secret_hex()).unwrap();
+        assert!(ephemeral_view(id).is_ok());
+        super::super::signer::signer_lock().unwrap();
     }
 }

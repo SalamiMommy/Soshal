@@ -117,7 +117,15 @@ pub fn enqueue_outbox_item_with_seal(
         seal(compressed).map_err(|e| format!("Failed to seal outbox payload: {e}"))?;
     block_on(conn.execute(
         "INSERT INTO outbox_queue (id, action_type, payload_json, media_path, status, retry_count, next_retry_at, created_at)
-         VALUES (?1, ?2, ?3, ?4, 'pending', 0, 0, ?5)",
+         VALUES (?1, ?2, ?3, ?4, 'pending', 0, 0, ?5)
+         ON CONFLICT(id) DO UPDATE SET
+             action_type = excluded.action_type,
+             payload_json = excluded.payload_json,
+             media_path = excluded.media_path,
+             status = 'pending',
+             retry_count = 0,
+             next_retry_at = 0,
+             created_at = excluded.created_at",
         params![id, action_type, stored_payload, media_path, now_secs],
     ))
     .map_err(|e| format!("Failed to enqueue outbox item: {e}"))?;
@@ -489,5 +497,29 @@ mod tests {
         // Empty-queue fetch returns empty.
         let fresh = soshal_test_util::test_db();
         assert!(fetch_pending_outbox_items(&fresh, 0, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_outbox_re_enqueue_resets_pending() {
+        let db = soshal_test_util::test_db();
+        // Initial enqueue
+        enqueue_outbox_item(&db, "item-1", "post", "payload 1", None, 1000).unwrap();
+        let items = fetch_pending_outbox_items(&db, 1000, 10).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, "item-1");
+
+        // Mark failed with retries
+        mark_outbox_item_failed(&db, "item-1", 5, 2000).unwrap();
+        let items = fetch_pending_outbox_items(&db, 1500, 10).unwrap();
+        assert!(items.is_empty(), "backoff should exclude item");
+
+        // Re-enqueuing the same ID should succeed (not crash with UNIQUE constraint error)
+        // and reset status to pending with 0 retries
+        enqueue_outbox_item(&db, "item-1", "post", "updated payload", None, 1600).unwrap();
+        let items = fetch_pending_outbox_items(&db, 1600, 10).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].retry_count, 0);
+        assert_eq!(items[0].status, "pending");
+        assert_eq!(items[0].payload_json, "updated payload");
     }
 }
