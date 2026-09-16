@@ -14,6 +14,11 @@ fn sanitize_sdp_rewrites_private_ip4_con_line() {
     let out = sanitize_sdp(sdp, false);
     assert!(out.contains("c=IN IP4 127.0.0.1"));
     assert!(!out.contains("192.168.1.50"));
+
+    let sdp_slash = "v=0\r\nc=IN IP4 192.168.1.50/127\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
+    let out_slash = sanitize_sdp(sdp_slash, false);
+    assert!(out_slash.contains("c=IN IP4 127.0.0.1"));
+    assert!(!out_slash.contains("192.168.1.50"));
 }
 
 #[test]
@@ -294,6 +299,10 @@ fn is_safe_candidate_force_relay_drops_srflx_keeps_relay() {
     ));
     assert!(!is_safe_candidate(
         "candidate:3 1 UDP 1 8.8.8.8 5000 typ host",
+        true
+    ));
+    assert!(!is_safe_candidate(
+        "candidate:4 1 UDP 1686052607 203.0.113.9 5000 typ prflx",
         true
     ));
 }

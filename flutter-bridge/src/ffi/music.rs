@@ -334,6 +334,7 @@ struct SavedTrackDto<'a> {
 /// audience, createdAt — plus hostReady and savedAt. Newest saved first.
 #[frb(sync, serialize)]
 pub fn music_saved() -> Result<String, String> {
+    let _my_pk = super::signer::signer_pubkey()?;
     let rows = super::db::with_db_result(|db| SavedContentRepo::new(db).list(31022, 200))?;
     let mut out = Vec::with_capacity(rows.len());
     for r in &rows {

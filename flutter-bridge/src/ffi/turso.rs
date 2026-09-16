@@ -48,6 +48,7 @@ pub fn db_turso_configure(url: String, auth_token: String) -> Result<String, Str
 /// Manually trigger database synchronization with the remote Turso Cloud database.
 #[frb(sync, serialize)]
 pub fn db_turso_sync() -> Result<String, String> {
+    super::signer::signer_pubkey()?;
     with_db_result(|db| db.sync_turso().map_err(Into::into))
 }
 

@@ -38,7 +38,8 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
             if let Some(ip4_pos) = line.find("IP4") {
                 let ip_part = &line[ip4_pos + 3..];
                 let ip = ip_part.trim();
-                if !ip.is_empty() && is_private_ip_str(ip) {
+                let ip_addr = ip.split('/').next().unwrap_or(ip).trim();
+                if !ip_addr.is_empty() && is_private_ip_str(ip_addr) {
                     out.push_str("c=IN IP4 127.0.0.1");
                     continue;
                 }
@@ -46,7 +47,8 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
             if let Some(ip6_pos) = line.find("IP6") {
                 let ip_part = &line[ip6_pos + 3..];
                 let ip = ip_part.trim();
-                if !ip.is_empty() && is_private_ipv6_str(ip) {
+                let ip_addr = ip.split('/').next().unwrap_or(ip).trim();
+                if !ip_addr.is_empty() && is_private_ipv6_str(ip_addr) {
                     out.push_str("c=IN IP6 ::1");
                     continue;
                 }

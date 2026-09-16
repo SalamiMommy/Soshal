@@ -63,7 +63,7 @@ pub fn is_safe_candidate(candidate: &str, force_relay: bool) -> bool {
     if candidate.contains("typ host") {
         return false;
     }
-    if force_relay && candidate.contains("typ srflx") {
+    if force_relay && (candidate.contains("typ srflx") || candidate.contains("typ prflx")) {
         return false;
     }
     if has_private_ip(candidate) {

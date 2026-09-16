@@ -166,14 +166,16 @@ fn story_from_value(v: &serde_json::Value) -> Option<StoryInfo> {
         .into_iter()
         .filter_map(|m| m.url)
         .collect();
+    let created_at = v["created_at"].as_i64().unwrap_or(0).max(0) as u64;
+    let default_expires_at = created_at + 86400;
     Some(StoryInfo {
         id: v["id"].as_str()?.to_string(),
         author_pubkey: v["pubkey"].as_str().unwrap_or("").to_string(),
         content: content.text.unwrap_or_default(),
         images,
         expires_at: tag_value(tags, "expiration")
-            .map(|e| e.parse::<u64>().unwrap_or(1))
-            .unwrap_or(0),
+            .map(|e| e.parse::<u64>().unwrap_or(default_expires_at))
+            .unwrap_or(default_expires_at),
         views: v["views"].as_i64().unwrap_or(0) as i32,
     })
 }
@@ -428,7 +430,7 @@ pub fn streaming_fetch_stories(user_pubkey: String) -> Result<String, String> {
     super::util::json_ok(
         rows.into_iter()
             .filter_map(|v| story_from_value(&v))
-            .filter(|s| s.expires_at == 0 || s.expires_at > now as u64)
+            .filter(|s| s.expires_at > now as u64)
             .collect::<Vec<_>>(),
     )
 }
@@ -468,7 +470,7 @@ pub fn streaming_fetch_followed_stories(audience: String) -> Result<String, Stri
     super::util::json_ok(
         rows.into_iter()
             .filter_map(|v| story_from_value(&v))
-            .filter(|s| s.expires_at == 0 || s.expires_at > now as u64)
+            .filter(|s| s.expires_at > now as u64)
             .collect::<Vec<_>>(),
     )
 }

@@ -62,7 +62,7 @@ class _StoriesScreenState extends State<StoriesScreen> {
       final pubkey = session.activePubkey;
       if (pubkey == null) return;
       await context.read<StreamingService>().markStoryViewed(story.id, pubkey);
-      setState(() => _viewed[story.id] = true);
+      if (mounted) setState(() => _viewed[story.id] = true);
     } catch (e) {
       debugPrint('mark viewed: $e');
     }

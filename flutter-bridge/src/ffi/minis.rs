@@ -345,6 +345,7 @@ pub fn minis_unsave(event_id: String) -> Result<bool, String> {
 /// Newest saved first.
 #[frb(sync, serialize)]
 pub fn minis_saved() -> Result<String, String> {
+    let _my_pk = super::signer::signer_pubkey()?;
     let rows = super::db::with_db_result(|db| SavedContentRepo::new(db).list(31020, 200))?;
     let out: Vec<serde_json::Value> = rows
         .into_iter()

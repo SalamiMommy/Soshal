@@ -251,7 +251,9 @@ pub fn groups_post_message(
         // `is_banned` alone was dead code before — a banned member could
         // keep posting and every client would render their messages.
         let group_repo = GroupRepo::new(db);
-        if !group_repo.is_member(&group_id, &sender)? {
+        let group = group_repo.get_by_id(&group_id)?;
+        let is_owner = group.as_ref().map(|g| g.pubkey == sender).unwrap_or(false);
+        if !is_owner && !group_repo.is_member(&group_id, &sender)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a member of this group".to_string(),
             ));
@@ -297,6 +299,27 @@ pub fn groups_fetch_messages(
     let limit = (limit.clamp(1, 200)) as i64;
     let offset = (offset.max(0)) as i64;
     super::db::with_db_result(|db| {
+        let group_repo = GroupRepo::new(db);
+        if let Some(group) = group_repo.get_by_id(&group_id)? {
+            let viewer = super::signer::signer_pubkey().ok();
+            if let Some(ref pk) = viewer {
+                if BannedMemberRepo::new(db).is_banned(&group_id, pk)? {
+                    return Ok("[]".to_string());
+                }
+            }
+            let is_private = group.access_type == "private" || group.password_hash.is_some();
+            if is_private {
+                let is_member = match &viewer {
+                    Some(pk) => {
+                        group.pubkey == *pk || group_repo.is_member(&group_id, pk).unwrap_or(false)
+                    }
+                    None => false,
+                };
+                if !is_member {
+                    return Ok("[]".to_string());
+                }
+            }
+        }
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
             let stmt = conn
@@ -560,7 +583,9 @@ pub fn groups_rooms_react(
     super::signer::require_identity(&pubkey)?;
     super::db::with_db_result(|db| {
         let group_repo = GroupRepo::new(db);
-        if !group_repo.is_member(&group_id, &pubkey)? {
+        let group = group_repo.get_by_id(&group_id)?;
+        let is_owner = group.as_ref().map(|g| g.pubkey == pubkey).unwrap_or(false);
+        if !is_owner && !group_repo.is_member(&group_id, &pubkey)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a member of this group".to_string(),
             ));
@@ -603,6 +628,27 @@ pub fn groups_rooms_reactions(
 #[frb(sync, serialize)]
 pub fn groups_threads_list(group_id: String, sort: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
+        let group_repo = GroupRepo::new(db);
+        if let Some(group) = group_repo.get_by_id(&group_id)? {
+            let viewer = super::signer::signer_pubkey().ok();
+            if let Some(ref pk) = viewer {
+                if BannedMemberRepo::new(db).is_banned(&group_id, pk)? {
+                    return Ok("[]".to_string());
+                }
+            }
+            let is_private = group.access_type == "private" || group.password_hash.is_some();
+            if is_private {
+                let is_member = match &viewer {
+                    Some(pk) => {
+                        group.pubkey == *pk || group_repo.is_member(&group_id, pk).unwrap_or(false)
+                    }
+                    None => false,
+                };
+                if !is_member {
+                    return Ok("[]".to_string());
+                }
+            }
+        }
         let sort = soshal_db_core::repos::thread::ThreadSort::parse(&sort);
         let rows = soshal_db_core::repos::thread::GroupThreadRepo::new(db).list(&group_id, sort)?;
         serde_json::to_string(&rows)
@@ -634,7 +680,9 @@ pub fn groups_threads_create(
     };
     super::db::with_db_result(|db| {
         let group_repo = GroupRepo::new(db);
-        if !group_repo.is_member(&group_id, &author)? {
+        let group = group_repo.get_by_id(&group_id)?;
+        let is_owner = group.as_ref().map(|g| g.pubkey == author).unwrap_or(false);
+        if !is_owner && !group_repo.is_member(&group_id, &author)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a member of this group".to_string(),
             ));
@@ -707,7 +755,9 @@ pub fn groups_threads_reply(
             .get(&thread_id)?
             .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
         let group_repo = GroupRepo::new(db);
-        if !group_repo.is_member(&thread.group_id, &author)? {
+        let group = group_repo.get_by_id(&thread.group_id)?;
+        let is_owner = group.as_ref().map(|g| g.pubkey == author).unwrap_or(false);
+        if !is_owner && !group_repo.is_member(&thread.group_id, &author)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a member of this group".to_string(),
             ));
@@ -752,7 +802,9 @@ pub fn groups_threads_react(
             .get(&thread_id)?
             .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
         let group_repo = GroupRepo::new(db);
-        if !group_repo.is_member(&thread.group_id, &pubkey)? {
+        let group = group_repo.get_by_id(&thread.group_id)?;
+        let is_owner = group.as_ref().map(|g| g.pubkey == pubkey).unwrap_or(false);
+        if !is_owner && !group_repo.is_member(&thread.group_id, &pubkey)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a member of this group".to_string(),
             ));
@@ -861,7 +913,10 @@ pub fn groups_voice_join(channel_id: String, pubkey: String) -> Result<bool, Str
             |r| r.get(0),
         )?;
         let gid = group_id.ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
-        if !GroupRepo::new(db).is_member(&gid, &pubkey)? {
+        let group_repo = GroupRepo::new(db);
+        let group = group_repo.get_by_id(&gid)?;
+        let is_owner = group.as_ref().map(|g| g.pubkey == pubkey).unwrap_or(false);
+        if !is_owner && !group_repo.is_member(&gid, &pubkey)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a group member".to_string(),
             ));
@@ -890,7 +945,38 @@ pub fn groups_voice_leave(channel_id: String, pubkey: String) -> Result<bool, St
 #[frb(sync, serialize)]
 pub fn groups_voice_presence(channel_id: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
-        let rows = soshal_db_core::repos::voice::GroupVoiceRepo::new(db).presence(&channel_id)?;
+        let conn = db.conn()?;
+        let group_id: Option<String> = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT group_id FROM group_voice_channels WHERE id = ?1",
+            libsql::params![channel_id.as_str()],
+            |r| r.get(0),
+        )?;
+        if let Some(gid) = group_id {
+            let group_repo = GroupRepo::new(db);
+            if let Some(group) = group_repo.get_by_id(&gid)? {
+                let viewer = super::signer::signer_pubkey().ok();
+                if let Some(ref pk) = viewer {
+                    if BannedMemberRepo::new(db).is_banned(&gid, pk)? {
+                        return Ok("[]".to_string());
+                    }
+                }
+                let is_private = group.access_type == "private" || group.password_hash.is_some();
+                if is_private {
+                    let is_member = match &viewer {
+                        Some(pk) => {
+                            group.pubkey == *pk || group_repo.is_member(&gid, pk).unwrap_or(false)
+                        }
+                        None => false,
+                    };
+                    if !is_member {
+                        return Ok("[]".to_string());
+                    }
+                }
+            }
+        }
+        let voice_repo = soshal_db_core::repos::voice::GroupVoiceRepo::new(db);
+        let rows = voice_repo.presence(&channel_id)?;
         serde_json::to_string(&rows)
             .map_err(|e| soshal_db_core::error::DbError::Oversized(e.to_string()))
     })

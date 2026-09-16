@@ -207,14 +207,46 @@ fn empty_reactions() {
 #[test]
 fn oversized_emoji_skipped() {
     let input = AggregateReactionsInput {
-        reactions: vec![RawMessageReaction {
-            emoji: "x".repeat(65),
-            reactor_pubkey: "a".into(),
-        }],
+        reactions: vec![
+            RawMessageReaction {
+                emoji: "x".repeat(65),
+                reactor_pubkey: "a".into(),
+            },
+            RawMessageReaction {
+                emoji: "".into(),
+                reactor_pubkey: "a".into(),
+            },
+        ],
         self_pubkey: "a".into(),
     };
     let result = aggregate_message_reactions(input);
     assert!(result.is_empty());
+}
+
+#[test]
+fn duplicate_reactions_from_same_pubkey_deduplicated() {
+    let input = AggregateReactionsInput {
+        reactions: vec![
+            RawMessageReaction {
+                emoji: "🔥".into(),
+                reactor_pubkey: "spammer".into(),
+            },
+            RawMessageReaction {
+                emoji: "🔥".into(),
+                reactor_pubkey: "spammer".into(),
+            },
+            RawMessageReaction {
+                emoji: "🔥".into(),
+                reactor_pubkey: "legit".into(),
+            },
+        ],
+        self_pubkey: "spammer".into(),
+    };
+    let result = aggregate_message_reactions(input);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].emoji, "🔥");
+    assert_eq!(result[0].count, 2);
+    assert!(result[0].has_reacted);
 }
 
 #[test]

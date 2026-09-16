@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use soshal_common_core::json_util::{json_in, json_out};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Deserialize)]
 pub struct RawMessageReaction {
@@ -31,8 +31,12 @@ pub fn aggregate_message_reactions(
         return Vec::new();
     }
     let mut emoji_map: HashMap<&str, (usize, bool)> = HashMap::new();
+    let mut seen_reactions: HashSet<(&str, &str)> = HashSet::new();
     for r in &input.reactions {
-        if r.emoji.len() > 64 {
+        if r.emoji.is_empty() || r.emoji.len() > 64 {
+            continue;
+        }
+        if !seen_reactions.insert((&r.reactor_pubkey, &r.emoji)) {
             continue;
         }
         let has_reacted = r.reactor_pubkey == input.self_pubkey;

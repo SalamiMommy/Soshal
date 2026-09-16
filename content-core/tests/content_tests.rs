@@ -812,6 +812,21 @@ fn stories_valid_processing() {
     assert_eq!(events[1]["media"][0]["url"], "https://x/y.mp4");
     assert_eq!(events[1]["media"][0]["type"], "video/mp4");
     assert_eq!(events[1]["created_at_ms"], 200_000.0);
+
+    // Story without expiration tag created at t=10 is expired when now_sec=100 and expiry_seconds=50
+    let input_old = json!({
+        "events": [
+            {"id": "ancient_no_tag", "pubkey": "pk", "content": "{\"text\":\"old\"}", "created_at": 10, "tags": []},
+            {"id": "fresh_no_tag", "pubkey": "pk", "content": "{\"text\":\"fresh\"}", "created_at": 80, "tags": []}
+        ],
+        "now_sec": 100,
+        "expiry_seconds": 50
+    });
+    let out_old: serde_json::Value =
+        serde_json::from_str(&filter_stories_json(&input_old.to_string())).unwrap();
+    let events_old = out_old.as_array().unwrap();
+    assert_eq!(events_old.len(), 1);
+    assert_eq!(events_old[0]["id"], "fresh_no_tag");
 }
 
 #[test]

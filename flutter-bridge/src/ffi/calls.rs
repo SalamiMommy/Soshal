@@ -28,7 +28,14 @@ pub async fn calls_send_signal(
     candidate: Option<String>,
     media_type: Option<String>,
 ) -> Result<String, String> {
+    let _my_pk = super::signer::signer_pubkey()?;
     let kind = signal_kind(&signal_type)?;
+    if target_pubkey.len() != 64 || !target_pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("invalid target_pubkey: must be 64-character hex string".to_string());
+    }
+    if call_id.is_empty() || call_id.len() > 128 {
+        return Err("call_id must be between 1 and 128 characters".to_string());
+    }
     let mut content = serde_json::json!({
         "call_id": call_id,
         "type": signal_type,
@@ -90,8 +97,8 @@ pub async fn calls_fetch_signals(my_pubkey: String) -> Result<String, String> {
             continue;
         }
         let created = e.created_at.as_secs();
-        if now.saturating_sub(created) > 300 {
-            continue; // ignore stale signals (>5 min)
+        if created > now + 60 || now.saturating_sub(created) > 300 {
+            continue; // ignore stale signals (>5 min) or future-dated anomalies
         }
         if !soshal_nostr_core::models::verify_event(&e) {
             continue;

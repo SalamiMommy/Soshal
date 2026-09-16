@@ -67,10 +67,9 @@ fn process_stories(input: ProcessStoriesInput) -> Vec<ProcessedStoryOut> {
         }
         let expires_at =
             find_tag_value(&event.tags, "expiration").and_then(|s| s.parse::<f64>().ok());
-        if let Some(exp) = expires_at {
-            if exp < now_sec {
-                continue;
-            }
+        let actual_expiry = expires_at.unwrap_or(event.created_at + input.expiry_seconds);
+        if actual_expiry < now_sec {
+            continue;
         }
         let (content_media, text) = match serde_json::from_str::<StoryContentParsed>(&event.content)
         {
@@ -87,7 +86,6 @@ fn process_stories(input: ProcessStoriesInput) -> Vec<ProcessedStoryOut> {
                 });
             }
         }
-        let actual_expiry = expires_at.unwrap_or(now_sec + input.expiry_seconds);
         results.push(ProcessedStoryOut {
             id: event.id.clone(),
             pubkey: event.pubkey.clone(),
