@@ -253,15 +253,12 @@ pub fn media_clear_cache(cache_dir: String) -> Result<String, String> {
     if canon == canon_temp {
         return Err("cannot clear system temp directory itself".to_string()).into();
     }
-    let is_chunk_root = if let Ok(canon_chunk) = std::fs::canonicalize(&chunk_root) {
-        canon == canon_chunk
-    } else {
-        canon == chunk_root
-    };
+    let canon_chunk = std::fs::canonicalize(&chunk_root).unwrap_or_else(|_| chunk_root.clone());
+    let is_chunk_root = canon == canon_chunk;
 
     // M6 fix: always-available safe roots (chunk store + system temp).
     // These can be checked even before the DB is initialized.
-    let always_safe = [chunk_root, temp_root];
+    let always_safe = [&canon_chunk, &canon_temp];
     let in_safe_root = always_safe.iter().any(|root| canon.starts_with(root));
     if !in_safe_root {
         // Not inside a guaranteed-safe root: require the DB to be initialized

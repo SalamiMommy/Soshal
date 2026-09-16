@@ -135,11 +135,19 @@ fn publish_bookmark_list(pubkey: &str) {
         }
     }
     if let Ok(signed) = super::signer::sign_builder(builder) {
-        if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            let _ = rt.block_on(super::network::network_publish_event(signed));
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _ = super::network::network_publish_event(signed).await;
+            });
+        } else {
+            std::thread::spawn(move || {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    let _ = rt.block_on(super::network::network_publish_event(signed));
+                }
+            });
         }
     }
 }

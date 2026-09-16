@@ -421,8 +421,8 @@ pub(crate) fn resolve_audience_authors(audience: &str) -> Result<Option<Vec<Stri
         return Ok(Some(vec![trimmed.to_string()]));
     }
     let level = match trimmed {
-        "friends" | "friends_only" => 1u32,
-        "network" => 2,
+        "friends" | "friends_only" | "following" | "follows" => 1u32,
+        "network" | "friends_of_friends" | "fof" => 2,
         _ => return Ok(None),
     };
     let self_pubkey = super::db::active_pubkey()?;

@@ -35,41 +35,52 @@ pub fn social_friend_suggestions() -> Result<Vec<String>, String> {
 }
 
 fn compute_suggestions(me: &str) -> Result<Vec<String>, String> {
-    let users = all_contact_lists()?;
-    let mut self_contacts = Vec::new();
-    let mut all_users = Vec::new();
-    for (pubkey, contacts_json) in users {
+    let self_contacts = self_contact_list(me)?;
+    let other_users = other_contact_lists(me)?;
+    let mut all_users = Vec::with_capacity(other_users.len());
+    for (pubkey, contacts_json) in other_users {
         let contacts: Vec<String> = serde_json::from_str(&contacts_json).unwrap_or_default();
-        if pubkey == me {
-            self_contacts = contacts;
-        } else {
-            all_users.push(AllUserInfo {
-                pubkey,
-                contacts,
-                wot_distance: 2,
-            });
-        }
+        all_users.push(AllUserInfo {
+            pubkey,
+            contacts,
+            wot_distance: 2,
+        });
     }
     let suggestions = suggest_mutual_friends(SuggestMutualFriendsInput {
         self_pubkey: me.to_string(),
         self_contacts,
         all_users,
-        limit: 100_000,
+        limit: 100,
     });
     Ok(suggestions.into_iter().map(|s| s.pubkey).collect())
 }
 
-/// Load every stored user's pubkey + contact list (raw query; repos have no
-/// list-all query). Users with no contacts can't contribute to the WoT
-/// suggestions and are skipped before the JSON parse.
-fn all_contact_lists() -> Result<Vec<(String, String)>, String> {
+/// Load the active user's own contact list directly from the database.
+fn self_contact_list(me: &str) -> Result<Vec<String>, String> {
+    super::db::with_db_result(|db| {
+        let conn = db.conn()?;
+        let found: Option<String> = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT contact_pubkeys FROM users WHERE pubkey = ?1",
+            libsql::params![me],
+            |r| r.get(0),
+        )?;
+        Ok(found
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default())
+    })
+}
+
+/// Load candidate users' pubkey + contact list, excluding `me`.
+fn other_contact_lists(me: &str) -> Result<Vec<(String, String)>, String> {
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         soshal_db_core::query::query(
             &conn,
             "SELECT pubkey, contact_pubkeys FROM users \
-             WHERE contact_pubkeys != '[]' LIMIT 5000",
-            (),
+             WHERE pubkey != ?1 AND contact_pubkeys IS NOT NULL \
+             AND contact_pubkeys != '[]' AND contact_pubkeys != '' LIMIT 5000",
+            libsql::params![me],
             |r| {
                 let pubkey: String = r.get(0)?;
                 let contacts: String = r.get(1)?;

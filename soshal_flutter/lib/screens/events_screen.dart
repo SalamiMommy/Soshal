@@ -1228,9 +1228,28 @@ class _EventsAudienceDiscoveryScreenState
   Widget build(BuildContext context) {
     final events = context.watch<EventsService>().events;
     final publicEvents = events;
-    final friendEvents =
-        events.where((e) => _friendPubkeys.contains(e.creatorPubkey)).toList();
-    final fofEvents = events; // Extends network discovery
+    final friends = context.friendsServiceOrNull;
+    final pk = context.activePubkeyOrNull;
+    final friendEvents = friends != null
+        ? friends.filterList(
+            events,
+            AudienceFilter.friends,
+            (e) => e.creatorPubkey,
+            myPubkey: pk,
+          )
+        : events
+            .where((e) =>
+                _friendPubkeys.contains(e.creatorPubkey) ||
+                (pk != null && e.creatorPubkey == pk))
+            .toList();
+    final fofEvents = friends != null
+        ? friends.filterList(
+            events,
+            AudienceFilter.friendsOfFriends,
+            (e) => e.creatorPubkey,
+            myPubkey: pk,
+          )
+        : friendEvents;
 
     return Scaffold(
       appBar: AppBar(

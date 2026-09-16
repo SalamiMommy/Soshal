@@ -4,6 +4,9 @@
 pub fn score_smoking(self_smoking: Option<&str>, other_smoking: Option<&str>) -> f64 {
     match (self_smoking, other_smoking) {
         (Some(s), Some(o)) => {
+            let s = s.trim().to_ascii_lowercase();
+            let o = o.trim().to_ascii_lowercase();
+            let (s, o) = (s.as_str(), o.as_str());
             if s == o {
                 return 1.0;
             }
@@ -31,6 +34,9 @@ pub fn score_smoking(self_smoking: Option<&str>, other_smoking: Option<&str>) ->
 pub fn score_drinking(self_drinking: Option<&str>, other_drinking: Option<&str>) -> f64 {
     match (self_drinking, other_drinking) {
         (Some(s), Some(o)) => {
+            let s = s.trim().to_ascii_lowercase();
+            let o = o.trim().to_ascii_lowercase();
+            let (s, o) = (s.as_str(), o.as_str());
             if s == o {
                 return 1.0;
             }
@@ -58,6 +64,9 @@ pub fn score_drinking(self_drinking: Option<&str>, other_drinking: Option<&str>)
 pub fn score_politics(self_politics: Option<&str>, other_politics: Option<&str>) -> f64 {
     match (self_politics, other_politics) {
         (Some(s), Some(o)) => {
+            let s = s.trim().to_ascii_lowercase();
+            let o = o.trim().to_ascii_lowercase();
+            let (s, o) = (s.as_str(), o.as_str());
             if s == "prefer not to say" || o == "prefer not to say" {
                 return 0.5;
             }
@@ -91,6 +100,9 @@ pub fn score_politics(self_politics: Option<&str>, other_politics: Option<&str>)
 pub fn score_relationship_intent(self_intent: Option<&str>, other_intent: Option<&str>) -> f64 {
     match (self_intent, other_intent) {
         (Some(s), Some(o)) => {
+            let s = s.trim().to_ascii_lowercase();
+            let o = o.trim().to_ascii_lowercase();
+            let (s, o) = (s.as_str(), o.as_str());
             if s == o {
                 return 1.0;
             }

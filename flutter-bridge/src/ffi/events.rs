@@ -127,6 +127,7 @@ fn events_from_values(rows: Vec<serde_json::Value>) -> Vec<EventInfo> {
 /// rows must not count toward attendee totals.
 const RSVP_NOT_SUPERSEDED: &str = "NOT EXISTS (SELECT 1 FROM posts p2 \
     WHERE p2.kind = ?1 AND p2.rsvp_event_id = p.rsvp_event_id AND p2.pubkey = p.pubkey \
+    AND p2.is_deleted = 0 \
     AND (p2.created_at > p.created_at \
          OR (p2.created_at = p.created_at AND p2.id > p.id)))";
 
@@ -144,6 +145,7 @@ fn attendee_counts_for_ids(ids: &[String]) -> std::collections::HashMap<String, 
             let sql = format!(
                 "SELECT rsvp_event_id, COUNT(*) FROM posts p WHERE kind = ?1 \
                  AND content = 'accepted' AND rsvp_event_id = ?2 \
+                 AND is_deleted = 0 \
                  AND {RSVP_NOT_SUPERSEDED} \
                  GROUP BY rsvp_event_id"
             );
@@ -159,6 +161,7 @@ fn attendee_counts_for_ids(ids: &[String]) -> std::collections::HashMap<String, 
             let sql = format!(
                 "SELECT rsvp_event_id, COUNT(*) FROM posts p WHERE kind = ?1 \
                  AND content = 'accepted' AND rsvp_event_id IN (SELECT value FROM json_each(?2)) \
+                 AND is_deleted = 0 \
                  AND {RSVP_NOT_SUPERSEDED} \
                  GROUP BY rsvp_event_id"
             );
@@ -184,7 +187,7 @@ fn attendees_count(event_id: &str) -> i32 {
         let conn = db.conn()?;
         let sql = format!(
             "SELECT COUNT(*) FROM posts p WHERE kind = ?1 AND content = 'accepted' \
-             AND rsvp_event_id = ?2 AND {RSVP_NOT_SUPERSEDED}"
+             AND rsvp_event_id = ?2 AND is_deleted = 0 AND {RSVP_NOT_SUPERSEDED}"
         );
         let count = soshal_db_core::query::query_first(
             &conn,
@@ -628,7 +631,7 @@ pub fn events_get_attendees(event_id: String) -> Result<Vec<String>, String> {
         let conn = db.conn()?;
         let sql = format!(
             "SELECT DISTINCT pubkey FROM posts p WHERE kind = {KIND_EVENT_RSVP} AND content = 'accepted' \
-             AND rsvp_event_id = ?1 AND {RSVP_NOT_SUPERSEDED} ORDER BY created_at DESC LIMIT 200"
+             AND is_deleted = 0 AND rsvp_event_id = ?1 AND {RSVP_NOT_SUPERSEDED} ORDER BY created_at DESC LIMIT 200"
         );
         let pubkeys = soshal_db_core::query::query(&conn, &sql, libsql::params![event_id], |r| {
             r.get::<String>(0)

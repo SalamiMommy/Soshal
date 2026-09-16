@@ -428,7 +428,11 @@ class MessagingService extends ChangeNotifier
       final media = EphemeralMedia.fromJson(jsonDecode(json));
       final index = _pendingEphemeral.indexWhere((m) => m.id == id);
       if (index >= 0) {
-        _pendingEphemeral[index] = media;
+        if (media.state != 'pending') {
+          _pendingEphemeral.removeAt(index);
+        } else {
+          _pendingEphemeral[index] = media;
+        }
         _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
         notifyDeferred();
       }

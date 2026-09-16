@@ -14,6 +14,10 @@ pub fn within_checkin_radius(
         || !event_lon.is_finite()
         || !user_lat.is_finite()
         || !user_lon.is_finite()
+        || !(-90.0..=90.0).contains(&event_lat)
+        || !(-90.0..=90.0).contains(&user_lat)
+        || !(-180.0..=180.0).contains(&event_lon)
+        || !(-180.0..=180.0).contains(&user_lon)
         || !radius_m.is_finite()
         || radius_m <= 0.0
     {
@@ -71,6 +75,17 @@ mod tests {
             37.7749,
             f64::INFINITY,
             500.0
+        ));
+        // Out-of-bounds coordinates (> 90 lat, > 180 lon)
+        assert!(!within_checkin_radius(95.0, 0.0, 37.7749, -122.4194, 500.0));
+        assert!(!within_checkin_radius(
+            37.7749, 185.0, 37.7749, -122.4194, 500.0
+        ));
+        assert!(!within_checkin_radius(
+            37.7749, -122.4194, -91.0, 0.0, 500.0
+        ));
+        assert!(!within_checkin_radius(
+            37.7749, -122.4194, 0.0, -181.0, 500.0
         ));
     }
 }

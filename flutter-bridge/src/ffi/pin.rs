@@ -44,6 +44,8 @@ pub async fn pin_set(pin: String) -> Result<bool, String> {
         r.set(PIN_HASH_KEY, &format!("{salt_hex}:{hash}"))
             .map_err(super::util::to_err)?;
         r.set("pin_permanently_locked", "false")
+            .map_err(super::util::to_err)?;
+        r.set("pin_lockout_state", "{}")
             .map_err(super::util::to_err)
     })?;
     Ok(true)
@@ -66,6 +68,8 @@ pub async fn pin_change(old_pin: String, new_pin: String) -> Result<bool, String
         r.set(PIN_HASH_KEY, &format!("{salt_hex}:{hash}"))
             .map_err(super::util::to_err)?;
         r.set("pin_permanently_locked", "false")
+            .map_err(super::util::to_err)?;
+        r.set("pin_lockout_state", "{}")
             .map_err(super::util::to_err)
     })?;
     Ok(true)

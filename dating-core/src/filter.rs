@@ -8,10 +8,10 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
         return Vec::new();
     }
     let gender_map: &[&str] = match input.own_seeking.as_deref() {
-        Some("male") => &["male"],
-        Some("female") => &["female"],
-        Some("non-binary") => &["non-binary"],
-        Some("other") => &["other"],
+        Some(s) if s.eq_ignore_ascii_case("male") => &["male"],
+        Some(s) if s.eq_ignore_ascii_case("female") => &["female"],
+        Some(s) if s.eq_ignore_ascii_case("non-binary") => &["non-binary"],
+        Some(s) if s.eq_ignore_ascii_case("other") => &["other"],
         _ => &["male", "female", "non-binary", "other"],
     };
     let self_contacts_set: HashSet<&str> = input.self_contacts.iter().map(|s| s.as_str()).collect();
@@ -33,7 +33,7 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                     if !seeking.eq_ignore_ascii_case("all") {
                         match profile.gender.as_ref() {
                             Some(g) => {
-                                if !gender_map.contains(&g.as_str()) {
+                                if !gender_map.iter().any(|m| m.eq_ignore_ascii_case(g)) {
                                     return false;
                                 }
                             }
@@ -59,7 +59,7 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                     } else {
                         &["male", "female", "non-binary", "other"]
                     };
-                    if !other_map.contains(&own_g.as_str()) {
+                    if !other_map.iter().any(|m| m.eq_ignore_ascii_case(own_g)) {
                         return false;
                     }
                 }

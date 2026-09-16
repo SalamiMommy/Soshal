@@ -246,10 +246,14 @@ pub fn marketplace_fetch_listings(
     }
     let sql = listings_sql("", limit, offset, authors.as_deref());
     match &authors {
-        Some(a) => super::util::json_ok(db_listings_params(
-            &sql,
-            &[serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?],
-        )?),
+        Some(a) => {
+            let p = if a.len() == 1 {
+                a[0].clone()
+            } else {
+                serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?
+            };
+            super::util::json_ok(db_listings_params(&sql, &[p])?)
+        }
         None => super::util::json_ok(db_listings(sql)?),
     }
 }
