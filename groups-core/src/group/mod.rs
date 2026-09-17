@@ -19,6 +19,14 @@ pub(crate) fn safe_truncate(s: &str, max_bytes: usize) -> String {
     soshal_common_core::ui_safe::truncate_str(s, max_bytes).to_string()
 }
 
+pub(crate) fn clamp_created_at(v: f64) -> f64 {
+    if v.is_finite() && v >= 0.0 {
+        v
+    } else {
+        0.0
+    }
+}
+
 pub(crate) fn is_safe_group_media_url(u: &str) -> bool {
     if u.is_empty() || u.len() > MAX_TAG_VALUE_LEN {
         return false;

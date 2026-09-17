@@ -35,6 +35,13 @@ fn event_signature_valid(event: &nostr::event::Event) -> bool {
 }
 
 fn validate_swap_event(input: &ValidateSwapInput) -> ValidateSwapOut {
+    if input.event_json.len() > 128 * 1024 {
+        return ValidateSwapOut {
+            valid: false,
+            d_tag: None,
+            inner_pubkey: None,
+        };
+    }
     let event = match serde_json::from_str::<nostr::event::Event>(&input.event_json) {
         Ok(e) => e,
         Err(_) => {
@@ -49,9 +56,10 @@ fn validate_swap_event(input: &ValidateSwapInput) -> ValidateSwapOut {
     // forged payloads are rejected outright. A successful parse guarantees
     // well-formed hex id/pubkey/sig fields. Constant-time pubkey comparison
     // prevents a timing side-channel probing the caller's claimed identity.
+    let self_pk_clean = input.self_pubkey.trim();
     if !constant_time_eq(
-        event.pubkey.to_hex().as_bytes(),
-        input.self_pubkey.as_bytes(),
+        event.pubkey.to_hex().to_ascii_lowercase().as_bytes(),
+        self_pk_clean.to_ascii_lowercase().as_bytes(),
     ) {
         return ValidateSwapOut {
             valid: false,
@@ -91,7 +99,7 @@ fn validate_swap_event(input: &ValidateSwapInput) -> ValidateSwapOut {
             };
         }
     }
-    let p_ok = p_tag == Some(input.self_pubkey.as_str());
+    let p_ok = p_tag.is_some_and(|p| p.eq_ignore_ascii_case(self_pk_clean));
     let role_ok = role_tag == Some(input.expected_role.as_str());
     let type_ok = type_tag == Some(input.expected_type.as_str());
     if !d_present || !p_ok || !role_ok || !type_ok {
@@ -115,7 +123,12 @@ fn validate_swap_event(input: &ValidateSwapInput) -> ValidateSwapOut {
         // The inner payload must name the signer as the party. The outer
         // signature already authenticates the inner payload as authored by
         // `self_pubkey`, so no separate inner signature is needed.
-        if inner.id.is_empty() || inner.pubkey != input.self_pubkey {
+        if inner.id.is_empty()
+            || !constant_time_eq(
+                inner.pubkey.to_ascii_lowercase().as_bytes(),
+                self_pk_clean.to_ascii_lowercase().as_bytes(),
+            )
+        {
             return ValidateSwapOut {
                 valid: false,
                 d_tag,

@@ -1,6 +1,6 @@
 use super::{
-    find_tag_values_map, is_safe_group_media_url, GroupEventInput, MAX_EVENTS, MAX_TAGS_PER_EVENT,
-    MAX_TAG_VALUE_LEN,
+    clamp_created_at, find_tag_values_map, is_safe_group_media_url, safe_truncate, GroupEventInput,
+    MAX_EVENTS, MAX_TAGS_PER_EVENT, MAX_TAG_VALUE_LEN,
 };
 use serde::{Deserialize, Serialize};
 use soshal_common_core::json_util::{json_in, json_out};
@@ -60,13 +60,18 @@ fn parse_group_chat_messages(input: ParseGroupChatMessagesInput) -> Vec<ParsedGr
         let video_url = video_url_str
             .filter(|s| is_safe_group_media_url(s))
             .map(|s| s.to_string());
+        let content = if event.content.len() > 64 * 1024 {
+            safe_truncate(&event.content, 64 * 1024)
+        } else {
+            event.content.clone()
+        };
         results.push(ParsedGroupChatMessageOut {
             id: event.id.clone(),
             group_id: input.group_id.clone(),
             channel_id: event_channel.map(|s| s.to_string()),
             pubkey: event.pubkey.clone(),
-            content: event.content.clone(),
-            created_at: event.created_at * 1000.0,
+            content,
+            created_at: clamp_created_at(event.created_at) * 1000.0,
             image_url,
             video_url,
         });

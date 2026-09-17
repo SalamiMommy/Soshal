@@ -208,3 +208,43 @@ fn posts_reject_ssrf_and_script_media() {
     assert_eq!(videos.len(), 1);
     assert_eq!(videos[0], "https://example.com/safe.mp4");
 }
+
+#[test]
+fn groups_reject_ssrf_picture_and_clamps_negative_timestamp() {
+    use soshal_groups_core::group::groups::parse_groups_json;
+    let input = json!({
+        "events": [{
+            "id": "g1",
+            "pubkey": "PK_UPPER",
+            "content": json!({
+                "about": "A group",
+                "picture": "http://127.0.0.1:8080/exploit.png"
+            }).to_string(),
+            "tags": [["d", "g1"], ["name", "Group One"]],
+            "created_at": -50.0,
+            "kind": 39000
+        }],
+        "self_pubkey": "pk_upper"
+    });
+    let out = parse::<serde_json::Value>(&parse_groups_json(&input.to_string()));
+    assert_eq!(out.len(), 1);
+    assert!(out[0]["picture"].is_null());
+    assert_eq!(out[0]["created_at"], 0.0);
+    assert_eq!(out[0]["is_owner"], true);
+}
+
+#[test]
+fn channels_and_posts_clamps_nan_and_negative_timestamp() {
+    let input_chan = json!({
+        "events": [{
+            "id": "c1",
+            "pubkey": "pk",
+            "content": "",
+            "tags": [["d", "c1"], ["g", "g1"], ["name", "General"]],
+            "created_at": -10.0,
+            "kind": 40
+        }]
+    });
+    let out_chan = parse::<serde_json::Value>(&parse_group_channels_json(&input_chan.to_string()));
+    assert_eq!(out_chan[0]["created_at"], 0.0);
+}

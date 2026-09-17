@@ -217,7 +217,12 @@ fn check_low_entropy_spam(text: &str) -> bool {
 
 /// Evaluates text across all normalized variants against spam patterns and heuristics.
 pub fn check_spam(text: &str) -> SpamVerdict {
-    let trimmed = text.trim();
+    let bounded_text = if text.len() > crate::check::MAX_MODERATION_INPUT_LEN {
+        &text[..text.floor_char_boundary(crate::check::MAX_MODERATION_INPUT_LEN)]
+    } else {
+        text
+    };
+    let trimmed = bounded_text.trim();
     if trimmed.is_empty() {
         return SpamVerdict {
             is_spam: false,

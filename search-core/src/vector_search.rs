@@ -141,8 +141,11 @@ pub fn rank_vector_documents(
     docs: &[VectorDocument],
     top_k: usize,
 ) -> Vec<(String, f32)> {
+    if top_k == 0 || docs.is_empty() || query_embedding.is_empty() {
+        return Vec::new();
+    }
     let query_norm = embedding_norm(query_embedding);
-    if query_norm <= 0.0 || docs.is_empty() {
+    if !query_norm.is_finite() || query_norm <= 0.0 {
         return Vec::new();
     }
     let inv_query_sqrt = 1.0 / query_norm.sqrt();

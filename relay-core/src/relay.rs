@@ -160,6 +160,9 @@ impl RelayNode {
         if payload.len() > crate::envelope::MAX_PAYLOAD_BYTES {
             return Err("payload exceeds mesh cap".to_string());
         }
+        if event_id.is_empty() || author.is_empty() {
+            return Err("event id or author cannot be empty".to_string());
+        }
         if event_id.len() > 128 || author.len() > 128 {
             return Err("event id or author exceeds 128-byte cap".to_string());
         }
@@ -572,6 +575,15 @@ mod tests {
         assert_eq!(status["running"], true);
         assert_eq!(status["peers"]["reticulum"], 2);
         assert_eq!(status["published"], 1);
+    }
+
+    #[test]
+    fn test_publish_rejects_empty_id_and_author() {
+        let mut node = RelayNode::new();
+        node.add_backend(Box::new(mock(BackendKind::Reticulum, 1).0));
+        node.start().unwrap();
+        assert!(node.publish("", 1, "a", 0, b"p".to_vec()).is_err());
+        assert!(node.publish("e1", 1, "", 0, b"p".to_vec()).is_err());
     }
 
     #[test]

@@ -153,3 +153,56 @@ fn test_extract_deletion_ids_json() {
     assert_eq!(v[0], "deleted_event_1");
     assert_eq!(extract_deletion_ids_json("garbage"), "[]");
 }
+
+#[test]
+fn test_extract_deletion_ids_filters_empty() {
+    use soshal_events_core::deletion::extract_deletion_ids_json;
+    let tags = vec![
+        vec!["e".to_string(), "".to_string()],
+        vec!["e".to_string(), "valid_id".to_string()],
+    ];
+    assert_eq!(extract_deletion_ids(&tags), vec!["valid_id"]);
+
+    let json_input = serde_json::json!({
+        "tags": [
+            ["e", ""],
+            ["e", "valid_json_id"]
+        ]
+    });
+    let out = extract_deletion_ids_json(&json_input.to_string());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 1);
+    assert_eq!(v[0], "valid_json_id");
+}
+
+#[test]
+fn test_get_expiry_clamps_negative() {
+    use soshal_events_core::event::expiry::get_expiry_from_tags_json;
+    let tags = vec![vec!["expiration".to_string(), "-100".to_string()]];
+    assert_eq!(get_expiry_from_tags(&tags), 0);
+
+    let json_input = serde_json::json!({
+        "tags": [
+            ["expiration", "-500"]
+        ]
+    });
+    assert_eq!(get_expiry_from_tags_json(&json_input.to_string()), 0);
+}
+
+#[test]
+fn test_compute_interest_score_json_bounds_input() {
+    use soshal_events_core::event::interest::compute_interest_score_json;
+    let many_my: Vec<String> = (0..1500).map(|i| format!("tag{}", i)).collect();
+    let peer = vec!["tag0".to_string(), "tag1".to_string(), "long_".repeat(30)];
+    let input = serde_json::json!({
+        "myInterests": many_my,
+        "peerInterests": peer,
+    });
+    let out = compute_interest_score_json(&input.to_string());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(v["score"].as_f64().unwrap() > 0.0);
+    assert!(v["common"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("tag0")));
+}

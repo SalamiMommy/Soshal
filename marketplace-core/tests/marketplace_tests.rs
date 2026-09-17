@@ -475,4 +475,47 @@ fn parse_listing_currency_and_location_tag_variations() {
     let out = parse_listing_json(&input2.to_string());
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["locationGeohash"], "u33dc5");
+
+    // Currency with invalid characters rejected
+    let input3 = serde_json::json!({
+        "id": "x3", "pubkey": "pk", "content": "", "created_at": 1.0,
+        "tags": [["price", "10"], ["currency", "USD<script>"]]
+    });
+    assert_eq!(parse_listing_json(&input3.to_string()), "null");
+}
+
+#[test]
+fn parse_listing_truncates_huge_fields() {
+    let huge_title = "T".repeat(500);
+    let huge_cond = "C".repeat(200);
+    let huge_contact = "tel:".to_string() + &"1".repeat(500);
+    let input = serde_json::json!({
+        "id": "x_huge",
+        "pubkey": "pk",
+        "content": serde_json::json!({
+            "condition": huge_cond,
+            "contactMethods": [huge_contact],
+        }).to_string(),
+        "created_at": 1.0,
+        "tags": [["price", "10"], ["title", huge_title]]
+    });
+    let out = parse_listing_json(&input.to_string());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["title"].as_str().unwrap().len(), 256);
+    assert_eq!(v["condition"].as_str().unwrap().len(), 64);
+    assert_eq!(v["contactMethods"][0].as_str().unwrap().len(), 256);
+}
+
+#[test]
+fn validate_swap_rejects_oversized_payload() {
+    let input = serde_json::json!({
+        "event_json": "x".repeat(130 * 1024),
+        "self_pubkey": "y",
+        "expected_role": "buyer",
+        "expected_type": "buy_now",
+        "check_inner": false
+    });
+    let v: serde_json::Value =
+        serde_json::from_str(&validate_swap_event_json(&input.to_string())).unwrap();
+    assert_eq!(v["valid"], false);
 }

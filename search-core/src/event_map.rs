@@ -49,18 +49,15 @@ pub fn event_to_search_result(input: &EventToSearchResultInput) -> Option<Search
                         .or_else(|| meta.get("displayName").and_then(|v| v.as_str()))
                         .or_else(|| meta.get("name").and_then(|v| v.as_str()));
                     title = match display_name {
-                        Some(n) if !n.is_empty() => n.to_string(),
+                        Some(n) if !n.is_empty() => soshal_common_core::format::truncate(n, 120),
                         _ => ev.pubkey.chars().take(8).collect(),
                     };
-                    subtitle = meta
-                        .get("about")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
+                    let raw_subtitle = meta.get("about").and_then(|v| v.as_str()).unwrap_or("");
+                    subtitle = soshal_common_core::format::truncate(raw_subtitle, 200);
                     image_url = meta
                         .get("picture")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
+                        .and_then(soshal_common_core::url::sanitize_link_url);
                 }
                 Err(_) => {
                     title = ev.pubkey.chars().take(8).collect();
@@ -77,11 +74,12 @@ pub fn event_to_search_result(input: &EventToSearchResultInput) -> Option<Search
             let [d_tag, title_tag] = find_tag_values_map(&ev.tags, ["d", "title"]);
             let d_str = d_tag.unwrap_or("");
             let title_str = title_tag.unwrap_or("");
-            title = if !title_str.is_empty() {
-                title_str.to_string()
+            let raw_title = if !title_str.is_empty() {
+                title_str
             } else {
-                d_str.to_string()
+                d_str
             };
+            title = soshal_common_core::format::truncate(raw_title, 120);
             subtitle = soshal_common_core::format::truncate(&ev.content, 80);
         }
         n if n == KIND_LISTING as u32 => {
@@ -90,18 +88,24 @@ pub fn event_to_search_result(input: &EventToSearchResultInput) -> Option<Search
                 find_tag_values_map(&ev.tags, ["title", "price", "image"]);
             let title_str = title_tag.unwrap_or("");
             let price = price_tag.unwrap_or("");
-            title = if !title_str.is_empty() {
-                title_str.to_string()
+            let raw_title = if !title_str.is_empty() {
+                title_str
             } else {
-                "Marketplace Listing".to_string()
+                "Marketplace Listing"
             };
-            subtitle = price.to_string();
+            title = soshal_common_core::format::truncate(raw_title, 120);
+            subtitle = soshal_common_core::format::truncate(price, 80);
             if let Some(img) = image_tag {
-                image_url = Some(img.to_string());
+                image_url = soshal_common_core::url::sanitize_link_url(img);
             }
         }
         _ => return None,
     }
+    let created_at = if ev.created_at.is_finite() && ev.created_at >= 0.0 {
+        ev.created_at
+    } else {
+        0.0
+    };
     Some(SearchResultOut {
         result_type,
         id: ev.id.clone(),
@@ -109,7 +113,7 @@ pub fn event_to_search_result(input: &EventToSearchResultInput) -> Option<Search
         subtitle,
         image_url,
         pubkey: ev.pubkey.clone(),
-        created_at: ev.created_at,
+        created_at,
     })
 }
 

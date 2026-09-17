@@ -101,7 +101,12 @@ pub fn sanitize_glitter_content(content: &str) -> String {
     if content.is_empty() {
         return String::new();
     }
-    let s = strip_control_chars(content);
+    let bounded = if content.len() > crate::check::MAX_MODERATION_INPUT_LEN {
+        &content[..content.floor_char_boundary(crate::check::MAX_MODERATION_INPUT_LEN)]
+    } else {
+        content
+    };
+    let s = strip_control_chars(bounded);
     let s = decode_ascii_entities(&s);
     let re = get_glitter_regexes();
 

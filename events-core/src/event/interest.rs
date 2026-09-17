@@ -45,8 +45,35 @@ pub fn compute_interest_score_json(input: &str) -> String {
     if input.my_interests.is_empty() || input.peer_interests.is_empty() {
         return r#"{"score":0,"common":[]}"#.to_string();
     }
-    let my_owned: Vec<String> = input.my_interests.iter().map(|s| s.to_string()).collect();
-    let peer_owned: Vec<String> = input.peer_interests.iter().map(|s| s.to_string()).collect();
+    let my_owned: Vec<String> = input
+        .my_interests
+        .iter()
+        .take(1_000)
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| {
+            if s.len() > 128 {
+                s[..s.floor_char_boundary(128)].to_string()
+            } else {
+                s.to_string()
+            }
+        })
+        .collect();
+    let peer_owned: Vec<String> = input
+        .peer_interests
+        .iter()
+        .take(1_000)
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| {
+            if s.len() > 128 {
+                s[..s.floor_char_boundary(128)].to_string()
+            } else {
+                s.to_string()
+            }
+        })
+        .collect();
+    if my_owned.is_empty() || peer_owned.is_empty() {
+        return r#"{"score":0,"common":[]}"#.to_string();
+    }
     let out = compute_interest_score(&my_owned, &peer_owned);
     json_out(&out, r#"{"score":0,"common":[]}"#)
 }

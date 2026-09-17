@@ -268,7 +268,12 @@ pub fn collapse_spaced_words(text: &str) -> String {
 /// 5. Spaced-word collapsed
 pub fn generate_normalized_variants(text: &str) -> Vec<String> {
     let mut variants = Vec::with_capacity(6);
-    let trimmed = text.trim().to_string();
+    let bounded = if text.len() > crate::check::MAX_MODERATION_INPUT_LEN {
+        &text[..text.floor_char_boundary(crate::check::MAX_MODERATION_INPUT_LEN)]
+    } else {
+        text
+    };
+    let trimmed = bounded.trim().to_string();
     if trimmed.is_empty() {
         return variants;
     }

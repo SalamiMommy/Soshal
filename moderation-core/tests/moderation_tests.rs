@@ -620,3 +620,17 @@ fn test_ai_classifier_false_positive_resistance() {
         assert_eq!(res.primary_category, None);
     }
 }
+
+#[test]
+fn test_check_spam_oversized_input_bounded() {
+    let huge = "nice day outside ".repeat(20_000); // ~340KB > 256KB
+    let verdict = soshal_moderation_core::spam::check_spam(&huge);
+    assert!(!verdict.is_spam);
+}
+
+#[test]
+fn test_sanitize_glitter_oversized_input_bounded() {
+    let huge_clean = "<p>Safe content</p>".repeat(20_000);
+    let sanitized = sanitize_glitter_content(&huge_clean);
+    assert!(!sanitized.is_empty());
+}

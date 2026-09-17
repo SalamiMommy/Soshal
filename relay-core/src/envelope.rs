@@ -80,6 +80,9 @@ impl MeshEnvelope {
 
     /// Encodes to wire bytes (little-endian, magic prefixed).
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        if self.event_id.is_empty() || self.author.is_empty() {
+            return Err("envelope event_id and author cannot be empty".to_string());
+        }
         let mut out = Vec::with_capacity(
             4 + 1
                 + 1
@@ -127,12 +130,18 @@ impl MeshEnvelope {
         }
         let mut pos = 6;
         let event_id = take_str(data, &mut pos)?;
+        if event_id.is_empty() {
+            return None;
+        }
         if data.len() < pos + 2 {
             return None;
         }
         let kind = u16::from_le_bytes([data[pos], data[pos + 1]]);
         pos += 2;
         let author = take_str(data, &mut pos)?;
+        if author.is_empty() {
+            return None;
+        }
         if data.len() < pos + 8 {
             return None;
         }
@@ -271,6 +280,35 @@ mod tests {
     fn test_rejects_trailing_bytes() {
         let mut bytes = sample().to_bytes().unwrap();
         bytes.push(0x42);
+        assert_eq!(MeshEnvelope::from_bytes(&bytes), None);
+    }
+
+    #[test]
+    fn test_rejects_empty_event_id_and_author() {
+        let empty_id = MeshEnvelope::new(
+            "".to_string(),
+            1,
+            "author".to_string(),
+            0,
+            b"payload".to_vec(),
+        );
+        assert!(empty_id.to_bytes().is_err());
+
+        let empty_author =
+            MeshEnvelope::new("id".to_string(), 1, "".to_string(), 0, b"payload".to_vec());
+        assert!(empty_author.to_bytes().is_err());
+
+        // Craft bytes with empty event_id (len = 0)
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&MAGIC);
+        bytes.push(ENVELOPE_VERSION);
+        bytes.push(0); // hop
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // event_id len = 0
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // kind
+        bytes.extend_from_slice(&4u16.to_le_bytes()); // author len = 4
+        bytes.extend_from_slice(b"auth");
+        bytes.extend_from_slice(&0u64.to_le_bytes()); // created_at
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // payload_len = 0
         assert_eq!(MeshEnvelope::from_bytes(&bytes), None);
     }
 }

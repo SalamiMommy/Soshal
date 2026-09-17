@@ -104,7 +104,10 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
         _ => return None,
     };
     let currency_str = currency.unwrap_or("USD");
-    if currency_str.len() > 16 {
+    if currency_str.is_empty()
+        || currency_str.len() > 16
+        || !currency_str.chars().all(|c| c.is_ascii_alphanumeric())
+    {
         return None;
     }
 
@@ -112,7 +115,8 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
     let d_tag = d_tag
         .map(|s| s.to_string())
         .unwrap_or_else(|| ev.id.get(..12).unwrap_or(&ev.id).to_string());
-    let title = title.unwrap_or("Untitled").to_string();
+    let title = title.unwrap_or("Untitled");
+    let title = soshal_common_core::ui_safe::truncate_str(title, 256).to_string();
     let location_geohash = location_geohash.map(|s| s.to_string());
     let mut description: Option<String> = None;
     let mut condition = "good".to_string();
@@ -122,10 +126,14 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
         if let Ok(content) = serde_json::from_str::<ListingContent>(&ev.content) {
             description = content.description;
             if let Some(c) = content.condition {
-                condition = c;
+                condition = soshal_common_core::ui_safe::truncate_str(&c, 64).to_string();
             }
             if let Some(cm) = content.contact_methods {
-                contact_methods = cm.into_iter().take(64).collect();
+                contact_methods = cm
+                    .into_iter()
+                    .take(64)
+                    .map(|m| soshal_common_core::ui_safe::truncate_str(&m, 256).to_string())
+                    .collect();
             }
             if let Some(e) = content.escrow_enabled {
                 escrow_enabled = e;

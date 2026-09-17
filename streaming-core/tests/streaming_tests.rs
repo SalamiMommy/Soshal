@@ -165,3 +165,35 @@ fn merge_live_chat_messages_empty_id_in_existing_ignored() {
     let out = merge_live_chat_messages(existing, incoming);
     assert_eq!(out.len(), 3);
 }
+
+#[test]
+fn test_events_clamp_negative_and_nan_created_at() {
+    let mut ev = soshal_test_util::nostr_event("content", vec![]);
+    ev.created_at = -100.0;
+    let story = story_from_event(&ev);
+    assert_eq!(story["created_at"], 0);
+
+    ev.created_at = f64::NAN;
+    let chat = live_chat_from_event(&ev);
+    assert_eq!(chat["created_at"], 0);
+
+    let stream = live_stream_from_event(&ev);
+    assert_eq!(stream["created_at"], 0);
+
+    let peer = chatrandom_peer_from_event(&ev);
+    assert_eq!(peer["created_at"], 0);
+}
+
+#[test]
+fn test_chatrandom_available_content_bounds() {
+    let many_interests: Vec<String> = (0..100)
+        .map(|i| format!("int_{}_{}", i, "x".repeat(100)))
+        .collect();
+    let res = chatrandom_available_content(&many_interests, &"v".repeat(50), &"m".repeat(50));
+    let v: serde_json::Value = serde_json::from_str(&res).unwrap();
+    let arr = v["interests"].as_array().unwrap();
+    assert_eq!(arr.len(), 64);
+    assert_eq!(arr[0].as_str().unwrap().len(), 64);
+    assert_eq!(v["media_type"].as_str().unwrap().len(), 32);
+    assert_eq!(v["mode"].as_str().unwrap().len(), 32);
+}

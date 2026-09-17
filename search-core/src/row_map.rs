@@ -27,25 +27,29 @@ pub fn map_search_row(row: &SearchRowInput) -> MappedSearchRow {
                 image_url = meta
                     .get("picture")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                meta.get("about")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string()
+                    .and_then(soshal_common_core::url::sanitize_link_url);
+                let about = meta.get("about").and_then(|v| v.as_str()).unwrap_or("");
+                soshal_common_core::format::truncate(about, 200)
             }
             Err(_) => String::new(),
         }
     } else {
-        row.content.clone()
+        soshal_common_core::format::truncate(&row.content, 200)
+    };
+    let title = soshal_common_core::format::truncate(&row.title, 120);
+    let created_at = if row.created_at.is_finite() && row.created_at >= 0.0 {
+        row.created_at
+    } else {
+        0.0
     };
     MappedSearchRow {
         result_type: row.row_type.clone(),
         id: row.id.clone(),
-        title: row.title.clone(),
+        title,
         subtitle,
         image_url,
         pubkey: row.pubkey.clone(),
-        created_at: row.created_at,
+        created_at,
     }
 }
 

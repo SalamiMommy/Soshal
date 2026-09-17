@@ -33,13 +33,23 @@ pub fn validate_lud16_parts(lud16: &str) -> Result<(&str, &str), String> {
     if user.len() > 64 {
         return Err("invalid lud16: user part too long".into());
     }
+    if user.starts_with('.') || user.ends_with('.') || user.contains("..") {
+        return Err(
+            "invalid lud16: user part cannot start or end with '.' or contain consecutive dots"
+                .into(),
+        );
+    }
     if !domain
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b':')
     {
         return Err("invalid lud16: domain contains disallowed characters".into());
     }
-    if domain.len() > 255 || domain.starts_with('.') || domain.ends_with('.') {
+    if domain.len() > 255
+        || domain.starts_with('.')
+        || domain.ends_with('.')
+        || domain.contains("..")
+    {
         return Err("invalid lud16: domain invalid".into());
     }
     Ok((user, domain))
@@ -52,6 +62,9 @@ pub fn validate_lud16_parts(lud16: &str) -> Result<(&str, &str), String> {
 pub fn parse_lud16_url_secure(lud16: &str) -> Result<(String, String, String), String> {
     let (user, domain) = validate_lud16_parts(lud16)?;
     let url = format!("https://{}/.well-known/lnurlp/{}", domain, user);
+    if !soshal_common_core::url::is_valid_media_url(&url) {
+        return Err("invalid lud16: unsafe destination domain or URL".into());
+    }
     Ok((user.to_string(), domain.to_string(), url))
 }
 

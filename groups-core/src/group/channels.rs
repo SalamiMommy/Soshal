@@ -1,4 +1,7 @@
-use super::{GroupEventInput, MAX_EVENTS, MAX_TAGS_PER_EVENT, MAX_TAG_VALUE_LEN};
+use super::{
+    clamp_created_at, safe_truncate, GroupEventInput, MAX_EVENTS, MAX_TAGS_PER_EVENT,
+    MAX_TAG_VALUE_LEN,
+};
 use serde::{Deserialize, Serialize};
 use soshal_common_core::json_util::{json_in, json_out};
 
@@ -66,11 +69,11 @@ fn parse_group_channels(input: ParseGroupChannelsInput) -> Vec<ParsedGroupChanne
                 id: id.to_string(),
                 group_id: gid.to_string(),
                 name: name.to_string(),
-                description: desc_tag.map(|s| s.to_string()),
+                description: desc_tag.map(|s| safe_truncate(s, MAX_TAG_VALUE_LEN)),
                 created_by: event.pubkey.clone(),
-                created_at: event.created_at * 1000.0,
-                category: category_tag.map(|s| s.to_string()),
-                channel_type: type_tag.map(|s| s.to_string()),
+                created_at: clamp_created_at(event.created_at) * 1000.0,
+                category: category_tag.map(|s| safe_truncate(s, MAX_TAG_VALUE_LEN)),
+                channel_type: type_tag.map(|s| safe_truncate(s, MAX_TAG_VALUE_LEN)),
                 position: position_tag
                     .and_then(|s| s.parse::<i64>().ok())
                     .filter(|n| *n >= -1_000_000_000 && *n <= 1_000_000_000),

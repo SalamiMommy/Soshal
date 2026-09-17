@@ -1,6 +1,6 @@
 use super::{
-    find_tag_values_map, safe_truncate, GroupEventInput, MAX_EVENTS, MAX_TAGS_PER_EVENT,
-    MAX_TAG_VALUE_LEN,
+    clamp_created_at, find_tag_values_map, is_safe_group_media_url, safe_truncate, GroupEventInput,
+    MAX_EVENTS, MAX_TAGS_PER_EVENT, MAX_TAG_VALUE_LEN,
 };
 use serde::{Deserialize, Serialize};
 use soshal_common_core::json_util::{json_in, json_out};
@@ -50,6 +50,7 @@ fn parse_groups(input: ParseGroupsInput) -> Vec<ParsedGroupOut> {
                     picture = parsed
                         .get("picture")
                         .and_then(|v| v.as_str())
+                        .filter(|s| is_safe_group_media_url(s))
                         .map(|s| safe_truncate(s, MAX_TAG_VALUE_LEN));
                     audience = parsed
                         .get("audience")
@@ -66,8 +67,8 @@ fn parse_groups(input: ParseGroupsInput) -> Vec<ParsedGroupOut> {
                 about,
                 picture,
                 created_by: event.pubkey.clone(),
-                created_at: event.created_at * 1000.0,
-                is_owner: event.pubkey == input.self_pubkey,
+                created_at: clamp_created_at(event.created_at) * 1000.0,
+                is_owner: event.pubkey.eq_ignore_ascii_case(&input.self_pubkey),
                 audience,
             });
         }

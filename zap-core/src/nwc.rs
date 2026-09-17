@@ -77,6 +77,9 @@ pub fn make_invoice_request(
     if amount_sats <= 0 || amount_sats > 21_000_000_000 {
         return Err("amount out of range".into());
     }
+    if description.len() > 2048 {
+        return Err("description too long (max 2048 chars)".into());
+    }
     Ok(nostr::nips::nip47::Request::make_invoice(
         nostr::nips::nip47::MakeInvoiceRequest {
             amount: (amount_sats as u64).saturating_mul(1000),
@@ -106,6 +109,9 @@ pub fn validate_pay_invoice(invoice: &str) -> Result<(), String> {
     }
     let msats = super::parse_msats_from_bolt11(invoice)
         .map_err(|_| "invalid bolt11 invoice".to_string())?;
+    if msats == 0 {
+        return Err("invalid bolt11 invoice: missing or zero amount".into());
+    }
     if msats > super::NWC_MAX_PAY_SATS * 1000 {
         return Err(format!(
             "payment exceeds {}-sat NWC cap",

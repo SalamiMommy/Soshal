@@ -472,3 +472,50 @@ fn rank_vector_documents_dimension_mismatch_scores_zero() {
     assert_eq!(ranked[0], ("d1".to_string(), 1.0));
     assert_eq!(ranked[1], ("d2".to_string(), 0.0));
 }
+
+#[test]
+fn rank_vector_documents_top_k_zero_and_nan_embedding() {
+    let docs = vec![VectorDocument::new("d1".into(), vec![1.0, 0.0])];
+    assert!(rank_vector_documents(&[1.0, 0.0], &docs, 0).is_empty());
+    assert!(rank_vector_documents(&[f32::NAN, 0.0], &docs, 5).is_empty());
+    assert!(rank_vector_documents(&[f32::INFINITY, 0.0], &docs, 5).is_empty());
+}
+
+#[test]
+fn event_to_search_result_sanitizes_image_and_truncates() {
+    use soshal_nostr_core::models::NostrEvent;
+    let ev = NostrEvent {
+        id: "ev1".into(),
+        pubkey: "0123456789abcdef".into(),
+        content: serde_json::json!({
+            "display_name": "A".repeat(200),
+            "about": "B".repeat(500),
+            "picture": "http://127.0.0.1:8080/exploit.png"
+        })
+        .to_string(),
+        tags: vec![],
+        created_at: 100.0,
+        kind: 0,
+    };
+    let input = EventToSearchResultInput { event: ev, kind: 0 };
+    let res = event_to_search_result(&input).unwrap();
+    assert_eq!(res.title.chars().count(), 120);
+    assert_eq!(res.subtitle.chars().count(), 200);
+    assert!(res.image_url.is_none());
+}
+
+#[test]
+fn map_search_row_sanitizes_image_and_truncates() {
+    let row = SearchRowInput {
+        id: "r1".into(),
+        row_type: "post".into(),
+        title: "T".repeat(300),
+        content: "C".repeat(500),
+        pubkey: "pk".into(),
+        created_at: -50.0,
+    };
+    let mapped = map_search_row(&row);
+    assert_eq!(mapped.title.chars().count(), 120);
+    assert_eq!(mapped.subtitle.chars().count(), 200);
+    assert_eq!(mapped.created_at, 0.0);
+}

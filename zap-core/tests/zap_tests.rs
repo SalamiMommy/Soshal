@@ -26,10 +26,23 @@ fn lud16_secure_accepts_valid() {
 #[test]
 fn lud16_secure_rejects_path_traversal() {
     assert!(parse_lud16_url_secure("../admin@domain.com").is_err());
+    assert!(parse_lud16_url_secure("..@domain.com").is_err());
+    assert!(parse_lud16_url_secure(".admin@domain.com").is_err());
+    assert!(parse_lud16_url_secure("admin.@domain.com").is_err());
+    assert!(parse_lud16_url_secure("ad..min@domain.com").is_err());
+    assert!(parse_lud16_url_secure("admin@domain..com").is_err());
     assert!(parse_lud16_url_secure("a/b@domain.com").is_err());
     assert!(parse_lud16_url_secure("a?b@domain.com").is_err());
     assert!(parse_lud16_url_secure("a#b@domain.com").is_err());
     assert!(parse_lud16_url_secure("sp ace@domain.com").is_err());
+}
+
+#[test]
+fn lud16_secure_rejects_ssrf_hosts() {
+    assert!(parse_lud16_url_secure("alice@localhost").is_err());
+    assert!(parse_lud16_url_secure("alice@127.0.0.1").is_err());
+    assert!(parse_lud16_url_secure("alice@169.254.169.254").is_err());
+    assert!(parse_lud16_url_secure("alice@test.nip.io").is_err());
 }
 
 #[test]
@@ -189,9 +202,18 @@ fn pay_invoice_validation_bounds() {
         Err("invalid bolt11 invoice".into())
     );
     assert!(validate_pay_invoice(&"x".repeat(5000)).is_err());
+    assert!(validate_pay_invoice("garbage").is_err());
+    assert!(validate_pay_invoice("lnbc").is_err());
     assert!(validate_pay_invoice("lnbc10n").is_ok());
     assert!(validate_pay_invoice("lnbc10m").is_ok()); // exactly at cap (1M sats)
     assert!(validate_pay_invoice("lnbc20m").is_err()); // over cap
+}
+
+#[test]
+fn make_invoice_request_caps_description() {
+    assert!(soshal_zap_core::nwc::make_invoice_request(100, "hello".into()).is_ok());
+    assert!(soshal_zap_core::nwc::make_invoice_request(100, "x".repeat(2048)).is_ok());
+    assert!(soshal_zap_core::nwc::make_invoice_request(100, "x".repeat(2049)).is_err());
 }
 
 #[test]

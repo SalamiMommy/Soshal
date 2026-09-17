@@ -80,6 +80,11 @@ pub fn media_blob_from_tags(tags: &[Vec<String>]) -> (String, u64) {
     (String::new(), 0)
 }
 
+/// Maximum text overlay length for mini video overlays (guards against hostile note floods).
+const MAX_OVERLAY_LEN: usize = 10_000;
+const MAX_METADATA_LEN: usize = 500;
+const MAX_AUDIENCE_LEN: usize = 64;
+
 /// Maps a kind-31020 mini event to its typed struct. Returns `None` when the
 /// `url` tag is missing.
 pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
@@ -95,6 +100,16 @@ pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
     } else {
         audience
     };
+    let audience = if audience.len() > MAX_AUDIENCE_LEN {
+        soshal_common_core::ui_safe::truncate_str(audience, MAX_AUDIENCE_LEN)
+    } else {
+        audience
+    };
+    let text_overlay = if ev.content.len() > MAX_OVERLAY_LEN {
+        soshal_common_core::ui_safe::truncate_str(&ev.content, MAX_OVERLAY_LEN).to_string()
+    } else {
+        ev.content.clone()
+    };
     let (blob_hash, media_size) = media_blob_from_tags(&ev.tags);
     Some(MiniEventOut {
         id: ev.id.clone(),
@@ -102,7 +117,7 @@ pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
         video_url: url,
         blob_hash,
         media_size,
-        text_overlay: ev.content.clone(),
+        text_overlay,
         thumbnail: thumb,
         audience: audience.to_string(),
         created_at: clamp_created_at(ev.created_at),
@@ -161,6 +176,21 @@ pub fn musicloud_event_out(ev: &NostrEvent) -> Option<MusicloudEventOut> {
     } else {
         audience
     };
+    let audience = if audience.len() > MAX_AUDIENCE_LEN {
+        soshal_common_core::ui_safe::truncate_str(audience, MAX_AUDIENCE_LEN)
+    } else {
+        audience
+    };
+    let title = if title.len() > MAX_METADATA_LEN {
+        soshal_common_core::ui_safe::truncate_str(title, MAX_METADATA_LEN)
+    } else {
+        title
+    };
+    let d_tag = if d_tag.len() > MAX_METADATA_LEN {
+        soshal_common_core::ui_safe::truncate_str(d_tag, MAX_METADATA_LEN)
+    } else {
+        d_tag
+    };
     let (blob_hash, media_size) = media_blob_from_tags(&ev.tags);
     Some(MusicloudEventOut {
         id: ev.id.clone(),
@@ -185,6 +215,14 @@ pub fn musicloud_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
 
 /// Builds the kind-30085 custom profile content payload.
 pub fn custom_profile_content(nodes: &serde_json::Value, theme_id: &str) -> Result<String, String> {
+    if theme_id.len() > 64
+        || (!theme_id.is_empty()
+            && !theme_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+    {
+        return Err("invalid theme_id: must be 0-64 alphanumeric/hyphen/underscore chars".into());
+    }
     let payload = serde_json::json!({ "themeId": theme_id, "nodes": nodes });
     serde_json::to_string(&payload).map_err(|e| format!("serialize: {}", e))
 }

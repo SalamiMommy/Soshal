@@ -34,7 +34,7 @@ pub fn extract_deletion_ids(tags: &[Vec<String>]) -> Vec<String> {
             continue;
         }
         if let Some(id) = tag.get(1) {
-            if id.len() > MAX_TAG_FIELD_LEN {
+            if id.is_empty() || id.len() > MAX_TAG_FIELD_LEN {
                 continue;
             }
             if seen.insert(id.as_str()) {
@@ -63,7 +63,7 @@ pub fn extract_deletion_ids_json(input: &str) -> String {
             continue;
         }
         if let Some(&id) = tag.get(1) {
-            if id.len() <= MAX_TAG_FIELD_LEN && seen.insert(id) {
+            if !id.is_empty() && id.len() <= MAX_TAG_FIELD_LEN && seen.insert(id) {
                 ids.push(id);
             }
         }

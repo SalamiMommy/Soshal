@@ -483,3 +483,46 @@ fn test_mini_rejects_private_ip_url() {
     );
     assert!(mini_event_out(&e).is_none());
 }
+
+#[test]
+fn test_mini_truncates_huge_overlay_and_audience() {
+    let huge_text = "A".repeat(20_000);
+    let huge_aud = "aud_".repeat(50);
+    let e = ev(
+        "m_huge",
+        31020,
+        &huge_text,
+        vec![tag("url", "https://x/v.mp4"), tag("audience", &huge_aud)],
+    );
+    let typed = mini_event_out(&e).unwrap();
+    assert_eq!(typed.text_overlay.len(), 10_000);
+    assert_eq!(typed.audience.len(), 64);
+}
+
+#[test]
+fn test_musicloud_truncates_huge_metadata() {
+    let huge_title = "T".repeat(1000);
+    let huge_d = "D".repeat(1000);
+    let e = ev(
+        "mc_huge",
+        31022,
+        "",
+        vec![
+            tag("url", "https://x/a.mp3"),
+            tag("title", &huge_title),
+            tag("d", &huge_d),
+        ],
+    );
+    let typed = musicloud_event_out(&e).unwrap();
+    assert_eq!(typed.title.len(), 500);
+    assert_eq!(typed.d.len(), 500);
+}
+
+#[test]
+fn test_custom_profile_content_validation() {
+    let nodes = serde_json::json!([]);
+    assert!(custom_profile_content(&nodes, "dark_mode-1").is_ok());
+    assert!(custom_profile_content(&nodes, "").is_ok());
+    assert!(custom_profile_content(&nodes, &"a".repeat(65)).is_err());
+    assert!(custom_profile_content(&nodes, "theme;evil()").is_err());
+}

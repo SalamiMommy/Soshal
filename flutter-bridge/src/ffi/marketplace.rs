@@ -361,10 +361,21 @@ pub fn marketplace_create_listing(
     if price == 0 {
         return Err("price must be positive".to_string()).into();
     }
+    if description.len() > 10_000 {
+        return Err("description exceeds 10,000 chars cap".to_string()).into();
+    }
+    if images_json.len() > 64 * 1024 {
+        return Err("images JSON exceeds 64KB cap".to_string()).into();
+    }
     let images: Vec<String> =
         serde_json::from_str(&images_json).map_err(|e| format!("invalid images JSON: {e}"))?;
     if images.len() > 12 {
         return Err("too many images".to_string()).into();
+    }
+    for img in &images {
+        if img.trim().is_empty() || !soshal_common_core::url::is_valid_media_url(img) {
+            return Err(format!("invalid image URL: {img}")).into();
+        }
     }
     let d_tag = uuid_like();
     let content = serde_json::json!({
@@ -420,6 +431,15 @@ pub fn marketplace_update_listing(
     description: String,
     price: u64,
 ) -> Result<bool, String> {
+    if title.trim().is_empty() || title.len() > 500 {
+        return Err("title must be between 1 and 500 chars".to_string()).into();
+    }
+    if price == 0 {
+        return Err("price must be positive".to_string()).into();
+    }
+    if description.len() > 10_000 {
+        return Err("description exceeds 10,000 chars cap".to_string()).into();
+    }
     let existing: ListingInfo = serde_json::from_str(&marketplace_get_listing(listing_id.clone())?)
         .map_err(|e| format!("parse listing: {e}"))?;
     if existing.seller_pubkey != seller_pubkey {
@@ -435,28 +455,52 @@ pub fn marketplace_update_listing(
         "images": existing.images,
     });
     let now = soshal_common_core::format::now_secs();
-    let row = soshal_db_core::repos::post::PostRow {
-        id: listing_id,
-        pubkey: seller_pubkey.clone(),
-        content: content.to_string(),
-        kind: KIND_LISTING as i64,
-        created_at: now,
-        tags_json: String::new(),
-        sig: None,
-        reply_to: None,
-        root_id: None,
-        mentioned_pubkeys: String::new(),
-        mentioned_hashtags: String::new(),
-        subject: Some(title),
-        sync_status: "edited".to_string(),
-        is_deleted: false,
-        scheduled_at: None,
-        freenet_key: None,
-        is_freenet_native: false,
-        rsvp_event_id: None,
-    };
     super::db::with_db_result(|db| {
-        soshal_db_core::repos::post::PostRepo::new(db).upsert(&row)?;
+        let repo = soshal_db_core::repos::post::PostRepo::new(db);
+        let existing_row = repo.get_by_id(&listing_id)?;
+        let (tags_json, created_at) = match existing_row {
+            Some(r) => (
+                if !r.tags_json.is_empty() {
+                    r.tags_json
+                } else {
+                    serde_json::to_string(&vec![
+                        vec!["d".to_string(), listing_id.clone()],
+                        vec!["t".to_string(), existing.category.clone()],
+                    ])
+                    .unwrap_or_default()
+                },
+                r.created_at,
+            ),
+            None => (
+                serde_json::to_string(&vec![
+                    vec!["d".to_string(), listing_id.clone()],
+                    vec!["t".to_string(), existing.category.clone()],
+                ])
+                .unwrap_or_default(),
+                now,
+            ),
+        };
+        let row = soshal_db_core::repos::post::PostRow {
+            id: listing_id,
+            pubkey: seller_pubkey.clone(),
+            content: content.to_string(),
+            kind: KIND_LISTING as i64,
+            created_at,
+            tags_json,
+            sig: None,
+            reply_to: None,
+            root_id: None,
+            mentioned_pubkeys: String::new(),
+            mentioned_hashtags: String::new(),
+            subject: Some(title),
+            sync_status: "edited".to_string(),
+            is_deleted: false,
+            scheduled_at: None,
+            freenet_key: None,
+            is_freenet_native: false,
+            rsvp_event_id: None,
+        };
+        repo.upsert(&row)?;
         Ok(true)
     })
 }
@@ -1413,6 +1457,70 @@ mod tests {
         .unwrap_err()
         .contains("too many images"));
 
+        // Description too long
+        assert!(marketplace_create_listing(
+            pk_hex.clone(),
+            "w".to_string(),
+            "d".repeat(10_001),
+            10,
+            "sats".to_string(),
+            "tools".to_string(),
+            "new".to_string(),
+            "[]".to_string(),
+            false,
+        )
+        .unwrap_err()
+        .contains("description exceeds"));
+
+        // Invalid image URL (SSRF)
+        assert!(marketplace_create_listing(
+            pk_hex.clone(),
+            "w".to_string(),
+            "desc".to_string(),
+            10,
+            "sats".to_string(),
+            "tools".to_string(),
+            "new".to_string(),
+            "[\"http://127.0.0.1/evil.png\"]".to_string(),
+            false,
+        )
+        .unwrap_err()
+        .contains("invalid image URL"));
+
+        // Update validation
+        assert!(marketplace_update_listing(
+            event_id.to_string(),
+            pk_hex.clone(),
+            "".to_string(),
+            "desc".to_string(),
+            100,
+        )
+        .is_err());
+        assert!(marketplace_update_listing(
+            event_id.to_string(),
+            pk_hex.clone(),
+            "x".repeat(501),
+            "desc".to_string(),
+            100,
+        )
+        .is_err());
+        assert!(marketplace_update_listing(
+            event_id.to_string(),
+            pk_hex.clone(),
+            "widget 2".to_string(),
+            "desc".to_string(),
+            0,
+        )
+        .is_err());
+        assert!(marketplace_update_listing(
+            event_id.to_string(),
+            pk_hex.clone(),
+            "widget 2".to_string(),
+            "d".repeat(10_001),
+            100,
+        )
+        .is_err());
+
         assert!(marketplace_update_listing(
             event_id.to_string(),
             pk_hex.clone(),
@@ -1423,6 +1531,7 @@ mod tests {
         .unwrap());
         let info = marketplace_get_listing(event_id.to_string()).unwrap();
         assert!(info.contains("widget 2"), "{info}");
+        assert!(info.contains("\"category\":\"tools\""), "{info}");
         signer::signer_lock().unwrap();
     }
 

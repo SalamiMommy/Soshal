@@ -31,13 +31,21 @@ pub fn story_content(media_urls: &[String], text: Option<&str>) -> Result<String
     serde_json::to_string(&content).map_err(|e| format!("serialize: {}", e))
 }
 
+fn clamp_created_at(v: f64) -> u64 {
+    if v.is_finite() && v >= 0.0 {
+        v as u64
+    } else {
+        0
+    }
+}
+
 /// Maps a kind-30078 story event to its webview JSON.
 pub fn story_from_event(ev: &NostrEvent) -> serde_json::Value {
     serde_json::json!({
         "id": ev.id,
         "pubkey": ev.pubkey,
         "content": ev.content,
-        "created_at": ev.created_at as u64,
+        "created_at": clamp_created_at(ev.created_at),
         "expiration": find_tag_opt(&ev.tags, "expiration"),
         "audience": find_tag_opt(&ev.tags, "audience").unwrap_or_else(|| "public".to_string()),
     })
@@ -49,7 +57,7 @@ pub fn live_chat_from_event(ev: &NostrEvent) -> serde_json::Value {
         "id": ev.id,
         "pubkey": ev.pubkey,
         "content": ev.content,
-        "created_at": ev.created_at as u64,
+        "created_at": clamp_created_at(ev.created_at),
     })
 }
 
@@ -97,7 +105,7 @@ pub fn live_stream_from_event(ev: &NostrEvent) -> serde_json::Value {
         "id": ev.id,
         "pubkey": ev.pubkey,
         "content": ev.content,
-        "created_at": ev.created_at as u64,
+        "created_at": clamp_created_at(ev.created_at),
         "d_tag": find_tag_opt(&ev.tags, "d"),
         "status_tag": find_tag_opt(&ev.tags, "status"),
         "audience": find_tag_opt(&ev.tags, "audience").unwrap_or_else(|| "public".to_string()),
@@ -107,8 +115,29 @@ pub fn live_stream_from_event(ev: &NostrEvent) -> serde_json::Value {
 
 /// Builds kind-20030 chatrandom availability content JSON.
 pub fn chatrandom_available_content(interests: &[String], media_type: &str, mode: &str) -> String {
+    let bounded_interests: Vec<String> = interests
+        .iter()
+        .take(64)
+        .map(|s| {
+            if s.len() > 64 {
+                s[..s.floor_char_boundary(64)].to_string()
+            } else {
+                s.clone()
+            }
+        })
+        .collect();
+    let media_type = if media_type.len() > 32 {
+        &media_type[..media_type.floor_char_boundary(32)]
+    } else {
+        media_type
+    };
+    let mode = if mode.len() > 32 {
+        &mode[..mode.floor_char_boundary(32)]
+    } else {
+        mode
+    };
     serde_json::json!({
-        "interests": interests,
+        "interests": bounded_interests,
         "media_type": media_type,
         "mode": mode,
     })
@@ -121,7 +150,7 @@ pub fn chatrandom_peer_from_event(ev: &NostrEvent) -> serde_json::Value {
         "id": ev.id,
         "pubkey": ev.pubkey,
         "content": ev.content,
-        "created_at": ev.created_at as u64,
+        "created_at": clamp_created_at(ev.created_at),
     })
 }
 
