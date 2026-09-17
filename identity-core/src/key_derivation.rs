@@ -3,7 +3,7 @@
 //! Derives local database AES keys from ML-KEM secret keys via HKDF-SHA256.
 
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use soshal_common_core::json_util::json_out;
 
@@ -17,6 +17,12 @@ pub struct DeriveDbKeyInput {
     pub kem_secret_key_hex: String,
     #[serde(alias = "device_salt_hex")]
     pub device_salt_hex: Option<String>,
+}
+
+impl Drop for DeriveDbKeyInput {
+    fn drop(&mut self) {
+        self.kem_secret_key_hex.zeroize();
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -43,6 +49,29 @@ pub fn derive_db_key_hkdf(input_json: &str) -> String {
             )
         }
     };
+
+    if input.kem_secret_key_hex.len() > 16_384 {
+        return json_out(
+            &DeriveDbKeyOutput {
+                success: false,
+                derived_key_hex: String::new(),
+                error: Some("KEM secret key exceeds maximum allowed length".into()),
+            },
+            SERIALIZATION_FAILED,
+        );
+    }
+    if let Some(ref salt) = input.device_salt_hex {
+        if salt.len() > 1024 {
+            return json_out(
+                &DeriveDbKeyOutput {
+                    success: false,
+                    derived_key_hex: String::new(),
+                    error: Some("Device salt exceeds maximum allowed length".into()),
+                },
+                SERIALIZATION_FAILED,
+            );
+        }
+    }
 
     let kem_bytes = match hex::decode(&input.kem_secret_key_hex) {
         Ok(b) if !b.is_empty() => Zeroizing::new(b),

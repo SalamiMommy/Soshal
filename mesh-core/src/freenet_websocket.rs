@@ -295,7 +295,11 @@ impl FreenetWebSocketClient {
         // Subscribe notifications and unrelated messages are skipped inside a
         // bounded window; a close frame surfaces the node's rejection reason.
         for _ in 0..MAX_RESPONSE_DRAIN {
-            match ws.next().await {
+            let next_msg = match tokio::time::timeout(WS_CONNECT_TIMEOUT, ws.next()).await {
+                Ok(msg) => msg,
+                Err(_) => return Err("Freenet WebSocket receive timed out".to_string()),
+            };
+            match next_msg {
                 Some(Ok(Message::Binary(bytes))) => {
                     let native_resp: Result<FnetHostResponse, FnetClientError> =
                         bincode::deserialize(&bytes)

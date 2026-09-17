@@ -45,6 +45,16 @@ impl IoUringEngine {
 
     /// Reads chunk payload from flash storage using optimal kernel I/O engine mode.
     pub fn read_chunk(&self, path: &Path) -> Result<Vec<u8>, String> {
+        let meta = std::fs::metadata(path).map_err(|e| format!("metadata {path:?}: {e}"))?;
+        if !meta.is_file() {
+            return Err(format!("not a regular file: {path:?}"));
+        }
+        if meta.len() > 64 * 1024 * 1024 {
+            return Err(format!("chunk exceeds maximum size: {path:?}"));
+        }
+        if meta.len() == 0 {
+            return Ok(Vec::new());
+        }
         match self.mode {
             IoEngineMode::IoUringKernelRing => self.read_uring(path),
             IoEngineMode::MemmapZeroCopy => {
@@ -53,7 +63,7 @@ impl IoUringEngine {
             }
             IoEngineMode::StandardTokioFs => {
                 let mut file = File::open(path).map_err(|e| e.to_string())?;
-                let mut buf = Vec::new();
+                let mut buf = Vec::with_capacity(meta.len() as usize);
                 file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
                 Ok(buf)
             }
@@ -65,6 +75,15 @@ impl IoUringEngine {
     /// caller copies bytes out. The map must stay alive while bytes are read.
     pub fn mmap_chunk(&self, path: &Path) -> Result<memmap2::Mmap, String> {
         let file = std::fs::File::open(path).map_err(|e| format!("mmap open {path:?}: {e}"))?;
+        let meta = file
+            .metadata()
+            .map_err(|e| format!("metadata {path:?}: {e}"))?;
+        if !meta.is_file() {
+            return Err(format!("not a regular file: {path:?}"));
+        }
+        if meta.len() > 64 * 1024 * 1024 {
+            return Err(format!("chunk exceeds maximum size: {path:?}"));
+        }
         // Safety: mapping is read-only and the file is opened read-only; the
         // returned Mmap is the only way to touch the memory and drops safely.
         #[allow(unsafe_code)]
@@ -84,6 +103,9 @@ impl IoUringEngine {
                     .truncate(true)
                     .open(path)
                     .map_err(|e| e.to_string())?;
+                if data.is_empty() {
+                    return file.sync_data().map_err(|e| e.to_string());
+                }
                 file.set_len(data.len() as u64)
                     .map_err(|e| format!("set_len {path:?}: {e}"))?;
                 // Safety: file was just created with the exact target length;
@@ -146,6 +168,9 @@ impl IoUringEngine {
             if res < 0 {
                 return Err(std::io::Error::from_raw_os_error(-res).to_string());
             }
+            if res == 0 {
+                return Err("unexpected EOF in io_uring read".to_string());
+            }
             done += res as usize;
         }
         Ok(buf)
@@ -183,6 +208,9 @@ impl IoUringEngine {
             let res = cqe.result();
             if res < 0 {
                 return Err(std::io::Error::from_raw_os_error(-res).to_string());
+            }
+            if res == 0 {
+                return Err("zero bytes written in io_uring write".to_string());
             }
             done += res as usize;
         }

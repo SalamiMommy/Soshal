@@ -248,6 +248,17 @@ fn spatial_matrix_sorted_by_distance() {
 }
 
 #[test]
+fn spatial_matrix_drops_infinite_points_without_failing() {
+    let input = r#"{"center_lat":37.7749,"center_lon":-122.4194,
+        "points":[{"id":"valid","lat":37.79,"lon":-122.42},{"id":"invalid","lat":999999.0,"lon":1e300}],
+        "max_distance_km":0.0}"#;
+    let out = compute_spatial_matrix_json(input);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 1);
+    assert_eq!(v[0]["id"], "valid");
+}
+
+#[test]
 fn expand_prefix_variants() {
     // Default precision of 5 when omitted.
     let out = expand_geohash_prefix_json(r#"{"geohash":"u33dc"}"#);

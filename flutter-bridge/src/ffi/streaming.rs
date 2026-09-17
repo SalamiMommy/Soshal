@@ -277,8 +277,11 @@ pub fn streaming_start_live(
     if title.trim().is_empty() || title.len() > 300 {
         return Err("title must be 1..=300 chars".to_string()).into();
     }
-    if stream_url.is_empty() || stream_url.len() > 500 {
-        return Err("stream_url must be 1..=500 chars".to_string()).into();
+    if stream_url.is_empty()
+        || stream_url.len() > 500
+        || !soshal_common_core::url::is_valid_media_url(&stream_url)
+    {
+        return Err("stream_url must be a valid media URL (max 500 chars)".to_string()).into();
     }
     let content = serde_json::json!({
         "title": title,

@@ -107,12 +107,21 @@ pub fn compute_spatial_matrix_json(input: &str) -> String {
         return "[]".to_string();
     };
 
+    if !(-90.0..=90.0).contains(&input.center_lat) || !(-180.0..=180.0).contains(&input.center_lon)
+    {
+        return "[]".to_string();
+    }
+
     let mut results: Vec<DistanceResult> = input
         .points
         .into_iter()
+        .take(10_000)
         .filter_map(|pt| {
+            if !(-90.0..=90.0).contains(&pt.lat) || !(-180.0..=180.0).contains(&pt.lon) {
+                return None;
+            }
             let dist = distance::haversine_km(input.center_lat, input.center_lon, pt.lat, pt.lon);
-            if input.max_distance_km <= 0.0 || dist <= input.max_distance_km {
+            if dist.is_finite() && (input.max_distance_km <= 0.0 || dist <= input.max_distance_km) {
                 Some(DistanceResult {
                     id: pt.id,
                     distance_km: dist,

@@ -111,6 +111,21 @@ fn reaction_map_aggregates() {
 }
 
 #[test]
+fn reaction_map_deduplicates_repeated_e_tags_per_event() {
+    let events = vec![soshal_test_util::nostr_event(
+        "🔥",
+        vec![
+            vec!["e".into(), "t1".into()],
+            vec!["e".into(), "t1".into()],
+            vec!["e".into(), "t1".into()],
+        ],
+    )];
+    let map = aggregate_reaction_map(&events);
+    assert_eq!(map["t1"]["count"], 1);
+    assert_eq!(map["t1"]["emojis"]["🔥"], 1);
+}
+
+#[test]
 fn test_score_new_post() {
     let s = PostStats {
         created_at_secs: 1000.0,

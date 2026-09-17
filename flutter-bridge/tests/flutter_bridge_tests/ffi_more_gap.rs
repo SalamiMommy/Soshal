@@ -55,8 +55,9 @@ mod ffi_more_gap_tests {
     fn ephemeral_media_lifecycle() {
         let _g = crate::test_util::lock();
         let db = crate::test_util::init_db("more_gap", "ephemeral");
-        let (sender, _) = gen_keys();
-        let (recipient, _) = gen_keys();
+        let (sender, sender_sec) = gen_keys();
+        let (recipient, recipient_sec) = gen_keys();
+        signer::signer_unlock(sender_sec).unwrap();
         let err = ephemeral::ephemeral_save(
             "m1".into(),
             "c1".into(),
@@ -84,6 +85,8 @@ mod ffi_more_gap_tests {
         .unwrap();
         let got = ephemeral::ephemeral_get(id.clone()).unwrap();
         assert!(got.contains("\"state\":\"pending\""), "{got}");
+        signer::signer_lock().unwrap();
+        signer::signer_unlock(recipient_sec).unwrap();
         let pending = ephemeral::ephemeral_list_pending(recipient).unwrap();
         assert!(pending.contains(&id), "{pending}");
         let viewed = ephemeral::ephemeral_view(id.clone()).unwrap();
@@ -95,6 +98,7 @@ mod ffi_more_gap_tests {
         assert!(gone.contains("not found"), "{gone}");
         let cleaned = ephemeral::ephemeral_clean_expired().unwrap();
         assert!(cleaned.is_empty());
+        signer::signer_lock().unwrap();
         let _ = db;
     }
     #[test]

@@ -49,7 +49,11 @@ pub fn hash_community_password(password: &str) -> Result<String, String> {
 /// Verifies a candidate password against the stored `<salt_hex>:<hash_hex>`.
 /// Comparison is performed in constant time to prevent timing side-channels.
 pub fn verify_community_password(password: &str, stored_hash: &str) -> bool {
-    if password.is_empty() || stored_hash.is_empty() {
+    if password.is_empty()
+        || password.len() > COMMUNITY_PASSWORD_MAX_LEN
+        || stored_hash.is_empty()
+        || stored_hash.len() > 256
+    {
         return false;
     }
 
@@ -72,13 +76,15 @@ pub fn verify_community_password(password: &str, stored_hash: &str) -> bool {
         &mut dk,
     );
 
-    let candidate_hash_hex = hex::encode(&dk);
+    let mut candidate_hash_hex = hex::encode(&dk);
     dk.zeroize();
 
-    soshal_common_core::util::constant_time_eq(
+    let matches = soshal_common_core::util::constant_time_eq(
         candidate_hash_hex.as_bytes(),
         expected_hash_hex.as_bytes(),
-    )
+    );
+    candidate_hash_hex.zeroize();
+    matches
 }
 
 /// Determines whether a community is private based on its access_type and password presence.

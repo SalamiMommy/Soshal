@@ -177,3 +177,34 @@ fn channels_reject_bad_position_and_slow_mode() {
     assert!(out[0]["position"].is_null());
     assert!(out[0]["slow_mode_seconds"].is_null());
 }
+
+#[test]
+fn posts_reject_ssrf_and_script_media() {
+    let input = json!({
+        "events": [{
+            "id": "e_ssrf",
+            "pubkey": "pk",
+            "content": "",
+            "tags": [
+                ["d", "g"],
+                ["image", "http://127.0.0.1/private.jpg"],
+                ["image", "javascript:alert(1)"],
+                ["image", "data:text/html;base64,PHNjcmlwdD4="],
+                ["image", "https://example.com/safe.jpg"],
+                ["imeta", "url=http://169.254.169.254/secret.mp4", "m=video/mp4"],
+                ["imeta", "url=https://example.com/safe.mp4", "m=video/mp4"]
+            ],
+            "created_at": 1.0,
+            "kind": 1
+        }],
+        "group_id": "g"
+    });
+    let out = parse::<serde_json::Value>(&parse_group_posts_json(&input.to_string()));
+    let images = out[0]["images"].as_array().unwrap();
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0], "https://example.com/safe.jpg");
+
+    let videos = out[0]["videos"].as_array().unwrap();
+    assert_eq!(videos.len(), 1);
+    assert_eq!(videos[0], "https://example.com/safe.mp4");
+}

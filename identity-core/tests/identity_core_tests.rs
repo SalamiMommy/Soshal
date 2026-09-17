@@ -866,3 +866,26 @@ fn derive_db_key_output_serde() {
     assert!(json.contains("\"success\":true"));
     assert!(json.contains("\"derivedKeyHex\""));
 }
+
+#[test]
+fn derive_db_key_hkdf_rejects_oversized_kem_secret_key() {
+    let huge_hex = "a".repeat(20_000);
+    let json_in = format!(r#"{{"kemSecretKeyHex":"{huge_hex}"}}"#);
+    let out = derive_db_key_hkdf(&json_in);
+    let parsed: soshal_identity_core::key_derivation::DeriveDbKeyOutput =
+        serde_json::from_str(&out).unwrap();
+    assert!(!parsed.success);
+    assert!(parsed.error.unwrap().contains("exceeds maximum"));
+}
+
+#[test]
+fn wot_cache_eviction_resilient_to_empty_queue() {
+    let users = (0..70)
+        .map(|i| WotUser {
+            pubkey: format!("pk_{i}"),
+            contacts: vec![],
+        })
+        .collect::<Vec<_>>();
+    let partitions = get_wot_peers_by_distance("self_pk", &users, 2);
+    assert!(partitions.is_empty() || partitions.values().all(|v| !v.is_empty()));
+}

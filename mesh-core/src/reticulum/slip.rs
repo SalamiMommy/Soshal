@@ -26,8 +26,13 @@ pub fn slip_encode(data: &[u8]) -> Vec<u8> {
     out
 }
 
+pub const MAX_SLIP_FRAME_SIZE: usize = 65_536;
+
 /// Decodes SLIP framed bytes into raw payload data.
 pub fn slip_decode(data: &[u8]) -> Result<Vec<u8>, String> {
+    if data.len() > MAX_SLIP_FRAME_SIZE {
+        return Err("SLIP frame exceeds maximum allowed size".to_string());
+    }
     let mut out = Vec::with_capacity(data.len());
     let mut escaping = false;
 
@@ -49,6 +54,10 @@ pub fn slip_decode(data: &[u8]) -> Result<Vec<u8>, String> {
         }
     }
 
+    if escaping {
+        return Err("dangling SLIP escape character at EOF".to_string());
+    }
+
     Ok(out)
 }
 
@@ -64,5 +73,19 @@ mod tests {
         assert!(encoded.ends_with(&[SLIP_END]));
         let decoded = slip_decode(&encoded).unwrap();
         assert_eq!(payload, decoded);
+    }
+
+    #[test]
+    fn test_slip_dangling_escape_rejected() {
+        let payload = vec![SLIP_END, 0x01, SLIP_ESC];
+        let err = slip_decode(&payload).unwrap_err();
+        assert!(err.contains("dangling SLIP escape"));
+    }
+
+    #[test]
+    fn test_slip_oversized_frame_rejected() {
+        let oversized = vec![0x00; MAX_SLIP_FRAME_SIZE + 1];
+        let err = slip_decode(&oversized).unwrap_err();
+        assert!(err.contains("maximum allowed size"));
     }
 }

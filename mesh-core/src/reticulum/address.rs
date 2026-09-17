@@ -51,12 +51,15 @@ impl ReticulumAddress {
 
     /// Parses a 32-character hex string into a Reticulum address.
     pub fn from_hex(hex_str: &str) -> Result<Self, String> {
-        let bytes = hex::decode(hex_str.trim()).map_err(|e| format!("Invalid hex: {e}"))?;
-        if bytes.len() != 16 {
-            return Err(format!("Expected 16 bytes, got {}", bytes.len()));
+        let trimmed = hex_str.trim();
+        if trimmed.len() != 32 {
+            return Err(format!(
+                "Expected 32 hex characters (16 bytes), got {}",
+                trimmed.len()
+            ));
         }
         let mut arr = [0u8; 16];
-        arr.copy_from_slice(&bytes);
+        hex::decode_to_slice(trimmed, &mut arr).map_err(|e| format!("Invalid hex: {e}"))?;
         Ok(Self(arr))
     }
 }

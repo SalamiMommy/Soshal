@@ -114,6 +114,10 @@ pub fn guestbook_list(
     limit: i32,
     only_approved: bool,
 ) -> Result<String, String> {
+    if !hex64(&profile_pubkey) {
+        return Err("invalid profile pubkey".to_string()).into();
+    }
+    let limit = limit.clamp(1, 200);
     let caller = super::signer::signer_pubkey().ok();
     let is_owner = caller.as_deref() == Some(profile_pubkey.as_str());
 
@@ -319,6 +323,7 @@ mod tests {
         assert!(guestbook_add("not-hex".to_string(), "hi".to_string())
             .await
             .is_err());
+        assert!(guestbook_list("not-hex".to_string(), 50, false).is_err());
         assert!(guestbook_add("f".repeat(64), String::new()).await.is_err());
         assert!(guestbook_add("f".repeat(64), "x".repeat(2_001))
             .await

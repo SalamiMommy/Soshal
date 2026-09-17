@@ -1,4 +1,6 @@
-use super::{GroupEventInput, MAX_EVENTS, MAX_TAGS_PER_EVENT, MAX_TAG_VALUE_LEN};
+use super::{
+    is_safe_group_media_url, GroupEventInput, MAX_EVENTS, MAX_TAGS_PER_EVENT, MAX_TAG_VALUE_LEN,
+};
 use serde::{Deserialize, Serialize};
 use soshal_common_core::json_util::{json_in, json_out};
 
@@ -59,7 +61,7 @@ fn parse_group_posts(input: ParseGroupPostsInput) -> Vec<ParsedGroupPostOut> {
             }
             match tag[0].as_str() {
                 "image" => {
-                    if tag[1].len() <= MAX_TAG_VALUE_LEN && images.len() < 1024 {
+                    if images.len() < 32 && is_safe_group_media_url(&tag[1]) {
                         images.push(tag[1].clone());
                     }
                 }
@@ -80,7 +82,8 @@ fn parse_group_posts(input: ParseGroupPostsInput) -> Vec<ParsedGroupPostOut> {
                     match (url, mime) {
                         (Some(u), Some(m))
                             if (m.contains("video") || m.contains("gif"))
-                                && videos.len() < 1024 =>
+                                && videos.len() < 16
+                                && is_safe_group_media_url(&u) =>
                         {
                             videos.push(u);
                         }

@@ -5,6 +5,23 @@ use soshal_nostr_core::models::NostrEvent;
 
 /// Builds kind-30078 story content JSON.
 pub fn story_content(media_urls: &[String], text: Option<&str>) -> Result<String, String> {
+    let has_text = text.is_some_and(|t| !t.trim().is_empty());
+    if media_urls.is_empty() && !has_text {
+        return Err("story must have text or at least one media URL".into());
+    }
+    if media_urls.len() > 32 {
+        return Err("too many media URLs (max 32)".into());
+    }
+    for u in media_urls {
+        if !soshal_common_core::url::is_valid_media_url(u) {
+            return Err(format!("invalid or unsafe media URL: {}", u));
+        }
+    }
+    if let Some(t) = text {
+        if t.len() > 10_000 {
+            return Err("text too long (max 10000)".into());
+        }
+    }
     let mut content = serde_json::json!({
         "media": media_urls.iter().map(|u| serde_json::json!({"url": u, "type": "image"})).collect::<Vec<_>>(),
     });
@@ -44,6 +61,20 @@ pub fn stream_content(
     status: &str,
     category: Option<&str>,
 ) -> Result<String, String> {
+    if stream_url.is_empty()
+        || stream_url.len() > 2048
+        || !soshal_common_core::url::is_valid_media_url(stream_url)
+    {
+        return Err(format!("invalid or unsafe stream URL: {}", stream_url));
+    }
+    if title.len() > 500 {
+        return Err("title too long (max 500)".into());
+    }
+    if let Some(s) = summary {
+        if s.len() > 5000 {
+            return Err("summary too long (max 5000)".into());
+        }
+    }
     let mut content = serde_json::json!({
         "title": title,
         "stream_url": stream_url,

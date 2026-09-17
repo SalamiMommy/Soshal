@@ -212,8 +212,12 @@ pub fn get_wot_peers_by_distance(
         while guard.0.len() >= 16 {
             if let Some(oldest) = guard.1.pop_front() {
                 guard.0.remove(&oldest);
+            } else {
+                guard.0.clear();
+                break;
             }
         }
+        guard.1.retain(|k| k != &key);
         guard.1.push_back(key.clone());
         guard.0.insert(key, result.clone());
         return result;

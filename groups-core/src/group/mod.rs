@@ -18,3 +18,21 @@ pub(crate) use soshal_nostr_core::models::find_tag_values_map;
 pub(crate) fn safe_truncate(s: &str, max_bytes: usize) -> String {
     soshal_common_core::ui_safe::truncate_str(s, max_bytes).to_string()
 }
+
+pub(crate) fn is_safe_group_media_url(u: &str) -> bool {
+    if u.is_empty() || u.len() > MAX_TAG_VALUE_LEN {
+        return false;
+    }
+    let lower = u.to_ascii_lowercase();
+    if lower.starts_with("javascript:")
+        || lower.starts_with("data:")
+        || lower.starts_with("file:")
+        || lower.starts_with("vbscript:")
+    {
+        return false;
+    }
+    if lower.contains("://") || lower.starts_with("//") {
+        return soshal_common_core::url::is_valid_media_url(u);
+    }
+    true
+}

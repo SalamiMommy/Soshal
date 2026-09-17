@@ -177,16 +177,28 @@ struct ReactionCounts {
 /// `{"count": n, "emojis": {emoji: n}}`. Reaction target is the `e` tag.
 pub fn aggregate_reaction_map(events: &[NostrEvent]) -> serde_json::Map<String, serde_json::Value> {
     let mut counts_map: HashMap<String, ReactionCounts> = HashMap::new();
+    let mut seen_targets = std::collections::HashSet::new();
     for ev in events {
+        seen_targets.clear();
         for tag in &ev.tags {
             if tag.first().map(|s| s.as_str()) == Some("e") {
                 let Some(target) = tag.get(1) else {
                     continue;
                 };
+                if target.is_empty() || target.len() > 64 || !seen_targets.insert(target.as_str()) {
+                    continue;
+                }
                 let entry = counts_map.entry(target.clone()).or_default();
                 entry.count += 1;
                 let emoji = if ev.content.is_empty() {
                     "+"
+                } else if ev.content.len() > 32 {
+                    let bound = ev.content.floor_char_boundary(32);
+                    if bound == 0 {
+                        "+"
+                    } else {
+                        &ev.content[..bound]
+                    }
                 } else {
                     ev.content.as_str()
                 };

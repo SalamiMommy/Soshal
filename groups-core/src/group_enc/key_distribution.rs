@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 // ─── Build Key Distribution Content ────────────────────────────────────────
 
@@ -13,6 +14,12 @@ pub struct BuildKeyDistInput {
     pub shared_pubkey: String,
     #[serde(rename = "pqcCt", alias = "pqc_ct", default)]
     pub pqc_ct: String,
+}
+
+impl Drop for BuildKeyDistInput {
+    fn drop(&mut self) {
+        self.shared_key.zeroize();
+    }
 }
 
 /// Output of [`build_key_distribution_content`].
@@ -86,8 +93,8 @@ pub fn parse_key_distribution_content(content: &str) -> ParsedKeyDistContent {
     if parsed.pqc_ct.is_empty() {
         return ParsedKeyDistContent {
             valid: false,
-            group_id: parsed.group_id,
-            shared_pubkey: parsed.shared_pubkey,
+            group_id: parsed.group_id.clone(),
+            shared_pubkey: parsed.shared_pubkey.clone(),
             pqc_ct: String::new(),
             error_reason: Some("Missing pqc_ct".to_string()),
         };
@@ -95,10 +102,10 @@ pub fn parse_key_distribution_content(content: &str) -> ParsedKeyDistContent {
 
     ParsedKeyDistContent {
         valid: true,
-        group_id: parsed.group_id,
+        group_id: parsed.group_id.clone(),
         // `sharedKey` from the event (if any) is deliberately dropped here.
-        shared_pubkey: parsed.shared_pubkey,
-        pqc_ct: parsed.pqc_ct,
+        shared_pubkey: parsed.shared_pubkey.clone(),
+        pqc_ct: parsed.pqc_ct.clone(),
         error_reason: None,
     }
 }

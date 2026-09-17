@@ -21,13 +21,27 @@ pub fn ephemeral_save(
     max_views: i64,
     expires_at: i64,
 ) -> Result<String, String> {
-    if max_views < 1 {
-        return Err("max_views must be at least 1".to_string()).into();
+    if !(1..=100).contains(&max_views) {
+        return Err("max_views must be between 1 and 100".to_string()).into();
     }
-    if let Ok(caller) = super::signer::signer_pubkey() {
-        if caller != sender_pubkey && caller != recipient_pubkey {
-            return Err("identity mismatch: caller is neither sender nor recipient".to_string());
-        }
+    if sender_pubkey.is_empty()
+        || sender_pubkey.len() > 128
+        || recipient_pubkey.is_empty()
+        || recipient_pubkey.len() > 128
+    {
+        return Err("invalid pubkey length".to_string()).into();
+    }
+    if !soshal_common_core::url::is_valid_media_url(&media_url) {
+        return Err("invalid or unsafe media URL".to_string()).into();
+    }
+    let caller = super::signer::signer_pubkey()?;
+    if !soshal_common_core::util::constant_time_eq(caller.as_bytes(), sender_pubkey.as_bytes())
+        && !soshal_common_core::util::constant_time_eq(
+            caller.as_bytes(),
+            recipient_pubkey.as_bytes(),
+        )
+    {
+        return Err("identity mismatch: caller is neither sender nor recipient".to_string());
     }
     let id = uuid_like();
     let now = soshal_common_core::format::now_secs();
@@ -65,17 +79,21 @@ fn row_json(row: &EphemeralMediaRow) -> String {
 /// Get one row by id.
 #[frb(sync, serialize)]
 pub fn ephemeral_get(id: String) -> Result<String, String> {
-    let caller_opt = super::signer::signer_pubkey().ok();
+    let caller = super::signer::signer_pubkey()?;
     super::db::with_db_result(|db| {
         let row = EphemeralMediaRepo::new(db)
             .get(&id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
-        if let Some(ref caller) = caller_opt {
-            if row.recipient_pubkey != *caller && row.sender_pubkey != *caller {
-                return Err(soshal_db_core::error::DbError::Migration(
-                    "unauthorized to view ephemeral media".to_string(),
-                ));
-            }
+        if !soshal_common_core::util::constant_time_eq(
+            row.recipient_pubkey.as_bytes(),
+            caller.as_bytes(),
+        ) && !soshal_common_core::util::constant_time_eq(
+            row.sender_pubkey.as_bytes(),
+            caller.as_bytes(),
+        ) {
+            return Err(soshal_db_core::error::DbError::Migration(
+                "unauthorized to view ephemeral media".to_string(),
+            ));
         }
         Ok(row_json(&row))
     })
@@ -90,11 +108,7 @@ fn cleanup_expired_best_effort() {
 /// All pending media addressed to `pubkey`, newest first, as a JSON array.
 #[frb(sync, serialize)]
 pub fn ephemeral_list_pending(pubkey: String) -> Result<String, String> {
-    if let Ok(caller) = super::signer::signer_pubkey() {
-        if caller != pubkey {
-            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
-        }
-    }
+    super::signer::require_identity(&pubkey)?;
     cleanup_expired_best_effort();
     super::db::with_db_result(|db| {
         let now = soshal_common_core::format::now_secs();
@@ -111,7 +125,7 @@ pub fn ephemeral_list_pending(pubkey: String) -> Result<String, String> {
 /// the fresh row. Errors once the media is expired.
 #[frb(sync, serialize)]
 pub fn ephemeral_view(id: String) -> Result<String, String> {
-    let caller_opt = super::signer::signer_pubkey().ok();
+    let caller = super::signer::signer_pubkey()?;
     cleanup_expired_best_effort();
     super::db::with_db_result(|db| {
         let repo = EphemeralMediaRepo::new(db);
@@ -119,12 +133,16 @@ pub fn ephemeral_view(id: String) -> Result<String, String> {
         let existing = repo
             .get(&id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
-        if let Some(ref caller) = caller_opt {
-            if existing.recipient_pubkey != *caller && existing.sender_pubkey != *caller {
-                return Err(soshal_db_core::error::DbError::Migration(
-                    "unauthorized to view ephemeral media".to_string(),
-                ));
-            }
+        if !soshal_common_core::util::constant_time_eq(
+            existing.recipient_pubkey.as_bytes(),
+            caller.as_bytes(),
+        ) && !soshal_common_core::util::constant_time_eq(
+            existing.sender_pubkey.as_bytes(),
+            caller.as_bytes(),
+        ) {
+            return Err(soshal_db_core::error::DbError::Migration(
+                "unauthorized to view ephemeral media".to_string(),
+            ));
         }
         if existing.expires_at.map_or(false, |exp| exp < now) || existing.state != "pending" {
             return Err(soshal_db_core::error::DbError::Migration(
@@ -141,20 +159,26 @@ pub fn ephemeral_view(id: String) -> Result<String, String> {
 /// Delete a row.
 #[frb(sync, serialize)]
 pub fn ephemeral_delete(id: String) -> Result<bool, String> {
-    let caller_opt = super::signer::signer_pubkey().ok();
+    let caller = super::signer::signer_pubkey()?;
     super::db::with_db_result(|db| {
         let repo = EphemeralMediaRepo::new(db);
         if let Some(existing) = repo.get(&id)? {
-            if let Some(ref caller) = caller_opt {
-                if existing.recipient_pubkey != *caller && existing.sender_pubkey != *caller {
-                    return Err(soshal_db_core::error::DbError::Migration(
-                        "unauthorized to delete ephemeral media".to_string(),
-                    ));
-                }
+            if !soshal_common_core::util::constant_time_eq(
+                existing.recipient_pubkey.as_bytes(),
+                caller.as_bytes(),
+            ) && !soshal_common_core::util::constant_time_eq(
+                existing.sender_pubkey.as_bytes(),
+                caller.as_bytes(),
+            ) {
+                return Err(soshal_db_core::error::DbError::Migration(
+                    "unauthorized to delete ephemeral media".to_string(),
+                ));
             }
+            repo.delete(&id)?;
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        repo.delete(&id)?;
-        Ok(true)
     })
 }
 
@@ -390,6 +414,81 @@ mod tests {
         // Recipient can view it
         super::super::signer::signer_unlock(recip_keys.secret_key().to_secret_hex()).unwrap();
         assert!(ephemeral_view(id).is_ok());
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_locked_signer_ephemeral_rejected() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = tmp_db("locked_signer");
+        let sender_keys = soshal_nostr_core::keys::generate_keys();
+        let recip_keys = soshal_nostr_core::keys::generate_keys();
+        let id = save_media(
+            &sender_keys,
+            "msg_locked",
+            &recip_keys.public_key().to_hex(),
+            1,
+            0,
+        );
+
+        // Lock the signer explicitly
+        super::super::signer::signer_lock().unwrap();
+
+        // Every operation requiring authorization must fail when signer is locked
+        assert!(ephemeral_get(id.clone()).is_err());
+        assert!(ephemeral_view(id.clone()).is_err());
+        assert!(ephemeral_list_pending(recip_keys.public_key().to_hex()).is_err());
+        assert!(ephemeral_delete(id).is_err());
+        assert!(ephemeral_save(
+            "msg_locked2".to_string(),
+            "conv1".to_string(),
+            "dm".to_string(),
+            "https://example.com/media.jpg".to_string(),
+            "image/jpeg".to_string(),
+            sender_keys.public_key().to_hex(),
+            recip_keys.public_key().to_hex(),
+            1,
+            0,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_ephemeral_save_rejects_invalid_media_url() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = tmp_db("bad_url");
+        let sender_keys = soshal_nostr_core::keys::generate_keys();
+        let recip_keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(sender_keys.secret_key().to_secret_hex()).unwrap();
+
+        assert!(ephemeral_save(
+            "m1".to_string(),
+            "conv1".to_string(),
+            "dm".to_string(),
+            "http://127.0.0.1:8080/evil.jpg".to_string(),
+            "image/jpeg".to_string(),
+            sender_keys.public_key().to_hex(),
+            recip_keys.public_key().to_hex(),
+            1,
+            0,
+        )
+        .is_err());
+
+        assert!(ephemeral_save(
+            "m2".to_string(),
+            "conv1".to_string(),
+            "dm".to_string(),
+            "javascript:evil()".to_string(),
+            "image/jpeg".to_string(),
+            sender_keys.public_key().to_hex(),
+            recip_keys.public_key().to_hex(),
+            1,
+            0,
+        )
+        .is_err());
+
         super::super::signer::signer_lock().unwrap();
     }
 }

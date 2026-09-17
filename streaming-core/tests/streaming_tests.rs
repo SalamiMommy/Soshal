@@ -66,6 +66,24 @@ fn stream_content_builds_json_and_skips_empty_category() {
 }
 
 #[test]
+fn story_content_rejects_empty_ssrf_and_excessive_urls() {
+    assert!(story_content(&[], None).is_err());
+    assert!(story_content(&[], Some("text only story")).is_ok());
+    assert!(story_content(&["http://127.0.0.1/malicious.png".into()], None).is_err());
+    assert!(story_content(&["javascript:alert(1)".into()], None).is_err());
+    let excessive: Vec<String> = (0..33).map(|i| format!("https://cdn/img{i}.png")).collect();
+    assert!(story_content(&excessive, None).is_err());
+}
+
+#[test]
+fn stream_content_rejects_ssrf_and_bad_urls() {
+    assert!(stream_content("T", None, "http://127.0.0.1:8080/stream", "live", None).is_err());
+    assert!(stream_content("T", None, "http://169.254.169.254/latest", "live", None).is_err());
+    assert!(stream_content("T", None, "javascript:evil()", "live", None).is_err());
+    assert!(stream_content("T", None, "", "live", None).is_err());
+}
+
+#[test]
 fn live_stream_from_event_defaults_d_audience_category() {
     let ev = soshal_test_util::nostr_event(
         "content",
