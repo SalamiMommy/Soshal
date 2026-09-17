@@ -60,6 +60,11 @@ mod ffi_tests {
         )
         .unwrap());
         assert!(moderation::moderation_set_word_filters("not json".to_string()).is_err());
+        assert!(moderation::moderation_set_word_filters(r#"[""]"#.to_string()).is_err());
+        assert!(moderation::moderation_set_word_filters(
+            serde_json::to_string(&vec!["a".repeat(129)]).unwrap()
+        )
+        .is_err());
         crate::test_util::cleanup(&path);
     }
     #[test]
@@ -141,9 +146,11 @@ mod ffi_tests {
         assert_eq!(rows[0]["reason"], "spam");
         // list_reports filters on target_pubkey, which report_content never
         // sets (content_type is dropped) -> stays empty, but no longer Err.
+        assert!(moderation::moderation_list_reports("".to_string(), 10).is_err());
         let listed: Vec<serde_json::Value> =
             serde_json::from_str(&moderation::moderation_list_reports(me, 10).unwrap()).unwrap();
         assert!(listed.is_empty());
+        assert!(moderation::moderation_delete_report("".to_string()).is_err());
         let id = rows[0]["id"].as_str().unwrap().to_string();
         assert!(moderation::moderation_delete_report(id).unwrap());
         let gone: Vec<serde_json::Value> = serde_json::from_str(

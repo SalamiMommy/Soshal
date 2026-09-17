@@ -61,6 +61,8 @@ fn discover_by_interest<'a>(input: DiscoverByInterestInput<'a>) -> Vec<DiscoverR
     let matcher =
         aho_corasick::AhoCorasick::new(&lower_tags).expect("empty patterns are pre-filtered");
     let mut results = Vec::with_capacity(input.events.len().min(input.limit));
+    let mut seen_pubkeys: HashSet<&str> =
+        HashSet::with_capacity(input.events.len().min(input.limit));
     for event in &input.events {
         if results.len() >= input.limit {
             break;
@@ -68,7 +70,10 @@ fn discover_by_interest<'a>(input: DiscoverByInterestInput<'a>) -> Vec<DiscoverR
         if event.content.len() > 64 * 1024 {
             continue;
         }
-        if event.pubkey == input.self_pubkey || self_contacts_set.contains(event.pubkey) {
+        if event.pubkey == input.self_pubkey
+            || self_contacts_set.contains(event.pubkey)
+            || seen_pubkeys.contains(event.pubkey)
+        {
             continue;
         }
         let content_to_match: Cow<str> = if event.content.bytes().any(|b| b.is_ascii_uppercase()) {
@@ -88,6 +93,7 @@ fn discover_by_interest<'a>(input: DiscoverByInterestInput<'a>) -> Vec<DiscoverR
             }
         }
         if !matched.is_empty() {
+            seen_pubkeys.insert(event.pubkey);
             results.push(DiscoverResultOut {
                 pubkey: event.pubkey,
                 reason: format!("Shared interests: {}", matched.join(", ")),
@@ -138,5 +144,33 @@ mod tests {
         };
         let res_blank = discover_by_interest(input_blank);
         assert!(res_blank.is_empty());
+    }
+
+    #[test]
+    fn test_discover_by_interest_deduplicates_pubkeys() {
+        let input = DiscoverByInterestInput {
+            events: vec![
+                DiscoveryEventInput {
+                    pubkey: "pk1",
+                    content: "rust programming is awesome",
+                },
+                DiscoveryEventInput {
+                    pubkey: "pk1",
+                    content: "more rust posts here",
+                },
+                DiscoveryEventInput {
+                    pubkey: "pk2",
+                    content: "rust enthusiast too",
+                },
+            ],
+            tags: vec!["rust"],
+            self_pubkey: "self",
+            self_contacts: vec![],
+            limit: 10,
+        };
+        let res = discover_by_interest(input);
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].pubkey, "pk1");
+        assert_eq!(res[1].pubkey, "pk2");
     }
 }

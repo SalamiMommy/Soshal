@@ -202,8 +202,11 @@ impl RelayNode {
         // secp256k1 fixpoint ~0.1 ms). Dedup/queue/re-broadcast stay strictly
         // sequential so `seen`/`recent`/`delivered` order is deterministic.
         let mut jobs: Vec<(usize, MeshEnvelope)> = Vec::new();
-        for (idx, payloads) in inbound {
+        'inbound_loop: for (idx, payloads) in inbound {
             for payload in payloads {
+                if jobs.len() >= DELIVERED_CAPACITY {
+                    break 'inbound_loop;
+                }
                 let Some(env) = MeshEnvelope::from_bytes(&payload) else {
                     continue;
                 };

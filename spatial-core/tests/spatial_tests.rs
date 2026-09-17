@@ -140,7 +140,9 @@ fn filter_presence_json() {
     let input = r#"{"target_prefix":"u33","now_sec":1000,"max_age_sec":600,"events":[
         {"id":"e1","pubkey":"pk","geohash":"u33dc4","created_at":900},
         {"id":"e1","pubkey":"pk","geohash":"u33dc4","created_at":900},
-        {"id":"e2","pubkey":"pk","geohash":"zzzzzz","created_at":1}
+        {"id":"e2","pubkey":"pk","geohash":"zzzzzz","created_at":1},
+        {"id":"e3","pubkey":"pk","geohash":"u33dc412345678901234567890","created_at":950},
+        {"id":"e4","pubkey":"pk","geohash":"","created_at":950}
     ]}"#;
     let out = filter_geohash_presence_events_json(input);
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();

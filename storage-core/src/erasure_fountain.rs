@@ -102,8 +102,13 @@ pub fn decode_fountain(
 
     let mut decoder = Decoder::new(oti);
 
+    if packets.len() > 60_000 {
+        return Err("too many fountain packets provided".to_string());
+    }
+    let min_packet_len = 4 + manifest.symbol_size as usize;
+
     for packet_bytes in packets {
-        if packet_bytes.len() < 4 {
+        if packet_bytes.len() < min_packet_len {
             return Err("fountain packet too short".to_string());
         }
         let packet = EncodingPacket::deserialize(packet_bytes);

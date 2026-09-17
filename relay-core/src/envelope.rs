@@ -146,7 +146,7 @@ impl MeshEnvelope {
         if payload_len > MAX_PAYLOAD_BYTES {
             return None;
         }
-        if data.len() < pos + payload_len {
+        if data.len() != pos + payload_len {
             return None;
         }
         let payload = data[pos..pos + payload_len].to_vec();
@@ -264,6 +264,13 @@ mod tests {
         let _ = take_str(&bytes, &mut pos);
         bytes[pos - 2] = 0xff;
         bytes[pos - 1] = 0xff;
+        assert_eq!(MeshEnvelope::from_bytes(&bytes), None);
+    }
+
+    #[test]
+    fn test_rejects_trailing_bytes() {
+        let mut bytes = sample().to_bytes().unwrap();
+        bytes.push(0x42);
         assert_eq!(MeshEnvelope::from_bytes(&bytes), None);
     }
 }

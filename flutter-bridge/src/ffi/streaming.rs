@@ -363,6 +363,14 @@ pub fn streaming_post_story(
     if images.len() > 12 {
         return Err("too many images".to_string()).into();
     }
+    for url in &images {
+        if !soshal_content_core::url::is_valid_media_url(url) {
+            return Err(format!("invalid media url: {url}")).into();
+        }
+    }
+    if content.len() > 10_000 {
+        return Err("content too long".to_string()).into();
+    }
     let content_str = events::story_content(
         &images,
         if content.trim().is_empty() {
@@ -499,13 +507,20 @@ pub fn streaming_story_react(
     pubkey: String,
     emoji: String,
 ) -> Result<bool, String> {
+    if story_id.len() != 64 {
+        return Err("invalid story id".to_string()).into();
+    }
+    let emoji = emoji.trim();
+    if emoji.is_empty() || emoji.len() > 32 {
+        return Err("invalid emoji".to_string()).into();
+    }
     super::signer::require_identity(&pubkey)?;
     super::db::with_db_result(|db| {
         soshal_db_core::repos::story_reaction::StoryReactionRepo::new(db).react(
             &soshal_db_core::repos::story_reaction::StoryReactionRow {
                 story_id,
                 pubkey,
-                emoji,
+                emoji: emoji.to_string(),
                 created_at: soshal_common_core::format::now_secs(),
             },
         )?;
@@ -522,6 +537,9 @@ pub fn streaming_moq_publish_object(
     is_keyframe: bool,
     payload_hex: String,
 ) -> Result<String, String> {
+    if publisher_pubkey.trim().is_empty() || publisher_pubkey.len() > 128 {
+        return Err("invalid publisher_pubkey".to_string());
+    }
     if let Ok(active_pk) = super::signer::signer_pubkey() {
         if publisher_pubkey.len() == 64 && active_pk != publisher_pubkey {
             return Err("identity mismatch: caller is not the claimed pubkey".to_string());
@@ -614,11 +632,24 @@ mod tests {
         let keys = soshal_nostr_core::keys::generate_keys();
         super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
 
+        let my_pk = keys.public_key().to_hex();
         let story_id = "a".repeat(64);
         let fake_pk = "b".repeat(64);
-
         assert!(streaming_mark_story_viewed(story_id.clone(), fake_pk.clone()).is_err());
-        assert!(streaming_story_react(story_id, fake_pk.clone(), "🔥".to_string()).is_err());
+        assert!(
+            streaming_story_react("short".to_string(), my_pk.clone(), "🔥".to_string()).is_err()
+        );
+        assert!(streaming_story_react(story_id.clone(), my_pk.clone(), "".to_string()).is_err());
+        assert!(
+            streaming_story_react(story_id.clone(), fake_pk.clone(), "🔥".to_string()).is_err()
+        );
+        assert!(streaming_post_story(
+            my_pk,
+            "hello".to_string(),
+            "[\"javascript:alert(1)\"]".to_string(),
+            24
+        )
+        .is_err());
         assert!(streaming_moq_publish_object(
             "stream1".to_string(),
             fake_pk,

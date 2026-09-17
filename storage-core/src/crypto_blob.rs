@@ -43,7 +43,7 @@ pub fn decrypt_blob_at_rest(
     key: &[u8; 32],
     ciphertext_with_nonce: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, &'static str> {
-    if ciphertext_with_nonce.len() < NONCE_LEN {
+    if ciphertext_with_nonce.len() < NONCE_LEN + AES_256_GCM.tag_len() {
         return Err("Ciphertext payload too short");
     }
 
@@ -98,5 +98,12 @@ mod tests {
 
         let decrypted = decrypt_blob_at_rest(&key, &encrypted).unwrap();
         assert_eq!(&decrypted[..], message);
+    }
+
+    #[test]
+    fn test_decrypt_payload_too_short() {
+        let key = [42u8; 32];
+        assert!(decrypt_blob_at_rest(&key, &[0u8; NONCE_LEN]).is_err());
+        assert!(decrypt_blob_at_rest(&key, &[0u8; NONCE_LEN + 15]).is_err());
     }
 }

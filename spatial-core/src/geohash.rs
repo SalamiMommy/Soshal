@@ -198,6 +198,10 @@ pub fn filter_geohash_presence_events_json(input: &str) -> String {
             continue;
         }
 
+        if ev.geohash.is_empty() || ev.geohash.len() > MAX_GEOHASH_LEN {
+            continue;
+        }
+
         if !input.target_prefix.is_empty() && !ev.geohash.starts_with(&input.target_prefix) {
             continue;
         }

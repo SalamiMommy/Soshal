@@ -379,6 +379,9 @@ pub fn groups_remove_member(
     admin_pubkey: String,
 ) -> Result<bool, String> {
     require_owner(&group_id, &admin_pubkey)?;
+    if member_pubkey == admin_pubkey {
+        return Err("cannot remove group owner".to_string()).into();
+    }
     super::db::with_db_result(|db| {
         GroupRepo::new(db).remove_member(&group_id, &member_pubkey)?;
         Ok(true)
@@ -952,27 +955,27 @@ pub fn groups_voice_presence(channel_id: String) -> Result<String, String> {
             libsql::params![channel_id.as_str()],
             |r| r.get(0),
         )?;
-        if let Some(gid) = group_id {
-            let group_repo = GroupRepo::new(db);
-            if let Some(group) = group_repo.get_by_id(&gid)? {
-                let viewer = super::signer::signer_pubkey().ok();
-                if let Some(ref pk) = viewer {
-                    if BannedMemberRepo::new(db).is_banned(&gid, pk)? {
-                        return Ok("[]".to_string());
-                    }
-                }
-                let is_private = group.access_type == "private" || group.password_hash.is_some();
-                if is_private {
-                    let is_member = match &viewer {
-                        Some(pk) => {
-                            group.pubkey == *pk || group_repo.is_member(&gid, pk).unwrap_or(false)
-                        }
-                        None => false,
-                    };
-                    if !is_member {
-                        return Ok("[]".to_string());
-                    }
-                }
+        let Some(gid) = group_id else {
+            return Ok("[]".to_string());
+        };
+        let group_repo = GroupRepo::new(db);
+        let Some(group) = group_repo.get_by_id(&gid)? else {
+            return Ok("[]".to_string());
+        };
+        let viewer = super::signer::signer_pubkey().ok();
+        if let Some(ref pk) = viewer {
+            if BannedMemberRepo::new(db).is_banned(&gid, pk)? {
+                return Ok("[]".to_string());
+            }
+        }
+        let is_private = group.access_type == "private" || group.password_hash.is_some();
+        if is_private {
+            let is_member = match &viewer {
+                Some(pk) => group.pubkey == *pk || group_repo.is_member(&gid, pk).unwrap_or(false),
+                None => false,
+            };
+            if !is_member {
+                return Ok("[]".to_string());
             }
         }
         let voice_repo = soshal_db_core::repos::voice::GroupVoiceRepo::new(db);
@@ -1041,7 +1044,8 @@ pub fn groups_set_password(
     actor_pubkey: String,
 ) -> Result<bool, String> {
     require_owner(&group_id, &actor_pubkey)?;
-    let (access_type, password_hash) = match new_password {
+    let new_password = new_password.map(zeroize::Zeroizing::new);
+    let (access_type, password_hash) = match new_password.as_deref() {
         Some(p) if !p.trim().is_empty() => {
             let h = soshal_groups_core::access::hash_community_password(p.trim())?;
             ("private".to_string(), Some(h))
@@ -1091,6 +1095,7 @@ fn sweep_attempts(now: i64, attempts: &mut HashMap<String, (u32, i64)>) {
 /// used as an offline-style guess oracle.
 #[frb(sync, serialize)]
 pub fn groups_verify_password(group_id: String, password: String) -> Result<bool, String> {
+    let password = zeroize::Zeroizing::new(password);
     let now = soshal_common_core::format::now_secs();
 
     // Phase 1: Check lockout window (no counter increment yet).
@@ -1317,6 +1322,7 @@ mod tests {
         assert!(denied.unwrap_err().contains("only the group owner"));
 
         super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
+        assert!(groups_remove_member("g3".to_string(), owner.clone(), owner.clone()).is_err());
         assert!(groups_remove_member("g3".to_string(), member, owner).unwrap());
 
         let members = groups_get_members("g3".to_string()).unwrap();

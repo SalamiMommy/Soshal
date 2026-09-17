@@ -359,6 +359,8 @@ struct MoqPublishDto<'a> {
     groups: u64,
 }
 
+const MAX_MOQ_GROUP_BYTES: usize = 8 * 1024 * 1024;
+
 /// Publish one encoded MoQ group into the live registry under `stream_id`.
 /// Bytes are opaque to the transport; the caller encodes with
 /// `p2p_moq_encode_group`. Returns JSON `{"status","stream_id","groups"}`.
@@ -366,6 +368,12 @@ struct MoqPublishDto<'a> {
 pub fn p2p_moq_publish_group(stream_id: String, encoded: Vec<u8>) -> Result<String, String> {
     if stream_id.is_empty() || stream_id.len() > 128 {
         return Err("bad live stream id".to_string()).into();
+    }
+    if encoded.is_empty() {
+        return Err("cannot publish empty MoQ group".to_string()).into();
+    }
+    if encoded.len() > MAX_MOQ_GROUP_BYTES {
+        return Err("MoQ group exceeds maximum size".to_string()).into();
     }
     let seq = soshal_network_core::quic::moq_publish_group(&stream_id, encoded).map_err(|e| e)?;
     serde_json::to_string(&MoqPublishDto {
@@ -746,6 +754,11 @@ mod tests {
         assert!(e.contains("bad live stream id"), "got {e}");
         let e = super::p2p_moq_publish_group("x".repeat(129), vec![1]).unwrap_err();
         assert!(e.contains("bad live stream id"), "got {e}");
+        let e = super::p2p_moq_publish_group("valid-id".to_string(), vec![]).unwrap_err();
+        assert!(e.contains("cannot publish empty"), "got {e}");
+        let e = super::p2p_moq_publish_group("valid-id".to_string(), vec![0u8; 9 * 1024 * 1024])
+            .unwrap_err();
+        assert!(e.contains("exceeds maximum size"), "got {e}");
         let encoded = super::p2p_moq_encode_group(sample_group_json()).unwrap();
         let first =
             super::p2p_moq_publish_group("ffi-test-stream".to_string(), encoded.clone()).unwrap();

@@ -37,8 +37,16 @@ pub fn social_friend_suggestions() -> Result<Vec<String>, String> {
 fn compute_suggestions(me: &str) -> Result<Vec<String>, String> {
     let self_contacts = self_contact_list(me)?;
     let other_users = other_contact_lists(me)?;
+    let blocked_set: std::collections::HashSet<String> =
+        super::db::with_db_result(|db| soshal_db_core::repos::block::BlockRepo::new(db).list(me))
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
     let mut all_users = Vec::with_capacity(other_users.len());
     for (pubkey, contacts_json) in other_users {
+        if blocked_set.contains(&pubkey) {
+            continue;
+        }
         let contacts: Vec<String> = serde_json::from_str(&contacts_json).unwrap_or_default();
         all_users.push(AllUserInfo {
             pubkey,
@@ -52,7 +60,11 @@ fn compute_suggestions(me: &str) -> Result<Vec<String>, String> {
         all_users,
         limit: 100,
     });
-    Ok(suggestions.into_iter().map(|s| s.pubkey).collect())
+    Ok(suggestions
+        .into_iter()
+        .map(|s| s.pubkey)
+        .filter(|pk| !blocked_set.contains(pk))
+        .collect())
 }
 
 /// Load the active user's own contact list directly from the database.

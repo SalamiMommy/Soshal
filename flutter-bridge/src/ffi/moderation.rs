@@ -181,6 +181,10 @@ pub fn moderation_report_content(
 /// with `id`, `pubkey` and `reason` per item.
 #[frb(sync, serialize)]
 pub fn moderation_list_reports(target_pubkey: String, limit: i64) -> Result<String, String> {
+    if target_pubkey.trim().is_empty() || target_pubkey.len() > 128 {
+        return Err("invalid target_pubkey".to_string()).into();
+    }
+    let limit = limit.clamp(1, 200);
     let items = super::db::with_db_result(|db| {
         let rows = SpamReportRepo::new(db).list_by_target(&target_pubkey, limit)?;
         Ok(rows
@@ -200,6 +204,9 @@ pub fn moderation_list_reports(target_pubkey: String, limit: i64) -> Result<Stri
 /// Delete a spam report by id.
 #[frb(sync, serialize)]
 pub fn moderation_delete_report(report_id: String) -> Result<bool, String> {
+    if report_id.trim().is_empty() || report_id.len() > 128 {
+        return Err("invalid report_id".to_string()).into();
+    }
     super::db::with_db_result(|db| {
         SpamReportRepo::new(db).delete(&report_id)?;
         Ok(true)
@@ -241,6 +248,11 @@ pub fn moderation_set_word_filters(filters_json: String) -> Result<bool, String>
         serde_json::from_str(&filters_json).map_err(|e| format!("invalid filters JSON: {e}"))?;
     if filters.len() > 1000 {
         return Err("too many filters".to_string()).into();
+    }
+    for filter in &filters {
+        if filter.trim().is_empty() || filter.len() > 128 {
+            return Err("filter words must be non-empty and <= 128 chars".to_string()).into();
+        }
     }
     super::db::with_db_result(|db| {
         SettingsRepo::new(db).set(
