@@ -182,9 +182,10 @@ pub fn notifications_fetch(user_pubkey: String, limit: i32, offset: i32) -> Resu
 /// Mark notification as read.
 #[frb(sync, serialize)]
 pub fn notifications_mark_read(notification_id: String) -> Result<bool, String> {
+    let caller = super::signer::signer_pubkey()?;
     super::db::db_execute_params(
-        "UPDATE notifications SET is_read = 1 WHERE id = ?1 AND is_read = 0",
-        &[notification_id],
+        "UPDATE notifications SET is_read = 1 WHERE id = ?1 AND pubkey = ?2 AND is_read = 0",
+        &[notification_id, caller],
     )
     .map(|affected| affected > 0)
     .into()
@@ -205,9 +206,10 @@ pub fn notifications_mark_all_read(user_pubkey: String) -> Result<bool, String> 
 /// Delete a notification.
 #[frb(sync, serialize)]
 pub fn notifications_delete(notification_id: String) -> Result<bool, String> {
+    let caller = super::signer::signer_pubkey()?;
     super::db::db_execute_params(
-        "DELETE FROM notifications WHERE id = ?1",
-        &[notification_id],
+        "DELETE FROM notifications WHERE id = ?1 AND pubkey = ?2",
+        &[notification_id, caller],
     )
     .map(|affected| affected > 0)
     .into()

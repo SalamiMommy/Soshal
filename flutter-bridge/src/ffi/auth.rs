@@ -41,8 +41,10 @@ pub fn auth_generate_mnemonic() -> Result<String, String> {
 
 /// Validate a BIP-39 mnemonic phrase
 #[frb(sync, serialize)]
-pub fn auth_validate_mnemonic(mnemonic: String) -> Result<bool, String> {
-    Ok(validate_mnemonic(&mnemonic)).into()
+pub fn auth_validate_mnemonic(mut mnemonic: String) -> Result<bool, String> {
+    let ok = validate_mnemonic(&mnemonic);
+    mnemonic.zeroize();
+    Ok(ok).into()
 }
 
 /// Restore a keypair from a BIP-39 mnemonic and unlock the in-process signer.

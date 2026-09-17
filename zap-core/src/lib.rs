@@ -126,7 +126,8 @@ pub fn parse_msats_from_bolt11(bolt11: &str) -> Result<u64, String> {
         Some(b'n') => amount.checked_mul(MULT_N as u128),
         Some(b'u') => amount.checked_mul(MULT_U as u128),
         Some(b'm') => amount.checked_mul(MULT_M as u128),
-        _ => amount.checked_mul(MULT_DEFAULT as u128),
+        Some(b'1') | None => amount.checked_mul(MULT_DEFAULT as u128),
+        _ => return Err("invalid BOLT-11 multiplier".to_string()),
     }
     .ok_or_else(|| "BOLT-11 amount overflow".to_string())?;
 

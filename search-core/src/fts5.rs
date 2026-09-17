@@ -46,6 +46,8 @@ pub fn format_fts5_query(query: &str) -> String {
     let mut out = String::with_capacity(trimmed.len() + 16);
     let mut seen: HashSet<(Option<String>, String)> = HashSet::new();
     let mut count = 0;
+    const ALLOWED_FTS5_FIELDS: &[&str] = &["id", "pubkey", "content", "subject", "category"];
+
     for word in trimmed.split_whitespace() {
         let (field, term) = match word.find(':') {
             Some(idx) => {
@@ -53,7 +55,14 @@ pub fn format_fts5_query(query: &str) -> String {
                     .chars()
                     .filter(|c| c.is_alphanumeric())
                     .collect();
-                (if f.is_empty() { None } else { Some(f) }, &word[idx + 1..])
+                if ALLOWED_FTS5_FIELDS
+                    .iter()
+                    .any(|&col| col.eq_ignore_ascii_case(&f))
+                {
+                    (Some(f.to_ascii_lowercase()), &word[idx + 1..])
+                } else {
+                    (None, word)
+                }
             }
             None => (None, word),
         };

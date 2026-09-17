@@ -356,12 +356,13 @@ pub fn messaging_send_group_dm(
     group_id: String,
     participant_pubkeys_json: String,
 ) -> Result<String, String> {
+    let content = zeroize::Zeroizing::new(content);
     if content.is_empty() {
         return Err("message must not be empty".to_string()).into();
     }
     let participants: Vec<String> = serde_json::from_str(&participant_pubkeys_json)
         .map_err(|e| format!("invalid participants JSON: {e}"))?;
-    let payload = serde_json::json!({ "text": content, "groupId": group_id }).to_string();
+    let payload = serde_json::json!({ "text": &*content, "groupId": group_id }).to_string();
 
     // Check if a group key exists in local DB
     let sealed_payload = super::db::with_db_result(|db| {
@@ -384,7 +385,7 @@ pub fn messaging_send_group_dm(
     } else if let Some(first_peer) = fallback_recipient.clone() {
         super::signer::signer_nip44_encrypt(payload, first_peer)?
     } else {
-        soshal_groups_core::group_enc::seal::group_message_envelope(&payload, None)?
+        return Err("no group key or recipients found for group DM".into());
     };
 
     let mut builder = EventBuilder::new(Kind::EncryptedDirectMessage, event_content);

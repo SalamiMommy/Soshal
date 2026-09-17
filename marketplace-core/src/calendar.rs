@@ -73,7 +73,7 @@ fn parse_calendar_event(ev: &CalendarEventInput) -> Option<CalendarEventOut> {
                 s.parse::<f64>().ok()
             }
         })
-        .filter(|t| t.is_finite());
+        .filter(|t| t.is_finite() && *t >= start_time);
     let location = location_val.map(|s| s.to_string());
     let mut description: Option<String> = None;
     let mut image: Option<String> = None;

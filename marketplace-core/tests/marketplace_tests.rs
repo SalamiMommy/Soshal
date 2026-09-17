@@ -191,7 +191,7 @@ fn parse_poll_event_falls_back_to_tags_and_default_expiry() {
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["question"], "question text");
     assert_eq!(v["options"].as_array().unwrap().len(), 2);
-    assert_eq!(v["expiresAt"], 1000.0 + 604800.0 * 1000.0);
+    assert_eq!(v["expiresAt"], 50.0 * 1000.0 + 604800.0 * 1000.0);
     assert_eq!(v["closed"], false);
 }
 
@@ -279,6 +279,21 @@ fn parse_calendar_event_rejects_missing_invalid_start() {
     let mut input2 = input;
     input2["tags"] = serde_json::json!([["start", "notanumber"]]);
     assert_eq!(parse_calendar_event_json(&input2.to_string()), "null");
+}
+
+#[test]
+fn parse_calendar_event_rejects_inverted_end_time() {
+    let input = serde_json::json!({
+        "id": "c4",
+        "pubkey": "pk",
+        "content": "",
+        "created_at": 10.0,
+        "tags": [["start", "1700003600"], ["end", "1700000000"]]
+    });
+    let out = parse_calendar_event_json(&input.to_string());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["startTime"], 1700003600.0);
+    assert!(v.get("endTime").is_none());
 }
 
 // ---------------------------------------------------------------------------

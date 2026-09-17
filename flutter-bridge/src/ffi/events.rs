@@ -238,7 +238,13 @@ pub async fn events_fetch_nearby(
         if radius_km <= 0.0 {
             let filter = format!("{audience_clause} ");
             let rows = super::db::db_query_json(&event_rows_sql(&filter, limit), &params)?;
-            return super::util::json_ok(events_from_values(rows));
+            let mut out = events_from_values(rows);
+            let ids: Vec<String> = out.iter().map(|e| e.id.clone()).collect();
+            let counts = attendee_counts_for_ids(&ids);
+            for e in &mut out {
+                e.attendees = counts.get(&e.id).copied().unwrap_or(0);
+            }
+            return super::util::json_ok(out);
         }
         let radius = radius_km.min(5000.0);
         let lat_deg = radius as f64 / 110.574;
@@ -259,6 +265,11 @@ pub async fn events_fetch_nearby(
             soshal_spatial_core::distance::haversine_km(center.0, center.1, e.latitude, e.longitude)
                 <= radius as f64
         });
+        let ids: Vec<String> = out.iter().map(|e| e.id.clone()).collect();
+        let counts = attendee_counts_for_ids(&ids);
+        for e in &mut out {
+            e.attendees = counts.get(&e.id).copied().unwrap_or(0);
+        }
         super::util::json_ok(out)
     })
     .await
@@ -287,7 +298,7 @@ pub async fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result
             std::collections::HashMap::new();
         if !ids.is_empty() && !user_pubkey.is_empty() {
             let ids_json = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string());
-            let rows = super::db::db_query_json(
+            let rsvp_rows = super::db::db_query_json(
                 &format!(
                     "SELECT p.rsvp_event_id, p.content FROM posts p WHERE kind = ?1 \
                      AND pubkey = ?2 AND is_deleted = 0 \
@@ -298,7 +309,7 @@ pub async fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result
                 &[KIND_EVENT_RSVP.to_string(), user_pubkey.clone(), ids_json],
             )
             .unwrap_or_default();
-            for r in rows {
+            for r in rsvp_rows {
                 if let (Some(eid), Some(s)) = (r["rsvp_event_id"].as_str(), r["content"].as_str()) {
                     if valid_rsvp(s) {
                         rsvp_map
@@ -514,8 +525,14 @@ pub fn events_rsvp(
         let conn = db.conn()?;
         soshal_db_core::query::with_tx(&conn, |tx| async move {
             tx.execute(
-                "DELETE FROM posts WHERE id LIKE ?1 AND id != ?2",
-                libsql::params!(format!("rsvp:{user_pubkey}:{event_id}:%"), rsvp_id.clone()),
+                "DELETE FROM posts WHERE ((kind = ?1 AND pubkey = ?2 AND rsvp_event_id = ?3) OR id LIKE ?4) AND id != ?5",
+                libsql::params!(
+                    KIND_EVENT_RSVP as i64,
+                    user_pubkey.clone(),
+                    event_id.clone(),
+                    format!("rsvp:{user_pubkey}:{event_id}:%"),
+                    rsvp_id.clone(),
+                ),
             )
             .await?;
             soshal_db_core::repos::post::PostRepo::new(db)
@@ -612,7 +629,7 @@ pub fn events_get_event(event_id: String) -> Result<String, String> {
     let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
-             WHERE p.kind IN ({EVENT_KINDS}) AND p.id = ?1"
+             WHERE p.kind IN ({EVENT_KINDS}) AND p.id = ?1 AND p.is_deleted = 0"
         ),
         &[event_id.clone()],
     )?;

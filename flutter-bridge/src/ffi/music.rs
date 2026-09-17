@@ -45,6 +45,7 @@ pub async fn music_publish(
     } else if std::fs::metadata(&media_source).is_err() {
         return Err("media file not found".into());
     }
+    super::signer::signer_pubkey()?;
     let manifest_json = super::media::media_upload_blob_file(media_source.clone()).await?;
     let manifest: serde_json::Value =
         serde_json::from_str(&manifest_json).map_err(|e| format!("parse blob manifest: {e}"))?;

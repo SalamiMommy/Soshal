@@ -138,29 +138,43 @@ pub fn encode_p2p_frame(json_input: &str) -> String {
         Err(_) => return "{\"chunks\":[],\"crc32\":0}".to_string(),
     };
 
-    let bytes = input.payload.as_bytes();
-    if bytes.len() > MAX_TOTAL_BYTES {
+    let payload_str = &input.payload;
+    if payload_str.len() > MAX_TOTAL_BYTES {
         return "{\"chunks\":[],\"crc32\":0}".to_string();
     }
-    let total_crc = compute_crc32(bytes);
+    let total_crc = compute_crc32(payload_str.as_bytes());
     let chunk_size = if input.chunk_size == 0 {
         512
     } else {
         input.chunk_size.min(MAX_CHUNK_SIZE)
     };
-    let chunks_iter = bytes.chunks(chunk_size);
-    let total = chunks_iter.len();
+
+    let mut slices = Vec::new();
+    let mut start = 0;
+    while start < payload_str.len() {
+        let mut end = (start + chunk_size).min(payload_str.len());
+        while end > start && !payload_str.is_char_boundary(end) {
+            end -= 1;
+        }
+        if end == start {
+            end = payload_str[start..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| start + i)
+                .unwrap_or(payload_str.len());
+        }
+        slices.push(&payload_str[start..end]);
+        start = end;
+    }
+
+    let total = slices.len();
     let mut chunks = Vec::with_capacity(total);
-    for (idx, chunk) in chunks_iter.enumerate() {
-        let data = match std::str::from_utf8(chunk) {
-            Ok(s) => s.to_string(),
-            Err(_) => String::from_utf8_lossy(chunk).into_owned(),
-        };
+    for (idx, slice) in slices.into_iter().enumerate() {
         chunks.push(ChunkOutput {
             index: idx,
             total,
-            data,
-            checksum: compute_crc32(chunk),
+            data: slice.to_string(),
+            checksum: compute_crc32(slice.as_bytes()),
         });
     }
 
@@ -185,11 +199,15 @@ pub fn decode_p2p_frame(json_input: &str) -> String {
     // chunks, out-of-range indices, duplicate indices, or an aggregate size
     // past the frame cap would otherwise cause unbounded allocation and CRC
     // CPU from crafted JSON.
-    if input.chunks.len() > MAX_CHUNKS {
+    if input.chunks.is_empty() || input.chunks.len() > MAX_CHUNKS {
+        return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string();
+    }
+    let expected_total = input.chunks[0].total;
+    if expected_total == 0 || expected_total > MAX_CHUNKS || input.chunks.len() != expected_total {
         return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string();
     }
     for chunk in &input.chunks {
-        if chunk.total == 0 || chunk.index >= chunk.total {
+        if chunk.total != expected_total || chunk.index >= expected_total {
             return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string();
         }
     }

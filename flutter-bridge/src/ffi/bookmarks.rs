@@ -93,8 +93,8 @@ pub fn bookmarks_resolve_post(event_id: String) -> Result<String, String> {
         Ok(row)
     })
     .and_then(|r| match r {
-        Some(row) => super::util::json_ok(row),
-        None => Ok(String::new()),
+        Some(row) if !row.is_deleted => super::util::json_ok(row),
+        _ => Ok(String::new()),
     })
 }
 
@@ -111,8 +111,11 @@ pub fn bookmarks_resolve_posts(ids_json: String) -> Result<String, String> {
     super::db::with_db_result(|db| {
         let repo = soshal_db_core::repos::post::PostRepo::new(db);
         let rows = repo.get_by_ids(&ids)?;
-        let map: std::collections::HashMap<&str, &soshal_db_core::repos::post::PostRow> =
-            rows.iter().map(|r| (r.id.as_str(), r)).collect();
+        let map: std::collections::HashMap<&str, &soshal_db_core::repos::post::PostRow> = rows
+            .iter()
+            .filter(|r| !r.is_deleted)
+            .map(|r| (r.id.as_str(), r))
+            .collect();
         Ok(serde_json::to_string(&map).unwrap_or_else(|_| "{}".into()))
     })
 }

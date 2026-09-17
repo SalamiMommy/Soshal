@@ -64,6 +64,12 @@ impl LinkManager {
 
         let now = now_secs() as u64;
 
+        // Create link request packet carrying our hybrid PQC public key so
+        // the responder can bootstrap the ratchet session.
+        let own_pk = self
+            .crypto
+            .begin_handshake(&link_peer_id(&remote_dest), &link_context(&remote_dest))?;
+
         let link_info = LinkInfo {
             remote_destination: remote_dest,
             state: LinkState::Pending,
@@ -75,11 +81,6 @@ impl LinkManager {
 
         links.insert(remote_dest, link_info);
 
-        // Create link request packet carrying our hybrid PQC public key so
-        // the responder can bootstrap the ratchet session.
-        let own_pk = self
-            .crypto
-            .begin_handshake(&link_peer_id(&remote_dest), &link_context(&remote_dest))?;
         let mut payload = Vec::with_capacity(1 + own_pk.len());
         payload.push(LINK_REQUEST_PQC);
         payload.extend_from_slice(own_pk.as_bytes());

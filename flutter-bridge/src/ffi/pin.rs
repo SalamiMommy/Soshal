@@ -27,6 +27,7 @@ fn with_repo<T>(
 /// PIN, use `pin_change` which requires the current PIN for authentication.
 #[frb(serialize)]
 pub async fn pin_set(pin: String) -> Result<bool, String> {
+    let pin = zeroize::Zeroizing::new(pin);
     if !pin.chars().all(|c| c.is_ascii_digit()) || !(4..=12).contains(&pin.len()) {
         return Err("PIN must be 4-12 digits".to_string());
     }
@@ -55,6 +56,8 @@ pub async fn pin_set(pin: String) -> Result<bool, String> {
 /// lockout enforcement applies). `new_pin` must be 4-12 digits.
 #[frb(serialize)]
 pub async fn pin_change(old_pin: String, new_pin: String) -> Result<bool, String> {
+    let old_pin = zeroize::Zeroizing::new(old_pin);
+    let new_pin = zeroize::Zeroizing::new(new_pin);
     if !new_pin.chars().all(|c| c.is_ascii_digit()) || !(4..=12).contains(&new_pin.len()) {
         return Err("new PIN must be 4-12 digits".to_string());
     }
@@ -199,6 +202,7 @@ fn check_pin_with_lockout(pin: &str) -> Result<(), String> {
 /// (M3 fix: lockout/permanent-lock errors are no longer masked as Ok(false).)
 #[frb(serialize)]
 pub async fn pin_verify(pin: String) -> Result<bool, String> {
+    let pin = zeroize::Zeroizing::new(pin);
     match check_pin_with_lockout(&pin) {
         Ok(()) => Ok(true),
         // Plain wrong PIN: return Ok(false) so the UI can increment an
@@ -214,6 +218,7 @@ pub async fn pin_verify(pin: String) -> Result<bool, String> {
 /// runs a 600k-iteration PBKDF2 (~0.3-1 s) and must not block the Dart isolate.
 #[frb(serialize)]
 pub async fn pin_clear(pin: String) -> Result<bool, String> {
+    let pin = zeroize::Zeroizing::new(pin);
     check_pin_with_lockout(&pin)?;
     with_repo(|r| {
         r.set(PIN_HASH_KEY, "").map_err(super::util::to_err)?;

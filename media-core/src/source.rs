@@ -25,6 +25,17 @@ pub async fn fetch_source_bytes(source: &str) -> Result<(Vec<u8>, Option<String>
     if is_url_source(source) {
         fetch_url_bytes(source).await
     } else {
+        let meta =
+            std::fs::metadata(source).map_err(|e| format!("Failed to read file {source}: {e}"))?;
+        if !meta.is_file() {
+            return Err("source must be a regular file".to_string());
+        }
+        if meta.len() > MAX_SOURCE_URL_BYTES as u64 {
+            return Err(format!(
+                "source file exceeds size cap ({} bytes)",
+                MAX_SOURCE_URL_BYTES
+            ));
+        }
         let data =
             std::fs::read(source).map_err(|e| format!("Failed to read file {source}: {e}"))?;
         Ok((data, None))
@@ -135,6 +146,12 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("Failed to read file"));
+    }
+
+    #[tokio::test]
+    async fn path_source_rejects_directory() {
+        let err = fetch_source_bytes("/").await.unwrap_err();
+        assert!(err.contains("regular file"));
     }
 
     #[tokio::test]

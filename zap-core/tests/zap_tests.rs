@@ -274,11 +274,10 @@ fn make_invoice_low_bound_one_sat() {
 }
 
 #[test]
-fn bolt11_non_unit_letter_uses_btc_multiplier_and_caps() {
-    // "x" is not a unit letter: falls through to the BTC multiplier (10^11
-    // msat/BTC), overshooting the parse cap.
+fn bolt11_non_unit_letter_rejected() {
+    // "x" is not a unit letter: rejected as invalid BOLT-11 multiplier.
     let err = parse_msats_from_bolt11("lnbc123x").unwrap_err();
-    assert!(err.contains("exceeds zap cap"), "got {err}");
+    assert_eq!(err, "invalid BOLT-11 multiplier");
 }
 
 #[test]

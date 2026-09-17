@@ -215,6 +215,14 @@ pub async fn resolve(nip05_address: &str) -> Nip05Result {
             error: Some(format!("no pubkey listed for {name}")),
         };
     };
+    if let Err(e) = nostr::key::PublicKey::from_hex(&pubkey) {
+        return Nip05Result {
+            verified: false,
+            pubkey: None,
+            relays: vec![],
+            error: Some(format!("invalid pubkey in nip05 response: {e}")),
+        };
+    }
     let relays = json["relays"][&pubkey]
         .as_array()
         .map(|a| {

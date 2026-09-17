@@ -113,6 +113,12 @@ impl PqcLinkCrypto {
         if self.has_session(peer) {
             return Err("ratchet session already exists for peer".to_string());
         }
+        if self.at_session_capacity() {
+            return Err("ratchet session limit reached".to_string());
+        }
+        if !self.keygen_budget(peer) {
+            return Err("handshake keygen rate limited".to_string());
+        }
         let (pk, sk) = hybrid_keygen().map_err(|e| format!("hybrid keygen failed: {e}"))?;
         let state = init_state("", context, &sk, &pk);
         self.put(peer, state);

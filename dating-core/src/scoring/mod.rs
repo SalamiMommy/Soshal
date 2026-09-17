@@ -36,9 +36,9 @@ pub(crate) fn compute_compatibility_score_d<P: ProfileScoringFields>(
 /// Returns true if dealbreaker matches the target snake_case field without heap allocation.
 fn matches_field(dealbreaker: &str, field_snake: &str) -> bool {
     let mut field_bytes = field_snake.bytes();
-    for b in dealbreaker.bytes() {
+    for (i, b) in dealbreaker.bytes().enumerate() {
         if b.is_ascii_uppercase() {
-            if field_bytes.next() != Some(b'_') {
+            if i > 0 && field_bytes.next() != Some(b'_') {
                 return false;
             }
             if field_bytes.next() != Some(b.to_ascii_lowercase()) {
@@ -296,5 +296,20 @@ mod tests {
             compute_compatibility_score(&base, &other),
             compute_compatibility_score(&zeroed, &other)
         );
+    }
+
+    #[test]
+    fn matches_field_casing_variations() {
+        assert!(matches_field("Age", "age"));
+        assert!(matches_field("age", "age"));
+        assert!(matches_field("BodyType", "body_type"));
+        assert!(matches_field("bodyType", "body_type"));
+        assert!(matches_field("body_type", "body_type"));
+        assert!(matches_field("RelationshipIntent", "relationship_intent"));
+        assert!(matches_field("relationshipIntent", "relationship_intent"));
+
+        assert!(!matches_field("Age", "height"));
+        assert!(!matches_field("BodyType", "body"));
+        assert!(!matches_field("Body", "body_type"));
     }
 }
