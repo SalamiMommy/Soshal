@@ -262,6 +262,25 @@ fn resolve_favicon(href: Option<&str>, page_url: &str) -> Option<String> {
         .filter(|s| is_valid_media_url(s))
 }
 
+fn resolve_image_url(raw: Option<&str>, page_url: &str) -> Option<String> {
+    let raw = raw?;
+    if raw.len() > MAX_PREVIEW_URL_LENGTH {
+        return None;
+    }
+    let decoded = decode_html_entities(raw);
+    if let Ok(base) = url::Url::parse(page_url) {
+        if let Ok(resolved) = base.join(&decoded) {
+            let s = resolved.to_string();
+            if is_valid_media_url(&s) {
+                return Some(s);
+            }
+        }
+    } else if is_valid_media_url(&decoded) {
+        return Some(decoded);
+    }
+    None
+}
+
 pub fn extract_favicon(html: &str, page_url: &str) -> Option<String> {
     resolve_favicon(scan_html(html).favicon, page_url)
 }
@@ -319,16 +338,11 @@ pub fn parse_link_preview_html(html: &str, url_str: &str) -> Option<LinkPreviewO
     if description.len() > MAX_PREVIEW_URL_LENGTH {
         return None;
     }
-    let og_image = scan.og_image.winner();
-    let twitter_image = scan.twitter_image.winner();
-    let image = match og_image {
-        Some(v) if v.len() <= MAX_PREVIEW_URL_LENGTH => Some(decode_html_entities(v)),
-        _ => match twitter_image {
-            Some(v) if v.len() <= MAX_PREVIEW_URL_LENGTH => Some(decode_html_entities(v)),
-            _ => None,
-        },
-    };
-    let image = image.filter(|u| is_valid_media_url(u));
+    let raw_image = scan
+        .og_image
+        .winner()
+        .or_else(|| scan.twitter_image.winner());
+    let image = resolve_image_url(raw_image, url_str);
     let favicon = resolve_favicon(scan.favicon, url_str);
     let domain = url::Url::parse(url_str)
         .ok()

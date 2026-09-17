@@ -1,4 +1,7 @@
 pub fn can_checkin(event_start: u64, event_end: u64, now: u64, buffer_secs: u64) -> bool {
+    if event_start >= event_end {
+        return false;
+    }
     let with_buffer = event_start.saturating_sub(buffer_secs);
     now >= with_buffer && now < event_end
 }
@@ -87,5 +90,15 @@ mod tests {
         assert!(!within_checkin_radius(
             37.7749, -122.4194, 0.0, -181.0, 500.0
         ));
+    }
+
+    #[test]
+    fn test_can_checkin_inverted_times_rejected() {
+        assert!(!can_checkin(1000, 500, 450, 600));
+        assert!(!can_checkin(1000, 1000, 1000, 600));
+        assert!(can_checkin(1000, 2000, 1500, 600));
+        assert!(can_checkin(1000, 2000, 800, 600));
+        assert!(!can_checkin(1000, 2000, 300, 600));
+        assert!(!can_checkin(1000, 2000, 2500, 600));
     }
 }

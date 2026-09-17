@@ -214,8 +214,16 @@ fn sanitize_test() {
     assert_eq!(sanitize_log_message("user profile"), "user profile");
     let nsec = "nsec1qwqsvf30y2pqf30y2pqf30y2pqf30y2pqf30y2pqf30y2pveerx";
     assert!(scrub_sensitive_data(nsec).contains("[REDACTED_NSEC]"));
+    let ips = "Connect to 172.20.1.5 and 169.254.169.254 and ::1 and 127.0.0.2";
+    let scrubbed_ips = scrub_sensitive_data(ips);
+    assert!(!scrubbed_ips.contains("172.20.1.5"));
+    assert!(!scrubbed_ips.contains("169.254.169.254"));
+    assert!(!scrubbed_ips.contains("::1"));
+    assert!(!scrubbed_ips.contains("127.0.0.2"));
+    assert!(scrubbed_ips.contains("[REDACTED_IP]"));
     let ctx = r#"{"userId":"123","password":"secret"}"#;
     assert!(sanitize_context(ctx).unwrap().contains("[REDACTED]"));
+    assert!(sanitize_context(&format!("{{{}}}", "\"a\":1,".repeat(200_000))).is_none());
     let details = format!("/{}", "a".repeat(64));
     assert_eq!(sanitize_details(&details), "/[HEX]");
 }
@@ -323,6 +331,8 @@ fn compress_deflate_roundtrip() {
     assert_eq!(decompress_json(&compress_json("")), "");
     assert_eq!(decompress_json("!!!not base64!!!"), "");
     assert_eq!(decompress_json("AAAA"), "");
+    assert_eq!(decompress_json(&"A".repeat(10 * 1024 * 1024)), "");
+    assert_eq!(decompress_json_dict(&"A".repeat(10 * 1024 * 1024)), "");
     assert!(decompress_limited(b"garbage", 1024).is_err());
 }
 
@@ -748,6 +758,17 @@ fn link_preview_direct_and_guards() {
     .unwrap();
     assert_eq!(with_meta.description, "Desc");
     assert_eq!(with_meta.image, None);
+
+    let with_relative_img = parse_link_preview_html(
+        r#"<meta property="og:image" content="/images/banner.jpg">"#,
+        "https://example.com/blog/post",
+    )
+    .unwrap();
+    assert_eq!(
+        with_relative_img.image,
+        Some("https://example.com/images/banner.jpg".to_string())
+    );
+
     assert!(
         parse_link_preview_html(&"a".repeat(5 * 1024 * 1024 + 1), "https://example.com").is_none()
     );

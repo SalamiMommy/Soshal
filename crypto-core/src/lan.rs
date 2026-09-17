@@ -40,10 +40,13 @@ impl EphemeralSessionKey {
     /// Consumes the key: it is single-use (one session, one agreement).
     pub fn agree(self, peer_public: &[u8; PUBLIC_KEY_LEN]) -> Result<SessionKey, &'static str> {
         let peer = UnparsedPublicKey::new(&X25519, peer_public);
-        let shared = ring::agreement::agree_ephemeral(self.private, &peer, |k| k.to_vec())
-            .map_err(|_| "x25519 agreement failed")?;
+        let shared = ring::agreement::agree_ephemeral(self.private, &peer, |k| {
+            zeroize::Zeroizing::new(k.to_vec())
+        })
+        .map_err(|_| "x25519 agreement failed")?;
         let okm = crate::hash::hkdf_sha256(&shared, b"soshal-lan-session", b"lan-session", KEY_LEN)
             .map_err(|_| "session key derivation failed")?;
+        let okm = zeroize::Zeroizing::new(okm);
         let mut key = [0u8; KEY_LEN];
         key.copy_from_slice(&okm);
         Ok(SessionKey {

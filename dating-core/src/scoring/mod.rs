@@ -33,22 +33,17 @@ pub(crate) fn compute_compatibility_score_d<P: ProfileScoringFields>(
     compute_compatibility_score_inner(self_p, other_p, distance_km)
 }
 
-/// Returns true if dealbreaker matches the target snake_case field without heap allocation.
+/// Returns true if dealbreaker matches the target snake_case field without heap allocation,
+/// supporting snake_case, camelCase, PascalCase, SCREAMING_SNAKE_CASE, kebab-case, etc.
 fn matches_field(dealbreaker: &str, field_snake: &str) -> bool {
-    let mut field_bytes = field_snake.bytes();
-    for (i, b) in dealbreaker.bytes().enumerate() {
-        if b.is_ascii_uppercase() {
-            if i > 0 && field_bytes.next() != Some(b'_') {
-                return false;
-            }
-            if field_bytes.next() != Some(b.to_ascii_lowercase()) {
-                return false;
-            }
-        } else if field_bytes.next() != Some(b) {
-            return false;
-        }
-    }
-    field_bytes.next().is_none()
+    dealbreaker
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .eq(field_snake
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .map(|c| c.to_ascii_lowercase()))
 }
 
 fn has_dealbreaker(dealbreakers: Option<&[String]>, field_snake: &str) -> bool {
@@ -302,11 +297,16 @@ mod tests {
     fn matches_field_casing_variations() {
         assert!(matches_field("Age", "age"));
         assert!(matches_field("age", "age"));
+        assert!(matches_field("AGE", "age"));
         assert!(matches_field("BodyType", "body_type"));
         assert!(matches_field("bodyType", "body_type"));
         assert!(matches_field("body_type", "body_type"));
+        assert!(matches_field("BODY_TYPE", "body_type"));
+        assert!(matches_field("body-type", "body_type"));
         assert!(matches_field("RelationshipIntent", "relationship_intent"));
         assert!(matches_field("relationshipIntent", "relationship_intent"));
+        assert!(matches_field("RELATIONSHIP_INTENT", "relationship_intent"));
+        assert!(matches_field("relationship-intent", "relationship_intent"));
 
         assert!(!matches_field("Age", "height"));
         assert!(!matches_field("BodyType", "body"));

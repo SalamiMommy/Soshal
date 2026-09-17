@@ -156,7 +156,8 @@ fn sanitize_value(value: &mut serde_json::Value) {
 /// `None` if the input is empty, null, or not a JSON object. Redaction is
 /// recursive: nested objects and arrays are scrubbed too.
 pub fn sanitize_context(input_json: &str) -> Option<String> {
-    if input_json.is_empty() || input_json == "null" {
+    const MAX_CONTEXT_LEN: usize = 1024 * 1024;
+    if input_json.is_empty() || input_json == "null" || input_json.len() > MAX_CONTEXT_LEN {
         return None;
     }
 
@@ -199,7 +200,7 @@ fn get_patterns() -> &'static Vec<(Regex, &'static str)> {
             ),
             (
                 compile_re(
-                    r"\b(127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b",
+                    r"\b(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3})\b|::1\b",
                 ),
                 "[REDACTED_IP]",
             ),

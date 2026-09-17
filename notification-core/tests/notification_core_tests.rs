@@ -239,6 +239,21 @@ fn aggregate_notifications_dedupes_existing_ids() {
 }
 
 #[test]
+fn aggregate_notifications_dedupes_intra_batch_and_clamps_negative_timestamp() {
+    let mut ev1 = nostr_event("e1", "pk1", 7, "like+", &[&["e", "t1"]]);
+    ev1.created_at = -100.0;
+    let mut ev2 = nostr_event("e1", "pk1", 7, "like+", &[&["e", "t1"]]);
+    ev2.created_at = 1700000000.0;
+    let out = aggregate_notifications(AggregateInput {
+        events: vec![ev1, ev2],
+        existing_ids: vec![],
+        live_stream_kind: 0,
+    });
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].created_at, 0);
+}
+
+#[test]
 fn aggregate_notifications_content_fallbacks() {
     let events = vec![
         nostr_event("e1", "pk1", 7, "", &[]),

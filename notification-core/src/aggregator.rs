@@ -93,8 +93,7 @@ pub fn aggregate_notifications(input: AggregateInput) -> Vec<NotificationOutput>
     let mut out: Vec<NotificationOutput> = Vec::with_capacity(input.events.len());
     let live_stream_kind = input.live_stream_kind;
 
-    let existing_set: std::collections::HashSet<&str> =
-        input.existing_ids.iter().map(|s| s.as_str()).collect();
+    let mut seen_ids: std::collections::HashSet<String> = input.existing_ids.into_iter().collect();
 
     for ev in &input.events {
         let [t_tag, e_tag] = find_tag_values_map(&ev.tags, ["t", "e"]);
@@ -121,7 +120,7 @@ pub fn aggregate_notifications(input: AggregateInput) -> Vec<NotificationOutput>
         };
 
         let id = notif_id(notif_type, &ev.id, &ev.pubkey);
-        if existing_set.contains(id.as_str()) {
+        if !seen_ids.insert(id.clone()) {
             continue;
         }
 
@@ -130,6 +129,11 @@ pub fn aggregate_notifications(input: AggregateInput) -> Vec<NotificationOutput>
             None => ev.id.clone(),
         };
         let content = format_notification_content(notif_type, &ev.content, &ev.tags);
+        let created_at = if ev.created_at.is_finite() && ev.created_at >= 0.0 {
+            ev.created_at as u64
+        } else {
+            0
+        };
 
         out.push(NotificationOutput {
             id,
@@ -137,7 +141,7 @@ pub fn aggregate_notifications(input: AggregateInput) -> Vec<NotificationOutput>
             event_id,
             from_pubkey: ev.pubkey.clone(),
             content,
-            created_at: ev.created_at as u64,
+            created_at,
         });
     }
 

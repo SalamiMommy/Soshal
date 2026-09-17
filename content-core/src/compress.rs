@@ -21,7 +21,13 @@ static ENCODER_DICT: LazyLock<zstd::dict::EncoderDictionary<'static>> =
 static DECODER_DICT: LazyLock<zstd::dict::DecoderDictionary<'static>> =
     LazyLock::new(|| zstd::dict::DecoderDictionary::copy(FEED_DICT));
 
+/// Default cap for compressed input (16 MiB) — prevent unbounded compression memory.
+pub const MAX_COMPRESS_BYTES: usize = 16 * 1024 * 1024;
+
 pub fn compress(data: &[u8]) -> Result<Vec<u8>, String> {
+    if data.len() > MAX_COMPRESS_BYTES {
+        return Err(format!("payload exceeds {MAX_COMPRESS_BYTES} bytes"));
+    }
     let cap = (data.len() / 2).max(128);
     let mut encoder =
         flate2::write::DeflateEncoder::new(Vec::with_capacity(cap), Compression::default());
@@ -75,6 +81,9 @@ pub fn compress_json(data: &str) -> String {
 }
 
 pub fn decompress_json(encoded: &str) -> String {
+    if encoded.len() > MAX_DECOMPRESS_BYTES * 2 {
+        return String::new();
+    }
     match general_purpose::STANDARD.decode(encoded) {
         Ok(bytes) => match decompress(&bytes) {
             Ok(decompressed) => String::from_utf8(decompressed).unwrap_or_default(),
@@ -92,6 +101,9 @@ pub fn is_dict_frame(data: &[u8]) -> bool {
 /// Compresses with the bundled trained dictionary. Output = magic || zstd
 /// frame. Up to ~70% smaller than deflate on small repetitive JSON.
 pub fn compress_dict(data: &[u8]) -> Result<Vec<u8>, String> {
+    if data.len() > MAX_COMPRESS_BYTES {
+        return Err(format!("payload exceeds {MAX_COMPRESS_BYTES} bytes"));
+    }
     let mut encoder = zstd::stream::Encoder::with_prepared_dictionary(Vec::new(), &ENCODER_DICT)
         .map_err(|e| format!("compress_dict init: {}", e))?;
     encoder
@@ -152,6 +164,9 @@ pub fn compress_json_dict(data: &str) -> String {
 /// Dictionary variant of `decompress_json`; falls back to plain deflate
 /// when the payload is not a dict frame.
 pub fn decompress_json_dict(encoded: &str) -> String {
+    if encoded.len() > MAX_DECOMPRESS_BYTES * 2 {
+        return String::new();
+    }
     let Ok(bytes) = general_purpose::STANDARD.decode(encoded) else {
         return String::new();
     };

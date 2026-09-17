@@ -10,9 +10,16 @@ use image::GenericImageView;
 
 /// Max edge used for hashing — ThumbHash is designed for ≤100px inputs.
 const HASH_MAX_SIZE: u32 = 100;
+/// Max bytes accepted as compressed image input to avoid memory exhaustion attacks.
+pub const MAX_THUMBHASH_INPUT_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum valid ThumbHash binary length (spec standard is ~21-30 bytes).
+pub const MAX_THUMBHASH_LEN: usize = 64;
 
 /// Encodes a ThumbHash from compressed image bytes (downscaled first).
 pub fn encode_thumbhash_from_bytes(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    if bytes.is_empty() || bytes.len() > MAX_THUMBHASH_INPUT_BYTES {
+        return Err("image input out of bounds".to_string());
+    }
     let img =
         image::load_from_memory(bytes).map_err(|e| format!("thumbhash decode source: {e}"))?;
     let (w, h) = img.dimensions();
@@ -48,8 +55,8 @@ pub fn encode_thumbhash_from_rgba(
 
 /// Decodes a ThumbHash into a small RGBA frame (its intrinsic size).
 pub fn decode_thumbhash_to_rgba(hash: &[u8]) -> Result<DecodedRgbaFrame, String> {
-    if hash.is_empty() {
-        return Err("empty thumbhash".to_string());
+    if hash.is_empty() || hash.len() > MAX_THUMBHASH_LEN {
+        return Err("invalid thumbhash length".to_string());
     }
     let (w, h, rgba) =
         thumbhash::thumb_hash_to_rgba(hash).map_err(|_| "invalid thumbhash".to_string())?;
@@ -89,5 +96,7 @@ mod tests {
     #[test]
     fn empty_hash_rejected() {
         assert!(decode_thumbhash_to_rgba(&[]).is_err());
+        assert!(decode_thumbhash_to_rgba(&[0u8; 100]).is_err());
+        assert!(encode_thumbhash_from_bytes(&[]).is_err());
     }
 }

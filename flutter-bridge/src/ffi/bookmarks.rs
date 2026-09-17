@@ -9,6 +9,9 @@ use nostr::event::{EventBuilder, Kind, Tag};
 #[frb(sync, serialize)]
 pub fn bookmarks_save(pubkey: String, event_id: String) -> Result<String, String> {
     super::signer::require_identity(&pubkey)?;
+    if event_id.is_empty() || event_id.len() > 128 {
+        return Err("invalid event_id length".into());
+    }
     let now = soshal_common_core::format::now_secs();
     let row = soshal_db_core::repos::bookmark::BookmarkRow {
         id: format!("bm:{pubkey}:{event_id}"),
@@ -29,6 +32,8 @@ pub fn bookmarks_save(pubkey: String, event_id: String) -> Result<String, String
 #[frb(sync, serialize)]
 pub fn bookmarks_list(pubkey: String, limit: i64, offset: i64) -> Result<String, String> {
     super::signer::require_identity(&pubkey)?;
+    let limit = limit.clamp(1, 500);
+    let offset = offset.max(0);
     super::db::with_db_result(|db| {
         let rows = soshal_db_core::repos::bookmark::BookmarkRepo::new(db)
             .get_user_bookmarks(&pubkey, limit, offset)?;
@@ -103,8 +108,15 @@ pub fn bookmarks_resolve_post(event_id: String) -> Result<String, String> {
 /// absent). Replaces N sequential per-bookmark FFI round-trips.
 #[frb(sync, serialize)]
 pub fn bookmarks_resolve_posts(ids_json: String) -> Result<String, String> {
+    const MAX_BATCH_IDS: usize = 500;
+    if ids_json.len() > 256 * 1024 {
+        return Err("ids_json too large".into());
+    }
     let ids: Vec<String> =
         serde_json::from_str(&ids_json).map_err(|e| format!("invalid ids JSON: {e}"))?;
+    if ids.len() > MAX_BATCH_IDS {
+        return Err(format!("too many ids: max {MAX_BATCH_IDS}"));
+    }
     if ids.is_empty() {
         return Ok("{}".to_string());
     }
@@ -278,5 +290,8 @@ mod tests {
         assert_eq!(out, "{}");
         // Malformed ids JSON → error.
         assert!(bookmarks_resolve_posts("not-json".to_string()).is_err());
+        // Too many ids → error.
+        let too_many: Vec<String> = (0..501).map(|i| format!("id{i}")).collect();
+        assert!(bookmarks_resolve_posts(serde_json::to_string(&too_many).unwrap()).is_err());
     }
 }

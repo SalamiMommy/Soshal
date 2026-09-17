@@ -133,6 +133,9 @@ pub fn compute_crc32(bytes: &[u8]) -> u32 {
 /// Input: JSON string of FramePacketInput.
 /// Returns: JSON string of FramePacketResult (empty on failure).
 pub fn encode_p2p_frame(json_input: &str) -> String {
+    if json_input.len() > MAX_TOTAL_BYTES * 2 {
+        return "{\"chunks\":[],\"crc32\":0}".to_string();
+    }
     let input: FramePacketInput = match serde_json::from_str(json_input) {
         Ok(v) => v,
         Err(_) => return "{\"chunks\":[],\"crc32\":0}".to_string(),
@@ -168,6 +171,9 @@ pub fn encode_p2p_frame(json_input: &str) -> String {
     }
 
     let total = slices.len();
+    if total > MAX_CHUNKS {
+        return "{\"chunks\":[],\"crc32\":0}".to_string();
+    }
     let mut chunks = Vec::with_capacity(total);
     for (idx, slice) in slices.into_iter().enumerate() {
         chunks.push(ChunkOutput {
@@ -190,6 +196,9 @@ pub fn encode_p2p_frame(json_input: &str) -> String {
 /// Input: JSON string of DecodeFrameInput.
 /// Returns: JSON string of DecodeFrameResult.
 pub fn decode_p2p_frame(json_input: &str) -> String {
+    if json_input.len() > MAX_TOTAL_BYTES * 4 {
+        return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string();
+    }
     let input: DecodeFrameInput = match serde_json::from_str(json_input) {
         Ok(v) => v,
         Err(_) => return "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string(),
@@ -256,4 +265,43 @@ pub fn decode_p2p_frame(json_input: &str) -> String {
 
     serde_json::to_string(&result)
         .unwrap_or_else(|_| "{\"payload\":\"\",\"valid\":false,\"crc32\":0}".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encode_decode_roundtrip() {
+        let payload = "hello p2p mesh frame world";
+        let enc_input = serde_json::json!({
+            "payload": payload,
+            "chunk_size": 8
+        });
+        let enc_json = encode_p2p_frame(&enc_input.to_string());
+        let res: FramePacketResult = serde_json::from_str(&enc_json).unwrap();
+        assert!(!res.chunks.is_empty());
+        assert!(res.chunks.len() <= MAX_CHUNKS);
+
+        let dec_input = serde_json::json!({
+            "chunks": res.chunks,
+            "expected_crc32": res.crc32
+        });
+        let dec_json = decode_p2p_frame(&dec_input.to_string());
+        let dec_res: DecodeFrameResult = serde_json::from_str(&dec_json).unwrap();
+        assert!(dec_res.valid);
+        assert_eq!(dec_res.payload, payload);
+    }
+
+    #[test]
+    fn test_chunk_explosion_rejected() {
+        // 10,000 bytes with chunk_size 1 would create 10,000 chunks > MAX_CHUNKS (256)
+        let payload = "a".repeat(10_000);
+        let enc_input = serde_json::json!({
+            "payload": payload,
+            "chunk_size": 1
+        });
+        let enc_json = encode_p2p_frame(&enc_input.to_string());
+        assert_eq!(enc_json, "{\"chunks\":[],\"crc32\":0}");
+    }
 }

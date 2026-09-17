@@ -235,6 +235,21 @@ impl ChunkStore {
 
     /// Reads a chunk and verifies its BLAKE3 hash. `None` on missing/corrupt.
     pub fn get(&self, hash: &str) -> Option<Vec<u8>> {
+        if !is_valid_hash(hash) {
+            return None;
+        }
+        let path = self.chunk_path(hash);
+        let file = fs::File::open(&path).ok()?;
+        let md = file.metadata().ok()?;
+        if !md.is_file() {
+            return None;
+        }
+        if md.len() == 0 {
+            if blake3::hash(&[]).to_hex().as_str() == hash {
+                return Some(Vec::new());
+            }
+            return None;
+        }
         self.get_mmap(hash).map(|m| m.as_ref().to_vec())
     }
 
@@ -249,7 +264,13 @@ impl ChunkStore {
         let path = self.chunk_path(hash);
         let file = fs::File::open(&path).ok()?;
         let md = file.metadata().ok()?;
+        if !md.is_file() {
+            return None;
+        }
         let size = md.len();
+        if size == 0 {
+            return None;
+        }
         let mtime = md.modified().ok();
         // Safety: read-only mapping of a file we opened read-only; the Mmap is
         // the sole handle to the region and unmap happens on drop.
@@ -346,6 +367,10 @@ impl ChunkStore {
     /// Chunks a file on disk and stores every chunk, deduplicating as it goes.
     /// Returns the manifest (empty-file safe).
     pub fn store_file(&self, path: &Path) -> Result<ChunkManifest, String> {
+        let meta = fs::metadata(path).map_err(|e| format!("metadata {path:?}: {e}"))?;
+        if !meta.is_file() {
+            return Err(format!("path is not a regular file: {path:?}"));
+        }
         let file = fs::File::open(path).map_err(|e| format!("open {path:?}: {e}"))?;
         self.store_reader(file)
     }
@@ -1028,5 +1053,22 @@ mod tests {
         assert!(store.put(data));
         assert!(store.contains(&valid_hash));
         assert_eq!(store.get(&valid_hash).unwrap(), data);
+    }
+
+    #[test]
+    fn test_empty_chunk_and_store_file_regular_check() {
+        let root = soshal_test_util::tmp_root("cas_empty_and_dir");
+        let store = ChunkStore::new(root.clone());
+
+        // Empty chunk put & get
+        let empty_data = b"";
+        let empty_hash = blake3::hash(empty_data).to_hex().to_string();
+        assert!(store.put(empty_data));
+        assert!(store.contains(&empty_hash));
+        assert_eq!(store.get(&empty_hash), Some(Vec::new()));
+        assert!(store.get_mmap(&empty_hash).is_none());
+
+        // store_file on directory must fail
+        assert!(store.store_file(&root).is_err());
     }
 }

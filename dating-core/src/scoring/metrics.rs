@@ -4,7 +4,7 @@
 /// Missing distance never scores (caller skips the dimension).
 #[doc(hidden)]
 pub fn score_distance(distance_km: f64) -> f64 {
-    if !distance_km.is_finite() {
+    if !distance_km.is_finite() || distance_km < 0.0 {
         return 0.5;
     }
     if distance_km <= 10.0 {
@@ -24,7 +24,7 @@ pub fn score_distance(distance_km: f64) -> f64 {
 pub fn score_age(self_age: Option<f64>, other_age: Option<f64>) -> f64 {
     match (self_age, other_age) {
         (Some(s), Some(o)) => {
-            if !s.is_finite() || !o.is_finite() {
+            if !s.is_finite() || !o.is_finite() || s <= 0.0 || o <= 0.0 || s > 150.0 || o > 150.0 {
                 return 0.5;
             }
             let diff = (s - o).abs();
@@ -47,7 +47,7 @@ pub fn score_age(self_age: Option<f64>, other_age: Option<f64>) -> f64 {
 pub fn score_height(self_height: Option<f64>, other_height: Option<f64>) -> f64 {
     match (self_height, other_height) {
         (Some(s), Some(o)) => {
-            if !s.is_finite() || !o.is_finite() {
+            if !s.is_finite() || !o.is_finite() || s <= 0.0 || o <= 0.0 || s > 300.0 || o > 300.0 {
                 return 0.5;
             }
             let diff = (s - o).abs();
@@ -138,5 +138,27 @@ pub fn score_education(self_education: Option<&str>, other_education: Option<&st
             }
         }
         _ => 0.5,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_metrics_return_neutral() {
+        assert_eq!(score_distance(-5.0), 0.5);
+        assert_eq!(score_distance(f64::NAN), 0.5);
+        assert_eq!(score_distance(f64::INFINITY), 0.5);
+
+        assert_eq!(score_age(Some(-10.0), Some(-10.0)), 0.5);
+        assert_eq!(score_age(Some(0.0), Some(0.0)), 0.5);
+        assert_eq!(score_age(Some(200.0), Some(200.0)), 0.5);
+        assert_eq!(score_age(Some(25.0), Some(25.0)), 1.0);
+
+        assert_eq!(score_height(Some(-50.0), Some(-50.0)), 0.5);
+        assert_eq!(score_height(Some(0.0), Some(0.0)), 0.5);
+        assert_eq!(score_height(Some(500.0), Some(500.0)), 0.5);
+        assert_eq!(score_height(Some(175.0), Some(175.0)), 1.0);
     }
 }
