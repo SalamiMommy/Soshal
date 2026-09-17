@@ -31,8 +31,11 @@ fn row_to_item(
     row: NotificationRow,
     users: &std::collections::HashMap<String, (String, String)>,
 ) -> NotificationItem {
-    let (name, avatar) = row
+    let from_pk_clean = row
         .from_pubkey
+        .as_deref()
+        .map(|pk| pk.trim().to_ascii_lowercase());
+    let (name, avatar) = from_pk_clean
         .as_deref()
         .and_then(|pk| users.get(pk))
         .cloned()
@@ -73,7 +76,7 @@ fn user_names(
         )?;
         let mut map = std::collections::HashMap::with_capacity(rows.len());
         for (pk, name, pic) in rows {
-            map.insert(pk, (name, pic));
+            map.insert(pk.trim().to_ascii_lowercase(), (name, pic));
         }
         return Ok(map);
     }
@@ -96,7 +99,7 @@ fn user_names(
     })?;
     let mut map = std::collections::HashMap::with_capacity(rows.len());
     for (pk, name, pic) in rows {
-        map.insert(pk, (name, pic));
+        map.insert(pk.trim().to_ascii_lowercase(), (name, pic));
     }
     Ok(map)
 }
@@ -127,6 +130,7 @@ fn require_db_rows(
 /// Fetch unread notifications.
 #[frb(sync, serialize)]
 pub fn notifications_fetch_unread(user_pubkey: String, limit: i32) -> Result<String, String> {
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&user_pubkey)?;
     super::util::json_ok(require_db_rows(
         &user_pubkey,
@@ -139,6 +143,7 @@ pub fn notifications_fetch_unread(user_pubkey: String, limit: i32) -> Result<Str
 /// `limit` rows).
 #[frb(sync, serialize)]
 pub fn notifications_fetch(user_pubkey: String, limit: i32, offset: i32) -> Result<String, String> {
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&user_pubkey)?;
     let limit = limit.clamp(1, 500);
     let offset = offset.max(0);
@@ -194,6 +199,7 @@ pub fn notifications_mark_read(notification_id: String) -> Result<bool, String> 
 /// Mark all notifications as read for a user.
 #[frb(sync, serialize)]
 pub fn notifications_mark_all_read(user_pubkey: String) -> Result<bool, String> {
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&user_pubkey)?;
     super::db::db_execute_params(
         "UPDATE notifications SET is_read = 1 WHERE pubkey = ?1",
@@ -219,14 +225,19 @@ pub fn notifications_delete(notification_id: String) -> Result<bool, String> {
 /// suppressed across fetches and app restarts.
 #[frb(sync, serialize)]
 pub fn notifications_ignore_user(user_pubkey: String, from_pubkey: String) -> Result<bool, String> {
-    if user_pubkey.is_empty() || from_pubkey.is_empty() {
+    let u_pk = user_pubkey.trim().to_ascii_lowercase();
+    let f_pk = from_pubkey.trim().to_ascii_lowercase();
+    if u_pk.is_empty() || f_pk.is_empty() {
         return Err("bad ignore-user args".to_string()).into();
     }
-    super::signer::require_identity(&user_pubkey)?;
+    if u_pk == f_pk {
+        return Err("cannot ignore self".to_string()).into();
+    }
+    super::signer::require_identity(&u_pk)?;
     super::db::with_db_result(|db| {
         let at = soshal_common_core::format::now_secs();
         IgnoredNotificationRepo::new(db)
-            .ignore_user(&user_pubkey, &from_pubkey, "user", at)
+            .ignore_user(&u_pk, &f_pk, "user", at)
             .map(|()| true)
     })
     .into()
@@ -235,14 +246,15 @@ pub fn notifications_ignore_user(user_pubkey: String, from_pubkey: String) -> Re
 /// Persist a "turn off thread/like notifications" decision.
 #[frb(sync, serialize)]
 pub fn notifications_ignore_thread(user_pubkey: String, event_id: String) -> Result<bool, String> {
-    if user_pubkey.is_empty() || event_id.is_empty() {
+    let u_pk = user_pubkey.trim().to_ascii_lowercase();
+    if u_pk.is_empty() || event_id.is_empty() {
         return Err("bad ignore-thread args".to_string()).into();
     }
-    super::signer::require_identity(&user_pubkey)?;
+    super::signer::require_identity(&u_pk)?;
     super::db::with_db_result(|db| {
         let at = soshal_common_core::format::now_secs();
         IgnoredNotificationRepo::new(db)
-            .ignore_thread(&user_pubkey, &event_id, "thread", at)
+            .ignore_thread(&u_pk, &event_id, "thread", at)
             .map(|()| true)
     })
     .into()
@@ -254,10 +266,12 @@ pub fn notifications_unignore_user(
     user_pubkey: String,
     from_pubkey: String,
 ) -> Result<bool, String> {
-    super::signer::require_identity(&user_pubkey)?;
+    let u_pk = user_pubkey.trim().to_ascii_lowercase();
+    let f_pk = from_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&u_pk)?;
     super::db::with_db_result(|db| {
         IgnoredNotificationRepo::new(db)
-            .unignore_user(&user_pubkey, &from_pubkey, "user")
+            .unignore_user(&u_pk, &f_pk, "user")
             .map(|()| true)
     })
     .into()
@@ -269,10 +283,11 @@ pub fn notifications_unignore_thread(
     user_pubkey: String,
     event_id: String,
 ) -> Result<bool, String> {
-    super::signer::require_identity(&user_pubkey)?;
+    let u_pk = user_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&u_pk)?;
     super::db::with_db_result(|db| {
         IgnoredNotificationRepo::new(db)
-            .unignore_thread(&user_pubkey, &event_id, "thread")
+            .unignore_thread(&u_pk, &event_id, "thread")
             .map(|()| true)
     })
     .into()
@@ -281,7 +296,8 @@ pub fn notifications_unignore_thread(
 /// List all ignore rows for the Ignored List dashboard.
 #[frb(sync, serialize)]
 pub fn notifications_list_ignored(user_pubkey: String) -> Result<String, String> {
-    super::signer::require_identity(&user_pubkey)?;
+    let u_pk = user_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&u_pk)?;
     #[derive(Serialize)]
     struct IgnoredRow<'a> {
         kind: &'a str,
@@ -289,7 +305,7 @@ pub fn notifications_list_ignored(user_pubkey: String) -> Result<String, String>
         event_id: &'a str,
         created_at: i64,
     }
-    let rows = super::db::with_db_result(|db| IgnoredNotificationRepo::new(db).list(&user_pubkey))?;
+    let rows = super::db::with_db_result(|db| IgnoredNotificationRepo::new(db).list(&u_pk))?;
     let items: Vec<IgnoredRow> = rows
         .iter()
         .map(|(kind, from_pubkey, event_id, created_at)| IgnoredRow {
@@ -310,12 +326,14 @@ pub fn notifications_is_ignored(
     from_pubkey: String,
     event_id: String,
 ) -> Result<bool, String> {
-    super::signer::require_identity(&user_pubkey)?;
+    let u_pk = user_pubkey.trim().to_ascii_lowercase();
+    let f_pk = from_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&u_pk)?;
     super::db::with_db_result(|db| {
         IgnoredNotificationRepo::new(db).is_ignored(
-            &user_pubkey,
+            &u_pk,
             kind.as_str(),
-            from_pubkey.as_str(),
+            f_pk.as_str(),
             event_id.as_str(),
         )
     })
@@ -325,13 +343,14 @@ pub fn notifications_is_ignored(
 /// Get unread count.
 #[frb(sync, serialize)]
 pub fn notifications_get_unread_count(user_pubkey: String) -> Result<i32, String> {
-    super::signer::require_identity(&user_pubkey)?;
+    let u_pk = user_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&u_pk)?;
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let count: i64 = soshal_db_core::query::query_first(
             &conn,
             "SELECT COUNT(*) FROM notifications WHERE pubkey = ?1 AND is_read = 0",
-            libsql::params![user_pubkey.as_str()],
+            libsql::params![u_pk.as_str()],
             |r| r.get(0),
         )?
         .unwrap_or(0);
@@ -346,9 +365,10 @@ pub fn notifications_fetch_by_type(
     notification_type: String,
     limit: i32,
 ) -> Result<String, String> {
-    super::signer::require_identity(&user_pubkey)?;
+    let u_pk = user_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&u_pk)?;
     super::util::json_ok(require_db_rows(
-        &user_pubkey,
+        &u_pk,
         limit.clamp(1, 100) as i64,
         Some(&notification_type),
     )?)
@@ -360,7 +380,10 @@ fn ensure_active_account(user_pubkey: &str) -> Result<(), String> {
         .ok()
         .and_then(|v| v["pubkey"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
-    if active_pubkey != user_pubkey {
+    if !active_pubkey
+        .trim()
+        .eq_ignore_ascii_case(user_pubkey.trim())
+    {
         return Err("push token must be registered for the active account".to_string());
     }
     Ok(())
@@ -908,5 +931,36 @@ mod tests {
         assert_eq!(err, "push token must be registered for the active account");
         assert!(notifications_unregister_push(pk).unwrap());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_batch18_notifications_hardening() {
+        let (pk1, _g, _s) = setup_test_context("b18_notif");
+        let keys2 = soshal_nostr_core::keys::generate_keys();
+        let pk2 = keys2.public_key().to_hex();
+
+        // Reject self-ignore
+        let err = notifications_ignore_user(pk1.clone(), pk1.clone()).unwrap_err();
+        assert!(err.contains("cannot ignore self"), "{err}");
+
+        // Ignore user with casing differences
+        assert!(
+            notifications_ignore_user(pk1.to_ascii_uppercase(), pk2.to_ascii_uppercase()).unwrap()
+        );
+        assert!(notifications_is_ignored(
+            pk1.clone(),
+            "user".to_string(),
+            pk2.clone(),
+            String::new(),
+        )
+        .unwrap());
+        assert!(notifications_unignore_user(pk1.clone(), pk2.to_ascii_uppercase()).unwrap());
+        assert!(!notifications_is_ignored(
+            pk1.clone(),
+            "user".to_string(),
+            pk2.clone(),
+            String::new(),
+        )
+        .unwrap());
     }
 }

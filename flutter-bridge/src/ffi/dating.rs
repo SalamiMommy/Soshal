@@ -276,6 +276,7 @@ fn cards_by_pubkey(
             .collect::<Vec<_>>(),
     )
     .unwrap_or_else(|_| "[]".into());
+    let norm_viewer = viewer.trim().to_ascii_lowercase();
     let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
@@ -284,11 +285,11 @@ fn cards_by_pubkey(
              AND p.pubkey NOT IN (SELECT blocked_pubkey FROM blocks WHERE pubkey = ?2) \
              ORDER BY p.created_at DESC"
         ),
-        &[ids_json, viewer.to_string()],
+        &[ids_json, norm_viewer],
     )?;
     let mut map = std::collections::HashMap::new();
     for card in cards_from_values(rows, &std::collections::HashMap::new()) {
-        map.entry(card.pubkey.clone()).or_insert(card);
+        map.entry(card.pubkey.to_ascii_lowercase()).or_insert(card);
     }
     Ok(map)
 }
@@ -778,6 +779,8 @@ fn react(user_pubkey: &str, profile_pubkey: &str, content: &str) -> Result<bool,
     if profile_pubkey.len() != 64 {
         return Err("invalid profile event id".to_string());
     }
+    let norm_profile_pk = profile_pubkey.trim().to_ascii_lowercase();
+    let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
     // The like/matches/stats reads join `posts p ON p.id = r.event_id`, so the
     // stored event_id must be the profile *event id*, not the author pubkey.
     // Resolve the author's newest non-deleted profile event; fail loudly if
@@ -787,7 +790,7 @@ fn react(user_pubkey: &str, profile_pubkey: &str, content: &str) -> Result<bool,
             "SELECT p.id FROM posts p WHERE p.kind = {KIND_PROFILE} \
              AND p.pubkey = ?1 AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT 1"
         ),
-        &[profile_pubkey.to_string()],
+        &[norm_profile_pk.clone()],
     )?;
     let profile_event_id = rows
         .first()
@@ -805,9 +808,9 @@ fn react(user_pubkey: &str, profile_pubkey: &str, content: &str) -> Result<bool,
     let event_id = signed["id"].as_str().unwrap_or_default().to_string();
     let now = soshal_common_core::format::now_secs();
     let row = soshal_db_core::repos::reaction::ReactionRow {
-        id: format!("reaction:{user_pubkey}:{profile_pubkey}"),
+        id: format!("reaction:{norm_user_pk}:{norm_profile_pk}"),
         event_id: profile_event_id,
-        pubkey: user_pubkey.to_string(),
+        pubkey: norm_user_pk,
         content: Some(content.to_string()),
         created_at: now,
         kind: 7,
@@ -855,10 +858,11 @@ pub fn dating_pass(user_pubkey: String, profile_id: String) -> Result<bool, Stri
     if profile_id.len() != 64 {
         return Err("invalid profile event id".to_string()).into();
     }
+    let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
     let row = soshal_db_core::repos::reaction::ReactionRow {
-        id: format!("pass:{}:{}", user_pubkey, profile_id),
+        id: format!("pass:{}:{}", norm_user_pk, profile_id),
         event_id: profile_id,
-        pubkey: user_pubkey,
+        pubkey: norm_user_pk,
         content: Some("pass".to_string()),
         created_at: soshal_common_core::format::now_secs(),
         kind: 7,
@@ -875,9 +879,10 @@ pub fn dating_pass(user_pubkey: String, profile_id: String) -> Result<bool, Stri
 #[frb(sync, serialize)]
 pub fn dating_reset_passes(user_pubkey: String) -> Result<i64, String> {
     super::signer::require_identity(&user_pubkey)?;
+    let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
     let n = super::db::db_execute_params(
         "DELETE FROM reactions WHERE pubkey = ?1 AND content = 'pass'",
-        &[user_pubkey],
+        &[norm_user_pk],
     )?;
     Ok(n as i64).into()
 }
@@ -887,6 +892,7 @@ pub fn dating_reset_passes(user_pubkey: String) -> Result<i64, String> {
 #[frb(sync, serialize)]
 pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
     super::signer::require_identity(&user_pubkey)?;
+    let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
     let rows = super::db::db_query_json(
         &format!(
             "SELECT r.event_id, r.pubkey FROM reactions r \
@@ -894,20 +900,25 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
              (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0) \
              ORDER BY r.created_at DESC LIMIT 200"
         ),
-        &[user_pubkey.clone()],
+        &[norm_user_pk.clone()],
     )?;
     let mut likers: Vec<String> = Vec::new();
     let mut seen_likers = std::collections::HashSet::new();
     for row in &rows {
-        let pk = row["pubkey"].as_str().unwrap_or_default();
-        if seen_likers.insert(pk) {
+        let pk = row["pubkey"].as_str().unwrap_or_default().trim();
+        if !pk.is_empty() && seen_likers.insert(pk.to_ascii_lowercase()) {
             likers.push(pk.to_string());
         }
     }
-    let cards = cards_by_pubkey(&likers, &user_pubkey, 200)?;
+    let cards = cards_by_pubkey(&likers, &norm_user_pk, 200)?;
     let mut out = Vec::new();
     for row in rows {
-        if let Some(card) = cards.get(row["pubkey"].as_str().unwrap_or_default()) {
+        let pk = row["pubkey"]
+            .as_str()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        if let Some(card) = cards.get(&pk) {
             out.push(card.clone());
         }
     }
@@ -918,6 +929,7 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
     super::signer::require_identity(&user_pubkey)?;
+    let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
     let rows = super::db::db_query_json(
         &format!(
             "SELECT r.event_id, r.pubkey, p.pubkey AS profile_owner FROM reactions r \
@@ -927,20 +939,25 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
                          AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1)) \
              ORDER BY r.created_at DESC LIMIT 100"
         ),
-        &[user_pubkey.clone()],
+        &[norm_user_pk.clone()],
     )?;
     let mut owners: Vec<String> = Vec::new();
     let mut seen_owners = std::collections::HashSet::new();
     for row in &rows {
-        let pk = row["profile_owner"].as_str().unwrap_or_default();
-        if seen_owners.insert(pk) {
+        let pk = row["profile_owner"].as_str().unwrap_or_default().trim();
+        if !pk.is_empty() && seen_owners.insert(pk.to_ascii_lowercase()) {
             owners.push(pk.to_string());
         }
     }
-    let cards = cards_by_pubkey(&owners, &user_pubkey, 100)?;
+    let cards = cards_by_pubkey(&owners, &norm_user_pk, 100)?;
     let mut out = Vec::new();
     for row in rows {
-        if let Some(card) = cards.get(row["profile_owner"].as_str().unwrap_or_default()) {
+        let pk = row["profile_owner"]
+            .as_str()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        if let Some(card) = cards.get(&pk) {
             out.push(card.clone());
         }
     }
@@ -955,9 +972,13 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn dating_unmatch(user_pubkey: String, profile_id: String) -> Result<bool, String> {
     super::signer::require_identity(&user_pubkey)?;
+    if profile_id.trim().is_empty() || profile_id.len() > 128 {
+        return Err("invalid profile_id".to_string()).into();
+    }
+    let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
     super::db::with_db_result(|db| {
         soshal_db_core::repos::dating_unmatch::DatingUnmatchRepo::new(db).upsert(
-            &user_pubkey,
+            &norm_user_pk,
             &profile_id,
             soshal_common_core::format::now_secs(),
         )?;
@@ -972,6 +993,9 @@ pub fn dating_calculate_score(
     target_pubkey: String,
     preferences_json: String,
 ) -> Result<f32, String> {
+    if preferences_json.len() > 1024 * 1024 {
+        return Err("preferences JSON too large".to_string()).into();
+    }
     let prefs: serde_json::Value =
         serde_json::from_str(&preferences_json).unwrap_or(serde_json::Value::Null);
     let profile_rows = |pubkey: &str| {
@@ -1034,9 +1058,18 @@ pub fn dating_filter_profiles(
 ) -> Result<String, String> {
     let mut cards = fetch_profiles_internal(&user_pubkey, 100, "public")?;
     if !interests_json.is_empty() {
+        if interests_json.len() > 1024 * 1024 {
+            return Err("interests JSON too large".to_string()).into();
+        }
         let interests: Vec<String> = serde_json::from_str(&interests_json).unwrap_or_default();
         if !interests.is_empty() {
-            cards.retain(|c| c.interests.iter().any(|i| interests.contains(i)));
+            cards.retain(|c| {
+                c.interests.iter().any(|i| {
+                    interests
+                        .iter()
+                        .any(|req| req.trim().eq_ignore_ascii_case(i.trim()))
+                })
+            });
         }
     }
     let own_card = get_own_profile_internal(&user_pubkey);
@@ -1186,9 +1219,17 @@ pub fn dating_get_stats(user_pubkey: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn dating_block_profile(user_pubkey: String, target_pubkey: String) -> Result<bool, String> {
     super::signer::require_identity(&user_pubkey)?;
+    let user_pk = user_pubkey.trim().to_ascii_lowercase();
+    let target_pk = target_pubkey.trim().to_ascii_lowercase();
+    if user_pk == target_pk {
+        return Err("cannot block self".to_string()).into();
+    }
+    if target_pk.is_empty() || target_pk.len() > 128 {
+        return Err("invalid target_pubkey".to_string()).into();
+    }
     let row = soshal_db_core::repos::block::BlockRow {
-        pubkey: user_pubkey,
-        blocked_pubkey: target_pubkey,
+        pubkey: user_pk,
+        blocked_pubkey: target_pk,
         created_at: soshal_common_core::format::now_secs(),
     };
     super::db::with_db_result(|db| {
@@ -1201,8 +1242,10 @@ pub fn dating_block_profile(user_pubkey: String, target_pubkey: String) -> Resul
 #[frb(sync, serialize)]
 pub fn dating_unblock_profile(user_pubkey: String, target_pubkey: String) -> Result<bool, String> {
     super::signer::require_identity(&user_pubkey)?;
+    let user_pk = user_pubkey.trim().to_ascii_lowercase();
+    let target_pk = target_pubkey.trim().to_ascii_lowercase();
     super::db::with_db_result(|db| {
-        soshal_db_core::repos::block::BlockRepo::new(db).delete(&user_pubkey, &target_pubkey)?;
+        soshal_db_core::repos::block::BlockRepo::new(db).delete(&user_pk, &target_pk)?;
         Ok(true)
     })
 }
@@ -1216,13 +1259,21 @@ pub fn dating_report_profile(
     reason: String,
 ) -> Result<bool, String> {
     super::signer::require_identity(&reporter_pubkey)?;
+    let reporter_pk = reporter_pubkey.trim().to_ascii_lowercase();
+    let target_pk = target_pubkey.trim().to_ascii_lowercase();
+    if reporter_pk == target_pk {
+        return Err("cannot report self".to_string()).into();
+    }
+    if target_pk.is_empty() || target_pk.len() > 128 {
+        return Err("invalid target_pubkey".to_string()).into();
+    }
     let reason = soshal_common_core::format::truncate(&reason, 512);
     let now = soshal_common_core::format::now_secs();
     let row = soshal_db_core::repos::spam_report::SpamReportRow {
         id: format!("rep_{now}_{:x}", rand::random::<u64>()),
-        pubkey: reporter_pubkey,
+        pubkey: reporter_pk,
         target_id: None,
-        target_pubkey: Some(target_pubkey),
+        target_pubkey: Some(target_pk),
         reason: Some(reason),
         tags: "[\"dating\"]".to_string(),
         created_at: now,

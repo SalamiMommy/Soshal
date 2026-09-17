@@ -6,6 +6,7 @@
 use flutter_rust_bridge::frb;
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 
@@ -26,6 +27,81 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
         );
         e.into_inner()
     })
+}
+
+/// Lock a **security-critical** `std::sync::Mutex`. Unlike [`lock`], this does
+/// NOT recover from poisoning — a poisoned security-critical mutex indicates
+/// that a thread panicked while holding sensitive state (e.g. the signer key),
+/// and that state may be inconsistent or partially-zeroized. Returning the
+/// poisoned guard would allow callers to observe or overwrite corrupted key
+/// material. Instead, this returns `Err` so the caller's operation fails
+/// cleanly without touching the inconsistent state.
+pub(crate) fn lock_critical<T>(m: &Mutex<T>) -> Result<MutexGuard<'_, T>, String> {
+    m.lock().map_err(|_| {
+        eprintln!(
+            "[soshal] CRITICAL: security-critical mutex poisoned ({}:{}); \
+             operation aborted to prevent inconsistent key material exposure",
+            file!(),
+            line!()
+        );
+        "security mutex poisoned: operation aborted for safety".to_string()
+    })
+}
+
+/// Lock-free token-bucket rate limiter backed by a single `AtomicU64`.
+///
+/// The u64 packs two u32 fields: the high 32 bits hold the current 1-second
+/// window key (truncated Unix timestamp), and the low 32 bits hold the call
+/// count within that window. A CAS loop provides thread-safety without a Mutex.
+///
+/// Primarily used to throttle FFI crypto operations (signing, encryption, HKDF)
+/// against a compromised Flutter plugin that might call them in a tight loop
+/// (signing oracle, CPU-exhaustion via HKDF).
+pub(crate) struct RateLimiter {
+    state: AtomicU64,
+    max_per_sec: u32,
+}
+
+impl RateLimiter {
+    pub(crate) const fn new(max_per_sec: u32) -> Self {
+        Self {
+            state: AtomicU64::new(0),
+            max_per_sec,
+        }
+    }
+
+    /// Consume one token. Returns `Ok(())` if within the per-second budget,
+    /// `Err` if the budget is exhausted for the current second.
+    pub(crate) fn check(&self) -> Result<(), String> {
+        // Truncate to 32 bits: safely wraps every ~136 years, more than
+        // adequate for a 1-second sliding-window comparison.
+        let now_win = (soshal_common_core::format::now_secs() as u64) & 0xFFFF_FFFF;
+        loop {
+            let old = self.state.load(Ordering::Relaxed);
+            let win = old >> 32;
+            let cnt = (old & 0xFFFF_FFFF) as u32;
+            let (new_win, new_cnt) = if win == now_win {
+                if cnt >= self.max_per_sec {
+                    return Err(format!(
+                        "rate limit exceeded: max {} operations per second",
+                        self.max_per_sec
+                    ));
+                }
+                (now_win, cnt + 1)
+            } else {
+                // New second: reset the window.
+                (now_win, 1)
+            };
+            let new_state = (new_win << 32) | (new_cnt as u64);
+            if self
+                .state
+                .compare_exchange_weak(old, new_state, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+    }
 }
 
 /// Bounded, TTL'd key/value cache for the function-global caches scattered

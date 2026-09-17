@@ -163,10 +163,26 @@ fn protocol_load_from_cache(filename: &str) -> Result<Vec<u8>, String> {
     // No separator in `filename` means this cannot escape `canon_cache`.
     let file_path = canon_cache.join(filename);
 
-    match fs::read(&file_path) {
-        Ok(data) => Ok(data),
-        Err(e) => Err(format!("Cache read failed: {}", e)),
-    }
+    // Open with O_NOFOLLOW so that a symlink placed at the target path between
+    // the filename validation above and the actual open is rejected by the
+    // kernel — same TOCTOU hardening as `media.rs::open_allowed_read()`.
+    #[cfg(unix)]
+    let data = {
+        use std::io::Read;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&file_path)
+            .map_err(|e| format!("Cache read failed: {e}"))?;
+        let mut buf = Vec::new();
+        f.read_to_end(&mut buf)
+            .map_err(|e| format!("Cache read failed: {e}"))?;
+        buf
+    };
+    #[cfg(not(unix))]
+    let data = fs::read(&file_path).map_err(|e| format!("Cache read failed: {e}"))?;
+    Ok(data)
 }
 
 /// Get metadata for media resource

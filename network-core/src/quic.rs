@@ -245,14 +245,19 @@ fn try_system_cert_validation(
     end_entity: &CertificateDer<'_>,
     intermediates: &[CertificateDer<'_>],
     server_name: &ServerName<'_>,
-    _ocsp_response: &[u8],
+    ocsp_response: &[u8],
     now: UnixTime,
 ) -> Result<ServerCertVerified, rustls::Error> {
     // Chain validation against the bundled Mozilla roots: rejects expired or
     // wrong-host public certificates. Mesh self-signed certs (no CA chain)
     // fail here and fall through to the HMAC-pinned acceptance path in
     // HybridCertVerifier::verify_server_cert.
-    WEBPKI_VERIFIER.verify_server_cert(end_entity, intermediates, server_name, &[], now)
+    //
+    // Pass the actual OCSP staple bytes so that public endpoints presenting a
+    // revoked certificate alongside a valid OCSP staple are detected here.
+    // (Mesh self-signed certs have no OCSP infrastructure; they are absent
+    // from this code path because they fail the CA chain check first.)
+    WEBPKI_VERIFIER.verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
 }
 
 /// App-facing handle to the datagram channel (thread-safe, sync).

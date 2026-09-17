@@ -103,6 +103,10 @@ pub fn compute_spatial_matrix_json(input: &str) -> String {
         distance_km: f64,
     }
 
+    if input.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
+
     let Some(input) = json_in_borrow::<Input>(input) else {
         return "[]".to_string();
     };
@@ -153,12 +157,17 @@ pub fn expand_geohash_prefix_json(input: &str) -> String {
         prefixes: Vec<String>,
     }
 
+    if input.len() > 64 * 1024 {
+        return "{\"prefixes\":[]}".to_string();
+    }
+
     let Some(input) = json_in_borrow::<Input>(input) else {
         return "{\"prefixes\":[]}".to_string();
     };
 
     let precision = input.precision.unwrap_or(5);
-    let prefixes = get_nearby_prefixes(input.geohash, precision);
+    let norm_geohash = input.geohash.trim().to_ascii_lowercase();
+    let prefixes = get_nearby_prefixes(&norm_geohash, precision);
     let out = Output { prefixes };
     json_out(&out, "{\"prefixes\":[]}")
 }
@@ -191,10 +200,15 @@ pub fn filter_geohash_presence_events_json(input: &str) -> String {
         geohash: &'a str,
     }
 
+    if input.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
+
     let Some(input) = json_in_borrow::<Input>(input) else {
         return "[]".to_string();
     };
 
+    let norm_target = input.target_prefix.trim().to_ascii_lowercase();
     let mut seen_ids = HashSet::with_capacity(input.events.len());
     let mut filtered = Vec::with_capacity(input.events.len());
 
@@ -211,8 +225,11 @@ pub fn filter_geohash_presence_events_json(input: &str) -> String {
             continue;
         }
 
-        if !input.target_prefix.is_empty() && !ev.geohash.starts_with(&input.target_prefix) {
-            continue;
+        if !norm_target.is_empty() {
+            let ev_geo = ev.geohash.trim().to_ascii_lowercase();
+            if !ev_geo.starts_with(&norm_target) {
+                continue;
+            }
         }
 
         filtered.push(FilteredSpatialEvent {
@@ -223,4 +240,38 @@ pub fn filter_geohash_presence_events_json(input: &str) -> String {
     }
 
     json_out(&filtered, "[]")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_geohash_case_insensitivity() {
+        let json_input = r#"{"geohash":"U4PRU","precision":5}"#;
+        let res = expand_geohash_prefix_json(json_input);
+        assert!(res.contains("u4pru"));
+
+        let events_json = r#"{
+            "events": [{"id":"e1","pubkey":"pk1","geohash":"U4PRU123","created_at":100}],
+            "target_prefix": "u4pru",
+            "now_sec": 105,
+            "max_age_sec": 60
+        }"#;
+        let res = filter_geohash_presence_events_json(events_json);
+        assert!(res.contains("e1"));
+    }
+
+    #[test]
+    fn test_geohash_json_caps() {
+        let oversized = "0".repeat(17 * 1024 * 1024);
+        assert_eq!(compute_spatial_matrix_json(&oversized), "[]");
+        assert_eq!(filter_geohash_presence_events_json(&oversized), "[]");
+
+        let oversized_expand = "0".repeat(65 * 1024);
+        assert_eq!(
+            expand_geohash_prefix_json(&oversized_expand),
+            "{\"prefixes\":[]}"
+        );
+    }
 }

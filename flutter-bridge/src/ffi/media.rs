@@ -203,13 +203,37 @@ pub async fn media_fetch(url: String, cache_dir: String) -> Result<String, Strin
 #[frb(serialize)]
 pub async fn media_load_local(file_path: String) -> Result<Vec<u8>, String> {
     tokio::task::spawn_blocking(move || {
+        const MAX_LOCAL_MEDIA_BYTES: u64 = 200 * 1024 * 1024; // 200 MiB
         let full = resolve_allowed_path(&file_path, "media")?;
         let file = open_allowed_read(&full, "media")?;
-        let cap = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+        let cap = match file.metadata() {
+            Ok(meta) => {
+                if meta.len() > MAX_LOCAL_MEDIA_BYTES {
+                    return Err(format!(
+                        "media file too large ({} bytes; max {} bytes)",
+                        meta.len(),
+                        MAX_LOCAL_MEDIA_BYTES
+                    ));
+                }
+                meta.len() as usize
+            }
+            Err(_) => 0,
+        };
         let mut data = Vec::with_capacity(cap);
-        let mut file = file;
-        file.read_to_end(&mut data)
+        let file = file;
+        // Use `take` as a second-line defence in case metadata lied or the
+        // file grew between the metadata check and the read (sparse files,
+        // special filesystems, etc.).
+        use std::io::Read;
+        file.take(MAX_LOCAL_MEDIA_BYTES + 1)
+            .read_to_end(&mut data)
             .map_err(|e| format!("Failed to read media: {e}"))?;
+        if data.len() as u64 > MAX_LOCAL_MEDIA_BYTES {
+            return Err(format!(
+                "media file exceeds {}-byte limit",
+                MAX_LOCAL_MEDIA_BYTES
+            ));
+        }
         Ok(data)
     })
     .await

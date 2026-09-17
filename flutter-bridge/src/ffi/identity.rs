@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use soshal_db_core::repos::block::BlockRepo;
 use soshal_db_core::repos::user::{UserRepo, UserRow};
 use soshal_identity_core::wot;
+use zeroize::Zeroize;
 
 /// User profile info
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -739,11 +740,18 @@ pub fn identity_is_blocked(checker_pubkey: String, target_pubkey: String) -> Res
 
 /// Build an in-process signer handle from an nsec; returns the derived pubkey.
 /// Used for diagnostics only — the app's live signer lives in `signer.rs`.
-/// The nsec crosses FFI, so this surface is compiled out of release builds
-/// (key material must only enter the bridge via `signer_unlock`/keyring).
+///
+/// The nsec crosses the FFI boundary as a plain `String`, so this surface must
+/// never be called in production code. In release builds the function zeroizes
+/// the nsec parameter and immediately returns `Err`; the call is a no-op from a
+/// key-exposure perspective. The runtime guard is in addition to any build-time
+/// gating done by the Dart caller (e.g. `kDebugMode`).
 #[frb(sync, serialize)]
-pub fn identity_in_process_signer(nsec: String) -> Result<String, String> {
+pub fn identity_in_process_signer(mut nsec: String) -> Result<String, String> {
     if !cfg!(debug_assertions) {
+        // Zeroize key material before the early return so it does not linger
+        // on the heap after the nsec String is dropped.
+        nsec.zeroize();
         return Err("signer probe disabled in release builds".to_string());
     }
     use soshal_identity_core::signers::SignerHandle;

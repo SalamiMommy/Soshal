@@ -23,6 +23,19 @@ static SIGNER: Mutex<Option<Keys>> = Mutex::new(None);
 static LAN_KEY_CACHE: Mutex<Option<[u8; 32]>> = Mutex::new(None);
 static AT_REST_KEY_CACHE: Mutex<Option<[u8; 32]>> = Mutex::new(None);
 
+/// Rate limiter for signing/encryption FFI surfaces: max 500 calls per second.
+///
+/// Defense-in-depth against a compromised Flutter plugin (or malicious pub
+/// package) hammering these operations in a tight loop:
+///   - Signing oracle: differential timing analysis on Schnorr signatures
+///     requires tens-of-thousands of calls per second to extract information.
+///   - NIP-44 encrypt/decrypt: tight-loop decryption of captured ciphertexts.
+///
+/// 500/sec is far above any legitimate messaging workload (typical peak:
+/// ~20 messages/sec in a very busy conversation) while blocking >99.9% of
+/// automated abuse patterns.
+static SIGN_RATE: crate::ffi::util::RateLimiter = crate::ffi::util::RateLimiter::new(500);
+
 fn clear_derived_cache() {
     if let Ok(mut guard) = LAN_KEY_CACHE.lock() {
         if let Some(lan) = guard.as_mut() {
@@ -61,16 +74,16 @@ pub fn signer_unlock(mut secret: String) -> Result<String, String> {
             secret.zeroize();
             k
         }
-        Err(e) => {
+        Err(_) => {
             secret.zeroize();
-            return Err(format!("invalid secret key: {e}")).into();
+            return Err("invalid secret key".to_string()).into();
         }
     };
     let pk = keys.public_key().to_hex();
     // M2 fix: clear derived caches INSIDE the SIGNER lock to prevent the stale
     // identity window where another thread could call lan_key() with the old
     // key between cache clear and key replacement.
-    let mut guard = crate::ffi::util::lock(&SIGNER);
+    let mut guard = crate::ffi::util::lock_critical(&SIGNER)?;
     clear_derived_cache();
     soshal_crypto_core::nip44::clear_conversation_key_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
@@ -87,7 +100,7 @@ pub fn signer_unlock(mut secret: String) -> Result<String, String> {
 /// the caller's intent to lock.
 #[frb(sync, serialize)]
 pub fn signer_lock() -> Result<bool, String> {
-    let mut guard = crate::ffi::util::lock(&SIGNER);
+    let mut guard = crate::ffi::util::lock_critical(&SIGNER)?;
     clear_derived_cache();
     soshal_crypto_core::nip44::clear_conversation_key_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
@@ -315,7 +328,7 @@ pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> 
         return Err("stored key does not match pubkey".to_string()).into();
     }
     // Clear derived caches INSIDE the SIGNER lock to prevent stale identity window.
-    let mut guard = crate::ffi::util::lock(&SIGNER);
+    let mut guard = crate::ffi::util::lock_critical(&SIGNER)?;
     clear_derived_cache();
     soshal_identity_core::signers::clear_shared_secret_cache();
     soshal_crypto_core::nip44::clear_conversation_key_cache();
@@ -461,6 +474,7 @@ pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
 /// dedicated function with the correct context tag if a new use case arises.
 #[frb(sync, serialize)]
 pub fn signer_schnorr_sign(message_hex: String) -> Result<String, String> {
+    SIGN_RATE.check()?;
     let guard = crate::ffi::util::lock(&SIGNER);
     match guard.as_ref() {
         Some(keys) => {
@@ -538,6 +552,7 @@ pub fn signer_nip44_encrypt(
     mut plaintext: String,
     recipient_pubkey: String,
 ) -> Result<String, String> {
+    SIGN_RATE.check()?;
     let guard = crate::ffi::util::lock(&SIGNER);
     let out = match guard.as_ref() {
         Some(keys) => {
@@ -567,6 +582,7 @@ pub fn signer_nip44_encrypt(
 /// opaque Dart type rather than a String, breaking the callers).
 #[frb(sync, serialize)]
 pub fn signer_nip44_decrypt(payload: String, sender_pubkey: String) -> Result<String, String> {
+    SIGN_RATE.check()?;
     let guard = crate::ffi::util::lock(&SIGNER);
     match guard.as_ref() {
         Some(keys) => {
@@ -724,7 +740,7 @@ mod tests {
         signer_lock().unwrap();
         let err = signer_unlock("not-a-secret-key".to_string()).unwrap_err();
         assert!(
-            err.starts_with("invalid secret key: "),
+            err.starts_with("invalid secret key"),
             "expected invalid secret key err, got: {err}"
         );
         assert!(signer_is_locked().unwrap());

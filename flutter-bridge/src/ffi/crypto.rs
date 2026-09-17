@@ -43,6 +43,13 @@ pub async fn crypto_pqc_kem_decaps(_ciphertext: String, _sk: String) -> Result<S
     Err("PQ-KEM FFI disabled: key material must not cross to Dart".to_string()).into()
 }
 
+/// Rate limiter for HKDF operations: max 200 derivations per second.
+///
+/// `crypto_hkdf_expand` with `len = 65536` does significant CPU work. A tight
+/// loop of 200/sec is already far above any legitimate single-session need
+/// (key derivation happens a handful of times at login/key-change events).
+static HKDF_RATE: crate::ffi::util::RateLimiter = crate::ffi::util::RateLimiter::new(200);
+
 /// HKDF-SHA256 key expansion (RFC 5869) with the given salt and info.
 /// Returns `len` derived bytes as hex.
 #[frb(sync, serialize)]
@@ -52,6 +59,7 @@ pub fn crypto_hkdf_expand(
     info: Vec<u8>,
     len: usize,
 ) -> Result<String, String> {
+    HKDF_RATE.check()?;
     if len > 64 * 1024 {
         return Err("len must be <= 65536".to_string()).into();
     }

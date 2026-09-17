@@ -78,10 +78,12 @@ pub async fn messaging_send_dm(
 /// Deterministic conversation id for a DM pair: sorted pubkeys joined by
 /// `:`, prefixed `conv:`.
 pub(crate) fn conv_id(my_pubkey: &str, other_pubkey: &str) -> String {
-    let (first, second) = if my_pubkey <= other_pubkey {
-        (my_pubkey, other_pubkey)
+    let pk_a = my_pubkey.trim().to_ascii_lowercase();
+    let pk_b = other_pubkey.trim().to_ascii_lowercase();
+    let (first, second) = if pk_a <= pk_b {
+        (&pk_a, &pk_b)
     } else {
-        (other_pubkey, my_pubkey)
+        (&pk_b, &pk_a)
     };
     format!("conv:{first}:{second}")
 }
@@ -183,10 +185,11 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
 #[frb(sync, serialize)]
 pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, String> {
     super::signer::require_identity(&pubkey)?;
+    let norm_pk = pubkey.trim().to_ascii_lowercase();
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
-        let pattern_prefix = format!("conv:{pubkey}:%");
-        let pattern_suffix = format!("conv:%:{pubkey}");
+        let pattern_prefix = format!("conv:{norm_pk}:%");
+        let pattern_suffix = format!("conv:%:{norm_pk}");
         let cids: Vec<String> = soshal_db_core::query::query(
             &conn,
             "SELECT conversation_id FROM conversations \
@@ -195,11 +198,13 @@ pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, Stri
             libsql::params![pattern_prefix.as_str(), pattern_suffix.as_str()],
             |r| r.get(0),
         )?;
-        let mut peers = extract_peers_from_cids(&cids, &pubkey);
-        let blocked = soshal_db_core::repos::block::BlockRepo::new(db).list(&pubkey)?;
-        let blocked_set: std::collections::HashSet<&str> =
-            blocked.iter().map(String::as_str).collect();
-        peers.retain(|p| !blocked_set.contains(p.as_str()));
+        let mut peers = extract_peers_from_cids(&cids, &norm_pk);
+        let blocked = soshal_db_core::repos::block::BlockRepo::new(db).list(&norm_pk)?;
+        let blocked_set: std::collections::HashSet<String> = blocked
+            .into_iter()
+            .map(|s| s.to_ascii_lowercase())
+            .collect();
+        peers.retain(|p| !blocked_set.contains(&p.to_ascii_lowercase()));
         Ok(peers)
     })
 }
@@ -211,31 +216,32 @@ pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, Stri
 /// other, so `"abc".contains("ab")` would wrongly include a conversation
 /// for a different account.
 pub(crate) fn extract_peers_from_cids(cids: &[String], pubkey: &str) -> Vec<String> {
+    let norm_pk = pubkey.trim().to_ascii_lowercase();
     let mut seen = std::collections::HashSet::with_capacity(cids.len());
     let mut peers: Vec<String> = Vec::with_capacity(cids.len());
     for cid in cids {
         let rest = cid.strip_prefix("conv:").unwrap_or(cid.as_str());
         if let Some((p1, p2)) = rest.split_once(':') {
             if !p2.contains(':') {
-                let other = if p1 == pubkey {
+                let other = if p1.eq_ignore_ascii_case(&norm_pk) {
                     p2
-                } else if p2 == pubkey {
+                } else if p2.eq_ignore_ascii_case(&norm_pk) {
                     p1
                 } else {
                     continue;
                 };
-                if seen.insert(other) {
+                if seen.insert(other.to_ascii_lowercase()) {
                     peers.push(other.to_string());
                 }
                 continue;
             }
         }
         let parts: Vec<&str> = rest.split(':').collect();
-        if !parts.contains(&pubkey) {
+        if !parts.iter().any(|p| p.eq_ignore_ascii_case(&norm_pk)) {
             continue;
         }
         for p in parts {
-            if p != pubkey && seen.insert(p) {
+            if !p.eq_ignore_ascii_case(&norm_pk) && seen.insert(p.to_ascii_lowercase()) {
                 peers.push(p.to_string());
             }
         }
@@ -268,7 +274,7 @@ pub fn messaging_store_dm(
     tags_json: String,
 ) -> Result<bool, String> {
     let my_pk = super::signer::signer_pubkey()?;
-    if my_pk != sender && my_pk != recipient {
+    if !my_pk.eq_ignore_ascii_case(&sender) && !my_pk.eq_ignore_ascii_case(&recipient) {
         return Err("authenticated user must be sender or recipient of DM".to_string());
     }
     let content = seal_dm_content(content)?;
@@ -294,6 +300,9 @@ pub fn messaging_store_dm(
 /// + one transaction-ish upsert loop instead of one call per message.
 #[frb(sync, serialize)]
 pub fn messaging_store_dms(dms_json: String) -> Result<bool, String> {
+    if dms_json.len() > 16 * 1024 * 1024 {
+        return Err("DMs JSON exceeds 16MB cap".to_string()).into();
+    }
     #[derive(serde::Deserialize)]
     struct DmIn {
         id: String,
@@ -311,7 +320,7 @@ pub fn messaging_store_dms(dms_json: String) -> Result<bool, String> {
     }
     let my_pk = super::signer::signer_pubkey()?;
     for dm in &dms {
-        if my_pk != dm.sender && my_pk != dm.recipient {
+        if !my_pk.eq_ignore_ascii_case(&dm.sender) && !my_pk.eq_ignore_ascii_case(&dm.recipient) {
             return Err("authenticated user must be sender or recipient of DM".to_string());
         }
     }
@@ -359,6 +368,12 @@ pub fn messaging_send_group_dm(
     let content = zeroize::Zeroizing::new(content);
     if content.is_empty() {
         return Err("message must not be empty".to_string()).into();
+    }
+    if content.len() > 64000 {
+        return Err("content must be ≤64000 chars".to_string()).into();
+    }
+    if participant_pubkeys_json.len() > 1024 * 1024 {
+        return Err("participants JSON exceeds 1MB cap".to_string()).into();
     }
     let participants: Vec<String> = serde_json::from_str(&participant_pubkeys_json)
         .map_err(|e| format!("invalid participants JSON: {e}"))?;
@@ -458,5 +473,30 @@ mod tests {
         let cids = vec![conv_id("ab", "cd")];
         let peers = extract_peers_from_cids(&cids, "zz");
         assert!(peers.is_empty());
+    }
+
+    #[test]
+    fn test_conv_id_case_insensitivity() {
+        assert_eq!(conv_id("AA", "bb"), conv_id("aa", "bb"));
+        assert_eq!(conv_id("bb", "AA"), conv_id("aa", "bb"));
+        assert_eq!(conv_id("AA", "BB"), "conv:aa:bb");
+
+        let cids = vec![conv_id("aa", "bb")];
+        let peers = extract_peers_from_cids(&cids, "AA");
+        assert_eq!(peers, vec!["bb".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_messaging_payload_caps() {
+        assert!(messaging_store_dms("0".repeat(17 * 1024 * 1024)).is_err());
+        assert!(
+            messaging_send_group_dm("x".repeat(65000), "g1".to_string(), "[]".to_string()).is_err()
+        );
+        assert!(messaging_send_group_dm(
+            "hi".to_string(),
+            "g1".to_string(),
+            "0".repeat(2 * 1024 * 1024)
+        )
+        .is_err());
     }
 }

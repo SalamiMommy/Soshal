@@ -279,6 +279,7 @@ pub async fn events_fetch_nearby(
 /// Fetch events the user is involved in (created, RSVPed, or attended).
 #[frb(serialize)]
 pub async fn events_fetch_user_events(user_pubkey: String, limit: i32) -> Result<String, String> {
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
     tokio::task::spawn_blocking(move || {
         let filter = "AND (p.pubkey = ?1 OR EXISTS (SELECT 1 FROM posts r WHERE r.pubkey = ?1 \
                       AND (r.rsvp_event_id = p.id \
@@ -373,6 +374,7 @@ pub fn events_create(
     // creator must match it: otherwise a caller could attribute a stored row
     // to an arbitrary (victim) pubkey while the signed event carries a
     // different one.
+    let creator_pubkey = creator_pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&creator_pubkey)?;
     let d_tag = format!("{}-{}", creator_pubkey.get(..12).unwrap_or(""), start_time);
     let content = serde_json::json!({
@@ -465,6 +467,8 @@ pub fn events_rsvp(
     user_pubkey: String,
     rsvp_status: String,
 ) -> Result<bool, String> {
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
+    let rsvp_status = rsvp_status.trim().to_ascii_lowercase();
     super::signer::require_identity(&user_pubkey)?;
     if !valid_rsvp(&rsvp_status) {
         return Err("rsvp_status must be accepted/declined/pending".to_string()).into();
@@ -566,6 +570,7 @@ pub fn events_check_in(
     latitude: f64,
     longitude: f64,
 ) -> Result<bool, String> {
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
     if event_id.trim().is_empty() || event_id.len() > 128 {
         return Err("invalid event id".to_string()).into();
     }
@@ -967,6 +972,30 @@ mod tests {
         assert!(events_reminder_upsert(String::new(), "e".into(), "t".into(), 123, 10).is_err());
         assert!(events_reminder_delete(rid).is_err());
     }
+
+    #[test]
+    fn test_batch18_events_hardening() {
+        // Cap checks on events_interest_score
+        let huge_1mb = "a".repeat(1024 * 1024 + 1);
+        let err = events_interest_score(huge_1mb.clone(), "[]".into()).unwrap_err();
+        assert!(err.contains("1MB cap"), "{err}");
+
+        let err = events_interest_score("[]".into(), huge_1mb).unwrap_err();
+        assert!(err.contains("1MB cap"), "{err}");
+
+        // Cap checks on events_score_events
+        let huge_16mb = "b".repeat(16 * 1024 * 1024 + 1);
+        let err = events_score_events(huge_16mb, "[]".into()).unwrap_err();
+        assert!(err.contains("16MB cap"), "{err}");
+
+        let huge_interests = "c".repeat(1024 * 1024 + 1);
+        let err = events_score_events("[]".into(), huge_interests).unwrap_err();
+        assert!(err.contains("1MB cap"), "{err}");
+
+        // RSVP status case insensitivity
+        assert!(valid_rsvp(&"ACCEPTED".to_ascii_lowercase()));
+        assert!(valid_rsvp(&"Pending".to_ascii_lowercase()));
+    }
 }
 
 // ─── Event reminders ────────────────────────────────────────────────────────
@@ -1034,6 +1063,9 @@ pub fn events_interest_score(
     my_interests_json: String,
     peer_interests_json: String,
 ) -> Result<String, String> {
+    if my_interests_json.len() > 1024 * 1024 || peer_interests_json.len() > 1024 * 1024 {
+        return Err("interests JSON exceeds 1MB cap".to_string());
+    }
     let score = soshal_events_core::event::interest::compute_interest_score_json(&format!(
         r#"{{"myInterests":{my_interests_json},"peerInterests":{peer_interests_json}}}"#
     ));
@@ -1049,6 +1081,12 @@ pub fn events_score_events(
     events_json: String,
     my_interests_json: String,
 ) -> Result<String, String> {
+    if events_json.len() > 16 * 1024 * 1024 {
+        return Err("events JSON exceeds 16MB cap".to_string());
+    }
+    if my_interests_json.len() > 1024 * 1024 {
+        return Err("my_interests JSON exceeds 1MB cap".to_string());
+    }
     #[derive(serde::Deserialize)]
     struct EventText<'a> {
         id: &'a str,

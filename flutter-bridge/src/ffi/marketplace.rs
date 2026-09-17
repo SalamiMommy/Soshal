@@ -442,9 +442,10 @@ pub fn marketplace_update_listing(
     }
     let existing: ListingInfo = serde_json::from_str(&marketplace_get_listing(listing_id.clone())?)
         .map_err(|e| format!("parse listing: {e}"))?;
-    if existing.seller_pubkey != seller_pubkey {
+    if !existing.seller_pubkey.eq_ignore_ascii_case(&seller_pubkey) {
         return Err("only the seller can update a listing".to_string()).into();
     }
+    let seller_pubkey = seller_pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&seller_pubkey)?;
     let content = serde_json::json!({
         "title": title,
@@ -513,9 +514,10 @@ pub fn marketplace_delete_listing(
 ) -> Result<bool, String> {
     let existing: ListingInfo = serde_json::from_str(&marketplace_get_listing(listing_id.clone())?)
         .map_err(|e| format!("parse listing: {e}"))?;
-    if existing.seller_pubkey != seller_pubkey {
+    if !existing.seller_pubkey.eq_ignore_ascii_case(&seller_pubkey) {
         return Err("only the seller can delete a listing".to_string()).into();
     }
+    let seller_pubkey = seller_pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&seller_pubkey)?;
     let open: i64 = super::db::with_db_result(|db| {
         let conn = db.conn()?;
@@ -627,10 +629,18 @@ pub fn marketplace_create_order(
 ) -> Result<String, String> {
     let listing: ListingInfo = serde_json::from_str(&marketplace_get_listing(listing_id.clone())?)
         .map_err(|e| format!("parse listing: {e}"))?;
-    if listing.seller_pubkey != seller_pubkey {
+    if !listing.seller_pubkey.eq_ignore_ascii_case(&seller_pubkey) {
         return Err("seller does not own this listing".to_string()).into();
     }
+    if buyer_pubkey
+        .trim()
+        .eq_ignore_ascii_case(seller_pubkey.trim())
+    {
+        return Err("cannot order own listing".to_string()).into();
+    }
     super::signer::require_identity(&buyer_pubkey)?;
+    let buyer_pubkey = buyer_pubkey.trim().to_ascii_lowercase();
+    let seller_pubkey = seller_pubkey.trim().to_ascii_lowercase();
     let id = uuid_like();
     let content = serde_json::json!({
         "listingId": listing_id,
@@ -685,10 +695,11 @@ pub fn marketplace_get_order(order_id: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, String> {
     if let Ok(caller) = super::signer::signer_pubkey() {
-        if caller != buyer_pubkey {
+        if !caller.eq_ignore_ascii_case(&buyer_pubkey) {
             return Err("identity mismatch: caller is not the claimed pubkey".to_string());
         }
     }
+    let buyer_pubkey = buyer_pubkey.trim().to_ascii_lowercase();
     let orders: Vec<OrderInfo> = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let sql = format!(
@@ -718,10 +729,11 @@ pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, St
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_seller_orders(seller_pubkey: String) -> Result<String, String> {
     if let Ok(caller) = super::signer::signer_pubkey() {
-        if caller != seller_pubkey {
+        if !caller.eq_ignore_ascii_case(&seller_pubkey) {
             return Err("identity mismatch: caller is not the claimed pubkey".to_string());
         }
     }
+    let seller_pubkey = seller_pubkey.trim().to_ascii_lowercase();
     let orders: Vec<OrderInfo> = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let sql = format!(
@@ -758,7 +770,9 @@ pub fn marketplace_create_escrow(
 ) -> Result<String, String> {
     let order: OrderInfo = serde_json::from_str(&marketplace_get_order(order_id.clone())?)
         .map_err(|e| format!("parse order: {e}"))?;
-    if order.buyer_pubkey != buyer_pubkey || order.seller_pubkey != seller_pubkey {
+    if !order.buyer_pubkey.eq_ignore_ascii_case(&buyer_pubkey)
+        || !order.seller_pubkey.eq_ignore_ascii_case(&seller_pubkey)
+    {
         return Err("order parties do not match escrow parties".to_string()).into();
     }
     if super::signer::require_identity(&buyer_pubkey).is_err()
@@ -774,8 +788,8 @@ pub fn marketplace_create_escrow(
     let row = soshal_db_core::repos::escrow::EscrowRow {
         id: escrow_id.clone(),
         listing_id: order.listing_id,
-        buyer_pubkey,
-        seller_pubkey,
+        buyer_pubkey: buyer_pubkey.trim().to_ascii_lowercase(),
+        seller_pubkey: seller_pubkey.trim().to_ascii_lowercase(),
         amount_msats: i64::try_from(amount).map_err(|_| "amount too large".to_string())?,
         currency: "sats".to_string(),
         status: "created".to_string(),
@@ -803,7 +817,7 @@ pub fn marketplace_release_escrow(
     // Bind the caller to the unlocked signer: the previous code dropped the
     // seller identity entirely, so any local caller could release any escrow.
     let caller = super::signer::signer_pubkey()?;
-    if caller != seller_pubkey {
+    if !caller.eq_ignore_ascii_case(&seller_pubkey) {
         return Err("release must be initiated by the seller identity".into());
     }
     super::db::with_db_result(|db| {
@@ -811,7 +825,7 @@ pub fn marketplace_release_escrow(
         let escrow = repo
             .get(&escrow_id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
-        if escrow.seller_pubkey != caller {
+        if !escrow.seller_pubkey.eq_ignore_ascii_case(&caller) {
             return Err(soshal_db_core::error::DbError::NotFound);
         }
         let (buyer_confirmed, seller_confirmed) = repo.get_confirms(&escrow_id)?;
@@ -840,7 +854,7 @@ pub fn marketplace_escrow_confirm_buyer(escrow_id: String, caller: String) -> Re
         let escrow = repo
             .get(&escrow_id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
-        if escrow.buyer_pubkey != caller {
+        if !escrow.buyer_pubkey.eq_ignore_ascii_case(&caller) {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "confirmation must be initiated by the buyer identity".to_string(),
             ));
@@ -862,7 +876,7 @@ pub fn marketplace_escrow_confirm_seller(
         let escrow = repo
             .get(&escrow_id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
-        if escrow.seller_pubkey != caller {
+        if !escrow.seller_pubkey.eq_ignore_ascii_case(&caller) {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "confirmation must be initiated by the seller identity".to_string(),
             ));
@@ -887,7 +901,9 @@ pub fn marketplace_dispute_escrow(
         let escrow = repo
             .get(&escrow_id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
-        if escrow.buyer_pubkey != disputer_pubkey && escrow.seller_pubkey != disputer_pubkey {
+        if !escrow.buyer_pubkey.eq_ignore_ascii_case(&disputer_pubkey)
+            && !escrow.seller_pubkey.eq_ignore_ascii_case(&disputer_pubkey)
+        {
             return Err(soshal_db_core::error::DbError::NotFound);
         }
         super::signer::require_identity(&disputer_pubkey)
@@ -916,17 +932,21 @@ pub fn marketplace_resolve_escrow(
         let escrow = repo
             .get(&escrow_id)?
             .ok_or(soshal_db_core::error::DbError::NotFound)?;
-        if caller != escrow.buyer_pubkey && caller != escrow.seller_pubkey {
+        if !caller.eq_ignore_ascii_case(&escrow.buyer_pubkey)
+            && !caller.eq_ignore_ascii_case(&escrow.seller_pubkey)
+        {
             return Err(soshal_db_core::error::DbError::NotFound);
         }
         drop(mediator_pubkey);
-        if winner_pubkey != escrow.buyer_pubkey && winner_pubkey != escrow.seller_pubkey {
+        if !winner_pubkey.eq_ignore_ascii_case(&escrow.buyer_pubkey)
+            && !winner_pubkey.eq_ignore_ascii_case(&escrow.seller_pubkey)
+        {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "winner must be an escrow party".to_string(),
             ));
         }
         let status = if escrow.status == "disputed" {
-            if winner_pubkey == escrow.seller_pubkey {
+            if winner_pubkey.eq_ignore_ascii_case(&escrow.seller_pubkey) {
                 "completed"
             } else {
                 "refunded"
@@ -987,9 +1007,13 @@ pub fn marketplace_review_listing(
     if !(1..=5).contains(&rating) {
         return Err("rating must be between 1 and 5".to_string());
     }
-    if reviewer_pubkey.is_empty() {
+    if reviewer_pubkey.trim().is_empty() {
         return Err("reviewer_pubkey cannot be empty".to_string());
     }
+    if text.len() > 5000 {
+        return Err("review text exceeds 5,000 characters cap".to_string());
+    }
+    let reviewer_pubkey = reviewer_pubkey.trim().to_ascii_lowercase();
     let row = soshal_db_core::repos::marketplace_review::MarketplaceReviewRow {
         id: uuid_like(),
         listing_id,
@@ -1008,6 +1032,7 @@ pub fn marketplace_review_listing(
 /// `{"rating": N, "reviewer": <pubkey>, "text": <text>}`.
 #[frb(sync, serialize)]
 pub fn marketplace_listing_reviews(listing_id: String, limit: i64) -> Result<String, String> {
+    let limit = limit.clamp(1, 200);
     let rows = super::db::with_db_result(|db| {
         soshal_db_core::repos::marketplace_review::MarketplaceReviewRepo::new(db)
             .list_by_listing(&listing_id, limit)
@@ -1044,6 +1069,10 @@ pub fn marketplace_poll_create(
     options_json: String,
     expires_in_hours: i64,
 ) -> Result<String, String> {
+    if options_json.len() > 64 * 1024 {
+        return Err("options JSON exceeds 64KB cap".to_string()).into();
+    }
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&user_pubkey)?;
     let options: Vec<String> =
         serde_json::from_str(&options_json).map_err(|e| format!("invalid options JSON: {e}"))?;
@@ -1097,8 +1126,9 @@ pub fn marketplace_poll_vote(
     if option_index < 0 {
         return Err("option_index must be non-negative".to_string());
     }
+    let voter_pubkey = voter_pubkey.trim().to_ascii_lowercase();
     if let Ok(caller) = super::signer::signer_pubkey() {
-        if caller != voter_pubkey {
+        if !caller.eq_ignore_ascii_case(&voter_pubkey) {
             return Err("identity mismatch: caller is not the claimed pubkey".to_string());
         }
     }
@@ -1118,8 +1148,9 @@ pub fn marketplace_poll_vote(
 /// Close a poll; only the poll owner may close it.
 #[frb(sync, serialize)]
 pub fn marketplace_poll_close(poll_id: String, user_pubkey: String) -> Result<bool, String> {
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
     if let Ok(caller) = super::signer::signer_pubkey() {
-        if caller != user_pubkey {
+        if !caller.eq_ignore_ascii_case(&user_pubkey) {
             return Err("identity mismatch: caller is not the claimed pubkey".to_string());
         }
     }
@@ -1129,7 +1160,7 @@ pub fn marketplace_poll_close(poll_id: String, user_pubkey: String) -> Result<bo
             .get_poll(&poll_id)
             .map_err(super::util::to_err)?
             .ok_or_else(|| "poll not found".to_string())?;
-        if poll.pubkey != user_pubkey {
+        if !poll.pubkey.eq_ignore_ascii_case(&user_pubkey) {
             return Err("not poll owner".to_string());
         }
         repo.set_closed(&poll_id, true)
@@ -1169,6 +1200,7 @@ pub fn marketplace_poll_get(poll_id: String) -> Result<String, String> {
 /// Whether a voter has voted in a poll.
 #[frb(sync, serialize)]
 pub fn marketplace_poll_has_voted(poll_id: String, voter_pubkey: String) -> Result<bool, String> {
+    let voter_pubkey = voter_pubkey.trim().to_ascii_lowercase();
     super::db::with_db_result(|db| {
         soshal_db_core::repos::poll::PollRepo::new(db).has_voted(&poll_id, &voter_pubkey)
     })
@@ -1757,6 +1789,7 @@ mod tests {
         assert!(marketplace_poll_get("nope".to_string())
             .unwrap_err()
             .contains("poll not found"));
+        signer::signer_lock().unwrap();
     }
 
     #[test]
@@ -2102,6 +2135,56 @@ mod tests {
                 && info["currency"] == "sats",
             "got {info:?}"
         );
+
+        signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_batch18_marketplace_hardening() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = db::tmp_db("market_b18", "market");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let spk = keys.public_key().to_hex();
+        signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        db::insert_test_user(&spk);
+        insert_listing("list_b18", &spk, "Item", 1000, "goods", 100);
+
+        // Self-ordering must be rejected
+        let err =
+            marketplace_create_order("list_b18".to_string(), spk.clone(), spk.clone()).unwrap_err();
+        assert!(err.contains("cannot order own listing"), "{err}");
+
+        // Updating listing with uppercase seller pubkey should succeed
+        assert!(marketplace_update_listing(
+            "list_b18".to_string(),
+            spk.to_ascii_uppercase(),
+            "Item Updated".to_string(),
+            "New desc".to_string(),
+            2000,
+        )
+        .unwrap());
+
+        // Review text length cap > 5000
+        let long_rev = "a".repeat(5001);
+        let err = marketplace_review_listing("list_b18".to_string(), spk.clone(), 5, long_rev)
+            .unwrap_err();
+        assert!(err.contains("5,000"), "{err}");
+
+        // Review with matching uppercase pubkey succeeds (signer active)
+        assert!(marketplace_review_listing(
+            "list_b18".to_string(),
+            spk.to_ascii_uppercase(),
+            5,
+            "Good product".to_string()
+        )
+        .unwrap());
+
+        // Poll options JSON cap > 64KB
+        let huge_opts = format!("[{}]", "\"option\",".repeat(10_000));
+        let err = marketplace_poll_create(spk.clone(), "Question?".to_string(), huge_opts, 24)
+            .unwrap_err();
+        assert!(err.contains("64KB"), "{err}");
 
         signer::signer_lock().unwrap();
     }
