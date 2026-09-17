@@ -485,6 +485,9 @@ fn valid_node_types() -> &'static [&'static str] {
 
 /// Parse + strictly validate a full profile. Returns canonical JSON.
 pub fn parse_and_validate(profile_json: &str) -> Result<String, String> {
+    if profile_json.len() > 1024 * 1024 {
+        return Err("custom profile JSON too large (max 1MB)".to_string());
+    }
     let profile: CustomProfile = serde_json::from_str(profile_json)
         .map_err(|e| format!("invalid custom profile JSON: {e}"))?;
     validate(&profile)?;
@@ -683,6 +686,8 @@ fn validate_properties(node_type: &str, props: &Map<String, Value>) -> Result<()
 
 /// Default node for `node_type` at `index` (mirrors legacy Dart factory).
 pub fn default_node(node_type: &str, index: u64) -> Result<String, String> {
+    let node_type_clean = node_type.trim().to_ascii_lowercase();
+    let node_type = node_type_clean.as_str();
     if !valid_node_types().contains(&node_type) {
         return Err(format!("unknown node type: {node_type}"));
     }

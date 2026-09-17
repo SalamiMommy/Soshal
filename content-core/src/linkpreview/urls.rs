@@ -18,6 +18,9 @@ struct ExtractUrlsInput {
 }
 
 pub fn extract_urls_json(input: &str) -> String {
+    if input.len() > 1024 * 1024 {
+        return "[]".to_string();
+    }
     let parsed = json_in(
         input,
         ExtractUrlsInput {

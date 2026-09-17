@@ -238,6 +238,7 @@ pub fn streaming_fetch_live(limit: i32, audience: String) -> Result<String, Stri
 /// Fetch live streams from followed users (contact graph join).
 #[frb(sync, serialize)]
 pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, String> {
+    let normalized_pk = user_pubkey.trim().to_ascii_lowercase();
     let streams: Vec<StreamInfo> = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let sql = "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
@@ -247,7 +248,7 @@ pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, Stri
         let rows = soshal_db_core::query::query(
             &conn,
             sql,
-            libsql::params![KIND_LIVE as i64, user_pubkey.as_str()],
+            libsql::params![KIND_LIVE as i64, normalized_pk.as_str()],
             |r| {
                 let id: String = r.get(0)?;
                 let pubkey: String = r.get(1)?;
@@ -276,6 +277,9 @@ pub fn streaming_start_live(
     super::signer::require_identity(&broadcaster_pubkey)?;
     if title.trim().is_empty() || title.len() > 300 {
         return Err("title must be 1..=300 chars".to_string()).into();
+    }
+    if description.len() > 5000 {
+        return Err("description too long (max 5000)".to_string()).into();
     }
     if stream_url.is_empty()
         || stream_url.len() > 500
@@ -327,7 +331,7 @@ pub fn streaming_end_live(stream_id: String, broadcaster_pubkey: String) -> Resu
         .map_err(|e| e.to_string())?;
         res.ok_or_else(|| "stream not found".to_string())
     })?;
-    if row_pubkey != broadcaster_pubkey {
+    if !row_pubkey.eq_ignore_ascii_case(&broadcaster_pubkey) {
         return Err("only the broadcaster can end a stream".to_string()).into();
     }
     let mut tags: Vec<Vec<String>> = serde_json::from_str(&tags_json).unwrap_or_default();
@@ -361,6 +365,9 @@ pub fn streaming_post_story(
     expires_in_hours: i32,
 ) -> Result<String, String> {
     super::signer::require_identity(&author_pubkey)?;
+    if images_json.len() > 1024 * 1024 {
+        return Err("images JSON too large".to_string()).into();
+    }
     let images: Vec<String> =
         serde_json::from_str(&images_json).map_err(|e| format!("invalid images JSON: {e}"))?;
     if images.len() > 12 {
@@ -430,13 +437,14 @@ pub fn streaming_post_story(
 #[frb(sync, serialize)]
 pub fn streaming_fetch_stories(user_pubkey: String) -> Result<String, String> {
     let now = soshal_common_core::format::now_secs();
+    let normalized_pk = user_pubkey.trim().to_ascii_lowercase();
     let rows = super::db::db_query_json(
         &format!(
             "SELECT id, pubkey, content, created_at, tags_json, 0 AS views FROM posts \
              WHERE kind = {KIND_STORY} AND pubkey = ?1 AND is_deleted = 0 \
              ORDER BY created_at DESC LIMIT 50"
         ),
-        &[user_pubkey],
+        &[normalized_pk],
     )?;
     super::util::json_ok(
         rows.into_iter()
@@ -544,9 +552,12 @@ pub fn streaming_moq_publish_object(
         return Err("invalid publisher_pubkey".to_string());
     }
     if let Ok(active_pk) = super::signer::signer_pubkey() {
-        if publisher_pubkey.len() == 64 && active_pk != publisher_pubkey {
+        if publisher_pubkey.len() == 64 && !active_pk.eq_ignore_ascii_case(&publisher_pubkey) {
             return Err("identity mismatch: caller is not the claimed pubkey".to_string());
         }
+    }
+    if payload_hex.len() > 32 * 1024 * 1024 {
+        return Err("payload too large (max 32MB hex)".to_string());
     }
     let payload = hex::decode(&payload_hex).map_err(|e| format!("invalid hex payload: {e}"))?;
     let mut publisher =
@@ -647,18 +658,48 @@ mod tests {
             streaming_story_react(story_id.clone(), fake_pk.clone(), "🔥".to_string()).is_err()
         );
         assert!(streaming_post_story(
-            my_pk,
+            my_pk.clone(),
             "hello".to_string(),
             "[\"javascript:alert(1)\"]".to_string(),
             24
         )
         .is_err());
+        assert!(streaming_start_live(
+            my_pk.clone(),
+            "Live Title".to_string(),
+            "x".repeat(5001),
+            "https://stream.example.com/live".to_string()
+        )
+        .is_err());
+        assert!(streaming_post_story(
+            my_pk.clone(),
+            "hello".to_string(),
+            format!("[{}]", "\"https://x.com/a.jpg\",".repeat(100_000)),
+            24
+        )
+        .is_err());
+        assert!(streaming_moq_publish_object(
+            "stream1".to_string(),
+            my_pk.to_ascii_uppercase(),
+            1,
+            true,
+            "deadbeef".to_string()
+        )
+        .is_ok());
         assert!(streaming_moq_publish_object(
             "stream1".to_string(),
             fake_pk,
             1,
             true,
             "deadbeef".to_string()
+        )
+        .is_err());
+        assert!(streaming_moq_publish_object(
+            "stream1".to_string(),
+            my_pk,
+            1,
+            true,
+            "0".repeat(33 * 1024 * 1024)
         )
         .is_err());
         let _ = super::super::signer::signer_lock();

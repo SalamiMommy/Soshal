@@ -75,7 +75,7 @@ pub fn media_blob_from_tags(tags: &[Vec<String>]) -> (String, u64) {
             continue;
         }
         let size: u64 = tag[4].parse().unwrap_or(0);
-        return (blob_hash.clone(), size);
+        return (blob_hash.to_ascii_lowercase(), size);
     }
     (String::new(), 0)
 }
@@ -229,7 +229,12 @@ pub fn custom_profile_content(nodes: &serde_json::Value, theme_id: &str) -> Resu
 
 /// Builds the `a` tag coordinate for a musicloud track comment.
 pub fn musicloud_comment_addr(track_kind: u16, track_pubkey: &str, track_d: &str) -> String {
-    format!("{}:{}:{}", track_kind, track_pubkey, track_d)
+    format!(
+        "{}:{}:{}",
+        track_kind,
+        track_pubkey.trim().to_ascii_lowercase(),
+        track_d.trim()
+    )
 }
 
 /// Sorts webview JSON items by `createdAt` descending (newest first).

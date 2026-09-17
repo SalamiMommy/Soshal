@@ -83,6 +83,9 @@ pub fn stream_content(
             return Err("summary too long (max 5000)".into());
         }
     }
+    if status.len() > 64 {
+        return Err("status too long (max 64)".into());
+    }
     let mut content = serde_json::json!({
         "title": title,
         "stream_url": stream_url,
@@ -156,13 +159,14 @@ pub fn chatrandom_peer_from_event(ev: &NostrEvent) -> serde_json::Value {
 
 /// Maps a chatrandom request type to its event kind + content JSON.
 pub fn chatrandom_request_parts(request_type: &str) -> Result<(u16, String), String> {
-    let kind = match request_type {
+    let req_clean = request_type.trim().to_ascii_lowercase();
+    let kind = match req_clean.as_str() {
         "available" => 20030u16,
         "request" => 20031u16,
         "accept" => 20032,
         _ => return Err("invalid request type, use available/request/accept".into()),
     };
-    let content = serde_json::json!({"type": request_type}).to_string();
+    let content = serde_json::json!({"type": req_clean}).to_string();
     Ok((kind, content))
 }
 

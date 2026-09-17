@@ -5,13 +5,22 @@ use zeroize::{Zeroize, Zeroizing};
 
 const KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 12;
+const MAX_SEAL_PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
+const MAX_UNSEAL_CIPHERTEXT_BYTES: usize = 24 * 1024 * 1024;
+const MAX_DOMAIN_LEN: usize = 256;
 
 pub fn kem_seal(
     payload: &[u8],
     peer_pk_hex: &str,
     domain: &[u8],
 ) -> Result<(String, String, String), String> {
-    let (ct_hex, ss_hex) = crate::kem::kem_encapsulate(peer_pk_hex)?;
+    if payload.len() > MAX_SEAL_PAYLOAD_BYTES {
+        return Err("payload exceeds max size".to_string());
+    }
+    if domain.len() > MAX_DOMAIN_LEN {
+        return Err("domain exceeds max length".to_string());
+    }
+    let (ct_hex, ss_hex) = crate::kem::kem_encapsulate(peer_pk_hex.trim())?;
     let ss_hex = Zeroizing::new(ss_hex);
     let ss = Zeroizing::new(hex::decode(ss_hex.as_str()).map_err(|_| "bad ss hex".to_string())?);
     let derived = hkdf_derive(&ss, domain)?;
@@ -26,11 +35,17 @@ pub fn kem_unseal(
     sk_hex: &str,
     domain: &[u8],
 ) -> Result<Vec<u8>, String> {
-    let ss_hex = crate::kem::kem_decapsulate(ct_hex, sk_hex)?;
+    if ciphertext_b64.len() > MAX_UNSEAL_CIPHERTEXT_BYTES {
+        return Err("ciphertext exceeds max size".to_string());
+    }
+    if domain.len() > MAX_DOMAIN_LEN {
+        return Err("domain exceeds max length".to_string());
+    }
+    let ss_hex = crate::kem::kem_decapsulate(ct_hex.trim(), sk_hex.trim())?;
     let ss_hex = Zeroizing::new(ss_hex);
     let ss = Zeroizing::new(hex::decode(ss_hex.as_str()).map_err(|_| "bad ss hex".to_string())?);
     let derived = hkdf_derive(&ss, domain)?;
-    let nonce_bytes = hex::decode(nonce_hex).map_err(|_| "bad nonce hex".to_string())?;
+    let nonce_bytes = hex::decode(nonce_hex.trim()).map_err(|_| "bad nonce hex".to_string())?;
     if nonce_bytes.len() != NONCE_LEN {
         return Err("bad nonce len".to_string());
     }
@@ -47,7 +62,13 @@ pub fn hybrid_seal(
     peer_pk_hex: &str,
     domain: &[u8],
 ) -> Result<(String, String, String), String> {
-    let pk_bytes = hex::decode(peer_pk_hex).map_err(|_| "bad pk hex".to_string())?;
+    if payload.len() > MAX_SEAL_PAYLOAD_BYTES {
+        return Err("payload exceeds max size".to_string());
+    }
+    if domain.len() > MAX_DOMAIN_LEN {
+        return Err("domain exceeds max length".to_string());
+    }
+    let pk_bytes = hex::decode(peer_pk_hex.trim()).map_err(|_| "bad pk hex".to_string())?;
     if pk_bytes.len() != crate::hybrid::HYBRID_PK_LEN {
         return Err("bad pk len".to_string());
     }
@@ -68,9 +89,15 @@ pub fn hybrid_unseal(
     sk_hex: &str,
     domain: &[u8],
 ) -> Result<Vec<u8>, String> {
-    let ct_bytes = hex::decode(ct_hex).map_err(|_| "bad ct hex".to_string())?;
+    if ciphertext_b64.len() > MAX_UNSEAL_CIPHERTEXT_BYTES {
+        return Err("ciphertext exceeds max size".to_string());
+    }
+    if domain.len() > MAX_DOMAIN_LEN {
+        return Err("domain exceeds max length".to_string());
+    }
+    let ct_bytes = hex::decode(ct_hex.trim()).map_err(|_| "bad ct hex".to_string())?;
     let sk_bytes =
-        zeroize::Zeroizing::new(hex::decode(sk_hex).map_err(|_| "bad sk hex".to_string())?);
+        zeroize::Zeroizing::new(hex::decode(sk_hex.trim()).map_err(|_| "bad sk hex".to_string())?);
     if ct_bytes.len() != crate::hybrid::HYBRID_CT_LEN
         || sk_bytes.len() != crate::hybrid::HYBRID_SK_LEN
     {
@@ -85,7 +112,7 @@ pub fn hybrid_unseal(
     let ss = res?;
     let ss = Zeroizing::new(ss);
     let derived = hkdf_derive(ss.as_slice(), domain)?;
-    let nonce_bytes = hex::decode(nonce_hex).map_err(|_| "bad nonce hex".to_string())?;
+    let nonce_bytes = hex::decode(nonce_hex.trim()).map_err(|_| "bad nonce hex".to_string())?;
     if nonce_bytes.len() != NONCE_LEN {
         return Err("bad nonce len".to_string());
     }

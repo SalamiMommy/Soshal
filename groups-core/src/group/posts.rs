@@ -115,6 +115,9 @@ fn parse_group_posts(input: ParseGroupPostsInput) -> Vec<ParsedGroupPostOut> {
 }
 
 pub fn parse_group_posts_json(input_json: &str) -> String {
+    if input_json.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
     let Some(input) = json_in::<Option<ParseGroupPostsInput>>(input_json, None) else {
         return "[]".to_string();
     };

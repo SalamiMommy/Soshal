@@ -190,7 +190,8 @@ impl BlossomClient {
         if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("invalid file hash".into());
         }
-        let url = format!("{}/{}", self.server_url, hash);
+        let hash_lower = hash.to_ascii_lowercase();
+        let url = format!("{}/{}", self.server_url, hash_lower);
         let resp = self
             .http
             .get(&url)
@@ -230,7 +231,8 @@ impl BlossomClient {
         {
             return Err("invalid pubkey for blossom list".to_string());
         }
-        let url = format!("{}/list/{}", self.server_url, pubkey);
+        let pubkey_lower = pubkey.to_ascii_lowercase();
+        let url = format!("{}/list/{}", self.server_url, pubkey_lower);
         let resp = self
             .http
             .get(&url)

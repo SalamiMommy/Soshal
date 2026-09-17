@@ -76,6 +76,10 @@ pub fn parse_key_distribution_content(content: &str) -> ParsedKeyDistContent {
         error_reason: Some("Invalid JSON".to_string()),
     };
 
+    if content.len() > 1024 * 1024 {
+        return fallback();
+    }
+
     let parsed: BuildKeyDistInput = match serde_json::from_str(content) {
         Ok(v) => v,
         Err(_) => return fallback(),

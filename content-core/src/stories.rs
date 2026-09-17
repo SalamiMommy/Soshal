@@ -92,8 +92,11 @@ fn process_stories(input: ProcessStoriesInput) -> Vec<ProcessedStoryOut> {
             Ok(parsed) => (parsed.media.unwrap_or_default(), parsed.text),
             Err(_) => (Vec::new(), None),
         };
-        let mut media: Vec<MediaItemOut> = Vec::with_capacity(content_media.len());
+        let mut media: Vec<MediaItemOut> = Vec::with_capacity(content_media.len().min(64));
         for m in content_media {
+            if media.len() >= 64 {
+                break;
+            }
             if m.url.len() <= MAX_PREVIEW_URL_LENGTH
                 && m.media_type.len() <= 100
                 && crate::url::is_valid_media_url(&m.url)
@@ -124,6 +127,9 @@ fn process_stories(input: ProcessStoriesInput) -> Vec<ProcessedStoryOut> {
 }
 
 pub fn filter_stories_json(input: &str) -> String {
+    if input.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
     let parsed = json_in(
         input,
         ProcessStoriesInput {

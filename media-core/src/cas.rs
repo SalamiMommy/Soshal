@@ -218,8 +218,9 @@ impl ChunkStore {
             p.push(format!("{safe_hash}.chunk"));
             return p;
         }
-        let (a, b) = hash.split_at(2);
-        let mut p = PathBuf::with_capacity(self.root.as_os_str().len() + hash.len() + 10);
+        let hash_lower = hash.to_ascii_lowercase();
+        let (a, b) = hash_lower.split_at(2);
+        let mut p = PathBuf::with_capacity(self.root.as_os_str().len() + hash_lower.len() + 10);
         p.push(&self.root);
         p.push(a);
         p.push(format!("{b}.chunk"));
@@ -281,7 +282,11 @@ impl ChunkStore {
         // same tick and same byte length would otherwise return stale/corrupt
         // content under the old verified verdict. The verified cache only
         // skips the redundant mark_verified write, never the hash.
-        if blake3::hash(map.as_ref()).to_hex().as_str() != hash {
+        if !blake3::hash(map.as_ref())
+            .to_hex()
+            .as_str()
+            .eq_ignore_ascii_case(hash)
+        {
             return None;
         }
         self.mark_verified(hash.to_string(), size, mtime);
@@ -358,7 +363,9 @@ impl ChunkStore {
 
     /// Stores a chunk under an expected hash, verifying the content first.
     pub fn put_verified(&self, expected: &str, data: &[u8]) -> bool {
-        if expected.len() != 64 || blake3::hash(data).to_hex().as_str() != expected {
+        if expected.len() != 64
+            || !expected.eq_ignore_ascii_case(blake3::hash(data).to_hex().as_str())
+        {
             return false;
         }
         self.put_trusted(expected, data)

@@ -78,6 +78,9 @@ struct PostStatsInput {
 /// indices into the original array.
 #[frb(serialize)]
 pub async fn feed_rank_posts(events_json: String) -> Result<String, String> {
+    if events_json.len() > 16 * 1024 * 1024 {
+        return Err("events JSON too large".to_string()).into();
+    }
     let input: Vec<FeedRankItem> = match serde_json::from_str(&events_json) {
         Ok(v) => v,
         Err(e) => return Err(format!("invalid stats JSON: {e}")).into(),
@@ -323,13 +326,19 @@ pub async fn feed_publish_reply(
     let _ = super::db::with_db_result(|db| {
         let repo = PostRepo::new(db);
         if let Ok(Some(post)) = repo.get_by_id(&reply_to_event_id) {
-            if !author_pks.contains(&post.pubkey) {
+            if !author_pks
+                .iter()
+                .any(|p| p.eq_ignore_ascii_case(&post.pubkey))
+            {
                 author_pks.push(post.pubkey);
             }
         }
         if root_event_id != reply_to_event_id {
             if let Ok(Some(post)) = repo.get_by_id(&root_event_id) {
-                if !author_pks.contains(&post.pubkey) {
+                if !author_pks
+                    .iter()
+                    .any(|p| p.eq_ignore_ascii_case(&post.pubkey))
+                {
                     author_pks.push(post.pubkey);
                 }
             }
@@ -401,7 +410,7 @@ pub async fn feed_delete_post(event_id: String) -> Result<String, String> {
     super::db::with_db_string(|db| {
         let repo = PostRepo::new(db);
         if let Ok(Some(post)) = repo.get_by_id(&event_id) {
-            if post.pubkey != caller {
+            if !post.pubkey.eq_ignore_ascii_case(&caller) {
                 return Err("cannot delete post authored by another user".to_string());
             }
             repo.delete(&event_id).map_err(|e| e.to_string())?;
@@ -422,6 +431,9 @@ pub async fn feed_delete_post(event_id: String) -> Result<String, String> {
 /// filtering out posts that trip on-device AI moderation or word filters.
 #[frb(serialize)]
 pub async fn feed_fetch_events(options_json: String) -> Result<String, String> {
+    if options_json.len() > 1024 * 1024 {
+        return Err("options JSON too large".to_string()).into();
+    }
     tokio::task::spawn_blocking(move || {
         let opts: FeedOptions = serde_json::from_str(&options_json)
             .map_err(|e| format!("invalid options JSON: {e}"))?;
@@ -538,6 +550,9 @@ pub async fn feed_fetch_window(
 /// Fetch a thread (root post + direct replies) from the local DB, filtering moderated replies.
 #[frb(serialize)]
 pub async fn feed_fetch_thread(event_id: String) -> Result<String, String> {
+    if event_id.trim().is_empty() || event_id.len() > 128 {
+        return Err("invalid event_id".to_string()).into();
+    }
     tokio::task::spawn_blocking(move || {
         super::db::with_db_result(|db| {
             let filters = get_custom_word_filters(db);
@@ -966,6 +981,44 @@ mod tests {
             .unwrap_err();
         assert!(err.contains("200"), "got: {err}");
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_delete_post_case_insensitive_author() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = tmp_db("del_case");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        crate::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let my_pk = keys.public_key().to_hex();
+        let ev_id = "f".repeat(64);
+        insert_post(
+            &ev_id,
+            &my_pk.to_ascii_uppercase(),
+            "delete me",
+            1,
+            1000,
+            "[]",
+        );
+        let res = feed_delete_post(ev_id).await;
+        assert!(res.is_ok(), "error: {:?}", res);
+        crate::signer_lock().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_feed_payload_size_limits() {
+        let huge_rank = "0".repeat(17 * 1024 * 1024);
+        assert!(feed_rank_posts(huge_rank).await.is_err());
+
+        let huge_opts = "0".repeat(2 * 1024 * 1024);
+        assert!(feed_fetch_events(huge_opts).await.is_err());
+
+        assert!(feed_fetch_thread("".to_string()).await.is_err());
+        assert!(feed_fetch_thread("x".repeat(129)).await.is_err());
+
+        let huge_req = "0".repeat(2 * 1024 * 1024);
+        assert!(feed_compute_card_layout(huge_req).is_err());
+    }
 }
 
 /// Pre-calculated layout extents for one feed card. Request:
@@ -976,6 +1029,9 @@ mod tests {
 /// "media_height_px"}.
 #[frb(sync, serialize)]
 pub fn feed_compute_card_layout(request_json: String) -> Result<String, String> {
+    if request_json.len() > 1024 * 1024 {
+        return Err("request JSON too large".to_string()).into();
+    }
     let result = soshal_layout_core::compute_card_layout_json(&request_json);
     if result.is_empty() {
         Err("invalid layout request".to_string()).into()
@@ -988,6 +1044,9 @@ pub fn feed_compute_card_layout(request_json: String) -> Result<String, String> 
 /// layout results, in the same order (stable for ListView.builder maps).
 #[frb(sync, serialize)]
 pub fn feed_compute_card_layouts(requests_json: String) -> Result<String, String> {
+    if requests_json.len() > 8 * 1024 * 1024 {
+        return Err("requests JSON too large".to_string()).into();
+    }
     let requests: Vec<soshal_layout_core::CardLayoutRequest> =
         match serde_json::from_str(&requests_json) {
             Ok(v) => v,

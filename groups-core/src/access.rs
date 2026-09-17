@@ -89,7 +89,7 @@ pub fn verify_community_password(password: &str, stored_hash: &str) -> bool {
 
 /// Determines whether a community is private based on its access_type and password presence.
 pub fn is_community_private(access_type: &str, has_password_hash: bool) -> bool {
-    access_type == "private" || has_password_hash
+    access_type.trim().eq_ignore_ascii_case("private") || has_password_hash
 }
 
 #[cfg(test)]
@@ -140,6 +140,8 @@ mod tests {
     #[test]
     fn test_is_community_private() {
         assert!(is_community_private("private", false));
+        assert!(is_community_private("Private", false));
+        assert!(is_community_private("  PRIVATE  ", false));
         assert!(is_community_private("open", true));
         assert!(is_community_private("private", true));
         assert!(!is_community_private("open", false));

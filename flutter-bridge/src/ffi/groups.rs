@@ -50,7 +50,10 @@ fn row_to_group(
             String::new()
         },
         created_at: row.created_at.max(0) as u64,
-        is_private: row.access_type == "private" || row.password_hash.is_some(),
+        is_private: soshal_groups_core::access::is_community_private(
+            &row.access_type,
+            row.password_hash.is_some(),
+        ),
     }
 }
 
@@ -108,9 +111,10 @@ pub fn groups_fetch_groups(user_pubkey: String, audience: String) -> Result<Stri
             .map_err(soshal_db_core::error::DbError::Migration)?;
         let rows: Vec<_> = match &owners {
             Some(a) => {
-                let set: std::collections::HashSet<&str> = a.iter().map(|s| s.as_str()).collect();
+                let set: std::collections::HashSet<String> =
+                    a.iter().map(|s| s.trim().to_ascii_lowercase()).collect();
                 rows.into_iter()
-                    .filter(|r| set.contains(r.pubkey.as_str()))
+                    .filter(|r| set.contains(&r.pubkey.trim().to_ascii_lowercase()))
                     .collect()
             }
             None => rows,
@@ -182,7 +186,10 @@ pub fn groups_join(
         let group = repo
             .get_by_id(&group_id)?
             .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
-        if group.access_type == "private" || group.password_hash.is_some() {
+        if soshal_groups_core::access::is_community_private(
+            &group.access_type,
+            group.password_hash.is_some(),
+        ) {
             let stored_hash = group.password_hash.as_deref().unwrap_or("");
             if stored_hash.is_empty() {
                 return Err(soshal_db_core::error::DbError::Oversized(
@@ -312,7 +319,10 @@ pub fn groups_fetch_messages(
                     return Ok("[]".to_string());
                 }
             }
-            let is_private = group.access_type == "private" || group.password_hash.is_some();
+            let is_private = soshal_groups_core::access::is_community_private(
+                &group.access_type,
+                group.password_hash.is_some(),
+            );
             if is_private {
                 let is_member = match &viewer {
                     Some(pk) => {
@@ -385,7 +395,10 @@ pub fn groups_remove_member(
     admin_pubkey: String,
 ) -> Result<bool, String> {
     require_owner(&group_id, &admin_pubkey)?;
-    if member_pubkey == admin_pubkey {
+    if member_pubkey
+        .trim()
+        .eq_ignore_ascii_case(admin_pubkey.trim())
+    {
         return Err("cannot remove group owner".to_string()).into();
     }
     super::db::with_db_result(|db| {
@@ -473,7 +486,7 @@ fn require_owner(group_id: &str, actor: &str) -> Result<(), String> {
             .map(|r| r.pubkey)
             .ok_or_else(|| soshal_db_core::error::DbError::NotFound)
     })?;
-    if owner != actor {
+    if !owner.eq_ignore_ascii_case(actor) {
         return Err("only the group owner can do that".to_string());
     }
     super::signer::require_identity(actor)?;
@@ -648,7 +661,10 @@ pub fn groups_threads_list(group_id: String, sort: String) -> Result<String, Str
                     return Ok("[]".to_string());
                 }
             }
-            let is_private = group.access_type == "private" || group.password_hash.is_some();
+            let is_private = soshal_groups_core::access::is_community_private(
+                &group.access_type,
+                group.password_hash.is_some(),
+            );
             if is_private {
                 let is_member = match &viewer {
                     Some(pk) => {
@@ -990,7 +1006,10 @@ pub fn groups_voice_presence(channel_id: String) -> Result<String, String> {
                 return Ok("[]".to_string());
             }
         }
-        let is_private = group.access_type == "private" || group.password_hash.is_some();
+        let is_private = soshal_groups_core::access::is_community_private(
+            &group.access_type,
+            group.password_hash.is_some(),
+        );
         if is_private {
             let is_member = match &viewer {
                 Some(pk) => {

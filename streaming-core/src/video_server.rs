@@ -123,7 +123,7 @@ impl LocalVideoServer {
                         return;
                     }
 
-                    let path = parts[1];
+                    let path = parts[1].split('?').next().unwrap_or(parts[1]);
                     let range_header =
                         lines.find(|l| l.len() >= 6 && l[..6].eq_ignore_ascii_case("range:"));
 
@@ -148,7 +148,7 @@ impl LocalVideoServer {
                         }
                         Route::Blob(hash) => {
                             let file_path = match root {
-                                Some(root) => root.join(hash),
+                                Some(root) => root.join(hash.to_ascii_lowercase()),
                                 None => {
                                     write_not_found(&mut socket).await;
                                     return;

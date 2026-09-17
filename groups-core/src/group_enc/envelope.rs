@@ -41,7 +41,8 @@ pub struct GroupPermissionOutput {
 }
 
 pub fn validate_group_permissions(input: &GroupPermissionInput) -> GroupPermissionOutput {
-    let is_admin_or_owner = input.role == "owner" || input.role == "admin";
+    let is_admin_or_owner = input.role.trim().eq_ignore_ascii_case("owner")
+        || input.role.trim().eq_ignore_ascii_case("admin");
     let bitmask_allowed = input.required_bit == 0
         || (input.permissions_mask & input.required_bit) == input.required_bit;
     let allowed = is_admin_or_owner || bitmask_allowed;
@@ -75,6 +76,9 @@ struct GroupPermissionInputBorrow<'a> {
 /// JSON-string entry point for [`build_group_message_envelope`]. Returns
 /// `"{}"` on malformed input.
 pub fn build_group_message_envelope_json(input: &str) -> String {
+    if input.len() > 1024 * 1024 {
+        return "{}".to_string();
+    }
     let Some(i) =
         soshal_common_core::json_util::json_in_borrow::<BuildGroupMsgEnvelopeInputBorrow>(input)
     else {
@@ -92,12 +96,16 @@ pub fn build_group_message_envelope_json(input: &str) -> String {
 /// JSON-string entry point for [`validate_group_permissions`]. Returns
 /// `{"allowed":false}` on malformed input.
 pub fn validate_group_permissions_json(input: &str) -> String {
+    if input.len() > 1024 * 1024 {
+        return r#"{"allowed":false}"#.to_string();
+    }
     let Some(i) =
         soshal_common_core::json_util::json_in_borrow::<GroupPermissionInputBorrow>(input)
     else {
         return r#"{"allowed":false}"#.to_string();
     };
-    let is_admin_or_owner = i.role == "owner" || i.role == "admin";
+    let is_admin_or_owner =
+        i.role.trim().eq_ignore_ascii_case("owner") || i.role.trim().eq_ignore_ascii_case("admin");
     let bitmask_allowed =
         i.required_bit == 0 || (i.permissions_mask & i.required_bit) == i.required_bit;
     let allowed = is_admin_or_owner || bitmask_allowed;

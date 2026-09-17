@@ -87,6 +87,9 @@ fn parse_group_channels(input: ParseGroupChannelsInput) -> Vec<ParsedGroupChanne
 }
 
 pub fn parse_group_channels_json(input_json: &str) -> String {
+    if input_json.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
     let Some(input) = json_in::<Option<ParseGroupChannelsInput>>(input_json, None) else {
         return "[]".to_string();
     };

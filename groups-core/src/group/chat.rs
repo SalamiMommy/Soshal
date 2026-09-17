@@ -80,6 +80,9 @@ fn parse_group_chat_messages(input: ParseGroupChatMessagesInput) -> Vec<ParsedGr
 }
 
 pub fn parse_group_chat_messages_json(input_json: &str) -> String {
+    if input_json.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
     let Some(input) = json_in::<Option<ParseGroupChatMessagesInput>>(input_json, None) else {
         return "[]".to_string();
     };

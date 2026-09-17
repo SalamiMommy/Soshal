@@ -3,12 +3,14 @@ use std::sync::OnceLock;
 
 fn npub_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"nostr:npub1[ac-hj-np-z02-9]{58,82}").expect("valid npub regex"))
+    RE.get_or_init(|| {
+        Regex::new(r"(?i)nostr:npub1[ac-hj-np-z02-9]{58,82}").expect("valid npub regex")
+    })
 }
 
 fn bech32_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"npub1[ac-hj-np-z02-9]{58,82}").expect("valid bech32 regex"))
+    RE.get_or_init(|| Regex::new(r"(?i)npub1[ac-hj-np-z02-9]{58,82}").expect("valid bech32 regex"))
 }
 
 #[derive(Debug, PartialEq)]
@@ -22,7 +24,7 @@ pub fn parse(text: &str) -> Vec<MentionSegment> {
     if text.is_empty() {
         return Vec::new();
     }
-    if !text.contains("nostr:npub1") {
+    if !text.to_ascii_lowercase().contains("nostr:npub1") {
         return vec![MentionSegment {
             text: text.to_string(),
             is_mention: false,
@@ -40,10 +42,16 @@ pub fn parse(text: &str) -> Vec<MentionSegment> {
                 pubkey: None,
             });
         }
+        let m_str = m.as_str();
+        let pubkey_str = if m_str.len() >= 6 && m_str[..6].eq_ignore_ascii_case("nostr:") {
+            &m_str[6..]
+        } else {
+            m_str
+        };
         segments.push(MentionSegment {
-            text: m.as_str().to_string(),
+            text: m_str.to_string(),
             is_mention: true,
-            pubkey: Some(m.as_str().trim_start_matches("nostr:").to_string()),
+            pubkey: Some(pubkey_str.to_string()),
         });
         last = m.end();
     }
@@ -58,7 +66,7 @@ pub fn parse(text: &str) -> Vec<MentionSegment> {
 }
 
 pub fn extract_pubkeys(text: &str) -> Vec<String> {
-    if text.is_empty() || !text.contains("npub1") {
+    if text.is_empty() || !text.to_ascii_lowercase().contains("npub1") {
         return Vec::new();
     }
     let re = bech32_re();
