@@ -81,16 +81,25 @@ fn parse_calendar_event(ev: &CalendarEventInput) -> Option<CalendarEventOut> {
     if ev.content.len() <= 256 * 1024 {
         if let Ok(content) = serde_json::from_str::<CalendarContent>(&ev.content) {
             description = content.description;
-            image = content.image;
+            image = content
+                .image
+                .filter(|u| soshal_common_core::url::is_valid_media_url(u));
             if let Some(v) = content.videos {
-                videos.extend(v);
+                videos.extend(
+                    v.into_iter()
+                        .filter(|u| soshal_common_core::url::is_valid_media_url(u)),
+                );
             }
         } else if !ev.content.is_empty() {
             description = Some(ev.content.clone());
         }
     }
     for tag in &ev.tags {
-        if tag.len() >= 2 && tag[0] == "video" && tag[1].len() <= MAX_TAG_VALUE_LEN {
+        if tag.len() >= 2
+            && tag[0] == "video"
+            && tag[1].len() <= MAX_TAG_VALUE_LEN
+            && soshal_common_core::url::is_valid_media_url(&tag[1])
+        {
             videos.push(tag[1].clone());
         }
         if videos.len() > 1024 {
@@ -98,13 +107,21 @@ fn parse_calendar_event(ev: &CalendarEventInput) -> Option<CalendarEventOut> {
         }
     }
     let imeta_videos = soshal_content_core::linkpreview::imeta::extract_imeta_video_urls(&ev.tags);
-    videos.extend(imeta_videos);
+    videos.extend(
+        imeta_videos
+            .into_iter()
+            .filter(|u| soshal_common_core::url::is_valid_media_url(u)),
+    );
     let mut participants: Vec<String> = Vec::new();
+    let mut seen_participants = std::collections::HashSet::new();
     for tag in &ev.tags {
         if tag.len() >= 2 && tag[0] == "p" {
-            participants.push(tag[1].clone());
+            let p = tag[1].trim();
+            if !p.is_empty() && p.len() <= 128 && seen_participants.insert(p.to_ascii_lowercase()) {
+                participants.push(p.to_string());
+            }
         }
-        if participants.len() > 10_000 {
+        if participants.len() >= 1024 {
             break;
         }
     }
@@ -129,6 +146,9 @@ fn parse_calendar_event(ev: &CalendarEventInput) -> Option<CalendarEventOut> {
 }
 
 pub fn parse_calendar_event_json(input: &str) -> String {
+    if input.len() > 1024 * 1024 {
+        return "null".to_string();
+    }
     let Some(ev) = json_in::<Option<CalendarEventInput>>(input, None) else {
         return "null".to_string();
     };

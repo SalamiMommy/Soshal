@@ -46,7 +46,12 @@ fn discover_by_interest<'a>(input: DiscoverByInterestInput<'a>) -> Vec<DiscoverR
     if input.events.len() * input.tags.len() > 1_000_000 {
         return Vec::new();
     }
-    let self_contacts_set: HashSet<&str> = input.self_contacts.iter().copied().collect();
+    let self_contacts_set: HashSet<String> = input
+        .self_contacts
+        .iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .collect();
+    let self_pubkey_lower = input.self_pubkey.trim().to_ascii_lowercase();
     let lower_tags: Vec<String> = input
         .tags
         .iter()
@@ -61,7 +66,7 @@ fn discover_by_interest<'a>(input: DiscoverByInterestInput<'a>) -> Vec<DiscoverR
     let matcher =
         aho_corasick::AhoCorasick::new(&lower_tags).expect("empty patterns are pre-filtered");
     let mut results = Vec::with_capacity(input.events.len().min(input.limit));
-    let mut seen_pubkeys: HashSet<&str> =
+    let mut seen_pubkeys: HashSet<String> =
         HashSet::with_capacity(input.events.len().min(input.limit));
     for event in &input.events {
         if results.len() >= input.limit {
@@ -70,9 +75,10 @@ fn discover_by_interest<'a>(input: DiscoverByInterestInput<'a>) -> Vec<DiscoverR
         if event.content.len() > 64 * 1024 {
             continue;
         }
-        if event.pubkey == input.self_pubkey
-            || self_contacts_set.contains(event.pubkey)
-            || seen_pubkeys.contains(event.pubkey)
+        let ev_pubkey_lower = event.pubkey.trim().to_ascii_lowercase();
+        if ev_pubkey_lower == self_pubkey_lower
+            || self_contacts_set.contains(&ev_pubkey_lower)
+            || seen_pubkeys.contains(&ev_pubkey_lower)
         {
             continue;
         }
@@ -93,7 +99,7 @@ fn discover_by_interest<'a>(input: DiscoverByInterestInput<'a>) -> Vec<DiscoverR
             }
         }
         if !matched.is_empty() {
-            seen_pubkeys.insert(event.pubkey);
+            seen_pubkeys.insert(ev_pubkey_lower);
             results.push(DiscoverResultOut {
                 pubkey: event.pubkey,
                 reason: format!("Shared interests: {}", matched.join(", ")),
@@ -106,6 +112,9 @@ fn discover_by_interest<'a>(input: DiscoverByInterestInput<'a>) -> Vec<DiscoverR
 }
 
 pub fn discover_by_interest_json(input: &str) -> String {
+    if input.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
     let Some(input) = json_in_borrow::<DiscoverByInterestInput>(input) else {
         return "[]".to_string();
     };
@@ -172,5 +181,36 @@ mod tests {
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].pubkey, "pk1");
         assert_eq!(res[1].pubkey, "pk2");
+    }
+
+    #[test]
+    fn test_discover_by_interest_casing_resilience() {
+        let input = DiscoverByInterestInput {
+            events: vec![
+                DiscoveryEventInput {
+                    pubkey: "MY_SELF_KEY",
+                    content: "rust programming",
+                },
+                DiscoveryEventInput {
+                    pubkey: "CONTACT_A",
+                    content: "rust programming",
+                },
+                DiscoveryEventInput {
+                    pubkey: "STRANGER_A",
+                    content: "rust programming",
+                },
+                DiscoveryEventInput {
+                    pubkey: "stranger_a",
+                    content: "more rust programming",
+                },
+            ],
+            tags: vec!["rust"],
+            self_pubkey: "my_self_key",
+            self_contacts: vec!["contact_a"],
+            limit: 10,
+        };
+        let res = discover_by_interest(input);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].pubkey, "STRANGER_A");
     }
 }

@@ -351,6 +351,18 @@ pub fn events_create(
     if title.trim().is_empty() || title.len() > 300 {
         return Err("title must be 1..=300 chars".to_string()).into();
     }
+    if location.len() > 500 {
+        return Err("location must not exceed 500 chars".to_string()).into();
+    }
+    if !latitude.is_finite() || !(-90.0..=90.0).contains(&latitude) {
+        return Err("latitude must be a finite float between -90 and 90".to_string()).into();
+    }
+    if !longitude.is_finite() || !(-180.0..=180.0).contains(&longitude) {
+        return Err("longitude must be a finite float between -180 and 180".to_string()).into();
+    }
+    if !image_url.trim().is_empty() && !soshal_common_core::url::is_valid_media_url(&image_url) {
+        return Err("invalid image url".to_string()).into();
+    }
     if start_time == 0 || (end_time != 0 && end_time < start_time) {
         return Err("invalid time range".to_string()).into();
     }
@@ -554,6 +566,15 @@ pub fn events_check_in(
     latitude: f64,
     longitude: f64,
 ) -> Result<bool, String> {
+    if event_id.trim().is_empty() || event_id.len() > 128 {
+        return Err("invalid event id".to_string()).into();
+    }
+    if !latitude.is_finite() || !(-90.0..=90.0).contains(&latitude) {
+        return Err("latitude must be a finite float between -90 and 90".to_string()).into();
+    }
+    if !longitude.is_finite() || !(-180.0..=180.0).contains(&longitude) {
+        return Err("longitude must be a finite float between -180 and 180".to_string()).into();
+    }
     super::signer::require_identity(&user_pubkey)?;
     let event: EventInfo = serde_json::from_str(&events_get_event(event_id.clone())?)
         .map_err(|e| format!("parse event: {e}"))?;
@@ -767,6 +788,81 @@ mod tests {
             String::new()
         )
         .is_err());
+
+        // Oversized location
+        assert!(events_create(
+            "pk".into(),
+            "t".into(),
+            String::new(),
+            "x".repeat(501),
+            0.0,
+            0.0,
+            100,
+            200,
+            String::new()
+        )
+        .is_err());
+
+        // Invalid coords
+        assert!(events_create(
+            "pk".into(),
+            "t".into(),
+            String::new(),
+            String::new(),
+            91.0,
+            0.0,
+            100,
+            200,
+            String::new()
+        )
+        .is_err());
+        assert!(events_create(
+            "pk".into(),
+            "t".into(),
+            String::new(),
+            String::new(),
+            f64::NAN,
+            0.0,
+            100,
+            200,
+            String::new()
+        )
+        .is_err());
+        assert!(events_create(
+            "pk".into(),
+            "t".into(),
+            String::new(),
+            String::new(),
+            0.0,
+            181.0,
+            100,
+            200,
+            String::new()
+        )
+        .is_err());
+
+        // Unsafe image URL
+        assert!(events_create(
+            "pk".into(),
+            "t".into(),
+            String::new(),
+            String::new(),
+            0.0,
+            0.0,
+            100,
+            200,
+            "http://127.0.0.1:8080/evil.png".into()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_events_check_in_validation() {
+        assert!(events_check_in("".into(), "pk".into(), 0.0, 0.0).is_err());
+        assert!(events_check_in("x".repeat(129), "pk".into(), 0.0, 0.0).is_err());
+        assert!(events_check_in("ev1".into(), "pk".into(), 91.0, 0.0).is_err());
+        assert!(events_check_in("ev1".into(), "pk".into(), 0.0, -181.0).is_err());
+        assert!(events_check_in("ev1".into(), "pk".into(), f64::NAN, 0.0).is_err());
     }
 
     #[allow(clippy::await_holding_lock)]

@@ -117,7 +117,17 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
         .unwrap_or_else(|| ev.id.get(..12).unwrap_or(&ev.id).to_string());
     let title = title.unwrap_or("Untitled");
     let title = soshal_common_core::ui_safe::truncate_str(title, 256).to_string();
-    let location_geohash = location_geohash.map(|s| s.to_string());
+    let location_geohash = location_geohash.and_then(|s| {
+        let trimmed = s.trim();
+        if !trimmed.is_empty()
+            && trimmed.len() <= 12
+            && trimmed.chars().all(|c| c.is_ascii_alphanumeric())
+        {
+            Some(trimmed.to_string())
+        } else {
+            None
+        }
+    });
     let mut description: Option<String> = None;
     let mut condition = "good".to_string();
     let mut contact_methods: Vec<String> = Vec::new();
@@ -171,6 +181,9 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
 }
 
 pub fn parse_listing_json(input: &str) -> String {
+    if input.len() > 1024 * 1024 {
+        return "null".to_string();
+    }
     let Some(ev) = json_in::<Option<ListingEvent>>(input, None) else {
         return "null".to_string();
     };

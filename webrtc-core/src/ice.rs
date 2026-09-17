@@ -116,6 +116,9 @@ fn push_redacted_word(word: &mut String, out: &mut String) {
 /// Input: `{"candidate": "...", "forceRelay": true/false}`
 /// Output: `{"safe": true/false}`
 pub fn is_safe_candidate_json(input: &str) -> String {
+    if input.len() > 1024 * 1024 {
+        return json_out(&serde_json::json!({"safe": false}), r#"{"safe": false}"#);
+    }
     #[derive(Deserialize)]
     struct Input {
         candidate: String,
@@ -136,11 +139,19 @@ pub fn is_safe_candidate_json(input: &str) -> String {
 /// (I2P mode: no STUN traffic at all). The `forceRelay` flag mirrors
 /// `iceTransportPolicy` for the UI's candidate filtering.
 pub fn ice_config(privacy_level: &str, stun_url: &str) -> serde_json::Value {
-    let force_relay = !privacy_level.is_empty() && privacy_level != "public";
-    let servers: Vec<serde_json::Value> = if stun_url.is_empty() {
-        Vec::new()
+    let p_trim = privacy_level.trim();
+    let force_relay = !p_trim.is_empty() && !p_trim.eq_ignore_ascii_case("public");
+    let stun_clean = stun_url.trim();
+    let is_valid_stun = !stun_clean.is_empty()
+        && stun_clean.len() <= 2048
+        && (stun_clean.starts_with("stun:")
+            || stun_clean.starts_with("stuns:")
+            || stun_clean.starts_with("turn:")
+            || stun_clean.starts_with("turns:"));
+    let servers: Vec<serde_json::Value> = if is_valid_stun {
+        vec![serde_json::json!({ "urls": stun_clean })]
     } else {
-        vec![serde_json::json!({ "urls": stun_url })]
+        Vec::new()
     };
     serde_json::json!({
         "iceServers": servers,
@@ -187,5 +198,24 @@ mod tests {
         let cfg = ice_config("", "stun:stun.l.google.com:19302");
         assert_eq!(cfg["iceTransportPolicy"], "all");
         assert_eq!(cfg["forceRelay"], false);
+    }
+
+    #[test]
+    fn public_level_case_insensitive() {
+        let cfg = ice_config("Public", "stun:stun.l.google.com:19302");
+        assert_eq!(cfg["iceTransportPolicy"], "all");
+        assert_eq!(cfg["forceRelay"], false);
+    }
+
+    #[test]
+    fn rejects_invalid_stun_url() {
+        let cfg1 = ice_config("public", "http://evil.com");
+        assert_eq!(cfg1["iceServers"].as_array().unwrap().len(), 0);
+
+        let cfg2 = ice_config("public", "javascript:alert(1)");
+        assert_eq!(cfg2["iceServers"].as_array().unwrap().len(), 0);
+
+        let cfg3 = ice_config("public", "turns:turn.example.com:5349");
+        assert_eq!(cfg3["iceServers"].as_array().unwrap().len(), 1);
     }
 }

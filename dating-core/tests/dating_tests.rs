@@ -571,3 +571,104 @@ fn compute_mutual_score_json_parse_failure_is_zero_string() {
     assert_eq!(compute_mutual_score_json("{bad-json", "{}"), "0.0");
     assert_eq!(compute_mutual_score_json("{}", "{bad-json"), "0.0");
 }
+
+#[test]
+fn filter_contacts_and_mutual_friends_casing() {
+    use soshal_dating_core::FilterDatingProfilesInput;
+
+    let make_input = |hide: bool| FilterDatingProfilesInput {
+        profiles: vec![DatingProfileInput {
+            pubkey: "AABBCC11".into(),
+            verified_mutual_friends: Some(vec![
+                "Friend_X".into(),
+                "friend_x".into(),
+                "FRIEND_Y".into(),
+            ]),
+            gender: Some("female".into()),
+            seeking: Some("male".into()),
+            ..Default::default()
+        }],
+        own_gender: Some("male".into()),
+        own_seeking: Some("female".into()),
+        min_age: None,
+        max_age: None,
+        height_min_cm: None,
+        height_max_cm: None,
+        body_type: None,
+        smoking: None,
+        drinking: None,
+        relationship_intent: None,
+        politics: None,
+        education: None,
+        self_contacts: vec!["aabbcc11".into(), "friend_x".into(), "friend_y".into()],
+        hide_friends: Some(hide),
+        own_location_geohash: None,
+        own_max_distance_km: None,
+    };
+    let res = filter_dating_profiles(make_input(true));
+    assert_eq!(res.len(), 1);
+    assert!(res[0].is_contact);
+    assert!(!res[0].passes); // hidden because hide_friends is true and pubkey matched case-insensitively
+
+    // Now with hide_friends false, mutual friends should be deduplicated case-insensitively
+    let res2 = filter_dating_profiles(make_input(false));
+    assert!(res2[0].passes);
+    assert_eq!(res2[0].mutual_friends, vec!["Friend_X", "FRIEND_Y"]);
+}
+
+#[test]
+fn sort_contacts_casing_and_mutual_dedup() {
+    use soshal_dating_core::sort::sort_dating_profiles;
+    use soshal_dating_core::SortProfilesInput;
+
+    let profile = DatingProfileInput {
+        pubkey: "AABBCC11".into(),
+        verified_mutual_friends: Some(vec![
+            "Friend_X".into(),
+            "friend_x".into(),
+            "FRIEND_Y".into(),
+        ]),
+        ..Default::default()
+    };
+    let input = SortProfilesInput {
+        self_profile: DatingProfileInput::default(),
+        profiles: vec![profile],
+        self_contacts: vec!["aabbcc11".into(), "friend_x".into(), "friend_y".into()],
+        sort_by: None,
+    };
+    let res = sort_dating_profiles(input);
+    assert_eq!(res.len(), 1);
+    assert_eq!(res[0].mutual_friends, vec!["Friend_X", "FRIEND_Y"]);
+}
+
+#[test]
+fn icebreakers_case_insensitive_matching() {
+    use soshal_dating_core::icebreaker::generate_icebreakers_json;
+
+    let payload = r#"{
+        "self_profile": {
+            "interests": ["Hiking", "Coffee"],
+            "relationshipIntent": "Long-Term",
+            "language": ["English", "French"]
+        },
+        "peer_profile": {
+            "interests": ["hiking", "music"],
+            "relationshipIntent": "long-term",
+            "language": ["french", "spanish"]
+        }
+    }"#;
+    let out = generate_icebreakers_json(payload);
+    assert!(out.contains("Hiking"));
+    assert!(out.contains("Long-Term"));
+    assert!(out.contains("French"));
+}
+
+#[test]
+fn metrics_casing_resilience() {
+    use soshal_dating_core::scoring::metrics::{score_body_type, score_education, score_ethnicity};
+
+    assert_eq!(score_body_type(Some("Athletic"), Some("athletic")), 1.0);
+    assert_eq!(score_ethnicity(Some("Asian"), Some("asian")), 1.0);
+    assert_eq!(score_education(Some("Bachelor's"), Some("bachelor's")), 1.0);
+    assert_eq!(score_education(Some("Master's"), Some("doctorate")), 0.5);
+}

@@ -90,12 +90,24 @@ fn format_notification_content(notif_type: &str, content: &str, tags: &[Vec<Stri
 // ─── Core logic ────────────────────────────────────────────────────────
 
 pub fn aggregate_notifications(input: AggregateInput) -> Vec<NotificationOutput> {
-    let mut out: Vec<NotificationOutput> = Vec::with_capacity(input.events.len());
+    const MAX_ITEMS: usize = 10_000;
+    let events = if input.events.len() > MAX_ITEMS {
+        &input.events[..MAX_ITEMS]
+    } else {
+        &input.events[..]
+    };
+    let existing_ids = if input.existing_ids.len() > MAX_ITEMS {
+        &input.existing_ids[..MAX_ITEMS]
+    } else {
+        &input.existing_ids[..]
+    };
+
+    let mut out: Vec<NotificationOutput> = Vec::with_capacity(events.len());
     let live_stream_kind = input.live_stream_kind;
 
-    let mut seen_ids: std::collections::HashSet<String> = input.existing_ids.into_iter().collect();
+    let mut seen_ids: std::collections::HashSet<String> = existing_ids.iter().cloned().collect();
 
-    for ev in &input.events {
+    for ev in events {
         let [t_tag, e_tag] = find_tag_values_map(&ev.tags, ["t", "e"]);
         let notif_type: &str = match ev.kind {
             7 => "reaction",
@@ -104,7 +116,7 @@ pub fn aggregate_notifications(input: AggregateInput) -> Vec<NotificationOutput>
             k if live_stream_kind != 0 && k == live_stream_kind => "live_stream",
             _ => {
                 if ev.kind == soshal_common_core::consts::KIND_TEXT_NOTE as u32 {
-                    if t_tag == Some("friend-request") {
+                    if t_tag.is_some_and(|t| t.trim().eq_ignore_ascii_case("friend-request")) {
                         "friend_request"
                     } else if e_tag.is_some() {
                         "reply"
@@ -150,6 +162,9 @@ pub fn aggregate_notifications(input: AggregateInput) -> Vec<NotificationOutput>
 
 /// JSON wrapper: accepts serialized `AggregateInput`, returns serialized `Vec<NotificationOutput>`.
 pub fn aggregate_notifications_json(input_json: &str) -> String {
+    if input_json.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
     let input = json_in(
         input_json,
         AggregateInput {

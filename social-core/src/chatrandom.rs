@@ -81,6 +81,9 @@ pub fn compute_jaccard_score(a: &[String], b: &[String]) -> f64 {
 /// Ranks candidate peers by interest overlap score descending.
 /// Takes JSON input, returns JSON string of scored peers.
 pub fn rank_chatrandom_peers(json_input: &str) -> String {
+    if json_input.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
     let Some(input) = json_in::<Option<RankChatRandomPeersInput>>(json_input, None) else {
         return "[]".to_string();
     };
@@ -133,6 +136,9 @@ pub fn rank_chatrandom_peers(json_input: &str) -> String {
 /// Scores and ranks group chat-random rooms for matching.
 /// Takes JSON input, returns JSON string of scored rooms.
 pub fn match_group_chatrandom(json_input: &str) -> String {
+    if json_input.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
     let Some(input) = json_in::<Option<MatchGroupChatRandomInput>>(json_input, None) else {
         return "[]".to_string();
     };

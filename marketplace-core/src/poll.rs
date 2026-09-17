@@ -100,13 +100,23 @@ pub(crate) fn parse_poll_event<'a>(
         .iter()
         .find(|t| t.len() >= 2 && t[0] == "expiration")
         .map(|t| t[1]);
-    let default_expiry = ev.created_at * 1000.0 + POLL_EXPIRY_DEFAULT * 1000.0;
+    let created_at_ms = if ev.created_at.is_finite() && ev.created_at >= 0.0 {
+        ev.created_at * 1000.0
+    } else {
+        0.0
+    };
+    let default_expiry = created_at_ms + POLL_EXPIRY_DEFAULT * 1000.0;
     let expires_at = match exp_tag {
         Some(s) if s.len() <= 32 => match s.parse::<f64>() {
             Ok(v) if v.is_finite() && v > 0.0 => v * 1000.0,
             _ => default_expiry,
         },
         _ => default_expiry,
+    };
+    let now_ms = if now_ms.is_finite() && now_ms >= 0.0 {
+        now_ms
+    } else {
+        0.0
     };
     let closed = now_ms > expires_at;
     Some(PollOut {
@@ -116,7 +126,7 @@ pub(crate) fn parse_poll_event<'a>(
         options,
         expires_at,
         closed,
-        created_at: ev.created_at * 1000.0,
+        created_at: created_at_ms,
     })
 }
 
@@ -129,6 +139,9 @@ struct PollInput<'a> {
 }
 
 pub fn parse_poll_event_json(input: &str) -> String {
+    if input.len() > 1024 * 1024 {
+        return "null".to_string();
+    }
     let Some(parsed) = serde_json::from_str::<PollInput>(input).ok() else {
         return "null".to_string();
     };

@@ -68,6 +68,9 @@ pub fn score_height(self_height: Option<f64>, other_height: Option<f64>) -> f64 
 pub fn score_body_type(self_type: Option<&str>, other_type: Option<&str>) -> f64 {
     match (self_type, other_type) {
         (Some(s), Some(o)) => {
+            let s_norm = s.trim().to_ascii_lowercase();
+            let o_norm = o.trim().to_ascii_lowercase();
+            let (s, o) = (s_norm.as_str(), o_norm.as_str());
             if s == o {
                 return 1.0;
             }
@@ -108,7 +111,15 @@ pub fn score_body_type(self_type: Option<&str>, other_type: Option<&str>) -> f64
 #[doc(hidden)]
 pub fn score_ethnicity(self_ethnicity: Option<&str>, other_ethnicity: Option<&str>) -> f64 {
     match (self_ethnicity, other_ethnicity) {
-        (Some(s), Some(o)) if s == o => 1.0,
+        (Some(s), Some(o)) => {
+            let s = s.trim();
+            let o = o.trim();
+            if !s.is_empty() && s.eq_ignore_ascii_case(o) {
+                1.0
+            } else {
+                0.5
+            }
+        }
         _ => 0.5,
     }
 }
@@ -117,6 +128,9 @@ pub fn score_ethnicity(self_ethnicity: Option<&str>, other_ethnicity: Option<&st
 pub fn score_education(self_education: Option<&str>, other_education: Option<&str>) -> f64 {
     match (self_education, other_education) {
         (Some(s), Some(o)) => {
+            let s_norm = s.trim().to_ascii_lowercase();
+            let o_norm = o.trim().to_ascii_lowercase();
+            let (s, o) = (s_norm.as_str(), o_norm.as_str());
             if s == o {
                 return 1.0;
             }

@@ -519,3 +519,70 @@ fn validate_swap_rejects_oversized_payload() {
         serde_json::from_str(&validate_swap_event_json(&input.to_string())).unwrap();
     assert_eq!(v["valid"], false);
 }
+
+#[test]
+fn parse_calendar_event_rejects_unsafe_media_and_dedups_participants() {
+    use soshal_marketplace_core::calendar::parse_calendar_event_json;
+
+    let input = serde_json::json!({
+        "id": "cal1",
+        "pubkey": "pk1",
+        "content": serde_json::json!({
+            "image": "http://127.0.0.1:8080/evil.jpg",
+            "videos": ["file:///etc/passwd", "https://example.com/safe.mp4"]
+        }).to_string(),
+        "created_at": 100.0,
+        "tags": [
+            ["start", "100"],
+            ["p", "ALICE"],
+            ["p", "alice"],
+            ["p", "BOB"],
+            ["video", "javascript:alert(1)"],
+            ["video", "https://example.com/video2.mp4"]
+        ]
+    });
+    let out = parse_calendar_event_json(&input.to_string());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(v["image"].is_null()); // unsafe image rejected
+    let videos = v["videos"].as_array().unwrap();
+    assert_eq!(videos.len(), 2);
+    assert_eq!(videos[0], "https://example.com/safe.mp4");
+    assert_eq!(videos[1], "https://example.com/video2.mp4");
+    let participants = v["participants"].as_array().unwrap();
+    assert_eq!(participants.len(), 2);
+    assert_eq!(participants[0], "ALICE");
+    assert_eq!(participants[1], "BOB");
+}
+
+#[test]
+fn parse_listing_rejects_invalid_geohash() {
+    let input_bad_geohash = serde_json::json!({
+        "id": "x_bad_geo",
+        "pubkey": "pk",
+        "content": "",
+        "created_at": 1.0,
+        "tags": [["price", "10"], ["g", "invalid-geohash-too-long-here"]]
+    });
+    let out = parse_listing_json(&input_bad_geohash.to_string());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(v["locationGeohash"].is_null());
+}
+
+#[test]
+fn parse_poll_event_handles_nan_and_negative_timestamps() {
+    use soshal_marketplace_core::poll::parse_poll_event_json;
+
+    let input = serde_json::json!({
+        "event": {
+            "id": "poll1",
+            "pubkey": "pk1",
+            "content": "What is your favorite color?",
+            "created_at": -50.0,
+            "tags": [["poll_option", "0", "Red"], ["poll_option", "1", "Blue"]]
+        },
+        "nowMs": 1000.0
+    });
+    let out = parse_poll_event_json(&input.to_string());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["createdAt"], 0.0);
+}

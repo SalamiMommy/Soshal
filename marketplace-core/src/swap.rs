@@ -100,8 +100,10 @@ fn validate_swap_event(input: &ValidateSwapInput) -> ValidateSwapOut {
         }
     }
     let p_ok = p_tag.is_some_and(|p| p.eq_ignore_ascii_case(self_pk_clean));
-    let role_ok = role_tag == Some(input.expected_role.as_str());
-    let type_ok = type_tag == Some(input.expected_type.as_str());
+    let role_ok =
+        role_tag.is_some_and(|r| r.trim().eq_ignore_ascii_case(input.expected_role.trim()));
+    let type_ok =
+        type_tag.is_some_and(|t| t.trim().eq_ignore_ascii_case(input.expected_type.trim()));
     if !d_present || !p_ok || !role_ok || !type_ok {
         return ValidateSwapOut {
             valid: false,
@@ -149,6 +151,9 @@ fn validate_swap_event(input: &ValidateSwapInput) -> ValidateSwapOut {
 }
 
 pub fn validate_swap_event_json(input: &str) -> String {
+    if input.len() > 1024 * 1024 {
+        return r#"{"valid":false}"#.to_string();
+    }
     let Some(input) = json_in::<Option<ValidateSwapInput>>(input, None) else {
         return r#"{"valid":false}"#.to_string();
     };

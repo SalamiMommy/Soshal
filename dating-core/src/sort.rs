@@ -12,7 +12,11 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
     if input.profiles.len() > MAX_PROFILES {
         return Vec::new();
     }
-    let self_contacts_set: HashSet<&str> = input.self_contacts.iter().map(|s| s.as_str()).collect();
+    let self_contacts_set: HashSet<String> = input
+        .self_contacts
+        .iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .collect();
     let self_coords = input
         .self_profile
         .location_geohash
@@ -23,13 +27,18 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
     let mut results: Vec<(SortedProfileOut, Option<f64>, Option<f64>, f64)> =
         Vec::with_capacity(input.profiles.len().min(MAX_PROFILES));
     for profile in &input.profiles {
-        let is_contact = self_contacts_set.contains(profile.pubkey.as_str());
+        let pubkey_lower = profile.pubkey.trim().to_ascii_lowercase();
+        let is_contact = self_contacts_set.contains(&pubkey_lower);
+        let mut seen_friends = HashSet::new();
         let mutual_friends: Vec<String> = profile
             .verified_mutual_friends
             .as_deref()
             .unwrap_or(&[])
             .iter()
-            .filter(|f| self_contacts_set.contains(f.as_str()))
+            .filter(|f| {
+                let f_lower = f.trim().to_ascii_lowercase();
+                self_contacts_set.contains(&f_lower) && seen_friends.insert(f_lower)
+            })
             .cloned()
             .collect();
 
@@ -50,13 +59,18 @@ pub fn sort_dating_profiles(input: SortProfilesInput) -> Vec<SortedProfileOut> {
             };
             (score, distance_km)
         };
+        let distance_u32 = if distance_km.is_finite() && distance_km >= 0.0 {
+            distance_km.round().min(u32::MAX as f64) as u32
+        } else {
+            0
+        };
         results.push((
             SortedProfileOut {
                 event_id: profile.event_id.clone(),
                 pubkey: profile.pubkey.clone(),
                 compatibility_score: score,
                 mutual_friends,
-                distance: distance_km.round() as u32,
+                distance: distance_u32,
                 liked_by_me: profile.liked_by_me.unwrap_or(false),
                 liked_me: profile.liked_me.unwrap_or(false),
                 liker_total_likes: profile.liker_total_likes.unwrap_or(0),

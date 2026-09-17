@@ -99,6 +99,9 @@ struct SanitizeOutput<'a> {
 pub fn sanitize_sdp_json(input: &str) -> String {
     use std::borrow::Cow;
 
+    if input.len() > MAX_FFI_LEN {
+        return r#"{"sanitized_sdp":""}"#.to_string();
+    }
     #[derive(Deserialize)]
     struct Input<'a> {
         #[serde(borrow)]

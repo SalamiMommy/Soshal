@@ -120,9 +120,14 @@ pub fn signer_pubkey() -> Result<String, String> {
 /// different pubkey.
 pub(crate) fn require_identity(expected: &str) -> Result<(), String> {
     let actual = signer_pubkey()?;
+    let expected_clean = expected.trim().to_ascii_lowercase();
+    let actual_clean = actual.trim().to_ascii_lowercase();
     // Constant-time comparison: prevents timing side-channel on pubkey check.
     // `constant_time_eq` returns false for mismatched-length inputs.
-    if !soshal_common_core::util::constant_time_eq(actual.as_bytes(), expected.as_bytes()) {
+    if !soshal_common_core::util::constant_time_eq(
+        actual_clean.as_bytes(),
+        expected_clean.as_bytes(),
+    ) {
         return Err("identity mismatch: caller is not the claimed pubkey".to_string());
     }
     Ok(())
@@ -131,7 +136,9 @@ pub(crate) fn require_identity(expected: &str) -> Result<(), String> {
 /// Constant-time match between a signer's hex pubkey and a caller-supplied
 /// hex pubkey, without leaking prefix-match information via timing.
 fn pubkey_matches(actual_hex: &str, expected_hex: &str) -> bool {
-    soshal_common_core::util::constant_time_eq(actual_hex.as_bytes(), expected_hex.as_bytes())
+    let actual_clean = actual_hex.trim().to_ascii_lowercase();
+    let expected_clean = expected_hex.trim().to_ascii_lowercase();
+    soshal_common_core::util::constant_time_eq(actual_clean.as_bytes(), expected_clean.as_bytes())
 }
 
 /// Path to local sealed key for a given pubkey: `<db_dir>/keys/<pubkey>.key`.

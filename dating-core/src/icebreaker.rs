@@ -34,11 +34,19 @@ fn generate_icebreakers(input: GenerateIcebreakersInput) -> Vec<String> {
         self_profile.interests.as_ref(),
         peer_profile.interests.as_ref(),
     ) {
-        let shared: Vec<&str> = s_ints
-            .iter()
-            .filter(|i| p_ints.contains(i))
-            .map(|s| s.as_str())
-            .collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut shared: Vec<&str> = Vec::new();
+        for s in s_ints {
+            let s_trim = s.trim();
+            if s_trim.is_empty() {
+                continue;
+            }
+            let s_lower = s_trim.to_ascii_lowercase();
+            if p_ints.iter().any(|p| p.trim().eq_ignore_ascii_case(s_trim)) && seen.insert(s_lower)
+            {
+                shared.push(s_trim);
+            }
+        }
         if !shared.is_empty() {
             let interest_str = if shared.len() >= 2 {
                 format!("{} and {}", shared[0], shared[1])
@@ -58,10 +66,12 @@ fn generate_icebreakers(input: GenerateIcebreakersInput) -> Vec<String> {
         self_profile.relationship_intent.as_ref(),
         peer_profile.relationship_intent.as_ref(),
     ) {
-        if s_int == p_int && !s_int.is_empty() {
+        let s_trim = s_int.trim();
+        let p_trim = p_int.trim();
+        if !s_trim.is_empty() && s_trim.eq_ignore_ascii_case(p_trim) {
             prompts.push(format!(
                 "It's awesome that we're both looking for {}. What does that mean to you?",
-                s_int
+                s_trim
             ));
         }
     }
@@ -69,11 +79,18 @@ fn generate_icebreakers(input: GenerateIcebreakersInput) -> Vec<String> {
         self_profile.language.as_ref(),
         peer_profile.language.as_ref(),
     ) {
-        let shared: Vec<&str> = s_ls
-            .iter()
-            .filter(|l| p_ls.contains(l))
-            .map(|s| s.as_str())
-            .collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut shared: Vec<&str> = Vec::new();
+        for s in s_ls {
+            let s_trim = s.trim();
+            if s_trim.is_empty() {
+                continue;
+            }
+            let s_lower = s_trim.to_ascii_lowercase();
+            if p_ls.iter().any(|p| p.trim().eq_ignore_ascii_case(s_trim)) && seen.insert(s_lower) {
+                shared.push(s_trim);
+            }
+        }
         if !shared.is_empty() {
             prompts.push(format!("We both speak {}!", shared[0]));
         }
@@ -86,6 +103,9 @@ fn generate_icebreakers(input: GenerateIcebreakersInput) -> Vec<String> {
 /// Input JSON shape: `{ "self_profile": DatingProfileMin,
 /// "peer_profile": DatingProfileMin }`. Output JSON shape: `string[]`.
 pub fn generate_icebreakers_json(input: &str) -> String {
+    if input.len() > 1024 * 1024 {
+        return "[]".to_string();
+    }
     let Some(parsed) = json_in::<Option<GenerateIcebreakersInput>>(input, None) else {
         return "[]".to_string();
     };

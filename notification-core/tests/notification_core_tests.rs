@@ -323,3 +323,46 @@ fn notification_output_serializes_with_renamed_type() {
     assert_eq!(v["event_id"], "t1");
     assert_eq!(v["created_at"], 100);
 }
+
+#[test]
+fn notif_id_normalizes_pubkey_casing() {
+    assert_eq!(
+        notif_id("reaction", "ev1", "ABCDEF123456"),
+        "reaction:ev1:abcdef123456"
+    );
+    assert_eq!(
+        notif_id("reaction", "ev1", "abcdef123456"),
+        notif_id("reaction", "ev1", "ABCDEF123456")
+    );
+}
+
+#[test]
+fn notification_json_caps_safely() {
+    let huge = "a".repeat(2 * 1024 * 1024);
+    assert_eq!(format_content_json(&huge), "");
+    assert_eq!(notif_id_json(&huge), "");
+
+    let huge_agg = "b".repeat(17 * 1024 * 1024);
+    assert_eq!(aggregate_notifications_json(&huge_agg), "[]");
+}
+
+#[test]
+fn aggregate_notifications_friend_request_casing_and_limits() {
+    let ev = nostr_event(
+        "ev1",
+        "PK_SENDER",
+        1, // KIND_TEXT_NOTE
+        "Let's be friends",
+        &[&["t", "Friend-Request"]],
+    );
+
+    let res = aggregate_notifications(AggregateInput {
+        events: vec![ev],
+        existing_ids: vec![],
+        live_stream_kind: 0,
+    });
+
+    assert_eq!(res.len(), 1);
+    assert_eq!(res[0].notif_type, "friend_request");
+    assert_eq!(res[0].id, "friend_request:ev1:pk_sender");
+}

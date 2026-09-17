@@ -14,7 +14,11 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
         Some(s) if s.eq_ignore_ascii_case("other") => &["other"],
         _ => &["male", "female", "non-binary", "other"],
     };
-    let self_contacts_set: HashSet<&str> = input.self_contacts.iter().map(|s| s.as_str()).collect();
+    let self_contacts_set: HashSet<String> = input
+        .self_contacts
+        .iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .collect();
     let own_coords = input
         .own_location_geohash
         .as_deref()
@@ -24,7 +28,8 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
         .iter()
         .enumerate()
         .map(|(i, profile)| {
-            let is_contact = self_contacts_set.contains(profile.pubkey.as_str());
+            let pubkey_lower = profile.pubkey.trim().to_ascii_lowercase();
+            let is_contact = self_contacts_set.contains(&pubkey_lower);
             let passes = (|| -> bool {
                 if input.hide_friends.unwrap_or(false) && is_contact {
                     return false;
@@ -175,7 +180,8 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                         friends
                             .iter()
                             .filter(|f| {
-                                self_contacts_set.contains(f.as_str()) && seen.insert(f.as_str())
+                                let f_lower = f.trim().to_ascii_lowercase();
+                                self_contacts_set.contains(&f_lower) && seen.insert(f_lower)
                             })
                             .cloned()
                             .collect()

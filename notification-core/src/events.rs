@@ -33,6 +33,9 @@ pub fn format_content(notif_type: &str, content: &str, tags: &[Vec<String>]) -> 
 
 /// JSON wrapper: accepts `{"type":"...","content":"..."}`, returns formatted string.
 pub fn format_content_json(input_json: &str) -> String {
+    if input_json.len() > 1024 * 1024 {
+        return String::new();
+    }
     #[derive(Deserialize)]
     struct Input {
         #[serde(rename = "type")]
@@ -46,17 +49,21 @@ pub fn format_content_json(input_json: &str) -> String {
 
 /// Generates a deterministic notification ID from type, event ID, and sender pubkey.
 pub fn notif_id(notif_type: &str, event_id: &str, from_pubkey: &str) -> String {
-    let mut id = String::with_capacity(notif_type.len() + event_id.len() + from_pubkey.len() + 2);
+    let pk_clean = from_pubkey.trim().to_ascii_lowercase();
+    let mut id = String::with_capacity(notif_type.len() + event_id.len() + pk_clean.len() + 2);
     id.push_str(notif_type);
     id.push(':');
     id.push_str(event_id);
     id.push(':');
-    id.push_str(from_pubkey);
+    id.push_str(&pk_clean);
     id
 }
 
 /// JSON wrapper: accepts `{"type":"...","eventId":"...","fromPubkey":"..."}`, returns ID.
 pub fn notif_id_json(input_json: &str) -> String {
+    if input_json.len() > 1024 * 1024 {
+        return String::new();
+    }
     #[derive(Deserialize)]
     struct Input {
         #[serde(rename = "type")]
