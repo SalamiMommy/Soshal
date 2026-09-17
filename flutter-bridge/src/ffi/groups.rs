@@ -31,7 +31,9 @@ fn row_to_group(
     viewer: Option<&str>,
     is_member: bool,
 ) -> GroupInfo {
-    let is_owner = viewer.map(|v| row.pubkey == v).unwrap_or(false);
+    let is_owner = viewer
+        .map(|v| row.pubkey.eq_ignore_ascii_case(v))
+        .unwrap_or(false);
     GroupInfo {
         id: row.id.clone(),
         name: row.name.clone(),
@@ -40,7 +42,7 @@ fn row_to_group(
         owner: row.pubkey.clone(),
         members: 0,
         is_member: is_owner || is_member,
-        role: if viewer.map(|v| row.pubkey == v).unwrap_or(false) {
+        role: if is_owner {
             "owner".to_string()
         } else if is_member {
             "member".to_string()
@@ -252,7 +254,10 @@ pub fn groups_post_message(
         // keep posting and every client would render their messages.
         let group_repo = GroupRepo::new(db);
         let group = group_repo.get_by_id(&group_id)?;
-        let is_owner = group.as_ref().map(|g| g.pubkey == sender).unwrap_or(false);
+        let is_owner = group
+            .as_ref()
+            .map(|g| g.pubkey.eq_ignore_ascii_case(&sender))
+            .unwrap_or(false);
         if !is_owner && !group_repo.is_member(&group_id, &sender)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a member of this group".to_string(),
@@ -311,7 +316,8 @@ pub fn groups_fetch_messages(
             if is_private {
                 let is_member = match &viewer {
                     Some(pk) => {
-                        group.pubkey == *pk || group_repo.is_member(&group_id, pk).unwrap_or(false)
+                        group.pubkey.eq_ignore_ascii_case(pk)
+                            || group_repo.is_member(&group_id, pk).unwrap_or(false)
                     }
                     None => false,
                 };
@@ -587,7 +593,10 @@ pub fn groups_rooms_react(
     super::db::with_db_result(|db| {
         let group_repo = GroupRepo::new(db);
         let group = group_repo.get_by_id(&group_id)?;
-        let is_owner = group.as_ref().map(|g| g.pubkey == pubkey).unwrap_or(false);
+        let is_owner = group
+            .as_ref()
+            .map(|g| g.pubkey.eq_ignore_ascii_case(&pubkey))
+            .unwrap_or(false);
         if !is_owner && !group_repo.is_member(&group_id, &pubkey)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a member of this group".to_string(),
@@ -643,7 +652,8 @@ pub fn groups_threads_list(group_id: String, sort: String) -> Result<String, Str
             if is_private {
                 let is_member = match &viewer {
                     Some(pk) => {
-                        group.pubkey == *pk || group_repo.is_member(&group_id, pk).unwrap_or(false)
+                        group.pubkey.eq_ignore_ascii_case(pk)
+                            || group_repo.is_member(&group_id, pk).unwrap_or(false)
                     }
                     None => false,
                 };
@@ -684,7 +694,10 @@ pub fn groups_threads_create(
     super::db::with_db_result(|db| {
         let group_repo = GroupRepo::new(db);
         let group = group_repo.get_by_id(&group_id)?;
-        let is_owner = group.as_ref().map(|g| g.pubkey == author).unwrap_or(false);
+        let is_owner = group
+            .as_ref()
+            .map(|g| g.pubkey.eq_ignore_ascii_case(&author))
+            .unwrap_or(false);
         if !is_owner && !group_repo.is_member(&group_id, &author)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a member of this group".to_string(),
@@ -759,7 +772,10 @@ pub fn groups_threads_reply(
             .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
         let group_repo = GroupRepo::new(db);
         let group = group_repo.get_by_id(&thread.group_id)?;
-        let is_owner = group.as_ref().map(|g| g.pubkey == author).unwrap_or(false);
+        let is_owner = group
+            .as_ref()
+            .map(|g| g.pubkey.eq_ignore_ascii_case(&author))
+            .unwrap_or(false);
         if !is_owner && !group_repo.is_member(&thread.group_id, &author)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a member of this group".to_string(),
@@ -806,7 +822,10 @@ pub fn groups_threads_react(
             .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
         let group_repo = GroupRepo::new(db);
         let group = group_repo.get_by_id(&thread.group_id)?;
-        let is_owner = group.as_ref().map(|g| g.pubkey == pubkey).unwrap_or(false);
+        let is_owner = group
+            .as_ref()
+            .map(|g| g.pubkey.eq_ignore_ascii_case(&pubkey))
+            .unwrap_or(false);
         if !is_owner && !group_repo.is_member(&thread.group_id, &pubkey)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a member of this group".to_string(),
@@ -918,7 +937,10 @@ pub fn groups_voice_join(channel_id: String, pubkey: String) -> Result<bool, Str
         let gid = group_id.ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
         let group_repo = GroupRepo::new(db);
         let group = group_repo.get_by_id(&gid)?;
-        let is_owner = group.as_ref().map(|g| g.pubkey == pubkey).unwrap_or(false);
+        let is_owner = group
+            .as_ref()
+            .map(|g| g.pubkey.eq_ignore_ascii_case(&pubkey))
+            .unwrap_or(false);
         if !is_owner && !group_repo.is_member(&gid, &pubkey)? {
             return Err(soshal_db_core::error::DbError::Oversized(
                 "not a group member".to_string(),
@@ -971,7 +993,10 @@ pub fn groups_voice_presence(channel_id: String) -> Result<String, String> {
         let is_private = group.access_type == "private" || group.password_hash.is_some();
         if is_private {
             let is_member = match &viewer {
-                Some(pk) => group.pubkey == *pk || group_repo.is_member(&gid, pk).unwrap_or(false),
+                Some(pk) => {
+                    group.pubkey.eq_ignore_ascii_case(pk)
+                        || group_repo.is_member(&gid, pk).unwrap_or(false)
+                }
                 None => false,
             };
             if !is_member {
@@ -996,6 +1021,23 @@ pub fn groups_create(
     is_private: bool,
     password: Option<String>,
 ) -> Result<String, String> {
+    let group_id = group_id.trim().to_string();
+    if group_id.is_empty() || group_id.len() > 128 {
+        return Err("invalid group_id".into());
+    }
+    let trimmed_name = name.trim().to_string();
+    if trimmed_name.is_empty() || trimmed_name.len() > 200 {
+        return Err("invalid group name".into());
+    }
+    if description.len() > 5000 {
+        return Err("group description too long".into());
+    }
+    if !picture_url.is_empty() && !soshal_common_core::url::is_valid_media_url(&picture_url) {
+        return Err("invalid picture url".into());
+    }
+    if creator_pubkey.trim().is_empty() || creator_pubkey.len() > 128 {
+        return Err("invalid creator pubkey".into());
+    }
     let password_hash = if is_private {
         let pwd = password.as_deref().unwrap_or("").trim();
         if pwd.is_empty() {
@@ -2275,5 +2317,82 @@ mod tests {
         assert!(summary_after.contains("\"reacted\":false"));
 
         crate::ffi::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_groups_create_validation_and_casing() {
+        let _lock = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _signer_lock = crate::ffi::test_lock::SIGNER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _db = TestDb::init("groups_validation");
+
+        // Empty group_id rejected
+        assert!(groups_create(
+            "".into(),
+            "name".into(),
+            "".into(),
+            "".into(),
+            "pk".into(),
+            false,
+            None
+        )
+        .is_err());
+        // Empty name rejected
+        assert!(groups_create(
+            "gid".into(),
+            "  ".into(),
+            "".into(),
+            "".into(),
+            "pk".into(),
+            false,
+            None
+        )
+        .is_err());
+        // Invalid picture url rejected
+        assert!(groups_create(
+            "gid".into(),
+            "name".into(),
+            "".into(),
+            "http://127.0.0.1/evil.png".into(),
+            "pk".into(),
+            false,
+            None
+        )
+        .is_err());
+        // Valid group created
+        insert_user("Alice_PK");
+        let res = groups_create(
+            "g_val".into(),
+            "Group Name".into(),
+            "about".into(),
+            "https://example.com/pic.png".into(),
+            "Alice_PK".into(),
+            false,
+            None,
+        )
+        .unwrap();
+        let info: GroupInfo = serde_json::from_str(&res).unwrap();
+        assert_eq!(info.id, "g_val");
+
+        // row_to_group case-insensitive viewer matching
+        let row = soshal_db_core::repos::group::GroupRow {
+            id: "g_case".into(),
+            name: "Case Test".into(),
+            about: None,
+            picture: None,
+            pubkey: "aabbcc".into(),
+            created_at: 100,
+            updated_at: 100,
+            access_type: "open".into(),
+            relay: None,
+            sync_status: "local".into(),
+            password_hash: None,
+        };
+        let info = row_to_group(&row, Some("AABBCC"), false);
+        assert!(info.is_member);
+        assert_eq!(info.role, "owner");
     }
 }

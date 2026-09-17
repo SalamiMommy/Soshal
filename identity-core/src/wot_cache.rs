@@ -22,16 +22,18 @@ impl WotCache {
 
     pub fn get(&self, pubkey: &str) -> Option<TrustScore> {
         let mut guard = self.entries.lock().ok()?;
-        if guard.0.contains_key(pubkey) {
-            if let Some(pos) = guard.1.iter().position(|k| k == pubkey) {
+        let key = pubkey.to_ascii_lowercase();
+        if guard.0.contains_key(&key) {
+            if let Some(pos) = guard.1.iter().position(|k| k == &key) {
                 let k = guard.1.remove(pos).unwrap();
                 guard.1.push_back(k);
             }
         }
-        guard.0.get(pubkey).copied()
+        guard.0.get(&key).copied()
     }
 
     pub fn insert(&self, pubkey: String, score: TrustScore) {
+        let pubkey = pubkey.to_ascii_lowercase();
         if let Ok(mut guard) = self.entries.lock() {
             if let std::collections::hash_map::Entry::Occupied(mut e) =
                 guard.0.entry(pubkey.clone())
@@ -43,7 +45,7 @@ impl WotCache {
                 }
                 return;
             }
-            while guard.0.len() >= self.capacity && self.capacity > 0 {
+            while self.capacity > 0 && guard.0.len() >= self.capacity {
                 if let Some(oldest) = guard.1.pop_front() {
                     guard.0.remove(&oldest);
                 } else {
@@ -105,5 +107,20 @@ mod tests {
         cache.insert("D".into(), score(4.0));
         assert!(cache.get("B").is_none());
         assert!(cache.get("A").is_some());
+    }
+
+    #[test]
+    fn zero_capacity_cache_is_unbounded() {
+        let cache = WotCache::new(0);
+        cache.insert("A".into(), score(1.0));
+        assert_eq!(cache.get("A").map(|s| s.score), Some(1.0));
+    }
+
+    #[test]
+    fn cache_case_insensitivity() {
+        let cache = WotCache::new(2);
+        cache.insert("AbCd".into(), score(5.0));
+        assert_eq!(cache.get("abcd").map(|s| s.score), Some(5.0));
+        assert_eq!(cache.get("ABCD").map(|s| s.score), Some(5.0));
     }
 }

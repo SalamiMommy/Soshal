@@ -46,6 +46,34 @@ impl RollupEngine {
     pub fn verify_rollup(&self, rollup: &CommitmentRollup) -> RollupVerificationResult {
         let start_time = std::time::Instant::now();
 
+        if rollup.thread_id.trim().is_empty() || rollup.thread_id.len() > 256 {
+            return RollupVerificationResult {
+                verified: false,
+                thread_id: rollup.thread_id.clone(),
+                latency_ms: start_time.elapsed().as_millis() as u64,
+                verified_operations: 0,
+                error_msg: Some("Invalid thread_id".to_string()),
+            };
+        }
+        if rollup.genesis_root.is_empty() || rollup.genesis_root.len() > 128 {
+            return RollupVerificationResult {
+                verified: false,
+                thread_id: rollup.thread_id.clone(),
+                latency_ms: start_time.elapsed().as_millis() as u64,
+                verified_operations: 0,
+                error_msg: Some("Invalid genesis_root".to_string()),
+            };
+        }
+        if rollup.final_state_root.is_empty() || rollup.final_state_root.len() > 128 {
+            return RollupVerificationResult {
+                verified: false,
+                thread_id: rollup.thread_id.clone(),
+                latency_ms: start_time.elapsed().as_millis() as u64,
+                verified_operations: 0,
+                error_msg: Some("Invalid final_state_root".to_string()),
+            };
+        }
+
         // Decode commitment bytes from hex
         let commitment_bytes = match hex::decode(&rollup.commitment_hex) {
             Ok(bytes) => bytes,
@@ -197,6 +225,16 @@ pub fn get_global_zk_engine() -> &'static RollupEngine {
 
 /// FFI helper function to verify a rollup commitment JSON string
 pub fn verify_zk_rollup_json(rollup_json: &str) -> String {
+    if rollup_json.len() > 1024 * 1024 {
+        let err_res = RollupVerificationResult {
+            verified: false,
+            thread_id: String::new(),
+            latency_ms: 0,
+            verified_operations: 0,
+            error_msg: Some("Rollup JSON exceeds 1MB cap".to_string()),
+        };
+        return serde_json::to_string(&err_res).unwrap_or_default();
+    }
     let rollup: CommitmentRollup = match serde_json::from_str(rollup_json) {
         Ok(r) => r,
         Err(e) => {

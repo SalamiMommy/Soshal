@@ -544,3 +544,23 @@ fn wgpu_global_manager_and_create_json() {
     assert_eq!(cfg.width, 8);
     assert_eq!(cfg.height, 8);
 }
+
+#[test]
+fn haversine_coordinate_bounds() {
+    // Out of bounds latitude/longitude
+    assert!(haversine_km(91.0, 0.0, 10.0, 10.0).is_nan());
+    assert!(haversine_km(-91.0, 0.0, 10.0, 10.0).is_nan());
+    assert!(haversine_km(0.0, 181.0, 10.0, 10.0).is_nan());
+    assert!(haversine_km(0.0, -181.0, 10.0, 10.0).is_nan());
+    assert!(haversine_km(10.0, 10.0, 95.0, 0.0).is_nan());
+
+    let mut batch_res = [0.0f64; 2];
+    haversine_batch_km(100.0, 0.0, &[(10.0, 10.0), (20.0, 20.0)], &mut batch_res);
+    assert!(batch_res[0].is_nan());
+    assert!(batch_res[1].is_nan());
+
+    let mut batch_res2 = [0.0f64; 2];
+    haversine_batch_km(0.0, 0.0, &[(100.0, 10.0), (20.0, 20.0)], &mut batch_res2);
+    assert!(batch_res2[0].is_nan());
+    assert!(!batch_res2[1].is_nan());
+}

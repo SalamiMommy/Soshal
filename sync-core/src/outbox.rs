@@ -109,6 +109,20 @@ pub fn enqueue_outbox_item_with_seal(
     now_secs: i64,
     seal: impl Fn(String) -> Result<String, String>,
 ) -> Result<(), String> {
+    if id.trim().is_empty() || id.len() > 128 {
+        return Err("id must be between 1 and 128 chars".to_string());
+    }
+    if action_type.trim().is_empty() || action_type.len() > 64 {
+        return Err("action_type must be between 1 and 64 chars".to_string());
+    }
+    if payload_json.len() > 16 * 1024 * 1024 {
+        return Err("payload_json exceeds 16MB cap".to_string());
+    }
+    if let Some(mp) = media_path {
+        if mp.len() > 1024 {
+            return Err("media_path exceeds 1024 chars".to_string());
+        }
+    }
     let conn = db.conn().map_err(|e| e.to_string())?;
     // Compress THEN seal: ciphertext is ~incompressible, so the compression
     // must happen on the plaintext first to be useful.
@@ -182,6 +196,9 @@ pub fn fetch_pending_outbox_items_with_unseal(
     include_media: bool,
     unseal: impl Fn(&str) -> Result<String, String>,
 ) -> Result<Vec<OutboxItem>, String> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let conn = db.conn().map_err(|e| e.to_string())?;
     block_on(async {
         let sql = if include_media {

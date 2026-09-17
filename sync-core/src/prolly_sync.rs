@@ -102,11 +102,12 @@ impl ProllySyncSession {
                 if keys.len() > MAX_KEYS_PER_BRANCH {
                     return None;
                 }
-                // Determine missing keys compared to local tree keys (set is
-                // precomputed once per session, not rebuilt per message).
+                // Determine missing keys compared to local tree keys and already-tracked missing keys.
+                // Filter out empty or oversized keys (> 128 bytes).
                 let missing: Vec<String> = keys
                     .into_iter()
-                    .filter(|k| !self.local_key_set.contains(k))
+                    .filter(|k| !k.is_empty() && k.len() <= 128)
+                    .filter(|k| !self.local_key_set.contains(k) && !self.missing_keys.contains(k))
                     .collect();
 
                 if !missing.is_empty() {

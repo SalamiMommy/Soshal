@@ -22,6 +22,12 @@ pub fn wrap_message(
     plaintext: &[u8],
     key: &[u8; nip44::KEY_LEN],
 ) -> Result<EncryptedMessage, String> {
+    if plaintext.is_empty() {
+        return Err("plaintext cannot be empty".into());
+    }
+    if plaintext.len() > 1024 * 1024 {
+        return Err("plaintext exceeds 1MB cap".into());
+    }
     let ciphertext = nip44::encrypt(plaintext, key).map_err(|e| format!("nip44 encrypt: {e}"))?;
     Ok(EncryptedMessage {
         ciphertext,
@@ -34,6 +40,12 @@ pub fn wrap_message(
 /// # Errors
 /// Returns an error string if the payload is malformed or decryption fails.
 pub fn unwrap_message(payload: &str, key: &[u8; nip44::KEY_LEN]) -> Result<Vec<u8>, String> {
+    if payload.is_empty() {
+        return Err("payload cannot be empty".into());
+    }
+    if payload.len() > 1024 * 1024 {
+        return Err("payload exceeds 1MB cap".into());
+    }
     nip44::decrypt(payload, key).map_err(|e| format!("nip44 decrypt: {e}"))
 }
 

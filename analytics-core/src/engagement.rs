@@ -3,6 +3,9 @@
 use crate::{EngagementPostInput, EngagementStatOutput};
 
 pub fn compute_engagement_stats_json(json_input: &str) -> Result<String, String> {
+    if json_input.len() > 16 * 1024 * 1024 {
+        return Err("json input exceeds 16MB cap".into());
+    }
     let input: crate::EngagementInput =
         serde_json::from_str(json_input).map_err(|e| e.to_string())?;
     let out = compute_engagement_stats(&input.posts, &input.self_pubkey);
@@ -13,8 +16,10 @@ pub fn compute_engagement_stats(
     posts: &[EngagementPostInput],
     self_pubkey: &str,
 ) -> Vec<EngagementStatOutput> {
-    let mut matching: Vec<&EngagementPostInput> =
-        posts.iter().filter(|p| p.pubkey == self_pubkey).collect();
+    let mut matching: Vec<&EngagementPostInput> = posts
+        .iter()
+        .filter(|p| p.pubkey.eq_ignore_ascii_case(self_pubkey))
+        .collect();
 
     if matching.len() > 50 {
         matching.select_nth_unstable_by_key(50, |b| std::cmp::Reverse(b.created_at));

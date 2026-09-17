@@ -169,4 +169,36 @@ fn test_analytics_json_error_handling() {
     assert!(format_count_json("invalid json").is_err());
     assert!(compute_engagement_stats_json("invalid json").is_err());
     assert!(compute_analytics_posts_json("invalid json").is_err());
+
+    let huge = "x".repeat(16 * 1024 * 1024 + 1);
+    assert!(compute_engagement_stats_json(&huge).is_err());
+    assert!(compute_analytics_posts_json(&huge).is_err());
+}
+
+#[test]
+fn test_analytics_case_insensitivity_and_saturation() {
+    let posts = vec![
+        PostInput {
+            pubkey: "ALICE".into(),
+            local_stats: Some(LocalStats {
+                likes_count: Some(u64::MAX - 10),
+                reposts_count: None,
+            }),
+        },
+        PostInput {
+            pubkey: "alice".into(),
+            local_stats: Some(LocalStats {
+                likes_count: Some(50),
+                reposts_count: None,
+            }),
+        },
+    ];
+    let out = compute_analytics_posts(&posts, "Alice");
+    assert_eq!(out.total_posts, 2);
+    assert_eq!(out.total_reactions, u64::MAX);
+
+    let eng_posts = vec![make_post("p1", "ALICE", "msg", 100, 5, 2)];
+    let eng_out = compute_engagement_stats(&eng_posts, "alice");
+    assert_eq!(eng_out.len(), 1);
+    assert_eq!(eng_out[0].post_id, "p1");
 }

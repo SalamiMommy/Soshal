@@ -21,6 +21,12 @@ impl NostrClient {
     }
 
     pub async fn add_relay(&self, url: &str) -> Result<bool, nostr_sdk::error::Error> {
+        let (valid, _) = soshal_common_core::url::is_valid_relay_url(url);
+        if !valid {
+            return Err(nostr_sdk::error::Error::policy(format!(
+                "invalid or disallowed relay url: {url}"
+            )));
+        }
         self.client.add_relay(url).await
     }
 
@@ -161,6 +167,8 @@ mod tests {
         let client = NostrClient::new(from_nsec(SK_HEX).unwrap());
         assert!(client.add_relay("not a url").await.is_err());
         assert!(client.add_relay("wss://").await.is_err());
+        assert!(client.add_relay("ws://127.0.0.1:8080").await.is_err());
+        assert!(client.add_relay("ws://192.168.1.1:8080").await.is_err());
     }
 
     #[tokio::test]

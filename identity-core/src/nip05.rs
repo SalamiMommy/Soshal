@@ -156,8 +156,15 @@ pub async fn verify(nip05_address: &str, public_key: &str) -> Nip05Result {
         }
     };
     let verified = nostr::nips::nip05::verify_from_json(&pk, &address, &json);
-    let relays = json["relays"][public_key]
-        .as_array()
+    let pk_hex = pk.to_hex();
+    let relays = json["relays"]
+        .as_object()
+        .and_then(|obj| {
+            obj.iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(&pk_hex))
+                .map(|(_, v)| v)
+        })
+        .and_then(|v| v.as_array())
         .map(|a| {
             a.iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
@@ -165,16 +172,13 @@ pub async fn verify(nip05_address: &str, public_key: &str) -> Nip05Result {
                 // untrusted data, so wss:// only (no cleartext, no
                 // loopback/private/raw-IP endpoints).
                 .filter(|r| is_valid_relay_url(r).0 && r.starts_with("wss://"))
+                .take(32)
                 .collect()
         })
         .unwrap_or_default();
     Nip05Result {
         verified,
-        pubkey: if verified {
-            Some(public_key.to_string())
-        } else {
-            None
-        },
+        pubkey: if verified { Some(pk_hex) } else { None },
         relays,
         error: None,
     }
@@ -223,18 +227,26 @@ pub async fn resolve(nip05_address: &str) -> Nip05Result {
             error: Some(format!("invalid pubkey in nip05 response: {e}")),
         };
     }
-    let relays = json["relays"][&pubkey]
-        .as_array()
+    let pk_hex = pubkey.to_ascii_lowercase();
+    let relays = json["relays"]
+        .as_object()
+        .and_then(|obj| {
+            obj.iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(&pk_hex))
+                .map(|(_, v)| v)
+        })
+        .and_then(|v| v.as_array())
         .map(|a| {
             a.iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .filter(|r| is_valid_relay_url(r).0 && r.starts_with("wss://"))
+                .take(32)
                 .collect()
         })
         .unwrap_or_default();
     Nip05Result {
         verified: true,
-        pubkey: Some(pubkey),
+        pubkey: Some(pk_hex),
         relays,
         error: None,
     }

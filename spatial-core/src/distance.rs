@@ -5,6 +5,13 @@ pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     if lat1.is_infinite() || lon1.is_infinite() || lat2.is_infinite() || lon2.is_infinite() {
         return f64::INFINITY;
     }
+    if !(-90.0..=90.0).contains(&lat1)
+        || !(-90.0..=90.0).contains(&lat2)
+        || !(-180.0..=180.0).contains(&lon1)
+        || !(-180.0..=180.0).contains(&lon2)
+    {
+        return f64::NAN;
+    }
     let r = 6371.0;
     let d_lat = (lat2 - lat1).to_radians();
     let d_lon = (lon2 - lon1).to_radians();
@@ -17,7 +24,11 @@ pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 
 pub fn haversine_batch_km(lat1: f64, lon1: f64, targets: &[(f64, f64)], results: &mut [f64]) {
     let r = 6371.0;
-    if lat1.is_nan() || lon1.is_nan() {
+    if lat1.is_nan()
+        || lon1.is_nan()
+        || !(-90.0..=90.0).contains(&lat1)
+        || !(-180.0..=180.0).contains(&lon1)
+    {
         for res in results.iter_mut() {
             *res = f64::NAN;
         }
@@ -33,7 +44,11 @@ pub fn haversine_batch_km(lat1: f64, lon1: f64, targets: &[(f64, f64)], results:
     let cos_lat1 = lat1_rad.cos();
 
     for (i, &(lat2, lon2)) in targets.iter().enumerate().take(results.len()) {
-        if lat2.is_nan() || lon2.is_nan() {
+        if lat2.is_nan()
+            || lon2.is_nan()
+            || !(-90.0..=90.0).contains(&lat2)
+            || !(-180.0..=180.0).contains(&lon2)
+        {
             results[i] = f64::NAN;
             continue;
         }

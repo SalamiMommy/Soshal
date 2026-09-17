@@ -138,11 +138,14 @@ fn split_pubkey_list(s: &str) -> Vec<String> {
 }
 
 fn has_p_tag(event: &Event, pubkey: &str) -> bool {
+    if pubkey.is_empty() {
+        return false;
+    }
     event
         .tags
         .iter()
         .filter(|t| t.kind() == "p")
-        .any(|t| t.content().is_some_and(|c| c == pubkey))
+        .any(|t| t.content().is_some_and(|c| c.eq_ignore_ascii_case(pubkey)))
 }
 
 /// Convert a verified relay event into its cached DB row (if cacheable).
@@ -391,7 +394,7 @@ async fn handle_impl(
     // us; content stays encrypted here — never persisted unverified.
     if event.kind == Kind::EncryptedDirectMessage {
         let addresses_me = has_p_tag(event, my_pubkey);
-        let authored_by_me = event.pubkey.to_hex() == my_pubkey;
+        let authored_by_me = event.pubkey.to_hex().eq_ignore_ascii_case(my_pubkey);
         if addresses_me || authored_by_me {
             let recipient = event
                 .tags
@@ -516,7 +519,7 @@ async fn handle_impl(
             let Some(recipient) = first_p_tag(event) else {
                 return Ok(());
             };
-            if recipient != my_pubkey {
+            if !recipient.eq_ignore_ascii_case(my_pubkey) {
                 return Ok(());
             }
             let recipient = recipient.to_string();
@@ -550,7 +553,8 @@ async fn handle_impl(
                 let tags: Vec<Vec<String>> =
                     serde_json::from_str(&req.tags_json).unwrap_or_default();
                 let p_me = tags.iter().any(|t| {
-                    t.first().is_some_and(|k| k == "p") && t.get(1).is_some_and(|v| v == my_pubkey)
+                    t.first().is_some_and(|k| k == "p")
+                        && t.get(1).is_some_and(|v| v.eq_ignore_ascii_case(my_pubkey))
                 });
                 let amount_ok = tags.iter().any(|t| {
                     t.first().is_some_and(|k| k == "amount")

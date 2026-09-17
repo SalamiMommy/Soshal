@@ -19,9 +19,15 @@ struct RumorEnvelopeOutput<'a> {
 }
 
 pub fn build_rumor_envelope_json(input: &str) -> String {
+    if input.is_empty() || input.len() > 1024 * 1024 {
+        return String::new();
+    }
     let Some(input) = json_in_borrow::<BuildRumorEnvelopeInput>(input) else {
         return String::new();
     };
+    if input.pqc_ct.is_empty() || input.rumor.is_empty() {
+        return String::new();
+    }
     let out = RumorEnvelopeOutput {
         pqc_ct: &input.pqc_ct,
         rumor: &input.rumor,
@@ -53,9 +59,15 @@ struct SealEnvelopeOutput<'a> {
 }
 
 pub fn build_seal_envelope_json(input: &str) -> String {
+    if input.is_empty() || input.len() > 1024 * 1024 {
+        return String::new();
+    }
     let Some(input) = json_in_borrow::<BuildSealEnvelopeInput>(input) else {
         return String::new();
     };
+    if input.pqc_ct.is_empty() || input.rumor_json.is_empty() || input.dsa_public_key.is_empty() {
+        return String::new();
+    }
     let out = SealEnvelopeOutput {
         pqc_ct: &input.pqc_ct,
         rumor: &input.rumor_json,

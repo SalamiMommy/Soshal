@@ -26,6 +26,9 @@ impl EpochGarbageCollector {
         peer_vector_clocks: &HashMap<String, u64>,
         gc_threshold_secs: u64,
     ) -> Result<EpochGcSummary, String> {
+        if domain.trim().is_empty() || domain.len() > 128 {
+            return Err("domain must be between 1 and 128 chars".to_string());
+        }
         if peer_vector_clocks.is_empty() {
             return Ok(EpochGcSummary {
                 domain: domain.to_string(),
@@ -141,7 +144,7 @@ impl EpochGarbageCollector {
 
             EpochGcSummary {
                 domain: domain.to_string(),
-                epoch_counter: epoch_counter_i64 as u64,
+                epoch_counter: epoch_counter_i64.max(0) as u64,
                 pruned_tombstones: pruned,
                 bytes_reclaimed: reclaimed,
             }

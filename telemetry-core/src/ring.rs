@@ -134,6 +134,11 @@ impl SharedRing {
     pub fn drain<F: FnMut(u8, &[u8])>(&mut self, mut f: F) -> usize {
         let mut tail = read_u64(&self.map, 8);
         let head = self.head();
+        if tail > head {
+            tail = head;
+        } else if head > self.capacity as u64 && tail < head - self.capacity as u64 {
+            tail = head - self.capacity as u64;
+        }
         let mut drained = 0;
         while tail < head {
             let idx = (tail % self.capacity as u64) as usize;
@@ -177,7 +182,9 @@ impl SharedRing {
 
     /// Number of unconsumed bytes (approx; ignores per-entry padding).
     pub fn pending(&self) -> u64 {
-        self.head().saturating_sub(read_u64(&self.map, 8))
+        self.head()
+            .saturating_sub(read_u64(&self.map, 8))
+            .min(self.capacity as u64)
     }
 }
 
@@ -469,5 +476,21 @@ mod tests {
             assert!(payload.is_empty());
         });
         assert_eq!(drained, 1);
+    }
+
+    #[test]
+    fn drain_fast_forwards_tail_on_overrun() {
+        let mut ring = SharedRing::init(
+            &soshal_test_util::tmp_path("ring", "ring_overrun.bin"),
+            64 * 1024,
+        )
+        .unwrap();
+        // Advance head past capacity while tail is 0
+        ring.advance_head(64 * 1024).unwrap();
+        ring.advance_head(100 * 1024).unwrap();
+        assert_eq!(ring.pending(), 64 * 1024);
+        ring.drain(|_, _| {});
+        let tail = read_u64(&ring.map, 8);
+        assert!(tail >= 36 * 1024);
     }
 }

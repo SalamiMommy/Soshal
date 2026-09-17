@@ -125,3 +125,13 @@ fn seal_envelope_json_edge_cases() {
     let input2 = r#"{"pqcCt":"ct","rumorJson":"{}","dsaPublicKey":123}"#;
     assert_eq!(build_seal_envelope_json(input2), "");
 }
+
+#[test]
+fn test_envelope_and_wrap_size_caps() {
+    let huge = "x".repeat(1024 * 1024 + 10);
+    assert_eq!(build_rumor_envelope_json(&huge), "");
+    assert_eq!(build_seal_envelope_json(&huge), "");
+
+    assert!(wrap_message(&vec![0u8; 1024 * 1024 + 1], &soshal_test_util::fill_key()).is_err());
+    assert!(unwrap_message(&huge, &soshal_test_util::fill_key()).is_err());
+}

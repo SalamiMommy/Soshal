@@ -775,3 +775,133 @@ fn outbox_enqueue_pending_count_and_complete() {
     assert_eq!(remaining_all.len(), 1);
     assert_eq!(remaining_all[0].id, "o2");
 }
+
+#[test]
+fn test_dm_ingest_case_insensitive() {
+    let db = soshal_test_util::test_db();
+    let keys = Keys::generate();
+    let my_pubkey_hex = keys.public_key().to_hex();
+    let my_pubkey_upper = my_pubkey_hex.to_uppercase();
+
+    // Event addressed to uppercase pubkey in p-tag
+    let sender_keys = Keys::generate();
+    let event = soshal_test_util::signed_event_tagged(
+        &sender_keys,
+        Kind::EncryptedDirectMessage,
+        "encrypted payload",
+        vec![vec!["p".to_string(), my_pubkey_upper.clone()]],
+    );
+    let (tx, mut rx) = channel();
+    handle(&db, &my_pubkey_hex, &event, &tx).unwrap();
+
+    match rx.try_recv().unwrap() {
+        SyncUpdate::Dm { id, sender, .. } => {
+            assert_eq!(id, event.id.to_hex());
+            assert_eq!(sender, sender_keys.public_key().to_hex());
+        }
+        other => panic!("unexpected update: {other:?}"),
+    }
+}
+
+#[test]
+fn test_outbox_validation_and_zero_limit() {
+    let db = soshal_test_util::test_db();
+    // Empty id
+    assert!(enqueue_outbox_item(&db, "", "post", "{}", None, 100).is_err());
+    // Whitespace id
+    assert!(enqueue_outbox_item(&db, "   ", "post", "{}", None, 100).is_err());
+    // Empty action
+    assert!(enqueue_outbox_item(&db, "id1", "", "{}", None, 100).is_err());
+    // Zero limit returns empty
+    let empty = fetch_pending_outbox_items(&db, 200, 0).unwrap();
+    assert!(empty.is_empty());
+}
+
+#[test]
+fn test_epoch_gc_domain_validation() {
+    let db = soshal_test_util::test_db();
+    let conn = db.conn().unwrap();
+    let clocks = HashMap::new();
+    assert!(
+        EpochGarbageCollector::prune_tombstones_if_consensus_reached(&conn, "", &clocks, 3600)
+            .is_err()
+    );
+    assert!(
+        EpochGarbageCollector::prune_tombstones_if_consensus_reached(
+            &conn,
+            &"d".repeat(129),
+            &clocks,
+            3600
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn test_zk_rollup_size_cap_and_validation() {
+    use soshal_sync_core::zk_rollup::verify_zk_rollup_json;
+    // Oversized json (> 1MB)
+    let huge = "x".repeat(1024 * 1024 + 10);
+    let res = verify_zk_rollup_json(&huge);
+    assert!(res.contains("exceeds 1MB cap"));
+
+    // Invalid thread_id
+    let engine = RollupEngine::new();
+    let mut rollup = CommitmentRollup {
+        thread_id: "".to_string(),
+        genesis_root: "0".repeat(64),
+        final_state_root: "1".repeat(64),
+        operation_count: 5,
+        commitment_hex: "00".repeat(32),
+    };
+    let v = engine.verify_rollup(&rollup);
+    assert!(!v.verified);
+    assert_eq!(v.error_msg.as_deref(), Some("Invalid thread_id"));
+
+    // Invalid genesis root
+    rollup.thread_id = "t1".to_string();
+    rollup.genesis_root = "x".repeat(129);
+    let v = engine.verify_rollup(&rollup);
+    assert!(!v.verified);
+    assert_eq!(v.error_msg.as_deref(), Some("Invalid genesis_root"));
+}
+
+#[test]
+fn test_prolly_sync_deduplication_and_filtering() {
+    use soshal_sync_core::prolly_sync::{ProllySyncMessage, ProllySyncSession};
+    use soshal_sync_core::prolly_tree::ProllyTree;
+
+    let tree = ProllyTree::build(&[("local1".to_string(), "d1".to_string())]);
+    let mut session = ProllySyncSession::new(tree);
+
+    // Send ResponseBranch with empty string, oversized key, and valid keys
+    let resp = session.handle_message(ProllySyncMessage::ResponseBranch {
+        node_hash: "hash".to_string(),
+        keys: vec![
+            "".to_string(),
+            "x".repeat(200),
+            "missing1".to_string(),
+            "missing2".to_string(),
+        ],
+        child_hashes: vec![],
+    });
+
+    if let Some(ProllySyncMessage::RequestDeltas { missing_ids }) = resp {
+        assert_eq!(missing_ids, vec!["missing1", "missing2"]);
+    } else {
+        panic!("expected RequestDeltas");
+    }
+
+    // Second ResponseBranch with duplicate missing1 -> should only request missing3
+    let resp2 = session.handle_message(ProllySyncMessage::ResponseBranch {
+        node_hash: "hash".to_string(),
+        keys: vec!["missing1".to_string(), "missing3".to_string()],
+        child_hashes: vec![],
+    });
+
+    if let Some(ProllySyncMessage::RequestDeltas { missing_ids }) = resp2 {
+        assert_eq!(missing_ids, vec!["missing3"]);
+    } else {
+        panic!("expected RequestDeltas");
+    }
+}

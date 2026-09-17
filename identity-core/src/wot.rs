@@ -31,19 +31,16 @@ pub fn count_mutual(contacts_a: &[String], contacts_b: &[String]) -> usize {
     if contacts_a.is_empty() || contacts_b.is_empty() {
         return 0;
     }
-    let (small, large) = if contacts_a.len() <= contacts_b.len() {
-        (contacts_a, contacts_b)
-    } else {
-        (contacts_b, contacts_a)
-    };
-    let mut set_small = HashSet::with_capacity(small.len());
-    for s in small {
-        set_small.insert(s.as_str());
+    let set_a: HashSet<String> = contacts_a.iter().map(|s| s.to_ascii_lowercase()).collect();
+    let mut seen_b = HashSet::new();
+    let mut count = 0;
+    for b in contacts_b {
+        let b_lower = b.to_ascii_lowercase();
+        if seen_b.insert(b_lower.clone()) && set_a.contains(&b_lower) {
+            count += 1;
+        }
     }
-    large
-        .iter()
-        .filter(|l| set_small.contains(l.as_str()))
-        .count()
+    count
 }
 
 pub fn compute_distance(
@@ -52,10 +49,13 @@ pub fn compute_distance(
     direct_follows: &[String],
     mutual_count: usize,
 ) -> u32 {
-    if user_pubkey == target_pubkey {
+    if user_pubkey.eq_ignore_ascii_case(target_pubkey) {
         return 0;
     }
-    if direct_follows.iter().any(|f| f == target_pubkey) {
+    if direct_follows
+        .iter()
+        .any(|f| f.eq_ignore_ascii_case(target_pubkey))
+    {
         return 1;
     }
     if mutual_count > 0 {
@@ -308,4 +308,29 @@ fn partition_wot_peers(
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_count_mutual_deduplication_and_case_insensitivity() {
+        let contacts_a = vec!["ALICE".to_string(), "bob".to_string(), "alice".to_string()];
+        let contacts_b = vec![
+            "alice".to_string(),
+            "ALICE".to_string(),
+            "alice".to_string(),
+            "Charlie".to_string(),
+        ];
+        assert_eq!(count_mutual(&contacts_a, &contacts_b), 1);
+    }
+
+    #[test]
+    fn test_compute_distance_case_insensitivity() {
+        let follows = vec!["BOB".to_string()];
+        assert_eq!(compute_distance("alice", "ALICE", &follows, 0), 0);
+        assert_eq!(compute_distance("alice", "bob", &follows, 0), 1);
+        assert_eq!(compute_distance("alice", "BOB", &follows, 0), 1);
+    }
 }
