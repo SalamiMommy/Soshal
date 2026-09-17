@@ -446,3 +446,14 @@ fn configure_opus_keeps_rtpmap_extractable() {
     assert_eq!(pt, "111");
     assert!(out.contains("a=fmtp:111 "));
 }
+
+#[test]
+fn test_oversized_sdp_and_candidates() {
+    let huge = "a".repeat(1024 * 1024 + 1);
+    assert_eq!(sanitize_sdp(&huge, false), "");
+    assert!(extract_candidates(&huge).is_empty());
+    assert!(!validate_sdp(&huge));
+    assert_eq!(redact_private_ips(&huge), "");
+    let huge_cand = "a".repeat(2049);
+    assert!(!is_safe_candidate(&huge_cand, false));
+}

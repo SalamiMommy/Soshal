@@ -153,3 +153,13 @@ fn write_entry(p: &std::path::Path, _addr: usize, total: usize, kind: u8, payloa
     map[0..8].copy_from_slice(&(total as u64).to_le_bytes());
     map.flush().unwrap();
 }
+
+#[test]
+fn test_ring_capacity_oversized() {
+    let p = tmp_recorder("ring_huge.bin");
+    let res = soshal_telemetry_core::ring::SharedRing::init(&p, 300 * 1024 * 1024);
+    match res {
+        Err(e) => assert!(e.contains("ring capacity too large")),
+        Ok(_) => panic!("expected error on oversized ring capacity"),
+    }
+}

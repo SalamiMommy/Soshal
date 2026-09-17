@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::json_util::{json_in, json_out};
 
-const MAX_EDGES: usize = 1_000_000;
+const MAX_EDGES: usize = 10_000;
 const MAX_ITERATIONS: usize = 300;
 const MAX_NODE_ID_LEN: usize = 200;
 const MAX_NODE_LABEL_LEN: usize = 200;
@@ -155,9 +155,10 @@ fn calculate_force_layout(input: ForceLayoutInput) -> Vec<ForceLayoutNodeOut> {
             if !nodes[i].y.is_finite() {
                 nodes[i].y = center_y;
             }
-            let margin = 40.0;
-            nodes[i].x = nodes[i].x.max(margin).min(input.width - margin);
-            nodes[i].y = nodes[i].y.max(margin).min(input.height - margin);
+            let margin_x = 40.0f64.min(input.width / 4.0).max(0.0);
+            let margin_y = 40.0f64.min(input.height / 4.0).max(0.0);
+            nodes[i].x = nodes[i].x.clamp(margin_x, input.width - margin_x);
+            nodes[i].y = nodes[i].y.clamp(margin_y, input.height - margin_y);
         }
         if total_movement < CONVERGENCE_EPSILON * node_count as f64 {
             still_streak += 1;

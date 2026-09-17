@@ -59,15 +59,31 @@ fn process_stories(input: ProcessStoriesInput) -> Vec<ProcessedStoryOut> {
     if input.events.len() > MAX_POSTS {
         return Vec::new();
     }
-    let now_sec = input.now_sec;
+    let now_sec = if input.now_sec.is_finite() && input.now_sec >= 0.0 {
+        input.now_sec
+    } else {
+        0.0
+    };
+    let expiry_seconds = if input.expiry_seconds.is_finite() && input.expiry_seconds >= 0.0 {
+        input.expiry_seconds
+    } else {
+        86400.0
+    };
     let mut results = Vec::with_capacity(input.events.len().min(MAX_POSTS));
     for event in input.events {
         if event.content.len() > 1024 * 1024 {
             continue;
         }
-        let expires_at =
-            find_tag_value(&event.tags, "expiration").and_then(|s| s.parse::<f64>().ok());
-        let actual_expiry = expires_at.unwrap_or(event.created_at + input.expiry_seconds);
+        let created_at = if event.created_at.is_finite() && event.created_at >= 0.0 {
+            event.created_at
+        } else {
+            0.0
+        };
+        let expires_at = find_tag_value(&event.tags, "expiration")
+            .or_else(|| find_tag_value(&event.tags, "expires_at"))
+            .and_then(|s| s.parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v >= 0.0);
+        let actual_expiry = expires_at.unwrap_or(created_at + expiry_seconds);
         if actual_expiry < now_sec {
             continue;
         }
@@ -78,11 +94,15 @@ fn process_stories(input: ProcessStoriesInput) -> Vec<ProcessedStoryOut> {
         };
         let mut media: Vec<MediaItemOut> = Vec::with_capacity(content_media.len());
         for m in content_media {
-            if m.url.len() <= MAX_PREVIEW_URL_LENGTH && m.media_type.len() <= 100 {
+            if m.url.len() <= MAX_PREVIEW_URL_LENGTH
+                && m.media_type.len() <= 100
+                && crate::url::is_valid_media_url(&m.url)
+            {
+                let duration = m.duration.filter(|d| d.is_finite() && *d >= 0.0);
                 media.push(MediaItemOut {
                     url: m.url,
                     media_type: m.media_type,
-                    duration: m.duration,
+                    duration,
                 });
             }
         }
@@ -91,7 +111,7 @@ fn process_stories(input: ProcessStoriesInput) -> Vec<ProcessedStoryOut> {
             pubkey: event.pubkey.clone(),
             media,
             text,
-            created_at_ms: event.created_at * 1000.0,
+            created_at_ms: created_at * 1000.0,
             expires_at_ms: actual_expiry * 1000.0,
         });
     }

@@ -469,3 +469,17 @@ fn media_blob_tag_malformed_ignored() {
     assert_eq!(typed.media_size, 0);
     assert_eq!(mini_from_event(&e).unwrap()["blobHash"], "");
 }
+
+#[test]
+fn test_mini_rejects_private_ip_url() {
+    let e = ev(
+        "m_ssrf",
+        31020,
+        "",
+        vec![
+            tag("url", "http://127.0.0.1:8080/exploit.mp4"),
+            tag("image", "http://169.254.169.254/thumb.png"),
+        ],
+    );
+    assert!(mini_event_out(&e).is_none());
+}

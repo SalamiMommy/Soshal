@@ -104,17 +104,49 @@ impl Default for ChromeSpec {
 }
 
 pub fn compute_card_layout(req: &CardLayoutRequest) -> CardLayoutResult {
-    let mut height = req.chrome.header_px + req.chrome.padding_px;
+    let header_px = if req.chrome.header_px.is_finite() && req.chrome.header_px >= 0.0 {
+        req.chrome.header_px
+    } else {
+        48.0
+    };
+    let padding_px = if req.chrome.padding_px.is_finite() && req.chrome.padding_px >= 0.0 {
+        req.chrome.padding_px
+    } else {
+        16.0
+    };
+    let action_px = if req.chrome.action_px.is_finite() && req.chrome.action_px >= 0.0 {
+        req.chrome.action_px
+    } else {
+        40.0
+    };
+    let gap_px = if req.chrome.gap_px.is_finite() && req.chrome.gap_px >= 0.0 {
+        req.chrome.gap_px
+    } else {
+        8.0
+    };
+    let max_media_height_px =
+        if req.chrome.max_media_height_px.is_finite() && req.chrome.max_media_height_px >= 0.0 {
+            req.chrome.max_media_height_px
+        } else {
+            480.0
+        };
+
+    let mut height = header_px + padding_px;
     let text_block = req.text.as_ref().map(measure_text);
-    let mut media_boxes = Vec::with_capacity(req.media.len());
+    let media_slice = if req.media.len() > 64 {
+        &req.media[..64]
+    } else {
+        &req.media[..]
+    };
+    let mut media_boxes = Vec::with_capacity(media_slice.len());
     let mut media_height = 0.0;
-    for m in &req.media {
+    for m in media_slice {
         let box_w = text_block
             .as_ref()
             .map(|t| t.max_width_px)
-            .unwrap_or(req.chrome.max_media_height_px);
-        let box_h = if m.h > 0 {
-            (box_w * m.h as f32 / m.w.max(1) as f32).min(req.chrome.max_media_height_px)
+            .unwrap_or(max_media_height_px);
+        let box_h = if m.h > 0 && m.w > 0 {
+            (box_w * m.h as f32 / m.w as f32).min(max_media_height_px)
         } else {
             0.0
         };
@@ -125,13 +157,16 @@ pub fn compute_card_layout(req: &CardLayoutRequest) -> CardLayoutResult {
         });
     }
     if media_height > 0.0 {
-        height += media_height + req.chrome.gap_px;
+        height += media_height + gap_px;
     }
     let text_height = text_block.as_ref().map(|t| t.height_px).unwrap_or(0.0);
     if text_height > 0.0 {
         height += text_height;
     }
-    height += req.chrome.action_px;
+    height += action_px;
+    if !height.is_finite() || height < 0.0 {
+        height = 0.0;
+    }
     CardLayoutResult {
         id: req.id.clone(),
         height_px: height,

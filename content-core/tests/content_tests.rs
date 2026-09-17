@@ -830,6 +830,43 @@ fn stories_valid_processing() {
 }
 
 #[test]
+fn stories_rejects_private_ip_media() {
+    let input = json!({
+        "events": [
+            {"id": "ssrf", "pubkey": "pk", "content": "{\"media\":[{\"url\":\"http://127.0.0.1:8080/exploit.mp4\",\"type\":\"video/mp4\"}]}", "created_at": 100, "tags": []}
+        ],
+        "now_sec": 100,
+        "expiry_seconds": 3600
+    });
+    let out: serde_json::Value =
+        serde_json::from_str(&filter_stories_json(&input.to_string())).unwrap();
+    let events = out.as_array().unwrap();
+    assert_eq!(events.len(), 1);
+    assert!(events[0]["media"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn force_layout_small_canvas_no_panic() {
+    let json_input = json!({
+        "nodes": [{"id": "1", "label": "A"}, {"id": "2", "label": "B"}],
+        "edges": [{"source": "1", "target": "2"}],
+        "width": 30.0,
+        "height": 30.0,
+        "iterations": 10
+    });
+    let out =
+        soshal_content_core::forcelayout::calculate_force_layout_json(&json_input.to_string());
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed.len(), 2);
+    for n in &parsed {
+        let x = n["x"].as_f64().unwrap();
+        let y = n["y"].as_f64().unwrap();
+        assert!((0.0..=30.0).contains(&x));
+        assert!((0.0..=30.0).contains(&y));
+    }
+}
+
+#[test]
 fn css_color_rules() {
     assert!(is_valid_css_color("#fff"));
     assert!(is_valid_css_color("#abcd"));

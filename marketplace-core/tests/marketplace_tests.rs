@@ -80,6 +80,20 @@ fn parse_listing_maps_tags_and_content() {
 }
 
 #[test]
+fn parse_listing_rejects_private_ip_media() {
+    let mut input = listing_input();
+    input["tags"] = serde_json::json!([
+        ["price", "50"],
+        ["image", "http://127.0.0.1:8080/exploit.png"],
+        ["video", "http://192.168.1.1/video.mp4"],
+    ]);
+    let out = parse_listing_json(&input.to_string());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(v["images"].as_array().unwrap().is_empty());
+    assert!(v["videos"].is_null());
+}
+
+#[test]
 fn parse_listing_falls_back_and_defaults() {
     let input = serde_json::json!({
         "id": "shortid",

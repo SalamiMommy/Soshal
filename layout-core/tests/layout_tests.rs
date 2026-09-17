@@ -94,3 +94,29 @@ fn deterministic_across_calls() {
     });
     assert_eq!(a.height_px, b.height_px);
 }
+
+#[test]
+fn zero_width_media_yields_zero_height() {
+    let req = soshal_layout_core::CardLayoutRequest {
+        id: "zero".into(),
+        text: None,
+        media: vec![soshal_layout_core::MediaSpec { w: 0, h: 500 }],
+        chrome: ChromeSpec::default(),
+    };
+    let r = compute_card_layout(&req);
+    assert_eq!(r.media[0].height_px, 0.0);
+}
+
+#[test]
+fn non_finite_chrome_and_text_safe_json() {
+    let req = json!({
+        "id": "nan_test",
+        "text": {"content": "hello", "font_size_px": 16.0, "line_height_factor": 1.2, "max_width_px": -10.0},
+        "media": [{"w": 0, "h": 0}],
+        "chrome": {"header_px": -5.0}
+    });
+    let res = compute_card_layout_json(&req.to_string());
+    assert!(!res.is_empty());
+    let parsed: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert!(parsed["height_px"].as_f64().unwrap() >= 0.0);
+}

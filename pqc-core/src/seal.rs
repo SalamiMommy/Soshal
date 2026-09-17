@@ -102,6 +102,19 @@ struct DerivedKey {
     nonce: [u8; NONCE_LEN],
 }
 
+impl Zeroize for DerivedKey {
+    fn zeroize(&mut self) {
+        self.enc_key.zeroize();
+        self.nonce.zeroize();
+    }
+}
+
+impl Drop for DerivedKey {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
 fn hkdf_derive(shared_secret: &[u8], domain: &[u8]) -> Result<DerivedKey, String> {
     let mut okm = vec![0u8; KEY_LEN + NONCE_LEN];
     let salt = b"soshal-kem-seal-v1";
@@ -131,18 +144,25 @@ fn aead_encrypt(
     Ok((ct_b64, nonce_hex))
 }
 
+const MAX_CIPHERTEXT_B64_LEN: usize = 64 * 1024 * 1024;
+
 fn aead_decrypt(
     ciphertext_b64: &str,
     key: &[u8; KEY_LEN],
     nonce: &[u8; NONCE_LEN],
 ) -> Result<Vec<u8>, String> {
+    if ciphertext_b64.len() > MAX_CIPHERTEXT_B64_LEN {
+        return Err("ciphertext oversized".to_string());
+    }
     use aead::generic_array::GenericArray;
-    let ct = base64::engine::general_purpose::STANDARD
+    let mut ct = base64::engine::general_purpose::STANDARD
         .decode(ciphertext_b64)
         .map_err(|_| "bad base64".to_string())?;
     let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
     let nonce_arr = chacha20poly1305::Nonce::from_slice(nonce);
-    cipher
+    let res = cipher
         .decrypt(nonce_arr, ct.as_ref())
-        .map_err(|_| "decrypt failed".to_string())
+        .map_err(|_| "decrypt failed".to_string());
+    ct.zeroize();
+    res
 }

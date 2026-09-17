@@ -102,6 +102,15 @@ fn get_expiry_from_tags_found() {
 }
 
 #[test]
+fn get_expiry_from_tags_nip40_expiration() {
+    let tags = vec![
+        vec!["e".to_string(), "abc".to_string()],
+        vec!["expiration".to_string(), "1750000000".to_string()],
+    ];
+    assert_eq!(get_expiry_from_tags(&tags), 1750000000);
+}
+
+#[test]
 fn get_expiry_from_tags_not_found() {
     let tags = vec![vec!["e".to_string(), "abc".to_string()]];
     assert_eq!(get_expiry_from_tags(&tags), 0);

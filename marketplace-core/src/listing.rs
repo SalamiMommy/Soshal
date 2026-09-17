@@ -78,14 +78,21 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
             "price" if price_str.is_none() => price_str = Some(v),
             "currency" if currency.is_none() => currency = Some(v),
             "location" | "g" if location_geohash.is_none() => location_geohash = Some(v),
-            "image" if images.len() + videos.len() + hashtags.len() < 10_000 => {
-                images.push(v.clone())
+            "image" if images.len() < 32 => {
+                if soshal_common_core::url::is_valid_media_url(v) {
+                    images.push(v.clone());
+                }
             }
-            "video" if images.len() + videos.len() + hashtags.len() < 10_000 => {
-                videos.push(v.clone())
+            "video" if videos.len() < 16 => {
+                if soshal_common_core::url::is_valid_media_url(v) {
+                    videos.push(v.clone());
+                }
             }
-            "t" if images.len() + videos.len() + hashtags.len() < 10_000 => {
-                hashtags.push(v.clone())
+            "t" if hashtags.len() < 64 => {
+                let tag_val = v.trim();
+                if !tag_val.is_empty() && tag_val.len() <= 64 {
+                    hashtags.push(tag_val.to_string());
+                }
             }
             _ => {}
         }
@@ -127,6 +134,11 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
             description = Some(ev.content.clone());
         }
     }
+    let created_at = if ev.created_at.is_finite() && ev.created_at >= 0.0 {
+        ev.created_at
+    } else {
+        0.0
+    };
     Some(ListingOut {
         id: ev.id.clone(),
         pubkey: ev.pubkey.clone(),
@@ -145,7 +157,7 @@ pub fn parse_listing(ev: &ListingEvent) -> Option<ListingOut> {
         },
         contact_methods,
         tags: hashtags,
-        created_at: ev.created_at,
+        created_at,
         escrow_enabled,
     })
 }

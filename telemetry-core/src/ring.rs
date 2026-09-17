@@ -44,10 +44,18 @@ pub struct SharedRing {
     capacity: usize,
 }
 
+pub const MAX_RING_CAPACITY: usize = 256 * 1024 * 1024; // 256 MiB cap
+pub const MAX_REGISTERED_RINGS: usize = 32;
+
 impl SharedRing {
     /// Opens (or creates) the ring at `path` with `capacity_bytes` of data
     /// space (min 64 KiB, rounded up to a 4096 multiple).
     pub fn init(path: &Path, capacity_bytes: usize) -> Result<Self, String> {
+        if capacity_bytes > MAX_RING_CAPACITY {
+            return Err(format!(
+                "ring capacity too large: {capacity_bytes} bytes (max {MAX_RING_CAPACITY})"
+            ));
+        }
         let cap = capacity_bytes.max(64 * 1024).div_ceil(4096) * 4096;
         let file = OpenOptions::new()
             .read(true)
@@ -197,12 +205,15 @@ fn registry() -> &'static std::sync::Mutex<
 
 /// Registers a ring for FFI access by address. Returns the address.
 pub fn register_ring(path: &Path, capacity_bytes: usize) -> Result<usize, String> {
+    let mut reg = registry()
+        .lock()
+        .map_err(|_| "ring registry poisoned".to_string())?;
+    if reg.len() >= MAX_REGISTERED_RINGS {
+        return Err("too many registered rings".to_string());
+    }
     let ring = SharedRing::init(path, capacity_bytes)?;
     let addr = ring.addr();
-    registry()
-        .lock()
-        .map_err(|_| "ring registry poisoned".to_string())?
-        .insert(addr, std::sync::Arc::new(std::sync::Mutex::new(ring)));
+    reg.insert(addr, std::sync::Arc::new(std::sync::Mutex::new(ring)));
     Ok(addr)
 }
 

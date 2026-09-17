@@ -107,6 +107,12 @@ pub fn decode_voice_stream(data: &[u8]) -> Result<Vec<i16>, String> {
 /// Duration in seconds of a voice-note stream. Derived from the packet count
 /// (fixed 20 ms frames) instead of a full decode.
 pub fn voice_duration_secs(data: &[u8]) -> Result<f64, String> {
+    if data.len() > MAX_DECODE_INPUT_BYTES {
+        return Err(format!(
+            "opus stream too large: {} bytes (max {MAX_DECODE_INPUT_BYTES})",
+            data.len()
+        ));
+    }
     if !crate::is_opus_stream(data) {
         return Err("not a voice-note stream".to_string());
     }
@@ -140,4 +146,17 @@ pub fn pcm_len_for_secs(secs: f64) -> usize {
         return 0;
     }
     (s * OPUS_SAMPLE_RATE as f64).round() as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_voice_duration_oversized_rejected() {
+        let fake = vec![0u8; MAX_DECODE_INPUT_BYTES + 1];
+        let res = voice_duration_secs(&fake);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("opus stream too large"));
+    }
 }

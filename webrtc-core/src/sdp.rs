@@ -4,12 +4,18 @@ use crate::ice::is_safe_candidate;
 use soshal_common_core::json_util::{json_in, json_out};
 use soshal_common_core::url::{is_private_ip_str, is_private_ipv6_str};
 
+const MAX_FFI_LEN: usize = 1024 * 1024;
+const MAX_LINES: usize = 4_000;
+
 // ─── SDP Sanitization ───────────────────────────────────────────────────────
 
 /// Removes host candidates and (optionally) srflx/relay candidates from an
 /// SDP string, and rewrites `c=IN IP4` / `c=IN IP6` lines that reference
 /// private/reserved addresses to loopback equivalents.
 pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
+    if sdp.len() > MAX_FFI_LEN {
+        return String::new();
+    }
     let mut out = String::with_capacity(sdp.len() + 32);
     let mut first = true;
     for raw_line in sdp.lines() {
@@ -116,23 +122,28 @@ pub fn sanitize_sdp_json(input: &str) -> String {
 
 /// Extract `a=candidate:` lines from an SDP.
 pub fn extract_candidates(sdp: &str) -> Vec<String> {
+    if sdp.len() > MAX_FFI_LEN {
+        return Vec::new();
+    }
     sdp.lines()
         .filter(|line| line.starts_with("a=candidate:"))
+        .take(MAX_LINES)
         .map(|line| line.to_string())
         .collect()
 }
 
 /// Basic SDP well-formedness check: session-level v= and o= lines present.
 pub fn validate_sdp(sdp: &str) -> bool {
+    if sdp.len() > MAX_FFI_LEN {
+        return false;
+    }
     sdp.contains("v=0") && sdp.contains("o=")
 }
 
 // ─── Opus SDP Configuration ─────────────────────────────────────────────────
 
-const MAX_FFI_LEN: usize = 1024 * 1024;
 const MAX_PT_LEN: usize = 16;
 const MAX_LINE_LEN: usize = 1024;
-const MAX_LINES: usize = 4_000;
 
 fn safe_truncate_line(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {

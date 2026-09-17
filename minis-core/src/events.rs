@@ -12,7 +12,13 @@ fn clamp_created_at(v: f64) -> u64 {
 }
 
 fn sanitize_media_url(u: &str) -> String {
-    if u.starts_with("http://") || u.starts_with("https://") || u.starts_with("blob://") {
+    if u.starts_with("blob://") {
+        if u.len() <= 2048 {
+            return u.to_string();
+        }
+        return String::new();
+    }
+    if soshal_common_core::url::is_valid_media_url(u) {
         u.to_string()
     } else {
         String::new()
@@ -82,7 +88,7 @@ pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
     if url.is_empty() {
         return None;
     }
-    let thumb = thumb.unwrap_or("");
+    let thumb = sanitize_media_url(thumb.unwrap_or(""));
     let audience = audience.unwrap_or("");
     let audience = if audience.is_empty() {
         "public"
@@ -97,7 +103,7 @@ pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
         blob_hash,
         media_size,
         text_overlay: ev.content.clone(),
-        thumbnail: thumb.to_string(),
+        thumbnail: thumb,
         audience: audience.to_string(),
         created_at: clamp_created_at(ev.created_at),
     })
@@ -113,6 +119,7 @@ pub fn mini_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
 /// Max hashtags harvested from a musicloud track event before we stop
 /// scanning (guards against hostile tag floods).
 const MAX_HASHTAGS: usize = 10_000;
+const MAX_HASHTAG_LEN: usize = 1024;
 
 /// Maps a kind-31022 musicloud event to its typed struct. Returns `None`
 /// when the `url` tag is missing.
@@ -132,7 +139,12 @@ pub fn musicloud_event_out(ev: &NostrEvent) -> Option<MusicloudEventOut> {
                 "image" if thumbnail.is_empty() => thumbnail = &tag[1],
                 "d" if d_tag.is_empty() => d_tag = &tag[1],
                 "audience" if audience.is_empty() => audience = &tag[1],
-                "t" => hashtags.push(tag[1].clone()),
+                "t" => {
+                    let tag_val = tag[1].trim();
+                    if !tag_val.is_empty() && tag_val.len() <= MAX_HASHTAG_LEN {
+                        hashtags.push(tag_val.to_string());
+                    }
+                }
                 _ => {}
             }
         }
@@ -143,6 +155,7 @@ pub fn musicloud_event_out(ev: &NostrEvent) -> Option<MusicloudEventOut> {
     if url.is_empty() {
         return None;
     }
+    let thumbnail = sanitize_media_url(thumbnail);
     let audience = if audience.is_empty() {
         "public"
     } else {

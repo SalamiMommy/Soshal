@@ -93,14 +93,19 @@ fn hash_spec(spec: &TextStyleSpec) -> u64 {
 /// Measure wrapped text. Spaces are shaped separately so word boundaries
 /// carry correct inter-word advance.
 pub fn measure_text(spec: &TextStyleSpec) -> TextBlockLayout {
+    let max_width = if spec.max_width_px.is_finite() && spec.max_width_px > 0.0 {
+        spec.max_width_px
+    } else {
+        0.0
+    };
     let mut out = TextBlockLayout {
         lines: 0,
         height_px: 0.0,
         last_line_width_px: 0.0,
         elided: false,
-        max_width_px: spec.max_width_px,
+        max_width_px: max_width,
     };
-    if spec.max_width_px <= 0.0 || spec.font_size_px <= 0.0 {
+    if max_width <= 0.0 || !spec.font_size_px.is_finite() || spec.font_size_px <= 0.0 {
         return out;
     }
 

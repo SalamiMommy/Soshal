@@ -36,11 +36,16 @@ fn check_word_private_ip(word: &str) -> bool {
     false
 }
 
+pub const MAX_CANDIDATE_LEN: usize = 2048;
+pub const MAX_REDACT_LEN: usize = 1024 * 1024;
+
 fn has_private_ip(s: &str) -> bool {
     let mut word = String::new();
     for c in s.chars() {
         if c.is_ascii_hexdigit() || c == '.' || c == ':' || c == '[' || c == ']' {
-            word.push(c);
+            if word.len() < 128 {
+                word.push(c);
+            }
         } else {
             if !word.is_empty() {
                 if check_word_private_ip(&word) {
@@ -57,7 +62,7 @@ fn has_private_ip(s: &str) -> bool {
 }
 
 pub fn is_safe_candidate(candidate: &str, force_relay: bool) -> bool {
-    if candidate.is_empty() {
+    if candidate.is_empty() || candidate.len() > MAX_CANDIDATE_LEN {
         return false;
     }
     if candidate.contains("typ host") {
@@ -77,11 +82,16 @@ pub fn is_safe_candidate(candidate: &str, force_relay: bool) -> bool {
 /// same for host candidates; peers fall back to STUN srflx/relay candidates).
 /// Public addresses and non-IP tokens pass through untouched.
 pub fn redact_private_ips(s: &str) -> String {
+    if s.len() > MAX_REDACT_LEN {
+        return String::new();
+    }
     let mut out = String::with_capacity(s.len());
     let mut word = String::new();
     for c in s.chars() {
         if c.is_ascii_hexdigit() || c == '.' || c == ':' || c == '[' || c == ']' {
-            word.push(c);
+            if word.len() < 128 {
+                word.push(c);
+            }
         } else {
             push_redacted_word(&mut word, &mut out);
             out.push(c);

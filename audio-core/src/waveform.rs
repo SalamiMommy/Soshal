@@ -147,6 +147,9 @@ fn append_mono(
 
 /// Collapse mono samples into `bins` RMS peaks, each normalized 0..1.
 fn peaks(samples: &[f32], bins: usize) -> Vec<f32> {
+    if bins == 0 {
+        return Vec::new();
+    }
     if samples.is_empty() {
         return vec![0.0; bins];
     }
@@ -207,9 +210,17 @@ fn clamp_bins(bins: usize) -> usize {
     bins.clamp(WAVEFORM_MIN_BINS, WAVEFORM_MAX_BINS)
 }
 
+pub const MAX_AUDIO_FILE_BYTES: u64 = 100 * 1024 * 1024; // 100 MiB cap
+
 /// Extract waveform peaks from raw audio bytes. Container sniffed; raw Opus
 /// voice-note envelopes routed to audiopus.
 pub fn extract_waveform_bytes(data: &[u8], bins: usize) -> Result<Vec<f32>, String> {
+    if data.len() as u64 > MAX_AUDIO_FILE_BYTES {
+        return Err(format!(
+            "audio bytes too large: {} bytes (max {MAX_AUDIO_FILE_BYTES})",
+            data.len()
+        ));
+    }
     let samples = decode_all(data, None)?;
     Ok(peaks(&samples, clamp_bins(bins)))
 }
@@ -217,7 +228,18 @@ pub fn extract_waveform_bytes(data: &[u8], bins: usize) -> Result<Vec<f32>, Stri
 /// Extract waveform peaks from a file on disk. `hint_ext` helps the prober
 /// when the container is ambiguous (e.g. ".m4a").
 pub fn extract_waveform_path(path: &str, bins: usize) -> Result<Vec<f32>, String> {
-    let ext = std::path::Path::new(path)
+    let p = std::path::Path::new(path);
+    let meta = std::fs::metadata(p).map_err(|e| format!("read {path}: {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("path is not a regular file: {path}"));
+    }
+    if meta.len() > MAX_AUDIO_FILE_BYTES {
+        return Err(format!(
+            "file too large: {} bytes (max {MAX_AUDIO_FILE_BYTES})",
+            meta.len()
+        ));
+    }
+    let ext = p
         .extension()
         .and_then(|e| e.to_str())
         .map(str::to_lowercase);
@@ -344,5 +366,18 @@ mod tests {
     #[test]
     fn container_sample_cap_is_64mib() {
         assert_eq!(super::MAX_CONTAINER_SAMPLES, 64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn peaks_zero_bins_returns_empty() {
+        assert_eq!(peaks(&[1.0, 2.0, 3.0], 0), Vec::<f32>::new());
+    }
+
+    #[test]
+    fn extract_waveform_path_rejects_directory() {
+        let tmp = std::env::temp_dir();
+        let res = super::extract_waveform_path(tmp.to_str().unwrap(), 32);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("not a regular file"));
     }
 }
