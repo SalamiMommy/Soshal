@@ -259,6 +259,9 @@ struct ConfigureOpusInput {
 /// Input: `{"sdp": "...", "highFidelity": true/false}`
 /// Output: `{"sdp": "..."}`
 pub fn configure_opus_audio_sdp_json(input: &str) -> String {
+    if input.len() > MAX_FFI_LEN {
+        return json_out(&serde_json::json!({"sdp": ""}), r#"{"sdp": ""}"#);
+    }
     let Some(input) = json_in::<Option<ConfigureOpusInput>>(input, None) else {
         return json_out(&serde_json::json!({"sdp": ""}), r#"{"sdp": ""}"#);
     };

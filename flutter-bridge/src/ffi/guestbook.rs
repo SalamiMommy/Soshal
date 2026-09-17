@@ -57,9 +57,11 @@ fn sender_name_of(sender_pubkey: &str) -> Option<String> {
 }
 
 /// Sign + store + relay a guestbook entry (kind 30080, `p` = owner pubkey).
+/// Sign + store + relay a guestbook entry (kind 30080, `p` = owner pubkey).
 /// Returns the stored entry JSON. Requires the unlocked signer.
 #[frb(serialize)]
 pub async fn guestbook_add(profile_pubkey: String, content: String) -> Result<String, String> {
+    let profile_pubkey = profile_pubkey.trim().to_ascii_lowercase();
     if !hex64(&profile_pubkey) {
         return Err("invalid profile pubkey".to_string()).into();
     }
@@ -114,12 +116,16 @@ pub fn guestbook_list(
     limit: i32,
     only_approved: bool,
 ) -> Result<String, String> {
+    let profile_pubkey = profile_pubkey.trim().to_ascii_lowercase();
     if !hex64(&profile_pubkey) {
         return Err("invalid profile pubkey".to_string()).into();
     }
     let limit = limit.clamp(1, 200);
     let caller = super::signer::signer_pubkey().ok();
-    let is_owner = caller.as_deref() == Some(profile_pubkey.as_str());
+    let is_owner = caller
+        .as_deref()
+        .map(|c| c.eq_ignore_ascii_case(&profile_pubkey))
+        .unwrap_or(false);
 
     super::db::with_db_string(|db| {
         let rows = soshal_db_core::repos::guestbook::GuestbookRepo::new(db)
@@ -133,7 +139,11 @@ pub fn guestbook_list(
                 } else if is_owner {
                     true
                 } else {
-                    r.approved || caller.as_deref() == Some(r.sender_pubkey.as_str())
+                    r.approved
+                        || caller
+                            .as_deref()
+                            .map(|c| c.eq_ignore_ascii_case(&r.sender_pubkey))
+                            .unwrap_or(false)
                 }
             })
             .map(|r| GuestbookEntryDto {
@@ -156,6 +166,7 @@ pub fn guestbook_list(
 /// local row, relay the decision. Only the profile owner may approve.
 #[frb(serialize)]
 pub async fn guestbook_approve(entry_id: String, approved: bool) -> Result<String, String> {
+    let entry_id = entry_id.trim().to_ascii_lowercase();
     if entry_id.len() != 64 || !entry_id.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("invalid entry id".to_string()).into();
     }
@@ -175,7 +186,7 @@ pub async fn guestbook_approve(entry_id: String, approved: bool) -> Result<Strin
     let Some(profile_pubkey) = target else {
         return Err("guestbook entry not found".to_string()).into();
     };
-    if profile_pubkey != owner_pubkey {
+    if !profile_pubkey.eq_ignore_ascii_case(&owner_pubkey) {
         return Err("only the profile owner can approve entries".to_string()).into();
     }
     let content = if approved { "approved" } else { "rejected" };
@@ -200,6 +211,7 @@ pub async fn guestbook_approve(entry_id: String, approved: bool) -> Result<Strin
 /// Owner-only local delete of a guestbook entry.
 #[frb(sync, serialize)]
 pub fn guestbook_delete(entry_id: String) -> Result<bool, String> {
+    let entry_id = entry_id.trim().to_ascii_lowercase();
     if entry_id.len() != 64 || !entry_id.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("invalid entry id".to_string()).into();
     }
@@ -219,7 +231,7 @@ pub fn guestbook_delete(entry_id: String) -> Result<bool, String> {
     let Some(pk) = profile_pubkey else {
         return Ok(false).into();
     };
-    if pk != owner_pubkey {
+    if !pk.eq_ignore_ascii_case(&owner_pubkey) {
         return Err("only the profile owner can delete entries".to_string()).into();
     }
     super::db::with_db_result(|db| {
@@ -365,6 +377,38 @@ mod tests {
         let arr: serde_json::Value = serde_json::from_str(&bob_view).unwrap();
         assert_eq!(arr.as_array().unwrap().len(), 1);
 
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_guestbook_casing_insensitivity() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("guestbook-case", "gb");
+        let owner = nostr::key::Keys::generate();
+        let owner_pk = owner.public_key().to_hex();
+        let guest = nostr::key::Keys::generate();
+
+        super::super::signer::signer_unlock(guest.secret_key().to_secret_hex()).unwrap();
+        // Add entry to owner with uppercase pubkey
+        let entry_str = guestbook_add(owner_pk.to_uppercase(), "hello owner".to_string())
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&entry_str).unwrap();
+        let entry_id = v["id"].as_str().unwrap().to_string();
+
+        // Owner unlocks and can approve with uppercase entry ID
+        super::super::signer::signer_lock().unwrap();
+        super::super::signer::signer_unlock(owner.secret_key().to_secret_hex()).unwrap();
+
+        let approved_json = guestbook_approve(entry_id.to_uppercase(), true)
+            .await
+            .unwrap();
+        assert!(approved_json.contains("approved"));
+
+        // Owner can delete with uppercase entry ID
+        assert!(guestbook_delete(entry_id.to_uppercase()).unwrap());
         super::super::signer::signer_lock().unwrap();
     }
 }

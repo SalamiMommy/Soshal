@@ -34,13 +34,16 @@ pub async fn chatrandom_send(
     if peers.is_empty() {
         return Err("Recipient peer list cannot be empty for chatrandom handshake".to_string());
     }
+    if peers.len() > 50 {
+        return Err("Recipient peer list exceeds maximum of 50 peers".to_string());
+    }
     if content_json.len() > 65536 {
         return Err("Content exceeds maximum length of 64KB".to_string());
     }
     let my_pk = super::signer::signer_pubkey()?;
     for p in &peers {
         super::session::validate_pubkey_hex(p)?;
-        if p == &my_pk {
+        if p.eq_ignore_ascii_case(&my_pk) {
             return Err("Cannot pair with yourself".to_string());
         }
     }
@@ -74,11 +77,13 @@ pub async fn chatrandom_fetch(
         super::session::validate_pubkey_hex(auth)?;
     }
     super::signer::require_identity(&my_pubkey)?;
+    let my_pubkey_lower = my_pubkey.trim().to_ascii_lowercase();
     let lim = limit.clamp(1, 100);
     let events: Vec<nostr::event::Event> = if let Some(p) = author {
+        let p_clean = p.trim().to_ascii_lowercase();
         let filter = serde_json::json!({
             "kinds": [20030, 20031, 20032],
-            "authors": [p],
+            "authors": [p_clean],
             "limit": lim,
         });
         let raw = super::network::network_query_events(filter.to_string()).await?;
@@ -90,7 +95,7 @@ pub async fn chatrandom_fetch(
         });
         let direct_filter = serde_json::json!({
             "kinds": [20031, 20032],
-            "#p": [&my_pubkey],
+            "#p": [&my_pubkey_lower],
             "limit": lim,
         });
         let (raw_avail, raw_direct) = tokio::join!(
@@ -134,9 +139,11 @@ pub async fn chatrandom_fetch(
             let addresses_me = e.tags.iter().any(|t| {
                 let s = t.as_slice();
                 s.first().map(|v| v == "p").unwrap_or(false)
-                    && s.get(1).map(|v| v == &my_pubkey).unwrap_or(false)
+                    && s.get(1)
+                        .map(|v| v.eq_ignore_ascii_case(&my_pubkey_lower))
+                        .unwrap_or(false)
             });
-            let authored_by_me = e.pubkey.to_hex() == my_pubkey;
+            let authored_by_me = e.pubkey.to_hex().eq_ignore_ascii_case(&my_pubkey_lower);
             if !addresses_me && !authored_by_me {
                 continue;
             }
@@ -296,5 +303,26 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("invalid pubkey"), "{err}");
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_send_validates_peer_limit() {
+        let _g = crate::ffi::util::lock(&CHATRANDOM_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+
+        // Too many peers (> 50)
+        let peer_pk = soshal_nostr_core::keys::generate_keys()
+            .public_key()
+            .to_hex();
+        let many_peers = vec![peer_pk; 51];
+        let err = chatrandom_send("request".to_string(), many_peers, "{}".to_string())
+            .await
+            .unwrap_err();
+        assert!(err.contains("exceeds maximum of 50 peers"), "{err}");
+
+        super::super::signer::signer_lock().unwrap();
     }
 }

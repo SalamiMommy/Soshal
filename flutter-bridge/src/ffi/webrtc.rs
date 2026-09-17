@@ -55,7 +55,12 @@ fn validate_ice_endpoint_host(endpoint: &str) -> Result<String, String> {
 /// `privacy_level`: "public" (all), "friends" (relay only).
 #[frb(sync, serialize)]
 pub fn webrtc_get_ice_config(privacy_level: String) -> Result<String, String> {
-    let value = ice_config(&privacy_level, "stun:stun.l.google.com:19302");
+    let clean_level = if privacy_level.len() > 64 {
+        "friends"
+    } else {
+        privacy_level.trim()
+    };
+    let value = ice_config(clean_level, "stun:stun.l.google.com:19302");
     Ok(value.to_string()).into()
 }
 
@@ -108,6 +113,9 @@ pub fn webrtc_get_turn_servers(_auth_token: Option<String>) -> Result<String, St
 /// candidates (matches `friends`/`private` privacy levels).
 #[frb(sync, serialize)]
 pub fn webrtc_sanitize_sdp(sdp: String, force_relay: bool) -> Result<String, String> {
+    if sdp.len() > 1024 * 1024 {
+        return Err("sdp too large: max 1MB".to_string()).into();
+    }
     Ok(sanitize_sdp(&sdp, force_relay)).into()
 }
 
@@ -129,7 +137,12 @@ static EMPTY_SERVERS: std::sync::LazyLock<serde_json::Value> =
 /// Create peer connection config
 #[frb(sync, serialize)]
 pub fn webrtc_create_peer_config(privacy_level: String) -> Result<String, String> {
-    let ice_value = ice_config(&privacy_level, "stun:stun.l.google.com:19302");
+    let clean_level = if privacy_level.len() > 64 {
+        "friends"
+    } else {
+        privacy_level.trim()
+    };
+    let ice_value = ice_config(clean_level, "stun:stun.l.google.com:19302");
     let (servers, policy) = match ice_value.as_object() {
         Some(obj) => {
             let s = obj.get("iceServers").unwrap_or(&EMPTY_SERVERS);
@@ -155,6 +168,9 @@ pub fn webrtc_create_peer_config(privacy_level: String) -> Result<String, String
 /// Extract candidates from SDP
 #[frb(sync, serialize)]
 pub fn webrtc_extract_candidates(sdp: String) -> Result<Vec<String>, String> {
+    if sdp.len() > 1024 * 1024 {
+        return Err("sdp too large: max 1MB".to_string()).into();
+    }
     Ok(extract_candidates(&sdp)).into()
 }
 
@@ -168,6 +184,12 @@ pub fn webrtc_extract_candidates(sdp: String) -> Result<Vec<String>, String> {
 ///   sections that bypass `webrtc_sanitize_sdp`.
 #[frb(sync, serialize)]
 pub fn webrtc_add_candidate_to_sdp(sdp: String, candidate: String) -> Result<String, String> {
+    if sdp.len() > 1024 * 1024 {
+        return Err("sdp too large: max 1MB".to_string()).into();
+    }
+    if candidate.len() > 2048 {
+        return Err("candidate too large: max 2048 bytes".to_string()).into();
+    }
     // Enforce SDP attribute line prefix.
     if !candidate.starts_with("a=") {
         return Err("candidate must be an SDP attribute line starting with 'a='".to_string())
@@ -193,6 +215,9 @@ pub fn webrtc_add_candidate_to_sdp(sdp: String, candidate: String) -> Result<Str
 /// Validate SDP
 #[frb(sync, serialize)]
 pub fn webrtc_validate_sdp(sdp: String) -> Result<bool, String> {
+    if sdp.len() > 1024 * 1024 {
+        return Ok(false).into();
+    }
     Ok(validate_sdp(&sdp)).into()
 }
 
@@ -435,5 +460,17 @@ mod tests {
         assert!(!webrtc_validate_sdp("v=0 only".to_string()).unwrap());
         assert!(!webrtc_validate_sdp("o=- 0 0 IN IP4 127.0.0.1".to_string()).unwrap());
         assert!(!webrtc_validate_sdp(String::new()).unwrap());
+    }
+
+    #[test]
+    fn test_webrtc_oversized_sdp_and_candidate_rejected() {
+        let huge_sdp = "v=0\r\n".repeat(300_000);
+        assert!(webrtc_sanitize_sdp(huge_sdp.clone(), false).is_err());
+        assert!(webrtc_extract_candidates(huge_sdp.clone()).is_err());
+        assert!(!webrtc_validate_sdp(huge_sdp.clone()).unwrap());
+        assert!(webrtc_add_candidate_to_sdp(huge_sdp, "a=candidate:1".to_string()).is_err());
+
+        let huge_cand = format!("a={}", "x".repeat(2050));
+        assert!(webrtc_add_candidate_to_sdp("v=0".to_string(), huge_cand).is_err());
     }
 }

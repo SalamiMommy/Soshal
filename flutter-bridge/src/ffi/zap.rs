@@ -133,6 +133,9 @@ pub struct LnurlMetadata {
 /// Parse a lud16 address into its parts (Rust-side URL hygiene).
 #[frb(serialize)]
 pub fn zap_parse_lnurl_metadata(lnurl: String) -> Result<String, String> {
+    if lnurl.is_empty() || lnurl.len() > 2048 {
+        return Err("invalid lnurl length: max 2048 chars".to_string()).into();
+    }
     let (name, domain, callback) = soshal_zap_core::lnurl::parse_lud16_url_secure(&lnurl)
         .map_err(|e| format!("LNURL parse failed: {e}"))?;
     super::util::json_ok(LnurlMetadata {
@@ -229,6 +232,15 @@ pub async fn zap_fetch_invoice(
     /// payments caused by UI bugs or attacker-manipulated input.
     const MAX_ZAP_MSAT: u64 = 100_000_000_000;
 
+    if lnurl.is_empty() || lnurl.len() > 2048 {
+        return Err("invalid lnurl length: max 2048 chars".to_string()).into();
+    }
+    if _comment.len() > 1000 {
+        return Err("comment exceeds 1000 chars".to_string()).into();
+    }
+    if _nostr_event.len() > 64 * 1024 {
+        return Err("nostr_event exceeds 64KB".to_string()).into();
+    }
     let _lud16 = soshal_zap_core::lnurl::parse_lud16_url_secure(&lnurl)
         .map_err(|e| format!("LNURL parse failed: {e}"))?;
     if amount_msat == 0 {
@@ -308,12 +320,16 @@ pub async fn zap_send_payment(bolt11: String) -> Result<String, String> {
 /// only — never the `amount` tag of an unverified receipt).
 #[frb(serialize)]
 pub fn zap_get_total_msat(event_id: String) -> Result<u64, String> {
+    let event_id = event_id.trim();
+    if event_id.is_empty() || event_id.len() > 128 {
+        return Ok(0);
+    }
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let total: i64 = soshal_db_core::query::query_first(
             &conn,
-            "SELECT COALESCE(SUM(amount_msat), 0) FROM zaps WHERE event_id = ?1",
-            libsql::params![event_id.as_str()],
+            "SELECT COALESCE(SUM(amount_msat), 0) FROM zaps WHERE LOWER(event_id) = LOWER(?1)",
+            libsql::params![event_id],
             |r| r.get(0),
         )?
         .unwrap_or(0);
@@ -324,26 +340,31 @@ pub fn zap_get_total_msat(event_id: String) -> Result<u64, String> {
 /// Batch zap totals for many event ids: one query, one FFI roundtrip.
 #[frb(sync, serialize)]
 pub fn zap_fetch_totals(event_ids: Vec<String>) -> Result<String, String> {
+    if event_ids.len() > 500 {
+        return Err("too many event_ids: max 500".to_string()).into();
+    }
     let ids_json = serde_json::to_string(&event_ids).map_err(|e| format!("serialize: {e}"))?;
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let out = soshal_db_core::block_on(async {
             let stmt = conn
                 .prepare(
-                    "SELECT event_id, SUM(amount_msat) FROM zaps WHERE event_id IN (SELECT value FROM json_each(?1)) GROUP BY event_id",
+                    "SELECT event_id, SUM(amount_msat) FROM zaps WHERE LOWER(event_id) IN (SELECT LOWER(value) FROM json_each(?1)) GROUP BY LOWER(event_id)",
                 )
                 .await?;
             let mut rows = stmt.query(libsql::params![ids_json.as_str()]).await?;
-            let mut map: std::collections::HashMap<&str, i64> =
+            let mut map: std::collections::HashMap<String, i64> =
                 std::collections::HashMap::with_capacity(event_ids.len());
             for id in &event_ids {
-                map.insert(id.as_str(), 0);
+                map.insert(id.clone(), 0);
             }
             while let Some(row) = rows.next().await? {
                 let eid: String = row.get(0)?;
                 let sum: i64 = row.get(1)?;
-                if let Some(slot) = map.get_mut(eid.as_str()) {
-                    *slot = sum;
+                for id in &event_ids {
+                    if id.eq_ignore_ascii_case(&eid) {
+                        map.insert(id.clone(), sum);
+                    }
                 }
             }
             Ok::<_, libsql::Error>(map)
@@ -373,6 +394,10 @@ struct ZapReceiptDto {
 /// Fetch stored zap receipt rows for an event as raw JSON.
 #[frb(serialize)]
 pub fn zap_fetch_receipts(event_id: String, limit: i32) -> Result<String, String> {
+    let event_id = event_id.trim();
+    if event_id.is_empty() || event_id.len() > 128 {
+        return Ok("[]".to_string()).into();
+    }
     if limit <= 0 || limit > 500 {
         return Err("limit must be 1..=500".to_string()).into();
     }
@@ -381,11 +406,11 @@ pub fn zap_fetch_receipts(event_id: String, limit: i32) -> Result<String, String
         let out = soshal_db_core::block_on(async {
             let stmt = conn
                 .prepare(
-                    "SELECT id, event_id, recipient_pubkey, sender_pubkey, amount_msat, bolt11, preimage, comment, created_at, pubkey, amount, content, zap_type FROM zaps WHERE event_id = ?1 ORDER BY created_at DESC LIMIT ?2",
+                    "SELECT id, event_id, recipient_pubkey, sender_pubkey, amount_msat, bolt11, preimage, comment, created_at, pubkey, amount, content, zap_type FROM zaps WHERE LOWER(event_id) = LOWER(?1) ORDER BY created_at DESC LIMIT ?2",
                 )
                 .await?;
             let mut rows = stmt
-                .query(libsql::params![event_id.as_str(), limit as i64])
+                .query(libsql::params![event_id, limit as i64])
                 .await?;
             let mut out = Vec::with_capacity((limit as usize).min(64));
             while let Some(row) = rows.next().await? {
@@ -653,5 +678,32 @@ mod tests {
         .await
         .unwrap_err();
         assert!(err.contains("exceeds maximum"), "got: {err}");
+    }
+
+    #[test]
+    fn test_zap_case_insensitivity_and_limits() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _p = db::tmp_db("zap_case_limits", "zap");
+        db::db_execute_raw_test(
+            "INSERT INTO zaps (id, event_id, recipient_pubkey, amount, amount_msat, created_at, zap_type) \
+             VALUES ('z1','ev_lower','pk',10,10000,1000,'public')"
+                .to_string(),
+        )
+        .unwrap();
+
+        // Upper case query matches lower case row
+        assert_eq!(zap_get_total_msat("EV_LOWER".to_string()).unwrap(), 10000);
+
+        let totals_json = zap_fetch_totals(vec!["EV_LOWER".to_string()]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&totals_json).unwrap();
+        assert_eq!(v["EV_LOWER"], 10000);
+
+        let receipts_json = zap_fetch_receipts("EV_LOWER".to_string(), 10).unwrap();
+        assert!(receipts_json.contains("z1"));
+
+        // Oversized input limits
+        assert!(zap_parse_lnurl_metadata("x".repeat(2049)).is_err());
+        let too_many_ids = (0..501).map(|i| format!("ev{i}")).collect();
+        assert!(zap_fetch_totals(too_many_ids).is_err());
     }
 }

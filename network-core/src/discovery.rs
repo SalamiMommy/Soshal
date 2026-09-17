@@ -32,48 +32,63 @@ pub fn suggest_mutual_friends(input: SuggestMutualFriendsInput) -> Vec<Suggestio
     if input.all_users.len() > MAX_USERS || input.limit > MAX_USERS {
         return Vec::new();
     }
-    let self_pubkey = &input.self_pubkey;
-    let self_contacts: HashSet<&str> = input.self_contacts.iter().map(|s| s.as_str()).collect();
-    let user_info_map: HashMap<&str, &AllUserInfo> = input
+    let self_pubkey = input.self_pubkey.trim().to_ascii_lowercase();
+    let self_contacts: HashSet<String> = input
+        .self_contacts
+        .iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let user_info_map: HashMap<String, &AllUserInfo> = input
         .all_users
         .iter()
-        .map(|u| (u.pubkey.as_str(), u))
+        .map(|u| (u.pubkey.trim().to_ascii_lowercase(), u))
         .collect();
-    let mut candidates: HashMap<&str, HashSet<&str>> =
+    let mut candidate_display_pks: HashMap<String, &str> = HashMap::new();
+    let mut candidates: HashMap<String, HashSet<String>> =
         HashMap::with_capacity(input.all_users.len().min(128));
     for user in &input.all_users {
-        if &user.pubkey == self_pubkey || self_contacts.contains(user.pubkey.as_str()) {
+        let user_pk = user.pubkey.trim().to_ascii_lowercase();
+        if user_pk == self_pubkey || self_contacts.contains(&user_pk) {
             continue;
         }
         let mut mutuals = HashSet::new();
         for c in &user.contacts {
-            if self_contacts.contains(c.as_str()) {
-                mutuals.insert(c.as_str());
+            let c_norm = c.trim().to_ascii_lowercase();
+            if self_contacts.contains(&c_norm) {
+                mutuals.insert(c_norm);
             }
         }
         if !mutuals.is_empty() {
-            candidates.insert(user.pubkey.as_str(), mutuals);
+            candidate_display_pks.insert(user_pk.clone(), user.pubkey.as_str());
+            candidates.insert(user_pk, mutuals);
         }
     }
     for contact in &input.self_contacts {
-        if let Some(user_info) = user_info_map.get(contact.as_str()) {
+        let contact_norm = contact.trim().to_ascii_lowercase();
+        if let Some(user_info) = user_info_map.get(&contact_norm) {
             for their_contact in &user_info.contacts {
-                if their_contact == self_pubkey || self_contacts.contains(their_contact.as_str()) {
+                let their_contact_norm = their_contact.trim().to_ascii_lowercase();
+                if their_contact_norm == self_pubkey || self_contacts.contains(&their_contact_norm)
+                {
                     continue;
                 }
+                candidate_display_pks
+                    .entry(their_contact_norm.clone())
+                    .or_insert(their_contact.as_str());
                 candidates
-                    .entry(their_contact.as_str())
+                    .entry(their_contact_norm)
                     .or_default()
-                    .insert(contact.as_str());
+                    .insert(contact_norm.clone());
             }
         }
     }
     let candidates_len = candidates.len();
     let mut suggestions: Vec<SuggestionOut> = Vec::with_capacity(candidates_len);
-    for (pubkey, mutuals) in candidates {
+    for (pubkey_norm, mutuals) in candidates {
         let mutual_count = mutuals.len();
         let distance = user_info_map
-            .get(pubkey)
+            .get(&pubkey_norm)
             .map(|u| u.wot_distance)
             .unwrap_or(2);
         let reason = if distance == 2 {
@@ -81,8 +96,12 @@ pub fn suggest_mutual_friends(input: SuggestMutualFriendsInput) -> Vec<Suggestio
         } else {
             format!("Shared by {} mutual contact(s)", mutual_count)
         };
+        let display_pk = candidate_display_pks
+            .get(&pubkey_norm)
+            .copied()
+            .unwrap_or(pubkey_norm.as_str());
         suggestions.push(SuggestionOut {
-            pubkey: pubkey.to_string(),
+            pubkey: display_pk.to_string(),
             reason,
             mutual_count,
             distance,
@@ -103,6 +122,9 @@ pub fn suggest_mutual_friends(input: SuggestMutualFriendsInput) -> Vec<Suggestio
 }
 
 pub fn suggest_mutual_friends_json(input: &str) -> String {
+    if input.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
     let Some(input) = json_in::<Option<SuggestMutualFriendsInput>>(input, None) else {
         return "[]".to_string();
     };
@@ -143,41 +165,53 @@ pub fn discover_freenet_swarm(input: FreenetSwarmDiscoveryInput) -> Vec<FreenetS
     if input.manifests.len() > MAX_USERS || input.limit > MAX_USERS {
         return Vec::new();
     }
-    let self_pubkey = &input.self_pubkey;
-    let self_friends_set: HashSet<&str> = input.self_friends.iter().map(|s| s.as_str()).collect();
+    let self_pubkey = input.self_pubkey.trim().to_ascii_lowercase();
+    let self_friends_set: HashSet<String> = input
+        .self_friends
+        .iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
 
-    let mut candidate_seeds: HashMap<&str, HashSet<&str>> = HashMap::new();
-    let mut candidate_contracts: HashMap<&str, HashSet<String>> = HashMap::new();
-    let mut candidate_gateways: HashMap<&str, Option<String>> = HashMap::new();
+    let mut candidate_display_pks: HashMap<String, String> = HashMap::new();
+    let mut candidate_seeds: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut candidate_contracts: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut candidate_gateways: HashMap<String, Option<String>> = HashMap::new();
 
     for manifest in &input.manifests {
-        let reporter = manifest.peer_pubkey.as_str();
+        let reporter_orig = manifest.peer_pubkey.trim();
+        let reporter = reporter_orig.to_ascii_lowercase();
         if reporter == self_pubkey {
             continue;
         }
 
-        let is_direct_friend = self_friends_set.contains(reporter);
+        let is_direct_friend = self_friends_set.contains(&reporter);
 
         for target in &manifest.friends {
-            let target_str = target.as_str();
-            if target_str == self_pubkey || self_friends_set.contains(target_str) {
+            let target_trim = target.trim();
+            let target_norm = target_trim.to_ascii_lowercase();
+            if target_norm == self_pubkey || self_friends_set.contains(&target_norm) {
                 continue;
             }
 
+            candidate_display_pks
+                .entry(target_norm.clone())
+                .or_insert_with(|| target_trim.to_string());
+
             if is_direct_friend {
                 candidate_seeds
-                    .entry(target_str)
+                    .entry(target_norm.clone())
                     .or_default()
-                    .insert(reporter);
+                    .insert(reporter_orig.to_string());
             }
 
             if let Some(gw) = &manifest.gateway_url {
                 if !gw.is_empty() {
-                    candidate_gateways.insert(target_str, Some(gw.clone()));
+                    candidate_gateways.insert(target_norm.clone(), Some(gw.clone()));
                 }
             }
 
-            let contracts_entry = candidate_contracts.entry(target_str).or_default();
+            let contracts_entry = candidate_contracts.entry(target_norm).or_default();
             for contract in &manifest.contracts {
                 contracts_entry.insert(contract.clone());
             }
@@ -186,22 +220,26 @@ pub fn discover_freenet_swarm(input: FreenetSwarmDiscoveryInput) -> Vec<FreenetS
 
     let mut suggestions: Vec<FreenetSwarmSuggestion> = candidate_seeds
         .into_iter()
-        .map(|(pubkey, seeds)| {
+        .map(|(pubkey_norm, seeds)| {
             let mutual_count = seeds.len();
-            let mut seed_friends: Vec<String> = seeds.into_iter().map(|s| s.to_string()).collect();
+            let mut seed_friends: Vec<String> = seeds.into_iter().collect();
             seed_friends.sort();
             let contracts: Vec<String> = candidate_contracts
-                .remove(pubkey)
+                .remove(&pubkey_norm)
                 .map(|s| s.into_iter().collect())
                 .unwrap_or_default();
-            let gateway_url = candidate_gateways.remove(pubkey).flatten();
+            let gateway_url = candidate_gateways.remove(&pubkey_norm).flatten();
             let reason = format!(
                 "Discovered via Freenet friend swarm ({} mutual seed peer(s))",
                 mutual_count
             );
 
+            let pubkey = candidate_display_pks
+                .remove(&pubkey_norm)
+                .unwrap_or(pubkey_norm);
+
             FreenetSwarmSuggestion {
-                pubkey: pubkey.to_string(),
+                pubkey,
                 seed_friends,
                 mutual_count,
                 contracts,
@@ -228,6 +266,9 @@ pub fn discover_freenet_swarm(input: FreenetSwarmDiscoveryInput) -> Vec<FreenetS
 }
 
 pub fn discover_freenet_swarm_json(input: &str) -> String {
+    if input.len() > 16 * 1024 * 1024 {
+        return "[]".to_string();
+    }
     let Some(input) = json_in::<Option<FreenetSwarmDiscoveryInput>>(input, None) else {
         return "[]".to_string();
     };

@@ -183,3 +183,74 @@ fn discover_freenet_swarm_json_interface() {
     let result = discover_freenet_swarm_json(json_input);
     assert!(result.contains("user2"));
 }
+
+#[test]
+fn suggest_mutual_friends_case_insensitivity_and_self_exclusion() {
+    let input = SuggestMutualFriendsInput {
+        self_pubkey: "USER1_HEX".to_string(),
+        self_contacts: vec!["FRIEND1_HEX".to_string()],
+        all_users: vec![
+            // Self-pubkey with lowercase casing must be excluded
+            AllUserInfo {
+                pubkey: "user1_hex".to_string(),
+                contacts: vec!["friend1_hex".to_string()],
+                wot_distance: 2,
+            },
+            // Direct friend with lowercase casing must be excluded
+            AllUserInfo {
+                pubkey: "friend1_hex".to_string(),
+                contacts: vec!["friend1_hex".to_string()],
+                wot_distance: 2,
+            },
+            // Candidate with mixed case whose contacts match self_contacts with different casing
+            AllUserInfo {
+                pubkey: "Candidate_A".to_string(),
+                contacts: vec!["friend1_hex".to_string()],
+                wot_distance: 2,
+            },
+        ],
+        limit: 10,
+    };
+
+    let results = suggest_mutual_friends(input);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].pubkey, "Candidate_A");
+    assert_eq!(results[0].mutual_count, 1);
+}
+
+#[test]
+fn discover_freenet_swarm_case_insensitivity() {
+    let input = FreenetSwarmDiscoveryInput {
+        self_pubkey: "MY_SELF_KEY".to_string(),
+        self_friends: vec!["FRIEND_1".to_string()],
+        manifests: vec![
+            // Reporter casing differs from self_friends
+            FreenetSwarmManifest {
+                peer_pubkey: "friend_1".to_string(),
+                friends: vec![
+                    // Target matching self pubkey in lowercase must be ignored
+                    "my_self_key".to_string(),
+                    // Target matching direct friend in lowercase must be ignored
+                    "friend_1".to_string(),
+                    // Valid new peer
+                    "Target_Peer".to_string(),
+                ],
+                contracts: vec!["c1".to_string()],
+                gateway_url: None,
+            },
+        ],
+        limit: 10,
+    };
+
+    let results = discover_freenet_swarm(input);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].pubkey, "Target_Peer");
+    assert_eq!(results[0].mutual_count, 1);
+}
+
+#[test]
+fn discovery_json_oversized_payload_rejected() {
+    let huge = "x".repeat(17 * 1024 * 1024);
+    assert_eq!(suggest_mutual_friends_json(&huge), "[]");
+    assert_eq!(discover_freenet_swarm_json(&huge), "[]");
+}

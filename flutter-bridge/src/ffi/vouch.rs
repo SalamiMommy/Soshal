@@ -8,11 +8,12 @@ use flutter_rust_bridge::frb;
 /// Publish a vouch (kind 31989) for `target_pubkey`. Returns the event id.
 #[frb(serialize)]
 pub async fn vouch_publish(target_pubkey: String, content: String) -> Result<String, String> {
+    let target_pubkey = target_pubkey.trim().to_ascii_lowercase();
     if target_pubkey.len() != 64 || !target_pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("invalid target_pubkey: must be 64-character hex string".to_string());
     }
     let my_pk = super::signer::signer_pubkey()?;
-    if target_pubkey == my_pk {
+    if target_pubkey.eq_ignore_ascii_case(&my_pk) {
         return Err("cannot vouch for yourself".to_string());
     }
     if content.len() > 1000 {
@@ -34,6 +35,7 @@ pub async fn vouch_publish(target_pubkey: String, content: String) -> Result<Str
 /// signatures are returned. Returns JSON array of relation entries.
 #[frb(serialize)]
 pub async fn vouch_fetch(target_pubkey: String) -> Result<String, String> {
+    let target_pubkey = target_pubkey.trim().to_ascii_lowercase();
     if target_pubkey.len() != 64 || !target_pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("invalid target_pubkey: must be 64-character hex string".to_string());
     }
@@ -51,7 +53,7 @@ pub async fn vouch_fetch(target_pubkey: String) -> Result<String, String> {
         if e.kind.as_u16() != 31989 {
             continue;
         }
-        if e.pubkey.to_hex() == target_pubkey {
+        if e.pubkey.to_hex().eq_ignore_ascii_case(&target_pubkey) {
             // Drop invalid self-attestations
             continue;
         }
@@ -166,6 +168,20 @@ mod tests {
         let result = vouch_publish("zzz-not-a-pubkey".to_string(), "trusted".to_string()).await;
         let err = result.unwrap_err();
         assert!(err.contains("invalid target_pubkey"), "{err}");
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_vouch_publish_self_vouch_case_insensitive_rejected() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let uppercase_my_pk = keys.public_key().to_hex().to_uppercase();
+        let result = vouch_publish(uppercase_my_pk, "trusted".to_string()).await;
+        let err = result.unwrap_err();
+        assert!(err.contains("cannot vouch for yourself"), "{err}");
         super::super::signer::signer_lock().unwrap();
     }
 }
