@@ -8,7 +8,12 @@ use soshal_audio_core::voice::{decode_voice_stream, encode_voice_pcm, voice_dura
 /// Waveform peaks (normalized 0..1) for an audio file or voice-note stream.
 #[frb(serialize)]
 pub async fn storage_get_audio_peaks(path: String) -> Result<Vec<f32>, String> {
-    tokio::task::spawn_blocking(move || extract_waveform_path(&path, 64))
+    let path = path.trim();
+    if path.is_empty() || path.len() > 4096 {
+        return Err("path must be 1..=4096 chars".to_string()).into();
+    }
+    let path_owned = path.to_string();
+    tokio::task::spawn_blocking(move || extract_waveform_path(&path_owned, 64))
         .await
         .map_err(|e| format!("spawn_blocking join: {e}"))?
         .into()
@@ -17,6 +22,13 @@ pub async fn storage_get_audio_peaks(path: String) -> Result<Vec<f32>, String> {
 /// Encode mono i16 PCM (48 kHz) into a framed Opus voice-note stream.
 #[frb(serialize)]
 pub async fn storage_encode_voice_pcm(pcm: Vec<i16>) -> Result<Vec<u8>, String> {
+    const MAX_ENCODE_SAMPLES: usize = 48_000 * 600;
+    if pcm.len() > MAX_ENCODE_SAMPLES {
+        return Err(format!(
+            "pcm exceeds maximum duration ({MAX_ENCODE_SAMPLES} samples)"
+        ))
+        .into();
+    }
     tokio::task::spawn_blocking(move || encode_voice_pcm(&pcm))
         .await
         .map_err(|e| format!("spawn_blocking join: {e}"))?
@@ -26,12 +38,18 @@ pub async fn storage_encode_voice_pcm(pcm: Vec<i16>) -> Result<Vec<u8>, String> 
 /// Decode a framed Opus voice-note stream to mono i16 PCM.
 #[frb(sync, serialize)]
 pub fn storage_decode_voice_stream(payload: Vec<u8>) -> Result<Vec<i16>, String> {
+    if payload.len() > 4 * 1024 * 1024 {
+        return Err("payload exceeds 4MB cap".to_string()).into();
+    }
     decode_voice_stream(&payload).into()
 }
 
 /// Duration in seconds of a voice-note stream.
 #[frb(sync, serialize)]
 pub fn storage_voice_duration_secs(payload: Vec<u8>) -> Result<f64, String> {
+    if payload.len() > 4 * 1024 * 1024 {
+        return Err("payload exceeds 4MB cap".to_string()).into();
+    }
     voice_duration_secs(&payload).into()
 }
 
@@ -143,5 +161,18 @@ mod tests {
             "sine should register energy"
         );
         assert!(peaks.iter().any(|p| *p > 0.9), "sine peak near 1.0");
+    }
+
+    #[tokio::test]
+    async fn test_storage_bounds() {
+        assert!(storage_get_audio_peaks("".to_string()).await.is_err());
+        assert!(storage_get_audio_peaks("p".repeat(4097)).await.is_err());
+
+        let huge_pcm = vec![0i16; 48_000 * 600 + 1];
+        assert!(storage_encode_voice_pcm(huge_pcm).await.is_err());
+
+        let huge_payload = vec![0u8; 4 * 1024 * 1024 + 1];
+        assert!(storage_decode_voice_stream(huge_payload.clone()).is_err());
+        assert!(storage_voice_duration_secs(huge_payload).is_err());
     }
 }

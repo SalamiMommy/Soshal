@@ -48,7 +48,12 @@ fn run_search(
     if query.trim().is_empty() {
         return Ok(Vec::new());
     }
-    let fts_query = format_fts5_query(query);
+    let query_bounded = if query.len() > 1000 {
+        soshal_common_core::format::truncate(query, 1000)
+    } else {
+        query.to_string()
+    };
+    let fts_query = format_fts5_query(&query_bounded);
     if fts_query.is_empty() {
         return Ok(Vec::new());
     }
@@ -75,7 +80,7 @@ fn run_search(
                  JOIN posts p ON f.rowid = p.rowid \
                  LEFT JOIN users u ON u.pubkey = p.pubkey \
                  WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
-                 AND p.pubkey IN (SELECT value FROM json_each(?4)) ORDER BY rank DESC, p.created_at DESC LIMIT ?3"
+                 AND LOWER(p.pubkey) IN (SELECT LOWER(value) FROM json_each(?4)) ORDER BY rank DESC, p.created_at DESC LIMIT ?3"
             } else {
                 "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at, \
                  CASE WHEN p.kind = 0 THEN COALESCE(u.display_name, u.name, '') ELSE '' END \
@@ -166,9 +171,9 @@ pub fn search_profiles(query: String, limit: i32) -> Result<String, String> {
         let rows = super::db::db_query_json(
             "SELECT pubkey, name, display_name, about FROM users \
              WHERE lower(name) LIKE ?1 ESCAPE '\\' OR lower(display_name) LIKE ?1 ESCAPE '\\' \
-             OR lower(about) LIKE ?1 ESCAPE '\\' OR pubkey = ?2 \
+             OR lower(about) LIKE ?1 ESCAPE '\\' OR lower(pubkey) = ?2 \
              ORDER BY follower_count DESC LIMIT ?3",
-            &[pattern, query.trim().to_string(), limit.to_string()],
+            &[pattern, query.trim().to_lowercase(), limit.to_string()],
         )?;
         for r in rows {
             if let Some(pk) = r["pubkey"].as_str() {
@@ -258,6 +263,9 @@ pub async fn search_remote_global(
     limit: u64,
     relays_json: String,
 ) -> Result<String, String> {
+    if relays_json.len() > 64 * 1024 {
+        return Err("relays JSON too large (max 64KB)".to_string()).into();
+    }
     let relays: Vec<String> =
         serde_json::from_str(&relays_json).map_err(|e| format!("invalid relays JSON: {e}"))?;
     if relays.is_empty() {
@@ -266,13 +274,17 @@ pub async fn search_remote_global(
     if query.trim().is_empty() {
         return super::util::json_ok(Vec::<serde_json::Value>::new());
     }
+    if query.len() > 1000 {
+        return Err("query too long (max 1000)".to_string()).into();
+    }
     for url in &relays {
         let (valid, _blocked) = soshal_content_core::url::is_valid_relay_url(url);
         if !valid {
             return Err(format!("invalid or blocked relay URL: {url}")).into();
         }
     }
-    let filter = Filter::new().search(query).limit(limit as usize);
+    let limit_clamped = limit.clamp(1, 100);
+    let filter = Filter::new().search(query).limit(limit_clamped as usize);
     let client = Client::builder().build();
     let mut added = 0usize;
     for url in &relays {
@@ -399,6 +411,9 @@ pub fn search_index_posts(rows_json: String) -> Result<bool, String> {
         subject: Option<String>,
         kind: i64,
     }
+    if rows_json.len() > 16 * 1024 * 1024 {
+        return Err("rows JSON exceeds 16MB cap".to_string());
+    }
     let rows: Vec<IndexInput> =
         serde_json::from_str(&rows_json).map_err(|e| format!("invalid rows JSON: {e}"))?;
     super::db::with_db_result(|db| {
@@ -406,7 +421,7 @@ pub fn search_index_posts(rows_json: String) -> Result<bool, String> {
             .into_iter()
             .map(|r| soshal_db_core::repos::search_index::SearchIndexRow {
                 id: r.id,
-                pubkey: r.pubkey,
+                pubkey: r.pubkey.trim().to_ascii_lowercase(),
                 content: soshal_common_core::format::truncate(&r.content, 4096),
                 subject: r
                     .subject
@@ -423,6 +438,10 @@ pub fn search_index_posts(rows_json: String) -> Result<bool, String> {
 /// Index a profile into the FTS search table (kind 0 row).
 #[frb(sync, serialize)]
 pub fn search_index_profile(pubkey: String, name: String, about: String) -> Result<bool, String> {
+    let pubkey_clean = pubkey.trim().to_string();
+    if pubkey_clean.is_empty() || pubkey_clean.len() > 128 {
+        return Err("pubkey must be 1..=128 chars".to_string());
+    }
     let content = if name.is_empty() {
         about
     } else if about.is_empty() {
@@ -431,8 +450,8 @@ pub fn search_index_profile(pubkey: String, name: String, about: String) -> Resu
         format!("{name} {about}")
     };
     let row = soshal_db_core::repos::search_index::SearchIndexRow {
-        id: format!("profile:{pubkey}"),
-        pubkey,
+        id: format!("profile:{pubkey_clean}"),
+        pubkey: pubkey_clean.to_ascii_lowercase(),
         content: soshal_common_core::format::truncate(&content, 4096),
         subject: None,
         kind: 0,
@@ -447,8 +466,12 @@ pub fn search_index_profile(pubkey: String, name: String, about: String) -> Resu
 /// Remove an entry from the search index.
 #[frb(sync, serialize)]
 pub fn search_remove_indexed(id: String) -> Result<bool, String> {
+    let id_clean = id.trim();
+    if id_clean.is_empty() || id_clean.len() > 128 {
+        return Err("id must be 1..=128 chars".to_string());
+    }
     super::db::with_db_result(|db| {
-        SearchIndexRepo::new(db).delete(&id)?;
+        SearchIndexRepo::new(db).delete(id_clean)?;
         Ok(true)
     })
 }
@@ -859,5 +882,35 @@ mod tests {
         assert_eq!(escape_like("a\\b"), "a\\\\b");
         assert_eq!(escape_like("%_\\abc"), "\\%\\_\\\\abc");
         assert_eq!(escape_like("clean"), "clean");
+    }
+
+    #[test]
+    fn test_search_case_insensitive_pubkey_and_bounds() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _p = tmp_db("search-case-bounds");
+        let pk = "a".repeat(64);
+        insert_user(&pk, "Alice Wonderland");
+
+        // Profile lookup with uppercase hex pubkey
+        let res = search_profiles(pk.to_uppercase(), 10).unwrap();
+        let items = parse_arr(&res);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["pubkey"], pk);
+
+        // search_index_profile bounds
+        assert!(
+            search_index_profile("".to_string(), "name".to_string(), "about".to_string()).is_err()
+        );
+        assert!(
+            search_index_profile("p".repeat(129), "name".to_string(), "about".to_string()).is_err()
+        );
+
+        // search_index_posts oversized
+        let huge_rows = "x".repeat(16 * 1024 * 1024 + 10);
+        assert!(search_index_posts(huge_rows).is_err());
+
+        // search_remove_indexed bounds
+        assert!(search_remove_indexed("".to_string()).is_err());
+        assert!(search_remove_indexed("i".repeat(129)).is_err());
     }
 }

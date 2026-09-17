@@ -35,7 +35,12 @@ pub const SYNC_CONTEXT: &str = "soshal-ble-sync-v1";
 /// Builds the BLE device name for a pubkey:
 /// `SOSHAL_<first 12 hex chars>`.
 pub fn device_name(pubkey: &str) -> String {
-    let frag: String = pubkey.chars().take(DEVICE_NAME_PUBKEY_CHARS).collect();
+    let frag: String = pubkey
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .take(DEVICE_NAME_PUBKEY_CHARS)
+        .collect();
     format!("{DEVICE_NAME_PREFIX}{frag}")
 }
 
@@ -49,7 +54,7 @@ pub fn pubkey_fragment_from_device_name(name: &str) -> Option<String> {
     if frag.is_empty() || !frag.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    Some(frag.to_string())
+    Some(frag.to_ascii_lowercase())
 }
 
 /// Usable chunk size for a given negotiated MTU. BLE default MTU carries
@@ -81,17 +86,31 @@ pub fn split_chunks(data: &str, mtu: usize) -> Vec<String> {
 pub fn reassemble_chunks(lines: &[String]) -> Option<String> {
     let mut map: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
     let mut declared = None;
+    let mut total_len = 0usize;
     for line in lines {
+        if line.len() > MAX_MTU * 4 {
+            return None;
+        }
         let decoded = general_purpose::STANDARD.decode(line).ok()?;
         let text = String::from_utf8(decoded).ok()?;
         let mut parts = text.splitn(3, ':');
         let idx: usize = parts.next()?.parse().ok()?;
         let count: usize = parts.next()?.parse().ok()?;
+        if count == 0 || count > 4096 {
+            return None;
+        }
         let data = parts.next()?;
+        if data.len() > MAX_MTU {
+            return None;
+        }
         if declared.map(|c: usize| c != count).unwrap_or(false) {
             return None;
         }
         declared = Some(count);
+        total_len += data.len();
+        if total_len > MAX_PAYLOAD_BYTES * 2 {
+            return None;
+        }
         if map.insert(idx, data.to_string()).is_some() {
             return None;
         }
@@ -168,6 +187,9 @@ pub fn decrypt_envelope(
     own_sk_hex: &str,
     sender_dsa_pk_hex: Option<&str>,
 ) -> Result<String, String> {
+    if envelope_json.len() > 256 * 1024 {
+        return Err("envelope JSON too large (max 256KB)".to_string());
+    }
     let envelope: SyncEnvelope =
         serde_json::from_str(envelope_json).map_err(|e| format!("envelope parse: {e}"))?;
     if envelope.pqc_ct.len() != hybrid::HYBRID_CT_LEN * 2 || !envelope.pqc_ct.starts_with("01") {
@@ -189,4 +211,48 @@ pub fn decrypt_envelope(
         return Err("payload decompress failed".to_string());
     }
     Ok(payload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_device_name_and_fragment_case_normalization() {
+        let pk = "ABCDEF1234567890";
+        let dev = device_name(pk);
+        assert_eq!(dev, "SOSHAL_abcdef123456");
+        let frag = pubkey_fragment_from_device_name(&dev).unwrap();
+        assert_eq!(frag, "abcdef123456");
+
+        // Non-hex or bad prefix
+        assert_eq!(pubkey_fragment_from_device_name("OTHER_abcdef123456"), None);
+        assert_eq!(
+            pubkey_fragment_from_device_name("SOSHAL_NOT_HEX_CHARS"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_chunks_roundtrip_and_caps() {
+        let payload = "hello world over ble sync!";
+        let chunks = split_chunks(payload, 23);
+        assert!(!chunks.is_empty());
+        let restored = reassemble_chunks(&chunks).unwrap();
+        assert_eq!(restored, payload);
+
+        // Hostile chunk count (> 4096)
+        let fake_chunk = general_purpose::STANDARD.encode(b"0:5000:data");
+        assert_eq!(reassemble_chunks(&[fake_chunk]), None);
+
+        // Zero chunk count
+        let zero_chunk = general_purpose::STANDARD.encode(b"0:0:data");
+        assert_eq!(reassemble_chunks(&[zero_chunk]), None);
+    }
+
+    #[test]
+    fn test_decrypt_envelope_oversized_rejected() {
+        let huge_env = "x".repeat(256 * 1024 + 1);
+        assert!(decrypt_envelope(&huge_env, "00", None).is_err());
+    }
 }

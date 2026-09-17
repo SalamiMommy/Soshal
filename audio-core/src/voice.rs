@@ -71,6 +71,13 @@ pub(crate) fn decode_packets(data: &[u8]) -> Result<crate::MonoF32, String> {
 /// Encode i16 PCM (48 kHz mono, 960-sample frames) into a framed voice-note
 /// stream, magic header included.
 pub fn encode_voice_pcm(pcm: &[i16]) -> Result<Vec<u8>, String> {
+    const MAX_ENCODE_SAMPLES: usize = 48_000 * 600;
+    if pcm.len() > MAX_ENCODE_SAMPLES {
+        return Err(format!(
+            "pcm exceeds maximum duration: {} samples (max {MAX_ENCODE_SAMPLES})",
+            pcm.len()
+        ));
+    }
     let enc = new_encoder()?;
     let est_packets = pcm.len() / OPUS_FRAME_SIZE;
     let mut out = Vec::with_capacity(8 + est_packets * 64);

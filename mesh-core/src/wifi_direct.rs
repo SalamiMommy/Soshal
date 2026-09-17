@@ -54,27 +54,29 @@ impl WifiDirectManager {
     /// states stay observable as the peer's last-known state).
     pub async fn set_status(&self, peer_id: &str, status: WifiP2pStatus) {
         const MAX_TRACKED_LINKS: usize = 256;
+        let peer_id_clean = peer_id.trim().to_ascii_lowercase();
         let mut links = self.active_links.write().await;
         match status {
             WifiP2pStatus::Disconnected => {
-                links.remove(peer_id);
+                links.remove(&peer_id_clean);
             }
             _ => {
-                if !links.contains_key(peer_id) && links.len() >= MAX_TRACKED_LINKS {
+                if !links.contains_key(&peer_id_clean) && links.len() >= MAX_TRACKED_LINKS {
                     if let Some(oldest) = links.keys().next().cloned() {
                         links.remove(&oldest);
                     }
                 }
-                links.insert(peer_id.to_string(), status);
+                links.insert(peer_id_clean, status);
             }
         }
     }
 
     /// Retrieve status of a peer connection.
     pub async fn get_status(&self, peer_id: &str) -> WifiP2pStatus {
+        let peer_id_clean = peer_id.trim().to_ascii_lowercase();
         let links = self.active_links.read().await;
         links
-            .get(peer_id)
+            .get(&peer_id_clean)
             .cloned()
             .unwrap_or(WifiP2pStatus::Disconnected)
     }
@@ -84,7 +86,7 @@ impl WifiDirectManager {
         use base64::Engine;
         let payload_b64 = base64::engine::general_purpose::STANDARD.encode(data);
         let frame = ChunkFrame {
-            chunk_hash: chunk_hash.to_string(),
+            chunk_hash: chunk_hash.trim().to_ascii_lowercase(),
             chunk_index: index,
             total_chunks: total,
             payload_b64,
@@ -94,6 +96,9 @@ impl WifiDirectManager {
 
     /// Parses an incoming chunk frame.
     pub fn parse_chunk_frame(raw: &str) -> Option<(String, usize, usize, Vec<u8>)> {
+        if raw.len() > MAX_FRAME_BYTES * 2 {
+            return None;
+        }
         use base64::Engine;
         let frame: ChunkFrame = serde_json::from_str(raw).ok()?;
         let data = base64::engine::general_purpose::STANDARD
@@ -103,7 +108,7 @@ impl WifiDirectManager {
             return None;
         }
         Some((
-            frame.chunk_hash,
+            frame.chunk_hash.trim().to_ascii_lowercase(),
             frame.chunk_index,
             frame.total_chunks,
             data,

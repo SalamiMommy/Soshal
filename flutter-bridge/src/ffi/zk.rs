@@ -9,9 +9,16 @@ pub fn zk_verify_rollup(rollup_json: String) -> Result<String, String> {
     Ok(verify_zk_rollup_json(&rollup_json))
 }
 
+/// Maximum allowed rollup JSON size (1 MB) to prevent memory exhaustion DoS.
+const MAX_ROLLUP_JSON_BYTES: usize = 1024 * 1024;
+
 /// Apply a verified ZK state rollup directly to the database cache
 #[frb(sync, serialize)]
 pub fn zk_apply_rollup(db_path: String, rollup_json: String) -> Result<bool, String> {
+    if rollup_json.len() > MAX_ROLLUP_JSON_BYTES {
+        return Err("rollup_json exceeds 1MB cap".to_string());
+    }
+
     let rollup: CommitmentRollup = match serde_json::from_str(&rollup_json) {
         Ok(r) => r,
         Err(e) => return Err(format!("Invalid ZK rollup JSON: {}", e)),
@@ -98,5 +105,14 @@ mod tests {
         assert!(zk_apply_rollup(path, "garbage".to_string())
             .unwrap_err()
             .contains("Invalid ZK rollup JSON"));
+    }
+
+    #[test]
+    fn apply_rollup_oversized_rejected() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let path = tmp_db_path("oversized");
+        let huge = " ".repeat(MAX_ROLLUP_JSON_BYTES + 1);
+        let err = zk_apply_rollup(path, huge).unwrap_err();
+        assert!(err.contains("exceeds 1MB cap"));
     }
 }

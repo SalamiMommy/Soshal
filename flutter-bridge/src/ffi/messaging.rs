@@ -274,15 +274,17 @@ pub fn messaging_store_dm(
     tags_json: String,
 ) -> Result<bool, String> {
     let my_pk = super::signer::signer_pubkey()?;
-    if !my_pk.eq_ignore_ascii_case(&sender) && !my_pk.eq_ignore_ascii_case(&recipient) {
+    let sender_clean = sender.trim().to_ascii_lowercase();
+    let recipient_clean = recipient.trim().to_ascii_lowercase();
+    if !my_pk.eq_ignore_ascii_case(&sender_clean) && !my_pk.eq_ignore_ascii_case(&recipient_clean) {
         return Err("authenticated user must be sender or recipient of DM".to_string());
     }
     let content = seal_dm_content(content)?;
-    let cid = conv_id(&sender, &recipient);
+    let cid = conv_id(&sender_clean, &recipient_clean);
     let row = soshal_db_core::repos::message::MessageRow {
         id,
         conversation_id: cid,
-        pubkey: sender,
+        pubkey: sender_clean,
         content,
         created_at: created_at as i64,
         tags_json: tags_json.clone(),

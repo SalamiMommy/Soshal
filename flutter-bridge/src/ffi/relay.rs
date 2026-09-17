@@ -71,11 +71,15 @@ pub(super) fn mesh_backend_up(kind: soshal_network_core::transport::TransportKin
 /// and routes events into sync-core. Returns JSON status.
 #[frb(sync, serialize)]
 pub fn relay_node_start(pubkey: String) -> Result<String, String> {
+    let pubkey_clean = pubkey.trim().to_ascii_lowercase();
+    if pubkey_clean.is_empty() || pubkey_clean.len() > 128 {
+        return Err("pubkey must be 1..=128 chars".to_string());
+    }
     if node_guard().is_some() {
         let _ = relay_node_stop();
     }
     let mode = super::network::transport_mode();
-    let mut node = RelayNode::new_with_transport(mode, &pubkey);
+    let mut node = RelayNode::new_with_transport(mode, &pubkey_clean);
     if node.running_backends().is_empty() {
         return Err(
             "mesh relay needs a mesh transport mode (not nostr) — switch the \
@@ -113,6 +117,9 @@ pub fn relay_node_status() -> Result<String, String> {
 /// via mesh, Ok(false) when the mesh is not the active transport (caller
 /// falls back to relays/outbox).
 pub(super) fn try_mesh_publish(event_json: &str) -> Result<bool, String> {
+    if event_json.len() > 64 * 1024 {
+        return Err("event JSON exceeds 64KB cap".to_string());
+    }
     let (kind, _) = super::network::resolved_kind();
     if kind == soshal_network_core::transport::TransportKind::Nostr {
         return Ok(false);
@@ -163,6 +170,7 @@ fn status() -> String {
 /// over. The `MESH_INGEST_ALIVE` flag is kept for explicit stop, but the
 /// thread also exits on generation mismatch or `!mesh_running()`.
 fn spawn_ingest(db_path: String, my_pubkey: String) {
+    let my_pubkey = my_pubkey.trim().to_ascii_lowercase();
     let gen = MESH_INGEST_GEN.fetch_add(1, Ordering::Relaxed) + 1;
     MESH_INGEST_ALIVE.store(true, Ordering::Relaxed);
     std::thread::spawn(move || {

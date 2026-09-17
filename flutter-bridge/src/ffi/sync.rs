@@ -95,20 +95,22 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
             tags_json,
         } => {
             let my_pk = match super::signer::signer_pubkey() {
-                Ok(pk) => pk,
+                Ok(pk) => pk.trim().to_ascii_lowercase(),
                 Err(_) => return None,
             };
+            let sender_clean = sender.trim().to_ascii_lowercase();
+            let recipient_clean = recipient.trim().to_ascii_lowercase();
             if super::db::with_db_result(|db| {
-                soshal_db_core::repos::block::BlockRepo::new(db).is_blocked(&my_pk, &sender)
+                soshal_db_core::repos::block::BlockRepo::new(db).is_blocked(&my_pk, &sender_clean)
             })
             .unwrap_or(false)
             {
                 return None;
             }
-            let peer = if sender == my_pk {
-                recipient.clone()
+            let peer = if sender_clean == my_pk {
+                recipient_clean.clone()
             } else {
-                sender.clone()
+                sender_clean.clone()
             };
             // Keys never cross into sync-core; decrypt + persist here.
             let plain = match super::signer::signer_nip44_decrypt(content, peer) {
@@ -121,8 +123,8 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
             // single unseal on fetch.
             if super::messaging::messaging_store_dm(
                 id.clone(),
-                sender.clone(),
-                recipient.clone(),
+                sender_clean.clone(),
+                recipient_clean.clone(),
                 plain.to_string(),
                 created_at,
                 tags_json.clone(),
@@ -135,8 +137,8 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
                 .unwrap_or(serde_json::Value::Null);
             Some(
                 serde_json::json!({
-                    "t": "dm", "id": id, "sender": sender.clone(),
-                    "recipient": recipient.clone(), "content": plain, "created_at": created_at,
+                    "t": "dm", "id": id, "sender": sender_clean,
+                    "recipient": recipient_clean, "content": plain, "created_at": created_at,
                     "tags": tags
                 })
                 .to_string(),
@@ -170,10 +172,24 @@ pub(crate) fn update_json(update: SyncUpdate) -> Option<String> {
 /// connections survive app backgrounding; updates flow to `sync_events`.
 #[frb(serialize)]
 pub async fn sync_start(relays_json: String) -> Result<String, String> {
-    let relays: Vec<String> =
+    if relays_json.len() > 64 * 1024 {
+        return Err("relays JSON too large (max 64KB)".to_string()).into();
+    }
+    let relays_raw: Vec<String> =
         serde_json::from_str(&relays_json).map_err(|e| format!("invalid relays JSON: {e}"))?;
+    let mut relays = Vec::new();
+    for r in relays_raw {
+        let trimmed = r.trim();
+        if (trimmed.starts_with("ws://") || trimmed.starts_with("wss://")) && trimmed.len() <= 1024
+        {
+            relays.push(trimmed.to_string());
+            if relays.len() >= 50 {
+                break;
+            }
+        }
+    }
     if relays.is_empty() {
-        return Err("no relay urls".to_string()).into();
+        return Err("no valid relay urls".to_string()).into();
     }
     let db_path = super::db::db_path()?;
     let my_pubkey = super::signer::signer_pubkey()?;
@@ -354,6 +370,17 @@ pub fn sync_enqueue_outbox(
     payload_json: String,
     media_path: Option<String>,
 ) -> Result<String, String> {
+    if payload_json.len() > 16 * 1024 * 1024 {
+        return Err("payload JSON exceeds 16MB cap".to_string());
+    }
+    if action_type.is_empty() || action_type.len() > 128 {
+        return Err("action_type must be 1..=128 chars".to_string());
+    }
+    if let Some(path) = &media_path {
+        if path.len() > 4096 {
+            return Err("media_path exceeds 4096-char cap".to_string());
+        }
+    }
     let id = format!("{:x}", rand::random::<u64>());
     let now = soshal_common_core::format::now_secs();
     super::db::with_db_result(|db| {
@@ -389,6 +416,12 @@ pub fn sync_run_epoch_garbage_collection(
     peer_vector_clocks_json: String,
     gc_threshold_secs: u64,
 ) -> Result<String, String> {
+    if domain.is_empty() || domain.len() > 128 {
+        return Err("domain must be 1..=128 chars".to_string());
+    }
+    if peer_vector_clocks_json.len() > 1024 * 1024 {
+        return Err("peer vector clocks JSON exceeds 1MB cap".to_string());
+    }
     let clocks: std::collections::HashMap<String, u64> =
         serde_json::from_str(&peer_vector_clocks_json).unwrap_or_default();
     super::db::with_db_result(|db| {
@@ -612,5 +645,69 @@ mod tests {
         .unwrap();
         assert!(rows.contains("dm-1"), "rows: {rows}");
         super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_update_json_dm_case_insensitive_and_blocked() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("sync-dm-case", "sync");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let pk = keys.public_key().to_hex();
+        crate::ffi::db::insert_test_user(&pk);
+
+        // Self-DM with uppercase sender hex
+        let payload =
+            super::super::signer::signer_nip44_encrypt("case dm".to_string(), pk.clone()).unwrap();
+        let json = update_json(SyncUpdate::Dm {
+            id: "dm-case-1".into(),
+            sender: pk.to_uppercase(),
+            recipient: pk.clone(),
+            content: payload,
+            created_at: 1234,
+            tags_json: "[]".to_string(),
+        })
+        .expect("decryptable DM with uppercase sender must emit JSON");
+        assert!(json.contains("case dm"));
+
+        // Blocked sender with casing mismatch
+        let blocked = "b".repeat(64);
+        crate::ffi::db::insert_test_user(&blocked);
+        crate::ffi::db::db_execute_raw_test(format!(
+            "INSERT INTO blocks (pubkey, blocked_pubkey, created_at) VALUES ('{}', '{}', 12345)",
+            pk.to_lowercase(),
+            blocked.to_lowercase(),
+        ))
+        .unwrap();
+
+        let blocked_dm = update_json(SyncUpdate::Dm {
+            id: "dm-blocked".into(),
+            sender: blocked.to_uppercase(),
+            recipient: pk,
+            content: "ignored".into(),
+            created_at: 1234,
+            tags_json: "[]".to_string(),
+        });
+        assert!(blocked_dm.is_none(), "blocked sender DM must be dropped");
+
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_sync_start_and_outbox_bounds() {
+        let huge_relays = format!("[\"{}\"]", "ws://".to_string() + &"r".repeat(65 * 1024));
+        assert!(sync_start(huge_relays).await.is_err());
+
+        let invalid_relays =
+            serde_json::to_string(&vec!["http://relay.damus.io", "ftp://foo"]).unwrap();
+        assert!(sync_start(invalid_relays).await.is_err());
+
+        let huge_outbox = "x".repeat(16 * 1024 * 1024 + 10);
+        assert!(sync_enqueue_outbox("post".to_string(), huge_outbox, None).is_err());
+        assert!(sync_enqueue_outbox(String::new(), "{}".to_string(), None).is_err());
+
+        let huge_domain = "d".repeat(129);
+        assert!(sync_run_epoch_garbage_collection(huge_domain, "{}".to_string(), 100).is_err());
     }
 }

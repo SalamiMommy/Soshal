@@ -83,18 +83,19 @@ impl RelayNode {
         pubkey: &str,
     ) -> Self {
         use soshal_network_core::transport::TransportMode as M;
+        let pubkey_clean = pubkey.trim().to_ascii_lowercase();
         let mut node = Self::new();
         match mode {
             M::Default => {
                 node.add_backend(Box::new(crate::backends::reticulum::ReticulumBackend::new(
-                    pubkey.to_string(),
+                    pubkey_clean.clone(),
                 )));
                 node.add_backend(Box::new(crate::backends::i2p::I2pBackend::new()));
                 node.add_backend(Box::new(crate::backends::freenet::FreenetBackend::new()));
             }
             M::Reticulum => {
                 node.add_backend(Box::new(crate::backends::reticulum::ReticulumBackend::new(
-                    pubkey.to_string(),
+                    pubkey_clean,
                 )));
             }
             M::Freenet => {
@@ -160,19 +161,15 @@ impl RelayNode {
         if payload.len() > crate::envelope::MAX_PAYLOAD_BYTES {
             return Err("payload exceeds mesh cap".to_string());
         }
-        if event_id.is_empty() || author.is_empty() {
+        let event_id_clean = event_id.trim().to_ascii_lowercase();
+        let author_clean = author.trim().to_ascii_lowercase();
+        if event_id_clean.is_empty() || author_clean.is_empty() {
             return Err("event id or author cannot be empty".to_string());
         }
-        if event_id.len() > 128 || author.len() > 128 {
+        if event_id_clean.len() > 128 || author_clean.len() > 128 {
             return Err("event id or author exceeds 128-byte cap".to_string());
         }
-        let env = MeshEnvelope::new(
-            event_id.to_string(),
-            kind,
-            author.to_string(),
-            created_at,
-            payload,
-        );
+        let env = MeshEnvelope::new(event_id_clean, kind, author_clean, created_at, payload);
         self.note_seen(payload_digest(&env.payload));
         self.recent.push_back(env.clone());
         if self.recent.len() > RECENT_CAPACITY {
@@ -656,5 +653,27 @@ mod tests {
         assert!(ok >= 1);
         assert!(node.running_backends().contains(&BackendKind::Reticulum));
         node.stop();
+    }
+
+    #[test]
+    fn test_publish_normalizes_casing() {
+        let mut node = RelayNode::new();
+        node.add_backend(Box::new(mock(BackendKind::Reticulum, 1).0));
+        node.start().unwrap();
+
+        let peers = node
+            .publish(
+                "UPPERCASE_ID",
+                1,
+                "UPPERCASE_AUTHOR",
+                123,
+                b"test payload".to_vec(),
+            )
+            .unwrap();
+        assert_eq!(peers, 1);
+        let recent = node.recent_payloads(1);
+        assert_eq!(recent.len(), 1);
+        assert_eq!(node.recent[0].event_id, "uppercase_id");
+        assert_eq!(node.recent[0].author, "uppercase_author");
     }
 }

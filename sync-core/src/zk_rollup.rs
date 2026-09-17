@@ -46,7 +46,7 @@ impl RollupEngine {
     pub fn verify_rollup(&self, rollup: &CommitmentRollup) -> RollupVerificationResult {
         let start_time = std::time::Instant::now();
 
-        if rollup.thread_id.trim().is_empty() || rollup.thread_id.len() > 256 {
+        if rollup.thread_id.trim().is_empty() || rollup.thread_id.len() > 128 {
             return RollupVerificationResult {
                 verified: false,
                 thread_id: rollup.thread_id.clone(),
@@ -147,6 +147,11 @@ impl RollupEngine {
                 return Err("operation count exceeds i64 range".to_string());
             }
 
+            let thread_id = rollup.thread_id.trim();
+            if thread_id.is_empty() || thread_id.len() > 128 {
+                return Err("thread_id must be between 1 and 128 characters".to_string());
+            }
+
             // Anchor check: a rollup for a thread must agree with the
             // stored genesis, never regress the operation count, and never
             // diverge the final state root at an equal operation count —
@@ -160,7 +165,7 @@ impl RollupEngine {
                     .await
                     .map_err(|e| e.to_string())?;
                 let mut rows = stmt
-                    .query(params![rollup.thread_id.as_str()])
+                    .query(params![thread_id])
                     .await
                     .map_err(|e| e.to_string())?;
                 match rows.next().await.map_err(|e| e.to_string())? {
@@ -173,24 +178,30 @@ impl RollupEngine {
                 }
             };
             if let Some((stored_genesis, stored_ops, stored_root)) = existing {
-                if stored_genesis != rollup.genesis_root {
+                if !stored_genesis
+                    .trim()
+                    .eq_ignore_ascii_case(rollup.genesis_root.trim())
+                {
                     return Err(format!(
                         "rollup genesis mismatch for {}: stored {} vs proposed {}",
-                        rollup.thread_id, stored_genesis, rollup.genesis_root
+                        thread_id, stored_genesis, rollup.genesis_root
                     ));
                 }
                 if rollup.operation_count < stored_ops as u64 {
                     return Err(format!(
                         "rollup operation count regression for {}: stored {stored_ops} vs proposed {}",
-                        rollup.thread_id, rollup.operation_count
+                        thread_id, rollup.operation_count
                     ));
                 }
                 if rollup.operation_count == stored_ops as u64
-                    && rollup.final_state_root != stored_root
+                    && !rollup
+                        .final_state_root
+                        .trim()
+                        .eq_ignore_ascii_case(stored_root.trim())
                 {
                     return Err(format!(
                         "rollup final state root mismatch for {} at {stored_ops} ops: stored {} vs proposed {}",
-                        rollup.thread_id, stored_root, rollup.final_state_root
+                        thread_id, stored_root, rollup.final_state_root
                     ));
                 }
             }
@@ -203,9 +214,9 @@ impl RollupEngine {
                     operation_count = excluded.operation_count,
                     verified_at = excluded.verified_at",
                 params![
-                    rollup.thread_id.as_str(),
-                    rollup.genesis_root.as_str(),
-                    rollup.final_state_root.as_str(),
+                    thread_id,
+                    rollup.genesis_root.trim(),
+                    rollup.final_state_root.trim(),
                     rollup.operation_count as i64,
                     now
                 ],
@@ -457,5 +468,61 @@ mod tests {
         let res = engine.verify_rollup(&rollup);
         assert!(!res.verified);
         assert_eq!(res.verified_operations, 0);
+    }
+
+    #[test]
+    fn test_apply_rollup_casing_and_thread_bounds() {
+        let db = soshal_test_util::test_db();
+        let conn = db.conn().unwrap();
+        let engine = RollupEngine::new();
+
+        // 1. Initial rollup with lowercase roots
+        let initial = valid_rollup("thread_case", 5);
+        assert!(engine.apply_rollup_to_db(&conn, &initial).unwrap());
+
+        // 2. Next rollup with uppercase genesis root (should match stored genesis case-insensitively)
+        let mut next_rollup = valid_rollup("thread_case", 6);
+        next_rollup.genesis_root = next_rollup.genesis_root.to_uppercase();
+        {
+            use sha2::{Digest, Sha256};
+            let mut h = Sha256::new();
+            h.update(next_rollup.thread_id.as_bytes());
+            h.update(next_rollup.genesis_root.as_bytes());
+            h.update(next_rollup.final_state_root.as_bytes());
+            h.update(next_rollup.operation_count.to_le_bytes());
+            next_rollup.commitment_hex = hex::encode(h.finalize());
+        }
+        assert!(engine.apply_rollup_to_db(&conn, &next_rollup).unwrap());
+
+        // 3. Thread ID bounds: empty / whitespace only
+        let mut empty_thread = valid_rollup("   ", 1);
+        {
+            use sha2::{Digest, Sha256};
+            let mut h = Sha256::new();
+            h.update(empty_thread.thread_id.as_bytes());
+            h.update(empty_thread.genesis_root.as_bytes());
+            h.update(empty_thread.final_state_root.as_bytes());
+            h.update(empty_thread.operation_count.to_le_bytes());
+            empty_thread.commitment_hex = hex::encode(h.finalize());
+        }
+        let res = engine.apply_rollup_to_db(&conn, &empty_thread);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("Invalid thread_id"));
+
+        // 4. Thread ID bounds: oversized (> 128 chars)
+        let long_id = "a".repeat(129);
+        let mut long_thread = valid_rollup(&long_id, 1);
+        {
+            use sha2::{Digest, Sha256};
+            let mut h = Sha256::new();
+            h.update(long_thread.thread_id.as_bytes());
+            h.update(long_thread.genesis_root.as_bytes());
+            h.update(long_thread.final_state_root.as_bytes());
+            h.update(long_thread.operation_count.to_le_bytes());
+            long_thread.commitment_hex = hex::encode(h.finalize());
+        }
+        let res = engine.apply_rollup_to_db(&conn, &long_thread);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("Invalid thread_id"));
     }
 }

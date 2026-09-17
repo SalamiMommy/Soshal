@@ -199,7 +199,7 @@ pub fn streaming_fetch_live(limit: i32, audience: String) -> Result<String, Stri
         let sql = if authors_json.is_some() {
             "SELECT id, pubkey, content, created_at, tags_json FROM posts \
              WHERE kind = ?1 AND is_deleted = 0 \
-             AND pubkey IN (SELECT value FROM json_each(?3)) \
+             AND LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?3)) \
              ORDER BY created_at DESC LIMIT ?2"
         } else {
             "SELECT id, pubkey, content, created_at, tags_json FROM posts \
@@ -243,7 +243,7 @@ pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, Stri
         let conn = db.conn()?;
         let sql = "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
                    WHERE p.kind = ?1 AND p.is_deleted = 0 \
-                   AND p.pubkey IN (SELECT value FROM json_each((SELECT contact_pubkeys FROM users WHERE pubkey = ?2))) \
+                   AND LOWER(p.pubkey) IN (SELECT LOWER(value) FROM json_each((SELECT contact_pubkeys FROM users WHERE LOWER(pubkey) = ?2))) \
                    ORDER BY p.created_at DESC LIMIT 100";
         let rows = soshal_db_core::query::query(
             &conn,
@@ -441,7 +441,7 @@ pub fn streaming_fetch_stories(user_pubkey: String) -> Result<String, String> {
     let rows = super::db::db_query_json(
         &format!(
             "SELECT id, pubkey, content, created_at, tags_json, 0 AS views FROM posts \
-             WHERE kind = {KIND_STORY} AND pubkey = ?1 AND is_deleted = 0 \
+             WHERE kind = {KIND_STORY} AND LOWER(pubkey) = ?1 AND is_deleted = 0 \
              ORDER BY created_at DESC LIMIT 50"
         ),
         &[normalized_pk],
@@ -469,11 +469,11 @@ pub fn streaming_fetch_followed_stories(audience: String) -> Result<String, Stri
     let author_clause = match &authors {
         Some(a) => {
             if a.len() == 1 {
-                params.push(a[0].clone());
-                " AND p.pubkey = ?1"
+                params.push(a[0].to_ascii_lowercase());
+                " AND LOWER(p.pubkey) = ?1"
             } else {
                 params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
-                " AND p.pubkey IN (SELECT value FROM json_each(?1))"
+                " AND LOWER(p.pubkey) IN (SELECT LOWER(value) FROM json_each(?1))"
             }
         }
         None => "",
@@ -500,13 +500,15 @@ pub fn streaming_mark_story_viewed(
     story_id: String,
     viewer_pubkey: String,
 ) -> Result<bool, String> {
-    if story_id.len() != 64 {
+    let story_id_clean = story_id.trim().to_ascii_lowercase();
+    if story_id_clean.len() != 64 || !soshal_common_core::format::is_valid_hex(&story_id_clean) {
         return Err("invalid story id".to_string()).into();
     }
     super::signer::require_identity(&viewer_pubkey)?;
+    let viewer_clean = viewer_pubkey.trim().to_ascii_lowercase();
     super::db::with_db_result(|db| {
         soshal_db_core::repos::post_views::PostViewsRepo::new(db)
-            .mark_seen(&viewer_pubkey, &[story_id])?;
+            .mark_seen(&viewer_clean, &[story_id_clean])?;
         Ok(true)
     })
 }
@@ -518,7 +520,8 @@ pub fn streaming_story_react(
     pubkey: String,
     emoji: String,
 ) -> Result<bool, String> {
-    if story_id.len() != 64 {
+    let story_id_clean = story_id.trim().to_ascii_lowercase();
+    if story_id_clean.len() != 64 || !soshal_common_core::format::is_valid_hex(&story_id_clean) {
         return Err("invalid story id".to_string()).into();
     }
     let emoji = emoji.trim();
@@ -526,11 +529,12 @@ pub fn streaming_story_react(
         return Err("invalid emoji".to_string()).into();
     }
     super::signer::require_identity(&pubkey)?;
+    let pubkey_clean = pubkey.trim().to_ascii_lowercase();
     super::db::with_db_result(|db| {
         soshal_db_core::repos::story_reaction::StoryReactionRepo::new(db).react(
             &soshal_db_core::repos::story_reaction::StoryReactionRow {
-                story_id,
-                pubkey,
+                story_id: story_id_clean,
+                pubkey: pubkey_clean,
                 emoji: emoji.to_string(),
                 created_at: soshal_common_core::format::now_secs(),
             },
@@ -702,6 +706,31 @@ mod tests {
             "0".repeat(33 * 1024 * 1024)
         )
         .is_err());
+        let _ = super::super::signer::signer_lock();
+    }
+
+    #[test]
+    fn test_streaming_case_insensitivity_and_bounds() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("streaming-case", "streaming");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let my_pk = keys.public_key().to_hex();
+        crate::ffi::db::insert_test_user(&my_pk);
+
+        // Fetch stories with uppercase pubkey
+        let story_json = streaming_fetch_stories(my_pk.to_uppercase()).unwrap();
+        assert_eq!(story_json, "[]");
+
+        // React with bad story ID (not 64 hex)
+        assert!(
+            streaming_story_react("bad_id".to_string(), my_pk.clone(), "❤️".to_string()).is_err()
+        );
+
+        // Mark viewed with bad story ID
+        assert!(streaming_mark_story_viewed("bad_id".to_string(), my_pk.clone()).is_err());
+
         let _ = super::super::signer::signer_lock();
     }
 }

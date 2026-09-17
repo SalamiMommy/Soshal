@@ -41,9 +41,9 @@ impl MeshEnvelope {
         Self {
             version: ENVELOPE_VERSION,
             hop_count: 0,
-            event_id,
+            event_id: event_id.trim().to_ascii_lowercase(),
             kind,
-            author,
+            author: author.trim().to_ascii_lowercase(),
             created_at,
             payload,
         }
@@ -129,7 +129,7 @@ impl MeshEnvelope {
             return None;
         }
         let mut pos = 6;
-        let event_id = take_str(data, &mut pos)?;
+        let event_id = take_str(data, &mut pos)?.trim().to_ascii_lowercase();
         if event_id.is_empty() {
             return None;
         }
@@ -138,7 +138,7 @@ impl MeshEnvelope {
         }
         let kind = u16::from_le_bytes([data[pos], data[pos + 1]]);
         pos += 2;
-        let author = take_str(data, &mut pos)?;
+        let author = take_str(data, &mut pos)?.trim().to_ascii_lowercase();
         if author.is_empty() {
             return None;
         }
@@ -310,5 +310,34 @@ mod tests {
         bytes.extend_from_slice(&0u64.to_le_bytes()); // created_at
         bytes.extend_from_slice(&0u32.to_le_bytes()); // payload_len = 0
         assert_eq!(MeshEnvelope::from_bytes(&bytes), None);
+    }
+
+    #[test]
+    fn test_envelope_casing_and_payload_caps() {
+        let env = MeshEnvelope::new(
+            "DEADBEEF".to_string(),
+            1,
+            "CAFE1234".to_string(),
+            100,
+            b"data".to_vec(),
+        );
+        assert_eq!(env.event_id, "deadbeef");
+        assert_eq!(env.author, "cafe1234");
+
+        let bytes = env.to_bytes().unwrap();
+        let parsed = MeshEnvelope::from_bytes(&bytes).unwrap();
+        assert_eq!(parsed.event_id, "deadbeef");
+        assert_eq!(parsed.author, "cafe1234");
+
+        // Oversized payload wire rejection
+        let huge_env = MeshEnvelope::new(
+            "id".to_string(),
+            1,
+            "author".to_string(),
+            100,
+            vec![0u8; MAX_PAYLOAD_BYTES + 1],
+        );
+        let huge_bytes = huge_env.to_bytes().unwrap();
+        assert_eq!(MeshEnvelope::from_bytes(&huge_bytes), None);
     }
 }
