@@ -40,10 +40,11 @@ impl<'a> UserRepo<'a> {
         }
         if pubkeys.len() == 1 {
             let conn = self.db.conn()?;
+            let norm = pubkeys[0].trim().to_ascii_lowercase();
             let exists: Option<String> = crate::query::query_first(
                 &conn,
-                "SELECT pubkey FROM users WHERE pubkey = ?1",
-                params![pubkeys[0].as_str()],
+                "SELECT pubkey FROM users WHERE LOWER(pubkey) = LOWER(?1)",
+                params![norm.as_str()],
                 |row| row.get::<String>(0),
             )?;
             let mut set = std::collections::HashSet::with_capacity(exists.is_some() as usize);
@@ -53,10 +54,14 @@ impl<'a> UserRepo<'a> {
             return Ok(set);
         }
         let conn = self.db.conn()?;
-        let json = serde_json::to_string(pubkeys).unwrap_or_else(|_| "[]".to_string());
+        let norm_pubkeys: Vec<String> = pubkeys
+            .iter()
+            .map(|p| p.trim().to_ascii_lowercase())
+            .collect();
+        let json = serde_json::to_string(&norm_pubkeys).unwrap_or_else(|_| "[]".to_string());
         crate::query::query_fold(
             &conn,
-            "SELECT pubkey FROM users WHERE pubkey IN (SELECT value FROM json_each(?1))",
+            "SELECT pubkey FROM users WHERE LOWER(pubkey) IN (SELECT value FROM json_each(?1))",
             params![json.as_str()],
             std::collections::HashSet::with_capacity(pubkeys.len()),
             |mut set, row| {

@@ -25,8 +25,9 @@ impl WotCache {
         let key = pubkey.to_ascii_lowercase();
         if guard.0.contains_key(&key) {
             if let Some(pos) = guard.1.iter().position(|k| k == &key) {
-                let k = guard.1.remove(pos).unwrap();
-                guard.1.push_back(k);
+                if let Some(k) = guard.1.remove(pos) {
+                    guard.1.push_back(k);
+                }
             }
         }
         guard.0.get(&key).copied()
@@ -40,8 +41,9 @@ impl WotCache {
             {
                 e.insert(score);
                 if let Some(pos) = guard.1.iter().position(|k| k == &pubkey) {
-                    let k = guard.1.remove(pos).unwrap();
-                    guard.1.push_back(k);
+                    if let Some(k) = guard.1.remove(pos) {
+                        guard.1.push_back(k);
+                    }
                 }
                 return;
             }

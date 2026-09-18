@@ -210,23 +210,21 @@ impl<'a> MusicloudPlaylistRepo<'a> {
 
     pub fn add_track(&self, track: &PlaylistTrackRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        let position = crate::block_on(async {
-            let mut rows = conn
-                .query(
-                    "SELECT COALESCE(MAX(position)+1, 1) FROM musicloud_playlist_tracks WHERE playlist_id=?1",
-                    [track.playlist_id.as_str()],
-                )
-                .await?;
-            let row = rows.next().await?.expect("aggregate query returns one row");
-            row.get::<i64>(0)
-        })?;
+        let position = crate::query::query_first(
+            &conn,
+            "SELECT COALESCE(MAX(position)+1, 1) FROM musicloud_playlist_tracks WHERE playlist_id=?1",
+            [track.playlist_id.as_str()],
+            |row| row.get::<i64>(0),
+        )?
+        .unwrap_or(1);
+        let norm_pk = track.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO musicloud_playlist_tracks (playlist_id, track_id, pubkey, d, title, thumbnail, audio_url, blob_hash, media_size, audience, hashtags, created_at, position, added_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) ON CONFLICT(playlist_id, track_id) DO NOTHING",
             params![
                 track.playlist_id.as_str(),
                 track.track_id.as_str(),
-                track.pubkey.as_str(),
+                norm_pk.as_str(),
                 track.d.as_str(),
                 track.title.as_str(),
                 track.thumbnail.as_str(),

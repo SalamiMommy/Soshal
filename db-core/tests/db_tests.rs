@@ -338,6 +338,32 @@ fn test_user_ensure_exists_and_search() {
 }
 
 #[test]
+fn test_user_existing_pubkeys_case_insensitive() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    let repo = UserRepo::new(&db);
+
+    repo.ensure_exists("pk_user_abc").unwrap();
+    repo.ensure_exists("PK_USER_XYZ").unwrap();
+
+    // Single pubkey check
+    let single_lower = repo.existing_pubkeys(&["pk_user_abc".to_string()]).unwrap();
+    assert_eq!(single_lower.len(), 1);
+    let single_upper = repo.existing_pubkeys(&["PK_USER_ABC".to_string()]).unwrap();
+    assert_eq!(single_upper.len(), 1);
+
+    // Multi pubkey check
+    let multi = repo
+        .existing_pubkeys(&[
+            "PK_USER_ABC".to_string(),
+            "pk_user_xyz".to_string(),
+            "nonexistent".to_string(),
+        ])
+        .unwrap();
+    assert_eq!(multi.len(), 2);
+}
+
+#[test]
 fn test_message_repo_upsert_and_get_conversation() {
     let db = Database::open_in_memory().unwrap();
     db.migrate().unwrap();

@@ -1217,7 +1217,7 @@ pub fn dating_get_stats(user_pubkey: String) -> Result<String, String> {
         "profile_complete": !own_id.is_empty(),
         "photo_count": photo_count,
     });
-    Ok(serde_json::to_string(&stats).unwrap()).into()
+    serde_json::to_string(&stats).map_err(|e| e.to_string())
 }
 
 /// Block a profile: local-only blocklist record (mirrors the desktop

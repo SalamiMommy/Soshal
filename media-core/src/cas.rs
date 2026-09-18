@@ -174,25 +174,20 @@ impl ChunkStore {
             return idx.clone();
         }
         let built = Arc::new(ChunkIndex::build(&self.root));
-        if let Ok(mut slot) = self.index.write() {
-            if slot.is_none() {
-                *slot = Some(built);
-            }
+        let mut slot = self.index.write().unwrap_or_else(|e| e.into_inner());
+        if slot.is_none() {
+            *slot = Some(built.clone());
+            built
+        } else {
+            slot.as_ref().cloned().unwrap_or(built)
         }
-        self.index
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .unwrap()
-            .clone()
     }
 
     /// Rebuild the index from scratch (used when on-disk state changed
     /// outside this store, e.g. cache eviction ran).
     pub fn refresh_index(&self) {
-        if let Ok(mut slot) = self.index.write() {
-            *slot = Some(Arc::new(ChunkIndex::build(&self.root)));
-        }
+        let mut slot = self.index.write().unwrap_or_else(|e| e.into_inner());
+        *slot = Some(Arc::new(ChunkIndex::build(&self.root)));
     }
 
     /// Canonical on-disk path for a chunk hash. Two-char prefix subdir avoids

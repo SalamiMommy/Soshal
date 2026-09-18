@@ -292,10 +292,14 @@ pub fn streaming_start_live(
         "summary": description,
     })
     .to_string();
+    let d_tag = nostr::event::Tag::parse(vec!["d".to_string(), stream_url.clone()])
+        .map_err(|e| format!("invalid tag: {e}"))?;
+    let status_tag = nostr::event::Tag::parse(vec!["status".to_string(), "live".to_string()])
+        .map_err(|e| format!("invalid tag: {e}"))?;
     let builder =
         nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(KIND_LIVE), content.clone())
-            .tag(nostr::event::Tag::parse(vec!["d".to_string(), stream_url.clone()]).unwrap())
-            .tag(nostr::event::Tag::parse(vec!["status".to_string(), "live".to_string()]).unwrap());
+            .tag(d_tag)
+            .tag(status_tag);
     let signed_json = super::signer::sign_builder(builder)?;
     let signed: serde_json::Value =
         serde_json::from_str(&signed_json).map_err(|e| format!("bad signed event: {e}"))?;

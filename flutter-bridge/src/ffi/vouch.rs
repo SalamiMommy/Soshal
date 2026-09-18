@@ -19,10 +19,10 @@ pub async fn vouch_publish(target_pubkey: String, content: String) -> Result<Str
     if content.len() > 1000 {
         return Err("content too long: max 1000 characters".to_string());
     }
-    let mut builder = nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(31989), content);
-    if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), target_pubkey]) {
-        builder = builder.tag(tag);
-    }
+    let tag = nostr::event::Tag::parse(vec!["p".to_string(), target_pubkey])
+        .map_err(|e| format!("invalid p-tag: {e}"))?;
+    let builder =
+        nostr::event::EventBuilder::new(nostr::event::Kind::from_u16(31989), content).tag(tag);
     let signed = super::signer::sign_builder(builder)?;
     let event: serde_json::Value =
         serde_json::from_str(&signed).map_err(|e| format!("parse signed event: {e}"))?;

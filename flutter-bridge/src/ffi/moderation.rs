@@ -29,19 +29,24 @@ fn parse_pubkey_list(json: &str) -> Vec<String> {
 /// Mute a user (per-account settings list; never yourself).
 #[frb(sync, serialize)]
 pub fn moderation_mute_user(muter_pubkey: String, target_pubkey: String) -> Result<bool, String> {
-    if target_pubkey == muter_pubkey {
+    if target_pubkey
+        .trim()
+        .eq_ignore_ascii_case(muter_pubkey.trim())
+    {
         return Err("cannot mute yourself".to_string()).into();
     }
+    let norm_muter = muter_pubkey.trim().to_ascii_lowercase();
+    let norm_target = target_pubkey.trim().to_ascii_lowercase();
     // The claimed actor must be the unlocked identity, or a compromised Dart
     // layer could attribute mutes/blocks/reports to an arbitrary pubkey.
-    super::signer::require_identity(&muter_pubkey)?;
+    super::signer::require_identity(&norm_muter)?;
     super::db::with_db_result(|db| {
         let repo = SettingsRepo::new(db);
-        let key = muted_list_key(&muter_pubkey);
+        let key = muted_list_key(&norm_muter);
         let raw = repo.get(&key)?.unwrap_or_default();
         let mut list: Vec<String> = parse_pubkey_list(&raw);
-        if !list.iter().any(|k| k == &target_pubkey) {
-            list.push(target_pubkey);
+        if !list.iter().any(|k| k.eq_ignore_ascii_case(&norm_target)) {
+            list.push(norm_target);
         }
         repo.set(
             &key,
@@ -54,13 +59,15 @@ pub fn moderation_mute_user(muter_pubkey: String, target_pubkey: String) -> Resu
 /// Unmute a user.
 #[frb(sync, serialize)]
 pub fn moderation_unmute_user(muter_pubkey: String, target_pubkey: String) -> Result<bool, String> {
-    super::signer::require_identity(&muter_pubkey)?;
+    let norm_muter = muter_pubkey.trim().to_ascii_lowercase();
+    let norm_target = target_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&norm_muter)?;
     super::db::with_db_result(|db| {
         let repo = SettingsRepo::new(db);
-        let key = muted_list_key(&muter_pubkey);
+        let key = muted_list_key(&norm_muter);
         let raw = repo.get(&key)?.unwrap_or_default();
         let mut list: Vec<String> = parse_pubkey_list(&raw);
-        list.retain(|k| k != &target_pubkey);
+        list.retain(|k| !k.eq_ignore_ascii_case(&norm_target));
         repo.set(
             &key,
             &serde_json::to_string(&list).unwrap_or_else(|_| "[]".to_string()),
@@ -75,13 +82,16 @@ pub fn moderation_block_user(
     blocker_pubkey: String,
     target_pubkey: String,
 ) -> Result<bool, String> {
-    if target_pubkey == blocker_pubkey {
+    if target_pubkey
+        .trim()
+        .eq_ignore_ascii_case(blocker_pubkey.trim())
+    {
         return Err("cannot block yourself".to_string()).into();
     }
     super::signer::require_identity(&blocker_pubkey)?;
     let row = BlockRow {
-        pubkey: blocker_pubkey,
-        blocked_pubkey: target_pubkey,
+        pubkey: blocker_pubkey.trim().to_string(),
+        blocked_pubkey: target_pubkey.trim().to_string(),
         created_at: soshal_common_core::format::now_secs(),
     };
     super::db::with_db_result(|db| {
@@ -98,7 +108,7 @@ pub fn moderation_unblock_user(
 ) -> Result<bool, String> {
     super::signer::require_identity(&blocker_pubkey)?;
     super::db::with_db_result(|db| {
-        BlockRepo::new(db).delete(&blocker_pubkey, &target_pubkey)?;
+        BlockRepo::new(db).delete(blocker_pubkey.trim(), target_pubkey.trim())?;
         Ok(true)
     })
 }
@@ -106,10 +116,11 @@ pub fn moderation_unblock_user(
 /// Get muted users for an account.
 #[frb(sync, serialize)]
 pub fn moderation_get_muted(user_pubkey: String) -> Result<Vec<String>, String> {
-    super::signer::require_identity(&user_pubkey)?;
+    let norm_user = user_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&norm_user)?;
     super::db::with_db_result(|db| {
         let raw = SettingsRepo::new(db)
-            .get(&muted_list_key(&user_pubkey))?
+            .get(&muted_list_key(&norm_user))?
             .unwrap_or_default();
         Ok(parse_pubkey_list(&raw))
     })
@@ -353,9 +364,10 @@ mod tests {
     }
 
     #[test]
-    fn test_block_self_rejected() {
-        let result = moderation_block_user("pk".to_string(), "pk".to_string());
-        assert!(result.is_err());
+    fn test_block_and_mute_self_rejected() {
+        assert!(moderation_block_user("pk".to_string(), "pk".to_string()).is_err());
+        assert!(moderation_block_user("pk".to_string(), "PK".to_string()).is_err());
+        assert!(moderation_mute_user("pk".to_string(), "PK".to_string()).is_err());
     }
 
     #[test]

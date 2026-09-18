@@ -186,6 +186,11 @@ pub fn groups_join(
         let group = repo
             .get_by_id(&group_id)?
             .ok_or_else(|| soshal_db_core::error::DbError::NotFound)?;
+        if BannedMemberRepo::new(db).is_banned(&group_id, &user_pubkey)? {
+            return Err(soshal_db_core::error::DbError::Oversized(
+                "banned from this group".to_string(),
+            ));
+        }
         if soshal_groups_core::access::is_community_private(
             &group.access_type,
             group.password_hash.is_some(),
@@ -1897,9 +1902,14 @@ mod tests {
         assert!(banned_reply.is_err());
         assert!(banned_reply.unwrap_err().contains("banned from this group"));
 
-        let banned_react = groups_threads_react(thread_id, String::new(), user, "❤️".to_string());
+        let banned_react =
+            groups_threads_react(thread_id, String::new(), user.clone(), "❤️".to_string());
         assert!(banned_react.is_err());
         assert!(banned_react.unwrap_err().contains("banned from this group"));
+
+        let banned_join = groups_join("g_auth".to_string(), user, None);
+        assert!(banned_join.is_err());
+        assert!(banned_join.unwrap_err().contains("banned from this group"));
 
         let _ = super::super::signer::signer_lock();
     }
