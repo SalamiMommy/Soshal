@@ -15,10 +15,14 @@ macro_rules! post_columns_no_rsvp {
 }
 
 const POST_UPSERT_SQL: &str = "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id, category) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18, CASE WHEN ?4 = 30402 THEN (SELECT json_extract(je.value, '$[1]') FROM json_each(CASE WHEN json_valid(?6) THEN ?6 ELSE '[]' END) je WHERE json_extract(je.value, '$[0]') = 't' LIMIT 1) ELSE NULL END) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native, rsvp_event_id=excluded.rsvp_event_id, category=excluded.category WHERE posts.is_deleted = 0";
-const POST_FEED_SQL: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE pubkey IN (SELECT value FROM json_each(?1)) AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
-const POST_SELECT_BY_ID: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE id = ?1");
-const POST_SELECT_BY_PUBKEY: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE pubkey = ?1 AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
-const POST_SELECT_REPLIES: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 ORDER BY created_at ASC LIMIT 1000");
+const POST_FEED_SQL: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?1)) AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
+const POST_SELECT_BY_ID: &str = concat!(
+    "SELECT ",
+    post_columns!(),
+    " FROM posts WHERE LOWER(id) = LOWER(?1)"
+);
+const POST_SELECT_BY_PUBKEY: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE LOWER(pubkey) = LOWER(?1) AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
+const POST_SELECT_REPLIES: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE (LOWER(root_id) = LOWER(?1) OR LOWER(id) = LOWER(?1)) AND is_deleted = 0 ORDER BY created_at ASC LIMIT 1000");
 const POST_SELECT_PAGED: &str = concat!(
     "SELECT ",
     post_columns!(),
@@ -34,14 +38,14 @@ const POST_SELECT_PAGED_META_CURSOR: &str =
 /// Author-filtered variants of the slim feed pages: `?3`/`?4` is a JSON
 /// array of reachable pubkeys (audience filter: friends / network).
 const POST_SELECT_PAGED_META_AUTHORS: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey IN (SELECT value FROM json_each(?3)) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?3)) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_SINGLE_AUTHOR: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey = ?3 ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND LOWER(pubkey) = LOWER(?3) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_CURSOR_AUTHORS: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey IN (SELECT value FROM json_each(?4)) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?4)) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
 const POST_SELECT_PAGED_META_CURSOR_SINGLE_AUTHOR: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND pubkey = ?4 AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
-const POST_SELECT_SCHEDULED: &str = concat!("SELECT ", post_columns_no_rsvp!(), " FROM posts WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC");
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND LOWER(pubkey) = LOWER(?4) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
+const POST_SELECT_SCHEDULED: &str = concat!("SELECT ", post_columns_no_rsvp!(), " FROM posts WHERE LOWER(pubkey) = LOWER(?1) AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC");
 
 pub struct PostRepo<'a> {
     db: &'a Database,
@@ -110,11 +114,12 @@ impl<'a> PostRepo<'a> {
         offset: i64,
     ) -> Result<Vec<PostRow>, crate::error::DbError> {
         let (limit, offset) = crate::repos::clamp_page(limit, offset);
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         crate::query::query_capacity(
             &conn,
             POST_SELECT_BY_PUBKEY,
-            params![pubkey, limit, offset],
+            params![norm_pk.as_str(), limit, offset],
             limit as usize,
             Self::map_row,
         )
@@ -273,9 +278,11 @@ impl<'a> PostRepo<'a> {
         id: &str,
         author: &str,
     ) -> Result<(), crate::error::DbError> {
+        let norm_id = id.trim().to_ascii_lowercase();
+        let norm_author = author.trim().to_ascii_lowercase();
         tx.execute(
-            "UPDATE posts SET is_deleted = 1 WHERE id = ?1 AND pubkey = ?2",
-            params![id, author],
+            "UPDATE posts SET is_deleted = 1 WHERE LOWER(id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
+            params![norm_id.as_str(), norm_author.as_str()],
         )
         .await?;
         Ok(())
@@ -450,8 +457,14 @@ impl<'a> PostRepo<'a> {
     }
 
     pub fn get_scheduled(&self, pubkey: &str) -> Result<Vec<PostRow>, crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
-        crate::query::query(&conn, POST_SELECT_SCHEDULED, params![pubkey], Self::map_row)
+        crate::query::query(
+            &conn,
+            POST_SELECT_SCHEDULED,
+            params![norm_pk.as_str()],
+            Self::map_row,
+        )
     }
 
     fn map_meta_row(row: &libsql::Row) -> libsql::Result<PostMetaRow> {

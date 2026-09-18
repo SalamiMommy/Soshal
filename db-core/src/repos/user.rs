@@ -18,11 +18,12 @@ impl<'a> UserRepo<'a> {
     soshal_repo_new!();
 
     pub fn get_by_pubkey(&self, pubkey: &str) -> Result<Option<UserRow>, crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey = ?1",
-            params![pubkey],
+            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE LOWER(pubkey) = LOWER(?1)",
+            params![norm_pk.as_str()],
             Self::map_row,
         )
     }
@@ -70,10 +71,11 @@ impl<'a> UserRepo<'a> {
         tx: &libsql::Transaction,
         pubkey: &str,
     ) -> Result<Option<UserRow>, crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         let stmt = tx
-            .prepare("SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey = ?1")
+            .prepare("SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE LOWER(pubkey) = LOWER(?1)")
             .await?;
-        let mut rows = stmt.query(params![pubkey]).await?;
+        let mut rows = stmt.query(params![norm_pk.as_str()]).await?;
         match rows.next().await? {
             Some(row) => Ok(Some(Self::map_row(&row)?)),
             None => Ok(None),
@@ -152,11 +154,12 @@ impl<'a> UserRepo<'a> {
     }
 
     pub fn ensure_exists(&self, pubkey: &str) -> Result<(), crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-            params![pubkey],
+            params![norm_pk.as_str()],
         )?;
         Ok(())
     }
@@ -172,9 +175,10 @@ impl<'a> UserRepo<'a> {
         pubkey: &str,
         delta: i64,
     ) -> Result<(), crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         tx.execute(
-            "UPDATE users SET follower_count = MAX(0, follower_count + ?2) WHERE pubkey = ?1",
-            params![pubkey, delta],
+            "UPDATE users SET follower_count = MAX(0, follower_count + ?2) WHERE LOWER(pubkey) = LOWER(?1)",
+            params![norm_pk.as_str(), delta],
         )
         .await?;
         Ok(())
@@ -210,6 +214,7 @@ impl<'a> UserRepo<'a> {
         )?;
         let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
         for (author, list) in rows {
+            let author_norm = author.trim().to_ascii_lowercase();
             let entries: Vec<String> = if list.trim().starts_with('[') {
                 serde_json::from_str::<Vec<String>>(&list).unwrap_or_default()
             } else {
@@ -219,8 +224,9 @@ impl<'a> UserRepo<'a> {
                     .collect()
             };
             for pk in entries {
-                if pk != author {
-                    *counts.entry(pk).or_insert(0) += 1;
+                let pk_norm = pk.trim().to_ascii_lowercase();
+                if !pk_norm.is_empty() && pk_norm != author_norm {
+                    *counts.entry(pk_norm).or_insert(0) += 1;
                 }
             }
         }
@@ -236,7 +242,7 @@ impl<'a> UserRepo<'a> {
                 stmt.reset();
             }
             stmt = tx
-                .prepare("UPDATE users SET follower_count = ?2 WHERE pubkey = ?1")
+                .prepare("UPDATE users SET follower_count = ?2 WHERE LOWER(pubkey) = LOWER(?1)")
                 .await?;
             for (pk, n) in &counts {
                 stmt.run(params![pk.as_str(), *n]).await?;

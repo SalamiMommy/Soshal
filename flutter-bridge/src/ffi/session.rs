@@ -512,7 +512,13 @@ pub fn session_add_account(
                 loaded_at: Some(soshal_common_core::format::now_secs() as u64),
                 sig: None,
             });
-            if !session.accounts.iter().any(|a| a.pubkey == account.pubkey) {
+            let mut account = account;
+            account.pubkey = account.pubkey.trim().to_ascii_lowercase();
+            if !session
+                .accounts
+                .iter()
+                .any(|a| a.pubkey.eq_ignore_ascii_case(&account.pubkey))
+            {
                 session.accounts.push(account.clone());
             }
             if session.active_pubkey.is_none() {
@@ -532,6 +538,7 @@ pub fn session_add_account(
 /// Switch to an account
 #[frb(sync, serialize)]
 pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
+    let pubkey = pubkey.trim().to_ascii_lowercase();
     // Identity gate: if the signer is unlocked, the caller must prove they control
     // the currently active account or the destination account. If the signer is
     // currently locked, switching between already-persisted accounts in the local
@@ -541,7 +548,11 @@ pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
         let session = session_guard
             .as_ref()
             .ok_or_else(|| "Session not loaded".to_string())?;
-        if !session.accounts.iter().any(|a| a.pubkey == pubkey) {
+        if !session
+            .accounts
+            .iter()
+            .any(|a| a.pubkey.eq_ignore_ascii_case(&pubkey))
+        {
             return Err("Account not found".to_string());
         }
         if let Some(ref active_pk) = session.active_pubkey {
@@ -554,9 +565,17 @@ pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
     }
     let mut session_lock = lock_session()?;
     if let Some(session) = session_lock.as_mut() {
-        if session.accounts.iter().any(|a| a.pubkey == pubkey) {
+        if session
+            .accounts
+            .iter()
+            .any(|a| a.pubkey.eq_ignore_ascii_case(&pubkey))
+        {
             session.active_pubkey = Some(pubkey.clone());
-            if let Some(acc) = session.accounts.iter_mut().find(|a| a.pubkey == pubkey) {
+            if let Some(acc) = session
+                .accounts
+                .iter_mut()
+                .find(|a| a.pubkey.eq_ignore_ascii_case(&pubkey))
+            {
                 acc.last_used = soshal_common_core::format::now_secs() as u64;
             }
             // Invalidate unlocked signer keys and secret caches from the
@@ -565,7 +584,8 @@ pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
             // restore->add->switch->keychain-save sequence): locking there
             // wipes a just-unlocked key and makes the following keychain save
             // fail with "signer locked".
-            let target_is_unlocked = super::signer::signer_pubkey().is_ok_and(|pk| pk == pubkey);
+            let target_is_unlocked =
+                super::signer::signer_pubkey().is_ok_and(|pk| pk.eq_ignore_ascii_case(&pubkey));
             if !target_is_unlocked {
                 let _ = super::signer::signer_lock();
             }
@@ -588,17 +608,25 @@ pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
 /// first remaining account (or cleared if none remain).
 #[frb(sync, serialize)]
 pub fn session_remove_account(pubkey: String) -> Result<bool, String> {
+    let pubkey = pubkey.trim().to_ascii_lowercase();
     let mut session_lock = lock_session()?;
     let session = match session_lock.as_mut() {
         Some(s) => s,
         None => return Err("Session not loaded".to_string()).into(),
     };
     let before = session.accounts.len();
-    session.accounts.retain(|a| a.pubkey != pubkey);
+    session
+        .accounts
+        .retain(|a| !a.pubkey.eq_ignore_ascii_case(&pubkey));
     if session.accounts.len() == before {
         return Err("Account not found".to_string()).into();
     }
-    if session.active_pubkey.as_deref() == Some(pubkey.as_str()) {
+    if session
+        .active_pubkey
+        .as_deref()
+        .map(|s| s.eq_ignore_ascii_case(&pubkey))
+        .unwrap_or(false)
+    {
         session.active_pubkey = session.accounts.first().map(|a| a.pubkey.clone());
         // Invalidate unlocked signer keys from the removed active account.
         let _ = super::signer::signer_lock();

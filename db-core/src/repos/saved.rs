@@ -10,13 +10,15 @@ impl<'a> SavedContentRepo<'a> {
 
     pub fn upsert(&self, row: &SavedContentRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = row.pubkey.trim().to_ascii_lowercase();
+        let norm_id = row.id.trim();
         crate::query::execute(
             &conn,
             "INSERT INTO saved_content (kind, id, pubkey, d, media_type, media_url, text_overlay, title, thumbnail, blob_hash, media_size, audience, hashtags, host_ready, created_at, saved_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) ON CONFLICT(kind, id) DO UPDATE SET pubkey=excluded.pubkey, d=excluded.d, media_type=excluded.media_type, media_url=excluded.media_url, text_overlay=excluded.text_overlay, title=excluded.title, thumbnail=excluded.thumbnail, blob_hash=excluded.blob_hash, media_size=excluded.media_size, audience=excluded.audience, hashtags=excluded.hashtags, host_ready=excluded.host_ready, created_at=excluded.created_at, saved_at=excluded.saved_at",
             params![
                 row.kind,
-                row.id.as_str(),
-                row.pubkey.as_str(),
+                norm_id,
+                norm_pk.as_str(),
                 row.d.as_str(),
                 row.media_type.as_str(),
                 row.media_url.as_str(),
@@ -40,7 +42,7 @@ impl<'a> SavedContentRepo<'a> {
         crate::query::execute(
             &conn,
             "DELETE FROM saved_content WHERE kind=?1 AND id=?2",
-            params![kind, id],
+            params![kind, id.trim()],
         )?;
         Ok(())
     }
@@ -54,7 +56,7 @@ impl<'a> SavedContentRepo<'a> {
         crate::query::query_first(
             &conn,
             "SELECT kind, id, pubkey, d, media_type, media_url, text_overlay, title, thumbnail, blob_hash, media_size, audience, hashtags, host_ready, created_at, saved_at FROM saved_content WHERE kind=?1 AND id=?2",
-            params![kind, id],
+            params![kind, id.trim()],
             Self::map_row,
         )
     }
@@ -144,11 +146,13 @@ impl<'a> MusicloudPlaylistRepo<'a> {
         title: &str,
         is_private: bool,
     ) -> Result<(), crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
+        let now = soshal_common_core::format::now_secs();
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
             "INSERT OR IGNORE INTO musicloud_playlists (id, pubkey, title, is_private, created_at) VALUES (?1,?2,?3,?4,?5)",
-            params![id, pubkey, title, is_private as i64, 0],
+            params![id.trim(), norm_pk.as_str(), title, is_private as i64, now],
         )?;
         Ok(())
     }
@@ -158,12 +162,13 @@ impl<'a> MusicloudPlaylistRepo<'a> {
         pubkey: &str,
         limit: i64,
     ) -> Result<Vec<PlaylistRow>, crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         let limit = crate::repos::clamp_limit(limit);
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT p.id, p.pubkey, p.title, p.is_private, p.created_at, COUNT(t.track_id) FROM musicloud_playlists p LEFT JOIN musicloud_playlist_tracks t ON t.playlist_id = p.id WHERE p.pubkey=?1 GROUP BY p.id ORDER BY p.created_at DESC LIMIT ?2",
-            params![pubkey, limit],
+            "SELECT p.id, p.pubkey, p.title, p.is_private, p.created_at, COUNT(t.track_id) FROM musicloud_playlists p LEFT JOIN musicloud_playlist_tracks t ON t.playlist_id = p.id WHERE LOWER(p.pubkey)=LOWER(?1) GROUP BY p.id ORDER BY p.created_at DESC LIMIT ?2",
+            params![norm_pk.as_str(), limit],
             Self::map_playlist_row,
         )
     }

@@ -97,10 +97,10 @@ fn card_from_value(v: &serde_json::Value) -> Option<DatingCardInfo> {
 fn profile_rows_sql(extra: &str, limit: i32) -> String {
     format!(
         "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
-         FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
+         FROM posts p LEFT JOIN users u ON LOWER(u.pubkey) = LOWER(p.pubkey) \
          WHERE p.kind = {KIND_PROFILE} AND p.is_deleted = 0 {extra} \
          AND p.created_at = (SELECT MAX(created_at) FROM posts p2 \
-                             WHERE p2.pubkey = p.pubkey AND p2.kind = p.kind AND p2.is_deleted = 0) \
+                             WHERE LOWER(p2.pubkey) = LOWER(p.pubkey) AND p2.kind = p.kind AND p2.is_deleted = 0) \
          ORDER BY p.created_at DESC LIMIT {}",
         limit.clamp(1, 100)
     )
@@ -766,21 +766,27 @@ pub fn dating_get_own_profile(user_pubkey: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn dating_delete_profile(user_pubkey: String) -> Result<bool, String> {
     super::signer::require_identity(&user_pubkey)?;
+    let norm_pk = user_pubkey.trim().to_ascii_lowercase();
     super::db::db_execute_params(
-        &format!("UPDATE posts SET is_deleted = 1 WHERE kind = {KIND_PROFILE} AND pubkey = ?1"),
-        &[user_pubkey],
+        &format!(
+            "UPDATE posts SET is_deleted = 1 WHERE kind = {KIND_PROFILE} AND LOWER(pubkey) = ?1"
+        ),
+        &[norm_pk],
     )
     .map(|_| true)
     .into()
 }
 
 fn react(user_pubkey: &str, profile_pubkey: &str, content: &str) -> Result<bool, String> {
-    super::signer::require_identity(user_pubkey)?;
-    if profile_pubkey.len() != 64 {
+    let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
+    let norm_profile_pk = profile_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&norm_user_pk)?;
+    if norm_profile_pk.len() != 64 {
         return Err("invalid profile event id".to_string());
     }
-    let norm_profile_pk = profile_pubkey.trim().to_ascii_lowercase();
-    let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
+    if norm_user_pk == norm_profile_pk {
+        return Err("cannot react to self".to_string());
+    }
     // The like/matches/stats reads join `posts p ON p.id = r.event_id`, so the
     // stored event_id must be the profile *event id*, not the author pubkey.
     // Resolve the author's newest non-deleted profile event; fail loudly if
@@ -788,7 +794,7 @@ fn react(user_pubkey: &str, profile_pubkey: &str, content: &str) -> Result<bool,
     let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id FROM posts p WHERE p.kind = {KIND_PROFILE} \
-             AND p.pubkey = ?1 AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT 1"
+             AND LOWER(p.pubkey) = ?1 AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT 1"
         ),
         &[norm_profile_pk.clone()],
     )?;
@@ -855,13 +861,14 @@ pub fn dating_superlike(user_pubkey: String, profile_id: String) -> Result<bool,
 #[frb(sync, serialize)]
 pub fn dating_pass(user_pubkey: String, profile_id: String) -> Result<bool, String> {
     super::signer::require_identity(&user_pubkey)?;
+    let profile_id = profile_id.trim();
     if profile_id.len() != 64 {
         return Err("invalid profile event id".to_string()).into();
     }
     let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
     let row = soshal_db_core::repos::reaction::ReactionRow {
         id: format!("pass:{}:{}", norm_user_pk, profile_id),
-        event_id: profile_id,
+        event_id: profile_id.to_string(),
         pubkey: norm_user_pk,
         content: Some("pass".to_string()),
         created_at: soshal_common_core::format::now_secs(),
@@ -881,7 +888,7 @@ pub fn dating_reset_passes(user_pubkey: String) -> Result<i64, String> {
     super::signer::require_identity(&user_pubkey)?;
     let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
     let n = super::db::db_execute_params(
-        "DELETE FROM reactions WHERE pubkey = ?1 AND content = 'pass'",
+        "DELETE FROM reactions WHERE LOWER(pubkey) = ?1 AND content = 'pass'",
         &[norm_user_pk],
     )?;
     Ok(n as i64).into()
@@ -897,7 +904,7 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
         &format!(
             "SELECT r.event_id, r.pubkey FROM reactions r \
              WHERE r.content = '+' AND r.event_id IN \
-             (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0) \
+             (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND LOWER(pubkey) = ?1 AND is_deleted = 0) \
              ORDER BY r.created_at DESC LIMIT 200"
         ),
         &[norm_user_pk.clone()],
@@ -934,9 +941,9 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
         &format!(
             "SELECT r.event_id, r.pubkey, p.pubkey AS profile_owner FROM reactions r \
              JOIN posts p ON p.id = r.event_id \
-             WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND r.pubkey = ?1 \
-             AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND r2.pubkey = p.pubkey \
-                         AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1)) \
+             WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND LOWER(r.pubkey) = ?1 \
+             AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND LOWER(r2.pubkey) = LOWER(p.pubkey) \
+                         AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND LOWER(pubkey) = ?1)) \
              ORDER BY r.created_at DESC LIMIT 100"
         ),
         &[norm_user_pk.clone()],
@@ -996,13 +1003,15 @@ pub fn dating_calculate_score(
     if preferences_json.len() > 1024 * 1024 {
         return Err("preferences JSON too large".to_string()).into();
     }
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
+    let target_pubkey = target_pubkey.trim().to_ascii_lowercase();
     let prefs: serde_json::Value =
         serde_json::from_str(&preferences_json).unwrap_or(serde_json::Value::Null);
     let profile_rows = |pubkey: &str| {
         super::db::db_query_params(
             &format!(
                 "SELECT p.id, p.pubkey, p.content FROM posts p \
-                 WHERE p.kind = {KIND_PROFILE} AND p.pubkey = ?1 AND p.is_deleted = 0 \
+                 WHERE p.kind = {KIND_PROFILE} AND LOWER(p.pubkey) = LOWER(?1) AND p.is_deleted = 0 \
                  ORDER BY p.created_at DESC LIMIT 1"
             ),
             &[pubkey.to_string()],

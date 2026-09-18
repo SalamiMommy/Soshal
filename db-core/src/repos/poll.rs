@@ -10,12 +10,13 @@ impl<'a> PollRepo<'a> {
 
     pub fn upsert_poll(&self, p: &PollRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = p.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO polls (id, pubkey, question, options, expires_at, closed, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET question=excluded.question, options=excluded.options, expires_at=excluded.expires_at, closed=excluded.closed",
             params![
                 p.id.as_str(),
-                p.pubkey.as_str(),
+                norm_pk.as_str(),
                 p.question.as_str(),
                 p.options.as_str(),
                 p.expires_at,
@@ -45,7 +46,7 @@ impl<'a> PollRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, question, options, expires_at, closed, created_at FROM polls WHERE pubkey=?1 ORDER BY created_at DESC LIMIT ?2",
+            "SELECT id, pubkey, question, options, expires_at, closed, created_at FROM polls WHERE LOWER(pubkey)=LOWER(?1) ORDER BY created_at DESC LIMIT ?2",
             params![pubkey, limit],
             Self::map_poll,
         )
@@ -63,10 +64,11 @@ impl<'a> PollRepo<'a> {
 
     pub fn vote(&self, v: &PollVoteRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_voter = v.voter_pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO poll_votes (id, poll_id, option_id, voter_pubkey, voted_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(poll_id, voter_pubkey) DO UPDATE SET option_id=excluded.option_id, voted_at=excluded.voted_at",
-            params![v.id.as_str(), v.poll_id.as_str(), v.option_id, v.voter_pubkey.as_str(), v.voted_at],
+            params![v.id.as_str(), v.poll_id.as_str(), v.option_id, norm_voter.as_str(), v.voted_at],
         )?;
         Ok(())
     }
@@ -75,7 +77,7 @@ impl<'a> PollRepo<'a> {
         let conn = self.db.conn()?;
         Ok(crate::query::query_first(
             &conn,
-            "SELECT 1 FROM poll_votes WHERE poll_id=?1 AND voter_pubkey=?2",
+            "SELECT 1 FROM poll_votes WHERE poll_id=?1 AND LOWER(voter_pubkey)=LOWER(?2)",
             params![poll_id, voter],
             |_| Ok(true),
         )?

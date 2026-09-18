@@ -8,7 +8,9 @@ use nostr::event::{EventBuilder, Kind, Tag};
 /// Save a bookmark for an event. Returns the bookmark id (event id).
 #[frb(sync, serialize)]
 pub fn bookmarks_save(pubkey: String, event_id: String) -> Result<String, String> {
+    let pubkey = pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&pubkey)?;
+    let event_id = event_id.trim().to_ascii_lowercase();
     if event_id.is_empty() || event_id.len() > 128 {
         return Err("invalid event_id length".into());
     }
@@ -31,6 +33,7 @@ pub fn bookmarks_save(pubkey: String, event_id: String) -> Result<String, String
 /// `{id, pubkey, event_id, created_at}`.
 #[frb(sync, serialize)]
 pub fn bookmarks_list(pubkey: String, limit: i64, offset: i64) -> Result<String, String> {
+    let pubkey = pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&pubkey)?;
     let limit = limit.clamp(1, 500);
     let offset = offset.max(0);
@@ -45,6 +48,7 @@ pub fn bookmarks_list(pubkey: String, limit: i64, offset: i64) -> Result<String,
 /// Delete a bookmark by id. Returns true if a row was removed.
 #[frb(sync, serialize)]
 pub fn bookmarks_delete(id: String) -> Result<bool, String> {
+    let id = id.trim().to_ascii_lowercase();
     let row = super::db::with_db_result(|db| {
         let repo = soshal_db_core::repos::bookmark::BookmarkRepo::new(db);
         if let Some(r) = repo.get_by_id(&id)? {
@@ -53,13 +57,14 @@ pub fn bookmarks_delete(id: String) -> Result<bool, String> {
         let target_evt = id.strip_prefix("bm:").unwrap_or(&id);
         let conn = db.conn()?;
         if let Ok(active_pk) = super::signer::signer_pubkey() {
+            let active_pk = active_pk.trim().to_ascii_lowercase();
             let user_bm_id = format!("bm:{active_pk}:{target_evt}");
             if let Some(r) = repo.get_by_id(&user_bm_id)? {
                 return Ok(Some(r));
             }
             let found: Option<String> = soshal_db_core::query::query_first(
                 &conn,
-                "SELECT id FROM bookmarks WHERE pubkey = ?1 AND (id = ?2 OR event_id = ?3)",
+                "SELECT id FROM bookmarks WHERE LOWER(pubkey) = LOWER(?1) AND (LOWER(id) = LOWER(?2) OR LOWER(event_id) = LOWER(?3))",
                 libsql::params![active_pk.as_str(), id.as_str(), target_evt],
                 |r| r.get(0),
             )?;
@@ -69,7 +74,7 @@ pub fn bookmarks_delete(id: String) -> Result<bool, String> {
         }
         let found: Option<String> = soshal_db_core::query::query_first(
             &conn,
-            "SELECT id FROM bookmarks WHERE id = ?1 OR event_id = ?2",
+            "SELECT id FROM bookmarks WHERE LOWER(id) = LOWER(?1) OR LOWER(event_id) = LOWER(?2)",
             libsql::params![id.as_str(), target_evt],
             |r| r.get(0),
         )?;
@@ -93,6 +98,7 @@ pub fn bookmarks_delete(id: String) -> Result<bool, String> {
 /// Returns JSON of PostRow or empty string if not found.
 #[frb(sync, serialize)]
 pub fn bookmarks_resolve_post(event_id: String) -> Result<String, String> {
+    let event_id = event_id.trim().to_ascii_lowercase();
     super::db::with_db_result(|db| {
         let row = soshal_db_core::repos::post::PostRepo::new(db).get_by_id(&event_id)?;
         Ok(row)
@@ -136,11 +142,12 @@ pub fn bookmarks_resolve_posts(ids_json: String) -> Result<String, String> {
 /// one `e` tag per saved bookmark. Signer-locked or unreachable relays leave
 /// bookmarks local-only (DB write already succeeded).
 fn publish_bookmark_list(pubkey: &str) {
+    let pubkey = pubkey.trim().to_ascii_lowercase();
     if super::signer::signer_pubkey().is_err() {
         return;
     }
     let rows = super::db::with_db_result(|db| {
-        soshal_db_core::repos::bookmark::BookmarkRepo::new(db).get_user_bookmarks(pubkey, 1000, 0)
+        soshal_db_core::repos::bookmark::BookmarkRepo::new(db).get_user_bookmarks(&pubkey, 1000, 0)
     })
     .unwrap_or_default();
     let mut builder = EventBuilder::new(Kind::from_u16(10003), "");

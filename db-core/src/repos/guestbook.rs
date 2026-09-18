@@ -9,14 +9,16 @@ impl<'a> GuestbookRepo<'a> {
     soshal_repo_new!();
 
     pub fn insert(&self, e: &GuestbookEntryRow) -> Result<(), crate::error::DbError> {
+        let norm_profile = e.profile_pubkey.trim().to_ascii_lowercase();
+        let norm_sender = e.sender_pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
             "INSERT INTO guestbook_entries (id, profile_pubkey, sender_pubkey, sender_name, sender_avatar, content, created_at, signature, approved) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO NOTHING",
             params![
-                e.id.as_str(),
-                e.profile_pubkey.as_str(),
-                e.sender_pubkey.as_str(),
+                e.id.trim(),
+                norm_profile.as_str(),
+                norm_sender.as_str(),
                 e.sender_name.as_deref(),
                 e.sender_avatar.as_deref(),
                 e.content.as_str(),
@@ -34,14 +36,20 @@ impl<'a> GuestbookRepo<'a> {
         limit: i64,
         only_approved: bool,
     ) -> Result<Vec<GuestbookEntryRow>, crate::error::DbError> {
+        let norm_profile = profile_pubkey.trim().to_ascii_lowercase();
         let limit = crate::repos::clamp_limit(limit);
         let conn = self.db.conn()?;
         let sql = if only_approved {
-            "SELECT id, profile_pubkey, sender_pubkey, sender_name, sender_avatar, content, created_at, signature, approved FROM guestbook_entries WHERE profile_pubkey=?1 AND approved=1 ORDER BY created_at DESC LIMIT ?2"
+            "SELECT id, profile_pubkey, sender_pubkey, sender_name, sender_avatar, content, created_at, signature, approved FROM guestbook_entries WHERE LOWER(profile_pubkey)=LOWER(?1) AND approved=1 ORDER BY created_at DESC LIMIT ?2"
         } else {
-            "SELECT id, profile_pubkey, sender_pubkey, sender_name, sender_avatar, content, created_at, signature, approved FROM guestbook_entries WHERE profile_pubkey=?1 ORDER BY created_at DESC LIMIT ?2"
+            "SELECT id, profile_pubkey, sender_pubkey, sender_name, sender_avatar, content, created_at, signature, approved FROM guestbook_entries WHERE LOWER(profile_pubkey)=LOWER(?1) ORDER BY created_at DESC LIMIT ?2"
         };
-        crate::query::query(&conn, sql, params![profile_pubkey, limit], Self::map_row)
+        crate::query::query(
+            &conn,
+            sql,
+            params![norm_profile.as_str(), limit],
+            Self::map_row,
+        )
     }
 
     pub fn set_approved(&self, id: &str, approved: bool) -> Result<(), crate::error::DbError> {
@@ -49,7 +57,7 @@ impl<'a> GuestbookRepo<'a> {
         crate::query::execute(
             &conn,
             "UPDATE guestbook_entries SET approved=?2 WHERE id=?1",
-            params![id, approved as i64],
+            params![id.trim(), approved as i64],
         )?;
         Ok(())
     }
@@ -59,7 +67,7 @@ impl<'a> GuestbookRepo<'a> {
         crate::query::execute(
             &conn,
             "DELETE FROM guestbook_entries WHERE id=?1",
-            params![id],
+            params![id.trim()],
         )?;
         Ok(())
     }

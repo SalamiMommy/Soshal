@@ -84,7 +84,8 @@ pub fn identity_get_profile(pubkey: String) -> Result<String, String> {
                         if let Ok(follows) =
                             serde_json::from_str::<Vec<String>>(&my_row.contact_pubkeys)
                         {
-                            p.is_following = follows.contains(&r.pubkey);
+                            p.is_following =
+                                follows.iter().any(|f| f.eq_ignore_ascii_case(&r.pubkey));
                         }
                     }
                 }
@@ -122,7 +123,7 @@ pub fn identity_store_profile(profile: String) -> Result<bool, String> {
     // enforce identity: a Dart caller must not be able to overwrite the active
     // user's own cached profile with forged data without holding the key.
     if let Ok(active_pk) = super::signer::signer_pubkey() {
-        if active_pk == pubkey {
+        if active_pk.eq_ignore_ascii_case(pubkey) {
             super::signer::require_identity(pubkey)?;
         }
     }
@@ -131,7 +132,7 @@ pub fn identity_store_profile(profile: String) -> Result<bool, String> {
         let existing = repo.get_by_pubkey(&pubkey)?;
         let now = soshal_common_core::format::now_secs();
         let row = UserRow {
-            pubkey: pubkey.to_string(),
+            pubkey: pubkey.trim().to_ascii_lowercase(),
             npub: soshal_identity_core::keys::npub_encode(pubkey).unwrap_or_default(),
             name: get("name"),
             display_name: get("display_name"),
@@ -191,7 +192,7 @@ pub fn identity_update_profile(
         Ok(pk) => pk,
         Err(_) => return Err("signer locked".to_string()).into(),
     };
-    if unlocked != pubkey {
+    if !unlocked.eq_ignore_ascii_case(&pubkey) {
         return Err("pubkey does not match unlocked signer".to_string()).into();
     }
     let profile = serde_json::json!({
@@ -323,14 +324,16 @@ pub fn identity_get_trust_score(
     source_pubkey: String,
     target_pubkey: String,
 ) -> Result<f32, String> {
+    let source_pubkey = source_pubkey.trim().to_ascii_lowercase();
+    let target_pubkey = target_pubkey.trim().to_ascii_lowercase();
     let users = wot_graph_users()?;
     let mut self_contacts = Vec::new();
     let mut target_contacts = Vec::new();
     for u in &users {
-        if u.pubkey == source_pubkey {
+        if u.pubkey.eq_ignore_ascii_case(&source_pubkey) {
             self_contacts = u.contacts.clone();
         }
-        if u.pubkey == target_pubkey {
+        if u.pubkey.eq_ignore_ascii_case(&target_pubkey) {
             target_contacts = u.contacts.clone();
         }
     }
@@ -461,17 +464,19 @@ pub fn identity_get_wot_status(
     target_pubkey: String,
     viewer_pubkey: String,
 ) -> Result<String, String> {
+    let target_pubkey = target_pubkey.trim().to_ascii_lowercase();
+    let viewer_pubkey = viewer_pubkey.trim().to_ascii_lowercase();
     let wot_users = wot_graph_users()?;
     let by_distance = wot::get_wot_peers_by_distance(&viewer_pubkey, &wot_users, 2);
     let status = if by_distance
         .get(&1)
-        .map(|v| v.contains(&target_pubkey))
+        .map(|v| v.iter().any(|pk| pk.eq_ignore_ascii_case(&target_pubkey)))
         .unwrap_or(false)
     {
         "trusted"
     } else if by_distance
         .get(&2)
-        .map(|v| v.contains(&target_pubkey))
+        .map(|v| v.iter().any(|pk| pk.eq_ignore_ascii_case(&target_pubkey)))
         .unwrap_or(false)
     {
         "warning"
@@ -501,13 +506,14 @@ fn publish_event(signed: String) -> Result<i32, String> {
 #[frb(sync, serialize)]
 pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
     let unlocked = match super::signer::signer_pubkey() {
-        Ok(pk) => pk,
+        Ok(pk) => pk.trim().to_ascii_lowercase(),
         Err(_) => return Err("signer locked".to_string()).into(),
     };
+    let pubkey = pubkey.trim().to_ascii_lowercase();
     if pubkey.len() != 64 || hex::decode(&pubkey).is_err() {
         return Err("invalid pubkey: must be 64-character hex".to_string());
     }
-    if pubkey == unlocked {
+    if pubkey.eq_ignore_ascii_case(&unlocked) {
         return Err("cannot follow yourself".to_string());
     }
     let (list, row, was_following) = super::db::with_db_result(|db| {
@@ -516,7 +522,7 @@ pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
             Some(r) => serde_json::from_str(&r.contact_pubkeys).unwrap_or_default(),
             None => Vec::new(),
         };
-        let was_following = follows.contains(&pubkey);
+        let was_following = follows.iter().any(|f| f.eq_ignore_ascii_case(&pubkey));
         if !was_following {
             follows.push(pubkey.clone());
         }
@@ -547,7 +553,7 @@ pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
         r.contact_pubkeys = updated;
         UserRepo::new(db).upsert(&r)?;
         // Materialized follower count: a new follow adds +1 to the target.
-        if !was_following && pubkey != unlocked {
+        if !was_following && !pubkey.eq_ignore_ascii_case(&unlocked) {
             UserRepo::new(db).bump_follower_count(&pubkey, 1)?;
         }
         Ok(())
@@ -570,9 +576,10 @@ pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
     let unlocked = match super::signer::signer_pubkey() {
-        Ok(pk) => pk,
+        Ok(pk) => pk.trim().to_ascii_lowercase(),
         Err(_) => return Err("signer locked".to_string()).into(),
     };
+    let pubkey = pubkey.trim().to_ascii_lowercase();
     if pubkey.len() != 64 || hex::decode(&pubkey).is_err() {
         return Err("invalid pubkey: must be 64-character hex".to_string());
     }
@@ -582,8 +589,8 @@ pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
             Some(r) => serde_json::from_str(&r.contact_pubkeys).unwrap_or_default(),
             None => Vec::new(),
         };
-        let was_following = follows.contains(&pubkey);
-        follows.retain(|f| f != &pubkey);
+        let was_following = follows.iter().any(|f| f.eq_ignore_ascii_case(&pubkey));
+        follows.retain(|f| !f.eq_ignore_ascii_case(&pubkey));
         Ok((follows, row, was_following))
     })?;
     let updated = serde_json::to_string(&list).map_err(|e| format!("serialize: {e}"))?;
@@ -611,7 +618,7 @@ pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
         r.contact_pubkeys = updated;
         UserRepo::new(db).upsert(&r)?;
         // Materialized follower count: an unfollow removes -1 from the target.
-        if was_following && pubkey != unlocked {
+        if was_following && !pubkey.eq_ignore_ascii_case(&unlocked) {
             UserRepo::new(db).bump_follower_count(&pubkey, -1)?;
         }
         Ok(())

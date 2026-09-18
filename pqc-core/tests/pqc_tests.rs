@@ -123,6 +123,18 @@ fn hybrid_rejects_bad_lengths() {
     let (ct, _) = hybrid_encapsulate(&pk, b"d").unwrap();
     assert!(hybrid_decapsulate(&ct, "00", b"d").is_err());
     assert!(hybrid_decapsulate(&ct, &sk, b"d").is_ok());
+
+    // Whitespace trimming
+    let pk_spaced = format!("  {}  ", pk);
+    let (ct, _) = hybrid_encapsulate(&pk_spaced, b"d").unwrap();
+    let sk_spaced = format!("  {}  ", sk);
+    let ct_spaced = format!("  {}  ", ct);
+    assert!(hybrid_decapsulate(&ct_spaced, &sk_spaced, b"d").is_ok());
+
+    // Domain size limit
+    let huge_domain = vec![0x42u8; 1025];
+    assert!(hybrid_encapsulate(&pk, &huge_domain).is_err());
+    assert!(hybrid_decapsulate(&ct, &sk, &huge_domain).is_err());
 }
 
 #[test]

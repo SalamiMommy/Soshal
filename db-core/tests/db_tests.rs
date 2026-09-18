@@ -34,6 +34,7 @@ use soshal_db_core::repos::relay::{RelayRepo, RelayRow};
 use soshal_db_core::repos::reminder::{ReminderRepo, ReminderRow};
 use soshal_db_core::repos::repost::{RepostRepo, RepostRow};
 use soshal_db_core::repos::role::{GroupRoleRepo, GroupRoleRow};
+use soshal_db_core::repos::saved::{MusicloudPlaylistRepo, SavedContentRepo, SavedContentRow};
 use soshal_db_core::repos::search_index::{SearchIndexRepo, SearchIndexRow};
 use soshal_db_core::repos::settings::SettingsRepo;
 use soshal_db_core::repos::spam_report::{SpamReportRepo, SpamReportRow};
@@ -382,6 +383,23 @@ fn test_notification_repo_upsert_and_get_unread() {
     let unread = repo.get_unread("target_user", 10).unwrap();
     assert_eq!(unread.len(), 1);
     assert_eq!(unread[0].id, "n1");
+
+    let unread_upper = repo.get_unread("TARGET_USER", 10).unwrap();
+    assert_eq!(unread_upper.len(), 1);
+
+    let ign_repo = soshal_db_core::repos::ignored_notification::IgnoredNotificationRepo::new(&db);
+    ign_repo
+        .ignore_user("TARGET_USER", "SENDER1", "mention", 2005)
+        .unwrap();
+    assert!(ign_repo
+        .is_ignored("target_user", "mention", "sender1", "")
+        .unwrap());
+    assert!(ign_repo
+        .is_ignored("TARGET_USER", "mention", "SENDER1", "")
+        .unwrap());
+
+    let unread_ignored = repo.get_unread("target_user", 10).unwrap();
+    assert_eq!(unread_ignored.len(), 0);
 }
 
 #[test]
@@ -1047,6 +1065,7 @@ fn test_poll_crud_and_votes() {
     let found = repo.get_poll("poll1").unwrap().unwrap();
     assert_eq!(found.options, "[\"a\",\"b\"]");
     assert_eq!(repo.list_by_author("pk1", 10).unwrap().len(), 1);
+    assert_eq!(repo.list_by_author("PK1", 10).unwrap().len(), 1);
 
     let vote = PollVoteRow {
         id: "v1".into(),
@@ -1057,6 +1076,7 @@ fn test_poll_crud_and_votes() {
     };
     repo.vote(&vote).unwrap();
     assert!(repo.has_voted("poll1", "voter1").unwrap());
+    assert!(repo.has_voted("poll1", "VOTER1").unwrap());
     assert_eq!(repo.option_count("poll1", 1).unwrap(), 1);
 
     repo.set_closed("poll1", true).unwrap();
@@ -2292,4 +2312,224 @@ fn test_post_cursor_pagination_no_gap_same_ts() {
 
     let all: Vec<String> = page1.into_iter().chain(page2).chain(page3).collect();
     assert_eq!(all, vec!["post_d", "post_c", "post_b", "post_a", "post_0"]);
+}
+
+#[test]
+fn test_case_insensitivity_and_normalization_regression() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+
+    insert_test_user(&db, "User_Alpha");
+    insert_test_user(&db, "User_Beta");
+    insert_test_user(&db, "Pk_FrIeNd");
+    insert_test_user(&db, "ReAcToR_1");
+    insert_test_user(&db, "Bm_UsEr");
+    insert_test_user(&db, "MemBeR_X");
+    insert_test_user(&db, "ApPlIcAnT_1");
+    insert_test_user(&db, "admin_pk");
+    insert_test_user(&db, "sender1");
+    insert_test_user(&db, "recip1");
+
+    let grp_setup = GroupRepo::new(&db);
+    grp_setup
+        .upsert(&GroupRow {
+            id: "grp1".into(),
+            name: "Test Group".into(),
+            about: None,
+            picture: None,
+            pubkey: "admin_pk".into(),
+            created_at: 1000,
+            updated_at: 1000,
+            access_type: "open".into(),
+            relay: None,
+            sync_status: "synced".into(),
+            password_hash: None,
+        })
+        .unwrap();
+
+    // 1. MusicloudPlaylistRepo: create with mixed case, list with uppercase, created_at > 0
+    let pl_repo = MusicloudPlaylistRepo::new(&db);
+    pl_repo
+        .create("pl1", "MiXeD_pKb1", "pLaYlIsT 1", false)
+        .unwrap();
+    let pl_list = pl_repo.list("MIXED_PKB1", 10).unwrap();
+    assert_eq!(pl_list.len(), 1);
+    assert_eq!(pl_list[0].id, "pl1");
+    assert!(pl_list[0].created_at > 0);
+
+    // 2. SavedContentRepo: upsert with mixed case, get and delete with uppercase
+    let saved_repo = SavedContentRepo::new(&db);
+    let s_row = SavedContentRow {
+        kind: 30078,
+        id: "save_item_1".into(),
+        pubkey: "Pk_SaVeD".into(),
+        d: "d1".into(),
+        media_type: "audio".into(),
+        media_url: "url".into(),
+        text_overlay: "".into(),
+        title: "track info".into(),
+        thumbnail: "".into(),
+        blob_hash: "".into(),
+        media_size: 100,
+        audience: "public".into(),
+        hashtags: "[]".into(),
+        host_ready: true,
+        created_at: 100,
+        saved_at: 500,
+    };
+    saved_repo.upsert(&s_row).unwrap();
+    let retrieved = saved_repo.get(30078, "save_item_1").unwrap();
+    assert!(retrieved.is_some());
+    assert_eq!(retrieved.unwrap().pubkey, "pk_saved");
+    saved_repo.delete(30078, "save_item_1").unwrap();
+    assert!(saved_repo.get(30078, "save_item_1").unwrap().is_none());
+
+    // 3. BlockRepo: upsert with mixed-case, check and list with uppercase
+    let block_repo = BlockRepo::new(&db);
+    let b_row = BlockRow {
+        pubkey: "User_Alpha".into(),
+        blocked_pubkey: "User_Beta".into(),
+        created_at: 100,
+    };
+    block_repo.upsert(&b_row).unwrap();
+    assert!(block_repo.is_blocked("USER_ALPHA", "USER_BETA").unwrap());
+    assert_eq!(
+        block_repo.list("USER_ALPHA").unwrap(),
+        vec!["User_Beta".to_string()]
+    );
+    block_repo.delete("USER_ALPHA", "USER_BETA").unwrap();
+    assert!(!block_repo.is_blocked("USER_ALPHA", "USER_BETA").unwrap());
+
+    // 4. DatingUnmatchRepo: upsert with mixed-case, check with uppercase
+    let dating_repo = DatingUnmatchRepo::new(&db);
+    dating_repo.upsert("Actor_A", "Target_B", 200).unwrap();
+    assert!(dating_repo.is_unmatched("ACTOR_A", "TARGET_B").unwrap());
+    dating_repo.delete("ACTOR_A", "TARGET_B").unwrap();
+    assert!(!dating_repo.is_unmatched("ACTOR_A", "TARGET_B").unwrap());
+
+    // 5. FriendBackupRepo: upsert with mixed-case, get with uppercase
+    let fb_repo = FriendBackupRepo::new(&db);
+    let fb_row = FriendBackupRow {
+        user_pubkey: "Pk_FrIeNd".into(),
+        encrypted_data: "secret".into(),
+        updated_at: 300,
+    };
+    fb_repo.upsert(&fb_row).unwrap();
+    assert!(fb_repo.get("PK_FRIEND").unwrap().is_some());
+    fb_repo.delete("PK_FRIEND").unwrap();
+    assert!(fb_repo.get("PK_FRIEND").unwrap().is_none());
+
+    // 6. StoryReactionRepo: react with mixed-case, check with uppercase
+    let story_repo = StoryReactionRepo::new(&db);
+    let srx = StoryReactionRow {
+        story_id: "story_123".into(),
+        pubkey: "ReAcToR".into(),
+        emoji: "👍".into(),
+        created_at: 400,
+    };
+    story_repo.react(&srx).unwrap();
+    assert!(story_repo
+        .reacted_with("story_123", "REACTOR", "👍")
+        .unwrap());
+    story_repo.unreact("story_123", "REACTOR", "👍").unwrap();
+    assert!(!story_repo
+        .reacted_with("story_123", "REACTOR", "👍")
+        .unwrap());
+
+    // 7. ReactionRepo: upsert with mixed-case event_id, check with uppercase
+    let rx_repo = ReactionRepo::new(&db);
+    let rx_row1 = ReactionRow {
+        id: "rx1".into(),
+        event_id: "EvT_AbCd".into(),
+        pubkey: "ReAcToR_1".into(),
+        kind: 7,
+        content: Some("+".into()),
+        created_at: 500,
+    };
+    rx_repo.upsert(&rx_row1).unwrap();
+    assert_eq!(rx_repo.get_by_event("EVT_ABCD").unwrap().len(), 1);
+    // Upserting with changed casing replaces rather than duplicate
+    let rx_row2 = ReactionRow {
+        id: "rx2".into(),
+        event_id: "evt_abcd".into(),
+        pubkey: "ReAcToR_1".into(),
+        kind: 7,
+        content: Some("❤️".into()),
+        created_at: 600,
+    };
+    rx_repo.upsert(&rx_row2).unwrap();
+    let rx_list = rx_repo.get_by_event("EVT_ABCD").unwrap();
+    assert_eq!(rx_list.len(), 1);
+    assert_eq!(rx_list[0].content, Some("❤️".into()));
+
+    // 8. BookmarkRepo: upsert with mixed-case pubkey, get with uppercase
+    let bm_repo = BookmarkRepo::new(&db);
+    let bm_row = BookmarkRow {
+        id: "bm1".into(),
+        pubkey: "Bm_UsEr".into(),
+        event_id: "evt_bm".into(),
+        created_at: 700,
+    };
+    bm_repo.upsert(&bm_row).unwrap();
+    let bms = bm_repo.get_user_bookmarks("BM_USER", 10, 0).unwrap();
+    assert_eq!(bms.len(), 1);
+    assert_eq!(bms[0].id, "bm1");
+    bm_repo.delete("BM1").unwrap();
+    assert!(bm_repo
+        .get_user_bookmarks("BM_USER", 10, 0)
+        .unwrap()
+        .is_empty());
+
+    // 9. GroupRepo: add_member with mixed-case, then check and remove with uppercase
+    let grp_repo = GroupRepo::new(&db);
+    grp_repo
+        .add_member("grp1", "MemBeR_X", "member", 800)
+        .unwrap();
+    assert!(grp_repo.is_member("grp1", "MEMBER_X").unwrap());
+    // Adding again with same pubkey updates rather than duplicate
+    grp_repo
+        .add_member("grp1", "MemBeR_X", "admin", 850)
+        .unwrap();
+    assert_eq!(grp_repo.get_members("grp1").unwrap().len(), 1);
+    assert_eq!(grp_repo.get_members("grp1").unwrap()[0].role, "admin");
+    grp_repo.remove_member("grp1", "MEMBER_X").unwrap();
+    assert!(!grp_repo.is_member("grp1", "MEMBER_X").unwrap());
+
+    // 10. GroupJoinRequestRepo: upsert with mixed-case, get with uppercase
+    let req_repo = GroupJoinRequestRepo::new(&db);
+    let req_row = GroupJoinRequestRow {
+        group_id: "grp1".into(),
+        pubkey: "ApPlIcAnT_1".into(),
+        status: "pending".into(),
+        requested_at: 900,
+    };
+    req_repo.upsert(&req_row).unwrap();
+    assert!(req_repo.get("grp1", "APPLICANT_1").unwrap().is_some());
+    req_repo.delete("grp1", "APPLICANT_1").unwrap();
+    assert!(req_repo.get("grp1", "APPLICANT_1").unwrap().is_none());
+
+    // 11. ZapRepo: upsert with mixed-case event_id, sum_by_event with uppercase
+    let zap_repo = ZapRepo::new(&db);
+    let zap_row = ZapRow {
+        id: "zap1".into(),
+        pubkey: "sender1".into(),
+        recipient_pubkey: "recip1".into(),
+        event_id: Some("EvT_ZaPpEd".into()),
+        amount: 2100,
+        amount_msat: 2100000,
+        content: Some("great post".into()),
+        created_at: 950,
+        zap_type: "public".into(),
+    };
+    zap_repo.upsert(&zap_row).unwrap();
+    assert_eq!(zap_repo.sum_by_event("EVT_ZAPPED").unwrap(), 2100);
+
+    // 12. UserRepo: ensure_exists with uppercase pubkey creates lowercase row, get_by_pubkey finds it
+    let user_repo = UserRepo::new(&db);
+    user_repo.ensure_exists("UPPER_USER").unwrap();
+    let u = user_repo.get_by_pubkey("upper_user").unwrap();
+    assert!(u.is_some());
+    assert_eq!(u.unwrap().pubkey, "upper_user");
+    let u_upper = user_repo.get_by_pubkey("UPPER_USER").unwrap();
+    assert!(u_upper.is_some());
 }

@@ -238,6 +238,17 @@ pub fn groups_post_message(
     room_id: String,
     content: String,
 ) -> Result<String, String> {
+    let group_id = group_id.trim().to_string();
+    if group_id.is_empty() || group_id.len() > 128 {
+        return Err("invalid group_id".into());
+    }
+    let room_id = room_id.trim().to_string();
+    if room_id.len() > 128 {
+        return Err("invalid room_id".into());
+    }
+    if content.is_empty() || content.len() > 65536 {
+        return Err("content must be between 1 and 65536 bytes".into());
+    }
     let content = super::db::with_db_result(|db| {
         let key = shared_key_for_group(db, &group_id)?;
         Ok(match key {
@@ -693,6 +704,18 @@ pub fn groups_threads_create(
     body: String,
     author: String,
 ) -> Result<String, String> {
+    let group_id = group_id.trim().to_string();
+    if group_id.is_empty() || group_id.len() > 128 {
+        return Err("invalid group_id".into());
+    }
+    let title = title.trim().to_string();
+    if title.is_empty() || title.len() > 500 {
+        return Err("title must be between 1 and 500 characters".into());
+    }
+    if body.len() > 65536 {
+        return Err("body exceeds 65536 bytes".into());
+    }
+    let author = author.trim().to_ascii_lowercase();
     super::signer::require_identity(&author)?;
     let now = soshal_common_core::format::now_secs();
     let id = format!("thr_{now}_{:x}", rand::random::<u32>());
@@ -770,6 +793,19 @@ pub fn groups_threads_reply(
     content: String,
     author: String,
 ) -> Result<String, String> {
+    let thread_id = thread_id.trim().to_string();
+    if thread_id.is_empty() || thread_id.len() > 128 {
+        return Err("invalid thread_id".into());
+    }
+    let parent_id = parent_id.trim().to_string();
+    if parent_id.len() > 128 {
+        return Err("invalid parent_id".into());
+    }
+    let content = content.trim().to_string();
+    if content.is_empty() || content.len() > 65536 {
+        return Err("content must be between 1 and 65536 bytes".into());
+    }
+    let author = author.trim().to_ascii_lowercase();
     super::signer::require_identity(&author)?;
     let now = soshal_common_core::format::now_secs();
     let id = format!("rpl_{now}_{:x}", rand::random::<u32>());
@@ -2413,5 +2449,44 @@ mod tests {
         let info = row_to_group(&row, Some("AABBCC"), false);
         assert!(info.is_member);
         assert_eq!(info.role, "owner");
+
+        // groups_post_message bounds checks
+        assert!(groups_post_message("".into(), "".into(), "hello".into()).is_err());
+        assert!(groups_post_message("a".repeat(129), "".into(), "hello".into()).is_err());
+        assert!(groups_post_message("g1".into(), "r".repeat(129), "hello".into()).is_err());
+        assert!(groups_post_message("g1".into(), "".into(), "".into()).is_err());
+        assert!(groups_post_message("g1".into(), "".into(), "x".repeat(65537)).is_err());
+
+        // groups_threads_create bounds checks
+        assert!(
+            groups_threads_create("".into(), "title".into(), "body".into(), "pk".into()).is_err()
+        );
+        assert!(
+            groups_threads_create("a".repeat(129), "title".into(), "body".into(), "pk".into())
+                .is_err()
+        );
+        assert!(groups_threads_create("g1".into(), "".into(), "body".into(), "pk".into()).is_err());
+        assert!(
+            groups_threads_create("g1".into(), "t".repeat(501), "body".into(), "pk".into())
+                .is_err()
+        );
+        assert!(
+            groups_threads_create("g1".into(), "title".into(), "x".repeat(65537), "pk".into())
+                .is_err()
+        );
+
+        // groups_threads_reply bounds checks
+        assert!(groups_threads_reply("".into(), "".into(), "reply".into(), "pk".into()).is_err());
+        assert!(
+            groups_threads_reply("t".repeat(129), "".into(), "reply".into(), "pk".into()).is_err()
+        );
+        assert!(
+            groups_threads_reply("t1".into(), "p".repeat(129), "reply".into(), "pk".into())
+                .is_err()
+        );
+        assert!(groups_threads_reply("t1".into(), "".into(), "".into(), "pk".into()).is_err());
+        assert!(
+            groups_threads_reply("t1".into(), "".into(), "x".repeat(65537), "pk".into()).is_err()
+        );
     }
 }

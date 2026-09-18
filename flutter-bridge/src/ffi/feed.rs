@@ -146,7 +146,10 @@ fn feed_engagement_counters(
         return std::collections::HashMap::new();
     }
     let id_json = serde_json::to_string(ids).unwrap_or_else(|_| "[]".to_string());
-    let active_pubkey: String = super::db::active_pubkey().unwrap_or_default();
+    let active_pubkey: String = super::db::active_pubkey()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
     soshal_db_core::block_on(async {
         let r: Result<std::collections::HashMap<String, EngagementCounters>, String> = async {
             let conn = db.conn().map_err(|e| e.to_string())?;
@@ -156,7 +159,7 @@ fn feed_engagement_counters(
                             (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
                             (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.kind = 1 AND rp.is_deleted = 0),
                             p.reposts_count,
-                            EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?2)
+                            EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND LOWER(rl.pubkey) = LOWER(?2))
                      FROM posts p
                      WHERE p.id IN (SELECT value FROM json_each(?1))",
                 )
@@ -302,6 +305,14 @@ pub async fn feed_publish_reply(
     root_event_id: String,
     reply_to_event_id: String,
 ) -> Result<String, String> {
+    let root_event_id = root_event_id.trim().to_ascii_lowercase();
+    let reply_to_event_id = reply_to_event_id.trim().to_ascii_lowercase();
+    if root_event_id.is_empty() || root_event_id.len() > 128 {
+        return Err("invalid root_event_id".to_string());
+    }
+    if reply_to_event_id.is_empty() || reply_to_event_id.len() > 128 {
+        return Err("invalid reply_to_event_id".to_string());
+    }
     soshal_feed_core::publish::validate_note_content(&content).map_err(super::util::to_err)?;
     let filters =
         super::db::with_db_result(|db| Ok(get_custom_word_filters(db))).unwrap_or_default();
@@ -371,6 +382,10 @@ pub async fn feed_create_reaction(
     event_id: String,
     reaction_type: String,
 ) -> Result<String, String> {
+    let event_id = event_id.trim().to_ascii_lowercase();
+    if event_id.is_empty() || event_id.len() > 128 {
+        return Err("invalid event_id".to_string());
+    }
     // NIP-7 reactions are typically +, -, or a single emoji. 200 bytes is a
     // generous ceiling that prevents oversized events being signed and relayed.
     if reaction_type.is_empty() || reaction_type.len() > 200 {
@@ -403,6 +418,7 @@ pub async fn feed_create_reaction(
 /// Delete a post (kind 5 deletion request). Publishes or queues offline.
 #[frb(serialize)]
 pub async fn feed_delete_post(event_id: String) -> Result<String, String> {
+    let event_id = event_id.trim().to_ascii_lowercase();
     let caller = super::signer::signer_pubkey()?;
     if event_id.len() != 64 || hex::decode(&event_id).is_err() {
         return Err("invalid event_id: must be 64-character hex".to_string());
@@ -550,7 +566,8 @@ pub async fn feed_fetch_window(
 /// Fetch a thread (root post + direct replies) from the local DB, filtering moderated replies.
 #[frb(serialize)]
 pub async fn feed_fetch_thread(event_id: String) -> Result<String, String> {
-    if event_id.trim().is_empty() || event_id.len() > 128 {
+    let event_id = event_id.trim().to_ascii_lowercase();
+    if event_id.is_empty() || event_id.len() > 128 {
         return Err("invalid event_id".to_string()).into();
     }
     tokio::task::spawn_blocking(move || {

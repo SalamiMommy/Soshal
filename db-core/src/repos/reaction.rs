@@ -13,25 +13,27 @@ impl<'a> ReactionRepo<'a> {
         tx: &libsql::Transaction,
         row: &ReactionRow,
     ) -> Result<(), crate::error::DbError> {
+        let norm_eid = row.event_id.trim();
+        let norm_pk = row.pubkey.trim();
         if row.content.as_deref() == Some("-") {
             tx.execute(
-                "DELETE FROM reactions WHERE event_id = ?1 AND pubkey = ?2",
-                params![row.event_id.as_str(), row.pubkey.as_str()],
+                "DELETE FROM reactions WHERE LOWER(event_id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
+                params![norm_eid, norm_pk],
             )
             .await?;
             return Ok(());
         }
         tx.execute(
-            "DELETE FROM reactions WHERE event_id = ?1 AND pubkey = ?2",
-            params![row.event_id.as_str(), row.pubkey.as_str()],
+            "DELETE FROM reactions WHERE LOWER(event_id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
+            params![norm_eid, norm_pk],
         )
         .await?;
         tx.execute(
             "INSERT INTO reactions (id, pubkey, event_id, kind, content, created_at) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET content=excluded.content",
             params![
-                row.id.as_str(),
-                row.pubkey.as_str(),
-                row.event_id.as_str(),
+                row.id.trim(),
+                norm_pk,
+                norm_eid,
                 row.kind,
                 row.content.as_deref(),
                 row.created_at,
@@ -51,11 +53,12 @@ impl<'a> ReactionRepo<'a> {
     }
 
     pub fn get_by_event(&self, event_id: &str) -> Result<Vec<ReactionRow>, crate::error::DbError> {
+        let norm_eid = event_id.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, event_id, kind, content, created_at FROM reactions WHERE event_id = ?1 ORDER BY created_at DESC LIMIT 2000",
-            params![event_id],
+            "SELECT id, pubkey, event_id, kind, content, created_at FROM reactions WHERE LOWER(event_id) = LOWER(?1) ORDER BY created_at DESC LIMIT 2000",
+            params![norm_eid.as_str()],
             |row| {
                 Ok(ReactionRow {
                     id: row.get(0)?,

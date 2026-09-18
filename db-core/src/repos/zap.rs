@@ -13,13 +13,17 @@ impl<'a> ZapRepo<'a> {
         tx: &libsql::Transaction,
         row: &ZapRow,
     ) -> Result<(), crate::error::DbError> {
+        let id_clean = row.id.trim();
+        let pubkey_clean = row.pubkey.trim();
+        let recipient_clean = row.recipient_pubkey.trim();
+        let event_id_clean = row.event_id.as_ref().map(|s| s.trim());
         tx.execute(
             "INSERT INTO zaps (id, pubkey, sender_pubkey, recipient_pubkey, event_id, amount, amount_msat, content, created_at, zap_type) VALUES (?1,?2,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, amount_msat=excluded.amount_msat, recipient_pubkey=excluded.recipient_pubkey",
             params![
-                row.id.as_str(),
-                row.pubkey.as_str(),
-                row.recipient_pubkey.as_str(),
-                row.event_id.as_deref(),
+                id_clean,
+                pubkey_clean,
+                recipient_clean,
+                event_id_clean,
                 row.amount,
                 row.amount_msat,
                 row.content.as_deref(),
@@ -42,10 +46,11 @@ impl<'a> ZapRepo<'a> {
 
     pub fn sum_by_event(&self, event_id: &str) -> Result<i64, crate::error::DbError> {
         let conn = self.db.conn()?;
+        let clean_id = event_id.trim().to_ascii_lowercase();
         Ok(crate::query::query_first(
             &conn,
-            "SELECT COALESCE(SUM(amount),0) FROM zaps WHERE event_id = ?1",
-            params![event_id],
+            "SELECT COALESCE(SUM(amount),0) FROM zaps WHERE LOWER(event_id) = LOWER(?1)",
+            params![clean_id.as_str()],
             |row| row.get(0),
         )?
         .unwrap_or(0))

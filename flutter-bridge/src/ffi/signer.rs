@@ -156,7 +156,8 @@ fn pubkey_matches(actual_hex: &str, expected_hex: &str) -> bool {
 
 /// Path to local sealed key for a given pubkey: `<db_dir>/keys/<pubkey>.key`.
 fn local_sealed_key_path(pubkey: &str) -> Result<std::path::PathBuf, String> {
-    super::session::validate_pubkey_hex(pubkey)?;
+    let pubkey = pubkey.trim().to_ascii_lowercase();
+    super::session::validate_pubkey_hex(&pubkey)?;
     let db_path = super::db::db_path()?;
     if db_path.is_empty() {
         return Err("database path not set".to_string());
@@ -240,6 +241,7 @@ fn remove_local_sealed_key(pubkey: &str) -> bool {
 /// Allows locally stored profiles to unlock without needing a recovery phrase.
 #[frb(serialize)]
 pub async fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
+    let pubkey = pubkey.trim().to_ascii_lowercase();
     // Clone the secret under the guard, then release before the blocking
     // keyring write: keyring may prompt or stall, and holding the global
     // SIGNER mutex across it would stall every signing call on other threads.
@@ -294,6 +296,7 @@ pub async fn signer_save_to_keyring(pubkey: String) -> Result<bool, String> {
 /// Unlock the signer from the OS keychain or local sealed storage for the given pubkey.
 #[frb(serialize)]
 pub async fn signer_unlock_from_keyring(pubkey: String) -> Result<bool, String> {
+    let pubkey = pubkey.trim().to_ascii_lowercase();
     let entry_pubkey = pubkey.clone();
     let keyring_res: Result<String, String> = tokio::task::spawn_blocking(move || {
         let entry = match keyring::Entry::new(keychain_service(), &keychain_user(&entry_pubkey)) {
@@ -379,6 +382,7 @@ pub fn keyring_available() -> bool {
 /// Only the currently-unlocked identity may remove its own credential.
 #[frb(sync, serialize)]
 pub fn signer_remove_from_keyring(pubkey: String) -> Result<bool, String> {
+    let pubkey = pubkey.trim().to_ascii_lowercase();
     // Require the caller to be the identity being removed: prevents a compromised
     // Dart layer from performing a denial-of-service by wiping a victim account's
     // stored credential without knowing the nsec.

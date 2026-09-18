@@ -10,10 +10,12 @@ impl<'a> BannedMemberRepo<'a> {
 
     pub fn insert(&self, b: &BannedMemberRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = b.pubkey.trim().to_ascii_lowercase();
+        let norm_banned_by = b.banned_by.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO banned_members (group_id, pubkey, banned_by, reason, banned_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(group_id,pubkey) DO NOTHING",
-            params![b.group_id.as_str(), b.pubkey.as_str(), b.banned_by.as_str(), b.reason.as_str(), b.banned_at],
+            params![b.group_id.as_str(), norm_pk.as_str(), norm_banned_by.as_str(), b.reason.as_str(), b.banned_at],
         )?;
         Ok(())
     }
@@ -22,8 +24,8 @@ impl<'a> BannedMemberRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM banned_members WHERE group_id=?1 AND pubkey=?2",
-            params![group_id, pubkey],
+            "DELETE FROM banned_members WHERE group_id=?1 AND LOWER(pubkey)=LOWER(?2)",
+            params![group_id, pubkey.trim()],
         )?;
         Ok(())
     }
@@ -32,8 +34,8 @@ impl<'a> BannedMemberRepo<'a> {
         let conn = self.db.conn()?;
         Ok(crate::query::query_first(
             &conn,
-            "SELECT 1 FROM banned_members WHERE group_id=?1 AND pubkey=?2",
-            params![group_id, pubkey],
+            "SELECT 1 FROM banned_members WHERE group_id=?1 AND LOWER(pubkey)=LOWER(?2)",
+            params![group_id, pubkey.trim()],
             |_| Ok(true),
         )?
         .is_some())

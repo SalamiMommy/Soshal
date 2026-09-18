@@ -112,8 +112,8 @@ pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
     };
     let (blob_hash, media_size) = media_blob_from_tags(&ev.tags);
     Some(MiniEventOut {
-        id: ev.id.clone(),
-        pubkey: ev.pubkey.clone(),
+        id: ev.id.trim().to_ascii_lowercase(),
+        pubkey: ev.pubkey.trim().to_ascii_lowercase(),
         video_url: url,
         blob_hash,
         media_size,
@@ -193,8 +193,8 @@ pub fn musicloud_event_out(ev: &NostrEvent) -> Option<MusicloudEventOut> {
     };
     let (blob_hash, media_size) = media_blob_from_tags(&ev.tags);
     Some(MusicloudEventOut {
-        id: ev.id.clone(),
-        pubkey: ev.pubkey.clone(),
+        id: ev.id.trim().to_ascii_lowercase(),
+        pubkey: ev.pubkey.trim().to_ascii_lowercase(),
         audio_url: url.to_string(),
         blob_hash,
         media_size,

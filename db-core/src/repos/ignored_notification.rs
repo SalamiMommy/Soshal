@@ -75,10 +75,10 @@ impl<'a> IgnoredNotificationRepo<'a> {
         Ok(crate::query::query_first(
             &conn,
             "SELECT 1 FROM ignored_notifications
-             WHERE pubkey=?1 AND kind=?2 AND (
-                 (from_pubkey=?3 AND event_id='')
-              OR (event_id=?4 AND from_pubkey='')
-              OR (event_id=?4 AND from_pubkey=?3)
+             WHERE LOWER(pubkey)=LOWER(?1) AND kind=?2 AND (
+                 (LOWER(from_pubkey)=LOWER(?3) AND event_id='')
+              OR (LOWER(event_id)=LOWER(?4) AND from_pubkey='')
+              OR (LOWER(event_id)=LOWER(?4) AND LOWER(from_pubkey)=LOWER(?3))
              ) LIMIT 1",
             params![user_pubkey, kind, from_pubkey, event_id],
             |_| Ok(true),
@@ -95,7 +95,7 @@ impl<'a> IgnoredNotificationRepo<'a> {
         crate::query::query(
             &conn,
             "SELECT kind, from_pubkey, event_id, created_at
-             FROM ignored_notifications WHERE pubkey=?1 ORDER BY created_at DESC",
+             FROM ignored_notifications WHERE LOWER(pubkey)=LOWER(?1) ORDER BY created_at DESC",
             params![user_pubkey],
             |r| {
                 Ok((
@@ -117,12 +117,21 @@ fn execute_ignore(
     event_id: &str,
     at: i64,
 ) -> Result<(), crate::error::DbError> {
+    let norm_user = user_pubkey.trim().to_ascii_lowercase();
+    let norm_from = from_pubkey.trim().to_ascii_lowercase();
+    let norm_event = event_id.trim().to_ascii_lowercase();
     crate::query::execute(
         conn,
         "INSERT INTO ignored_notifications (pubkey, kind, from_pubkey, event_id, created_at)
          VALUES (?1,?2,?3,?4,?5)
          ON CONFLICT(pubkey, kind, from_pubkey, event_id) DO NOTHING",
-        params![user_pubkey, kind, from_pubkey, event_id, at],
+        params![
+            norm_user.as_str(),
+            kind,
+            norm_from.as_str(),
+            norm_event.as_str(),
+            at
+        ],
     )?;
     Ok(())
 }
@@ -137,7 +146,7 @@ fn delete_ignore(
     crate::query::execute(
         conn,
         "DELETE FROM ignored_notifications
-         WHERE pubkey=?1 AND kind=?2 AND from_pubkey=?3 AND event_id=?4",
+         WHERE LOWER(pubkey)=LOWER(?1) AND kind=?2 AND LOWER(from_pubkey)=LOWER(?3) AND LOWER(event_id)=LOWER(?4)",
         params![user_pubkey, kind, from_pubkey, event_id],
     )?;
     Ok(())

@@ -69,8 +69,8 @@ impl<'a> GroupRoleRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "UPDATE group_members SET role = ?1 WHERE group_id = ?2 AND pubkey = ?3",
-            params![role_id, group_id, pubkey],
+            "UPDATE group_members SET role = ?1 WHERE group_id = ?2 AND LOWER(pubkey) = LOWER(?3)",
+            params![role_id, group_id, pubkey.trim()],
         )?;
         Ok(())
     }

@@ -49,11 +49,12 @@ pub fn format_content_json(input_json: &str) -> String {
 
 /// Generates a deterministic notification ID from type, event ID, and sender pubkey.
 pub fn notif_id(notif_type: &str, event_id: &str, from_pubkey: &str) -> String {
+    let eid_clean = event_id.trim().to_ascii_lowercase();
     let pk_clean = from_pubkey.trim().to_ascii_lowercase();
-    let mut id = String::with_capacity(notif_type.len() + event_id.len() + pk_clean.len() + 2);
+    let mut id = String::with_capacity(notif_type.len() + eid_clean.len() + pk_clean.len() + 2);
     id.push_str(notif_type);
     id.push(':');
-    id.push_str(event_id);
+    id.push_str(&eid_clean);
     id.push(':');
     id.push_str(&pk_clean);
     id

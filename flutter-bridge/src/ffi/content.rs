@@ -82,12 +82,18 @@ mod custom_profile_tests {
 /// Compress JSON with the bundled zstd dictionary (feed payloads).
 #[frb(sync, serialize)]
 pub fn content_compress_json_dict(data: String) -> Result<String, String> {
+    if data.len() > 16 * 1024 * 1024 {
+        return Err("data exceeds 16MB cap".into());
+    }
     Ok(compress_json_dict(&data)).into()
 }
 
 /// Decompress a zstd-dict payload; transparently falls back to deflate.
 #[frb(sync, serialize)]
 pub fn content_decompress_json_dict(encoded: String) -> Result<String, String> {
+    if encoded.len() > 8 * 1024 * 1024 {
+        return Err("encoded data exceeds 8MB cap".into());
+    }
     Ok(decompress_json_dict(&encoded)).into()
 }
 
@@ -110,6 +116,14 @@ mod tests {
             content_decompress_json_dict("!!!not-base64-@@@".to_string()).unwrap(),
             ""
         );
+    }
+
+    #[test]
+    fn test_compress_decompress_caps() {
+        let huge_compress = "a".repeat(16 * 1024 * 1024 + 1);
+        assert!(content_compress_json_dict(huge_compress).is_err());
+        let huge_decompress = "b".repeat(8 * 1024 * 1024 + 1);
+        assert!(content_decompress_json_dict(huge_decompress).is_err());
     }
 
     #[test]

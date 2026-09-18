@@ -352,6 +352,9 @@ pub fn events_create(
     if title.trim().is_empty() || title.len() > 300 {
         return Err("title must be 1..=300 chars".to_string()).into();
     }
+    if description.len() > 65536 {
+        return Err("description must not exceed 65536 bytes".to_string()).into();
+    }
     if location.len() > 500 {
         return Err("location must not exceed 500 chars".to_string()).into();
     }
@@ -857,6 +860,20 @@ mod tests {
             100,
             200,
             "http://127.0.0.1:8080/evil.png".into()
+        )
+        .is_err());
+
+        // Oversized description
+        assert!(events_create(
+            "pk".into(),
+            "t".into(),
+            "x".repeat(65537),
+            String::new(),
+            0.0,
+            0.0,
+            100,
+            200,
+            String::new()
         )
         .is_err());
     }

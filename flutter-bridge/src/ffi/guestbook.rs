@@ -42,12 +42,13 @@ struct GuestbookEntryDto<'a> {
 }
 
 fn sender_name_of(sender_pubkey: &str) -> Option<String> {
+    let norm_pk = sender_pubkey.trim().to_ascii_lowercase();
     super::db::with_db_result(|db| {
         let conn = db.conn()?;
         soshal_db_core::query::query_first(
             &conn,
-            "SELECT name FROM users WHERE pubkey = ?1",
-            libsql::params![sender_pubkey],
+            "SELECT name FROM users WHERE LOWER(pubkey) = LOWER(?1)",
+            libsql::params![norm_pk.as_str()],
             |r| r.get(0),
         )
     })
@@ -69,7 +70,7 @@ pub async fn guestbook_add(profile_pubkey: String, content: String) -> Result<St
         return Err(format!("content must be 1..={MAX_CONTENT_LEN} chars")).into();
     }
     let sender_pubkey = match super::signer::signer_pubkey() {
-        Ok(pk) => pk,
+        Ok(pk) => pk.trim().to_ascii_lowercase(),
         Err(_) => return Err("signer locked".to_string()).into(),
     };
     let builder = nostr::event::EventBuilder::new(

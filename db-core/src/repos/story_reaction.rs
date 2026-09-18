@@ -9,11 +9,12 @@ impl<'a> StoryReactionRepo<'a> {
     soshal_repo_new!();
 
     pub fn react(&self, r: &StoryReactionRow) -> Result<(), crate::error::DbError> {
+        let norm_pk = r.pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
             "INSERT INTO story_reactions (story_id, pubkey, emoji, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(story_id,pubkey,emoji) DO NOTHING",
-            params![r.story_id.as_str(), r.pubkey.as_str(), r.emoji.as_str(), r.created_at],
+            params![r.story_id.trim(), norm_pk.as_str(), r.emoji.trim(), r.created_at],
         )?;
         Ok(())
     }
@@ -24,11 +25,12 @@ impl<'a> StoryReactionRepo<'a> {
         pubkey: &str,
         emoji: &str,
     ) -> Result<(), crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM story_reactions WHERE story_id=?1 AND pubkey=?2 AND emoji=?3",
-            params![story_id, pubkey, emoji],
+            "DELETE FROM story_reactions WHERE story_id=?1 AND LOWER(pubkey)=LOWER(?2) AND emoji=?3",
+            params![story_id.trim(), norm_pk.as_str(), emoji.trim()],
         )?;
         Ok(())
     }
@@ -43,7 +45,7 @@ impl<'a> StoryReactionRepo<'a> {
         crate::query::query(
             &conn,
             "SELECT story_id, pubkey, emoji, created_at FROM story_reactions WHERE story_id=?1 ORDER BY created_at DESC LIMIT ?2",
-            params![story_id, limit],
+            params![story_id.trim(), limit],
             Self::map_row,
         )
     }
@@ -54,11 +56,12 @@ impl<'a> StoryReactionRepo<'a> {
         pubkey: &str,
         emoji: &str,
     ) -> Result<bool, crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         Ok(crate::query::query_first(
             &conn,
-            "SELECT 1 FROM story_reactions WHERE story_id=?1 AND pubkey=?2 AND emoji=?3",
-            params![story_id, pubkey, emoji],
+            "SELECT 1 FROM story_reactions WHERE story_id=?1 AND LOWER(pubkey)=LOWER(?2) AND emoji=?3",
+            params![story_id.trim(), norm_pk.as_str(), emoji.trim()],
             |_| Ok(true),
         )?
         .is_some())

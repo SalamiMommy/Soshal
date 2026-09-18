@@ -22,14 +22,15 @@ impl<'a> GroupRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT g.id, g.name, g.about, g.picture, g.pubkey, g.created_at, g.updated_at, g.access_type, g.relay, g.sync_status, g.password_hash FROM groups g JOIN group_members gm ON g.id = gm.group_id WHERE gm.pubkey = ?1 ORDER BY g.updated_at DESC",
-            params![pubkey],
+            "SELECT g.id, g.name, g.about, g.picture, g.pubkey, g.created_at, g.updated_at, g.access_type, g.relay, g.sync_status, g.password_hash FROM groups g JOIN group_members gm ON g.id = gm.group_id WHERE LOWER(gm.pubkey) = LOWER(?1) ORDER BY g.updated_at DESC",
+            params![pubkey.trim().to_ascii_lowercase()],
             Self::map_row,
         )
     }
 
     pub fn upsert(&self, group: &GroupRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let pk_clean = group.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO groups (id, name, about, picture, pubkey, created_at, updated_at, access_type, relay, sync_status, password_hash) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(id) DO UPDATE SET name=excluded.name, about=excluded.about, picture=excluded.picture, updated_at=excluded.updated_at, access_type=excluded.access_type, relay=excluded.relay, sync_status=excluded.sync_status, password_hash=excluded.password_hash",
@@ -38,7 +39,7 @@ impl<'a> GroupRepo<'a> {
                 group.name.as_str(),
                 group.about.as_deref(),
                 group.picture.as_deref(),
-                group.pubkey.as_str(),
+                pk_clean.as_str(),
                 group.created_at,
                 group.updated_at,
                 group.access_type.as_str(),
@@ -58,10 +59,16 @@ impl<'a> GroupRepo<'a> {
         joined_at: i64,
     ) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let trimmed_pk = pubkey.trim();
+        crate::query::execute(
+            &conn,
+            "DELETE FROM group_members WHERE group_id = ?1 AND LOWER(pubkey) = LOWER(?2)",
+            params![group_id, trimmed_pk],
+        )?;
         crate::query::execute(
             &conn,
             "INSERT OR REPLACE INTO group_members (group_id, pubkey, role, joined_at) VALUES (?1,?2,?3,?4)",
-            params![group_id, pubkey, role, joined_at],
+            params![group_id, trimmed_pk, role, joined_at],
         )?;
         Ok(())
     }
@@ -70,8 +77,8 @@ impl<'a> GroupRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM group_members WHERE group_id = ?1 AND pubkey = ?2",
-            params![group_id, pubkey],
+            "DELETE FROM group_members WHERE group_id = ?1 AND LOWER(pubkey) = LOWER(?2)",
+            params![group_id, pubkey.trim().to_ascii_lowercase()],
         )?;
         Ok(())
     }
@@ -81,8 +88,8 @@ impl<'a> GroupRepo<'a> {
         let conn = self.db.conn()?;
         Ok(crate::query::query_first(
             &conn,
-            "SELECT 1 FROM group_members WHERE group_id = ?1 AND pubkey = ?2",
-            params![group_id, pubkey],
+            "SELECT 1 FROM group_members WHERE group_id = ?1 AND LOWER(pubkey) = LOWER(?2)",
+            params![group_id, pubkey.trim().to_ascii_lowercase()],
             |_| Ok(true),
         )?
         .is_some())

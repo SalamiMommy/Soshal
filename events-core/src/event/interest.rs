@@ -38,6 +38,9 @@ pub fn compute_interest_score<'a>(
 }
 
 pub fn compute_interest_score_json(input: &str) -> String {
+    if input.len() > 1_048_576 {
+        return r#"{"score":0,"common":[]}"#.to_string();
+    }
     let Some(input) = soshal_common_core::json_util::json_in_borrow::<InterestScoreInput>(input)
     else {
         return r#"{"score":0,"common":[]}"#.to_string();

@@ -327,7 +327,7 @@ fn notification_output_serializes_with_renamed_type() {
 #[test]
 fn notif_id_normalizes_pubkey_casing() {
     assert_eq!(
-        notif_id("reaction", "ev1", "ABCDEF123456"),
+        notif_id("reaction", "EV1", "ABCDEF123456"),
         "reaction:ev1:abcdef123456"
     );
     assert_eq!(

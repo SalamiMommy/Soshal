@@ -143,7 +143,10 @@ pub fn hybrid_keygen() -> Result<(String, String), String> {
 }
 
 pub fn hybrid_encapsulate(pk_hex: &str, domain: &[u8]) -> Result<(String, String), String> {
-    let pk_bytes = hex::decode(pk_hex).map_err(|_| "bad pk hex".to_string())?;
+    if domain.len() > 1024 {
+        return Err("domain exceeds 1024 bytes".to_string());
+    }
+    let pk_bytes = hex::decode(pk_hex.trim()).map_err(|_| "bad pk hex".to_string())?;
     if pk_bytes.len() != HYBRID_PK_LEN {
         return Err("bad pk len".to_string());
     }
@@ -154,8 +157,12 @@ pub fn hybrid_encapsulate(pk_hex: &str, domain: &[u8]) -> Result<(String, String
 }
 
 pub fn hybrid_decapsulate(ct_hex: &str, sk_hex: &str, domain: &[u8]) -> Result<String, String> {
-    let ct_bytes = hex::decode(ct_hex).map_err(|_| "bad ct hex".to_string())?;
-    let sk_bytes = Zeroizing::new(hex::decode(sk_hex).map_err(|_| "bad sk hex".to_string())?);
+    if domain.len() > 1024 {
+        return Err("domain exceeds 1024 bytes".to_string());
+    }
+    let ct_bytes = hex::decode(ct_hex.trim()).map_err(|_| "bad ct hex".to_string())?;
+    let sk_bytes =
+        Zeroizing::new(hex::decode(sk_hex.trim()).map_err(|_| "bad sk hex".to_string())?);
     if ct_bytes.len() != HYBRID_CT_LEN || sk_bytes.len() != HYBRID_SK_LEN {
         return Err("bad input length".to_string());
     }

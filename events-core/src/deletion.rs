@@ -19,7 +19,7 @@ pub fn extract_deletion_ids(tags: &[Vec<String>]) -> Vec<String> {
     let tag_count = tags.len().min(MAX_TAGS);
     let initial_cap = tag_count.min(MAX_OUTPUT_IDS).min(64);
     let mut ids: Vec<String> = Vec::with_capacity(initial_cap);
-    let mut seen: HashSet<&str> = HashSet::with_capacity(initial_cap);
+    let mut seen: HashSet<String> = HashSet::with_capacity(initial_cap);
     for tag in tags.iter().take(tag_count) {
         if ids.len() >= MAX_OUTPUT_IDS {
             break;
@@ -34,11 +34,12 @@ pub fn extract_deletion_ids(tags: &[Vec<String>]) -> Vec<String> {
             continue;
         }
         if let Some(id) = tag.get(1) {
+            let id = id.trim().to_ascii_lowercase();
             if id.is_empty() || id.len() > MAX_TAG_FIELD_LEN {
                 continue;
             }
-            if seen.insert(id.as_str()) {
-                ids.push(id.clone());
+            if seen.insert(id.clone()) {
+                ids.push(id);
             }
         }
     }
@@ -53,8 +54,8 @@ pub fn extract_deletion_ids_json(input: &str) -> String {
         return "[]".to_string();
     }
     let initial_cap = input.tags.len().min(MAX_OUTPUT_IDS).min(64);
-    let mut ids: Vec<&str> = Vec::with_capacity(initial_cap);
-    let mut seen: HashSet<&str> = HashSet::with_capacity(initial_cap);
+    let mut ids: Vec<String> = Vec::with_capacity(initial_cap);
+    let mut seen: HashSet<String> = HashSet::with_capacity(initial_cap);
     for tag in input.tags.iter().take(MAX_TAGS) {
         if ids.len() >= MAX_OUTPUT_IDS {
             break;
@@ -63,7 +64,8 @@ pub fn extract_deletion_ids_json(input: &str) -> String {
             continue;
         }
         if let Some(&id) = tag.get(1) {
-            if !id.is_empty() && id.len() <= MAX_TAG_FIELD_LEN && seen.insert(id) {
+            let id = id.trim().to_ascii_lowercase();
+            if !id.is_empty() && id.len() <= MAX_TAG_FIELD_LEN && seen.insert(id.clone()) {
                 ids.push(id);
             }
         }

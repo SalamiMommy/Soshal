@@ -264,9 +264,9 @@ pub fn music_save(track_json: String) -> Result<bool, String> {
     let _my_pk = super::signer::signer_pubkey()?;
     let t: serde_json::Value =
         serde_json::from_str(&track_json).map_err(|e| format!("parse track json: {e}"))?;
-    let id = t["id"].as_str().unwrap_or_default().to_string();
-    if id.is_empty() {
-        return Err("track id missing".into());
+    let id = t["id"].as_str().unwrap_or_default().trim().to_string();
+    if id.is_empty() || id.len() > 128 {
+        return Err("track id missing or invalid".into());
     }
     let blob_hash = t["blobHash"].as_str().unwrap_or_default().to_string();
     let host_ready = if blob_hash.len() == 64 {
@@ -275,11 +275,16 @@ pub fn music_save(track_json: String) -> Result<bool, String> {
         false
     };
     let hashtags = t["hashtags"].as_array().cloned().unwrap_or_default();
+    let pubkey = t["pubkey"]
+        .as_str()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
     super::db::with_db_result(|db| {
         SavedContentRepo::new(db).upsert(&SavedContentRow {
             kind: 31022,
             id: id.clone(),
-            pubkey: t["pubkey"].as_str().unwrap_or_default().to_string(),
+            pubkey,
             d: t["d"].as_str().unwrap_or_default().to_string(),
             media_type: "audio".to_string(),
             media_url: t["audioUrl"].as_str().unwrap_or_default().to_string(),
@@ -302,7 +307,11 @@ pub fn music_save(track_json: String) -> Result<bool, String> {
 #[frb(sync, serialize)]
 pub fn music_unsave(track_id: String) -> Result<bool, String> {
     let _my_pk = super::signer::signer_pubkey()?;
-    super::db::with_db_result(|db| SavedContentRepo::new(db).delete(31022, &track_id))?;
+    let track_id = track_id.trim();
+    if track_id.is_empty() || track_id.len() > 128 {
+        return Err("track_id must be between 1 and 128 chars".into());
+    }
+    super::db::with_db_result(|db| SavedContentRepo::new(db).delete(31022, track_id))?;
     Ok(true)
 }
 
@@ -369,7 +378,7 @@ fn require_playlist_owner(
         .get(playlist_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "playlist not found".to_string())?;
-    if playlist.pubkey != my_pk {
+    if !playlist.pubkey.eq_ignore_ascii_case(&my_pk) {
         return Err("only playlist owner can modify playlist".to_string());
     }
     Ok(my_pk)

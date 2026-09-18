@@ -354,6 +354,7 @@ pub fn marketplace_create_listing(
     images_json: String,
     shipping_available: bool,
 ) -> Result<String, String> {
+    let seller_pubkey = seller_pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&seller_pubkey)?;
     if title.trim().is_empty() || title.len() > 500 {
         return Err("title must be between 1 and 500 chars".to_string()).into();
@@ -543,15 +544,16 @@ pub fn marketplace_delete_listing(
 /// Fetch seller's listings.
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_seller_listings(seller_pubkey: String) -> Result<String, String> {
+    let norm_pk = seller_pubkey.trim().to_ascii_lowercase();
     super::util::json_ok(db_listings_params(
         &format!(
             "SELECT p.id, p.pubkey AS seller_pubkey, COALESCE(u.name,'') AS seller_name, \
              p.content, p.tags_json, p.created_at, p.is_deleted \
-             FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
-             WHERE p.kind = {KIND_LISTING} AND p.pubkey = ?1 AND p.is_deleted = 0 \
+             FROM posts p LEFT JOIN users u ON LOWER(u.pubkey) = LOWER(p.pubkey) \
+             WHERE p.kind = {KIND_LISTING} AND LOWER(p.pubkey) = ?1 AND p.is_deleted = 0 \
              ORDER BY p.created_at DESC LIMIT 200"
         ),
-        &[seller_pubkey],
+        &[norm_pk],
     )?)
 }
 
@@ -704,7 +706,7 @@ pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, St
         let conn = db.conn()?;
         let sql = format!(
             "SELECT p.id, p.content, p.pubkey, p.created_at FROM posts p \
-             WHERE p.kind = {KIND_ORDER} AND p.pubkey = ?1 AND p.is_deleted = 0 \
+             WHERE p.kind = {KIND_ORDER} AND LOWER(p.pubkey) = ?1 AND p.is_deleted = 0 \
              ORDER BY p.created_at DESC LIMIT 200"
         );
         let rows = soshal_db_core::query::query(
@@ -1004,19 +1006,24 @@ pub fn marketplace_review_listing(
     rating: i64,
     text: String,
 ) -> Result<bool, String> {
+    let listing_id = listing_id.trim();
+    if listing_id.is_empty() || listing_id.len() > 128 {
+        return Err("listing_id must be between 1 and 128 characters".to_string());
+    }
     if !(1..=5).contains(&rating) {
         return Err("rating must be between 1 and 5".to_string());
     }
     if reviewer_pubkey.trim().is_empty() {
         return Err("reviewer_pubkey cannot be empty".to_string());
     }
+    super::signer::require_identity(&reviewer_pubkey)?;
     if text.len() > 5000 {
         return Err("review text exceeds 5,000 characters cap".to_string());
     }
     let reviewer_pubkey = reviewer_pubkey.trim().to_ascii_lowercase();
     let row = soshal_db_core::repos::marketplace_review::MarketplaceReviewRow {
         id: uuid_like(),
-        listing_id,
+        listing_id: listing_id.to_string(),
         reviewer_pubkey,
         rating,
         text,
@@ -1032,10 +1039,11 @@ pub fn marketplace_review_listing(
 /// `{"rating": N, "reviewer": <pubkey>, "text": <text>}`.
 #[frb(sync, serialize)]
 pub fn marketplace_listing_reviews(listing_id: String, limit: i64) -> Result<String, String> {
+    let listing_id = listing_id.trim();
     let limit = limit.clamp(1, 200);
     let rows = super::db::with_db_result(|db| {
         soshal_db_core::repos::marketplace_review::MarketplaceReviewRepo::new(db)
-            .list_by_listing(&listing_id, limit)
+            .list_by_listing(listing_id, limit)
     })?;
     let reviews: Vec<serde_json::Value> = rows
         .into_iter()
@@ -1352,6 +1360,9 @@ mod tests {
         let arr: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["seller_pubkey"], seller1);
+        let json_upper = marketplace_fetch_seller_listings(seller1.to_uppercase()).unwrap();
+        let arr_upper: Vec<serde_json::Value> = serde_json::from_str(&json_upper).unwrap();
+        assert_eq!(arr_upper.len(), 1);
         let json = marketplace_fetch_seller_listings("nobody".to_string()).unwrap();
         assert!(serde_json::from_str::<Vec<serde_json::Value>>(&json)
             .unwrap()
@@ -1608,6 +1619,8 @@ mod tests {
 
         let json = marketplace_fetch_buyer_orders(bpk.clone()).unwrap();
         assert!(json.contains(&order_id), "{json}");
+        let json_upper = marketplace_fetch_buyer_orders(bpk.to_uppercase()).unwrap();
+        assert!(json_upper.contains(&order_id), "{json_upper}");
         assert!(marketplace_fetch_seller_orders(spk.clone()).is_err());
         signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
         let json = marketplace_fetch_seller_orders(spk.clone()).unwrap();
@@ -1714,33 +1727,45 @@ mod tests {
     #[test]
     fn test_reviews() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
         let _p = db::tmp_db("reviews", "market");
-        assert!(marketplace_review_listing(
-            "l1".to_string(),
-            "r1".to_string(),
-            5,
-            "great".to_string(),
-        )
-        .unwrap());
-        assert!(marketplace_review_listing(
-            "l1".to_string(),
-            "r2".to_string(),
-            3,
-            "ok".to_string(),
-        )
-        .unwrap());
+        let keys1 = soshal_nostr_core::keys::generate_keys();
+        let r1 = keys1.public_key().to_hex();
+        let keys2 = soshal_nostr_core::keys::generate_keys();
+        let r2 = keys2.public_key().to_hex();
+
+        // Must reject review without unlocked signer matching reviewer
+        signer::signer_lock().unwrap();
+        assert!(
+            marketplace_review_listing("l1".to_string(), r1.clone(), 5, "great".to_string(),)
+                .is_err()
+        );
+
+        // Reviewer 1 reviews
+        signer::signer_unlock(keys1.secret_key().to_secret_hex()).unwrap();
+        assert!(
+            marketplace_review_listing("l1".to_string(), r1.clone(), 5, "great".to_string(),)
+                .unwrap()
+        );
+
+        // Reviewer 2 reviews
+        signer::signer_unlock(keys2.secret_key().to_secret_hex()).unwrap();
+        assert!(
+            marketplace_review_listing("l1".to_string(), r2.clone(), 3, "ok".to_string(),).unwrap()
+        );
         let json = marketplace_listing_reviews("l1".to_string(), 10).unwrap();
         assert!(
             json.contains("\"rating\":5") && json.contains("\"rating\":3"),
             "{json}"
         );
-        assert!(json.contains("\"reviewer\":\"r1\""), "{json}");
+        assert!(json.contains(&r1), "{json}");
         assert_eq!(
             marketplace_listing_reviews("nope".to_string(), 10).unwrap(),
             "[]"
         );
         assert_eq!(marketplace_listing_rating("l1".to_string()).unwrap(), 4.0);
         assert!(marketplace_listing_rating("nope".to_string()).is_err());
+        signer::signer_lock().unwrap();
     }
 
     #[test]

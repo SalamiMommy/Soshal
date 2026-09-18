@@ -476,9 +476,12 @@ fn test_marketplace_listing_roundtrip() {
     )
     .unwrap();
     assert!(empty.is_empty());
+    let (rev_sec, rev1) = gen_keys();
+    insert_user(&rev1);
+    unlock(&rev_sec);
     assert!(marketplace::marketplace_review_listing(
         id.clone(),
-        "rev1".to_string(),
+        rev1.clone(),
         5,
         "great".to_string()
     )
@@ -488,12 +491,13 @@ fn test_marketplace_listing_roundtrip() {
             .unwrap();
     assert_eq!(reviews.len(), 1);
     assert_eq!(reviews[0]["rating"], 5);
-    assert_eq!(reviews[0]["reviewer"], "rev1");
+    assert_eq!(reviews[0]["reviewer"], rev1);
     assert_eq!(reviews[0]["text"], "great");
     assert_eq!(
         marketplace::marketplace_listing_rating(id.clone()).unwrap(),
         5.0
     );
+    unlock(&secret);
     assert!(marketplace::marketplace_update_listing(
         id.clone(),
         seller.clone(),

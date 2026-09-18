@@ -78,7 +78,7 @@ fn run_search(
                  CASE WHEN p.kind = 0 THEN COALESCE(u.display_name, u.name, '') ELSE '' END \
                  FROM posts_fts f \
                  JOIN posts p ON f.rowid = p.rowid \
-                 LEFT JOIN users u ON u.pubkey = p.pubkey \
+                 LEFT JOIN users u ON LOWER(u.pubkey) = LOWER(p.pubkey) \
                  WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
                  AND LOWER(p.pubkey) IN (SELECT LOWER(value) FROM json_each(?4)) ORDER BY rank DESC, p.created_at DESC LIMIT ?3"
             } else {
@@ -86,7 +86,7 @@ fn run_search(
                  CASE WHEN p.kind = 0 THEN COALESCE(u.display_name, u.name, '') ELSE '' END \
                  FROM posts_fts f \
                  JOIN posts p ON f.rowid = p.rowid \
-                 LEFT JOIN users u ON u.pubkey = p.pubkey \
+                 LEFT JOIN users u ON LOWER(u.pubkey) = LOWER(p.pubkey) \
                  WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
                  ORDER BY rank DESC, p.created_at DESC LIMIT ?3"
             };
@@ -373,7 +373,7 @@ pub fn search_trending_hashtags(limit: i32) -> Result<Vec<String>, String> {
 #[frb(sync, serialize)]
 pub fn search_trending_profiles(limit: i32) -> Result<String, String> {
     let json = super::db::db_query_raw(format!(
-        "SELECT pubkey, name, about FROM users ORDER BY follower_count DESC LIMIT {}",
+        "SELECT pubkey, name, display_name, about FROM users ORDER BY follower_count DESC LIMIT {}",
         limit.clamp(1, 100)
     ))?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
@@ -383,7 +383,12 @@ pub fn search_trending_profiles(limit: i32) -> Result<String, String> {
             Some(SearchResult {
                 id: r["pubkey"].as_str()?.to_string(),
                 result_type: "profile".to_string(),
-                title: r["name"].as_str().unwrap_or("").to_string(),
+                title: r["display_name"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| r["name"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 description: soshal_common_core::format::truncate(
                     r["about"].as_str().unwrap_or(""),
                     160,

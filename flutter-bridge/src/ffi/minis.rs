@@ -29,11 +29,13 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
     let author_clause = match &authors {
         Some(a) => {
             if a.len() == 1 {
-                params.push(a[0].clone());
-                " AND pubkey = ?1"
+                params.push(a[0].trim().to_ascii_lowercase());
+                " AND LOWER(pubkey) = ?1"
             } else {
-                params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
-                " AND pubkey IN (SELECT value FROM json_each(?1))"
+                let lower_a: Vec<String> =
+                    a.iter().map(|s| s.trim().to_ascii_lowercase()).collect();
+                params.push(serde_json::to_string(&lower_a).map_err(|e| format!("authors: {e}"))?);
+                " AND LOWER(pubkey) IN (SELECT value FROM json_each(?1))"
             }
         }
         None => "",
@@ -69,7 +71,11 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
                     let e = reaction_map.entry(eid.to_string()).or_insert((0, false));
                     e.0 += 1;
                     if let Some(m) = &me_pubkey {
-                        if r["pubkey"].as_str() == Some(m.as_str()) {
+                        if r["pubkey"]
+                            .as_str()
+                            .map(|s| s.eq_ignore_ascii_case(m))
+                            .unwrap_or(false)
+                        {
                             e.1 = true;
                         }
                     }
@@ -87,7 +93,11 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
                     let e = reaction_map.entry(eid.to_string()).or_insert((0, false));
                     e.0 += 1;
                     if let Some(m) = &me_pubkey {
-                        if r["pubkey"].as_str() == Some(m.as_str()) {
+                        if r["pubkey"]
+                            .as_str()
+                            .map(|s| s.eq_ignore_ascii_case(m))
+                            .unwrap_or(false)
+                        {
                             e.1 = true;
                         }
                     }
@@ -276,12 +286,13 @@ pub fn minis_wasm_rank_feed(
 #[frb(sync, serialize)]
 pub fn minis_save(event_id: String) -> Result<bool, String> {
     let _my_pk = super::signer::signer_pubkey()?;
-    if event_id.is_empty() {
-        return Err("event_id must not be empty".into());
+    let event_id = event_id.trim();
+    if event_id.is_empty() || event_id.len() > 128 {
+        return Err("event_id must not be empty and <= 128 chars".into());
     }
     let rows = super::db::db_query_json(
         "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE id=?1 AND kind=31020 AND is_deleted=0",
-        &[event_id.clone()],
+        &[event_id.to_string()],
     )?;
     let Some(row) = rows.first() else {
         return Err(format!("mini not found: {event_id}"));
@@ -309,7 +320,11 @@ pub fn minis_save(event_id: String) -> Result<bool, String> {
         SavedContentRepo::new(db).upsert(&SavedContentRow {
             kind: 31020,
             id: mini["id"].as_str().unwrap_or_default().to_string(),
-            pubkey: row["pubkey"].as_str().unwrap_or_default().to_string(),
+            pubkey: row["pubkey"]
+                .as_str()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase(),
             d: mini
                 .get("d")
                 .and_then(|v| v.as_str())
@@ -336,7 +351,11 @@ pub fn minis_save(event_id: String) -> Result<bool, String> {
 #[frb(sync, serialize)]
 pub fn minis_unsave(event_id: String) -> Result<bool, String> {
     let _my_pk = super::signer::signer_pubkey()?;
-    super::db::with_db_result(|db| SavedContentRepo::new(db).delete(31020, &event_id))?;
+    let event_id = event_id.trim();
+    if event_id.is_empty() || event_id.len() > 128 {
+        return Err("event_id must not be empty and <= 128 chars".into());
+    }
+    super::db::with_db_result(|db| SavedContentRepo::new(db).delete(31020, event_id))?;
     Ok(true)
 }
 
@@ -458,6 +477,10 @@ mod tests {
         assert!(rows[0]["savedAt"].as_i64().unwrap_or(0) > 0);
         let err = minis_save("nonexistent".to_string()).unwrap_err();
         assert!(err.contains("not found"), "unexpected: {err}");
+        assert!(minis_save("".to_string()).is_err());
+        assert!(minis_save("x".repeat(129)).is_err());
+        assert!(minis_unsave("".to_string()).is_err());
+        assert!(minis_unsave("x".repeat(129)).is_err());
         assert!(minis_unsave("m9".to_string()).unwrap());
         let after = minis_saved().unwrap();
         let rows: Vec<serde_json::Value> = serde_json::from_str(&after).unwrap_or_default();

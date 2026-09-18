@@ -28,6 +28,8 @@ pub async fn calls_send_signal(
     candidate: Option<String>,
     media_type: Option<String>,
 ) -> Result<String, String> {
+    let target_pubkey = target_pubkey.trim().to_ascii_lowercase();
+    let call_id = call_id.trim().to_string();
     let _my_pk = super::signer::signer_pubkey()?;
     let kind = signal_kind(&signal_type)?;
     if target_pubkey.len() != 64 || !target_pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -75,10 +77,11 @@ pub async fn calls_send_signal(
 /// call_id}` — only verified events, p-tag verified to `my_pubkey`.
 #[frb(serialize)]
 pub async fn calls_fetch_signals(my_pubkey: String) -> Result<String, String> {
+    let my_pubkey = my_pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&my_pubkey)?;
     let filter = serde_json::json!({
         "kinds": [20001, 20002, 20003, 20004],
-        "#p": [my_pubkey],
+        "#p": [my_pubkey.clone()],
         "limit": 100,
     })
     .to_string();
@@ -91,7 +94,9 @@ pub async fn calls_fetch_signals(my_pubkey: String) -> Result<String, String> {
         let addressed_to_me = e.tags.iter().any(|t| {
             let s = t.as_slice();
             s.first().map(|k| k == "p").unwrap_or(false)
-                && s.get(1).map(|p| p == &my_pubkey).unwrap_or(false)
+                && s.get(1)
+                    .map(|p| p.eq_ignore_ascii_case(&my_pubkey))
+                    .unwrap_or(false)
         });
         if !addressed_to_me {
             continue;

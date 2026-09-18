@@ -12,8 +12,8 @@ impl<'a> BookmarkRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            "SELECT id, pubkey, event_id, created_at FROM bookmarks WHERE id = ?1",
-            params![id],
+            "SELECT id, pubkey, event_id, created_at FROM bookmarks WHERE LOWER(id) = LOWER(?1)",
+            params![id.trim()],
             Self::map_row,
         )
     }
@@ -26,10 +26,11 @@ impl<'a> BookmarkRepo<'a> {
     ) -> Result<Vec<BookmarkRow>, crate::error::DbError> {
         let (limit, offset) = crate::repos::clamp_page(limit, offset);
         let conn = self.db.conn()?;
+        let pk_clean = pubkey.trim().to_ascii_lowercase();
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, event_id, created_at FROM bookmarks WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
-            params![pubkey, limit, offset],
+            "SELECT id, pubkey, event_id, created_at FROM bookmarks WHERE LOWER(pubkey) = LOWER(?1) ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
+            params![pk_clean.as_str(), limit, offset],
             Self::map_row,
         )
     }
@@ -48,9 +49,12 @@ impl<'a> BookmarkRepo<'a> {
         tx: &libsql::Transaction,
         row: &BookmarkRow,
     ) -> Result<(), crate::error::DbError> {
+        let id_clean = row.id.trim();
+        let pk_clean = row.pubkey.trim();
+        let evt_clean = row.event_id.trim();
         tx.execute(
             "INSERT INTO bookmarks (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET pubkey=excluded.pubkey, event_id=excluded.event_id, created_at=excluded.created_at",
-            params![row.id.as_str(), row.pubkey.as_str(), row.event_id.as_str(), row.created_at],
+            params![id_clean, pk_clean, evt_clean, row.created_at],
         )
         .await?;
         Ok(())
@@ -58,7 +62,11 @@ impl<'a> BookmarkRepo<'a> {
 
     pub fn delete(&self, id: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(&conn, "DELETE FROM bookmarks WHERE id = ?1", params![id])?;
+        crate::query::execute(
+            &conn,
+            "DELETE FROM bookmarks WHERE LOWER(id) = LOWER(?1)",
+            params![id.trim()],
+        )?;
         Ok(())
     }
 

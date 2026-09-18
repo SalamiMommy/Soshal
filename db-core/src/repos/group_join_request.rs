@@ -10,10 +10,17 @@ impl<'a> GroupJoinRequestRepo<'a> {
 
     pub fn upsert(&self, r: &GroupJoinRequestRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let gid = r.group_id.trim();
+        let pk = r.pubkey.trim();
+        crate::query::execute(
+            &conn,
+            "DELETE FROM group_join_requests WHERE group_id=?1 AND LOWER(pubkey)=LOWER(?2)",
+            params![gid, pk],
+        )?;
         crate::query::execute(
             &conn,
             "INSERT INTO group_join_requests (group_id, pubkey, status, requested_at) VALUES (?1,?2,?3,?4) ON CONFLICT(group_id,pubkey) DO UPDATE SET status=excluded.status, requested_at=excluded.requested_at",
-            params![r.group_id.as_str(), r.pubkey.as_str(), r.status.as_str(), r.requested_at],
+            params![gid, pk, r.status.as_str(), r.requested_at],
         )?;
         Ok(())
     }
@@ -48,8 +55,8 @@ impl<'a> GroupJoinRequestRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            "SELECT group_id, pubkey, status, requested_at FROM group_join_requests WHERE group_id=?1 AND pubkey=?2",
-            params![group_id, pubkey],
+            "SELECT group_id, pubkey, status, requested_at FROM group_join_requests WHERE group_id=?1 AND LOWER(pubkey)=LOWER(?2)",
+            params![group_id.trim(), pubkey.trim().to_ascii_lowercase()],
             Self::map_row,
         )
     }
@@ -58,8 +65,8 @@ impl<'a> GroupJoinRequestRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM group_join_requests WHERE group_id=?1 AND pubkey=?2",
-            params![group_id, pubkey],
+            "DELETE FROM group_join_requests WHERE group_id=?1 AND LOWER(pubkey)=LOWER(?2)",
+            params![group_id.trim(), pubkey.trim().to_ascii_lowercase()],
         )?;
         Ok(())
     }

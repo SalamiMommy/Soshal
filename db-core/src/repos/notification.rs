@@ -16,15 +16,21 @@ impl<'a> NotificationRepo<'a> {
             )));
         }
         let conn = self.db.conn()?;
+        let norm_pk = n.pubkey.trim().to_ascii_lowercase();
+        let norm_event_id = n.event_id.as_deref().map(|s| s.trim().to_ascii_lowercase());
+        let norm_from_pk = n
+            .from_pubkey
+            .as_deref()
+            .map(|s| s.trim().to_ascii_lowercase());
         crate::query::execute(
             &conn,
             "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read=excluded.is_read",
             params![
                 n.id.as_str(),
-                n.pubkey.as_str(),
+                norm_pk.as_str(),
                 n.type_.as_str(),
-                n.event_id.as_deref(),
-                n.from_pubkey.as_deref(),
+                norm_event_id.as_deref(),
+                norm_from_pk.as_deref(),
                 n.content.as_deref(),
                 n.created_at,
                 n.is_read,
@@ -48,12 +54,18 @@ impl<'a> NotificationRepo<'a> {
                 if crate::repos::limits::notification_too_big(n.content.as_deref().unwrap_or("")) {
                     continue; // oversized notification payload: skip
                 }
+                let norm_pk = n.pubkey.trim().to_ascii_lowercase();
+                let norm_event_id = n.event_id.as_deref().map(|s| s.trim().to_ascii_lowercase());
+                let norm_from_pk = n
+                    .from_pubkey
+                    .as_deref()
+                    .map(|s| s.trim().to_ascii_lowercase());
                 stmt.run(params![
                     n.id.as_str(),
-                    n.pubkey.as_str(),
+                    norm_pk.as_str(),
                     n.type_.as_str(),
-                    n.event_id.as_deref(),
-                    n.from_pubkey.as_deref(),
+                    norm_event_id.as_deref(),
+                    norm_from_pk.as_deref(),
                     n.content.as_deref(),
                     n.created_at,
                     n.is_read,
@@ -75,7 +87,7 @@ impl<'a> NotificationRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE pubkey = ?1 AND is_read = 0 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE i.pubkey = notifications.pubkey AND i.kind = notifications.type AND ((i.from_pubkey = COALESCE(notifications.from_pubkey, '') AND i.event_id = '') OR (i.event_id = COALESCE(notifications.event_id, '') AND i.from_pubkey = '') OR (i.from_pubkey = COALESCE(notifications.from_pubkey, '') AND i.event_id = COALESCE(notifications.event_id, '')))) ORDER BY created_at DESC LIMIT ?2",
+            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE LOWER(pubkey) = LOWER(?1) AND is_read = 0 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = LOWER(notifications.pubkey) AND i.kind = notifications.type AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, ''))))) ORDER BY created_at DESC LIMIT ?2",
             params![pubkey, limit],
             |row| {
                 Ok(NotificationRow {
@@ -102,7 +114,7 @@ impl<'a> NotificationRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE pubkey = ?1 AND is_read = 0 AND type = ?2 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE i.pubkey = notifications.pubkey AND i.kind = notifications.type AND ((i.from_pubkey = COALESCE(notifications.from_pubkey, '') AND i.event_id = '') OR (i.event_id = COALESCE(notifications.event_id, '') AND i.from_pubkey = '') OR (i.from_pubkey = COALESCE(notifications.from_pubkey, '') AND i.event_id = COALESCE(notifications.event_id, '')))) ORDER BY created_at DESC LIMIT ?3",
+            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE LOWER(pubkey) = LOWER(?1) AND is_read = 0 AND type = ?2 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = LOWER(notifications.pubkey) AND i.kind = notifications.type AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, ''))))) ORDER BY created_at DESC LIMIT ?3",
             params![pubkey, type_, limit],
             |row| {
                 Ok(NotificationRow {
