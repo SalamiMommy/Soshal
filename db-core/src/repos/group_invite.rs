@@ -10,14 +10,15 @@ impl<'a> GroupInviteRepo<'a> {
 
     pub fn create(&self, i: &GroupInviteRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_created_by = i.created_by.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO group_invites (id, group_id, created_by, token, max_uses, uses, expires_at, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO NOTHING",
             params![
                 i.id.as_str(),
-                i.group_id.as_str(),
-                i.created_by.as_str(),
-                i.token.as_str(),
+                i.group_id.trim(),
+                norm_created_by.as_str(),
+                i.token.trim(),
                 i.max_uses,
                 i.uses,
                 i.expires_at,
@@ -35,7 +36,7 @@ impl<'a> GroupInviteRepo<'a> {
         crate::query::query_first(
             &conn,
             "SELECT id, group_id, created_by, token, max_uses, uses, expires_at, created_at FROM group_invites WHERE token=?1",
-            params![token],
+            params![token.trim()],
             Self::map_row,
         )
     }

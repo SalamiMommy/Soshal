@@ -696,12 +696,8 @@ pub fn marketplace_get_order(order_id: String) -> Result<String, String> {
 /// Fetch buyer's orders (posts where the order row's pubkey is the buyer).
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, String> {
-    if let Ok(caller) = super::signer::signer_pubkey() {
-        if !caller.eq_ignore_ascii_case(&buyer_pubkey) {
-            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
-        }
-    }
     let buyer_pubkey = buyer_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&buyer_pubkey)?;
     let orders: Vec<OrderInfo> = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let sql = format!(
@@ -730,12 +726,8 @@ pub fn marketplace_fetch_buyer_orders(buyer_pubkey: String) -> Result<String, St
 /// content `seller` field matches).
 #[frb(sync, serialize)]
 pub fn marketplace_fetch_seller_orders(seller_pubkey: String) -> Result<String, String> {
-    if let Ok(caller) = super::signer::signer_pubkey() {
-        if !caller.eq_ignore_ascii_case(&seller_pubkey) {
-            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
-        }
-    }
     let seller_pubkey = seller_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&seller_pubkey)?;
     let orders: Vec<OrderInfo> = super::db::with_db_result(|db| {
         let conn = db.conn()?;
         let sql = format!(
@@ -1135,11 +1127,17 @@ pub fn marketplace_poll_vote(
         return Err("option_index must be non-negative".to_string());
     }
     let voter_pubkey = voter_pubkey.trim().to_ascii_lowercase();
-    if let Ok(caller) = super::signer::signer_pubkey() {
-        if !caller.eq_ignore_ascii_case(&voter_pubkey) {
-            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
-        }
+    super::signer::require_identity(&voter_pubkey)?;
+
+    let poll = super::db::with_db_result(|db| {
+        soshal_db_core::repos::poll::PollRepo::new(db).get_poll(&poll_id)
+    })?
+    .ok_or_else(|| "poll not found".to_string())?;
+
+    if poll.closed {
+        return Err("poll is closed".to_string());
     }
+
     let vote = soshal_db_core::repos::poll::PollVoteRow {
         id: uuid_like(),
         poll_id,
@@ -1157,11 +1155,7 @@ pub fn marketplace_poll_vote(
 #[frb(sync, serialize)]
 pub fn marketplace_poll_close(poll_id: String, user_pubkey: String) -> Result<bool, String> {
     let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
-    if let Ok(caller) = super::signer::signer_pubkey() {
-        if !caller.eq_ignore_ascii_case(&user_pubkey) {
-            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
-        }
-    }
+    super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_string(|db| {
         let repo = soshal_db_core::repos::poll::PollRepo::new(db);
         let poll = repo
@@ -1764,7 +1758,7 @@ mod tests {
             "[]"
         );
         assert_eq!(marketplace_listing_rating("l1".to_string()).unwrap(), 4.0);
-        assert!(marketplace_listing_rating("nope".to_string()).is_err());
+        assert_eq!(marketplace_listing_rating("nope".to_string()).unwrap(), 0.0);
         signer::signer_lock().unwrap();
     }
 
@@ -1801,6 +1795,12 @@ mod tests {
         let poll = marketplace_poll_get(poll_id.clone()).unwrap();
         assert!(poll.contains("\"votes\":[0,0,0]"), "{poll}");
         assert!(!marketplace_poll_has_voted(poll_id.clone(), pk.clone()).unwrap());
+        assert!(marketplace_poll_vote("nope".to_string(), pk.clone(), 0)
+            .unwrap_err()
+            .contains("not found"));
+        assert!(marketplace_poll_vote(poll_id.clone(), pk.clone(), -1)
+            .unwrap_err()
+            .contains("non-negative"));
         assert!(marketplace_poll_vote(poll_id.clone(), "v1".to_string(), 1).is_err());
         assert!(marketplace_poll_vote(poll_id.clone(), pk.clone(), 1).unwrap());
         assert!(marketplace_poll_has_voted(poll_id.clone(), pk.clone()).unwrap());
@@ -1810,7 +1810,10 @@ mod tests {
         assert!(marketplace_poll_close(poll_id.clone(), "other".to_string())
             .unwrap_err()
             .contains("identity mismatch"));
-        assert!(marketplace_poll_close(poll_id, pk.clone()).unwrap());
+        assert!(marketplace_poll_close(poll_id.clone(), pk.clone()).unwrap());
+        assert!(marketplace_poll_vote(poll_id.clone(), pk.clone(), 0)
+            .unwrap_err()
+            .contains("closed"));
         assert!(marketplace_poll_get("nope".to_string())
             .unwrap_err()
             .contains("poll not found"));

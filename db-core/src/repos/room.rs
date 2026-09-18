@@ -119,11 +119,12 @@ impl<'a> GroupRoomRepo<'a> {
         emoji: &str,
     ) -> Result<bool, crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         let deleted = crate::query::execute(
             &conn,
             "DELETE FROM group_room_reactions
-             WHERE message_id = ?1 AND pubkey = ?2 AND emoji = ?3",
-            params![message_id, pubkey, emoji],
+             WHERE message_id = ?1 AND LOWER(pubkey) = ?2 AND emoji = ?3",
+            params![message_id, norm_pk.as_str(), emoji],
         )?;
         if deleted > 0 {
             return Ok(false);
@@ -136,7 +137,7 @@ impl<'a> GroupRoomRepo<'a> {
                 group_id,
                 room_id,
                 message_id,
-                pubkey,
+                norm_pk.as_str(),
                 emoji,
                 soshal_common_core::format::now_secs()
             ],
@@ -152,15 +153,16 @@ impl<'a> GroupRoomRepo<'a> {
         viewer_pubkey: &str,
     ) -> Result<Vec<RoomReactionSummaryRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_viewer = viewer_pubkey.trim().to_ascii_lowercase();
         crate::query::query(
             &conn,
             "SELECT r.message_id, r.emoji, COUNT(*) AS cnt,
-                    MAX(CASE WHEN r.pubkey = ?3 THEN 1 ELSE 0 END) AS reacted
+                    MAX(CASE WHEN LOWER(r.pubkey) = ?3 THEN 1 ELSE 0 END) AS reacted
              FROM group_room_reactions r
              WHERE r.group_id = ?1 AND r.room_id = ?2
              GROUP BY r.message_id, r.emoji
              ORDER BY cnt DESC, r.emoji ASC",
-            [group_id, room_id, viewer_pubkey],
+            [group_id, room_id, norm_viewer.as_str()],
             |row| {
                 Ok(RoomReactionSummaryRow {
                     message_id: row.get(0)?,

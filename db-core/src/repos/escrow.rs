@@ -25,6 +25,8 @@ impl<'a> EscrowRepo<'a> {
 
     pub fn create(&self, e: &EscrowRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_buyer = e.buyer_pubkey.trim().to_ascii_lowercase();
+        let norm_seller = e.seller_pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO escrows (id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at)
@@ -32,8 +34,8 @@ impl<'a> EscrowRepo<'a> {
             params![
                 e.id.as_str(),
                 e.listing_id.as_str(),
-                e.buyer_pubkey.as_str(),
-                e.seller_pubkey.as_str(),
+                norm_buyer.as_str(),
+                norm_seller.as_str(),
                 e.amount_msats,
                 e.currency.as_str(),
                 e.status.as_str(),
@@ -77,15 +79,16 @@ impl<'a> EscrowRepo<'a> {
         pubkey: &str,
     ) -> Result<Vec<EscrowRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::query(
             &conn,
             "SELECT id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at
-             FROM escrows WHERE buyer_pubkey=?1
+             FROM escrows WHERE LOWER(buyer_pubkey)=?1
              UNION ALL
              SELECT id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at
-             FROM escrows WHERE seller_pubkey=?1 AND buyer_pubkey != ?1
+             FROM escrows WHERE LOWER(seller_pubkey)=?1 AND LOWER(buyer_pubkey) != ?1
              ORDER BY created_at DESC",
-            params![pubkey],
+            params![norm_pk.as_str()],
             row_to_escrow,
         )
     }

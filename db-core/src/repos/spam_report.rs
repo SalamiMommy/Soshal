@@ -10,14 +10,19 @@ impl<'a> SpamReportRepo<'a> {
 
     pub fn insert(&self, r: &SpamReportRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = r.pubkey.trim().to_ascii_lowercase();
+        let norm_target = r
+            .target_pubkey
+            .as_deref()
+            .map(|s| s.trim().to_ascii_lowercase());
         crate::query::execute(
             &conn,
             "INSERT INTO spam_reports (id, pubkey, target_id, target_pubkey, reason, tags, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO NOTHING",
             params![
                 r.id.as_str(),
-                r.pubkey.as_str(),
+                norm_pk.as_str(),
                 r.target_id.as_deref(),
-                r.target_pubkey.as_deref(),
+                norm_target.as_deref(),
                 r.reason.as_deref(),
                 r.tags.as_str(),
                 r.created_at
@@ -33,10 +38,11 @@ impl<'a> SpamReportRepo<'a> {
     ) -> Result<Vec<SpamReportRow>, crate::error::DbError> {
         let limit = crate::repos::clamp_limit(limit);
         let conn = self.db.conn()?;
+        let norm_target = target_pubkey.trim().to_ascii_lowercase();
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, target_id, target_pubkey, reason, tags, created_at FROM spam_reports WHERE target_pubkey=?1 ORDER BY created_at DESC LIMIT ?2",
-            params![target_pubkey, limit],
+            "SELECT id, pubkey, target_id, target_pubkey, reason, tags, created_at FROM spam_reports WHERE LOWER(target_pubkey)=?1 ORDER BY created_at DESC LIMIT ?2",
+            params![norm_target.as_str(), limit],
             Self::map_row,
         )
     }

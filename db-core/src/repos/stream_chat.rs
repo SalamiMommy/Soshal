@@ -10,10 +10,11 @@ impl<'a> StreamChatRepo<'a> {
 
     pub fn insert(&self, m: &StreamChatRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = m.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO stream_chat (id, stream_id, pubkey, text, created_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(id) DO NOTHING",
-            params![m.id.as_str(), m.stream_id.as_str(), m.pubkey.as_str(), m.text.as_str(), m.created_at],
+            params![m.id.as_str(), m.stream_id.as_str(), norm_pk.as_str(), m.text.as_str(), m.created_at],
         )?;
         Ok(())
     }

@@ -11,16 +11,16 @@ impl<'a> GroupJoinRequestRepo<'a> {
     pub fn upsert(&self, r: &GroupJoinRequestRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
         let gid = r.group_id.trim();
-        let pk = r.pubkey.trim();
+        let pk = r.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
-            "DELETE FROM group_join_requests WHERE group_id=?1 AND LOWER(pubkey)=LOWER(?2)",
-            params![gid, pk],
+            "DELETE FROM group_join_requests WHERE group_id=?1 AND LOWER(pubkey)=?2",
+            params![gid, pk.as_str()],
         )?;
         crate::query::execute(
             &conn,
             "INSERT INTO group_join_requests (group_id, pubkey, status, requested_at) VALUES (?1,?2,?3,?4) ON CONFLICT(group_id,pubkey) DO UPDATE SET status=excluded.status, requested_at=excluded.requested_at",
-            params![gid, pk, r.status.as_str(), r.requested_at],
+            params![gid, pk.as_str(), r.status.as_str(), r.requested_at],
         )?;
         Ok(())
     }

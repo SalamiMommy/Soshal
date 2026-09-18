@@ -10,12 +10,13 @@ impl<'a> MusicloudRepo<'a> {
 
     pub fn upsert(&self, m: &MusicloudRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = m.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO musiclouds (id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(id) DO UPDATE SET title=excluded.title, duration=excluded.duration, text_overlay=excluded.text_overlay, thumbnail=excluded.thumbnail",
             params![
                 m.id.as_str(),
-                m.pubkey.as_str(),
+                norm_pk.as_str(),
                 m.audio_url.as_str(),
                 m.title.as_deref(),
                 m.duration,
@@ -53,10 +54,11 @@ impl<'a> MusicloudRepo<'a> {
     ) -> Result<Vec<MusicloudRow>, crate::error::DbError> {
         let limit = crate::repos::clamp_limit(limit);
         let conn = self.db.conn()?;
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, created_at FROM musiclouds WHERE pubkey=?1 ORDER BY created_at DESC LIMIT ?2",
-            params![pubkey, limit],
+            "SELECT id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, created_at FROM musiclouds WHERE LOWER(pubkey)=?1 ORDER BY created_at DESC LIMIT ?2",
+            params![norm_pk.as_str(), limit],
             Self::map_row,
         )
     }
@@ -129,10 +131,11 @@ impl<'a> MusicloudCommentRepo<'a> {
 
     pub fn insert(&self, c: &MusicloudCommentRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = c.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO musicloud_comments (id, track_id, pubkey, content, created_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(id) DO NOTHING",
-            params![c.id.as_str(), c.track_id.as_str(), c.pubkey.as_str(), c.content.as_str(), c.created_at],
+            params![c.id.as_str(), c.track_id.as_str(), norm_pk.as_str(), c.content.as_str(), c.created_at],
         )?;
         Ok(())
     }

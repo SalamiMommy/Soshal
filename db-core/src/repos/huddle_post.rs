@@ -10,10 +10,11 @@ impl<'a> HuddlePostRepo<'a> {
 
     pub fn insert(&self, p: &HuddlePostRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = p.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO huddle_posts (id, huddle_id, pubkey, content, created_at, expires_at) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO NOTHING",
-            params![p.id.as_str(), p.huddle_id.as_str(), p.pubkey.as_str(), p.content.as_str(), p.created_at, p.expires_at],
+            params![p.id.as_str(), p.huddle_id.as_str(), norm_pk.as_str(), p.content.as_str(), p.created_at, p.expires_at],
         )?;
         Ok(())
     }

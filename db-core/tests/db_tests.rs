@@ -1039,11 +1039,13 @@ fn test_marketplace_review_crud() {
         text: "ok".into(),
         created_at: 2000,
     };
+    assert_eq!(repo.average_for("lis1").unwrap(), None);
     repo.insert(&r1).unwrap();
     repo.insert(&r2).unwrap();
     let list = repo.list_by_listing("lis1", 10).unwrap();
     assert_eq!(list.len(), 2);
     assert_eq!(repo.average_for("lis1").unwrap().unwrap(), 4.0);
+    assert_eq!(repo.average_for("nonexistent").unwrap(), None);
 }
 
 #[test]

@@ -22,9 +22,11 @@ impl<'a> RepostRepo<'a> {
         tx: &libsql::Transaction,
         r: &RepostRow,
     ) -> Result<(), crate::error::DbError> {
+        let norm_pk = r.pubkey.trim().to_ascii_lowercase();
+        let norm_eid = r.event_id.trim().to_ascii_lowercase();
         tx.execute(
             "INSERT INTO reposts (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO NOTHING",
-            params![r.id.as_str(), r.pubkey.as_str(), r.event_id.as_str(), r.created_at],
+            params![r.id.trim(), norm_pk.as_str(), norm_eid.as_str(), r.created_at],
         )
         .await?;
         Ok(())
@@ -32,10 +34,11 @@ impl<'a> RepostRepo<'a> {
 
     pub fn count_by_event(&self, event_id: &str) -> Result<i64, crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_eid = event_id.trim().to_ascii_lowercase();
         Ok(crate::query::query_first(
             &conn,
-            "SELECT COUNT(*) FROM reposts WHERE event_id = ?1",
-            params![event_id],
+            "SELECT COUNT(*) FROM reposts WHERE LOWER(event_id) = ?1",
+            params![norm_eid.as_str()],
             |row| row.get(0),
         )?
         .unwrap_or(0))

@@ -751,11 +751,8 @@ fn get_own_profile_internal(user_pubkey: &str) -> Option<DatingCardInfo> {
 /// Get the user's own latest profile.
 #[frb(sync, serialize)]
 pub fn dating_get_own_profile(user_pubkey: String) -> Result<String, String> {
-    if let Ok(caller) = super::signer::signer_pubkey() {
-        if caller != user_pubkey {
-            return Err("identity mismatch: caller is not the claimed pubkey".to_string());
-        }
-    }
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&user_pubkey)?;
     let card = get_own_profile_internal(&user_pubkey)
         .ok_or_else(|| "No dating profile yet".to_string())?;
     super::util::json_ok(card)

@@ -111,21 +111,27 @@ impl<'a> GroupVoiceRepo<'a> {
 
     pub fn join(&self, channel_id: &str, pubkey: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT OR IGNORE INTO group_voice_presence (channel_id, pubkey, joined_at)
              VALUES (?1,?2,?3)",
-            params![channel_id, pubkey, soshal_common_core::format::now_secs()],
+            params![
+                channel_id,
+                norm_pk.as_str(),
+                soshal_common_core::format::now_secs()
+            ],
         )?;
         Ok(())
     }
 
     pub fn leave(&self, channel_id: &str, pubkey: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
-            "DELETE FROM group_voice_presence WHERE channel_id = ?1 AND pubkey = ?2",
-            params![channel_id, pubkey],
+            "DELETE FROM group_voice_presence WHERE channel_id = ?1 AND LOWER(pubkey) = ?2",
+            params![channel_id, norm_pk.as_str()],
         )?;
         Ok(())
     }
