@@ -21,9 +21,16 @@ pub fn is_match(pattern: &str, text: &str) -> bool {
     let re = {
         let mut guard = cache.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(pos) = guard.iter().position(|(p, _)| p == pattern) {
-            let re = guard.remove(pos).expect("position from iter").1;
-            guard.push_back((pattern.to_string(), re.clone()));
-            re
+            if let Some((_, re)) = guard.remove(pos) {
+                guard.push_back((pattern.to_string(), re.clone()));
+                re
+            } else {
+                let Ok(re) = Regex::new(pattern) else {
+                    return false;
+                };
+                guard.push_back((pattern.to_string(), re.clone()));
+                re
+            }
         } else {
             let Ok(re) = Regex::new(pattern) else {
                 return false;

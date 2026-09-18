@@ -97,13 +97,16 @@ fn fetch_chunk_bytes(
                 let fetched = block_on_chunk(async move {
                     let pool = {
                         let guard = QUIC_POOL.get_or_init(|| std::sync::Mutex::new(None));
-                        let mut guard = guard.lock().map_err(|_| "quic pool lock".to_string())?;
+                        let mut guard = guard.lock().unwrap_or_else(|e| e.into_inner());
                         if guard.is_none() {
                             let pool = quic::QuicChunkPool::new()
                                 .map_err(|e| format!("quic pool: {e}"))?;
                             *guard = Some(std::sync::Arc::new(pool));
                         }
-                        guard.as_ref().expect("quic pool").clone()
+                        match guard.as_ref() {
+                            Some(p) => p.clone(),
+                            None => return Err("quic pool unavailable".to_string()),
+                        }
                     };
                     let fut = pool.fetch_chunk(qa, key, &pk, &req);
                     tokio::time::timeout(QUIC_EXCHANGE_TIMEOUT, fut)

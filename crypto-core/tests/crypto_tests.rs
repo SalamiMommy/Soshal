@@ -493,6 +493,11 @@ fn base64url_padding_tests() {
     assert_eq!(from_base64url(&to_base64url(padded)), padded);
 
     assert_eq!(from_base64url("abcde"), "abcde");
+    assert_eq!(from_base64url("  aGVsbG8-_w==  "), "aGVsbG8+/w==");
+
+    let decoded_nopad = soshal_crypto_core::base64url::base64url_decode("aGVsbG8-_w").unwrap();
+    let decoded_pad = soshal_crypto_core::base64url::base64url_decode("  aGVsbG8-_w==  ").unwrap();
+    assert_eq!(decoded_nopad, decoded_pad);
 }
 
 #[test]

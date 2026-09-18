@@ -87,7 +87,7 @@ impl<'a> NotificationRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE LOWER(pubkey) = LOWER(?1) AND is_read = 0 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = LOWER(notifications.pubkey) AND i.kind = notifications.type AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, ''))))) ORDER BY created_at DESC LIMIT ?2",
+            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE LOWER(pubkey) = LOWER(?1) AND is_read = 0 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = LOWER(notifications.pubkey) AND (i.kind = notifications.type OR i.kind = 'user' OR i.kind = 'thread' OR i.kind = 'all') AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, ''))))) ORDER BY created_at DESC LIMIT ?2",
             params![pubkey, limit],
             |row| {
                 Ok(NotificationRow {
@@ -114,7 +114,7 @@ impl<'a> NotificationRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE LOWER(pubkey) = LOWER(?1) AND is_read = 0 AND type = ?2 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = LOWER(notifications.pubkey) AND i.kind = notifications.type AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, ''))))) ORDER BY created_at DESC LIMIT ?3",
+            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read FROM notifications WHERE LOWER(pubkey) = LOWER(?1) AND is_read = 0 AND type = ?2 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = LOWER(notifications.pubkey) AND (i.kind = notifications.type OR i.kind = 'user' OR i.kind = 'thread' OR i.kind = 'all') AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, ''))))) ORDER BY created_at DESC LIMIT ?3",
             params![pubkey, type_, limit],
             |row| {
                 Ok(NotificationRow {
@@ -129,6 +129,19 @@ impl<'a> NotificationRepo<'a> {
                 })
             },
         )
+    }
+
+    pub fn count_unread(&self, pubkey: &str) -> Result<i64, crate::error::DbError> {
+        let conn = self.db.conn()?;
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
+        let count: i64 = crate::query::query_first(
+            &conn,
+            "SELECT COUNT(*) FROM notifications WHERE LOWER(pubkey) = LOWER(?1) AND is_read = 0 AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = LOWER(notifications.pubkey) AND (i.kind = notifications.type OR i.kind = 'user' OR i.kind = 'thread' OR i.kind = 'all') AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')))))",
+            params![norm_pk.as_str()],
+            |row| row.get(0),
+        )?
+        .unwrap_or(0);
+        Ok(count)
     }
 }
 

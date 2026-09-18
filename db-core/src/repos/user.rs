@@ -49,7 +49,7 @@ impl<'a> UserRepo<'a> {
             )?;
             let mut set = std::collections::HashSet::with_capacity(exists.is_some() as usize);
             if let Some(pk) = exists {
-                set.insert(pk);
+                set.insert(pk.to_ascii_lowercase());
             }
             return Ok(set);
         }
@@ -65,7 +65,7 @@ impl<'a> UserRepo<'a> {
             params![json.as_str()],
             std::collections::HashSet::with_capacity(pubkeys.len()),
             |mut set, row| {
-                set.insert(row.get::<String>(0)?);
+                set.insert(row.get::<String>(0)?.to_ascii_lowercase());
                 Ok(set)
             },
         )
@@ -101,10 +101,11 @@ impl<'a> UserRepo<'a> {
         tx: &libsql::Transaction,
         row: &UserRow,
     ) -> Result<(), crate::error::DbError> {
+        let norm_pk = row.pubkey.trim();
         tx.execute(
             USER_UPSERT_SQL,
             params![
-                row.pubkey.as_str(),
+                norm_pk,
                 row.npub.as_str(),
                 row.name.as_deref(),
                 row.display_name.as_deref(),
@@ -133,8 +134,9 @@ impl<'a> UserRepo<'a> {
         crate::query::with_tx(&conn, |tx| async move {
             let stmt = tx.prepare(USER_UPSERT_SQL).await?;
             for user in users {
+                let norm_pk = user.pubkey.trim();
                 stmt.run(params![
-                    user.pubkey.as_str(),
+                    norm_pk,
                     user.npub.as_str(),
                     user.name.as_deref(),
                     user.display_name.as_deref(),

@@ -769,6 +769,14 @@ fn link_preview_direct_and_guards() {
         Some("https://example.com/images/banner.jpg".to_string())
     );
 
+    let with_spaced_attrs = parse_link_preview_html(
+        r#"<meta property = "og:title" content = "Spaced Title" /><meta name = "description" content = "Spaced Desc" />"#,
+        "https://example.com/",
+    )
+    .unwrap();
+    assert_eq!(with_spaced_attrs.title, "Spaced Title");
+    assert_eq!(with_spaced_attrs.description, "Spaced Desc");
+
     assert!(
         parse_link_preview_html(&"a".repeat(5 * 1024 * 1024 + 1), "https://example.com").is_none()
     );

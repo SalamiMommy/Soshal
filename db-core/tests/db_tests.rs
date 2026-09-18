@@ -426,6 +426,29 @@ fn test_notification_repo_upsert_and_get_unread() {
 
     let unread_ignored = repo.get_unread("target_user", 10).unwrap();
     assert_eq!(unread_ignored.len(), 0);
+    assert_eq!(repo.count_unread("target_user").unwrap(), 0);
+
+    // Also test kind = "user" ignore suppresses any notification type
+    let notif2 = NotificationRow {
+        id: "n2".into(),
+        pubkey: "target_user".into(),
+        type_: "reaction".into(),
+        event_id: Some("e2".into()),
+        from_pubkey: Some("spammer".into()),
+        content: Some("spam reaction".into()),
+        created_at: 2010,
+        is_read: false,
+    };
+    repo.upsert(&notif2).unwrap();
+    assert_eq!(repo.count_unread("target_user").unwrap(), 1);
+    ign_repo
+        .ignore_user("target_user", "spammer", "user", 2015)
+        .unwrap();
+    assert!(ign_repo
+        .is_ignored("target_user", "reaction", "spammer", "e2")
+        .unwrap());
+    assert_eq!(repo.get_unread("target_user", 10).unwrap().len(), 0);
+    assert_eq!(repo.count_unread("target_user").unwrap(), 0);
 }
 
 #[test]

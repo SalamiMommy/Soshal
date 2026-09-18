@@ -75,12 +75,12 @@ impl<'a> IgnoredNotificationRepo<'a> {
         Ok(crate::query::query_first(
             &conn,
             "SELECT 1 FROM ignored_notifications
-             WHERE LOWER(pubkey)=LOWER(?1) AND kind=?2 AND (
+             WHERE LOWER(pubkey)=LOWER(?1) AND (kind=?2 OR kind='all' OR kind='user' OR kind='thread') AND (
                  (LOWER(from_pubkey)=LOWER(?3) AND event_id='')
               OR (LOWER(event_id)=LOWER(?4) AND from_pubkey='')
               OR (LOWER(event_id)=LOWER(?4) AND LOWER(from_pubkey)=LOWER(?3))
              ) LIMIT 1",
-            params![user_pubkey, kind, from_pubkey, event_id],
+            params![user_pubkey.trim(), kind.trim(), from_pubkey.trim(), event_id.trim()],
             |_| Ok(true),
         )?
         .is_some())
@@ -96,7 +96,7 @@ impl<'a> IgnoredNotificationRepo<'a> {
             &conn,
             "SELECT kind, from_pubkey, event_id, created_at
              FROM ignored_notifications WHERE LOWER(pubkey)=LOWER(?1) ORDER BY created_at DESC",
-            params![user_pubkey],
+            params![user_pubkey.trim()],
             |r| {
                 Ok((
                     r.get::<String>(0)?,
@@ -127,7 +127,7 @@ fn execute_ignore(
          ON CONFLICT(pubkey, kind, from_pubkey, event_id) DO NOTHING",
         params![
             norm_user.as_str(),
-            kind,
+            kind.trim(),
             norm_from.as_str(),
             norm_event.as_str(),
             at
@@ -147,7 +147,7 @@ fn delete_ignore(
         conn,
         "DELETE FROM ignored_notifications
          WHERE LOWER(pubkey)=LOWER(?1) AND kind=?2 AND LOWER(from_pubkey)=LOWER(?3) AND LOWER(event_id)=LOWER(?4)",
-        params![user_pubkey, kind, from_pubkey, event_id],
+        params![user_pubkey.trim(), kind.trim(), from_pubkey.trim(), event_id.trim()],
     )?;
     Ok(())
 }

@@ -5,8 +5,9 @@ pub fn base64url_encode(bytes: &[u8]) -> String {
 }
 
 pub fn base64url_decode(s: &str) -> Option<Vec<u8>> {
+    let clean = s.trim().trim_end_matches('=');
     base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(s.as_bytes())
+        .decode(clean.as_bytes())
         .ok()
 }
 
@@ -24,6 +25,7 @@ pub fn to_base64url(b64: &str) -> String {
 }
 
 pub fn from_base64url(b64u: &str) -> String {
+    let b64u = b64u.trim().trim_end_matches('=');
     let mut out = String::with_capacity(b64u.len() + 2);
     for b in b64u.bytes() {
         match b {

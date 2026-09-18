@@ -50,6 +50,7 @@ pub fn scheduled_create(
         rsvp_event_id: None,
     };
     super::db::with_db_result(|db| {
+        soshal_db_core::repos::user::UserRepo::new(db).ensure_exists(&row.pubkey)?;
         PostRepo::new(db).upsert(&row)?;
         Ok(())
     })?;

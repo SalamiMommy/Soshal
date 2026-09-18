@@ -53,7 +53,7 @@ impl<'a> ReminderRepo<'a> {
 
     pub fn delete(&self, id: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(&conn, "DELETE FROM reminders WHERE id = ?1", [id])?;
+        crate::query::execute(&conn, "DELETE FROM reminders WHERE id = ?1", [id.trim()])?;
         Ok(())
     }
 
@@ -66,7 +66,7 @@ impl<'a> ReminderRepo<'a> {
     ) -> Result<Vec<ReminderRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
         let window_start = now;
-        let window_end = now + lookahead_ms / 1000;
+        let window_end = now.saturating_add(lookahead_ms.max(0) / 1000);
         crate::query::query(
             &conn,
             "SELECT id, event_id, title, start_time, minutes_before, created_at

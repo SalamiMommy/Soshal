@@ -457,3 +457,15 @@ fn test_oversized_sdp_and_candidates() {
     let huge_cand = "a".repeat(2049);
     assert!(!is_safe_candidate(&huge_cand, false));
 }
+
+#[test]
+fn test_validate_sdp_checks_line_starts() {
+    // Valid SDP lines:
+    assert!(validate_sdp("v=0\r\no=- 123 456 IN IP4 0.0.0.0\r\n"));
+    assert!(validate_sdp("v=0\no=alice 1 1 IN IP4 1.2.3.4\n"));
+
+    // Substrings inside other text should not validate:
+    assert!(!validate_sdp("prev=0\r\nto=alice\r\n"));
+    assert!(!validate_sdp("a=custom v=0\r\na=other o=\r\n"));
+    assert!(!validate_sdp("v=1\r\no=alice\r\n"));
+}

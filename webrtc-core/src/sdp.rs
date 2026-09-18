@@ -140,7 +140,20 @@ pub fn validate_sdp(sdp: &str) -> bool {
     if sdp.len() > MAX_FFI_LEN {
         return false;
     }
-    sdp.contains("v=0") && sdp.contains("o=")
+    let mut has_v0 = false;
+    let mut has_o = false;
+    for line in sdp.lines() {
+        let trimmed = line.trim();
+        if trimmed == "v=0" {
+            has_v0 = true;
+        } else if trimmed.starts_with("o=") {
+            has_o = true;
+        }
+        if has_v0 && has_o {
+            return true;
+        }
+    }
+    false
 }
 
 // ─── Opus SDP Configuration ─────────────────────────────────────────────────

@@ -71,7 +71,11 @@ impl<'a> PostRepo<'a> {
                 None => Ok(Vec::new()),
             };
         }
-        let ids_json = serde_json::to_string(ids)
+        let norm_ids: Vec<String> = ids
+            .iter()
+            .map(|id| id.trim().to_ascii_lowercase())
+            .collect();
+        let ids_json = serde_json::to_string(&norm_ids)
             .map_err(|e| crate::error::DbError::Migration(e.to_string()))?;
         let conn = self.db.conn()?;
         crate::query::query(
@@ -79,7 +83,7 @@ impl<'a> PostRepo<'a> {
             concat!(
                 "SELECT ",
                 post_columns!(),
-                " FROM posts WHERE id IN (SELECT value FROM json_each(?1))"
+                " FROM posts WHERE LOWER(id) IN (SELECT value FROM json_each(?1))"
             ),
             params![ids_json.as_str()],
             Self::map_row,
@@ -195,18 +199,22 @@ impl<'a> PostRepo<'a> {
                 limits::MAX_BATCH_BYTES
             )));
         }
+        let norm_id = post.id.trim();
+        let norm_pk = post.pubkey.trim();
+        let norm_reply_to = post.reply_to.as_deref().map(|s| s.trim());
+        let norm_root_id = post.root_id.as_deref().map(|s| s.trim());
         tx.execute(
             POST_UPSERT_SQL,
             params![
-                post.id.as_str(),
-                post.pubkey.as_str(),
+                norm_id,
+                norm_pk,
                 post.content.as_str(),
                 post.kind,
                 post.created_at,
                 post.tags_json.as_str(),
                 post.sig.as_deref(),
-                post.reply_to.as_deref(),
-                post.root_id.as_deref(),
+                norm_reply_to,
+                norm_root_id,
                 post.mentioned_pubkeys.as_str(),
                 post.mentioned_hashtags.as_str(),
                 post.subject.as_deref(),
@@ -232,16 +240,20 @@ impl<'a> PostRepo<'a> {
             if limits::row_too_big(&post.content, &post.tags_json) {
                 continue; // relay content too large: skip, never store
             }
+            let norm_id = post.id.trim();
+            let norm_pk = post.pubkey.trim();
+            let norm_reply_to = post.reply_to.as_deref().map(|s| s.trim());
+            let norm_root_id = post.root_id.as_deref().map(|s| s.trim());
             stmt.run(params![
-                post.id.as_str(),
-                post.pubkey.as_str(),
+                norm_id,
+                norm_pk,
                 post.content.as_str(),
                 post.kind,
                 post.created_at,
                 post.tags_json.as_str(),
                 post.sig.as_deref(),
-                post.reply_to.as_deref(),
-                post.root_id.as_deref(),
+                norm_reply_to,
+                norm_root_id,
                 post.mentioned_pubkeys.as_str(),
                 post.mentioned_hashtags.as_str(),
                 post.subject.as_deref(),
@@ -260,10 +272,11 @@ impl<'a> PostRepo<'a> {
 
     pub fn delete(&self, id: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_id = id.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
-            "UPDATE posts SET is_deleted = 1 WHERE id = ?1",
-            params![id],
+            "UPDATE posts SET is_deleted = 1 WHERE LOWER(id) = ?1",
+            params![norm_id.as_str()],
         )?;
         Ok(())
     }

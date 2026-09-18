@@ -152,7 +152,9 @@ pub fn notifications_fetch(user_pubkey: String, limit: i32, offset: i32) -> Resu
         let rows: Vec<NotificationRow> = soshal_db_core::query::query_capacity(
             &conn,
             "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read \
-             FROM notifications WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
+             FROM notifications WHERE LOWER(pubkey) = ?1 \
+             AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = ?1 AND (i.kind = notifications.type OR i.kind = 'user' OR i.kind = 'thread' OR i.kind = 'all') AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, ''))))) \
+             ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
             libsql::params![user_pubkey.as_str(), limit as i64, offset as i64],
             limit as usize,
             |r| {
@@ -348,14 +350,7 @@ pub fn notifications_get_unread_count(user_pubkey: String) -> Result<i32, String
     let u_pk = user_pubkey.trim().to_ascii_lowercase();
     super::signer::require_identity(&u_pk)?;
     super::db::with_db_result(|db| {
-        let conn = db.conn()?;
-        let count: i64 = soshal_db_core::query::query_first(
-            &conn,
-            "SELECT COUNT(*) FROM notifications WHERE pubkey = ?1 AND is_read = 0",
-            libsql::params![u_pk.as_str()],
-            |r| r.get(0),
-        )?
-        .unwrap_or(0);
+        let count = NotificationRepo::new(db).count_unread(&u_pk)?;
         Ok(count as i32)
     })
 }

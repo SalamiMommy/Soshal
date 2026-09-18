@@ -412,6 +412,8 @@ fn post_get_by_ids() {
         .get_by_ids(&["p1".into(), "p2".into(), "missing".into()])
         .unwrap();
     assert_eq!(rows.len(), 2, "missing ids absent");
+    let rows_mixed = repo.get_by_ids(&["P1".into(), "P2".into()]).unwrap();
+    assert_eq!(rows_mixed.len(), 2, "case-insensitive matching for ids");
     assert!(repo.get_by_ids(&[]).unwrap().is_empty());
 }
 

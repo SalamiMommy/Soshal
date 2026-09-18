@@ -80,22 +80,26 @@ fn scan_entries(body: &str) -> Vec<TagEntry<'_>> {
         if body.is_char_boundary(i) {
             if let Some((kind, name_len)) = AttrKind::from_prefix(&body[i..]) {
                 let mut eq = i + name_len;
-                while eq < bytes.len() && (bytes[eq] == b' ' || bytes[eq] == b'\t') {
+                while eq < bytes.len() && matches!(bytes[eq], b' ' | b'\t' | b'\r' | b'\n') {
                     eq += 1;
                 }
-                let open = eq + 1;
-                if bytes.get(eq) == Some(&b'=')
-                    && matches!(bytes.get(open), Some(&b'"') | Some(&b'\''))
-                {
-                    let quote = bytes[open];
-                    let mut end = open + 1;
-                    while end < bytes.len() && bytes[end] != quote {
-                        end += 1;
+                if bytes.get(eq) == Some(&b'=') {
+                    let mut open = eq + 1;
+                    while open < bytes.len() && matches!(bytes[open], b' ' | b'\t' | b'\r' | b'\n')
+                    {
+                        open += 1;
                     }
-                    entries.push(TagEntry {
-                        kind,
-                        value: &body[open + 1..end],
-                    });
+                    if let Some(&quote @ (b'"' | b'\'')) = bytes.get(open) {
+                        let mut end = open + 1;
+                        while end < bytes.len() && bytes[end] != quote {
+                            end += 1;
+                        }
+                        entries.push(TagEntry {
+                            kind,
+                            value: &body[open + 1..end],
+                        });
+                        i = end;
+                    }
                 }
             }
         }
@@ -210,7 +214,10 @@ fn scan_html(html: &str) -> LinkScan<'_> {
     };
     for caps in re.captures_iter(html) {
         if let Some(tag_name) = caps.get(1) {
-            let tag = caps.get(0).unwrap().as_str();
+            let Some(tag_match) = caps.get(0) else {
+                continue;
+            };
+            let tag = tag_match.as_str();
             let name = tag_name.as_str();
             let prefix = if name.eq_ignore_ascii_case("meta") {
                 5

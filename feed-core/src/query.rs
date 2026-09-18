@@ -104,11 +104,11 @@ fn parse_media_json(tags_json: &str) -> Option<String> {
             continue;
         }
         if tag.len() < 5 {
-            return None;
+            continue;
         }
         let media_type = &tag[1];
         if !matches!(media_type.as_ref(), "image" | "video" | "audio") {
-            return None;
+            continue;
         }
         let url = &tag[2];
         let url_str = if url.is_empty()
@@ -121,7 +121,7 @@ fn parse_media_json(tags_json: &str) -> Option<String> {
         };
         let blob_hash = &tag[3];
         if blob_hash.len() != 64 || !blob_hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return None;
+            continue;
         }
         let size: u64 = tag[4].parse().unwrap_or(0);
         return Some(
@@ -271,5 +271,20 @@ mod tests {
         assert!(is_blob_ref(&h));
         assert!(!is_blob_ref("https://example.com/a.png"));
         assert!(!is_blob_ref(&"a".repeat(63)));
+    }
+
+    #[test]
+    fn skips_invalid_media_tag_and_finds_valid_tag() {
+        let tags = r#"[
+            ["media", "unsupported"],
+            ["media", "document", "https://example.com/doc.pdf", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "100"],
+            ["media", "image", "https://example.com/pic.png", "not-hex", "200"],
+            ["media", "image", "https://example.com/good.png", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "300"]
+        ]"#;
+        let parsed = parse_media_json(tags).expect("should find valid tag");
+        let v: serde_json::Value = serde_json::from_str(&parsed).unwrap();
+        assert_eq!(v["type"], "image");
+        assert_eq!(v["url"], "https://example.com/good.png");
+        assert_eq!(v["size"], 300);
     }
 }

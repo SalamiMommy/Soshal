@@ -5,7 +5,10 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 pub fn now_ms() -> u64 {
-    crate::format::now_secs() as u64 * 1000
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -19,5 +22,13 @@ mod tests {
         assert!(!constant_time_eq(b"hello", b"hell"));
         assert!(!constant_time_eq(b"", b"a"));
         assert!(constant_time_eq(b"", b""));
+    }
+
+    #[test]
+    fn test_now_ms() {
+        let ms = now_ms();
+        let secs = crate::format::now_secs() as u64;
+        assert!(ms >= secs * 1000);
+        assert!(ms <= (secs + 2) * 1000);
     }
 }
