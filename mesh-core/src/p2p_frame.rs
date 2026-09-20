@@ -255,7 +255,10 @@ pub fn decode_p2p_frame(json_input: &str) -> String {
 
     let payload = match String::from_utf8(payload_bytes) {
         Ok(s) => s,
-        Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
+        Err(e) => {
+            valid = false;
+            String::from_utf8_lossy(e.as_bytes()).into_owned()
+        }
     };
     let result = DecodeFrameResult {
         payload,

@@ -1168,15 +1168,22 @@ async fn serve_moq_subscription(send: &mut quinn::SendStream, stream_id: &str, w
             Err(_) => return,
         };
         let mut replay: Vec<Arc<Vec<u8>>> = Vec::new();
+        let mut last_seq = 0u64;
         let mut replayed_bytes = 0usize;
-        for (_, g) in lock.entries.iter() {
+        for (seq, g) in lock.entries.iter() {
             if replayed_bytes + g.len() > LIVE_MAX_REPLAY_BYTES {
                 break;
             }
             replayed_bytes += g.len();
+            last_seq = *seq;
             replay.push(g.clone());
         }
-        (replay, lock.watermark)
+        let wm = if replay.is_empty() {
+            lock.watermark
+        } else {
+            last_seq
+        };
+        (replay, wm)
     };
     let mut watermark = wm;
     for group in &replay {

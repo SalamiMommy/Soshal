@@ -304,10 +304,16 @@ class DatingService extends ChangeNotifier
   }
 
   Future<bool> unlike(String userPubkey, String profileId) async {
-    return _bool(
+    final ok = await _bool(
       () => RustLib.instance.api.crateFfiDatingDatingUnlike(
           userPubkey: userPubkey, profileId: profileId),
     );
+    if (ok) {
+      _likes.removeWhere((c) => c.pubkey == profileId);
+      _matches.removeWhere((c) => c.pubkey == profileId);
+      notifyDeferred();
+    }
+    return ok;
   }
 
   Future<bool> superlike(String userPubkey, String profileId) async {
@@ -335,10 +341,17 @@ class DatingService extends ChangeNotifier
   }
 
   Future<bool> block(String userPubkey, String targetPubkey) async {
-    return _bool(
+    final ok = await _bool(
       () => RustLib.instance.api.crateFfiDatingDatingBlockProfile(
           userPubkey: userPubkey, targetPubkey: targetPubkey),
     );
+    if (ok) {
+      _cards.removeWhere((c) => c.pubkey == targetPubkey);
+      _likes.removeWhere((c) => c.pubkey == targetPubkey);
+      _matches.removeWhere((c) => c.pubkey == targetPubkey);
+      notifyDeferred();
+    }
+    return ok;
   }
 
   /// Reset profiles the user swiped "no" on: deletes local `pass` records so
@@ -363,6 +376,9 @@ class DatingService extends ChangeNotifier
         userPubkey: userPubkey,
         profileId: profileId,
       );
+      if (ok) {
+        _matches.removeWhere((c) => c.pubkey == profileId);
+      }
       clearLastError();
       notifyDeferred();
       return ok;

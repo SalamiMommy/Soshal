@@ -47,7 +47,13 @@ pub fn parse_nwc_uri(uri: &str) -> Result<NwcConnectionInfo, String> {
                 relay_url = r;
             }
             "secret" => secret_hex = v.to_string(),
-            "lud16" => lud16 = Some(v.to_string()),
+            "lud16" => {
+                let s = v.to_string();
+                if !s.is_empty() {
+                    crate::lnurl::validate_lud16_parts(&s)?;
+                    lud16 = Some(s);
+                }
+            }
             _ => {}
         }
     }

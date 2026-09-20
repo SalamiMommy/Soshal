@@ -146,10 +146,18 @@ class MarketplaceService extends ChangeNotifier
 
   Future<bool> deleteListing(String listingId, String sellerPubkey) =>
       guard(() {
-        return RustLib.instance.api.crateFfiMarketplaceMarketplaceDeleteListing(
+        final ok =
+            RustLib.instance.api.crateFfiMarketplaceMarketplaceDeleteListing(
           listingId: listingId,
           sellerPubkey: sellerPubkey,
         );
+        if (ok) {
+          _listings.removeWhere((l) => l.id == listingId);
+          if (_current?.id == listingId) {
+            _current = null;
+          }
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<String> createOrder(

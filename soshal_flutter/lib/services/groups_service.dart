@@ -136,11 +136,15 @@ class GroupsService extends ChangeNotifier
 
   Future<bool> join(String groupId, String userPubkey, {String? password}) =>
       guard(() {
-        return RustLib.instance.api.crateFfiGroupsGroupsJoin(
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsJoin(
           groupId: groupId,
           userPubkey: userPubkey,
           password: password,
         );
+        if (ok && !_members.contains(userPubkey)) {
+          _members.add(userPubkey);
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<bool> setPassword(
@@ -157,10 +161,18 @@ class GroupsService extends ChangeNotifier
       }, onNotify: notifyDeferred);
 
   Future<bool> leave(String groupId, String userPubkey) => guard(() {
-        return RustLib.instance.api.crateFfiGroupsGroupsLeave(
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsLeave(
           groupId: groupId,
           userPubkey: userPubkey,
         );
+        if (ok) {
+          _members.remove(userPubkey);
+          _groups.removeWhere((g) => g.id == groupId);
+          if (_current?.id == groupId) {
+            _current = null;
+          }
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<String> postMessage(String groupId, String content,
@@ -229,11 +241,16 @@ class GroupsService extends ChangeNotifier
     String adminPubkey,
   ) =>
       guard(() {
-        return RustLib.instance.api.crateFfiGroupsGroupsRemoveMember(
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsRemoveMember(
           groupId: groupId,
           memberPubkey: memberPubkey,
           adminPubkey: adminPubkey,
         );
+        if (ok) {
+          _members.remove(memberPubkey);
+          _memberRoles.removeWhere((m) => m.pubkey == memberPubkey);
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<List<GroupRole>> fetchRoles(String groupId) => guard(() {
@@ -268,9 +285,14 @@ class GroupsService extends ChangeNotifier
       }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<bool> deleteRole(String roleId) => guard(() {
-        return RustLib.instance.api.crateFfiGroupsGroupsRoleDelete(
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsRoleDelete(
           roleId: roleId,
         );
+        if (ok) {
+          _roles.removeWhere((r) => r.id == roleId);
+          _memberRoles.removeWhere((m) => m.role == roleId);
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   /// Members with their assigned role ids ({pubkey, role} rows).
@@ -340,10 +362,14 @@ class GroupsService extends ChangeNotifier
       }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<bool> deleteRoom(String roomId, String actor) => guard(() {
-        return RustLib.instance.api.crateFfiGroupsGroupsRoomsDelete(
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsRoomsDelete(
           roomId: roomId,
           actor: actor,
         );
+        if (ok) {
+          _rooms.removeWhere((r) => r.id == roomId);
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<List<GroupThread>> fetchThreads(String groupId) => guard(() {
@@ -440,10 +466,14 @@ class GroupsService extends ChangeNotifier
       }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<bool> deleteThread(String threadId, String actor) => guard(() {
-        return RustLib.instance.api.crateFfiGroupsGroupsThreadsDelete(
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsThreadsDelete(
           threadId: threadId,
           actor: actor,
         );
+        if (ok) {
+          _threads.removeWhere((t) => t.id == threadId);
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<bool> setThreadPinned(String threadId, bool pinned, String actor) =>
@@ -509,10 +539,15 @@ class GroupsService extends ChangeNotifier
       }, onNotify: notifyDeferred, notifyOnSuccess: false);
 
   Future<bool> deleteVoiceChannel(String channelId, String actor) => guard(() {
-        return RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsDelete(
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsDelete(
           channelId: channelId,
           actor: actor,
         );
+        if (ok) {
+          _voiceChannels.removeWhere((v) => v.id == channelId);
+          _presence.removeWhere((p) => p.channelId == channelId);
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<bool> voiceJoin(String channelId, String pubkey) => guard(() {

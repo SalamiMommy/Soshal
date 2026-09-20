@@ -79,6 +79,9 @@ pub fn scheduled_delete(id: String) -> Result<bool, String> {
         if let Some(post) = repo.get_by_id(&id)? {
             super::signer::require_identity(&post.pubkey)
                 .map_err(soshal_db_core::error::DbError::Oversized)?;
+            if post.scheduled_at.is_none() && post.sync_status != "scheduled" {
+                return Err(soshal_db_core::error::DbError::NotFound);
+            }
         }
         repo.delete(&id)?;
         Ok(true)

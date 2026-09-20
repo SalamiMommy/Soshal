@@ -75,14 +75,20 @@ impl ReticulumNode {
 
     /// Starts the AutoInterface for peer discovery
     pub fn start_auto_interface(&mut self, config: AutoInterfaceConfig) -> Result<(), String> {
+        if let Some(mut old) = self.auto_interface.take() {
+            old.stop();
+        }
         let mut auto = AutoInterface::new(self.destination, config);
         auto.start()?;
+        let status = auto.get_status();
         self.auto_interface = Some(auto);
 
         // Update interface list
         let mut iface_guard = self.interfaces.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(ref auto) = self.auto_interface {
-            iface_guard.push(auto.get_status());
+        if let Some(existing) = iface_guard.iter_mut().find(|i| i.name == status.name) {
+            *existing = status;
+        } else {
+            iface_guard.push(status);
         }
 
         Ok(())
@@ -90,14 +96,20 @@ impl ReticulumNode {
 
     /// Starts the TCP server interface
     pub fn start_tcp_server(&mut self, config: TcpInterfaceConfig) -> Result<(), String> {
+        if let Some(mut old) = self.tcp_server.take() {
+            old.stop();
+        }
         let mut tcp = TcpServerInterface::new(self.destination, config);
         tcp.start()?;
+        let status = tcp.get_status();
         self.tcp_server = Some(tcp);
 
         // Update interface list
         let mut iface_guard = self.interfaces.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(ref tcp) = self.tcp_server {
-            iface_guard.push(tcp.get_status());
+        if let Some(existing) = iface_guard.iter_mut().find(|i| i.name == status.name) {
+            *existing = status;
+        } else {
+            iface_guard.push(status);
         }
 
         Ok(())
@@ -105,6 +117,12 @@ impl ReticulumNode {
 
     /// Starts the UDP transport layer for Reticulum communication
     pub fn start_udp_transport(&mut self, bind_addr: &str) -> Result<(), String> {
+        if let Some(handle) = self.transport_thread.take() {
+            *self.running.lock().unwrap_or_else(|e| e.into_inner()) = false;
+            let _ = handle.join();
+        }
+        *self.running.lock().unwrap_or_else(|e| e.into_inner()) = true;
+
         let socket = UdpSocket::bind(bind_addr).map_err(|e| format!("UDP bind failed: {e}"))?;
         socket
             .set_nonblocking(true)

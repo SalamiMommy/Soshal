@@ -301,11 +301,11 @@ impl PqcLinkCrypto {
 
 /// Parses `0x00 ‖ <u32 BE sid len> ‖ <sid> ‖ <pk ascii>` handshake frames.
 pub(crate) fn parse_handshake_frame(frame: &[u8]) -> Result<(&str, &str), String> {
-    if frame.len() < 5 || frame[0] != FRAME_TAG_HANDSHAKE {
+    if frame.len() < 5 || frame.len() > MAX_LINK_FRAME || frame[0] != FRAME_TAG_HANDSHAKE {
         return Err("bad handshake frame".to_string());
     }
     let sid_len = u32::from_be_bytes([frame[1], frame[2], frame[3], frame[4]]) as usize;
-    if frame.len() < 5 + sid_len + 1 {
+    if sid_len > 1024 || frame.len() < 5 + sid_len + 1 {
         return Err("bad handshake frame".to_string());
     }
     let sid = std::str::from_utf8(&frame[5..5 + sid_len]).map_err(|_| "handshake sid not ascii")?;
