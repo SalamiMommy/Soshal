@@ -387,6 +387,16 @@ fn filter_radius_excludes_missing_geohash() {
 }
 
 #[test]
+fn filter_radius_excludes_when_own_geohash_missing() {
+    let mut p = prof("hasloc");
+    p.location_geohash = Some("9q8yyk".to_string());
+    let mut input = filter_input(vec![p]);
+    input.own_location_geohash = None;
+    input.own_max_distance_km = Some(10.0);
+    assert!(!filter_dating_profiles(input)[0].passes);
+}
+
+#[test]
 fn filter_radius_without_radius_keeps_missing_geohash() {
     let mut input = filter_input(vec![prof("noloc")]);
     input.own_location_geohash = Some("9q8yyk".to_string());

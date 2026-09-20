@@ -58,8 +58,13 @@ class ScheduledService extends ChangeNotifier
 
   /// Delete a scheduled draft (soft delete).
   Future<bool> delete(String id) => guard(() {
-        return RustLib.instance.api.crateFfiScheduledScheduledDelete(id: id);
-      }, notifyOnSuccess: false);
+        final ok =
+            RustLib.instance.api.crateFfiScheduledScheduledDelete(id: id);
+        if (ok) {
+          _drafts.removeWhere((d) => d.id == id);
+        }
+        return ok;
+      });
 }
 
 /// A scheduled post draft row from the posts table.

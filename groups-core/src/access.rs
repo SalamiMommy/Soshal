@@ -79,9 +79,10 @@ pub fn verify_community_password(password: &str, stored_hash: &str) -> bool {
     let mut candidate_hash_hex = hex::encode(&dk);
     dk.zeroize();
 
+    let expected_lower = expected_hash_hex.to_ascii_lowercase();
     let matches = soshal_common_core::util::constant_time_eq(
         candidate_hash_hex.as_bytes(),
-        expected_hash_hex.as_bytes(),
+        expected_lower.as_bytes(),
     );
     candidate_hash_hex.zeroize();
     matches

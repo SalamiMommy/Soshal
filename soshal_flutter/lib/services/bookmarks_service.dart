@@ -52,9 +52,13 @@ class BookmarksService extends ChangeNotifier
 
   /// Delete a bookmark by id.
   Future<bool> delete(String id) => guard(() {
-        return RustLib.instance.api.crateFfiBookmarksBookmarksDelete(
+        final ok = RustLib.instance.api.crateFfiBookmarksBookmarksDelete(
           id: id,
         );
+        if (ok) {
+          _bookmarks.removeWhere((b) => b.id == id);
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<Map<String, FeedPost>> resolvePosts(List<String> eventIds) async {

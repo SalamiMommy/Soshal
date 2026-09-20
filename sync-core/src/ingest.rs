@@ -153,6 +153,8 @@ fn post_row(event: &Event) -> Option<PostRow> {
     if event.content.len() > MAX_CACHED_CONTENT {
         return None;
     }
+    let mut marked_root: Option<String> = None;
+    let mut marked_reply: Option<String> = None;
     let mut first_e: Option<String> = None;
     let mut last_e: Option<String> = None;
     let mut ps: Vec<&str> = Vec::new();
@@ -164,10 +166,17 @@ fn post_row(event: &Event) -> Option<PostRow> {
         match vec.first().map(|s| s.as_str()) {
             Some("e") => {
                 if let Some(c) = vec.get(1) {
-                    if first_e.is_none() {
-                        first_e = Some(c.clone());
+                    let marker = vec.get(3).map(|s| s.as_str());
+                    if marker == Some("root") {
+                        marked_root = Some(c.clone());
+                    } else if marker == Some("reply") {
+                        marked_reply = Some(c.clone());
+                    } else if marker != Some("mention") {
+                        if first_e.is_none() {
+                            first_e = Some(c.clone());
+                        }
+                        last_e = Some(c.clone());
                     }
-                    last_e = Some(c.clone());
                 }
             }
             Some("p") => {
@@ -188,12 +197,12 @@ fn post_row(event: &Event) -> Option<PostRow> {
         tags_json.push(vec);
     }
     let reply_to = if event.kind == Kind::TextNote || event.kind == Kind::ZapRequest {
-        last_e.clone()
+        marked_reply.or(last_e)
     } else {
         None
     };
     let root_id = if event.kind == Kind::TextNote || event.kind == Kind::ZapRequest {
-        first_e.clone()
+        marked_root.or(first_e.clone())
     } else {
         None
     };

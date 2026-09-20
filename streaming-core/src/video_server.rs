@@ -235,19 +235,24 @@ async fn serve_video_file(
                 let start_str = start_str.trim();
                 let end_str = end_str.trim();
                 if !start_str.is_empty() {
-                    if let Ok(s) = start_str.parse::<u64>() {
-                        start = s;
+                    match start_str.parse::<u64>() {
+                        Ok(s) => start = s,
+                        Err(_) => invalid_range = true,
                     }
-                    if !end_str.is_empty() {
-                        if let Ok(e) = end_str.parse::<u64>() {
-                            end = e.min(end);
+                    if !end_str.is_empty() && !invalid_range {
+                        match end_str.parse::<u64>() {
+                            Ok(e) => end = e.min(end),
+                            Err(_) => invalid_range = true,
                         }
                     }
                     true
                 } else if !end_str.is_empty() {
-                    if let Ok(n) = end_str.parse::<u64>() {
-                        start = total_size.saturating_sub(n);
-                        end = total_size.saturating_sub(1);
+                    match end_str.parse::<u64>() {
+                        Ok(n) => {
+                            start = total_size.saturating_sub(n);
+                            end = total_size.saturating_sub(1);
+                        }
+                        Err(_) => invalid_range = true,
                     }
                     true
                 } else {

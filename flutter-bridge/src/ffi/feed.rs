@@ -460,14 +460,27 @@ pub async fn feed_fetch_events(options_json: String) -> Result<String, String> {
             let filters = get_custom_word_filters(db);
             let repo = PostRepo::new(db);
             let mut rows: Vec<PostMetaRow> = Vec::new();
-            if let (Some(cursor), Some(cursor_id)) = (opts.cursor_created_at, opts.cursor_id) {
-                let chunk = match authors.as_deref() {
-                    Some(a) => {
-                        repo.get_paged_meta_cursor_by_authors(cursor, &cursor_id, limit, a)?
+            if let (Some(mut cursor), Some(mut cursor_id)) =
+                (opts.cursor_created_at, opts.cursor_id)
+            {
+                let mut loops = 0;
+                while rows.len() < limit as usize * 4 && loops < 32 {
+                    let chunk = match authors.as_deref() {
+                        Some(a) => {
+                            repo.get_paged_meta_cursor_by_authors(cursor, &cursor_id, limit, a)?
+                        }
+                        None => repo.get_paged_meta_cursor(cursor, &cursor_id, limit)?,
+                    };
+                    if chunk.is_empty() {
+                        break;
                     }
-                    None => repo.get_paged_meta_cursor(cursor, &cursor_id, limit)?,
-                };
-                rows.extend(chunk);
+                    loops += 1;
+                    if let Some(last) = chunk.last() {
+                        cursor = last.created_at;
+                        cursor_id = last.id.clone();
+                    }
+                    rows.extend(chunk);
+                }
             } else {
                 let mut offset = opts.offset.max(0) as i64;
                 // Over-fetch to gather enough rows surviving the moderation

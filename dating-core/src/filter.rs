@@ -135,36 +135,37 @@ pub fn filter_dating_profiles(input: FilterDatingProfilesInput) -> Vec<FilteredD
                 if !matches_trait(&input.education, &profile.education) {
                     return false;
                 }
-                if let Some((own_lat, own_lon)) = own_coords {
-                    if input.own_max_distance_km.is_some() || profile.max_distance_km.is_some() {
-                        let other_coords = profile
-                            .location_geohash
-                            .as_deref()
-                            .and_then(soshal_spatial_core::distance::decode_geohash_coords);
-                        let dist = other_coords.map(|(other_lat, other_lon)| {
-                            soshal_spatial_core::distance::haversine_km(
-                                own_lat, own_lon, other_lat, other_lon,
-                            )
-                        });
+                if input.own_max_distance_km.is_some() || profile.max_distance_km.is_some() {
+                    let Some((own_lat, own_lon)) = own_coords else {
+                        return false;
+                    };
+                    let other_coords = profile
+                        .location_geohash
+                        .as_deref()
+                        .and_then(soshal_spatial_core::distance::decode_geohash_coords);
+                    let dist = other_coords.map(|(other_lat, other_lon)| {
+                        soshal_spatial_core::distance::haversine_km(
+                            own_lat, own_lon, other_lat, other_lon,
+                        )
+                    });
 
-                        if let Some(own_max) = input.own_max_distance_km {
-                            if !own_max.is_finite() || own_max < 0.0 {
-                                return false;
-                            }
-                            match dist {
-                                Some(d) if d.is_finite() && d <= own_max => {}
-                                _ => return false,
-                            }
+                    if let Some(own_max) = input.own_max_distance_km {
+                        if !own_max.is_finite() || own_max < 0.0 {
+                            return false;
                         }
+                        match dist {
+                            Some(d) if d.is_finite() && d <= own_max => {}
+                            _ => return false,
+                        }
+                    }
 
-                        if let Some(other_max) = profile.max_distance_km {
-                            if !other_max.is_finite() || other_max < 0.0 {
-                                return false;
-                            }
-                            match dist {
-                                Some(d) if d.is_finite() && d <= other_max => {}
-                                _ => return false,
-                            }
+                    if let Some(other_max) = profile.max_distance_km {
+                        if !other_max.is_finite() || other_max < 0.0 {
+                            return false;
+                        }
+                        match dist {
+                            Some(d) if d.is_finite() && d <= other_max => {}
+                            _ => return false,
                         }
                     }
                 }

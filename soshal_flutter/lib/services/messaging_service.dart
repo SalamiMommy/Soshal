@@ -84,7 +84,9 @@ class MessagingService extends ChangeNotifier
   /// batched: a message burst on the stream triggers ONE batch FFI call
   /// instead of one call per message.
   void insertLiveDm(DirectMessage message) {
-    final peer = message.sender;
+    final peer = (message.isOwn && message.recipient.isNotEmpty)
+        ? message.recipient
+        : message.sender;
     if (peer.isEmpty) return;
     final list = _conversations.putIfAbsent(peer, () => []);
     _evictConversationsIfNeeded();

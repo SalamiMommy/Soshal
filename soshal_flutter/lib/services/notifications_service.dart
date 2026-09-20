@@ -143,6 +143,14 @@ class NotificationService extends ChangeNotifier
               _notifications[i] = _asRead(n);
             }
           }
+          for (final list in _byType.values) {
+            for (var i = 0; i < list.length; i++) {
+              final n = list[i];
+              if (n.id == notificationId && !n.read) {
+                list[i] = _asRead(n);
+              }
+            }
+          }
           if (listed) {
             _recomputeUnreadCount();
           } else if (_unreadCount > 0) {
@@ -162,6 +170,12 @@ class NotificationService extends ChangeNotifier
           if (_notifications.any((n) => !n.read)) {
             _notifications = [
               for (final n in _notifications)
+                if (!n.read) _asRead(n) else n,
+            ];
+          }
+          for (final entry in _byType.entries) {
+            _byType[entry.key] = [
+              for (final n in entry.value)
                 if (!n.read) _asRead(n) else n,
             ];
           }

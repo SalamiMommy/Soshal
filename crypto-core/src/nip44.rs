@@ -483,9 +483,20 @@ fn decrypt_legacy(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'stat
         msg: encrypted,
         aad: &aad,
     };
-    let plaintext = cipher
-        .decrypt(nonce, payload)
-        .map_err(|_| "decrypt failed")?;
+    let (version, plaintext) = match cipher.decrypt(nonce, payload) {
+        Ok(pt) => (version, pt),
+        Err(_) if tagged => {
+            let payload_untagged = Payload {
+                msg: &decoded[SALT_LEN..],
+                aad: &aad,
+            };
+            let pt = cipher
+                .decrypt(nonce, payload_untagged)
+                .map_err(|_| "decrypt failed")?;
+            (VERSION_LEGACY, pt)
+        }
+        Err(_) => return Err("decrypt failed"),
+    };
 
     enc_key_bytes.zeroize();
     auth_key_bytes.zeroize();

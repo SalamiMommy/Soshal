@@ -47,6 +47,9 @@ fn client_for(
     while map.len() >= MAX_NIP05_CLIENTS {
         if let Some(oldest) = order.pop_front() {
             map.remove(&oldest);
+        } else {
+            map.clear();
+            break;
         }
     }
     order.push_back(host.to_string());
@@ -211,7 +214,18 @@ pub async fn resolve(nip05_address: &str) -> Nip05Result {
             }
         }
     };
-    let Some(pubkey) = json["names"][&name].as_str().map(|s| s.to_string()) else {
+    let pubkey = json["names"]
+        .get(&name)
+        .or_else(|| {
+            json["names"].as_object().and_then(|obj| {
+                obj.iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(&name))
+                    .map(|(_, v)| v)
+            })
+        })
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let Some(pubkey) = pubkey else {
         return Nip05Result {
             verified: false,
             pubkey: None,
