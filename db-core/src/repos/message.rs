@@ -52,13 +52,19 @@ impl<'a> MessageRepo<'a> {
             )));
         }
         let conn = self.db.conn()?;
+        let norm_pk = msg.pubkey.trim();
+        crate::query::execute(
+            &conn,
+            "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
+            params![norm_pk],
+        )?;
         crate::query::execute(
             &conn,
             "INSERT INTO messages (id, conversation_id, pubkey, content, created_at, tags_json, reply_to, sync_status, is_deleted) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted",
             params![
                 msg.id.as_str(),
                 msg.conversation_id.as_str(),
-                msg.pubkey.as_str(),
+                norm_pk,
                 msg.content.as_str(),
                 msg.created_at,
                 msg.tags_json.as_str(),
@@ -107,12 +113,18 @@ impl<'a> MessageRepo<'a> {
                 if crate::repos::limits::row_too_big(&msg.content, &msg.tags_json) {
                     continue; // relay content too large: skip, never store
                 }
+                let norm_pk = msg.pubkey.trim();
+                tx.execute(
+                    "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
+                    params![norm_pk],
+                )
+                .await?;
                 tx.execute(
                     sql,
                     params![
                         msg.id.as_str(),
                         msg.conversation_id.as_str(),
-                        msg.pubkey.as_str(),
+                        norm_pk,
                         msg.content.as_str(),
                         msg.created_at,
                         msg.tags_json.as_str(),

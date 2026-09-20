@@ -18,6 +18,11 @@ impl<'a> ZapRepo<'a> {
         let recipient_clean = row.recipient_pubkey.trim();
         let event_id_clean = row.event_id.as_ref().map(|s| s.trim());
         tx.execute(
+            "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
+            params![pubkey_clean],
+        )
+        .await?;
+        tx.execute(
             "INSERT INTO zaps (id, pubkey, sender_pubkey, recipient_pubkey, event_id, amount, amount_msat, content, created_at, zap_type) VALUES (?1,?2,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, amount_msat=excluded.amount_msat, recipient_pubkey=excluded.recipient_pubkey",
             params![
                 id_clean,

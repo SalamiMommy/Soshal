@@ -195,17 +195,21 @@ impl<'a> MusicloudPlaylistRepo<'a> {
 
     pub fn delete(&self, id: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(
-            &conn,
-            "DELETE FROM musicloud_playlist_tracks WHERE playlist_id=?1",
-            params![id],
-        )?;
-        crate::query::execute(
-            &conn,
-            "DELETE FROM musicloud_playlists WHERE id=?1",
-            params![id],
-        )?;
-        Ok(())
+        let id = id.to_string();
+        crate::query::with_tx(&conn, |tx| async move {
+            tx.execute(
+                "DELETE FROM musicloud_playlist_tracks WHERE playlist_id=?1",
+                params![id.as_str()],
+            )
+            .await?;
+            tx.execute(
+                "DELETE FROM musicloud_playlists WHERE id=?1",
+                params![id.as_str()],
+            )
+            .await?;
+            tx.commit().await?;
+            Ok(())
+        })
     }
 
     pub fn add_track(&self, track: &PlaylistTrackRow) -> Result<(), crate::error::DbError> {

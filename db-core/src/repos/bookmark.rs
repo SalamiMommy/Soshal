@@ -53,6 +53,11 @@ impl<'a> BookmarkRepo<'a> {
         let pk_clean = row.pubkey.trim();
         let evt_clean = row.event_id.trim();
         tx.execute(
+            "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
+            params![pk_clean],
+        )
+        .await?;
+        tx.execute(
             "INSERT INTO bookmarks (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET pubkey=excluded.pubkey, event_id=excluded.event_id, created_at=excluded.created_at",
             params![id_clean, pk_clean, evt_clean, row.created_at],
         )

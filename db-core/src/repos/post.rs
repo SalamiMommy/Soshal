@@ -8,44 +8,38 @@ macro_rules! post_columns {
     };
 }
 
-macro_rules! post_columns_no_rsvp {
-    () => {
-        "id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native"
-    };
-}
-
-const POST_UPSERT_SQL: &str = "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id, category) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18, CASE WHEN ?4 = 30402 THEN (SELECT json_extract(je.value, '$[1]') FROM json_each(CASE WHEN json_valid(?6) THEN ?6 ELSE '[]' END) je WHERE json_extract(je.value, '$[0]') = 't' LIMIT 1) ELSE NULL END) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native, rsvp_event_id=excluded.rsvp_event_id, category=excluded.category WHERE posts.is_deleted = 0";
-const POST_FEED_SQL: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?1)) AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
+const POST_UPSERT_SQL: &str = "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id, category) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18, CASE WHEN ?4 = 30402 THEN (SELECT json_extract(je.value, '$[1]') FROM json_each(CASE WHEN json_valid(?6) THEN ?6 ELSE '[]' END) je WHERE json_extract(je.value, '$[0]') = 't' LIMIT 1) ELSE NULL END) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted, scheduled_at=excluded.scheduled_at, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native, rsvp_event_id=excluded.rsvp_event_id, category=excluded.category WHERE posts.is_deleted = 0";
+const POST_FEED_SQL: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?1)) AND is_deleted = 0 AND scheduled_at IS NULL ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
 const POST_SELECT_BY_ID: &str = concat!(
     "SELECT ",
     post_columns!(),
     " FROM posts WHERE LOWER(id) = LOWER(?1)"
 );
-const POST_SELECT_BY_PUBKEY: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE LOWER(pubkey) = LOWER(?1) AND is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
-const POST_SELECT_REPLIES: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE (LOWER(root_id) = LOWER(?1) OR LOWER(id) = LOWER(?1)) AND is_deleted = 0 ORDER BY created_at ASC LIMIT 1000");
+const POST_SELECT_BY_PUBKEY: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE LOWER(pubkey) = LOWER(?1) AND is_deleted = 0 AND scheduled_at IS NULL ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
+const POST_SELECT_REPLIES: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE (LOWER(root_id) = LOWER(?1) OR LOWER(id) = LOWER(?1)) AND is_deleted = 0 AND scheduled_at IS NULL ORDER BY created_at ASC LIMIT 1000");
 const POST_SELECT_PAGED: &str = concat!(
     "SELECT ",
     post_columns!(),
-    " FROM posts WHERE is_deleted = 0 ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2"
+    " FROM posts WHERE is_deleted = 0 AND scheduled_at IS NULL ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2"
 );
 /// Slim feed variant: only the columns the feed surface consumes. Feed pages
 /// are the hottest read path; the 17-column row mapping wastes decode work
 /// on sig/mention/freenet/scheduling columns the UI never sees.
 const POST_SELECT_PAGED_META: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_CURSOR: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
 /// Author-filtered variants of the slim feed pages: `?3`/`?4` is a JSON
 /// array of reachable pubkeys (audience filter: friends / network).
 const POST_SELECT_PAGED_META_AUTHORS: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?3)) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?3)) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_SINGLE_AUTHOR: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND LOWER(pubkey) = LOWER(?3) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND LOWER(pubkey) = LOWER(?3) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_CURSOR_AUTHORS: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?4)) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?4)) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
 const POST_SELECT_PAGED_META_CURSOR_SINGLE_AUTHOR: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND LOWER(pubkey) = LOWER(?4) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
-const POST_SELECT_SCHEDULED: &str = concat!("SELECT ", post_columns_no_rsvp!(), " FROM posts WHERE LOWER(pubkey) = LOWER(?1) AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC");
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND LOWER(pubkey) = LOWER(?4) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
+const POST_SELECT_SCHEDULED: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE LOWER(pubkey) = LOWER(?1) AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC");
 
 pub struct PostRepo<'a> {
     db: &'a Database,
@@ -147,12 +141,18 @@ impl<'a> PostRepo<'a> {
             )));
         }
         let conn = self.db.conn()?;
+        let norm_pk = post.pubkey.trim();
+        crate::query::execute(
+            &conn,
+            "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
+            params![norm_pk],
+        )?;
         crate::query::execute(
             &conn,
             POST_UPSERT_SQL,
             params![
                 post.id.as_str(),
-                post.pubkey.as_str(),
+                norm_pk,
                 post.content.as_str(),
                 post.kind,
                 post.created_at,
@@ -204,6 +204,11 @@ impl<'a> PostRepo<'a> {
         let norm_reply_to = post.reply_to.as_deref().map(|s| s.trim());
         let norm_root_id = post.root_id.as_deref().map(|s| s.trim());
         tx.execute(
+            "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
+            params![norm_pk],
+        )
+        .await?;
+        tx.execute(
             POST_UPSERT_SQL,
             params![
                 norm_id,
@@ -244,6 +249,11 @@ impl<'a> PostRepo<'a> {
             let norm_pk = post.pubkey.trim();
             let norm_reply_to = post.reply_to.as_deref().map(|s| s.trim());
             let norm_root_id = post.root_id.as_deref().map(|s| s.trim());
+            tx.execute(
+                "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
+                params![norm_pk],
+            )
+            .await?;
             stmt.run(params![
                 norm_id,
                 norm_pk,

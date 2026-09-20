@@ -11,6 +11,11 @@ fn hashtags_to_json(hashtags: &[String]) -> String {
     serde_json::to_string(hashtags).unwrap_or_else(|_| "[]".into())
 }
 
+fn hashtags_to_nostr_tags_json(hashtags: &[String]) -> String {
+    let tags: Vec<Vec<&str>> = hashtags.iter().map(|h| vec!["t", h.as_str()]).collect();
+    serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into())
+}
+
 /// Create a scheduled post draft. `scheduled_at` is a unix timestamp in the
 /// future; `publish_at` (unix) marks when sync should broadcast it.
 #[frb(sync, serialize)]
@@ -35,7 +40,7 @@ pub fn scheduled_create(
         content,
         kind: 1,
         created_at: now,
-        tags_json: hashtags_to_json(&hashtags),
+        tags_json: hashtags_to_nostr_tags_json(&hashtags),
         sig: None,
         reply_to: None,
         root_id: None,

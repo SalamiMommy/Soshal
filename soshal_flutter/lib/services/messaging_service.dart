@@ -295,7 +295,12 @@ class MessagingService extends ChangeNotifier
           decrypted: true,
           isOwn: true,
         );
-        _conversations.putIfAbsent(groupId, () => []).add(message);
+        _evictConversationsIfNeeded();
+        final convo = _conversations.putIfAbsent(groupId, () => []);
+        convo.insert(0, message);
+        if (convo.length > 200) {
+          convo.removeLast();
+        }
 
         return eventId;
       }, onNotify: notifyDeferred);
@@ -733,9 +738,30 @@ class IdentityService extends ChangeNotifier
   /// Follow a user
   Future<String> followUser(String targetPubkey, String myPubkey) async {
     try {
-      return RustLib.instance.api.crateFfiIdentityIdentityFollowUser(
+      final res = RustLib.instance.api.crateFfiIdentityIdentityFollowUser(
         pubkey: targetPubkey,
       );
+      final existing = _profiles[targetPubkey];
+      if (existing != null) {
+        _profiles[targetPubkey] = ProfileInfo(
+          pubkey: existing.pubkey,
+          name: existing.name,
+          displayName: existing.displayName,
+          picture: existing.picture,
+          banner: existing.banner,
+          about: existing.about,
+          nip05: existing.nip05,
+          nip05Valid: existing.nip05Valid,
+          createdAt: existing.createdAt,
+          followers: existing.followers + 1,
+          following: existing.following,
+          isFollowing: true,
+          wotStatus: existing.wotStatus,
+        );
+      }
+      clearLastError();
+      notifyDeferred();
+      return res;
     } catch (e) {
       setLastError(e);
       notifyDeferred();
@@ -750,6 +776,28 @@ class IdentityService extends ChangeNotifier
       final ok = RustLib.instance.api.crateFfiIdentityIdentityUnfollowUser(
         pubkey: targetPubkey,
       );
+      if (ok) {
+        final existing = _profiles[targetPubkey];
+        if (existing != null) {
+          _profiles[targetPubkey] = ProfileInfo(
+            pubkey: existing.pubkey,
+            name: existing.name,
+            displayName: existing.displayName,
+            picture: existing.picture,
+            banner: existing.banner,
+            about: existing.about,
+            nip05: existing.nip05,
+            nip05Valid: existing.nip05Valid,
+            createdAt: existing.createdAt,
+            followers: (existing.followers - 1).clamp(0, 1 << 30),
+            following: existing.following,
+            isFollowing: false,
+            wotStatus: existing.wotStatus,
+          );
+        }
+      }
+      clearLastError();
+      notifyDeferred();
       return ok ? 'unfollowed' : 'not followed';
     } catch (e) {
       setLastError(e);

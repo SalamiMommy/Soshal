@@ -98,14 +98,6 @@ fn p_tags(event: &Event) -> Vec<String> {
         .collect()
 }
 
-fn first_p_tag(event: &Event) -> Option<&str> {
-    event
-        .tags
-        .iter()
-        .find(|t| t.kind() == "p")
-        .and_then(|t| t.content())
-}
-
 fn r_tags(event: &Event) -> Vec<String> {
     event
         .tags
@@ -197,7 +189,7 @@ fn post_row(event: &Event) -> Option<PostRow> {
         tags_json.push(vec);
     }
     let reply_to = if event.kind == Kind::TextNote || event.kind == Kind::ZapRequest {
-        marked_reply.or(last_e)
+        marked_reply.or(last_e).or_else(|| marked_root.clone())
     } else {
         None
     };
@@ -351,6 +343,25 @@ fn user_row(event: &Event) -> Option<UserRow> {
         relay_list: String::new(),
         follower_count: 0,
     })
+}
+
+/// Extract bolt11 invoice from a zap receipt: check "bolt11" tag first (per NIP-57),
+/// falling back to event content.
+fn bolt11_from_event(event: &Event) -> Option<&str> {
+    event
+        .tags
+        .iter()
+        .find(|t| t.as_slice().first().map(|s| s == "bolt11").unwrap_or(false))
+        .and_then(|t| t.as_slice().get(1).map(|s| s.as_str()))
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            let c = event.content.trim();
+            if c.starts_with("lnbc") || c.starts_with("LNBC") {
+                Some(c)
+            } else {
+                None
+            }
+        })
 }
 
 /// Read the persisted watermark for `key` (0 when absent).
@@ -525,14 +536,14 @@ async fn handle_impl(
             }
         }
         Kind::ZapReceipt => {
-            let Some(recipient) = first_p_tag(event) else {
-                return Ok(());
-            };
-            if !recipient.eq_ignore_ascii_case(my_pubkey) {
+            if !has_p_tag(event, my_pubkey) {
                 return Ok(());
             }
-            let recipient = recipient.to_string();
-            let Ok(amount_msats) = soshal_zap_core::parse_msats_from_bolt11(&event.content) else {
+            let recipient = my_pubkey.to_string();
+            let Some(bolt11) = bolt11_from_event(event) else {
+                return Ok(());
+            };
+            let Ok(amount_msats) = soshal_zap_core::parse_msats_from_bolt11(bolt11) else {
                 return Ok(());
             };
             if amount_msats == 0 {
@@ -541,14 +552,14 @@ async fn handle_impl(
             // Checksum-forged invoice strings (invalid bech32) are rejected:
             // a real Lightning invoice always carries a valid checksum, so a
             // receipt whose bolt11 fails decode is not a genuine zap.
-            if !soshal_zap_core::bolt11_checksum_valid(&event.content) {
+            if !soshal_zap_core::bolt11_checksum_valid(bolt11) {
                 return Ok(());
             }
             // NIP-57 binding: only trust receipts whose invoice description
             // hash matches a verified zap-request addressed to us for the
             // same note at the same amount. Without this, any relay user can
             // forge 9735s and inflate zap totals without paying a sat.
-            let Some(desc_hash) = soshal_zap_core::bolt11_description_hash(&event.content) else {
+            let Some(desc_hash) = soshal_zap_core::bolt11_description_hash(bolt11) else {
                 return Ok(());
             };
             let Some(zapped_event) = first_e_tag(event) else {
@@ -620,22 +631,31 @@ async fn handle_impl(
             }
         }
         Kind::Bookmarks => {
-            let Some(event_id) = first_e_tag(event) else {
+            let e_ids = e_tags(event);
+            if e_ids.is_empty() {
                 return Ok(());
-            };
-            let event_id = event_id.to_string();
+            }
             ensure_author_user(db, t, event).await?;
-            BookmarkRepo::new(db)
-                .upsert_in(
+            let pubkey = event.pubkey.to_hex();
+            let created_at = sanitize_ts(event.created_at.as_secs());
+            let repo = BookmarkRepo::new(db);
+            for (idx, event_id) in e_ids.into_iter().enumerate() {
+                let id = if idx == 0 {
+                    event.id.to_hex()
+                } else {
+                    format!("{}:{event_id}", event.id.to_hex())
+                };
+                repo.upsert_in(
                     t,
                     &BookmarkRow {
-                        id: event.id.to_hex(),
-                        pubkey: event.pubkey.to_hex(),
+                        id,
+                        pubkey: pubkey.clone(),
                         event_id,
-                        created_at: sanitize_ts(event.created_at.as_secs()),
+                        created_at,
                     },
                 )
                 .await?;
+            }
         }
         Kind::Reaction => {
             let Some(target) = first_e_tag(event) else {
@@ -686,8 +706,10 @@ async fn handle_impl(
                 PostRepo::new(db).upsert_in(t, &row).await?;
                 let author = event.pubkey.to_hex();
                 let created_at = sanitize_ts(event.created_at.as_secs());
+                let mut seen_tags = std::collections::HashSet::new();
                 for tag in soshal_content_core::hashtag::extract(&event.content)
                     .into_iter()
+                    .filter(|t| seen_tags.insert(t.to_ascii_lowercase()))
                     .take(MAX_TAGS)
                 {
                     HashtagRepo::new(db)
@@ -815,6 +837,34 @@ pub fn handle_batch(
                             match ensure_res {
                                 Ok(()) => {
                                     seen_authors.insert(pk_hex);
+                                    if event.kind == Kind::TextNote {
+                                        let author = event.pubkey.to_hex();
+                                        let created_at = sanitize_ts(event.created_at.as_secs());
+                                        let mut seen_tags = std::collections::HashSet::new();
+                                        for tag in
+                                            soshal_content_core::hashtag::extract(&event.content)
+                                                .into_iter()
+                                                .filter(|t| {
+                                                    seen_tags.insert(t.to_ascii_lowercase())
+                                                })
+                                                .take(MAX_TAGS)
+                                        {
+                                            if let Err(e) = HashtagRepo::new(db)
+                                                .upsert_in(
+                                                    &t,
+                                                    &HashtagRow {
+                                                        tag,
+                                                        pubkey: author.clone(),
+                                                        last_used_at: created_at,
+                                                        count: 1,
+                                                    },
+                                                )
+                                                .await
+                                            {
+                                                eprintln!("sync engine: hashtag upsert: {e}");
+                                            }
+                                        }
+                                    }
                                     rows.push(row);
                                     ok_pos.push(pos);
                                 }
@@ -1274,19 +1324,25 @@ mod tests {
             .unwrap()
             .is_none());
 
-        // Bookmarks with e-tag: row persisted.
+        // Bookmarks with e-tags: rows persisted with deterministic ID format.
         let bm = signed_event_with_tags(
             &keys,
             Kind::Bookmarks,
             "",
-            vec![vec!["e".to_string(), "evt-9".to_string()]],
+            vec![
+                vec!["e".to_string(), "evt-9".to_string()],
+                vec!["e".to_string(), "evt-10".to_string()],
+            ],
         );
         handle(&db, "", &bm, &tx).unwrap();
-        let row = BookmarkRepo::new(&db)
-            .get_by_id(&bm.id.to_hex())
+        let repo = BookmarkRepo::new(&db);
+        let row9 = repo.get_by_id(&bm.id.to_hex()).unwrap().unwrap();
+        assert_eq!(row9.event_id, "evt-9");
+        let row10 = repo
+            .get_by_id(&format!("{}:evt-10", bm.id.to_hex()))
             .unwrap()
             .unwrap();
-        assert_eq!(row.event_id, "evt-9");
+        assert_eq!(row10.event_id, "evt-10");
     }
 
     #[test]
@@ -1525,5 +1581,104 @@ mod tests {
             Some("alice"),
             "an older metadata replay must not regress the stored profile"
         );
+    }
+
+    #[test]
+    fn direct_reply_marked_root_populates_reply_to() {
+        let keys = Keys::generate();
+        let root = "root_event_123";
+        let direct_reply = signed_event_with_tags(
+            &keys,
+            Kind::TextNote,
+            "direct reply",
+            vec![vec![
+                "e".to_string(),
+                root.to_string(),
+                "".to_string(),
+                "root".to_string(),
+            ]],
+        );
+        let prow = post_row(&direct_reply).unwrap();
+        assert_eq!(
+            prow.root_id.as_deref(),
+            Some(root),
+            "root_id should be populated from marked root"
+        );
+        assert_eq!(
+            prow.reply_to.as_deref(),
+            Some(root),
+            "reply_to should fall back to root for direct reply"
+        );
+    }
+
+    #[test]
+    fn batch_text_notes_indexes_hashtags() {
+        let db = soshal_test_util::test_db();
+        let keys = Keys::generate();
+        let my = keys.public_key().to_hex();
+        let (tx, _rx) = channel();
+
+        let post = soshal_test_util::signed_event(
+            &keys,
+            Kind::TextNote,
+            "Check out #soshal and #rust rocks! #soshal",
+            100,
+        );
+        handle_batch(&db, &my, &[post], &tx).unwrap();
+
+        let repo = HashtagRepo::new(&db);
+        let trending = repo.get_trending(10).unwrap();
+        assert_eq!(trending.len(), 2);
+        let tags: Vec<&str> = trending.iter().map(|h| h.tag.as_str()).collect();
+        assert!(tags.contains(&"soshal"));
+        assert!(tags.contains(&"rust"));
+        // Deduplicated per post: count is 1 for soshal despite being repeated
+        let soshal_h = trending.iter().find(|h| h.tag == "soshal").unwrap();
+        assert_eq!(soshal_h.count, 1);
+    }
+
+    #[test]
+    fn zap_receipt_with_bolt11_tag_ingested() {
+        let db = soshal_test_util::test_db();
+        let keys = Keys::generate();
+        let my = keys.public_key().to_hex();
+        let (tx, _rx) = channel();
+
+        let request = signed_event_with_tags(
+            &keys,
+            Kind::ZapRequest,
+            "",
+            vec![
+                vec!["p".to_string(), my.clone()],
+                vec!["e".to_string(), "note99".to_string()],
+                vec!["amount".to_string(), "1000".to_string()],
+            ],
+        );
+        handle(&db, &my, &request, &tx).unwrap();
+
+        let canonical = zap_request_canonical_json(&post_row(&request).unwrap());
+        let hash: [u8; 32] = Sha256::digest(canonical.as_bytes()).into();
+        let invoice = test_invoice_with_description_hash(&hash);
+
+        // Standard NIP-57: bolt11 invoice in tag, content is a message
+        let receipt = signed_event_with_tags(
+            &keys,
+            Kind::ZapReceipt,
+            "Thanks for the post!",
+            vec![
+                vec!["p".to_string(), my.clone()],
+                vec!["e".to_string(), "note99".to_string()],
+                vec!["bolt11".to_string(), invoice],
+            ],
+        );
+        handle(&db, &my, &receipt, &tx).unwrap();
+
+        let zap_count: i64 =
+            query_first(&db.conn().unwrap(), "SELECT COUNT(*) FROM zaps", (), |r| {
+                r.get(0)
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(zap_count, 1, "zap with bolt11 tag should be persisted");
     }
 }

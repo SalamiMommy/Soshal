@@ -15,17 +15,29 @@ impl<'a> ReactionRepo<'a> {
     ) -> Result<(), crate::error::DbError> {
         let norm_eid = row.event_id.trim();
         let norm_pk = row.pubkey.trim();
-        if row.content.as_deref() == Some("-") {
-            tx.execute(
-                "DELETE FROM reactions WHERE LOWER(event_id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
-                params![norm_eid, norm_pk],
-            )
-            .await?;
-            return Ok(());
+        let existing: Option<i64> = crate::query::query_first_async(
+            tx,
+            "SELECT created_at FROM reactions WHERE LOWER(event_id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
+            params![norm_eid, norm_pk],
+            |r| r.get::<i64>(0),
+        )
+        .await?;
+        if let Some(existing_ts) = existing {
+            if existing_ts > row.created_at {
+                return Ok(());
+            }
         }
         tx.execute(
             "DELETE FROM reactions WHERE LOWER(event_id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
             params![norm_eid, norm_pk],
+        )
+        .await?;
+        if row.content.as_deref() == Some("-") {
+            return Ok(());
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
+            params![norm_pk],
         )
         .await?;
         tx.execute(

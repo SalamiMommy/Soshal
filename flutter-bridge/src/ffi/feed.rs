@@ -254,6 +254,10 @@ struct SignedEventHeader<'a> {
     id: &'a str,
     pubkey: &'a str,
     content: &'a str,
+    #[serde(default)]
+    created_at: Option<i64>,
+    #[serde(default)]
+    sig: Option<&'a str>,
 }
 
 #[derive(serde::Serialize)]
@@ -278,7 +282,7 @@ pub async fn feed_publish_text_note(content: String, tags_json: String) -> Resul
     }
     let tags: Vec<Vec<String>> =
         serde_json::from_str(&tags_json).map_err(|e| format!("invalid tags JSON: {e}"))?;
-    let builder = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, content).tags(
+    let builder = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, &content).tags(
         tags.into_iter()
             .filter_map(|t| nostr::event::Tag::parse(t).ok()),
     );
@@ -292,6 +296,49 @@ pub async fn feed_publish_text_note(content: String, tags_json: String) -> Resul
         }]) {
             let _ = super::search::search_index_posts(rows);
         }
+        let created_at = signed
+            .created_at
+            .unwrap_or_else(soshal_common_core::format::now_secs);
+        let _ = super::db::with_db_result(|db| {
+            let _ = soshal_db_core::repos::user::UserRepo::new(db).ensure_exists(signed.pubkey);
+            let row = soshal_db_core::repos::post::PostRow {
+                id: signed.id.to_string(),
+                pubkey: signed.pubkey.to_string(),
+                content: signed.content.to_string(),
+                kind: 1,
+                created_at,
+                tags_json: tags_json.clone(),
+                sig: signed.sig.map(|s| s.to_string()),
+                reply_to: None,
+                root_id: None,
+                mentioned_pubkeys: String::new(),
+                mentioned_hashtags: String::new(),
+                subject: None,
+                sync_status: "synced".to_string(),
+                is_deleted: false,
+                scheduled_at: None,
+                freenet_key: None,
+                is_freenet_native: false,
+                rsvp_event_id: None,
+            };
+            PostRepo::new(db).upsert(&row)?;
+            let mut seen_tags = std::collections::HashSet::new();
+            for tag in soshal_content_core::hashtag::extract(&content)
+                .into_iter()
+                .filter(|t| seen_tags.insert(t.to_ascii_lowercase()))
+                .take(soshal_common_core::consts::MAX_TAGS)
+            {
+                let _ = soshal_db_core::repos::hashtag::HashtagRepo::new(db).upsert(
+                    &soshal_db_core::repos::hashtag::HashtagRow {
+                        tag,
+                        pubkey: signed.pubkey.to_string(),
+                        last_used_at: created_at,
+                        count: 1,
+                    },
+                );
+            }
+            Ok(())
+        });
     }
     super::sync::publish_or_enqueue("post", &signed_json).await?;
     Ok(signed_json).into()
@@ -371,6 +418,34 @@ pub async fn feed_publish_reply(
         }]) {
             let _ = super::search::search_index_posts(rows);
         }
+        let created_at = signed
+            .created_at
+            .unwrap_or_else(soshal_common_core::format::now_secs);
+        let _ = super::db::with_db_result(|db| {
+            let _ = soshal_db_core::repos::user::UserRepo::new(db).ensure_exists(signed.pubkey);
+            let row = soshal_db_core::repos::post::PostRow {
+                id: signed.id.to_string(),
+                pubkey: signed.pubkey.to_string(),
+                content: signed.content.to_string(),
+                kind: 1,
+                created_at,
+                tags_json: "[]".to_string(),
+                sig: signed.sig.map(|s| s.to_string()),
+                reply_to: Some(reply_to_event_id.clone()),
+                root_id: Some(root_event_id.clone()),
+                mentioned_pubkeys: String::new(),
+                mentioned_hashtags: String::new(),
+                subject: None,
+                sync_status: "synced".to_string(),
+                is_deleted: false,
+                scheduled_at: None,
+                freenet_key: None,
+                is_freenet_native: false,
+                rsvp_event_id: None,
+            };
+            PostRepo::new(db).upsert(&row)?;
+            Ok(())
+        });
     }
     super::sync::publish_or_enqueue("reply", &signed_json).await?;
     Ok(signed_json).into()
@@ -391,7 +466,8 @@ pub async fn feed_create_reaction(
     if reaction_type.is_empty() || reaction_type.len() > 200 {
         return Err("reaction_type must be 1–200 bytes".to_string()).into();
     }
-    let mut builder = nostr::event::EventBuilder::new(nostr::event::Kind::Reaction, reaction_type);
+    let mut builder =
+        nostr::event::EventBuilder::new(nostr::event::Kind::Reaction, reaction_type.clone());
     if let Ok(tag) = nostr::event::Tag::parse(vec!["e".to_string(), event_id.clone()]) {
         builder = builder.tag(tag);
     }
@@ -411,6 +487,24 @@ pub async fn feed_create_reaction(
         }
     }
     let signed_json = super::signer::sign_builder(builder)?;
+    if let Ok(signed) = serde_json::from_str::<SignedEventHeader>(&signed_json) {
+        let created_at = signed
+            .created_at
+            .unwrap_or_else(soshal_common_core::format::now_secs);
+        let _ = super::db::with_db_result(|db| {
+            let _ = soshal_db_core::repos::user::UserRepo::new(db).ensure_exists(signed.pubkey);
+            let row = soshal_db_core::repos::reaction::ReactionRow {
+                id: signed.id.to_string(),
+                pubkey: signed.pubkey.to_string(),
+                event_id: event_id.clone(),
+                kind: 7,
+                content: Some(reaction_type.clone()),
+                created_at,
+            };
+            soshal_db_core::repos::reaction::ReactionRepo::new(db).upsert(&row)?;
+            Ok(())
+        });
+    }
     super::sync::publish_or_enqueue("reaction", &signed_json).await?;
     Ok(signed_json).into()
 }

@@ -71,7 +71,7 @@ impl<'a> SearchIndexRepo<'a> {
         let fts_query = build_fts_query(query);
         crate::query::query(
             &conn,
-            "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at FROM posts_fts f JOIN posts p ON f.rowid = p.rowid WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 ORDER BY rank LIMIT ?2 OFFSET ?3",
+            "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at FROM posts_fts f JOIN posts p ON f.rowid = p.rowid WHERE p.is_deleted = 0 AND p.scheduled_at IS NULL AND posts_fts MATCH ?1 ORDER BY rank LIMIT ?2 OFFSET ?3",
             params![fts_query, limit, offset],
             Self::map_row,
         )

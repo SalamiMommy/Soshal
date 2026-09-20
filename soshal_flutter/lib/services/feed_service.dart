@@ -329,10 +329,38 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     String signerPubkey,
   ) async {
     try {
-      return await RustLib.instance.api.crateFfiFeedFeedCreateReaction(
+      final res = await RustLib.instance.api.crateFfiFeedFeedCreateReaction(
         eventId: eventId,
         reactionType: reactionType,
       );
+      final delta = reactionType == '+' ? 1 : reactionType == '-' ? -1 : 0;
+      final index = _posts.indexWhere((p) => p.eventId == eventId);
+      if (index >= 0) {
+        final p = _posts[index];
+        final updated = FeedPost(
+          eventId: p.eventId,
+          pubkey: p.pubkey,
+          content: p.content,
+          createdAt: p.createdAt,
+          reactions: (p.reactions + delta) < 0 ? 0 : p.reactions + delta,
+          replies: p.replies,
+          reposts: reactionType == 'repost' ? p.reposts + 1 : p.reposts,
+          liked: reactionType == '+'
+              ? true
+              : reactionType == '-'
+                  ? false
+                  : p.liked,
+          profileName: p.profileName,
+          profilePicture: p.profilePicture,
+          media: p.media,
+        );
+        _posts[index] = updated;
+        final ri = _rankedPosts.indexWhere((q) => q.eventId == eventId);
+        if (ri >= 0) _rankedPosts[ri] = updated;
+      }
+      clearLastError();
+      notifyDeferred();
+      return res;
     } catch (e, st) {
       setLastError(e, st);
       notifyDeferred();
