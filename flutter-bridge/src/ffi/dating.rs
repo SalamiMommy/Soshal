@@ -446,20 +446,21 @@ fn fetch_profiles_internal(
             return Ok(Vec::new());
         }
         if a.len() == 1 {
-            audience_clause = " AND p.pubkey = ?2".to_string();
+            audience_clause = " AND LOWER(p.pubkey) = LOWER(?2)".to_string();
             params.push(a[0].clone());
         } else {
-            audience_clause = " AND p.pubkey IN (SELECT value FROM json_each(?2))".to_string();
+            audience_clause =
+                " AND LOWER(p.pubkey) IN (SELECT LOWER(value) FROM json_each(?2))".to_string();
             params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
         }
     }
     let rows = super::db::db_query_json(
         &profile_rows_sql(
             &format!(
-                "AND p.pubkey != ?1 AND p.id NOT IN \
-                 (SELECT event_id FROM reactions WHERE pubkey = ?1) \
-                 AND p.pubkey NOT IN (SELECT pubkey FROM dating_unmatches WHERE actor_pubkey = ?1) \
-                 AND p.pubkey NOT IN (SELECT blocked_pubkey FROM blocks WHERE pubkey = ?1){audience_clause}",
+                "AND LOWER(p.pubkey) != LOWER(?1) AND p.id NOT IN \
+                 (SELECT event_id FROM reactions WHERE LOWER(pubkey) = LOWER(?1)) \
+                 AND LOWER(p.pubkey) NOT IN (SELECT LOWER(pubkey) FROM dating_unmatches WHERE LOWER(actor_pubkey) = LOWER(?1) UNION SELECT LOWER(actor_pubkey) FROM dating_unmatches WHERE LOWER(pubkey) = LOWER(?1)) \
+                 AND LOWER(p.pubkey) NOT IN (SELECT LOWER(blocked_pubkey) FROM blocks WHERE LOWER(pubkey) = LOWER(?1) UNION SELECT LOWER(pubkey) FROM blocks WHERE LOWER(blocked_pubkey) = LOWER(?1)){audience_clause}",
             ),
             limit,
         ),
@@ -902,6 +903,8 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
             "SELECT r.event_id, r.pubkey FROM reactions r \
              WHERE r.content = '+' AND r.event_id IN \
              (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND LOWER(pubkey) = ?1 AND is_deleted = 0) \
+             AND LOWER(r.pubkey) NOT IN (SELECT LOWER(pubkey) FROM dating_unmatches WHERE LOWER(actor_pubkey) = ?1 UNION SELECT LOWER(actor_pubkey) FROM dating_unmatches WHERE LOWER(pubkey) = ?1) \
+             AND LOWER(r.pubkey) NOT IN (SELECT LOWER(blocked_pubkey) FROM blocks WHERE LOWER(pubkey) = ?1 UNION SELECT LOWER(pubkey) FROM blocks WHERE LOWER(blocked_pubkey) = ?1) \
              ORDER BY r.created_at DESC LIMIT 200"
         ),
         &[norm_user_pk.clone()],
@@ -941,6 +944,8 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
              WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND LOWER(r.pubkey) = ?1 \
              AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND LOWER(r2.pubkey) = LOWER(p.pubkey) \
                          AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND LOWER(pubkey) = ?1)) \
+             AND LOWER(p.pubkey) NOT IN (SELECT LOWER(pubkey) FROM dating_unmatches WHERE LOWER(actor_pubkey) = ?1 UNION SELECT LOWER(actor_pubkey) FROM dating_unmatches WHERE LOWER(pubkey) = ?1) \
+             AND LOWER(p.pubkey) NOT IN (SELECT LOWER(blocked_pubkey) FROM blocks WHERE LOWER(pubkey) = ?1 UNION SELECT LOWER(pubkey) FROM blocks WHERE LOWER(blocked_pubkey) = ?1) \
              ORDER BY r.created_at DESC LIMIT 100"
         ),
         &[norm_user_pk.clone()],
@@ -976,14 +981,15 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
 #[frb(sync, serialize)]
 pub fn dating_unmatch(user_pubkey: String, profile_id: String) -> Result<bool, String> {
     super::signer::require_identity(&user_pubkey)?;
-    if profile_id.trim().is_empty() || profile_id.len() > 128 {
-        return Err("invalid profile_id".to_string()).into();
+    let norm_profile_id = profile_id.trim().to_ascii_lowercase();
+    if norm_profile_id.is_empty() || norm_profile_id.len() > 128 {
+        return Err("invalid profile_id".to_string());
     }
     let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
     super::db::with_db_result(|db| {
         soshal_db_core::repos::dating_unmatch::DatingUnmatchRepo::new(db).upsert(
             &norm_user_pk,
-            &profile_id,
+            &norm_profile_id,
             soshal_common_core::format::now_secs(),
         )?;
         Ok(true)

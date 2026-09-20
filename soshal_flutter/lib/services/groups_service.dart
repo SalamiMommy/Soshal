@@ -478,11 +478,29 @@ class GroupsService extends ChangeNotifier
 
   Future<bool> setThreadPinned(String threadId, bool pinned, String actor) =>
       guard(() {
-        return RustLib.instance.api.crateFfiGroupsGroupsThreadsPin(
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsThreadsPin(
           threadId: threadId,
           pinned: pinned,
           actor: actor,
         );
+        if (ok) {
+          final idx = _threads.indexWhere((t) => t.id == threadId);
+          if (idx != -1) {
+            final old = _threads[idx];
+            _threads[idx] = GroupThread(
+              id: old.id,
+              groupId: old.groupId,
+              title: old.title,
+              body: old.body,
+              author: old.author,
+              createdAt: old.createdAt,
+              isPinned: pinned,
+              replyCount: old.replyCount,
+              reactionCount: old.reactionCount,
+            );
+          }
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<String> replyToThread(
@@ -551,17 +569,33 @@ class GroupsService extends ChangeNotifier
       }, onNotify: notifyDeferred);
 
   Future<bool> voiceJoin(String channelId, String pubkey) => guard(() {
-        return RustLib.instance.api.crateFfiGroupsGroupsVoiceJoin(
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsVoiceJoin(
           channelId: channelId,
           pubkey: pubkey,
         );
+        if (ok) {
+          if (!_presence
+              .any((p) => p.channelId == channelId && p.pubkey == pubkey)) {
+            _presence.add(GroupVoicePresence(
+              channelId: channelId,
+              pubkey: pubkey,
+              joinedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            ));
+          }
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<bool> voiceLeave(String channelId, String pubkey) => guard(() {
-        return RustLib.instance.api.crateFfiGroupsGroupsVoiceLeave(
+        final ok = RustLib.instance.api.crateFfiGroupsGroupsVoiceLeave(
           channelId: channelId,
           pubkey: pubkey,
         );
+        if (ok) {
+          _presence.removeWhere(
+              (p) => p.channelId == channelId && p.pubkey == pubkey);
+        }
+        return ok;
       }, onNotify: notifyDeferred);
 
   Future<List<GroupVoicePresence>> fetchPresence(String channelId) => guard(() {

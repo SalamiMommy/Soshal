@@ -213,10 +213,24 @@ pub fn groups_join(
                 ));
             }
         }
+        let existing_role = repo.get_members(&group_id).ok().and_then(|members| {
+            members
+                .into_iter()
+                .find(|m| m.pubkey.trim().eq_ignore_ascii_case(user_pubkey.trim()))
+                .map(|m| m.role)
+        });
+        if existing_role.is_some() {
+            return Ok(true);
+        }
+        let role = if group.pubkey.trim().eq_ignore_ascii_case(user_pubkey.trim()) {
+            "owner"
+        } else {
+            "member"
+        };
         repo.add_member(
             &group_id,
             &user_pubkey,
-            "member",
+            role,
             soshal_common_core::format::now_secs(),
         )?;
         Ok(true)
@@ -228,7 +242,15 @@ pub fn groups_join(
 pub fn groups_leave(group_id: String, user_pubkey: String) -> Result<bool, String> {
     super::signer::require_identity(&user_pubkey)?;
     super::db::with_db_result(|db| {
-        GroupRepo::new(db).remove_member(&group_id, &user_pubkey)?;
+        let repo = GroupRepo::new(db);
+        if let Some(group) = repo.get_by_id(&group_id)? {
+            if group.pubkey.trim().eq_ignore_ascii_case(user_pubkey.trim()) {
+                return Err(soshal_db_core::error::DbError::Oversized(
+                    "group owner cannot leave the group".to_string(),
+                ));
+            }
+        }
+        repo.remove_member(&group_id, &user_pubkey)?;
         Ok(true)
     })
 }

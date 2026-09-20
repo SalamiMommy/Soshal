@@ -70,7 +70,7 @@ pub fn open_at_rest(key: &[u8; 32], sealed_hex: &str) -> Result<Vec<u8>, String>
 
 /// Opens a binary blob produced by [`seal_at_rest_bin`].
 pub fn open_at_rest_bin(key: &[u8; 32], blob: &[u8]) -> Result<Vec<u8>, String> {
-    if blob.len() <= NONCE_LEN {
+    if blob.len() < NONCE_LEN + AES_256_GCM.tag_len() {
         return Err("sealed blob too short".into());
     }
     let (nonce_bytes, body) = blob.split_at(NONCE_LEN);

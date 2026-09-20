@@ -16,6 +16,7 @@ use chacha20poly1305::{ChaCha20Poly1305, Key as P1305Key, Nonce as P1305Nonce};
 
 use crate::hash;
 use soshal_common_core::util::constant_time_eq;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 const NIP44_INFO: &[u8] = b"nip44-v2";
 const DERIVED_LEN: usize = 76;
@@ -149,14 +150,17 @@ pub fn unpad_in_place(mut padded: Vec<u8>) -> Result<Vec<u8>, &'static str> {
     Ok(padded)
 }
 
+type DerivedKeys = (
+    Zeroizing<[u8; KEY_LEN]>,
+    Zeroizing<[u8; NONCE_LEN]>,
+    Zeroizing<[u8; KEY_LEN]>,
+);
+
 /// NIP-44 v2 spec derivation. The conversation key is the HKDF extract step
 /// `ck = HMAC-SHA256("nip44-v2", key)`; message keys are the expand step
 /// `T(i) = HMAC-SHA256(ck, T(i-1) ‖ nonce ‖ i)`, truncated to 76 bytes
 /// (T1 ‖ T2 ‖ T3, mapped to enc-key 32 ‖ chacha nonce 12 ‖ auth-key 32).
-fn spec_derive_keys(
-    ck: &[u8; KEY_LEN],
-    nonce: &[u8; SALT_LEN],
-) -> ([u8; KEY_LEN], [u8; NONCE_LEN], [u8; KEY_LEN]) {
+fn spec_derive_keys(ck: &[u8; KEY_LEN], nonce: &[u8; SALT_LEN]) -> DerivedKeys {
     let mut t1_input = [0u8; SALT_LEN + 1];
     t1_input[..SALT_LEN].copy_from_slice(nonce);
     t1_input[SALT_LEN] = 1;
@@ -187,12 +191,15 @@ fn spec_derive_keys(
     t1.zeroize();
     t2.zeroize();
     t3.zeroize();
-    (enc_key, chacha_nonce, auth_key)
+    (
+        Zeroizing::new(enc_key),
+        Zeroizing::new(chacha_nonce),
+        Zeroizing::new(auth_key),
+    )
 }
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::RwLock;
-use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// A 32-byte key that is always scrubbed on drop.  Used as both the HashMap
 /// lookup key and the stored conversation key so that eviction automatically
@@ -267,7 +274,7 @@ pub fn encrypt(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<String, &'static
     let mut nonce = [0u8; SALT_LEN];
     getrandom::fill(&mut nonce).map_err(|_| "rng failed")?;
     let ck = derive_conversation_key(key);
-    let (mut enc_key_bytes, mut nonce12, mut auth_key_bytes) = spec_derive_keys(&ck, &nonce);
+    let (enc_key_bytes, nonce12, auth_key_bytes) = spec_derive_keys(&ck, &nonce);
 
     let padded_len = calc_padding(plaintext.len());
     let mut payload = Vec::with_capacity(VERSION_LEN + SALT_LEN + prefix_len + padded_len + 32);
@@ -282,16 +289,16 @@ pub fn encrypt(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<String, &'static
     // ChaCha20 stream cipher in-place over the padded plaintext slice.
     use chacha20::cipher::{KeyIvInit, StreamCipher as _};
     let mut cipher = chacha20::ChaCha20::new(
-        chacha20::Key::from_slice(&enc_key_bytes),
-        chacha20::Nonce::from_slice(&nonce12),
+        chacha20::Key::from_slice(&enc_key_bytes[..]),
+        chacha20::Nonce::from_slice(&nonce12[..]),
     );
     cipher.apply_keystream(&mut payload[cipher_start..]);
-    enc_key_bytes.zeroize();
-    nonce12.zeroize();
+    drop(enc_key_bytes);
+    drop(nonce12);
 
     // HMAC-SHA256 over nonce ‖ ciphertext (constant-time on verify).
-    let mac = hash::hmac_sha256_slices(&auth_key_bytes, &[&nonce, &payload[cipher_start..]]);
-    auth_key_bytes.zeroize();
+    let mac = hash::hmac_sha256_slices(&auth_key_bytes[..], &[&nonce, &payload[cipher_start..]]);
+    drop(auth_key_bytes);
 
     payload.extend_from_slice(&mac);
     Ok(general_purpose::STANDARD.encode(&payload))
@@ -366,11 +373,11 @@ fn decrypt_spec(mut decoded: Vec<u8>, key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'
                 return Err("bad nonce");
             }
         };
-        let (enc_key_bytes, nonce12, mut auth_key_bytes) = spec_derive_keys(&ck, &nonce_arr);
+        let (enc_key_bytes, nonce12, auth_key_bytes) = spec_derive_keys(&ck, &nonce_arr);
 
         // Constant-time authenticator check before any keystream work.
-        let expected = hash::hmac_sha256_slices(&auth_key_bytes, &[nonce, buffer]);
-        auth_key_bytes.zeroize();
+        let expected = hash::hmac_sha256_slices(&auth_key_bytes[..], &[nonce, buffer]);
+        drop(auth_key_bytes);
         if expected.len() != mac.len() || !constant_time_eq(&expected, mac) {
             decoded.zeroize();
             return Err("decrypt failed");
@@ -384,10 +391,12 @@ fn decrypt_spec(mut decoded: Vec<u8>, key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'
 
     use chacha20::cipher::{KeyIvInit, StreamCipher as _};
     let mut cipher = chacha20::ChaCha20::new(
-        chacha20::Key::from_slice(&enc_key_bytes),
-        chacha20::Nonce::from_slice(&nonce12),
+        chacha20::Key::from_slice(&enc_key_bytes[..]),
+        chacha20::Nonce::from_slice(&nonce12[..]),
     );
     cipher.apply_keystream(&mut decoded[buffer_range]);
+    drop(enc_key_bytes);
+    drop(nonce12);
 
     // Truncate the 32-byte HMAC from the end
     decoded.truncate(payload_len - 32);
@@ -411,20 +420,20 @@ pub fn encrypt_padded(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, 
     let (enc_key_slice, rest) = derived.split_at(KEY_LEN);
     let (auth_key_slice, nonce_slice) = rest.split_at(KEY_LEN);
 
-    let mut enc_key_bytes = [0u8; KEY_LEN];
-    let mut auth_key_bytes = [0u8; KEY_LEN];
-    let mut nonce_bytes = [0u8; NONCE_LEN];
+    let mut enc_key_bytes = Zeroizing::new([0u8; KEY_LEN]);
+    let mut auth_key_bytes = Zeroizing::new([0u8; KEY_LEN]);
+    let mut nonce_bytes = Zeroizing::new([0u8; NONCE_LEN]);
     enc_key_bytes.copy_from_slice(enc_key_slice);
     auth_key_bytes.copy_from_slice(auth_key_slice);
     nonce_bytes.copy_from_slice(nonce_slice);
 
     derived.zeroize();
 
-    let enc_key = P1305Key::from_slice(&enc_key_bytes);
-    let nonce = P1305Nonce::from_slice(&nonce_bytes);
+    let enc_key = P1305Key::from_slice(&enc_key_bytes[..]);
+    let nonce = P1305Nonce::from_slice(&nonce_bytes[..]);
     let mut aad = [0u8; 40];
     aad[..8].copy_from_slice(NIP44_INFO);
-    aad[8..].copy_from_slice(&auth_key_bytes);
+    aad[8..].copy_from_slice(&auth_key_bytes[..]);
 
     let cipher = ChaCha20Poly1305::new(enc_key);
     let payload = Payload {
@@ -435,9 +444,9 @@ pub fn encrypt_padded(plaintext: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, 
         .encrypt(nonce, payload)
         .map_err(|_| "encrypt failed")?;
 
-    enc_key_bytes.zeroize();
-    auth_key_bytes.zeroize();
-    nonce_bytes.zeroize();
+    drop(enc_key_bytes);
+    drop(auth_key_bytes);
+    drop(nonce_bytes);
 
     let mut output = salt.to_vec();
     output.push(VERSION_LEGACY);
@@ -463,20 +472,20 @@ fn decrypt_legacy(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'stat
     let (enc_key_slice, rest) = derived.split_at(KEY_LEN);
     let (auth_key_slice, nonce_slice) = rest.split_at(KEY_LEN);
 
-    let mut enc_key_bytes = [0u8; KEY_LEN];
-    let mut auth_key_bytes = [0u8; KEY_LEN];
-    let mut nonce_bytes = [0u8; NONCE_LEN];
+    let mut enc_key_bytes = Zeroizing::new([0u8; KEY_LEN]);
+    let mut auth_key_bytes = Zeroizing::new([0u8; KEY_LEN]);
+    let mut nonce_bytes = Zeroizing::new([0u8; NONCE_LEN]);
     enc_key_bytes.copy_from_slice(enc_key_slice);
     auth_key_bytes.copy_from_slice(auth_key_slice);
     nonce_bytes.copy_from_slice(nonce_slice);
 
     derived.zeroize();
 
-    let enc_key = P1305Key::from_slice(&enc_key_bytes);
-    let nonce = P1305Nonce::from_slice(&nonce_bytes);
+    let enc_key = P1305Key::from_slice(&enc_key_bytes[..]);
+    let nonce = P1305Nonce::from_slice(&nonce_bytes[..]);
     let mut aad = [0u8; 40];
     aad[..8].copy_from_slice(NIP44_INFO);
-    aad[8..].copy_from_slice(&auth_key_bytes);
+    aad[8..].copy_from_slice(&auth_key_bytes[..]);
 
     let cipher = ChaCha20Poly1305::new(enc_key);
     let payload = Payload {
@@ -498,9 +507,9 @@ fn decrypt_legacy(decoded: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, &'stat
         Err(_) => return Err("decrypt failed"),
     };
 
-    enc_key_bytes.zeroize();
-    auth_key_bytes.zeroize();
-    nonce_bytes.zeroize();
+    drop(enc_key_bytes);
+    drop(auth_key_bytes);
+    drop(nonce_bytes);
 
     if version == VERSION_LEGACY {
         return Ok(plaintext);
